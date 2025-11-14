@@ -1,0 +1,54 @@
+# SPIRV-Tools Rust Port Plan
+
+## Goals
+- Reimplement SPIRV-Tools functionality in idiomatic Rust with exhaustive type safety (newtypes, enums, traits) so invalid states are unrepresentable.
+- Maintain drop-in compatibility with the existing C API by exposing an `extern "C"` surface that mirrors `libspirv` so the Rust code can be swapped in incrementally.
+- Keep the port incremental: move the smallest self-contained pieces at a time, land them behind the FFI adapter, and validate behavior with the existing test suite plus new Rust-specific tests.
+- Ensure every Rust addition passes `cargo fmt` and `cargo clippy --all-targets --all-features` and integrates with existing CI expectations.
+
+## Guiding Principles
+1. Favor Rust's type system (newtypes, phantom data, `NonZeroU32`, `BitFlags`, typestates) over runtime checks.
+2. Keep safety boundaries explicit. Unsafe code is isolated inside `spirv-tools-ffi` shims with documented invariants.
+3. Mirror the public API shape of `include/spirv-tools/libspirv.h`. When the Rust implementation is incomplete, delegate to existing C++ implementations via FFI to avoid regressions.
+4. Keep changes minimal and focused. Update this plan whenever scope, sequencing, or assumptions change.
+5. Tests move with the code. Rust modules own their unit tests; FFI parity is verified with integration tests mirroring the original C tests.
+
+## High-Level Phases
+1. **Foundation / Workspace**
+    - Introduce a Cargo workspace under `rust/` with crates:
+      - `spirv-tools-ffi`: low-level FFI surface powered by the `cxx` crate so we can bind seamlessly with the existing C++ build.
+     - `spirv-tools-core`: pure-Rust logic, zero `unsafe`, high-level API.
+     - (Future) feature crates for optimizer, reducer, fuzzing, etc.
+   - Provide build glue (CMake/Bazel) to compile the Rust staticlib alongside existing binaries.
+2. **Core Data Model Port**
+   - Port enums (`spv_result_t`, operand types, message severity, target environments, etc.) as Rust enums/newtypes with `repr(transparent)` and conversion traits.
+   - Implement fundamental structs (diagnostics, context, target env, message consumer) with safe builders and invariants enforced via typestates.
+3. **Binary/Text Infrastructure**
+   - Port binary parser/assembler data structures (instruction representation, operand tables) while keeping algorithmic parity.
+   - Provide safe APIs for assembling/disassembling modules.
+4. **Validator/Optimizer/Tools**
+   - Incrementally port validator passes, optimizer transformations, reducer/fuzzer infrastructure, prioritizing components with minimal external dependencies first.
+5. **CLIs & Integration**
+   - Wire Rust implementations into existing CLI tools through the shared C API.
+
+## Active Milestone: Foundation / Workspace
+Tasks for this milestone:
+- [ ] Create the Rust workspace in `rust/` with `Cargo.toml` defining workspace members.
+- [ ] Scaffold `spirv-tools-core` crate with the initial data model for `SpvResult`, `MessageLevel`, and `Endianness` using exhaustive enums and conversions.
+- [ ] Scaffold `spirv-tools-ffi` crate that exposes the C ABI through `cxx::bridge`, delegating unported functions back to the existing C++ implementations when necessary.
+- [ ] Add `cargo fmt`, `cargo clippy` checks to the development workflow (document commands, integrate with CI later).
+- [ ] Port at least one self-contained API surface (e.g., `spvIsValidResult`, diagnostic helpers) end-to-end as a template.
+
+## Testing Strategy
+- Unit tests live alongside Rust modules using `#[cfg(test)]` and cover exhaustive enum conversions and validation helpers.
+- Cross-language FFI tests ensure the exported symbols maintain the same behavior as the C implementation.
+- Long term: reuse/port existing `test/` suites into Rust integration tests.
+
+## Open Questions / Risks
+- Determining the best boundary for delegating back to existing C++ code during the transition.
+- Build-system integration for consumers that currently rely on CMake/Bazel; for now, manual invocation via `cargo` is sufficient.
+- Mapping of large switch-based operand logic into data-driven Rust structures without performance regressions.
+
+## Next Up
+1. Land the workspace scaffolding with the foundational enums and conversions in Rust.
+2. Implement FFI-friendly wrappers for the basic result/message functions and expose them through `spirv-tools-ffi`.
