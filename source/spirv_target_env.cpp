@@ -20,11 +20,48 @@
 #include <cstring>
 #include <string>
 
+#if defined(SPIRV_RUST_TARGET_ENV)
+#include "rust/cxx.h"
+#include "rust/cxxbridge/spirv-tools-ffi.h"
+#endif
+
 #include "source/latest_version_spirv_header.h"
 #include "source/spirv_constant.h"
 #include "spirv-tools/libspirv.h"
 
+#if defined(SPIRV_RUST_TARGET_ENV)
+namespace {
+const std::string& RustTargetEnvDescription(spv_target_env env) {
+  static const std::array<std::string, SPV_ENV_MAX> descriptions = []() {
+    std::array<std::string, SPV_ENV_MAX> values{};
+    for (uint32_t i = 0; i < SPV_ENV_MAX; ++i) {
+      values[i] = std::string(spvtools::ffi::describe_target_env(i));
+    }
+    return values;
+  }();
+
+  static const std::string empty_description;
+  if (env >= SPV_ENV_MAX) {
+    return empty_description;
+  }
+  return descriptions[env];
+}
+}  // namespace
+#endif
+
 const char* spvTargetEnvDescription(spv_target_env env) {
+#if defined(SPIRV_RUST_TARGET_ENV)
+  if (env == SPV_ENV_WEBGPU_0) {
+    assert(false && "Deprecated target environment value.");
+    return "";
+  }
+  if (env == SPV_ENV_MAX) {
+    assert(false && "Invalid target environment value.");
+    return "";
+  }
+
+  return RustTargetEnvDescription(env).c_str();
+#else
   switch (env) {
     case SPV_ENV_UNIVERSAL_1_0:
       return "SPIR-V 1.0";
@@ -86,6 +123,7 @@ const char* spvTargetEnvDescription(spv_target_env env) {
       break;
   }
   return "";
+#endif
 }
 
 uint32_t spvVersionForTargetEnv(spv_target_env env) {

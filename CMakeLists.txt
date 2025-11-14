@@ -85,6 +85,11 @@ set(SPIRV_LIB_FUZZING_ENGINE_LINK_OPTIONS "" CACHE STRING "Used by OSS-Fuzz to c
 option(SPIRV_BUILD_LIBFUZZER_TARGETS "Build libFuzzer targets" OFF)
 
 option(SPIRV_WERROR "Enable error on warning" ON)
+
+option(SPIRV_ENABLE_RUST_TARGET_ENV
+       "Enable Rust implementations for selected target environment helpers" OFF)
+set(SPIRV_RUST_PROFILE "release" CACHE STRING
+    "Cargo profile to use when building Rust crates (used when SPIRV_ENABLE_RUST_TARGET_ENV=ON)")
 if(("${CMAKE_CXX_COMPILER_ID}" MATCHES "GNU") OR (("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang") AND (NOT CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC")))
   set(COMPILER_IS_LIKE_GNU TRUE)
 endif()
@@ -126,6 +131,45 @@ if (PROJECT_IS_TOP_LEVEL)
 endif()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/)
+
+if(SPIRV_ENABLE_RUST_TARGET_ENV)
+  set(SPIRV_RUST_MANIFEST ${PROJECT_SOURCE_DIR}/rust/Cargo.toml)
+  if(NOT EXISTS ${SPIRV_RUST_MANIFEST})
+    message(FATAL_ERROR "Expected Rust workspace at ${PROJECT_SOURCE_DIR}/rust when SPIRV_ENABLE_RUST_TARGET_ENV is ON")
+  endif()
+
+  if(SPIRV_RUST_PROFILE STREQUAL "release")
+    set(SPIRV_RUST_OUTPUT_SUBDIR "release")
+    set(SPIRV_RUST_CARGO_ARGS --release)
+  elseif(SPIRV_RUST_PROFILE STREQUAL "debug")
+    set(SPIRV_RUST_OUTPUT_SUBDIR "debug")
+    set(SPIRV_RUST_CARGO_ARGS)
+  else()
+    set(SPIRV_RUST_OUTPUT_SUBDIR ${SPIRV_RUST_PROFILE})
+    set(SPIRV_RUST_CARGO_ARGS --profile ${SPIRV_RUST_PROFILE})
+  endif()
+
+  set(SPIRV_RUST_LIB_NAME ${CMAKE_STATIC_LIBRARY_PREFIX}spirv_tools_ffi${CMAKE_STATIC_LIBRARY_SUFFIX})
+  set(SPIRV_RUST_LIB_PATH
+      ${PROJECT_SOURCE_DIR}/rust/target/${SPIRV_RUST_OUTPUT_SUBDIR}/${SPIRV_RUST_LIB_NAME})
+
+  add_custom_command(
+    OUTPUT ${SPIRV_RUST_LIB_PATH}
+    COMMAND cargo build --manifest-path ${SPIRV_RUST_MANIFEST} -p spirv-tools-ffi
+            ${SPIRV_RUST_CARGO_ARGS}
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    COMMENT "Building Rust spirv-tools-ffi (${SPIRV_RUST_PROFILE})"
+    BYPRODUCTS ${SPIRV_RUST_LIB_PATH}
+    VERBATIM
+    USES_TERMINAL
+  )
+
+  add_custom_target(spirv-tools-ffi-rust ALL DEPENDS ${SPIRV_RUST_LIB_PATH})
+
+  add_library(spirv-tools-ffi STATIC IMPORTED GLOBAL)
+  add_dependencies(spirv-tools-ffi spirv-tools-ffi-rust)
+  set_target_properties(spirv-tools-ffi PROPERTIES IMPORTED_LOCATION ${SPIRV_RUST_LIB_PATH})
+endif()
 
 option(SPIRV_COLOR_TERMINAL "Enable color terminal output" ON)
 if(${SPIRV_COLOR_TERMINAL})

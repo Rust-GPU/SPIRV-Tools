@@ -38,7 +38,16 @@ Tasks for this milestone:
 - [x] Scaffold `spirv-tools-ffi` crate that exposes the C ABI through `cxx::bridge`, delegating unported functions back to the existing C++ implementations when necessary.
 - [x] Add `cargo fmt`, `cargo clippy` checks to the development workflow (document commands, integrate with CI later).
   - Commands: `cargo fmt --all` and `cargo clippy --all-targets --all-features`.
-- [ ] Port at least one self-contained API surface (e.g., `spvIsValidResult`, diagnostic helpers) end-to-end as a template.
+- [x] Port at least one self-contained API surface (currently `spvTargetEnvDescription`) end-to-end via the Rust core + `cxx` bridge, behind the opt-in `SPIRV_ENABLE_RUST_TARGET_ENV` CMake flag until the integration is battle-tested.
+
+When the flag is enabled CMake drives `cargo build -p spirv-tools-ffi` (profile configurable via `SPIRV_RUST_PROFILE`) and links the resulting staticlib into the core library while compiling the generated `rust/cxxbridge/spirv-tools-ffi.cc` shim.
+
+Regenerate the bridge artifacts (`rust/cxxbridge/spirv-tools-ffi.{h,cc}`) after editing the Rust FFI surface with:
+
+```
+cxxbridge rust/spirv-tools-ffi/src/lib.rs --header > rust/cxxbridge/spirv-tools-ffi.h
+cxxbridge rust/spirv-tools-ffi/src/lib.rs --output rust/cxxbridge/spirv-tools-ffi.cc
+```
 
 ## Testing Strategy
 - Unit tests live alongside Rust modules using `#[cfg(test)]` and cover exhaustive enum conversions and validation helpers.

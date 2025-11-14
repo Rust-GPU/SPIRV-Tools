@@ -297,6 +297,10 @@ set(SPIRV_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/val/instruction.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/val/validation_state.cpp)
 
+if (SPIRV_ENABLE_RUST_TARGET_ENV)
+  list(APPEND SPIRV_SOURCES ${PROJECT_SOURCE_DIR}/rust/cxxbridge/spirv-tools-ffi.cc)
+endif()
+
 if (${SPIRV_TIMER_ENABLED})
   set(SPIRV_SOURCES
     ${SPIRV_SOURCES}
@@ -380,6 +384,13 @@ else()
   endif()
   spirv_tools_default_target_options(${SPIRV_TOOLS})
   set(SPIRV_TOOLS_TARGETS ${SPIRV_TOOLS} ${SPIRV_TOOLS}-shared)
+endif()
+
+if (SPIRV_ENABLE_RUST_TARGET_ENV)
+  foreach(target ${SPIRV_TOOLS_TARGETS})
+    target_link_libraries(${target} PRIVATE spirv-tools-ffi)
+    target_compile_definitions(${target} PRIVATE SPIRV_RUST_TARGET_ENV)
+  endforeach()
 endif()
 
 if("${CMAKE_SYSTEM_NAME}" STREQUAL "Linux")
