@@ -180,6 +180,7 @@ uint32_t spvVersionForTargetEnv(spv_target_env env) {
 #endif
 }
 
+#if !defined(SPIRV_RUST_TARGET_ENV)
 // When a new SPIR-V version is released, update this table.
 static_assert(spv::Version == 0x10600);
 constexpr auto ordered_universal_envs = std::array<spv_target_env, 7>{
@@ -187,6 +188,7 @@ constexpr auto ordered_universal_envs = std::array<spv_target_env, 7>{
     SPV_ENV_UNIVERSAL_1_3, SPV_ENV_UNIVERSAL_1_4, SPV_ENV_UNIVERSAL_1_5,
     SPV_ENV_UNIVERSAL_1_6,
 };
+#endif
 
 // When a new SPIR-V version is released, update this table.
 // Users see this ordered list when running 'spirv-val --help'. Order
@@ -255,6 +257,15 @@ bool spvParseTargetEnv(const char* s, spv_target_env* env) {
 
 bool spvReadEnvironmentFromText(const std::vector<char>& text,
                                 spv_target_env* env) {
+#if defined(SPIRV_RUST_TARGET_ENV)
+  rust::Slice<const uint8_t> slice(
+      reinterpret_cast<const uint8_t*>(text.data()), text.size());
+  auto result = spvtools::ffi::read_env_from_text(slice);
+  if (result.success && env) {
+    *env = static_cast<spv_target_env>(result.env);
+  }
+  return result.success;
+#else
   // Version is expected to match "; Version: 1.X"
   // Version string must occur in header, that is, initial lines of comments
   // Once a non-comment line occurs, the header has ended
@@ -304,6 +315,7 @@ bool spvReadEnvironmentFromText(const std::vector<char>& text,
     }
   }
   return false;
+#endif
 }
 
 #if !defined(SPIRV_RUST_TARGET_ENV)

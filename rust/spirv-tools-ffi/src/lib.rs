@@ -13,6 +13,7 @@ mod ffi {
         fn spirv_version_for_target(env: u32) -> u32;
         fn parse_target_env(input: &str) -> ParseResult;
         fn parse_vulkan_env(vulkan_version: u32, spirv_version: u32) -> ParseResult;
+        fn read_env_from_text(text: &[u8]) -> ParseResult;
         fn is_vulkan_env(env: u32) -> bool;
         fn is_opencl_env(env: u32) -> bool;
         fn is_opengl_env(env: u32) -> bool;
@@ -55,6 +56,19 @@ pub fn parse_target_env(input: &str) -> ffi::ParseResult {
 
 pub fn parse_vulkan_env(vulkan_version: u32, spirv_version: u32) -> ffi::ParseResult {
     match TargetEnv::parse_vulkan_env(vulkan_version, spirv_version) {
+        Some(env) => ffi::ParseResult {
+            success: true,
+            env: env.to_raw(),
+        },
+        None => ffi::ParseResult {
+            success: false,
+            env: TargetEnv::Universal1_0.to_raw(),
+        },
+    }
+}
+
+pub fn read_env_from_text(text: &[u8]) -> ffi::ParseResult {
+    match spirv_tools_core::target_env::read_env_from_text(text) {
         Some(env) => ffi::ParseResult {
             success: true,
             env: env.to_raw(),

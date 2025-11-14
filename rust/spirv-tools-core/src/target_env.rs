@@ -63,6 +63,16 @@ pub enum TargetEnv {
 }
 
 impl TargetEnv {
+    const ORDERED_UNIVERSAL_ENVS: [TargetEnv; 7] = [
+        TargetEnv::Universal1_0,
+        TargetEnv::Universal1_1,
+        TargetEnv::Universal1_2,
+        TargetEnv::Universal1_3,
+        TargetEnv::Universal1_4,
+        TargetEnv::Universal1_5,
+        TargetEnv::Universal1_6,
+    ];
+
     const fn vulkan_word(major: u32, minor: u32) -> u32 {
         (major << 22) | (minor << 12)
     }
@@ -337,10 +347,7 @@ impl TargetEnv {
 
         for (name, _) in Self::TARGET_NAMES {
             let word_len = name.len() + if first_on_line { 0 } else { 1 };
-            if !line.is_empty()
-                && max_line_len > 0
-                && line.len() + word_len > max_line_len
-            {
+            if !line.is_empty() && max_line_len > 0 && line.len() + word_len > max_line_len {
                 result.push_str(&line);
                 result.push('\n');
                 line.clear();
@@ -361,6 +368,40 @@ impl TargetEnv {
         result.push_str(&line);
         result
     }
+}
+
+/// Parses the textual header emitted by `spirv-dis` to determine the target env.
+pub fn read_env_from_text(text: &[u8]) -> Option<TargetEnv> {
+    const PREFIX: &[u8] = b"; Version: 1.";
+    let mut i = 0usize;
+    while i < text.len() {
+        let byte = text[i];
+        if byte == b';' {
+            if i + PREFIX.len() >= text.len() {
+                return None;
+            }
+
+            if text[i..].starts_with(PREFIX) {
+                let minor_pos = i + PREFIX.len();
+                let minor = text[minor_pos];
+                let next = text.get(minor_pos + 1).copied();
+                if minor.is_ascii_digit() && !next.map(|b| b.is_ascii_digit()).unwrap_or(false) {
+                    let index = (minor - b'0') as usize;
+                    if let Some(&env) = TargetEnv::ORDERED_UNIVERSAL_ENVS.get(index) {
+                        return Some(env);
+                    }
+                }
+            }
+
+            while i < text.len() && text[i] != b'\n' {
+                i += 1;
+            }
+        } else if !byte.is_ascii_whitespace() {
+            break;
+        }
+        i += 1;
+    }
+    None
 }
 
 impl From<TargetEnv> for u32 {
