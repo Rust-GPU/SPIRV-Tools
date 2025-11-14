@@ -16,7 +16,16 @@
 
 #include <utility>
 
+#if defined(SPIRV_RUST_TARGET_ENV)
+#include "rust/cxxbridge/spirv-tools-ffi.h"
+#endif
+
 spv_context spvContextCreate(spv_target_env env) {
+#if defined(SPIRV_RUST_TARGET_ENV)
+  if (!spvtools::ffi::is_valid_env(static_cast<uint32_t>(env))) {
+    return nullptr;
+  }
+#else
   switch (env) {
     case SPV_ENV_UNIVERSAL_1_0:
     case SPV_ENV_VULKAN_1_0:
@@ -48,6 +57,7 @@ spv_context spvContextCreate(spv_target_env env) {
     default:
       return nullptr;
   }
+#endif
 
   return new spv_context_t{env, nullptr /* a null default consumer */};
 }
