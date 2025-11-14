@@ -14,6 +14,7 @@
 
 #include "source/spirv_target_env.h"
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cctype>
@@ -127,6 +128,13 @@ const char* spvTargetEnvDescription(spv_target_env env) {
 }
 
 uint32_t spvVersionForTargetEnv(spv_target_env env) {
+#if defined(SPIRV_RUST_TARGET_ENV)
+  if (env == SPV_ENV_WEBGPU_0 || env == SPV_ENV_MAX) {
+    assert(false && "Invalid or deprecated target environment value.");
+    return SPV_SPIRV_VERSION_WORD(0, 0);
+  }
+  return spvtools::ffi::spirv_version_for_target(static_cast<uint32_t>(env));
+#else
   switch (env) {
     case SPV_ENV_UNIVERSAL_1_0:
     case SPV_ENV_VULKAN_1_0:
@@ -169,6 +177,7 @@ uint32_t spvVersionForTargetEnv(spv_target_env env) {
       break;
   }
   return SPV_SPIRV_VERSION_WORD(0, 0);
+#endif
 }
 
 // When a new SPIR-V version is released, update this table.
@@ -221,6 +230,13 @@ inline constexpr std::pair<const char*, spv_target_env> spvTargetEnvNameMap[] =
 };
 
 bool spvParseTargetEnv(const char* s, spv_target_env* env) {
+#if defined(SPIRV_RUST_TARGET_ENV)
+  auto result = spvtools::ffi::parse_target_env(rust::Str(s ? s : ""));
+  if (env) {
+    *env = static_cast<spv_target_env>(result.env);
+  }
+  return result.success;
+#else
   auto match = [s](const char* b) {
     return s && (0 == strncmp(s, b, strlen(b)));
   };
@@ -234,6 +250,7 @@ bool spvParseTargetEnv(const char* s, spv_target_env* env) {
   }
   if (env) *env = SPV_ENV_UNIVERSAL_1_0;
   return false;
+#endif
 }
 
 bool spvReadEnvironmentFromText(const std::vector<char>& text,
@@ -289,6 +306,7 @@ bool spvReadEnvironmentFromText(const std::vector<char>& text,
   return false;
 }
 
+#if !defined(SPIRV_RUST_TARGET_ENV)
 #define VULKAN_VER(MAJOR, MINOR) ((MAJOR << 22) | (MINOR << 12))
 #define SPIRV_VER(MAJOR, MINOR) ((MAJOR << 16) | (MINOR << 8))
 
@@ -307,9 +325,17 @@ static const VulkanEnv ordered_vulkan_envs[] = {
     {SPV_ENV_VULKAN_1_2, VULKAN_VER(1, 2), SPIRV_VER(1, 5)},
     {SPV_ENV_VULKAN_1_3, VULKAN_VER(1, 3), SPIRV_VER(1, 6)},
     {SPV_ENV_VULKAN_1_4, VULKAN_VER(1, 4), SPIRV_VER(1, 6)}};
+#endif
 
 bool spvParseVulkanEnv(uint32_t vulkan_ver, uint32_t spirv_ver,
                        spv_target_env* env) {
+#if defined(SPIRV_RUST_TARGET_ENV)
+  auto result = spvtools::ffi::parse_vulkan_env(vulkan_ver, spirv_ver);
+  if (result.success && env) {
+    *env = static_cast<spv_target_env>(result.env);
+  }
+  return result.success;
+#else
   for (auto triple : ordered_vulkan_envs) {
     if (triple.vulkan_ver >= vulkan_ver && triple.spirv_ver >= spirv_ver) {
       *env = triple.vulkan_env;
@@ -317,9 +343,13 @@ bool spvParseVulkanEnv(uint32_t vulkan_ver, uint32_t spirv_ver,
     }
   }
   return false;
+#endif
 }
 
 bool spvIsVulkanEnv(spv_target_env env) {
+#if defined(SPIRV_RUST_TARGET_ENV)
+  return spvtools::ffi::is_vulkan_env(static_cast<uint32_t>(env));
+#else
   switch (env) {
     case SPV_ENV_UNIVERSAL_1_0:
     case SPV_ENV_OPENCL_1_2:
@@ -357,9 +387,13 @@ bool spvIsVulkanEnv(spv_target_env env) {
       break;
   }
   return false;
+#endif
 }
 
 bool spvIsOpenCLEnv(spv_target_env env) {
+#if defined(SPIRV_RUST_TARGET_ENV)
+  return spvtools::ffi::is_opencl_env(static_cast<uint32_t>(env));
+#else
   switch (env) {
     case SPV_ENV_UNIVERSAL_1_0:
     case SPV_ENV_VULKAN_1_0:
@@ -397,9 +431,13 @@ bool spvIsOpenCLEnv(spv_target_env env) {
       break;
   }
   return false;
+#endif
 }
 
 bool spvIsOpenGLEnv(spv_target_env env) {
+#if defined(SPIRV_RUST_TARGET_ENV)
+  return spvtools::ffi::is_opengl_env(static_cast<uint32_t>(env));
+#else
   switch (env) {
     case SPV_ENV_UNIVERSAL_1_0:
     case SPV_ENV_VULKAN_1_0:
@@ -437,9 +475,13 @@ bool spvIsOpenGLEnv(spv_target_env env) {
       break;
   }
   return false;
+#endif
 }
 
 bool spvIsValidEnv(spv_target_env env) {
+#if defined(SPIRV_RUST_TARGET_ENV)
+  return spvtools::ffi::is_valid_env(static_cast<uint32_t>(env));
+#else
   switch (env) {
     case SPV_ENV_UNIVERSAL_1_0:
     case SPV_ENV_VULKAN_1_0:
@@ -473,9 +515,14 @@ bool spvIsValidEnv(spv_target_env env) {
       break;
   }
   return false;
+#endif
 }
 
 std::string spvLogStringForEnv(spv_target_env env) {
+#if defined(SPIRV_RUST_TARGET_ENV)
+  return std::string(
+      spvtools::ffi::log_namespace(static_cast<uint32_t>(env)));
+#else
   switch (env) {
     case SPV_ENV_OPENCL_1_2:
     case SPV_ENV_OPENCL_2_0:
@@ -519,9 +566,16 @@ std::string spvLogStringForEnv(spv_target_env env) {
       break;
   }
   return "Unknown";
+#endif
 }
 
 std::string spvTargetEnvList(const int pad, const int wrap) {
+#if defined(SPIRV_RUST_TARGET_ENV)
+  const int safe_pad = std::max(pad, 0);
+  const int safe_wrap = std::max(wrap, 0);
+  return std::string(spvtools::ffi::list_target_envs(
+      static_cast<size_t>(safe_pad), static_cast<size_t>(safe_wrap)));
+#else
   std::string ret;
   size_t max_line_len = wrap - pad;  // The first line isn't padded
   std::string line;
@@ -545,4 +599,5 @@ std::string spvTargetEnvList(const int pad, const int wrap) {
   ret += line;
 
   return ret;
+#endif
 }

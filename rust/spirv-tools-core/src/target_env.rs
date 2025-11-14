@@ -1,3 +1,5 @@
+use crate::version::{SpirvVersion, VulkanVersion};
+
 /// Rust representation of `spv_target_env`.
 #[repr(u32)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -61,6 +63,72 @@ pub enum TargetEnv {
 }
 
 impl TargetEnv {
+    const fn vulkan_word(major: u32, minor: u32) -> u32 {
+        (major << 22) | (minor << 12)
+    }
+
+    const TARGET_NAMES: &'static [(&'static str, TargetEnv)] = &[
+        ("vulkan1.0", TargetEnv::Vulkan1_0),
+        ("vulkan1.1spv1.4", TargetEnv::Vulkan1_1Spirv1_4),
+        ("vulkan1.1", TargetEnv::Vulkan1_1),
+        ("vulkan1.2", TargetEnv::Vulkan1_2),
+        ("vulkan1.3", TargetEnv::Vulkan1_3),
+        ("vulkan1.4", TargetEnv::Vulkan1_4),
+        ("spv1.0", TargetEnv::Universal1_0),
+        ("spv1.1", TargetEnv::Universal1_1),
+        ("spv1.2", TargetEnv::Universal1_2),
+        ("spv1.3", TargetEnv::Universal1_3),
+        ("spv1.4", TargetEnv::Universal1_4),
+        ("spv1.5", TargetEnv::Universal1_5),
+        ("spv1.6", TargetEnv::Universal1_6),
+        ("opencl1.2embedded", TargetEnv::OpenClEmbedded1_2),
+        ("opencl1.2", TargetEnv::OpenCl1_2),
+        ("opencl2.0embedded", TargetEnv::OpenClEmbedded2_0),
+        ("opencl2.0", TargetEnv::OpenCl2_0),
+        ("opencl2.1embedded", TargetEnv::OpenClEmbedded2_1),
+        ("opencl2.1", TargetEnv::OpenCl2_1),
+        ("opencl2.2embedded", TargetEnv::OpenClEmbedded2_2),
+        ("opencl2.2", TargetEnv::OpenCl2_2),
+        ("opengl4.0", TargetEnv::OpenGl4_0),
+        ("opengl4.1", TargetEnv::OpenGl4_1),
+        ("opengl4.2", TargetEnv::OpenGl4_2),
+        ("opengl4.3", TargetEnv::OpenGl4_3),
+        ("opengl4.5", TargetEnv::OpenGl4_5),
+    ];
+
+    const VULKAN_ENV_TABLE: &'static [(TargetEnv, VulkanVersion, SpirvVersion)] = &[
+        (
+            TargetEnv::Vulkan1_0,
+            VulkanVersion::from_word(Self::vulkan_word(1, 0)),
+            SpirvVersion::new(1, 0),
+        ),
+        (
+            TargetEnv::Vulkan1_1,
+            VulkanVersion::from_word(Self::vulkan_word(1, 1)),
+            SpirvVersion::new(1, 3),
+        ),
+        (
+            TargetEnv::Vulkan1_1Spirv1_4,
+            VulkanVersion::from_word(Self::vulkan_word(1, 1)),
+            SpirvVersion::new(1, 4),
+        ),
+        (
+            TargetEnv::Vulkan1_2,
+            VulkanVersion::from_word(Self::vulkan_word(1, 2)),
+            SpirvVersion::new(1, 5),
+        ),
+        (
+            TargetEnv::Vulkan1_3,
+            VulkanVersion::from_word(Self::vulkan_word(1, 3)),
+            SpirvVersion::new(1, 6),
+        ),
+        (
+            TargetEnv::Vulkan1_4,
+            VulkanVersion::from_word(Self::vulkan_word(1, 4)),
+            SpirvVersion::new(1, 6),
+        ),
+    ];
+
     /// Converts from the raw integer used by the C API.
     pub const fn from_raw(value: u32) -> Option<Self> {
         match value {
@@ -101,6 +169,34 @@ impl TargetEnv {
         self as u32
     }
 
+    /// Returns the associated SPIR-V version for the target environment.
+    pub const fn spirv_version(self) -> SpirvVersion {
+        match self {
+            Self::Universal1_0
+            | Self::Vulkan1_0
+            | Self::OpenCl1_2
+            | Self::OpenClEmbedded1_2
+            | Self::OpenCl2_0
+            | Self::OpenClEmbedded2_0
+            | Self::OpenCl2_1
+            | Self::OpenClEmbedded2_1
+            | Self::OpenGl4_0
+            | Self::OpenGl4_1
+            | Self::OpenGl4_2
+            | Self::OpenGl4_3
+            | Self::OpenGl4_5 => SpirvVersion::new(1, 0),
+            Self::Universal1_1 => SpirvVersion::new(1, 1),
+            Self::Universal1_2 | Self::OpenCl2_2 | Self::OpenClEmbedded2_2 => {
+                SpirvVersion::new(1, 2)
+            }
+            Self::Universal1_3 | Self::Vulkan1_1 => SpirvVersion::new(1, 3),
+            Self::Universal1_4 | Self::Vulkan1_1Spirv1_4 => SpirvVersion::new(1, 4),
+            Self::Universal1_5 | Self::Vulkan1_2 => SpirvVersion::new(1, 5),
+            Self::Universal1_6 | Self::Vulkan1_3 | Self::Vulkan1_4 => SpirvVersion::new(1, 6),
+            Self::WebGpu0 | Self::Max => SpirvVersion::new(0, 0),
+        }
+    }
+
     /// Human-readable description mirroring `spvTargetEnvDescription`.
     pub const fn description(self) -> &'static str {
         match self {
@@ -133,6 +229,137 @@ impl TargetEnv {
             Self::Vulkan1_4 => "SPIR-V 1.6 (under Vulkan 1.4 semantics)",
             Self::Max => "",
         }
+    }
+
+    /// Returns true if the environment belongs to the Vulkan profile family.
+    pub const fn is_vulkan(self) -> bool {
+        matches!(
+            self,
+            Self::Vulkan1_0
+                | Self::Vulkan1_1
+                | Self::Vulkan1_1Spirv1_4
+                | Self::Vulkan1_2
+                | Self::Vulkan1_3
+                | Self::Vulkan1_4
+        )
+    }
+
+    /// Returns true if the environment belongs to the OpenCL profile family.
+    pub const fn is_opencl(self) -> bool {
+        matches!(
+            self,
+            Self::OpenCl1_2
+                | Self::OpenClEmbedded1_2
+                | Self::OpenCl2_0
+                | Self::OpenClEmbedded2_0
+                | Self::OpenClEmbedded2_1
+                | Self::OpenClEmbedded2_2
+                | Self::OpenCl2_1
+                | Self::OpenCl2_2
+        )
+    }
+
+    /// Returns true if the environment belongs to the OpenGL profile family.
+    pub const fn is_opengl(self) -> bool {
+        matches!(
+            self,
+            Self::OpenGl4_0 | Self::OpenGl4_1 | Self::OpenGl4_2 | Self::OpenGl4_3 | Self::OpenGl4_5
+        )
+    }
+
+    /// Returns true if the environment is a well-defined, non-deprecated value.
+    pub const fn is_valid(self) -> bool {
+        !matches!(self, Self::WebGpu0 | Self::Max)
+    }
+
+    /// Returns the log namespace used by diagnostics.
+    pub const fn log_namespace(self) -> &'static str {
+        match self {
+            Self::OpenCl1_2
+            | Self::OpenCl2_0
+            | Self::OpenCl2_1
+            | Self::OpenCl2_2
+            | Self::OpenClEmbedded1_2
+            | Self::OpenClEmbedded2_0
+            | Self::OpenClEmbedded2_1
+            | Self::OpenClEmbedded2_2 => "OpenCL",
+            Self::OpenGl4_0
+            | Self::OpenGl4_1
+            | Self::OpenGl4_2
+            | Self::OpenGl4_3
+            | Self::OpenGl4_5 => "OpenGL",
+            Self::Vulkan1_0
+            | Self::Vulkan1_1
+            | Self::Vulkan1_1Spirv1_4
+            | Self::Vulkan1_2
+            | Self::Vulkan1_3
+            | Self::Vulkan1_4 => "Vulkan",
+            Self::Universal1_0
+            | Self::Universal1_1
+            | Self::Universal1_2
+            | Self::Universal1_3
+            | Self::Universal1_4
+            | Self::Universal1_5
+            | Self::Universal1_6 => "Universal",
+            Self::WebGpu0 | Self::Max => "Unknown",
+        }
+    }
+
+    /// Attempts to parse a textual prefix (e.g. "vulkan1.2") into an env.
+    pub fn parse_name(input: &str) -> Option<Self> {
+        for (name, env) in Self::TARGET_NAMES {
+            if input.starts_with(name) {
+                return Some(*env);
+            }
+        }
+        None
+    }
+
+    /// Attempts to resolve the least-capable Vulkan environment satisfying
+    /// the requested Vulkan/SPIR-V versions.
+    pub fn parse_vulkan_env(vulkan: u32, spirv: u32) -> Option<Self> {
+        let vulkan = VulkanVersion::from_word(vulkan);
+        let spirv = SpirvVersion::from_word(spirv);
+        for &(env, min_vulkan, max_spirv) in Self::VULKAN_ENV_TABLE {
+            if min_vulkan.meets_or_exceeds(vulkan) && max_spirv.meets_or_exceeds(spirv) {
+                return Some(env);
+            }
+        }
+        None
+    }
+
+    /// Returns a textual list of the environment prefixes, formatted for CLI help.
+    pub fn list_target_envs(pad: usize, wrap: usize) -> String {
+        let mut result = String::new();
+        let mut line = String::new();
+        let mut max_line_len = wrap.saturating_sub(pad);
+        let mut first_on_line = true;
+
+        for (name, _) in Self::TARGET_NAMES {
+            let word_len = name.len() + if first_on_line { 0 } else { 1 };
+            if !line.is_empty()
+                && max_line_len > 0
+                && line.len() + word_len > max_line_len
+            {
+                result.push_str(&line);
+                result.push('\n');
+                line.clear();
+                if pad > 0 {
+                    line.push_str(&" ".repeat(pad));
+                }
+                max_line_len = wrap;
+                first_on_line = true;
+            }
+
+            if !first_on_line {
+                line.push('|');
+            }
+            line.push_str(name);
+            first_on_line = false;
+        }
+
+        result.push_str(&line);
+        result
     }
 }
 
@@ -170,5 +397,33 @@ mod tests {
             "SPIR-V 1.0 (under Vulkan 1.0 semantics)"
         );
         assert_eq!(TargetEnv::Universal1_5.description(), "SPIR-V 1.5");
+    }
+
+    #[test]
+    fn parse_name_matches_prefixes() {
+        assert_eq!(
+            TargetEnv::parse_name("vulkan1.2"),
+            Some(TargetEnv::Vulkan1_2)
+        );
+        assert_eq!(
+            TargetEnv::parse_name("opencl2.2embedded"),
+            Some(TargetEnv::OpenClEmbedded2_2)
+        );
+        assert_eq!(TargetEnv::parse_name("unknown"), None);
+    }
+
+    #[test]
+    fn parse_vulkan_env_respects_capabilities() {
+        let env = TargetEnv::parse_vulkan_env((1 << 22) | (2 << 12), 0x10500);
+        assert_eq!(env, Some(TargetEnv::Vulkan1_2));
+        let impossible = TargetEnv::parse_vulkan_env(2 << 22, 0x10700);
+        assert_eq!(impossible, None);
+    }
+
+    #[test]
+    fn listing_is_non_empty() {
+        let list = TargetEnv::list_target_envs(4, 40);
+        assert!(list.contains("vulkan1.0"));
+        assert!(list.contains("|"));
     }
 }
