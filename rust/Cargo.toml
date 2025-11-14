@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "spirv-tools-core",
+    "spirv-tools-ffi",
+]
+resolver = "2"

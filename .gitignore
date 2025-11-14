@@ -18,6 +18,8 @@ compile_commands.json
 /testing
 /tools/clang/
 /utils/clang-format-diff.py
+target/
+rust/target/
 bazel-bin
 bazel-genfiles
 bazel-out

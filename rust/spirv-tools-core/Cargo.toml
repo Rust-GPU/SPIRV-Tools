@@ -1,0 +1,11 @@
+[package]
+name = "spirv-tools-core"
+version = "0.1.0"
+edition = "2021"
+authors = ["SPIRV-Tools Porters"]
+description = "Type-safe core abstractions for the SPIRV-Tools Rust port"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+thiserror = "1.0"

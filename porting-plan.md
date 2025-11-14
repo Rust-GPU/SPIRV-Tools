@@ -33,10 +33,11 @@
 
 ## Active Milestone: Foundation / Workspace
 Tasks for this milestone:
-- [ ] Create the Rust workspace in `rust/` with `Cargo.toml` defining workspace members.
-- [ ] Scaffold `spirv-tools-core` crate with the initial data model for `SpvResult`, `MessageLevel`, and `Endianness` using exhaustive enums and conversions.
-- [ ] Scaffold `spirv-tools-ffi` crate that exposes the C ABI through `cxx::bridge`, delegating unported functions back to the existing C++ implementations when necessary.
-- [ ] Add `cargo fmt`, `cargo clippy` checks to the development workflow (document commands, integrate with CI later).
+- [x] Create the Rust workspace in `rust/` with `Cargo.toml` defining workspace members.
+- [x] Scaffold `spirv-tools-core` crate with the initial data model for `SpvResult`, `MessageLevel`, and `Endianness` using exhaustive enums and conversions (also modeling `TargetEnv`).
+- [x] Scaffold `spirv-tools-ffi` crate that exposes the C ABI through `cxx::bridge`, delegating unported functions back to the existing C++ implementations when necessary.
+- [x] Add `cargo fmt`, `cargo clippy` checks to the development workflow (document commands, integrate with CI later).
+  - Commands: `cargo fmt --all` and `cargo clippy --all-targets --all-features`.
 - [ ] Port at least one self-contained API surface (e.g., `spvIsValidResult`, diagnostic helpers) end-to-end as a template.
 
 ## Testing Strategy
