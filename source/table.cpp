@@ -25,6 +25,11 @@ spv_context spvContextCreate(spv_target_env env) {
   if (!spvtools::ffi::is_valid_env(static_cast<uint32_t>(env))) {
     return nullptr;
   }
+  auto rust_context =
+      spvtools::ffi::create_context(static_cast<uint32_t>(env));
+  if (rust_context == 0) {
+    return nullptr;
+  }
 #else
   switch (env) {
     case SPV_ENV_UNIVERSAL_1_0:
@@ -59,10 +64,24 @@ spv_context spvContextCreate(spv_target_env env) {
   }
 #endif
 
-  return new spv_context_t{env, nullptr /* a null default consumer */};
+auto* context = new spv_context_t{env, nullptr /* a null default consumer */
+#if defined(SPIRV_RUST_TARGET_ENV)
+                                    , reinterpret_cast<void*>(rust_context)
+#endif
+  };
+  return context;
 }
 
-void spvContextDestroy(spv_context context) { delete context; }
+void spvContextDestroy(spv_context context) {
+#if defined(SPIRV_RUST_TARGET_ENV)
+  if (context && context->rust_context) {
+    spvtools::ffi::destroy_context(
+        reinterpret_cast<std::size_t>(context->rust_context));
+    context->rust_context = nullptr;
+  }
+#endif
+  delete context;
+}
 
 void spvtools::SetContextMessageConsumer(spv_context context,
                                          spvtools::MessageConsumer consumer) {

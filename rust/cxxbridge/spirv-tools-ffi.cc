@@ -618,6 +618,10 @@ void spvtools$ffi$cxxbridge1$parse_vulkan_env(::std::uint32_t vulkan_version, ::
 
 void spvtools$ffi$cxxbridge1$read_env_from_text(::rust::Slice<::std::uint8_t const> text, ::spvtools::ffi::ParseResult *return$) noexcept;
 
+::std::uint64_t spvtools$ffi$cxxbridge1$create_context(::std::uint32_t env) noexcept;
+
+void spvtools$ffi$cxxbridge1$destroy_context(::std::uint64_t handle) noexcept;
+
 bool spvtools$ffi$cxxbridge1$is_vulkan_env(::std::uint32_t env) noexcept;
 
 bool spvtools$ffi$cxxbridge1$is_opencl_env(::std::uint32_t env) noexcept;
@@ -657,6 +661,14 @@ void spvtools$ffi$cxxbridge1$list_target_envs(::std::size_t pad, ::std::size_t w
   ::rust::MaybeUninit<::spvtools::ffi::ParseResult> return$;
   spvtools$ffi$cxxbridge1$read_env_from_text(text, &return$.value);
   return ::std::move(return$.value);
+}
+
+::std::uint64_t create_context(::std::uint32_t env) noexcept {
+  return spvtools$ffi$cxxbridge1$create_context(env);
+}
+
+void destroy_context(::std::uint64_t handle) noexcept {
+  spvtools$ffi$cxxbridge1$destroy_context(handle);
 }
 
 bool is_vulkan_env(::std::uint32_t env) noexcept {

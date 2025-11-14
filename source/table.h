@@ -26,6 +26,9 @@
 struct spv_context_t {
   const spv_target_env target_env;
   spvtools::MessageConsumer consumer;
+#if defined(SPIRV_RUST_TARGET_ENV)
+  void* rust_context;
+#endif
 };
 
 namespace spvtools {

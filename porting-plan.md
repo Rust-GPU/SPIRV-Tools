@@ -60,6 +60,6 @@ cxxbridge rust/spirv-tools-ffi/src/lib.rs --output rust/cxxbridge/spirv-tools-ff
 - Mapping of large switch-based operand logic into data-driven Rust structures without performance regressions.
 
 ## Next Up
-1. Model the `spv_context_t` lifetime and message consumer plumbing in Rust so `spvContextCreate/Destroy` and logging callbacks can start moving over.
+1. Finish plumbing message consumers through the new Rust-owned context handle so `SetContextMessageConsumer` and diagnostic callbacks flow through the same boundary.
 2. Rework the assembler/disassembler entry points to accept the Rust-owned context + target env utilities, adding Rust integration tests around diagnostic emission.
 3. Stand up GN/Bazel wiring for the Rust artifacts so `SPIRV_ENABLE_RUST_TARGET_ENV` is not CMake-only, and document how to toggle it in those builds.

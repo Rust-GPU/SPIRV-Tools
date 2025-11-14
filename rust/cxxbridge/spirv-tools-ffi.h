@@ -597,6 +597,10 @@ struct ParseResult final {
 
 ::spvtools::ffi::ParseResult read_env_from_text(::rust::Slice<::std::uint8_t const> text) noexcept;
 
+::std::uint64_t create_context(::std::uint32_t env) noexcept;
+
+void destroy_context(::std::uint64_t handle) noexcept;
+
 bool is_vulkan_env(::std::uint32_t env) noexcept;
 
 bool is_opencl_env(::std::uint32_t env) noexcept;

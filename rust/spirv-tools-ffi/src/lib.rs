@@ -14,6 +14,8 @@ mod ffi {
         fn parse_target_env(input: &str) -> ParseResult;
         fn parse_vulkan_env(vulkan_version: u32, spirv_version: u32) -> ParseResult;
         fn read_env_from_text(text: &[u8]) -> ParseResult;
+        fn create_context(env: u32) -> u64;
+        unsafe fn destroy_context(handle: u64);
         fn is_vulkan_env(env: u32) -> bool;
         fn is_opencl_env(env: u32) -> bool;
         fn is_opengl_env(env: u32) -> bool;
@@ -104,4 +106,26 @@ pub fn log_namespace(env: u32) -> String {
 
 pub fn list_target_envs(pad: usize, wrap: usize) -> String {
     TargetEnv::list_target_envs(pad, wrap)
+}
+
+#[allow(dead_code)]
+pub struct ContextHandle {
+    env: TargetEnv,
+}
+
+pub fn create_context(env: u32) -> u64 {
+    match TargetEnv::from_raw(env) {
+        Some(env) => Box::into_raw(Box::new(ContextHandle { env })) as u64,
+        None => 0,
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be the integer value previously returned by `create_context`
+/// and not freed yet.
+pub unsafe fn destroy_context(handle: u64) {
+    if handle != 0 {
+        drop(Box::from_raw(handle as *mut ContextHandle));
+    }
 }
