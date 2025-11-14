@@ -60,5 +60,6 @@ cxxbridge rust/spirv-tools-ffi/src/lib.rs --output rust/cxxbridge/spirv-tools-ff
 - Mapping of large switch-based operand logic into data-driven Rust structures without performance regressions.
 
 ## Next Up
-1. Land the workspace scaffolding with the foundational enums and conversions in Rust.
-2. Implement FFI-friendly wrappers for the basic result/message functions and expose them through `spirv-tools-ffi`.
+1. Wire the remaining target-env helpers (`spvParseTargetEnv`, `spvParseVulkanEnv`, `spvVersionForTargetEnv`) through the Rust core, making them available behind the same opt-in flag.
+2. Expand the Rust crates with typed parsing utilities (newtypes for Vulkan/SPIR-V versions) plus unit tests, then export them via `cxx`.
+3. Stand up a basic GN/Bazel integration story for the Rust build outputs so the opt-in flag can graduate beyond CMake.
