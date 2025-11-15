@@ -3,7 +3,7 @@ use std::collections::{btree_map::Entry, BTreeMap};
 use std::str::FromStr;
 
 use rspirv::binary::Assemble;
-use rspirv::dr;
+use rspirv::dr::{self, Error as BuildError};
 use rspirv::spirv;
 
 use super::instruction::{IdRef, LiteralNumber, ResultId, SpirvId, TypeId};
@@ -85,6 +85,17 @@ impl<'a> ModuleBuilder<'a> {
             }
         }
     }
+
+    fn bind_result_id(&mut self, result_id: ResultId<'a>, numeric: u32) {
+        self.bind_spirv_id(result_id.as_spirv_id(), numeric);
+    }
+
+    fn bind_spirv_id(&mut self, id: SpirvId<'a>, numeric: u32) {
+        if let SpirvId::Named(named) = id {
+            self.named_ids.insert(named.name(), numeric);
+        }
+        self.next_numeric_id = self.next_numeric_id.max(numeric + 1);
+    }
 }
 
 /// Drives translation from parsed instructions to SPIR-V DR form.
@@ -111,14 +122,33 @@ impl<'a> AssemblyTranslator<'a> {
     /// Translates a parsed instruction.
     pub fn translate(&mut self, instruction: &ParsedInstruction<'a>) {
         match instruction.opcode() {
+            spirv::Op::TypeVoid => self.translate_type_void(instruction),
             spirv::Op::TypeInt => self.translate_type_int(instruction),
+            spirv::Op::TypeFunction => self.translate_type_function(instruction),
             spirv::Op::MemoryModel => self.translate_memory_model(instruction),
             spirv::Op::EntryPoint => self.translate_entry_point(instruction),
+            spirv::Op::Function => self.translate_function(instruction),
+            spirv::Op::FunctionParameter => self.translate_function_parameter(instruction),
+            spirv::Op::Label => self.translate_label(instruction),
+            spirv::Op::Return => self.translate_return(),
+            spirv::Op::FunctionEnd => self.translate_function_end(),
             spirv::Op::Constant => self.translate_constant(instruction),
             _ => self
                 .module_builder
                 .emit_error(MessagePosition::default(), "unsupported opcode"),
         }
+    }
+
+    fn translate_type_void(&mut self, instruction: &ParsedInstruction<'a>) {
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpTypeVoid requires a result id",
+            );
+            return;
+        };
+        let result_id = self.module_builder.resolve_result_id(result_id);
+        self.builder.type_void_id(Some(result_id));
     }
 
     fn translate_type_int(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -216,6 +246,163 @@ impl<'a> AssemblyTranslator<'a> {
             vec![dr::Operand::LiteralBit32(literal_to_u32(literal))],
         );
         self.builder.module_mut().types_global_values.push(inst);
+    }
+
+    fn translate_type_function(&mut self, instruction: &ParsedInstruction<'a>) {
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpTypeFunction missing result id",
+            );
+            return;
+        };
+
+        let mut operands = instruction.operands().iter();
+        let return_operand = match operands.next() {
+            Some(operand) => operand,
+            None => {
+                self.module_builder.emit_error(
+                    MessagePosition::default(),
+                    "OpTypeFunction missing return type",
+                );
+                return;
+            }
+        };
+        let return_type = match return_operand.value() {
+            OperandValue::Id(id) => self.module_builder.resolve_id_ref(*id),
+            _ => {
+                self.module_builder.emit_error(
+                    return_operand.span().start(),
+                    "Return type must be an id reference",
+                );
+                return;
+            }
+        };
+
+        let mut parameter_types = Vec::new();
+        for operand in operands {
+            match operand.value() {
+                OperandValue::Id(id) => {
+                    parameter_types.push(self.module_builder.resolve_id_ref(*id))
+                }
+                _ => {
+                    self.module_builder.emit_error(
+                        operand.span().start(),
+                        "Parameter type must be an id reference",
+                    );
+                    return;
+                }
+            }
+        }
+
+        let result_id = self.module_builder.resolve_result_id(result_id);
+        self.builder
+            .type_function_id(Some(result_id), return_type, parameter_types);
+    }
+
+    fn translate_function(&mut self, instruction: &ParsedInstruction<'a>) {
+        let Some(result_type) = instruction.result_type() else {
+            self.module_builder
+                .emit_error(MessagePosition::default(), "OpFunction missing result type");
+            return;
+        };
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder
+                .emit_error(MessagePosition::default(), "OpFunction missing result id");
+            return;
+        };
+
+        let mut operands = instruction.operands().iter();
+        let control_operand = match operands.next() {
+            Some(operand) => operand,
+            None => {
+                self.module_builder.emit_error(
+                    MessagePosition::default(),
+                    "OpFunction missing control operand",
+                );
+                return;
+            }
+        };
+        let control = match self.parse_function_control(control_operand) {
+            Some(value) => value,
+            None => return,
+        };
+        let function_type_operand = match operands.next() {
+            Some(operand) => operand,
+            None => {
+                self.module_builder.emit_error(
+                    MessagePosition::default(),
+                    "OpFunction missing function type",
+                );
+                return;
+            }
+        };
+        let function_type = match function_type_operand.value() {
+            OperandValue::Id(id) => self.module_builder.resolve_id_ref(*id),
+            _ => {
+                self.module_builder.emit_error(
+                    function_type_operand.span().start(),
+                    "Function type must be an id reference",
+                );
+                return;
+            }
+        };
+
+        let result_type = self.module_builder.resolve_type_id(result_type);
+        let result_id = self.module_builder.resolve_result_id(result_id);
+        if let Err(error) =
+            self.builder
+                .begin_function(result_type, Some(result_id), control, function_type)
+        {
+            self.emit_builder_error(error, MessagePosition::default());
+        }
+    }
+
+    fn translate_function_parameter(&mut self, instruction: &ParsedInstruction<'a>) {
+        let Some(result_type) = instruction.result_type() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpFunctionParameter missing result type",
+            );
+            return;
+        };
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpFunctionParameter missing result id",
+            );
+            return;
+        };
+
+        let type_id = self.module_builder.resolve_type_id(result_type);
+        match self.builder.function_parameter(type_id) {
+            Ok(parameter_id) => self.module_builder.bind_result_id(result_id, parameter_id),
+            Err(error) => self.emit_builder_error(error, MessagePosition::default()),
+        }
+    }
+
+    fn translate_label(&mut self, instruction: &ParsedInstruction<'a>) {
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder
+                .emit_error(MessagePosition::default(), "OpLabel missing result id");
+            return;
+        };
+        let label_id = self.module_builder.resolve_result_id(result_id);
+        if let Err(error) = self.builder.begin_block(Some(label_id)) {
+            self.emit_builder_error(error, MessagePosition::default());
+        }
+    }
+
+    fn translate_return(&mut self) {
+        if let Err(error) = self.builder.ret() {
+            self.emit_builder_error(error, MessagePosition::default());
+        }
+    }
+
+    fn translate_function_end(&mut self) {
+        if let Err(error) = self.builder.end_function() {
+            self.emit_builder_error(error, MessagePosition::default());
+        }
     }
 
     fn translate_memory_model(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -334,6 +521,56 @@ impl<'a> AssemblyTranslator<'a> {
                 None
             }
         }
+    }
+
+    fn parse_function_control(
+        &mut self,
+        operand: &ParsedOperand<'a>,
+    ) -> Option<spirv::FunctionControl> {
+        let word = match operand.value() {
+            OperandValue::Word(word) => word,
+            _ => {
+                self.module_builder.emit_error(
+                    operand.span().start(),
+                    "Function control must be an enumerant",
+                );
+                return None;
+            }
+        };
+        let text = word.as_str();
+        if text == "None" {
+            return Some(spirv::FunctionControl::empty());
+        }
+
+        let mut control = spirv::FunctionControl::empty();
+        for part in text.split('|').map(str::trim) {
+            if part.is_empty() {
+                continue;
+            }
+            let flag = match part {
+                "Inline" => Some(spirv::FunctionControl::INLINE),
+                "DontInline" => Some(spirv::FunctionControl::DONT_INLINE),
+                "Pure" => Some(spirv::FunctionControl::PURE),
+                "Const" => Some(spirv::FunctionControl::CONST),
+                _ => None,
+            };
+            match flag {
+                Some(value) => control |= value,
+                None => {
+                    self.module_builder.emit_error(
+                        operand.span().start(),
+                        format!("Unknown function control flag '{part}'"),
+                    );
+                    return None;
+                }
+            }
+        }
+        Some(control)
+    }
+
+    fn emit_builder_error(&mut self, error: BuildError, position: MessagePosition) {
+        self.module_builder
+            .emit_error(position, format!("Assembler builder error: {error}"));
     }
 
     /// Finalizes the translation and returns the constructed module plus diagnostics.
@@ -462,6 +699,21 @@ mod tests {
     #[test]
     fn assemble_text_parses_multiple_lines() {
         let text = "%uint = OpTypeInt 32 0\nOpMemoryModel Logical GLSL450";
+        let (binary, diagnostics) = assemble_text(text);
+        assert!(diagnostics.is_empty());
+        assert!(binary.is_some());
+    }
+
+    #[test]
+    fn assemble_text_emits_simple_function() {
+        let text = "\
+%void = OpTypeVoid\n\
+%void_fn = OpTypeFunction %void\n\
+OpMemoryModel Logical GLSL450\n\
+%main = OpFunction %void None %void_fn\n\
+%entry = OpLabel\n\
+OpReturn\n\
+OpFunctionEnd";
         let (binary, diagnostics) = assemble_text(text);
         assert!(diagnostics.is_empty());
         assert!(binary.is_some());
