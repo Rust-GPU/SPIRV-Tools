@@ -1,4 +1,9 @@
-use spirv_tools_core::TargetEnv;
+use core::ffi::c_void;
+use core::ptr::NonNull;
+use spirv_tools_core::assembly::{assemble_text, BinaryToTextOptions, TextToBinaryOptions};
+use spirv_tools_core::diagnostic::{DiagnosticMessage, MessagePosition};
+use spirv_tools_core::{MessageLevel, TargetEnv};
+use std::str;
 
 #[cxx::bridge(namespace = "spvtools::ffi")]
 mod ffi {
@@ -8,13 +13,26 @@ mod ffi {
         env: u32,
     }
 
+    #[derive(Debug)]
+    struct AssembleResult {
+        success: bool,
+        binary: Vec<u32>,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    struct MessagePosition {
+        line: u32,
+        column: u32,
+        index: u32,
+    }
+
     extern "Rust" {
         fn describe_target_env(env: u32) -> String;
         fn spirv_version_for_target(env: u32) -> u32;
         fn parse_target_env(input: &str) -> ParseResult;
         fn parse_vulkan_env(vulkan_version: u32, spirv_version: u32) -> ParseResult;
         fn read_env_from_text(text: &[u8]) -> ParseResult;
-        fn create_context(env: u32) -> u64;
+        fn create_context(env: u32, context_ptr: usize) -> u64;
         unsafe fn destroy_context(handle: u64);
         fn is_vulkan_env(env: u32) -> bool;
         fn is_opencl_env(env: u32) -> bool;
@@ -22,6 +40,28 @@ mod ffi {
         fn is_valid_env(env: u32) -> bool;
         fn log_namespace(env: u32) -> String;
         fn list_target_envs(pad: usize, wrap: usize) -> String;
+        fn sanitize_text_to_binary_options(options: u32) -> u32;
+        fn sanitize_binary_to_text_options(options: u32) -> u32;
+        fn has_rust_context(handle: usize) -> bool;
+        fn context_handle_from_raw(handle: usize) -> u64;
+        fn try_assemble_text(context_handle: u64, text: &[u8], options: u32) -> AssembleResult;
+    }
+
+    unsafe extern "C++" {
+        include!("spirv-tools-ffi/src/context_bridge.h");
+        fn dispatch_context_message(
+            context_ptr: usize,
+            level: u32,
+            has_source: bool,
+            source: &str,
+            position: MessagePosition,
+            message: &str,
+        );
+        fn assemble_text_with_context(
+            context_ptr: usize,
+            text: &[u8],
+            options: u32,
+        ) -> AssembleResult;
     }
 }
 
@@ -108,16 +148,134 @@ pub fn list_target_envs(pad: usize, wrap: usize) -> String {
     TargetEnv::list_target_envs(pad, wrap)
 }
 
-#[allow(dead_code)]
-pub struct ContextHandle {
-    env: TargetEnv,
+pub fn sanitize_text_to_binary_options(options: u32) -> u32 {
+    TextToBinaryOptions::from(options).bits()
 }
 
-pub fn create_context(env: u32) -> u64 {
-    match TargetEnv::from_raw(env) {
-        Some(env) => Box::into_raw(Box::new(ContextHandle { env })) as u64,
-        None => 0,
+pub fn sanitize_binary_to_text_options(options: u32) -> u32 {
+    BinaryToTextOptions::from(options).bits()
+}
+
+pub fn has_rust_context(handle: usize) -> bool {
+    let ptr = handle as *const ContextHandle;
+    unsafe { ptr.as_ref().is_some() }
+}
+
+pub fn context_handle_from_raw(handle: usize) -> u64 {
+    if has_rust_context(handle) {
+        handle as u64
+    } else {
+        0
     }
+}
+
+pub fn try_assemble_text(context_handle: u64, text: &[u8], options: u32) -> ffi::AssembleResult {
+    if context_handle == 0 {
+        return ffi::AssembleResult {
+            success: false,
+            binary: Vec::new(),
+        };
+    }
+
+    let context = unsafe { (context_handle as *const ContextHandle).as_ref() };
+    let Some(context) = context else {
+        return ffi::AssembleResult {
+            success: false,
+            binary: Vec::new(),
+        };
+    };
+
+    if let Ok(source) = str::from_utf8(text) {
+        let (maybe_binary, diagnostics) = assemble_text(source);
+        for diagnostic in diagnostics {
+            context.emit_diagnostic(&diagnostic);
+        }
+        if let Some(binary) = maybe_binary {
+            return ffi::AssembleResult {
+                success: true,
+                binary,
+            };
+        }
+    } else {
+        context.emit_message(
+            MessageLevel::Error,
+            Some("assembler"),
+            MessagePosition::default(),
+            "Assembly text must be valid UTF-8",
+        );
+    }
+
+    ffi::assemble_text_with_context(context.context_address(), text, options)
+}
+
+impl From<MessagePosition> for ffi::MessagePosition {
+    fn from(position: MessagePosition) -> Self {
+        ffi::MessagePosition {
+            line: position.line(),
+            column: position.column(),
+            index: position.index(),
+        }
+    }
+}
+
+impl From<ffi::MessagePosition> for MessagePosition {
+    fn from(position: ffi::MessagePosition) -> Self {
+        MessagePosition::new(position.line, position.column, position.index)
+    }
+}
+
+pub struct ContextHandle {
+    env: TargetEnv,
+    context: NonNull<c_void>,
+}
+
+impl ContextHandle {
+    fn context_address(&self) -> usize {
+        self.context.as_ptr() as usize
+    }
+
+    /// Returns the target environment for this context.
+    pub fn env(&self) -> TargetEnv {
+        self.env
+    }
+
+    /// Emits a message via the context's message consumer.
+    pub fn emit_message(
+        &self,
+        level: MessageLevel,
+        source: Option<&str>,
+        position: MessagePosition,
+        message: &str,
+    ) {
+        ffi::dispatch_context_message(
+            self.context_address(),
+            level.to_raw(),
+            source.is_some(),
+            source.unwrap_or(""),
+            position.into(),
+            message,
+        );
+    }
+
+    /// Emits a structured diagnostic through the message consumer.
+    pub fn emit_diagnostic(&self, diagnostic: &DiagnosticMessage<'_>) {
+        self.emit_message(
+            diagnostic.level(),
+            diagnostic.source(),
+            diagnostic.position(),
+            diagnostic.message(),
+        );
+    }
+}
+
+pub fn create_context(env: u32, context_ptr: usize) -> u64 {
+    let Some(env) = TargetEnv::from_raw(env) else {
+        return 0;
+    };
+    let Some(context) = NonNull::new(context_ptr as *mut c_void) else {
+        return 0;
+    };
+    Box::into_raw(Box::new(ContextHandle { env, context })) as u64
 }
 
 /// # Safety
@@ -127,5 +285,45 @@ pub fn create_context(env: u32) -> u64 {
 pub unsafe fn destroy_context(handle: u64) {
     if handle != 0 {
         drop(Box::from_raw(handle as *mut ContextHandle));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_invalid_environment() {
+        let dangling = NonNull::<c_void>::dangling().as_ptr() as usize;
+        assert_eq!(create_context(u32::MAX, dangling), 0);
+    }
+
+    #[test]
+    fn rejects_null_context_pointer() {
+        let env = TargetEnv::Universal1_0.to_raw();
+        assert_eq!(create_context(env, 0), 0);
+    }
+
+    #[test]
+    fn creates_and_destroys_context_handle() {
+        let env = TargetEnv::Universal1_0.to_raw();
+        let pointer = NonNull::<c_void>::dangling().as_ptr() as usize;
+        let handle = create_context(env, pointer);
+        assert_ne!(handle, 0);
+        unsafe {
+            destroy_context(handle);
+        }
+    }
+
+    #[test]
+    fn message_positions_convert_losslessly() {
+        let position = MessagePosition::new(5, 7, 11);
+        let ffi_pos: ffi::MessagePosition = position.into();
+        assert_eq!(ffi_pos.line, 5);
+        assert_eq!(ffi_pos.column, 7);
+        assert_eq!(ffi_pos.index, 11);
+
+        let round_trip = MessagePosition::from(ffi_pos);
+        assert_eq!(round_trip, position);
     }
 }

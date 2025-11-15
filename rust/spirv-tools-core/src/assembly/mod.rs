@@ -11,7 +11,7 @@ pub mod options;
 /// Parser and builder utilities for SPIR-V assembly instructions.
 pub mod parser;
 
-pub use assembler::{AssemblyTranslator, ModuleBuilder};
+pub use assembler::{assemble_text, AssemblyTranslator, ModuleBuilder};
 pub use instruction::{
     IdRef, InstructionLayout, LiteralNumber, OperandDescriptor, ResultId, SpirvId, TypeId,
 };

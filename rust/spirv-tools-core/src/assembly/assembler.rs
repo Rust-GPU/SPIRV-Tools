@@ -2,11 +2,12 @@ use std::borrow::Cow;
 use std::collections::{btree_map::Entry, BTreeMap};
 use std::str::FromStr;
 
+use rspirv::binary::Assemble;
 use rspirv::dr;
 use rspirv::spirv;
 
 use super::instruction::{IdRef, LiteralNumber, ResultId, SpirvId, TypeId};
-use super::parser::{OperandValue, ParsedInstruction, ParsedOperand};
+use super::parser::{parse_instruction, OperandValue, ParsedInstruction, ParsedOperand};
 use crate::diagnostic::{DiagnosticMessage, MessagePosition};
 use crate::message::MessageLevel;
 
@@ -362,9 +363,37 @@ fn literal_to_u32(literal: &LiteralNumber) -> u32 {
     }
 }
 
+/// Assembles a block of textual SPIR-V instructions separated by newlines into a binary module.
+/// Returns the assembled words on success along with any diagnostics emitted along the way.
+pub fn assemble_text(text: &str) -> (Option<Vec<u32>>, Vec<DiagnosticMessage<'static>>) {
+    let mut translator = AssemblyTranslator::new();
+    let mut diagnostics = Vec::new();
+
+    for raw_line in text.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with(';') {
+            continue;
+        }
+
+        match parse_instruction(line) {
+            Ok(parsed) => translator.translate(&parsed),
+            Err(error) => diagnostics.push(error.into_diagnostic()),
+        }
+    }
+
+    let (module, translator_diagnostics) = translator.finish();
+    diagnostics.extend(translator_diagnostics);
+
+    if diagnostics.is_empty() {
+        (Some(module.assemble()), diagnostics)
+    } else {
+        (None, diagnostics)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{assemble_instructions, AssemblyTranslator};
+    use super::{assemble_instructions, assemble_text, AssemblyTranslator};
     use crate::assembly::parser::parse_instruction;
 
     #[test]
@@ -428,5 +457,13 @@ mod tests {
         let (module, diagnostics) = assemble_instructions(&[&type_inst, &mem_model]);
         assert!(diagnostics.is_empty());
         assert!(module.memory_model.is_some());
+    }
+
+    #[test]
+    fn assemble_text_parses_multiple_lines() {
+        let text = "%uint = OpTypeInt 32 0\nOpMemoryModel Logical GLSL450";
+        let (binary, diagnostics) = assemble_text(text);
+        assert!(diagnostics.is_empty());
+        assert!(binary.is_some());
     }
 }

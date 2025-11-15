@@ -97,6 +97,11 @@ impl ParseError {
     pub fn diagnostic(&self) -> &DiagnosticMessage<'static> {
         &self.diagnostic
     }
+
+    /// Consumes this error and returns the contained diagnostic.
+    pub fn into_diagnostic(self) -> DiagnosticMessage<'static> {
+        self.diagnostic
+    }
 }
 
 /// High-level entry point: parse a single instruction from the provided text.
