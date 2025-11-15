@@ -1,5 +1,7 @@
 //! Assembly-related utilities.
 
+/// Translator that turns parsed instructions into DR modules.
+pub mod assembler;
 /// Grammar-backed instruction metadata and operand newtypes.
 pub mod instruction;
 /// Tokenization primitives for SPIR-V assembly text.
@@ -9,6 +11,7 @@ pub mod options;
 /// Parser and builder utilities for SPIR-V assembly instructions.
 pub mod parser;
 
+pub use assembler::{AssemblyTranslator, ModuleBuilder};
 pub use instruction::{
     IdRef, InstructionLayout, LiteralNumber, OperandDescriptor, ResultId, SpirvId, TypeId,
 };
