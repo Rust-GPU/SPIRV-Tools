@@ -113,6 +113,7 @@ impl<'a> AssemblyTranslator<'a> {
             spirv::Op::TypeInt => self.translate_type_int(instruction),
             spirv::Op::MemoryModel => self.translate_memory_model(instruction),
             spirv::Op::EntryPoint => self.translate_entry_point(instruction),
+            spirv::Op::Constant => self.translate_constant(instruction),
             _ => self
                 .module_builder
                 .emit_error(MessagePosition::default(), "unsupported opcode"),
@@ -168,6 +169,52 @@ impl<'a> AssemblyTranslator<'a> {
         let signedness = literal_to_u32(signed_literal);
         let result_id = self.module_builder.resolve_result_id(result_id);
         self.builder.type_int_id(Some(result_id), width, signedness);
+    }
+
+    fn translate_constant(&mut self, instruction: &ParsedInstruction<'a>) {
+        let Some(result_type) = instruction.result_type() else {
+            self.module_builder
+                .emit_error(MessagePosition::default(), "OpConstant missing result type");
+            return;
+        };
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpConstant requires a result identifier",
+            );
+            return;
+        };
+
+        let literal_operand = match instruction.operands().first() {
+            Some(operand) => operand,
+            None => {
+                self.module_builder.emit_error(
+                    MessagePosition::default(),
+                    "OpConstant missing literal operand",
+                );
+                return;
+            }
+        };
+        let literal = match literal_operand.value() {
+            OperandValue::Literal(value) => value,
+            _ => {
+                self.module_builder.emit_error(
+                    literal_operand.span().start(),
+                    "OpConstant literal operand must be numeric",
+                );
+                return;
+            }
+        };
+
+        let type_id = self.module_builder.resolve_type_id(result_type);
+        let result_id = self.module_builder.resolve_result_id(result_id);
+        let inst = dr::Instruction::new(
+            spirv::Op::Constant,
+            Some(type_id),
+            Some(result_id),
+            vec![dr::Operand::LiteralBit32(literal_to_u32(literal))],
+        );
+        self.builder.module_mut().types_global_values.push(inst);
     }
 
     fn translate_memory_model(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -296,6 +343,18 @@ impl<'a> AssemblyTranslator<'a> {
     }
 }
 
+/// Assembles a sequence of parsed instructions into a SPIR-V module, returning both the module and
+/// any diagnostics emitted along the way.
+pub fn assemble_instructions<'a>(
+    instructions: &[&'a ParsedInstruction<'a>],
+) -> (dr::Module, Vec<DiagnosticMessage<'static>>) {
+    let mut translator = AssemblyTranslator::new();
+    for instruction in instructions {
+        translator.translate(instruction);
+    }
+    translator.finish()
+}
+
 fn literal_to_u32(literal: &LiteralNumber) -> u32 {
     match literal {
         LiteralNumber::Unsigned(value) => *value as u32,
@@ -305,7 +364,7 @@ fn literal_to_u32(literal: &LiteralNumber) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::AssemblyTranslator;
+    use super::{assemble_instructions, AssemblyTranslator};
     use crate::assembly::parser::parse_instruction;
 
     #[test]
@@ -345,5 +404,29 @@ mod tests {
         assert!(diagnostics.is_empty());
         let inst = module.entry_points.first().expect("entry point");
         assert_eq!(inst.class.opcode, rspirv::spirv::Op::EntryPoint);
+    }
+
+    #[test]
+    fn translator_emits_constant_instruction() {
+        let type_inst = parse_instruction("%uint = OpTypeInt 32 0").unwrap();
+        let const_inst = parse_instruction("%c32 = OpConstant %uint 32").unwrap();
+        let mut translator = AssemblyTranslator::new();
+        translator.translate(&type_inst);
+        translator.translate(&const_inst);
+        let (module, diagnostics) = translator.finish();
+        assert!(diagnostics.is_empty());
+        assert!(module
+            .types_global_values
+            .iter()
+            .any(|inst| inst.class.opcode == rspirv::spirv::Op::Constant));
+    }
+
+    #[test]
+    fn assemble_instructions_streams_sequence() {
+        let type_inst = parse_instruction("%uint = OpTypeInt 32 0").unwrap();
+        let mem_model = parse_instruction("OpMemoryModel Logical GLSL450").unwrap();
+        let (module, diagnostics) = assemble_instructions(&[&type_inst, &mem_model]);
+        assert!(diagnostics.is_empty());
+        assert!(module.memory_model.is_some());
     }
 }

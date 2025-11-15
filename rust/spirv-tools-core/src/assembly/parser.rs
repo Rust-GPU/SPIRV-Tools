@@ -214,7 +214,9 @@ impl<'a> Parser<'a> {
                 OperandKind::IdRef | OperandKind::IdResult | OperandKind::IdResultType => {
                     OperandValue::Id(IdRef::new(parse_identifier(word, span, "id")?))
                 }
-                OperandKind::LiteralInteger => OperandValue::Literal(parse_integer(word, span)?),
+                OperandKind::LiteralInteger | OperandKind::LiteralContextDependentNumber => {
+                    OperandValue::Literal(parse_integer(word, span)?)
+                }
                 _ => OperandValue::Word(word),
             },
             TokenKind::StringLiteral(lit) => {

@@ -61,6 +61,6 @@ cxxbridge rust/spirv-tools-ffi/src/lib.rs --output rust/cxxbridge/spirv-tools-ff
 - Mapping of large switch-based operand logic into data-driven Rust structures without performance regressions.
 
 ## Next Up
-1. Extend the new translator to cover additional instructions (constants, memory model, entry points) and emit the proper diagnostics when operands are missing or mismatched.
-2. Feed sequences of parsed instructions through a module-level assembler so we can start producing full DR modules before wiring `try_assemble_text` to the new path.
+1. Wire the module-level assembler into `try_assemble_text` (behind the rust flag) so the C API can start exercising the Rust path on simple shaders.
+2. Incrementally expand opcode coverage (constants, memory model, entry points are done; next: functions, execution modes, variables) and add regression tests to lock behavior.
 3. After the assembler path is online, replicate the context plumbing inside the disassembler and ensure GN/Bazel builds can opt into the Rust implementation alongside CMake.
