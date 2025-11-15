@@ -31,16 +31,17 @@
 5. **CLIs & Integration**
    - Wire Rust implementations into existing CLI tools through the shared C API.
 
-## Active Milestone: Foundation / Workspace
-Tasks for this milestone:
-- [x] Create the Rust workspace in `rust/` with `Cargo.toml` defining workspace members.
-- [x] Scaffold `spirv-tools-core` crate with the initial data model for `SpvResult`, `MessageLevel`, and `Endianness` using exhaustive enums and conversions (also modeling `TargetEnv`).
-- [x] Scaffold `spirv-tools-ffi` crate that exposes the C ABI through `cxx::bridge`, delegating unported functions back to the existing C++ implementations when necessary.
-- [x] Add `cargo fmt`, `cargo clippy` checks to the development workflow (document commands, integrate with CI later).
-  - Commands: `cargo fmt --all` and `cargo clippy --all-targets --all-features`.
-- [x] Port at least one self-contained API surface (currently `spvTargetEnvDescription`) end-to-end via the Rust core + `cxx` bridge, behind the opt-in `SPIRV_ENABLE_RUST_TARGET_ENV` CMake flag until the integration is battle-tested.
+## Active Milestone: Binary/Text Infrastructure
+With the foundational workspace pieces in place, we now focus on the assembler and disassembler pipeline. This milestone delivers a Rust-native text/binary conversion path that can be swapped into the existing C entry points behind the FFI bridge.
 
-When the flag is enabled CMake drives `cargo build -p spirv-tools-ffi` (profile configurable via `SPIRV_RUST_PROFILE`) and links the resulting staticlib into the core library while compiling the generated `rust/cxxbridge/spirv-tools-ffi.cc` shim.
+Tasks for this milestone:
+- [ ] Build a strongly-typed lexer/token stream for SPIR-V assembly text that tracks source positions and quotes, so parsing can stay zero-copy where possible.
+- [ ] Model the intermediate instruction representation (IDs, operands, literal values) with newtypes that enforce the operand kinds the grammar expects.
+- [ ] Implement the assembler driver that consumes the lexer, consults the grammar tables, and emits binaries plus diagnostics through the Rust context.
+- [ ] Expose the Rust assembler via `try_assemble_text`, returning success/failure and hooking diagnostics into the existing consumers. Fall back to the legacy C++ assembler only while gaps remain.
+- [ ] Mirror the improvements in the disassembler path (options filtering, message routing) so both directions benefit from the Rust context.
+
+When the flag is enabled CMake continues to drive `cargo build -p spirv-tools-ffi` (profile configurable via `SPIRV_RUST_PROFILE`) and links the resulting staticlib into the core library while compiling the generated `rust/cxxbridge/spirv-tools-ffi.cc` shim.
 
 Regenerate the bridge artifacts (`rust/cxxbridge/spirv-tools-ffi.{h,cc}`) after editing the Rust FFI surface with:
 
@@ -60,6 +61,6 @@ cxxbridge rust/spirv-tools-ffi/src/lib.rs --output rust/cxxbridge/spirv-tools-ff
 - Mapping of large switch-based operand logic into data-driven Rust structures without performance regressions.
 
 ## Next Up
-1. Finish plumbing message consumers through the new Rust-owned context handle so `SetContextMessageConsumer` and diagnostic callbacks flow through the same boundary.
-2. Rework the assembler/disassembler entry points to accept the Rust-owned context + target env utilities, adding Rust integration tests around diagnostic emission.
-3. Stand up GN/Bazel wiring for the Rust artifacts so `SPIRV_ENABLE_RUST_TARGET_ENV` is not CMake-only, and document how to toggle it in those builds.
+1. Land the lexer/token infrastructure inside `spirv-tools-core::assembly`, complete with unit tests that cover identifiers, punctuation, and quoted literals. This unblocks the parser.
+2. Layer the typed operand/instruction builder on top of the lexer so we can start translating single instructions and module headers, emitting diagnostics through `ContextHandle`.
+3. After the assembler path is online, replicate the context plumbing inside the disassembler and ensure GN/Bazel builds can opt into the Rust implementation alongside CMake.

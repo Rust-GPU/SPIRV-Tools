@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cctype>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -38,6 +39,9 @@
 #include "source/spirv_constant.h"
 #include "source/spirv_target_env.h"
 #include "source/table.h"
+#if defined(SPIRV_RUST_TARGET_ENV)
+#include "rust/cxxbridge/spirv-tools-ffi.h"
+#endif
 #include "source/table2.h"
 #include "source/text_handler.h"
 #include "source/util/bitutils.h"
@@ -958,6 +962,41 @@ spv_result_t spvTextToBinaryInternal(const spvtools::AssemblyGrammar& grammar,
 
 }  // anonymous namespace
 
+namespace {
+
+spv_result_t AssembleTextInternal(spv_context_t* context,
+                                  const char* input_text,
+                                  size_t input_text_size,
+                                  uint32_t options,
+                                  spv_binary* pBinary) {
+  spv_text_t text = {input_text, input_text_size};
+  spvtools::AssemblyGrammar grammar(context);
+
+  return spvTextToBinaryInternal(grammar, context->consumer, &text, options,
+                                 pBinary);
+}
+
+spv_result_t AssembleTextWithDiagnostics(spv_const_context base_context,
+                                         const char* input_text,
+                                         size_t input_text_size,
+                                         uint32_t options,
+                                         spv_binary* pBinary,
+                                         spv_diagnostic* pDiagnostic) {
+  spv_context_t hijack_context = *base_context;
+  if (pDiagnostic) {
+    *pDiagnostic = nullptr;
+    spvtools::UseDiagnosticAsMessageConsumer(&hijack_context, pDiagnostic);
+  }
+
+  spv_result_t result = AssembleTextInternal(&hijack_context, input_text,
+                                             input_text_size, options, pBinary);
+
+  if (pDiagnostic && *pDiagnostic) (*pDiagnostic)->isTextSource = true;
+  return result;
+}
+
+}  // anonymous namespace
+
 spv_result_t spvTextToBinary(const spv_const_context context,
                              const char* input_text,
                              const size_t input_text_size, spv_binary* pBinary,
@@ -973,21 +1012,84 @@ spv_result_t spvTextToBinaryWithOptions(const spv_const_context context,
                                         const uint32_t options,
                                         spv_binary* pBinary,
                                         spv_diagnostic* pDiagnostic) {
-  spv_context_t hijack_context = *context;
-  if (pDiagnostic) {
-    *pDiagnostic = nullptr;
-    spvtools::UseDiagnosticAsMessageConsumer(&hijack_context, pDiagnostic);
+  const uint64_t rust_context_handle =
+      spvtools::GetRustContextHandle(context);
+  const bool has_rust_context = rust_context_handle != 0;
+
+  const uint32_t sanitized_options =
+#if defined(SPIRV_RUST_TARGET_ENV)
+      has_rust_context ?
+          spvtools::ffi::sanitize_text_to_binary_options(options) : options;
+#else
+      options;
+#endif
+
+#if defined(SPIRV_RUST_TARGET_ENV)
+  if (has_rust_context) {
+    ::rust::Slice<const uint8_t> text_slice(
+        reinterpret_cast<const uint8_t*>(input_text), input_text_size);
+    auto rust_result = spvtools::ffi::try_assemble_text(rust_context_handle,
+                                                       text_slice,
+                                                       sanitized_options);
+    if (rust_result.success) {
+      auto binary = new spv_binary_t();
+      if (!binary) {
+        return SPV_ERROR_OUT_OF_MEMORY;
+      }
+      binary->wordCount = rust_result.binary.size();
+      binary->code = new uint32_t[binary->wordCount];
+      if (!binary->code) {
+        delete binary;
+        return SPV_ERROR_OUT_OF_MEMORY;
+      }
+      std::copy(rust_result.binary.begin(), rust_result.binary.end(),
+                binary->code);
+      *pBinary = binary;
+      return SPV_SUCCESS;
+    }
+  }
+#endif
+
+  return AssembleTextWithDiagnostics(context, input_text, input_text_size,
+                                     sanitized_options, pBinary, pDiagnostic);
+}
+
+#if defined(SPIRV_RUST_TARGET_ENV)
+namespace spvtools::ffi {
+
+AssembleResult assemble_text_with_context(std::size_t context_ptr,
+                                          ::rust::Slice<const std::uint8_t> text,
+                                          std::uint32_t options) {
+  AssembleResult result{
+      /*success=*/false,
+      /*binary=*/{}};
+
+  if (context_ptr == 0 || text.data() == nullptr) {
+    return result;
   }
 
-  spv_text_t text = {input_text, input_text_size};
-  spvtools::AssemblyGrammar grammar(&hijack_context);
+  auto* context = reinterpret_cast<spv_const_context>(context_ptr);
+  if (!context) {
+    return result;
+  }
 
-  spv_result_t result = spvTextToBinaryInternal(
-      grammar, hijack_context.consumer, &text, options, pBinary);
-  if (pDiagnostic && *pDiagnostic) (*pDiagnostic)->isTextSource = true;
-
+  spv_binary binary = nullptr;
+  spv_result_t status = AssembleTextWithDiagnostics(
+      context, reinterpret_cast<const char*>(text.data()), text.size(), options,
+      &binary, nullptr);
+  if (status == SPV_SUCCESS && binary != nullptr) {
+    result.success = true;
+    result.binary.reserve(binary->wordCount);
+    for (std::size_t i = 0; i < binary->wordCount; ++i) {
+      result.binary.push_back(binary->code[i]);
+    }
+  }
+  spvBinaryDestroy(binary);
   return result;
 }
+
+}  // namespace spvtools::ffi
+#endif
 
 void spvTextDestroy(spv_text text) {
   if (text) {
