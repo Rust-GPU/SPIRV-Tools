@@ -193,11 +193,24 @@ impl<'a> Parser<'a> {
         }
 
         if !self.stream.peek_is_end() {
-            let extra = self.stream.next().expect("peek checked");
-            return Err(ParseError::new(
-                extra.span().start(),
-                "Unexpected tokens after instruction",
-            ));
+            if matches!(
+                layout.opcode(),
+                spirv::Op::ExecutionMode | spirv::Op::ExecutionModeId
+            ) {
+                let descriptor = OperandDescriptor::new(
+                    OperandKind::LiteralInteger,
+                    OperandQuantifier::ZeroOrMore,
+                );
+                while !self.stream.peek_is_end() {
+                    operands.push(self.parse_operand(descriptor)?);
+                }
+            } else {
+                let extra = self.stream.next().expect("peek checked");
+                return Err(ParseError::new(
+                    extra.span().start(),
+                    "Unexpected tokens after instruction",
+                ));
+            }
         }
 
         Ok(ParsedInstruction {

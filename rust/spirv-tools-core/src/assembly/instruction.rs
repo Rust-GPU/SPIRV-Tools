@@ -64,7 +64,7 @@ pub struct OperandDescriptor {
 
 impl OperandDescriptor {
     /// Creates a descriptor from the grammar representation.
-    const fn new(kind: OperandKind, quantifier: OperandQuantifier) -> Self {
+    pub(crate) const fn new(kind: OperandKind, quantifier: OperandQuantifier) -> Self {
         Self { kind, quantifier }
     }
 

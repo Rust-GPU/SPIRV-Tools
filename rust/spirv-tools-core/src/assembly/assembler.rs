@@ -3,7 +3,7 @@ use std::collections::{btree_map::Entry, BTreeMap};
 use std::str::FromStr;
 
 use rspirv::binary::Assemble;
-use rspirv::dr::{self, Error as BuildError};
+use rspirv::dr::{self, Error as BuildError, InsertPoint};
 use rspirv::spirv;
 
 use super::instruction::{IdRef, LiteralNumber, ResultId, SpirvId, TypeId};
@@ -122,21 +122,48 @@ impl<'a> AssemblyTranslator<'a> {
     /// Translates a parsed instruction.
     pub fn translate(&mut self, instruction: &ParsedInstruction<'a>) {
         match instruction.opcode() {
+            spirv::Op::Capability => self.translate_capability(instruction),
             spirv::Op::TypeVoid => self.translate_type_void(instruction),
             spirv::Op::TypeInt => self.translate_type_int(instruction),
             spirv::Op::TypeFunction => self.translate_type_function(instruction),
+            spirv::Op::TypePointer => self.translate_type_pointer(instruction),
             spirv::Op::MemoryModel => self.translate_memory_model(instruction),
             spirv::Op::EntryPoint => self.translate_entry_point(instruction),
+            spirv::Op::ExecutionMode => self.translate_execution_mode(instruction),
             spirv::Op::Function => self.translate_function(instruction),
             spirv::Op::FunctionParameter => self.translate_function_parameter(instruction),
             spirv::Op::Label => self.translate_label(instruction),
             spirv::Op::Return => self.translate_return(),
+            spirv::Op::ReturnValue => self.translate_return_value(instruction),
             spirv::Op::FunctionEnd => self.translate_function_end(),
             spirv::Op::Constant => self.translate_constant(instruction),
+            spirv::Op::Variable => self.translate_variable(instruction),
+            spirv::Op::Load => self.translate_load(instruction),
+            spirv::Op::Store => self.translate_store(instruction),
+            spirv::Op::IAdd
+            | spirv::Op::ISub
+            | spirv::Op::IMul
+            | spirv::Op::FAdd
+            | spirv::Op::FSub
+            | spirv::Op::FMul => self.translate_binary_arithmetic(instruction),
             _ => self
                 .module_builder
                 .emit_error(MessagePosition::default(), "unsupported opcode"),
         }
+    }
+
+    fn translate_capability(&mut self, instruction: &ParsedInstruction<'a>) {
+        let Some(operand) = instruction.operands().first() else {
+            self.module_builder
+                .emit_error(MessagePosition::default(), "OpCapability missing enumerant");
+            return;
+        };
+        let Some(capability) =
+            self.parse_enum_operand::<spirv::Capability>(Some(operand), "capability")
+        else {
+            return;
+        };
+        self.builder.capability(capability);
     }
 
     fn translate_type_void(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -399,10 +426,72 @@ impl<'a> AssemblyTranslator<'a> {
         }
     }
 
+    fn translate_return_value(&mut self, instruction: &ParsedInstruction<'a>) {
+        let operand = match instruction.operands().first() {
+            Some(operand) => operand,
+            None => {
+                self.module_builder.emit_error(
+                    MessagePosition::default(),
+                    "OpReturnValue missing result id",
+                );
+                return;
+            }
+        };
+        let Some(value_id) = self.operand_as_id(operand, "return value") else {
+            return;
+        };
+        if let Err(error) = self.builder.ret_value(value_id) {
+            self.emit_builder_error(error, operand.span().start());
+        }
+    }
+
     fn translate_function_end(&mut self) {
         if let Err(error) = self.builder.end_function() {
             self.emit_builder_error(error, MessagePosition::default());
         }
+    }
+
+    fn translate_type_pointer(&mut self, instruction: &ParsedInstruction<'a>) {
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpTypePointer missing result id",
+            );
+            return;
+        };
+        let mut operands = instruction.operands().iter();
+        let Some(storage_operand) = operands.next() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpTypePointer missing storage class",
+            );
+            return;
+        };
+        let Some(storage_class) =
+            self.parse_enum_operand::<spirv::StorageClass>(Some(storage_operand), "storage class")
+        else {
+            return;
+        };
+        let Some(pointee_operand) = operands.next() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpTypePointer missing pointee type",
+            );
+            return;
+        };
+        let Some(pointee_id) = self.operand_as_id(pointee_operand, "pointee type") else {
+            return;
+        };
+        if let Some(extra) = operands.next() {
+            self.module_builder.emit_error(
+                extra.span().start(),
+                "OpTypePointer received unexpected operands",
+            );
+            return;
+        }
+        let result_id = self.module_builder.resolve_result_id(result_id);
+        self.builder
+            .type_pointer(Some(result_id), storage_class, pointee_id);
     }
 
     fn translate_memory_model(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -485,6 +574,241 @@ impl<'a> AssemblyTranslator<'a> {
 
         self.builder
             .entry_point(execution_model, function_id, entry_name, interfaces);
+    }
+
+    fn translate_execution_mode(&mut self, instruction: &ParsedInstruction<'a>) {
+        let mut operands = instruction.operands().iter();
+        let entry_operand = match operands.next() {
+            Some(operand) => operand,
+            None => {
+                self.module_builder.emit_error(
+                    MessagePosition::default(),
+                    "OpExecutionMode missing entry point",
+                );
+                return;
+            }
+        };
+        let Some(entry_point) = self.operand_as_id(entry_operand, "entry point") else {
+            return;
+        };
+        let Some(execution_mode) =
+            self.parse_enum_operand::<spirv::ExecutionMode>(operands.next(), "execution mode")
+        else {
+            return;
+        };
+        let mut parameters = Vec::new();
+        for operand in operands {
+            match operand.value() {
+                OperandValue::Literal(literal) => parameters.push(literal_to_u32(literal)),
+                _ => {
+                    self.module_builder.emit_error(
+                        operand.span().start(),
+                        "Execution mode parameters must be literals",
+                    );
+                    return;
+                }
+            }
+        }
+        self.builder
+            .execution_mode(entry_point, execution_mode, parameters);
+    }
+
+    fn translate_variable(&mut self, instruction: &ParsedInstruction<'a>) {
+        let Some(result_type) = instruction.result_type() else {
+            self.module_builder
+                .emit_error(MessagePosition::default(), "OpVariable missing result type");
+            return;
+        };
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder
+                .emit_error(MessagePosition::default(), "OpVariable missing result id");
+            return;
+        };
+        let mut operands = instruction.operands().iter();
+        let Some(storage_operand) = operands.next() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpVariable missing storage class",
+            );
+            return;
+        };
+        let Some(storage_class) =
+            self.parse_enum_operand::<spirv::StorageClass>(Some(storage_operand), "storage class")
+        else {
+            return;
+        };
+        let initializer = match operands.next() {
+            Some(operand) => match self.operand_as_id(operand, "initializer") {
+                Some(id) => Some(id),
+                None => return,
+            },
+            None => None,
+        };
+        if let Some(extra) = operands.next() {
+            self.module_builder.emit_error(
+                extra.span().start(),
+                "OpVariable received unexpected operands",
+            );
+            return;
+        }
+        let type_id = self.module_builder.resolve_type_id(result_type);
+        let result_id = self.module_builder.resolve_result_id(result_id);
+        let initializer_id = initializer;
+        self.builder
+            .variable(type_id, Some(result_id), storage_class, initializer_id);
+    }
+
+    fn translate_load(&mut self, instruction: &ParsedInstruction<'a>) {
+        let Some(result_type) = instruction.result_type() else {
+            self.module_builder
+                .emit_error(MessagePosition::default(), "OpLoad missing result type");
+            return;
+        };
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder
+                .emit_error(MessagePosition::default(), "OpLoad missing result id");
+            return;
+        };
+        let mut operands = instruction.operands().iter();
+        let Some(pointer_operand) = operands.next() else {
+            self.module_builder
+                .emit_error(MessagePosition::default(), "OpLoad missing pointer operand");
+            return;
+        };
+        let Some(pointer_id) = self.operand_as_id(pointer_operand, "pointer operand") else {
+            return;
+        };
+        if let Some(extra) = operands.next() {
+            self.module_builder.emit_error(
+                extra.span().start(),
+                "OpLoad optional operands are not supported yet",
+            );
+            return;
+        }
+        let type_id = self.module_builder.resolve_type_id(result_type);
+        let result_id = self.module_builder.resolve_result_id(result_id);
+        let inst = dr::Instruction::new(
+            spirv::Op::Load,
+            Some(type_id),
+            Some(result_id),
+            vec![dr::Operand::IdRef(pointer_id)],
+        );
+        self.push_block_instruction(inst);
+    }
+
+    fn translate_store(&mut self, instruction: &ParsedInstruction<'a>) {
+        let mut operands = instruction.operands().iter();
+        let Some(pointer_operand) = operands.next() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpStore missing pointer operand",
+            );
+            return;
+        };
+        let Some(object_operand) = operands.next() else {
+            self.module_builder
+                .emit_error(MessagePosition::default(), "OpStore missing object operand");
+            return;
+        };
+        if let Some(extra) = operands.next() {
+            self.module_builder.emit_error(
+                extra.span().start(),
+                "OpStore optional operands are not supported yet",
+            );
+            return;
+        }
+        let Some(pointer_id) = self.operand_as_id(pointer_operand, "pointer operand") else {
+            return;
+        };
+        let Some(object_id) = self.operand_as_id(object_operand, "object operand") else {
+            return;
+        };
+        let inst = dr::Instruction::new(
+            spirv::Op::Store,
+            None,
+            None,
+            vec![
+                dr::Operand::IdRef(pointer_id),
+                dr::Operand::IdRef(object_id),
+            ],
+        );
+        self.push_block_instruction(inst);
+    }
+
+    fn translate_binary_arithmetic(&mut self, instruction: &ParsedInstruction<'a>) {
+        let Some(result_type) = instruction.result_type() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "Binary operation missing result type",
+            );
+            return;
+        };
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "Binary operation missing result id",
+            );
+            return;
+        };
+        let mut operands = instruction.operands().iter();
+        let Some(lhs_operand) = operands.next() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "Binary operation missing operands",
+            );
+            return;
+        };
+        let Some(rhs_operand) = operands.next() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "Binary operation requires two operands",
+            );
+            return;
+        };
+        if let Some(extra) = operands.next() {
+            self.module_builder.emit_error(
+                extra.span().start(),
+                "Binary operation received unexpected operands",
+            );
+            return;
+        }
+        let Some(lhs_id) = self.operand_as_id(lhs_operand, "left operand") else {
+            return;
+        };
+        let Some(rhs_id) = self.operand_as_id(rhs_operand, "right operand") else {
+            return;
+        };
+        let type_id = self.module_builder.resolve_type_id(result_type);
+        let result_id = self.module_builder.resolve_result_id(result_id);
+        let inst = dr::Instruction::new(
+            instruction.opcode(),
+            Some(type_id),
+            Some(result_id),
+            vec![dr::Operand::IdRef(lhs_id), dr::Operand::IdRef(rhs_id)],
+        );
+        self.push_block_instruction(inst);
+    }
+
+    fn operand_as_id(&mut self, operand: &ParsedOperand<'a>, label: &str) -> Option<u32> {
+        match operand.value() {
+            OperandValue::Id(id) => Some(self.module_builder.resolve_id_ref(*id)),
+            _ => {
+                self.module_builder.emit_error(
+                    operand.span().start(),
+                    format!("{label} must be an id reference"),
+                );
+                None
+            }
+        }
+    }
+
+    fn push_block_instruction(&mut self, instruction: dr::Instruction) {
+        if let Err(error) = self
+            .builder
+            .insert_into_block(InsertPoint::End, instruction)
+        {
+            self.emit_builder_error(error, MessagePosition::default());
+        }
     }
 
     fn parse_enum_operand<E>(
@@ -632,6 +956,7 @@ pub fn assemble_text(text: &str) -> (Option<Vec<u32>>, Vec<DiagnosticMessage<'st
 mod tests {
     use super::{assemble_instructions, assemble_text, AssemblyTranslator};
     use crate::assembly::parser::parse_instruction;
+    use rspirv::spirv;
 
     #[test]
     fn translator_emits_type_int_instruction() {
@@ -717,5 +1042,48 @@ OpFunctionEnd";
         let (binary, diagnostics) = assemble_text(text);
         assert!(diagnostics.is_empty());
         assert!(binary.is_some());
+    }
+
+    #[test]
+    fn translator_handles_execution_mode_and_memory_ops() {
+        let source = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint GLCompute %main \"main\" %buffer",
+            "OpExecutionMode %main LocalSize 1 1 1",
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+            "%uint = OpTypeInt 32 0",
+            "%ptr = OpTypePointer StorageBuffer %uint",
+            "%one = OpConstant %uint 1",
+            "%buffer = OpVariable %ptr StorageBuffer",
+            "%main = OpFunction %void None %void_fn",
+            "%entry = OpLabel",
+            "%value = OpLoad %uint %buffer",
+            "%sum = OpIAdd %uint %value %one",
+            "OpStore %buffer %sum",
+            "OpReturn",
+            "OpFunctionEnd",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| {
+                parse_instruction(line)
+                    .unwrap_or_else(|err| panic!("failed to parse '{line}': {err:?}"))
+            })
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let (module, diagnostics) = assemble_instructions(&refs);
+        assert!(diagnostics.is_empty());
+        assert_eq!(module.capabilities.len(), 1);
+        assert_eq!(module.execution_modes.len(), 1);
+        assert_eq!(module.entry_points.len(), 1);
+        let function = module.functions.first().expect("function");
+        assert_eq!(function.blocks.len(), 1);
+        let block = function.blocks.first().expect("entry block");
+        assert!(block
+            .instructions
+            .iter()
+            .any(|inst| inst.class.opcode == spirv::Op::IAdd));
     }
 }

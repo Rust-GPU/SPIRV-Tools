@@ -38,7 +38,9 @@ Tasks for this milestone:
 - [x] Build a strongly-typed lexer/token stream for SPIR-V assembly text that tracks source positions and quotes, so parsing can stay zero-copy where possible.
 - [x] Model the intermediate instruction representation (IDs, operands, literal values) with newtypes that enforce the operand kinds the grammar expects.
 - [ ] Implement the assembler driver that consumes the lexer, consults the grammar tables, and emits binaries plus diagnostics through the Rust context.
-- [ ] Expose the Rust assembler via `try_assemble_text`, returning success/failure and hooking diagnostics into the existing consumers. Fall back to the legacy C++ assembler only while gaps remain.
+  - [x] Cover core module metadata (capabilities, entry points, execution modes, pointer types, and global variables) plus basic block instructions such as loads, stores, and arithmetic.
+  - [ ] Support optional operands (memory access masks, alignment), composite instructions, access chains, and control-flow constructs so most shaders assemble entirely in Rust.
+- [x] Expose the Rust assembler via `try_assemble_text`, returning success/failure and hooking diagnostics into the existing consumers. Fall back to the legacy C++ assembler only while gaps remain.
 - [ ] Mirror the improvements in the disassembler path (options filtering, message routing) so both directions benefit from the Rust context.
 
 When the flag is enabled CMake continues to drive `cargo build -p spirv-tools-ffi` (profile configurable via `SPIRV_RUST_PROFILE`) and links the resulting staticlib into the core library while compiling the generated `rust/cxxbridge/spirv-tools-ffi.cc` shim.
@@ -61,6 +63,6 @@ cxxbridge rust/spirv-tools-ffi/src/lib.rs --output rust/cxxbridge/spirv-tools-ff
 - Mapping of large switch-based operand logic into data-driven Rust structures without performance regressions.
 
 ## Next Up
-1. Expand the translator to cover functions, execution modes, and basic instruction blocks so multi-instruction modules assemble end-to-end without falling back to C++.
-2. Drive the Rust assembler from `try_assemble_text` by default (only falling back on error) and improve diagnostic positions/line tracking for parser errors.
+1. Flesh out the assembler's coverage for optional operands and composite/control-flow instructions (AccessChain, Branch/BranchConditional, etc.) so the Rust path no longer requires the C++ fallback for typical shaders.
+2. Improve diagnostic positions/line tracking for parser errors so message consumers receive accurate spans, then gate the fallback so it only triggers on genuine unsupported features.
 3. After the assembler path is stable, replicate the context plumbing inside the disassembler and ensure GN/Bazel builds can opt into the Rust implementation alongside CMake.
