@@ -3,6 +3,7 @@ use rspirv::grammar::{CoreInstructionTable, Instruction as GrammarInstruction, L
 use rspirv::grammar::{OperandKind, OperandQuantifier};
 use rspirv::spirv;
 
+use super::lexer::NamedId;
 /// Wrapper around the SPIR-V grammar for a single instruction.
 #[derive(Clone, Copy, Debug)]
 pub struct InstructionLayout {
@@ -139,19 +140,40 @@ fn partition_operands(
     (result_type, result_id, index)
 }
 
-/// Raw SPIR-V identifier that is guaranteed to be non-zero.
+/// Textual or numeric SPIR-V identifier.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct SpirvId(NonZeroU32);
+pub enum SpirvId<'a> {
+    /// References a textual named identifier (e.g. `%value`).
+    Named(NamedId<'a>),
+    /// References an already-materialized numeric identifier.
+    Numeric(NonZeroU32),
+}
 
-impl SpirvId {
-    /// Creates a new identifier if the raw value is non-zero.
-    pub fn new(raw: u32) -> Option<Self> {
-        NonZeroU32::new(raw).map(Self)
+impl<'a> SpirvId<'a> {
+    /// Wraps a named identifier.
+    pub const fn named(id: NamedId<'a>) -> Self {
+        Self::Named(id)
     }
 
-    /// Returns the underlying integer value.
-    pub const fn get(self) -> u32 {
-        self.0.get()
+    /// Wraps a numeric identifier.
+    pub const fn numeric(id: NonZeroU32) -> Self {
+        Self::Numeric(id)
+    }
+
+    /// Returns the named identifier if present.
+    pub fn as_named(&self) -> Option<NamedId<'a>> {
+        match self {
+            SpirvId::Named(id) => Some(*id),
+            SpirvId::Numeric(_) => None,
+        }
+    }
+
+    /// Returns the numeric identifier if present.
+    pub fn as_numeric(&self) -> Option<NonZeroU32> {
+        match self {
+            SpirvId::Named(_) => None,
+            SpirvId::Numeric(id) => Some(*id),
+        }
     }
 }
 
@@ -159,23 +181,17 @@ macro_rules! id_newtype {
     ($name:ident) => {
         #[doc = concat!("Typed SPIR-V ", stringify!($name), " identifier.")]
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-        pub struct $name(SpirvId);
+        pub struct $name<'a>(SpirvId<'a>);
 
-        impl $name {
-            /// Creates a new identifier wrapper from the given raw value.
-            pub fn new(raw: u32) -> Option<Self> {
-                SpirvId::new(raw).map(Self)
+        impl<'a> $name<'a> {
+            /// Wraps the provided identifier.
+            pub const fn new(id: SpirvId<'a>) -> Self {
+                Self(id)
             }
 
-            /// Returns the underlying non-zero identifier value.
-            pub const fn get(self) -> u32 {
-                self.0.get()
-            }
-        }
-
-        impl From<$name> for u32 {
-            fn from(value: $name) -> Self {
-                value.get()
+            /// Returns the underlying representation.
+            pub const fn as_spirv_id(self) -> SpirvId<'a> {
+                self.0
             }
         }
     };
@@ -250,12 +266,10 @@ mod tests {
     }
 
     #[test]
-    fn id_wrappers_reject_zero() {
-        assert!(ResultId::new(0).is_none());
-        assert!(TypeId::new(0).is_none());
-        assert!(IdRef::new(0).is_none());
-        let value = ResultId::new(42).unwrap();
-        assert_eq!(u32::from(value), 42);
+    fn id_wrappers_store_numeric_ids() {
+        let numeric = NonZeroU32::new(42).unwrap();
+        let result_id = ResultId::new(SpirvId::numeric(numeric));
+        assert_eq!(result_id.as_spirv_id().as_numeric(), Some(numeric));
     }
 
     #[test]

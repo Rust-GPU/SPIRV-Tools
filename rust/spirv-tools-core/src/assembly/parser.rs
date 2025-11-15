@@ -1,0 +1,378 @@
+use std::borrow::Cow;
+
+use rspirv::spirv;
+
+use super::instruction::{
+    IdRef, InstructionLayout, LiteralNumber, OperandDescriptor, ResultId, SpirvId, TypeId,
+};
+use super::lexer::{Lexer, Punctuation, Span, Token, TokenKind, WordToken};
+use crate::diagnostic::{DiagnosticMessage, MessagePosition};
+use crate::message::MessageLevel;
+use rspirv::grammar::{OperandKind, OperandQuantifier};
+
+/// Fully parsed instruction with typed operands.
+#[derive(Debug)]
+pub struct ParsedInstruction<'a> {
+    layout: InstructionLayout,
+    result_type: Option<TypeId<'a>>,
+    result_id: Option<ResultId<'a>>,
+    operands: Vec<ParsedOperand<'a>>,
+}
+
+impl<'a> ParsedInstruction<'a> {
+    /// Returns the opcode for this instruction.
+    pub fn opcode(&self) -> spirv::Op {
+        self.layout.opcode()
+    }
+
+    /// Returns the parsed result type identifier.
+    pub fn result_type(&self) -> Option<TypeId<'a>> {
+        self.result_type
+    }
+
+    /// Returns the parsed result identifier.
+    pub fn result_id(&self) -> Option<ResultId<'a>> {
+        self.result_id
+    }
+
+    /// Returns the parsed operands including descriptor metadata.
+    pub fn operands(&self) -> &[ParsedOperand<'a>] {
+        &self.operands
+    }
+}
+
+/// Typed operand paired with its grammar descriptor.
+#[derive(Debug)]
+pub struct ParsedOperand<'a> {
+    descriptor: OperandDescriptor,
+    value: OperandValue<'a>,
+    span: Span,
+}
+
+impl<'a> ParsedOperand<'a> {
+    /// Returns the grammar metadata describing this operand.
+    pub fn descriptor(&self) -> OperandDescriptor {
+        self.descriptor
+    }
+
+    /// Returns the parsed operand value.
+    pub fn value(&self) -> &OperandValue<'a> {
+        &self.value
+    }
+
+    /// Returns the span covering this operand in the input source.
+    pub fn span(&self) -> Span {
+        self.span
+    }
+}
+
+/// Supported operand values surfaced by the typed parser.
+#[derive(Clone, Debug, PartialEq)]
+pub enum OperandValue<'a> {
+    /// References another ID within the module.
+    Id(IdRef<'a>),
+    /// Numeric literal parsed from the text stream.
+    Literal(LiteralNumber),
+    /// String literal operand (without quotes).
+    String(&'a str),
+    /// Raw word token for operand kinds we do not specialize yet.
+    Word(WordToken<'a>),
+}
+
+/// Parser errors emitted with diagnostic metadata so they can be reported through the context consumer.
+#[derive(Debug)]
+pub struct ParseError {
+    diagnostic: DiagnosticMessage<'static>,
+}
+
+impl ParseError {
+    fn new(position: MessagePosition, message: impl Into<Cow<'static, str>>) -> Self {
+        Self {
+            diagnostic: DiagnosticMessage::new(MessageLevel::Error, position, message)
+                .with_source("assembler"),
+        }
+    }
+
+    /// Returns the diagnostic payload suitable for emission.
+    pub fn diagnostic(&self) -> &DiagnosticMessage<'static> {
+        &self.diagnostic
+    }
+}
+
+/// High-level entry point: parse a single instruction from the provided text.
+pub fn parse_instruction(text: &str) -> Result<ParsedInstruction<'_>, ParseError> {
+    Parser::new(text).parse_instruction()
+}
+
+struct Parser<'a> {
+    stream: TokenStream<'a>,
+}
+
+impl<'a> Parser<'a> {
+    fn new(input: &'a str) -> Self {
+        let mut lexer = Lexer::new(input);
+        let mut tokens = Vec::new();
+        loop {
+            let token = lexer
+                .next_token()
+                .expect("lexer errors handled in ParseError");
+            let at_end = matches!(token.kind(), TokenKind::EndOfFile);
+            tokens.push(token);
+            if at_end {
+                break;
+            }
+        }
+        Self {
+            stream: TokenStream::new(tokens),
+        }
+    }
+
+    fn parse_instruction(mut self) -> Result<ParsedInstruction<'a>, ParseError> {
+        let first_word = self
+            .stream
+            .expect_word("instruction or result identifier")?;
+        let (result_id, opcode_token) = if self.stream.consume_equals() {
+            let id = parse_identifier(first_word.word, first_word.span, "result id")?;
+            let opcode = self.stream.expect_word("opcode")?;
+            (Some(ResultId::new(id)), opcode)
+        } else {
+            (None, first_word)
+        };
+
+        let opcode = opcode_token
+            .word
+            .opcode()
+            .ok_or_else(|| ParseError::new(opcode_token.span.start(), "Unknown opcode"))?;
+        let layout = InstructionLayout::lookup(opcode).ok_or_else(|| {
+            ParseError::new(opcode_token.span.start(), "Opcode not available in grammar")
+        })?;
+
+        if layout.result_id().is_some() && result_id.is_none() {
+            return Err(ParseError::new(
+                opcode_token.span.start(),
+                "Instruction requires a result id assignment",
+            ));
+        }
+        if layout.result_id().is_none() && result_id.is_some() {
+            return Err(ParseError::new(
+                opcode_token.span.start(),
+                "Instruction does not define a result id",
+            ));
+        }
+
+        let mut parsed_result_type = None;
+        if layout.result_type().is_some() {
+            let type_token = self.stream.expect_word("result type")?;
+            let type_id = parse_identifier(type_token.word, type_token.span, "result type")?;
+            parsed_result_type = Some(TypeId::new(type_id));
+        }
+
+        let mut operands = Vec::new();
+        for descriptor in layout.operands() {
+            match descriptor.quantifier() {
+                OperandQuantifier::One => {
+                    operands.push(self.parse_operand(descriptor)?);
+                }
+                OperandQuantifier::ZeroOrOne => {
+                    if self.stream.peek_is_end() {
+                        continue;
+                    }
+                    operands.push(self.parse_operand(descriptor)?);
+                }
+                OperandQuantifier::ZeroOrMore => {
+                    while !self.stream.peek_is_end() {
+                        operands.push(self.parse_operand(descriptor)?);
+                    }
+                }
+            }
+        }
+
+        if !self.stream.peek_is_end() {
+            let extra = self.stream.next().expect("peek checked");
+            return Err(ParseError::new(
+                extra.span().start(),
+                "Unexpected tokens after instruction",
+            ));
+        }
+
+        Ok(ParsedInstruction {
+            layout,
+            result_type: parsed_result_type,
+            result_id,
+            operands,
+        })
+    }
+
+    fn parse_operand(
+        &mut self,
+        descriptor: OperandDescriptor,
+    ) -> Result<ParsedOperand<'a>, ParseError> {
+        let token = self.stream.expect_any("operand")?;
+        let span = token.span();
+        let value = match token.kind() {
+            TokenKind::Word(word) => match descriptor.kind() {
+                OperandKind::IdRef | OperandKind::IdResult | OperandKind::IdResultType => {
+                    OperandValue::Id(IdRef::new(parse_identifier(word, span, "id")?))
+                }
+                OperandKind::LiteralInteger => OperandValue::Literal(parse_integer(word, span)?),
+                _ => OperandValue::Word(word),
+            },
+            TokenKind::StringLiteral(lit) => {
+                if descriptor.kind() != OperandKind::LiteralString {
+                    return Err(ParseError::new(
+                        span.start(),
+                        "String literal not allowed for this operand",
+                    ));
+                }
+                OperandValue::String(lit.value())
+            }
+            TokenKind::Punctuation(_) | TokenKind::EndOfFile => {
+                return Err(ParseError::new(
+                    span.start(),
+                    "Unexpected token in operand list",
+                ));
+            }
+        };
+
+        Ok(ParsedOperand {
+            descriptor,
+            value,
+            span,
+        })
+    }
+}
+
+struct TokenStream<'a> {
+    tokens: Vec<Token<'a>>,
+    index: usize,
+}
+
+impl<'a> TokenStream<'a> {
+    fn new(tokens: Vec<Token<'a>>) -> Self {
+        Self { tokens, index: 0 }
+    }
+
+    fn next(&mut self) -> Option<Token<'a>> {
+        let token = self.tokens.get(self.index).copied();
+        if token.is_some() {
+            self.index += 1;
+        }
+        token
+    }
+
+    fn peek(&self) -> Option<Token<'a>> {
+        self.tokens.get(self.index).copied()
+    }
+
+    fn peek_is_end(&self) -> bool {
+        matches!(self.peek().map(|t| t.kind()), Some(TokenKind::EndOfFile))
+    }
+
+    fn expect_word(&mut self, what: &str) -> Result<LocatedWord<'a>, ParseError> {
+        match self.next() {
+            Some(token) => match token.kind() {
+                TokenKind::Word(word) => Ok(LocatedWord {
+                    word,
+                    span: token.span(),
+                }),
+                _ => Err(ParseError::new(
+                    token.span().start(),
+                    format!("Expected {what}, found unexpected token"),
+                )),
+            },
+            None => Err(ParseError::new(
+                MessagePosition::default(),
+                format!("Unexpected end of instruction while expecting {what}"),
+            )),
+        }
+    }
+
+    fn expect_any(&mut self, what: &str) -> Result<Token<'a>, ParseError> {
+        self.next().ok_or_else(|| {
+            ParseError::new(
+                MessagePosition::default(),
+                format!("Unexpected end of instruction while expecting {what}"),
+            )
+        })
+    }
+
+    fn consume_equals(&mut self) -> bool {
+        match self.peek() {
+            Some(token) if matches!(token.kind(), TokenKind::Punctuation(Punctuation::Equals)) => {
+                self.next();
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
+struct LocatedWord<'a> {
+    word: WordToken<'a>,
+    span: Span,
+}
+
+fn parse_identifier<'a>(
+    word: WordToken<'a>,
+    span: Span,
+    label: &str,
+) -> Result<SpirvId<'a>, ParseError> {
+    let named = word.named_id().ok_or_else(|| {
+        ParseError::new(span.start(), format!("Expected {label} beginning with '%'"))
+    })?;
+    Ok(SpirvId::named(named))
+}
+
+fn parse_integer(word: WordToken<'_>, span: Span) -> Result<LiteralNumber, ParseError> {
+    let text = word.as_str();
+    if let Ok(value) = text.parse::<i64>() {
+        if value < 0 {
+            Ok(LiteralNumber::signed(value))
+        } else {
+            Ok(LiteralNumber::unsigned(value as u64))
+        }
+    } else if let Ok(value) = text.parse::<u64>() {
+        Ok(LiteralNumber::unsigned(value))
+    } else {
+        Err(ParseError::new(
+            span.start(),
+            "Failed to parse integer literal",
+        ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_instruction, OperandValue};
+    use rspirv::spirv;
+
+    #[test]
+    fn parses_op_type_int() {
+        let parsed = parse_instruction("%2 = OpTypeInt 32 1").expect("parse");
+        assert_eq!(parsed.opcode(), spirv::Op::TypeInt);
+        assert!(parsed.result_type().is_none());
+        assert_eq!(
+            parsed
+                .result_id()
+                .unwrap()
+                .as_spirv_id()
+                .as_named()
+                .unwrap()
+                .name(),
+            "2"
+        );
+        assert!(matches!(
+            parsed.operands()[0].value(),
+            OperandValue::Literal(_)
+        ));
+    }
+
+    #[test]
+    fn rejects_missing_result_id() {
+        let error = parse_instruction("OpTypeInt 32 1").unwrap_err();
+        assert!(error
+            .diagnostic()
+            .message()
+            .contains("result id assignment"));
+    }
+}

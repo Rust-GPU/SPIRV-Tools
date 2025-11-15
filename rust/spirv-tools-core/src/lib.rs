@@ -18,9 +18,10 @@ pub mod target_env;
 pub mod version;
 
 pub use assembly::{
-    BinaryToTextOptions, IdRef, InstructionLayout, LexError, Lexer, LiteralNumber, NamedId,
-    OperandDescriptor, Punctuation, ResultId, Span, SpirvId, StringLiteral, TextToBinaryOptions,
-    Token, TokenKind, TypeId, WordToken,
+    parse_instruction, BinaryToTextOptions, IdRef, InstructionLayout, LexError, Lexer,
+    LiteralNumber, NamedId, OperandDescriptor, OperandValue, ParseError, ParsedInstruction,
+    ParsedOperand, Punctuation, ResultId, Span, SpirvId, StringLiteral, TextToBinaryOptions, Token,
+    TokenKind, TypeId, WordToken,
 };
 pub use diagnostic::{DiagnosticMessage, MessagePosition};
 pub use endian::Endianness;

@@ -6,6 +6,8 @@ pub mod instruction;
 pub mod lexer;
 /// Bitflag wrappers for assembler/disassembler options.
 pub mod options;
+/// Parser and builder utilities for SPIR-V assembly instructions.
+pub mod parser;
 
 pub use instruction::{
     IdRef, InstructionLayout, LiteralNumber, OperandDescriptor, ResultId, SpirvId, TypeId,
@@ -14,3 +16,4 @@ pub use lexer::{
     LexError, Lexer, NamedId, Punctuation, Span, StringLiteral, Token, TokenKind, WordToken,
 };
 pub use options::{BinaryToTextOptions, TextToBinaryOptions};
+pub use parser::{parse_instruction, OperandValue, ParseError, ParsedInstruction, ParsedOperand};

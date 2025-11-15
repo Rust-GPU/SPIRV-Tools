@@ -90,7 +90,7 @@ impl<'a> StringLiteral<'a> {
 }
 
 /// A named id, e.g. `%1` or `%my_var`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NamedId<'a> {
     raw: &'a str,
 }
