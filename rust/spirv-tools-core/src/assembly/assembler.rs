@@ -1,11 +1,12 @@
 use std::borrow::Cow;
 use std::collections::{btree_map::Entry, BTreeMap};
+use std::str::FromStr;
 
 use rspirv::dr;
 use rspirv::spirv;
 
 use super::instruction::{IdRef, LiteralNumber, ResultId, SpirvId, TypeId};
-use super::parser::{OperandValue, ParsedInstruction};
+use super::parser::{OperandValue, ParsedInstruction, ParsedOperand};
 use crate::diagnostic::{DiagnosticMessage, MessagePosition};
 use crate::message::MessageLevel;
 
@@ -70,10 +71,10 @@ impl<'a> ModuleBuilder<'a> {
             SpirvId::Named(named) => match self.named_ids.entry(named.name()) {
                 Entry::Occupied(entry) => *entry.get(),
                 Entry::Vacant(entry) => {
-                    let id = self.next_numeric_id;
+                    let allocated = self.next_numeric_id;
                     self.next_numeric_id += 1;
-                    entry.insert(id);
-                    id
+                    entry.insert(allocated);
+                    allocated
                 }
             },
             SpirvId::Numeric(raw) => {
@@ -110,6 +111,8 @@ impl<'a> AssemblyTranslator<'a> {
     pub fn translate(&mut self, instruction: &ParsedInstruction<'a>) {
         match instruction.opcode() {
             spirv::Op::TypeInt => self.translate_type_int(instruction),
+            spirv::Op::MemoryModel => self.translate_memory_model(instruction),
+            spirv::Op::EntryPoint => self.translate_entry_point(instruction),
             _ => self
                 .module_builder
                 .emit_error(MessagePosition::default(), "unsupported opcode"),
@@ -167,6 +170,124 @@ impl<'a> AssemblyTranslator<'a> {
         self.builder.type_int_id(Some(result_id), width, signedness);
     }
 
+    fn translate_memory_model(&mut self, instruction: &ParsedInstruction<'a>) {
+        let mut operands = instruction.operands().iter();
+        let addressing = match self
+            .parse_enum_operand::<spirv::AddressingModel>(operands.next(), "addressing model")
+        {
+            Some(value) => value,
+            None => return,
+        };
+        let memory =
+            match self.parse_enum_operand::<spirv::MemoryModel>(operands.next(), "memory model") {
+                Some(value) => value,
+                None => return,
+            };
+        self.builder.memory_model(addressing, memory);
+    }
+
+    fn translate_entry_point(&mut self, instruction: &ParsedInstruction<'a>) {
+        let mut operands = instruction.operands().iter();
+        let execution_model = match self
+            .parse_enum_operand::<spirv::ExecutionModel>(operands.next(), "execution model")
+        {
+            Some(value) => value,
+            None => return,
+        };
+
+        let function_operand = match operands.next() {
+            Some(operand) => operand,
+            None => {
+                self.module_builder.emit_error(
+                    MessagePosition::default(),
+                    "OpEntryPoint missing function identifier",
+                );
+                return;
+            }
+        };
+        let function_id = match function_operand.value() {
+            OperandValue::Id(id) => self.module_builder.resolve_id_ref(*id),
+            _ => {
+                self.module_builder.emit_error(
+                    function_operand.span().start(),
+                    "Function operand must be an id reference",
+                );
+                return;
+            }
+        };
+
+        let name_operand = match operands.next() {
+            Some(operand) => operand,
+            None => {
+                self.module_builder.emit_error(
+                    MessagePosition::default(),
+                    "OpEntryPoint missing name literal",
+                );
+                return;
+            }
+        };
+        let entry_name = match name_operand.value() {
+            OperandValue::String(name) => *name,
+            _ => {
+                self.module_builder.emit_error(
+                    name_operand.span().start(),
+                    "Entry point name must be a literal string",
+                );
+                return;
+            }
+        };
+
+        let mut interfaces = Vec::new();
+        for operand in operands {
+            match operand.value() {
+                OperandValue::Id(id) => interfaces.push(self.module_builder.resolve_id_ref(*id)),
+                _ => self.module_builder.emit_error(
+                    operand.span().start(),
+                    "Interface operand must be an id reference",
+                ),
+            }
+        }
+
+        self.builder
+            .entry_point(execution_model, function_id, entry_name, interfaces);
+    }
+
+    fn parse_enum_operand<E>(
+        &mut self,
+        operand: Option<&ParsedOperand<'a>>,
+        label: &str,
+    ) -> Option<E>
+    where
+        E: FromStr,
+    {
+        let operand = match operand {
+            Some(value) => value,
+            None => {
+                self.module_builder
+                    .emit_error(MessagePosition::default(), format!("Missing {label}"));
+                return None;
+            }
+        };
+        let word = match operand.value() {
+            OperandValue::Word(word) => word,
+            _ => {
+                self.module_builder.emit_error(
+                    operand.span().start(),
+                    format!("{label} must be an enumerant"),
+                );
+                return None;
+            }
+        };
+        match word.as_str().parse::<E>() {
+            Ok(value) => Some(value),
+            Err(_err) => {
+                self.module_builder
+                    .emit_error(operand.span().start(), format!("Invalid {label}"));
+                None
+            }
+        }
+    }
+
     /// Finalizes the translation and returns the constructed module plus diagnostics.
     pub fn finish(self) -> (dr::Module, Vec<DiagnosticMessage<'static>>) {
         let module = self.builder.module();
@@ -201,5 +322,28 @@ mod tests {
         assert_eq!(inst.class.opcode, rspirv::spirv::Op::TypeInt);
         assert_eq!(inst.result_id, Some(1));
         assert_eq!(inst.operands.len(), 2);
+    }
+
+    #[test]
+    fn translator_sets_memory_model() {
+        let parsed = parse_instruction("OpMemoryModel Logical GLSL450").expect("parse");
+        let mut translator = AssemblyTranslator::new();
+        translator.translate(&parsed);
+        let (module, diagnostics) = translator.finish();
+        assert!(diagnostics.is_empty());
+        let inst = module.memory_model.as_ref().expect("memory model");
+        assert_eq!(inst.class.opcode, rspirv::spirv::Op::MemoryModel);
+    }
+
+    #[test]
+    fn translator_emits_entry_point_instruction() {
+        let parsed =
+            parse_instruction("OpEntryPoint GLCompute %main \"main\" %a %b").expect("parse");
+        let mut translator = AssemblyTranslator::new();
+        translator.translate(&parsed);
+        let (module, diagnostics) = translator.finish();
+        assert!(diagnostics.is_empty());
+        let inst = module.entry_points.first().expect("entry point");
+        assert_eq!(inst.class.opcode, rspirv::spirv::Op::EntryPoint);
     }
 }
