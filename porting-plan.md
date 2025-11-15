@@ -35,7 +35,7 @@
 With the foundational workspace pieces in place, we now focus on the assembler and disassembler pipeline. This milestone delivers a Rust-native text/binary conversion path that can be swapped into the existing C entry points behind the FFI bridge.
 
 Tasks for this milestone:
-- [ ] Build a strongly-typed lexer/token stream for SPIR-V assembly text that tracks source positions and quotes, so parsing can stay zero-copy where possible.
+- [x] Build a strongly-typed lexer/token stream for SPIR-V assembly text that tracks source positions and quotes, so parsing can stay zero-copy where possible.
 - [ ] Model the intermediate instruction representation (IDs, operands, literal values) with newtypes that enforce the operand kinds the grammar expects.
 - [ ] Implement the assembler driver that consumes the lexer, consults the grammar tables, and emits binaries plus diagnostics through the Rust context.
 - [ ] Expose the Rust assembler via `try_assemble_text`, returning success/failure and hooking diagnostics into the existing consumers. Fall back to the legacy C++ assembler only while gaps remain.
@@ -61,6 +61,6 @@ cxxbridge rust/spirv-tools-ffi/src/lib.rs --output rust/cxxbridge/spirv-tools-ff
 - Mapping of large switch-based operand logic into data-driven Rust structures without performance regressions.
 
 ## Next Up
-1. Land the lexer/token infrastructure inside `spirv-tools-core::assembly`, complete with unit tests that cover identifiers, punctuation, and quoted literals. This unblocks the parser.
-2. Layer the typed operand/instruction builder on top of the lexer so we can start translating single instructions and module headers, emitting diagnostics through `ContextHandle`.
+1. Layer the typed operand/instruction builder on top of the lexer so we can start translating single instructions and module headers, emitting diagnostics through `ContextHandle`.
+2. Teach the Rust assembler driver to consume that typed representation, including ID assignment/preservation, while keeping the C++ fallback until parity is proven.
 3. After the assembler path is online, replicate the context plumbing inside the disassembler and ensure GN/Bazel builds can opt into the Rust implementation alongside CMake.
