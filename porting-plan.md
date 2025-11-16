@@ -43,6 +43,8 @@ Tasks for this milestone:
     - [x] Parse and encode memory access operands (alignment + pointer scopes) for `OpLoad`/`OpStore`.
     - [x] Extend optional operand coverage to copy-memory instructions (dual masks) and other ops that require literal/ID payloads.
     - [ ] Add composite instruction coverage (e.g., `OpCompositeConstruct`, `OpVectorShuffle`) so complex data assembly no longer falls back.
+      - [x] Implement `OpCompositeConstruct`, `OpTypeVector`, and `OpVectorShuffle` translators.
+      - [ ] Extend coverage to `OpCompositeExtract`, `OpCompositeInsert`, and `OpVectorShuffle` corner cases (undef operands, larger vectors).
 - [x] Expose the Rust assembler via `try_assemble_text`, returning success/failure and hooking diagnostics into the existing consumers. Fall back to the legacy C++ assembler only while gaps remain.
 - [ ] Mirror the improvements in the disassembler path (options filtering, message routing) so both directions benefit from the Rust context.
 
@@ -66,6 +68,6 @@ cxxbridge rust/spirv-tools-ffi/src/lib.rs --output rust/cxxbridge/spirv-tools-ff
 - Mapping of large switch-based operand logic into data-driven Rust structures without performance regressions.
 
 ## Next Up
-1. Flesh out the assembler's coverage for optional operands and composite/control-flow instructions (Selection/Loop merges done; next up `OpCompositeConstruct`, phi nodes, and disassembler parity) so the Rust path no longer requires the C++ fallback for typical shaders.
+1. Flesh out the assembler's coverage for optional operands and composite/control-flow instructions (selection/loop merges plus composite constructs done; next up phi nodes, composite extract/insert, and disassembler parity) so the Rust path no longer requires the C++ fallback for typical shaders.
 2. Improve diagnostic positions/line tracking for parser errors so message consumers receive accurate spans, then gate the fallback so it only triggers on genuine unsupported features.
 3. After the assembler path is stable, replicate the context plumbing inside the disassembler and ensure GN/Bazel builds can opt into the Rust implementation alongside CMake.
