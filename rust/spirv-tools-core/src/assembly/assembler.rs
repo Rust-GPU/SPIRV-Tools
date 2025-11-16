@@ -133,6 +133,8 @@ impl<'a> AssemblyTranslator<'a> {
             spirv::Op::ExecutionMode => self.translate_execution_mode(instruction),
             spirv::Op::AccessChain => self.translate_access_chain(instruction, false),
             spirv::Op::InBoundsAccessChain => self.translate_access_chain(instruction, true),
+            spirv::Op::CopyMemory => self.translate_copy_memory(instruction, false),
+            spirv::Op::CopyMemorySized => self.translate_copy_memory(instruction, true),
             spirv::Op::Function => self.translate_function(instruction),
             spirv::Op::FunctionParameter => self.translate_function_parameter(instruction),
             spirv::Op::Label => self.translate_label(instruction),
@@ -667,6 +669,56 @@ impl<'a> AssemblyTranslator<'a> {
         }
         self.builder
             .execution_mode(entry_point, execution_mode, parameters);
+    }
+
+    fn translate_copy_memory(&mut self, instruction: &ParsedInstruction<'a>, sized: bool) {
+        let mut operands = instruction.operands().iter();
+        let Some(target_operand) = operands.next() else {
+            self.module_builder
+                .emit_error(MessagePosition::default(), "OpCopyMemory missing target");
+            return;
+        };
+        let Some(source_operand) = operands.next() else {
+            self.module_builder
+                .emit_error(MessagePosition::default(), "OpCopyMemory missing source");
+            return;
+        };
+        let Some(target_id) = self.operand_as_id(target_operand, "target pointer") else {
+            return;
+        };
+        let Some(source_id) = self.operand_as_id(source_operand, "source pointer") else {
+            return;
+        };
+        let mut dr_operands = vec![dr::Operand::IdRef(target_id), dr::Operand::IdRef(source_id)];
+        if sized {
+            let Some(size_operand) = operands.next() else {
+                self.module_builder.emit_error(
+                    MessagePosition::default(),
+                    "OpCopyMemorySized missing size operand",
+                );
+                return;
+            };
+            let Some(size_id) = self.operand_as_id(size_operand, "size operand") else {
+                return;
+            };
+            dr_operands.push(dr::Operand::IdRef(size_id));
+        }
+        self.take_memory_access_operand(&mut operands, &mut dr_operands);
+        self.take_memory_access_operand(&mut operands, &mut dr_operands);
+        if let Some(extra) = operands.next() {
+            self.module_builder.emit_error(
+                extra.span().start(),
+                "Unexpected operands after memory access masks",
+            );
+            return;
+        }
+        let opcode = if sized {
+            spirv::Op::CopyMemorySized
+        } else {
+            spirv::Op::CopyMemory
+        };
+        let inst = dr::Instruction::new(opcode, None, None, dr_operands);
+        self.push_block_instruction(inst);
     }
 
     fn translate_branch(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -1387,5 +1439,68 @@ OpFunctionEnd";
             .find(|inst| inst.class.opcode == spirv::Op::BranchConditional)
             .expect("branch conditional inst");
         assert!(branch_cond.operands.len() >= 3);
+    }
+
+    #[test]
+    fn translator_handles_copy_memory_operands() {
+        let source = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+            "%uint = OpTypeInt 32 0",
+            "%size = OpConstant %uint 4",
+            "%ptr_fn = OpTypePointer Function %uint",
+            "%main = OpFunction %void None %void_fn",
+            "%entry = OpLabel",
+            "%dst = OpVariable %ptr_fn Function",
+            "%src = OpVariable %ptr_fn Function",
+            "OpCopyMemory %dst %src Aligned 4 Aligned 8",
+            "OpCopyMemorySized %dst %src %size Aligned 4 Aligned 8",
+            "OpReturn",
+            "OpFunctionEnd",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let (module, diagnostics) = assemble_instructions(&refs);
+        assert!(diagnostics.is_empty());
+        let function = module.functions.first().expect("function");
+        let block = function.blocks.first().expect("block");
+        let mut copies = block.instructions.iter().filter(|inst| {
+            matches!(
+                inst.class.opcode,
+                spirv::Op::CopyMemory | spirv::Op::CopyMemorySized
+            )
+        });
+        let copy = copies.next().expect("OpCopyMemory");
+        assert!(matches!(
+            copy.operands.as_slice(),
+            [
+                dr::Operand::IdRef(_),
+                dr::Operand::IdRef(_),
+                dr::Operand::MemoryAccess(first),
+                dr::Operand::LiteralBit32(4),
+                dr::Operand::MemoryAccess(second),
+                dr::Operand::LiteralBit32(8)
+            ] if first.contains(spirv::MemoryAccess::ALIGNED)
+                && second.contains(spirv::MemoryAccess::ALIGNED)
+        ));
+        let copy_sized = copies.next().expect("OpCopyMemorySized");
+        assert!(matches!(
+            copy_sized.operands.as_slice(),
+            [
+                dr::Operand::IdRef(_),
+                dr::Operand::IdRef(_),
+                dr::Operand::IdRef(_),
+                dr::Operand::MemoryAccess(first),
+                dr::Operand::LiteralBit32(4),
+                dr::Operand::MemoryAccess(second),
+                dr::Operand::LiteralBit32(8)
+            ] if first.contains(spirv::MemoryAccess::ALIGNED)
+                && second.contains(spirv::MemoryAccess::ALIGNED)
+        ));
     }
 }
