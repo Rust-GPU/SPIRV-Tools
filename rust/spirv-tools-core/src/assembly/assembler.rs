@@ -140,6 +140,8 @@ impl<'a> AssemblyTranslator<'a> {
             spirv::Op::LoopMerge => self.translate_loop_merge(instruction),
             spirv::Op::CompositeConstruct => self.translate_composite_construct(instruction),
             spirv::Op::VectorShuffle => self.translate_vector_shuffle(instruction),
+            spirv::Op::CompositeExtract => self.translate_composite_extract(instruction),
+            spirv::Op::CompositeInsert => self.translate_composite_insert(instruction),
             spirv::Op::Function => self.translate_function(instruction),
             spirv::Op::FunctionParameter => self.translate_function_parameter(instruction),
             spirv::Op::Label => self.translate_label(instruction),
@@ -894,6 +896,131 @@ impl<'a> AssemblyTranslator<'a> {
             vector1_id,
             vector2_id,
             components,
+        ) {
+            self.emit_builder_error(error, MessagePosition::default());
+        }
+    }
+
+    fn translate_composite_extract(&mut self, instruction: &ParsedInstruction<'a>) {
+        let Some(result_type) = instruction.result_type() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpCompositeExtract missing result type",
+            );
+            return;
+        };
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpCompositeExtract missing result id",
+            );
+            return;
+        };
+        let mut operands = instruction.operands().iter();
+        let Some(composite_operand) = operands.next() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpCompositeExtract missing composite value",
+            );
+            return;
+        };
+        let Some(composite_id) = self.operand_as_id(composite_operand, "composite value") else {
+            return;
+        };
+        let mut indexes = Vec::new();
+        for operand in operands {
+            match operand.value() {
+                OperandValue::Literal(literal) => indexes.push(literal_to_u32(literal)),
+                _ => {
+                    self.module_builder.emit_error(
+                        operand.span().start(),
+                        "Composite extract indexes must be literals",
+                    );
+                    return;
+                }
+            }
+        }
+        if indexes.is_empty() {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpCompositeExtract requires at least one index",
+            );
+            return;
+        }
+        let type_id = self.module_builder.resolve_type_id(result_type);
+        let result_id = self.module_builder.resolve_result_id(result_id);
+        if let Err(error) =
+            self.builder
+                .composite_extract(type_id, Some(result_id), composite_id, indexes)
+        {
+            self.emit_builder_error(error, MessagePosition::default());
+        }
+    }
+
+    fn translate_composite_insert(&mut self, instruction: &ParsedInstruction<'a>) {
+        let Some(result_type) = instruction.result_type() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpCompositeInsert missing result type",
+            );
+            return;
+        };
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpCompositeInsert missing result id",
+            );
+            return;
+        };
+        let mut operands = instruction.operands().iter();
+        let Some(object_operand) = operands.next() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpCompositeInsert missing object operand",
+            );
+            return;
+        };
+        let Some(object_id) = self.operand_as_id(object_operand, "object operand") else {
+            return;
+        };
+        let Some(composite_operand) = operands.next() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpCompositeInsert missing composite operand",
+            );
+            return;
+        };
+        let Some(composite_id) = self.operand_as_id(composite_operand, "composite operand") else {
+            return;
+        };
+        let mut indexes = Vec::new();
+        for operand in operands {
+            match operand.value() {
+                OperandValue::Literal(literal) => indexes.push(literal_to_u32(literal)),
+                _ => {
+                    self.module_builder.emit_error(
+                        operand.span().start(),
+                        "Composite insert indexes must be literals",
+                    );
+                    return;
+                }
+            }
+        }
+        if indexes.is_empty() {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpCompositeInsert requires at least one index",
+            );
+            return;
+        }
+        let type_id = self.module_builder.resolve_type_id(result_type);
+        let result_id = self.module_builder.resolve_result_id(result_id);
+        if let Err(error) = self.builder.composite_insert(
+            type_id,
+            Some(result_id),
+            object_id,
+            composite_id,
+            indexes,
         ) {
             self.emit_builder_error(error, MessagePosition::default());
         }
@@ -2013,5 +2140,61 @@ OpFunctionEnd";
             .find(|inst| inst.class.opcode == spirv::Op::VectorShuffle)
             .expect("vector shuffle");
         assert_eq!(shuffle.operands.len(), 6);
+    }
+
+    #[test]
+    fn translator_emits_composite_extract_and_insert() {
+        let source = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+            "%int = OpTypeInt 32 0",
+            "%vec2 = OpTypeVector %int 2",
+            "%zero = OpConstant %int 0",
+            "%one = OpConstant %int 1",
+            "%main = OpFunction %void None %void_fn",
+            "%entry = OpLabel",
+            "%v = OpCompositeConstruct %vec2 %zero %one",
+            "%elem = OpCompositeExtract %int %v 1",
+            "%result = OpCompositeInsert %vec2 %elem %v 0",
+            "OpReturn",
+            "OpFunctionEnd",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let (module, diagnostics) = assemble_instructions(&refs);
+        assert!(diagnostics.is_empty());
+        let function = module.functions.first().expect("function");
+        let mut extract_seen = false;
+        let mut insert_seen = false;
+        for inst in function
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+        {
+            if inst.class.opcode == spirv::Op::CompositeExtract {
+                extract_seen = true;
+                assert!(matches!(
+                    inst.operands.as_slice(),
+                    [dr::Operand::IdRef(_), dr::Operand::LiteralBit32(1)]
+                ));
+            }
+            if inst.class.opcode == spirv::Op::CompositeInsert {
+                insert_seen = true;
+                assert!(matches!(
+                    inst.operands.as_slice(),
+                    [
+                        dr::Operand::IdRef(_),
+                        dr::Operand::IdRef(_),
+                        dr::Operand::LiteralBit32(0)
+                    ]
+                ));
+            }
+        }
+        assert!(extract_seen && insert_seen);
     }
 }
