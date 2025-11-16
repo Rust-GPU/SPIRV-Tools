@@ -128,6 +128,7 @@ impl<'a> AssemblyTranslator<'a> {
             spirv::Op::TypeInt => self.translate_type_int(instruction),
             spirv::Op::TypeFunction => self.translate_type_function(instruction),
             spirv::Op::TypePointer => self.translate_type_pointer(instruction),
+            spirv::Op::TypeVector => self.translate_type_vector(instruction),
             spirv::Op::MemoryModel => self.translate_memory_model(instruction),
             spirv::Op::EntryPoint => self.translate_entry_point(instruction),
             spirv::Op::ExecutionMode => self.translate_execution_mode(instruction),
@@ -137,6 +138,7 @@ impl<'a> AssemblyTranslator<'a> {
             spirv::Op::CopyMemorySized => self.translate_copy_memory(instruction, true),
             spirv::Op::SelectionMerge => self.translate_selection_merge(instruction),
             spirv::Op::LoopMerge => self.translate_loop_merge(instruction),
+            spirv::Op::CompositeConstruct => self.translate_composite_construct(instruction),
             spirv::Op::Function => self.translate_function(instruction),
             spirv::Op::FunctionParameter => self.translate_function_parameter(instruction),
             spirv::Op::Label => self.translate_label(instruction),
@@ -503,6 +505,53 @@ impl<'a> AssemblyTranslator<'a> {
             .type_pointer(Some(result_id), storage_class, pointee_id);
     }
 
+    fn translate_type_vector(&mut self, instruction: &ParsedInstruction<'a>) {
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder
+                .emit_error(MessagePosition::default(), "OpTypeVector missing result id");
+            return;
+        };
+        let mut operands = instruction.operands().iter();
+        let Some(component_operand) = operands.next() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpTypeVector missing component type",
+            );
+            return;
+        };
+        let Some(component_type) = self.operand_as_id(component_operand, "component type") else {
+            return;
+        };
+        let Some(count_operand) = operands.next() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpTypeVector missing component count",
+            );
+            return;
+        };
+        let count_literal = match count_operand.value() {
+            OperandValue::Literal(literal) => literal,
+            _ => {
+                self.module_builder.emit_error(
+                    count_operand.span().start(),
+                    "Component count must be a literal",
+                );
+                return;
+            }
+        };
+        if let Some(extra) = operands.next() {
+            self.module_builder.emit_error(
+                extra.span().start(),
+                "OpTypeVector received unexpected operands",
+            );
+            return;
+        }
+        let component_count = literal_to_u32(count_literal);
+        let result_id = self.module_builder.resolve_result_id(result_id);
+        self.builder
+            .type_vector_id(Some(result_id), component_type, component_count);
+    }
+
     fn translate_memory_model(&mut self, instruction: &ParsedInstruction<'a>) {
         let mut operands = instruction.operands().iter();
         let addressing = match self
@@ -739,6 +788,51 @@ impl<'a> AssemblyTranslator<'a> {
                 .loop_merge(merge_id, continue_id, loop_control, control_operands)
         {
             self.emit_builder_error(error, merge_operand.span().start());
+        }
+    }
+
+    fn translate_composite_construct(&mut self, instruction: &ParsedInstruction<'a>) {
+        let Some(result_type) = instruction.result_type() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpCompositeConstruct missing result type",
+            );
+            return;
+        };
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpCompositeConstruct missing result id",
+            );
+            return;
+        };
+        if instruction.operands().is_empty() {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpCompositeConstruct requires at least one constituent",
+            );
+            return;
+        }
+        let mut constituents = Vec::new();
+        for operand in instruction.operands() {
+            match operand.value() {
+                OperandValue::Id(id) => constituents.push(self.module_builder.resolve_id_ref(*id)),
+                _ => {
+                    self.module_builder.emit_error(
+                        operand.span().start(),
+                        "Constituent must be an id reference",
+                    );
+                    return;
+                }
+            }
+        }
+        let type_id = self.module_builder.resolve_type_id(result_type);
+        let result_id = self.module_builder.resolve_result_id(result_id);
+        if let Err(error) = self
+            .builder
+            .composite_construct(type_id, Some(result_id), constituents)
+        {
+            self.emit_builder_error(error, MessagePosition::default());
         }
     }
 
@@ -1783,5 +1877,39 @@ OpFunctionEnd";
             ] if control.contains(spirv::LoopControl::MIN_ITERATIONS)
                 && control.contains(spirv::LoopControl::PARTIAL_COUNT)
         ));
+    }
+
+    #[test]
+    fn translator_emits_composite_construct() {
+        let source = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+            "%int = OpTypeInt 32 0",
+            "%vec2 = OpTypeVector %int 2",
+            "%uint_0 = OpConstant %int 0",
+            "%uint_1 = OpConstant %int 1",
+            "%main = OpFunction %void None %void_fn",
+            "%entry = OpLabel",
+            "%vec = OpCompositeConstruct %vec2 %uint_0 %uint_1",
+            "OpReturn",
+            "OpFunctionEnd",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let (module, diagnostics) = assemble_instructions(&refs);
+        assert!(diagnostics.is_empty());
+        let function = module.functions.first().expect("function");
+        let block = function.blocks.first().expect("block");
+        let inst = block
+            .instructions
+            .iter()
+            .find(|inst| inst.class.opcode == spirv::Op::CompositeConstruct)
+            .expect("composite construct");
+        assert_eq!(inst.operands.len(), 2);
     }
 }
