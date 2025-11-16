@@ -4,6 +4,7 @@ use std::str::FromStr;
 
 use rspirv::binary::Assemble;
 use rspirv::dr::{self, Error as BuildError, InsertPoint};
+use rspirv::grammar::OperandKind;
 use rspirv::spirv;
 
 use super::instruction::{IdRef, LiteralNumber, ResultId, SpirvId, TypeId};
@@ -130,9 +131,13 @@ impl<'a> AssemblyTranslator<'a> {
             spirv::Op::MemoryModel => self.translate_memory_model(instruction),
             spirv::Op::EntryPoint => self.translate_entry_point(instruction),
             spirv::Op::ExecutionMode => self.translate_execution_mode(instruction),
+            spirv::Op::AccessChain => self.translate_access_chain(instruction, false),
+            spirv::Op::InBoundsAccessChain => self.translate_access_chain(instruction, true),
             spirv::Op::Function => self.translate_function(instruction),
             spirv::Op::FunctionParameter => self.translate_function_parameter(instruction),
             spirv::Op::Label => self.translate_label(instruction),
+            spirv::Op::Branch => self.translate_branch(instruction),
+            spirv::Op::BranchConditional => self.translate_branch_conditional(instruction),
             spirv::Op::Return => self.translate_return(),
             spirv::Op::ReturnValue => self.translate_return_value(instruction),
             spirv::Op::FunctionEnd => self.translate_function_end(),
@@ -576,6 +581,57 @@ impl<'a> AssemblyTranslator<'a> {
             .entry_point(execution_model, function_id, entry_name, interfaces);
     }
 
+    fn translate_access_chain(&mut self, instruction: &ParsedInstruction<'a>, in_bounds: bool) {
+        let Some(result_type) = instruction.result_type() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "Access chain missing result type",
+            );
+            return;
+        };
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder
+                .emit_error(MessagePosition::default(), "Access chain missing result id");
+            return;
+        };
+        let mut operands = instruction.operands().iter();
+        let Some(base_operand) = operands.next() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "Access chain missing base pointer",
+            );
+            return;
+        };
+        let Some(base_id) = self.operand_as_id(base_operand, "base pointer") else {
+            return;
+        };
+        let mut indexes = Vec::new();
+        for operand in operands {
+            match operand.value() {
+                OperandValue::Id(id) => {
+                    indexes.push(self.module_builder.resolve_id_ref(*id));
+                }
+                _ => {
+                    self.module_builder
+                        .emit_error(operand.span().start(), "Access chain indexes must be ids");
+                    return;
+                }
+            }
+        }
+        let result_type_id = self.module_builder.resolve_type_id(result_type);
+        let result_id = self.module_builder.resolve_result_id(result_id);
+        let result = if in_bounds {
+            self.builder
+                .in_bounds_access_chain(result_type_id, Some(result_id), base_id, indexes)
+        } else {
+            self.builder
+                .access_chain(result_type_id, Some(result_id), base_id, indexes)
+        };
+        if let Err(error) = result {
+            self.emit_builder_error(error, MessagePosition::default());
+        }
+    }
+
     fn translate_execution_mode(&mut self, instruction: &ParsedInstruction<'a>) {
         let mut operands = instruction.operands().iter();
         let entry_operand = match operands.next() {
@@ -611,6 +667,76 @@ impl<'a> AssemblyTranslator<'a> {
         }
         self.builder
             .execution_mode(entry_point, execution_mode, parameters);
+    }
+
+    fn translate_branch(&mut self, instruction: &ParsedInstruction<'a>) {
+        let operand = match instruction.operands().first() {
+            Some(op) => op,
+            None => {
+                self.module_builder
+                    .emit_error(MessagePosition::default(), "OpBranch missing target");
+                return;
+            }
+        };
+        let Some(target) = self.operand_as_id(operand, "branch target") else {
+            return;
+        };
+        if let Err(error) = self.builder.branch(target) {
+            self.emit_builder_error(error, operand.span().start());
+        }
+    }
+
+    fn translate_branch_conditional(&mut self, instruction: &ParsedInstruction<'a>) {
+        let mut operands = instruction.operands().iter();
+        let Some(condition_operand) = operands.next() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpBranchConditional missing condition",
+            );
+            return;
+        };
+        let Some(true_operand) = operands.next() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpBranchConditional missing true label",
+            );
+            return;
+        };
+        let Some(false_operand) = operands.next() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpBranchConditional missing false label",
+            );
+            return;
+        };
+        let Some(condition_id) = self.operand_as_id(condition_operand, "condition id") else {
+            return;
+        };
+        let Some(true_label) = self.operand_as_id(true_operand, "true label") else {
+            return;
+        };
+        let Some(false_label) = self.operand_as_id(false_operand, "false label") else {
+            return;
+        };
+        let mut branch_weights = Vec::new();
+        for operand in operands {
+            match operand.value() {
+                OperandValue::Literal(literal) => branch_weights.push(literal_to_u32(literal)),
+                _ => {
+                    self.module_builder.emit_error(
+                        operand.span().start(),
+                        "Branch weights must be literal integers",
+                    );
+                    return;
+                }
+            }
+        }
+        if let Err(error) =
+            self.builder
+                .branch_conditional(condition_id, true_label, false_label, branch_weights)
+        {
+            self.emit_builder_error(error, MessagePosition::default());
+        }
     }
 
     fn translate_variable(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -678,21 +804,19 @@ impl<'a> AssemblyTranslator<'a> {
         let Some(pointer_id) = self.operand_as_id(pointer_operand, "pointer operand") else {
             return;
         };
+        let mut dr_operands = vec![dr::Operand::IdRef(pointer_id)];
+        self.take_memory_access_operand(&mut operands, &mut dr_operands);
         if let Some(extra) = operands.next() {
             self.module_builder.emit_error(
                 extra.span().start(),
-                "OpLoad optional operands are not supported yet",
+                "Unexpected operands after memory access mask",
             );
             return;
         }
         let type_id = self.module_builder.resolve_type_id(result_type);
         let result_id = self.module_builder.resolve_result_id(result_id);
-        let inst = dr::Instruction::new(
-            spirv::Op::Load,
-            Some(type_id),
-            Some(result_id),
-            vec![dr::Operand::IdRef(pointer_id)],
-        );
+        let inst =
+            dr::Instruction::new(spirv::Op::Load, Some(type_id), Some(result_id), dr_operands);
         self.push_block_instruction(inst);
     }
 
@@ -710,28 +834,25 @@ impl<'a> AssemblyTranslator<'a> {
                 .emit_error(MessagePosition::default(), "OpStore missing object operand");
             return;
         };
-        if let Some(extra) = operands.next() {
-            self.module_builder.emit_error(
-                extra.span().start(),
-                "OpStore optional operands are not supported yet",
-            );
-            return;
-        }
         let Some(pointer_id) = self.operand_as_id(pointer_operand, "pointer operand") else {
             return;
         };
         let Some(object_id) = self.operand_as_id(object_operand, "object operand") else {
             return;
         };
-        let inst = dr::Instruction::new(
-            spirv::Op::Store,
-            None,
-            None,
-            vec![
-                dr::Operand::IdRef(pointer_id),
-                dr::Operand::IdRef(object_id),
-            ],
-        );
+        let mut dr_operands = vec![
+            dr::Operand::IdRef(pointer_id),
+            dr::Operand::IdRef(object_id),
+        ];
+        self.take_memory_access_operand(&mut operands, &mut dr_operands);
+        if let Some(extra) = operands.next() {
+            self.module_builder.emit_error(
+                extra.span().start(),
+                "Unexpected operands after memory access mask",
+            );
+            return;
+        }
+        let inst = dr::Instruction::new(spirv::Op::Store, None, None, dr_operands);
         self.push_block_instruction(inst);
     }
 
@@ -808,6 +929,45 @@ impl<'a> AssemblyTranslator<'a> {
             .insert_into_block(InsertPoint::End, instruction)
         {
             self.emit_builder_error(error, MessagePosition::default());
+        }
+    }
+
+    fn take_memory_access_operand(
+        &mut self,
+        operands: &mut std::slice::Iter<'_, ParsedOperand<'a>>,
+        target: &mut Vec<dr::Operand>,
+    ) {
+        if let Some(next) = operands.as_slice().first() {
+            if next.descriptor().kind() == OperandKind::MemoryAccess {
+                let operand = operands.next().expect("peeked operand");
+                self.encode_memory_access_operand(operand, target);
+            }
+        }
+    }
+
+    fn encode_memory_access_operand(
+        &mut self,
+        operand: &ParsedOperand<'a>,
+        target: &mut Vec<dr::Operand>,
+    ) {
+        let OperandValue::MemoryAccess(memory) = operand.value() else {
+            self.module_builder
+                .emit_error(operand.span().start(), "Invalid memory access operand");
+            return;
+        };
+        target.push(dr::Operand::MemoryAccess(memory.mask()));
+        if let Some(alignment) = memory.alignment() {
+            target.push(dr::Operand::LiteralBit32(literal_to_u32(alignment)));
+        }
+        if let Some(scope) = memory.make_pointer_available_scope() {
+            target.push(dr::Operand::IdRef(
+                self.module_builder.resolve_id_ref(scope),
+            ));
+        }
+        if let Some(scope) = memory.make_pointer_visible_scope() {
+            target.push(dr::Operand::IdRef(
+                self.module_builder.resolve_id_ref(scope),
+            ));
         }
     }
 
@@ -956,7 +1116,7 @@ pub fn assemble_text(text: &str) -> (Option<Vec<u32>>, Vec<DiagnosticMessage<'st
 mod tests {
     use super::{assemble_instructions, assemble_text, AssemblyTranslator};
     use crate::assembly::parser::parse_instruction;
-    use rspirv::spirv;
+    use rspirv::{dr, spirv};
 
     #[test]
     fn translator_emits_type_int_instruction() {
@@ -1085,5 +1245,147 @@ OpFunctionEnd";
             .instructions
             .iter()
             .any(|inst| inst.class.opcode == spirv::Op::IAdd));
+    }
+
+    #[test]
+    fn translator_emits_memory_operands_for_load_store() {
+        let source = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+            "%uint = OpTypeInt 32 0",
+            "%ptr_ty = OpTypePointer StorageBuffer %uint",
+            "%zero = OpConstant %uint 0",
+            "%buffer = OpVariable %ptr_ty StorageBuffer",
+            "%scope = OpConstant %uint 1",
+            "%main = OpFunction %void None %void_fn",
+            "%entry = OpLabel",
+            "%val = OpLoad %uint %buffer Aligned|MakePointerVisible 8 %scope",
+            "OpStore %buffer %val Aligned|MakePointerAvailable 8 %scope",
+            "OpReturn",
+            "OpFunctionEnd",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let (module, diagnostics) = assemble_instructions(&refs);
+        assert!(diagnostics.is_empty());
+        let function = module.functions.first().expect("function");
+        let block = function.blocks.first().expect("entry block");
+        let load = block
+            .instructions
+            .iter()
+            .find(|inst| inst.class.opcode == spirv::Op::Load)
+            .expect("load inst");
+        assert!(matches!(
+            load.operands.as_slice(),
+            [
+                dr::Operand::IdRef(_),
+                dr::Operand::MemoryAccess(mask),
+                dr::Operand::LiteralBit32(8),
+                dr::Operand::IdRef(_)
+            ] if mask.contains(spirv::MemoryAccess::ALIGNED)
+                && mask.contains(spirv::MemoryAccess::MAKE_POINTER_VISIBLE)
+        ));
+        let store = block
+            .instructions
+            .iter()
+            .find(|inst| inst.class.opcode == spirv::Op::Store)
+            .expect("store inst");
+        assert!(matches!(
+            store.operands.as_slice(),
+            [
+                dr::Operand::IdRef(_),
+                dr::Operand::IdRef(_),
+                dr::Operand::MemoryAccess(mask),
+                dr::Operand::LiteralBit32(8),
+                dr::Operand::IdRef(_)
+            ] if mask.contains(spirv::MemoryAccess::ALIGNED)
+                && mask.contains(spirv::MemoryAccess::MAKE_POINTER_AVAILABLE)
+        ));
+    }
+
+    #[test]
+    fn translator_emits_access_chain_instruction() {
+        let source = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+            "%uint = OpTypeInt 32 0",
+            "%ptr_uint = OpTypePointer StorageBuffer %uint",
+            "%ptr_ptr_uint = OpTypePointer StorageBuffer %ptr_uint",
+            "%zero = OpConstant %uint 0",
+            "%var = OpVariable %ptr_ptr_uint StorageBuffer",
+            "%main = OpFunction %void None %void_fn",
+            "%entry = OpLabel",
+            "%elem_ptr = OpAccessChain %ptr_uint %var %zero",
+            "OpReturn",
+            "OpFunctionEnd",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let (module, diagnostics) = assemble_instructions(&refs);
+        assert!(diagnostics.is_empty());
+        let function = module.functions.first().expect("function");
+        let block = function.blocks.first().expect("block");
+        let access_chain = block
+            .instructions
+            .iter()
+            .find(|inst| inst.class.opcode == spirv::Op::AccessChain)
+            .expect("access chain instruction");
+        assert!(matches!(
+            access_chain.operands.as_slice(),
+            [dr::Operand::IdRef(_), dr::Operand::IdRef(_)]
+        ));
+    }
+
+    #[test]
+    fn translator_handles_branch_instructions() {
+        let source = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+            "%uint = OpTypeInt 32 0",
+            "%one = OpConstant %uint 1",
+            "%main = OpFunction %void None %void_fn",
+            "%entry = OpLabel",
+            "OpBranch %mid",
+            "%mid = OpLabel",
+            "OpBranchConditional %one %then %exit 1 2",
+            "%then = OpLabel",
+            "OpReturn",
+            "%exit = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let (module, diagnostics) = assemble_instructions(&refs);
+        assert!(diagnostics.is_empty());
+        let function = module.functions.first().expect("function");
+        let all_insts: Vec<_> = function
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .collect();
+        assert!(all_insts
+            .iter()
+            .any(|inst| inst.class.opcode == spirv::Op::Branch));
+        let branch_cond = all_insts
+            .iter()
+            .find(|inst| inst.class.opcode == spirv::Op::BranchConditional)
+            .expect("branch conditional inst");
+        assert!(branch_cond.operands.len() >= 3);
     }
 }

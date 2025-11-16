@@ -77,6 +77,54 @@ pub enum OperandValue<'a> {
     String(&'a str),
     /// Raw word token for operand kinds we do not specialize yet.
     Word(WordToken<'a>),
+    /// Structured memory access operand (mask + auxiliary parameters).
+    MemoryAccess(MemoryAccessOperand<'a>),
+}
+
+/// Memory access operand parsed from the text stream.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MemoryAccessOperand<'a> {
+    mask: spirv::MemoryAccess,
+    alignment: Option<LiteralNumber>,
+    make_pointer_available_scope: Option<IdRef<'a>>,
+    make_pointer_visible_scope: Option<IdRef<'a>>,
+}
+
+impl<'a> MemoryAccessOperand<'a> {
+    /// Creates a parsed memory access operand capturing the mask and auxiliary fields.
+    pub const fn new(
+        mask: spirv::MemoryAccess,
+        alignment: Option<LiteralNumber>,
+        make_pointer_available_scope: Option<IdRef<'a>>,
+        make_pointer_visible_scope: Option<IdRef<'a>>,
+    ) -> Self {
+        Self {
+            mask,
+            alignment,
+            make_pointer_available_scope,
+            make_pointer_visible_scope,
+        }
+    }
+
+    /// Returns the mask bits encoded by this operand.
+    pub const fn mask(&self) -> spirv::MemoryAccess {
+        self.mask
+    }
+
+    /// Returns the optional alignment literal when the `Aligned` bit is present.
+    pub const fn alignment(&self) -> Option<&LiteralNumber> {
+        self.alignment.as_ref()
+    }
+
+    /// Returns the optional scope when `MakePointerAvailable*` is present.
+    pub const fn make_pointer_available_scope(&self) -> Option<IdRef<'a>> {
+        self.make_pointer_available_scope
+    }
+
+    /// Returns the optional scope when `MakePointerVisible*` is present.
+    pub const fn make_pointer_visible_scope(&self) -> Option<IdRef<'a>> {
+        self.make_pointer_visible_scope
+    }
 }
 
 /// Parser errors emitted with diagnostic metadata so they can be reported through the context consumer.
@@ -235,6 +283,7 @@ impl<'a> Parser<'a> {
                 OperandKind::LiteralInteger | OperandKind::LiteralContextDependentNumber => {
                     OperandValue::Literal(parse_integer(word, span)?)
                 }
+                OperandKind::MemoryAccess => self.parse_memory_access_operand(word, span)?,
                 _ => OperandValue::Word(word),
             },
             TokenKind::StringLiteral(lit) => {
@@ -259,6 +308,60 @@ impl<'a> Parser<'a> {
             value,
             span,
         })
+    }
+}
+
+impl<'a> Parser<'a> {
+    fn parse_memory_access_operand(
+        &mut self,
+        word: WordToken<'a>,
+        span: Span,
+    ) -> Result<OperandValue<'a>, ParseError> {
+        let mask = parse_memory_access_mask(word.as_str(), span)?;
+        let alignment = if mask.contains(spirv::MemoryAccess::ALIGNED) {
+            Some(self.parse_alignment_literal()?)
+        } else {
+            None
+        };
+        let make_pointer_available_scope = if mask
+            .contains(spirv::MemoryAccess::MAKE_POINTER_AVAILABLE)
+            || mask.contains(spirv::MemoryAccess::MAKE_POINTER_AVAILABLE_KHR)
+        {
+            Some(self.parse_scope_operand("MakePointerAvailable scope")?)
+        } else {
+            None
+        };
+        let make_pointer_visible_scope = if mask.contains(spirv::MemoryAccess::MAKE_POINTER_VISIBLE)
+            || mask.contains(spirv::MemoryAccess::MAKE_POINTER_VISIBLE_KHR)
+        {
+            Some(self.parse_scope_operand("MakePointerVisible scope")?)
+        } else {
+            None
+        };
+
+        Ok(OperandValue::MemoryAccess(MemoryAccessOperand::new(
+            mask,
+            alignment,
+            make_pointer_available_scope,
+            make_pointer_visible_scope,
+        )))
+    }
+
+    fn parse_alignment_literal(&mut self) -> Result<LiteralNumber, ParseError> {
+        let token = self.stream.expect_any("alignment literal")?;
+        match token.kind() {
+            TokenKind::Word(word) => parse_integer(word, token.span()),
+            _ => Err(ParseError::new(
+                token.span().start(),
+                "Alignment must be a literal integer",
+            )),
+        }
+    }
+
+    fn parse_scope_operand(&mut self, label: &str) -> Result<IdRef<'a>, ParseError> {
+        let located = self.stream.expect_word(label)?;
+        let id = parse_identifier(located.word, located.span, label)?;
+        Ok(IdRef::new(id))
     }
 }
 
@@ -361,9 +464,52 @@ fn parse_integer(word: WordToken<'_>, span: Span) -> Result<LiteralNumber, Parse
     }
 }
 
+fn parse_memory_access_mask(text: &str, span: Span) -> Result<spirv::MemoryAccess, ParseError> {
+    if text == "None" {
+        return Ok(spirv::MemoryAccess::empty());
+    }
+    if let Ok(bits) = text.parse::<u32>() {
+        return Ok(spirv::MemoryAccess::from_bits_truncate(bits));
+    }
+
+    let mut mask = spirv::MemoryAccess::empty();
+    for part in text.split('|').map(str::trim) {
+        if part.is_empty() || part == "None" {
+            continue;
+        }
+        if let Some(flag) = memory_access_flag(part) {
+            mask |= flag;
+        } else if let Ok(bits) = part.parse::<u32>() {
+            mask |= spirv::MemoryAccess::from_bits_truncate(bits);
+        } else {
+            return Err(ParseError::new(
+                span.start(),
+                format!("Unknown memory access flag '{part}'"),
+            ));
+        }
+    }
+    Ok(mask)
+}
+
+fn memory_access_flag(name: &str) -> Option<spirv::MemoryAccess> {
+    match name {
+        "Volatile" => Some(spirv::MemoryAccess::VOLATILE),
+        "Aligned" => Some(spirv::MemoryAccess::ALIGNED),
+        "Nontemporal" => Some(spirv::MemoryAccess::NONTEMPORAL),
+        "MakePointerAvailable" => Some(spirv::MemoryAccess::MAKE_POINTER_AVAILABLE),
+        "MakePointerAvailableKHR" => Some(spirv::MemoryAccess::MAKE_POINTER_AVAILABLE_KHR),
+        "MakePointerVisible" => Some(spirv::MemoryAccess::MAKE_POINTER_VISIBLE),
+        "MakePointerVisibleKHR" => Some(spirv::MemoryAccess::MAKE_POINTER_VISIBLE_KHR),
+        "NonPrivatePointer" => Some(spirv::MemoryAccess::NON_PRIVATE_POINTER),
+        "NonPrivatePointerKHR" => Some(spirv::MemoryAccess::NON_PRIVATE_POINTER_KHR),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{parse_instruction, OperandValue};
+    use crate::assembly::instruction::LiteralNumber;
     use rspirv::spirv;
 
     #[test]
@@ -394,5 +540,30 @@ mod tests {
             .diagnostic()
             .message()
             .contains("result id assignment"));
+    }
+
+    #[test]
+    fn parses_memory_access_alignment_and_scope() {
+        let parsed =
+            parse_instruction("%val = OpLoad %uint %ptr Aligned|MakePointerVisible 16 %scope")
+                .expect("parse");
+        let operand = parsed.operands().last().expect("memory operand");
+        match operand.value() {
+            OperandValue::MemoryAccess(memory) => {
+                assert!(memory.mask().contains(spirv::MemoryAccess::ALIGNED));
+                assert!(memory
+                    .mask()
+                    .contains(spirv::MemoryAccess::MAKE_POINTER_VISIBLE));
+                assert_eq!(memory.alignment().unwrap(), &LiteralNumber::unsigned(16));
+                let scope = memory
+                    .make_pointer_visible_scope()
+                    .unwrap()
+                    .as_spirv_id()
+                    .as_named()
+                    .unwrap();
+                assert_eq!(scope.name(), "scope");
+            }
+            other => panic!("Expected memory access operand, got {other:?}"),
+        }
     }
 }

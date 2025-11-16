@@ -40,6 +40,8 @@ Tasks for this milestone:
 - [ ] Implement the assembler driver that consumes the lexer, consults the grammar tables, and emits binaries plus diagnostics through the Rust context.
   - [x] Cover core module metadata (capabilities, entry points, execution modes, pointer types, and global variables) plus basic block instructions such as loads, stores, and arithmetic.
   - [ ] Support optional operands (memory access masks, alignment), composite instructions, access chains, and control-flow constructs so most shaders assemble entirely in Rust.
+    - [x] Parse and encode memory access operands (alignment + pointer scopes) for `OpLoad`/`OpStore`.
+    - [ ] Extend optional operand coverage to copy-memory instructions and other ops that require literal/ID payloads.
 - [x] Expose the Rust assembler via `try_assemble_text`, returning success/failure and hooking diagnostics into the existing consumers. Fall back to the legacy C++ assembler only while gaps remain.
 - [ ] Mirror the improvements in the disassembler path (options filtering, message routing) so both directions benefit from the Rust context.
 
