@@ -44,7 +44,7 @@ Tasks for this milestone:
     - [x] Extend optional operand coverage to copy-memory instructions (dual masks) and other ops that require literal/ID payloads.
     - [ ] Add composite instruction coverage (e.g., `OpCompositeConstruct`, `OpVectorShuffle`) so complex data assembly no longer falls back.
       - [x] Implement `OpCompositeConstruct`, `OpTypeVector`, and `OpVectorShuffle` translators.
-      - [x] Extend coverage to `OpCompositeExtract` and `OpCompositeInsert`; next up `OpVectorShuffle` corner cases (undef operands, larger vectors).
+      - [x] Extend coverage to `OpCompositeExtract`, `OpCompositeInsert`, and `OpPhi` boolean helpers; next up `OpVectorShuffle`/composite corner cases.
 - [x] Expose the Rust assembler via `try_assemble_text`, returning success/failure and hooking diagnostics into the existing consumers. Fall back to the legacy C++ assembler only while gaps remain.
 - [ ] Mirror the improvements in the disassembler path (options filtering, message routing) so both directions benefit from the Rust context.
 

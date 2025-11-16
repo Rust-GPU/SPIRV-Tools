@@ -71,6 +71,8 @@ impl<'a> ParsedOperand<'a> {
 pub enum OperandValue<'a> {
     /// References another ID within the module.
     Id(IdRef<'a>),
+    /// A pair of ID references (used for instructions like OpPhi).
+    IdPair(IdRef<'a>, IdRef<'a>),
     /// Numeric literal parsed from the text stream.
     Literal(LiteralNumber),
     /// String literal operand (without quotes).
@@ -288,6 +290,12 @@ impl<'a> Parser<'a> {
                 }
                 OperandKind::LiteralInteger | OperandKind::LiteralContextDependentNumber => {
                     OperandValue::Literal(parse_integer(word, span)?)
+                }
+                OperandKind::PairIdRefIdRef => {
+                    let first = IdRef::new(parse_identifier(word, span, "id")?);
+                    let second = self.stream.expect_word("second id in pair")?;
+                    let second_id = IdRef::new(parse_identifier(second.word, second.span, "id")?);
+                    OperandValue::IdPair(first, second_id)
                 }
                 OperandKind::MemoryAccess => self.parse_memory_access_operand(word, span)?,
                 _ => OperandValue::Word(word),

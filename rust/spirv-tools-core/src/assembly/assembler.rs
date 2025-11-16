@@ -125,6 +125,7 @@ impl<'a> AssemblyTranslator<'a> {
         match instruction.opcode() {
             spirv::Op::Capability => self.translate_capability(instruction),
             spirv::Op::TypeVoid => self.translate_type_void(instruction),
+            spirv::Op::TypeBool => self.translate_type_bool(instruction),
             spirv::Op::TypeInt => self.translate_type_int(instruction),
             spirv::Op::TypeFunction => self.translate_type_function(instruction),
             spirv::Op::TypePointer => self.translate_type_pointer(instruction),
@@ -142,6 +143,9 @@ impl<'a> AssemblyTranslator<'a> {
             spirv::Op::VectorShuffle => self.translate_vector_shuffle(instruction),
             spirv::Op::CompositeExtract => self.translate_composite_extract(instruction),
             spirv::Op::CompositeInsert => self.translate_composite_insert(instruction),
+            spirv::Op::Phi => self.translate_phi(instruction),
+            spirv::Op::ConstantTrue => self.translate_boolean_constant(instruction, true),
+            spirv::Op::ConstantFalse => self.translate_boolean_constant(instruction, false),
             spirv::Op::Function => self.translate_function(instruction),
             spirv::Op::FunctionParameter => self.translate_function_parameter(instruction),
             spirv::Op::Label => self.translate_label(instruction),
@@ -190,6 +194,25 @@ impl<'a> AssemblyTranslator<'a> {
         };
         let result_id = self.module_builder.resolve_result_id(result_id);
         self.builder.type_void_id(Some(result_id));
+    }
+
+    fn translate_type_bool(&mut self, instruction: &ParsedInstruction<'a>) {
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpTypeBool requires a result id",
+            );
+            return;
+        };
+        if !instruction.operands().is_empty() {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpTypeBool does not take operands",
+            );
+            return;
+        }
+        let result_id = self.module_builder.resolve_result_id(result_id);
+        self.builder.type_bool_id(Some(result_id));
     }
 
     fn translate_type_int(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -901,6 +924,39 @@ impl<'a> AssemblyTranslator<'a> {
         }
     }
 
+    fn translate_boolean_constant(&mut self, instruction: &ParsedInstruction<'a>, value: bool) {
+        let Some(result_type) = instruction.result_type() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "Boolean constant missing result type",
+            );
+            return;
+        };
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "Boolean constant missing result id",
+            );
+            return;
+        };
+        if !instruction.operands().is_empty() {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "Boolean constants do not take operands",
+            );
+            return;
+        }
+        let type_id = self.module_builder.resolve_type_id(result_type);
+        let result_id = self.module_builder.resolve_result_id(result_id);
+        let opcode = if value {
+            spirv::Op::ConstantTrue
+        } else {
+            spirv::Op::ConstantFalse
+        };
+        let inst = dr::Instruction::new(opcode, Some(type_id), Some(result_id), vec![]);
+        self.builder.module_mut().types_global_values.push(inst);
+    }
+
     fn translate_composite_extract(&mut self, instruction: &ParsedInstruction<'a>) {
         let Some(result_type) = instruction.result_type() else {
             self.module_builder.emit_error(
@@ -1022,6 +1078,44 @@ impl<'a> AssemblyTranslator<'a> {
             composite_id,
             indexes,
         ) {
+            self.emit_builder_error(error, MessagePosition::default());
+        }
+    }
+
+    fn translate_phi(&mut self, instruction: &ParsedInstruction<'a>) {
+        let Some(result_type) = instruction.result_type() else {
+            self.module_builder
+                .emit_error(MessagePosition::default(), "OpPhi missing result type");
+            return;
+        };
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder
+                .emit_error(MessagePosition::default(), "OpPhi missing result id");
+            return;
+        };
+        let mut incoming = Vec::new();
+        for operand in instruction.operands() {
+            match operand.value() {
+                OperandValue::IdPair(value, parent) => {
+                    let value_id = self.module_builder.resolve_id_ref(*value);
+                    let parent_id = self.module_builder.resolve_id_ref(*parent);
+                    incoming.push((value_id, parent_id));
+                }
+                _ => {
+                    self.module_builder
+                        .emit_error(operand.span().start(), "OpPhi operands must be id pairs");
+                    return;
+                }
+            }
+        }
+        if incoming.is_empty() {
+            self.module_builder
+                .emit_error(MessagePosition::default(), "OpPhi requires incoming edges");
+            return;
+        }
+        let type_id = self.module_builder.resolve_type_id(result_type);
+        let result_id = self.module_builder.resolve_result_id(result_id);
+        if let Err(error) = self.builder.phi(type_id, Some(result_id), incoming) {
             self.emit_builder_error(error, MessagePosition::default());
         }
     }
@@ -2196,5 +2290,46 @@ OpFunctionEnd";
             }
         }
         assert!(extract_seen && insert_seen);
+    }
+
+    #[test]
+    fn translator_emits_phi_instruction() {
+        let source = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+            "%int = OpTypeInt 32 0",
+            "%bool = OpTypeBool",
+            "%true = OpConstantTrue %bool",
+            "%zero = OpConstant %int 0",
+            "%one = OpConstant %int 1",
+            "%main = OpFunction %void None %void_fn",
+            "%entry = OpLabel",
+            "OpBranchConditional %true %then %else",
+            "%then = OpLabel",
+            "OpBranch %merge",
+            "%else = OpLabel",
+            "OpBranch %merge",
+            "%merge = OpLabel",
+            "%phi = OpPhi %int %zero %then %one %else",
+            "OpReturn",
+            "OpFunctionEnd",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let (module, diagnostics) = assemble_instructions(&refs);
+        assert!(diagnostics.is_empty());
+        let function = module.functions.first().expect("function");
+        let phi = function
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .find(|inst| inst.class.opcode == spirv::Op::Phi)
+            .expect("phi instruction");
+        assert_eq!(phi.operands.len(), 4);
     }
 }
