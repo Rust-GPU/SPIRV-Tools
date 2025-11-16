@@ -243,15 +243,9 @@ impl<'a> Parser<'a> {
         if !self.stream.peek_is_end() {
             if matches!(
                 layout.opcode(),
-                spirv::Op::ExecutionMode | spirv::Op::ExecutionModeId
+                spirv::Op::ExecutionMode | spirv::Op::ExecutionModeId | spirv::Op::LoopMerge
             ) {
-                let descriptor = OperandDescriptor::new(
-                    OperandKind::LiteralInteger,
-                    OperandQuantifier::ZeroOrMore,
-                );
-                while !self.stream.peek_is_end() {
-                    operands.push(self.parse_operand(descriptor)?);
-                }
+                self.parse_trailing_literals(&mut operands)?;
             } else {
                 let extra = self.stream.next().expect("peek checked");
                 return Err(ParseError::new(
@@ -267,6 +261,18 @@ impl<'a> Parser<'a> {
             result_id,
             operands,
         })
+    }
+
+    fn parse_trailing_literals(
+        &mut self,
+        operands: &mut Vec<ParsedOperand<'a>>,
+    ) -> Result<(), ParseError> {
+        let descriptor =
+            OperandDescriptor::new(OperandKind::LiteralInteger, OperandQuantifier::ZeroOrMore);
+        while !self.stream.peek_is_end() {
+            operands.push(self.parse_operand(descriptor)?);
+        }
+        Ok(())
     }
 
     fn parse_operand(

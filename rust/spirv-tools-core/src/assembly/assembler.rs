@@ -135,6 +135,8 @@ impl<'a> AssemblyTranslator<'a> {
             spirv::Op::InBoundsAccessChain => self.translate_access_chain(instruction, true),
             spirv::Op::CopyMemory => self.translate_copy_memory(instruction, false),
             spirv::Op::CopyMemorySized => self.translate_copy_memory(instruction, true),
+            spirv::Op::SelectionMerge => self.translate_selection_merge(instruction),
+            spirv::Op::LoopMerge => self.translate_loop_merge(instruction),
             spirv::Op::Function => self.translate_function(instruction),
             spirv::Op::FunctionParameter => self.translate_function_parameter(instruction),
             spirv::Op::Label => self.translate_label(instruction),
@@ -671,6 +673,75 @@ impl<'a> AssemblyTranslator<'a> {
             .execution_mode(entry_point, execution_mode, parameters);
     }
 
+    fn translate_selection_merge(&mut self, instruction: &ParsedInstruction<'a>) {
+        let mut operands = instruction.operands().iter();
+        let Some(merge_operand) = operands.next() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpSelectionMerge missing merge block",
+            );
+            return;
+        };
+        let Some(merge_id) = self.operand_as_id(merge_operand, "merge block") else {
+            return;
+        };
+        let Some(control_operand) = operands.next() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpSelectionMerge missing control mask",
+            );
+            return;
+        };
+        let Some(selection_control) = self.parse_selection_control(control_operand) else {
+            return;
+        };
+        if let Err(error) = self.builder.selection_merge(merge_id, selection_control) {
+            self.emit_builder_error(error, merge_operand.span().start());
+        }
+    }
+
+    fn translate_loop_merge(&mut self, instruction: &ParsedInstruction<'a>) {
+        let mut operands = instruction.operands().iter();
+        let Some(merge_operand) = operands.next() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpLoopMerge missing merge block",
+            );
+            return;
+        };
+        let Some(continue_operand) = operands.next() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpLoopMerge missing continue target",
+            );
+            return;
+        };
+        let Some(control_operand) = operands.next() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpLoopMerge missing control mask",
+            );
+            return;
+        };
+        let Some(merge_id) = self.operand_as_id(merge_operand, "merge block") else {
+            return;
+        };
+        let Some(continue_id) = self.operand_as_id(continue_operand, "continue target") else {
+            return;
+        };
+        let Some((loop_control, control_operands)) =
+            self.parse_loop_control_operand(control_operand, &mut operands)
+        else {
+            return;
+        };
+        if let Err(error) =
+            self.builder
+                .loop_merge(merge_id, continue_id, loop_control, control_operands)
+        {
+            self.emit_builder_error(error, merge_operand.span().start());
+        }
+    }
+
     fn translate_copy_memory(&mut self, instruction: &ParsedInstruction<'a>, sized: bool) {
         let mut operands = instruction.operands().iter();
         let Some(target_operand) = operands.next() else {
@@ -1059,6 +1130,90 @@ impl<'a> AssemblyTranslator<'a> {
         }
     }
 
+    fn parse_loop_control_operand(
+        &mut self,
+        operand: &ParsedOperand<'a>,
+        remaining: &mut std::slice::Iter<'_, ParsedOperand<'a>>,
+    ) -> Option<(spirv::LoopControl, Vec<dr::Operand>)> {
+        let word = match operand.value() {
+            OperandValue::Word(word) => word,
+            _ => {
+                self.module_builder
+                    .emit_error(operand.span().start(), "Loop control must be an enumerant");
+                return None;
+            }
+        };
+        let mut control = spirv::LoopControl::empty();
+        let mut additional_operands = Vec::new();
+        for part in word.as_str().split('|').map(str::trim) {
+            if part.is_empty() || part == "None" {
+                continue;
+            }
+            match part {
+                "Unroll" => control |= spirv::LoopControl::UNROLL,
+                "DontUnroll" => control |= spirv::LoopControl::DONT_UNROLL,
+                "DependencyInfinite" => control |= spirv::LoopControl::DEPENDENCY_INFINITE,
+                "DependencyLength" => {
+                    control |= spirv::LoopControl::DEPENDENCY_LENGTH;
+                    additional_operands.push(self.expect_loop_control_literal(remaining, part)?);
+                }
+                "MinIterations" => {
+                    control |= spirv::LoopControl::MIN_ITERATIONS;
+                    additional_operands.push(self.expect_loop_control_literal(remaining, part)?);
+                }
+                "MaxIterations" => {
+                    control |= spirv::LoopControl::MAX_ITERATIONS;
+                    additional_operands.push(self.expect_loop_control_literal(remaining, part)?);
+                }
+                "IterationMultiple" => {
+                    control |= spirv::LoopControl::ITERATION_MULTIPLE;
+                    additional_operands.push(self.expect_loop_control_literal(remaining, part)?);
+                }
+                "PeelCount" => {
+                    control |= spirv::LoopControl::PEEL_COUNT;
+                    additional_operands.push(self.expect_loop_control_literal(remaining, part)?);
+                }
+                "PartialCount" => {
+                    control |= spirv::LoopControl::PARTIAL_COUNT;
+                    additional_operands.push(self.expect_loop_control_literal(remaining, part)?);
+                }
+                other => {
+                    self.module_builder.emit_error(
+                        operand.span().start(),
+                        format!("Unknown loop control flag '{other}'"),
+                    );
+                    return None;
+                }
+            }
+        }
+        Some((control, additional_operands))
+    }
+
+    fn expect_loop_control_literal(
+        &mut self,
+        remaining: &mut std::slice::Iter<'_, ParsedOperand<'a>>,
+        label: &str,
+    ) -> Option<dr::Operand> {
+        let Some(operand) = remaining.next() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                format!("Loop control flag {label} requires a literal operand"),
+            );
+            return None;
+        };
+        let literal = match operand.value() {
+            OperandValue::Literal(lit) => lit,
+            _ => {
+                self.module_builder.emit_error(
+                    operand.span().start(),
+                    format!("Loop control flag {label} requires a literal operand"),
+                );
+                return None;
+            }
+        };
+        Some(dr::Operand::LiteralBit32(literal_to_u32(literal)))
+    }
+
     fn parse_function_control(
         &mut self,
         operand: &ParsedOperand<'a>,
@@ -1096,6 +1251,40 @@ impl<'a> AssemblyTranslator<'a> {
                     self.module_builder.emit_error(
                         operand.span().start(),
                         format!("Unknown function control flag '{part}'"),
+                    );
+                    return None;
+                }
+            }
+        }
+        Some(control)
+    }
+
+    fn parse_selection_control(
+        &mut self,
+        operand: &ParsedOperand<'a>,
+    ) -> Option<spirv::SelectionControl> {
+        let word = match operand.value() {
+            OperandValue::Word(word) => word,
+            _ => {
+                self.module_builder.emit_error(
+                    operand.span().start(),
+                    "Selection control must be an enumerant",
+                );
+                return None;
+            }
+        };
+        let mut control = spirv::SelectionControl::empty();
+        for part in word.as_str().split('|').map(str::trim) {
+            if part.is_empty() || part == "None" {
+                continue;
+            }
+            match part {
+                "Flatten" => control |= spirv::SelectionControl::FLATTEN,
+                "DontFlatten" => control |= spirv::SelectionControl::DONT_FLATTEN,
+                other => {
+                    self.module_builder.emit_error(
+                        operand.span().start(),
+                        format!("Unknown selection control flag '{other}'"),
                     );
                     return None;
                 }
@@ -1501,6 +1690,98 @@ OpFunctionEnd";
                 dr::Operand::LiteralBit32(8)
             ] if first.contains(spirv::MemoryAccess::ALIGNED)
                 && second.contains(spirv::MemoryAccess::ALIGNED)
+        ));
+    }
+
+    #[test]
+    fn translator_emits_selection_merge() {
+        let source = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+            "%uint = OpTypeInt 32 0",
+            "%one = OpConstant %uint 1",
+            "%main = OpFunction %void None %void_fn",
+            "%entry = OpLabel",
+            "OpSelectionMerge %merge None",
+            "OpBranchConditional %one %then %else",
+            "%then = OpLabel",
+            "OpBranch %merge",
+            "%else = OpLabel",
+            "OpBranch %merge",
+            "%merge = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let (module, diagnostics) = assemble_instructions(&refs);
+        assert!(diagnostics.is_empty());
+        let function = module.functions.first().expect("function");
+        let selection_merge = function
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .find(|inst| inst.class.opcode == spirv::Op::SelectionMerge)
+            .expect("selection merge");
+        assert!(matches!(
+            selection_merge.operands.as_slice(),
+            [
+                dr::Operand::IdRef(_),
+                dr::Operand::SelectionControl(control)
+            ] if control.is_empty()
+        ));
+    }
+
+    #[test]
+    fn translator_emits_loop_merge_with_operands() {
+        let source = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+            "%uint = OpTypeInt 32 0",
+            "%one = OpConstant %uint 1",
+            "%main = OpFunction %void None %void_fn",
+            "%entry = OpLabel",
+            "OpBranch %loop",
+            "%loop = OpLabel",
+            "OpLoopMerge %merge %continue MinIterations|PartialCount 4 2",
+            "OpBranch %continue",
+            "%continue = OpLabel",
+            "OpBranchConditional %one %loop %merge",
+            "%merge = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let (module, diagnostics) = assemble_instructions(&refs);
+        assert!(diagnostics.is_empty());
+        let function = module.functions.first().expect("function");
+        let loop_merge = function
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .find(|inst| inst.class.opcode == spirv::Op::LoopMerge)
+            .expect("loop merge");
+        assert!(matches!(
+            loop_merge.operands.as_slice(),
+            [
+                dr::Operand::IdRef(_),
+                dr::Operand::IdRef(_),
+                dr::Operand::LoopControl(control),
+                dr::Operand::LiteralBit32(4),
+                dr::Operand::LiteralBit32(2)
+            ] if control.contains(spirv::LoopControl::MIN_ITERATIONS)
+                && control.contains(spirv::LoopControl::PARTIAL_COUNT)
         ));
     }
 }
