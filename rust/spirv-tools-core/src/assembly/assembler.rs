@@ -139,6 +139,7 @@ impl<'a> AssemblyTranslator<'a> {
             spirv::Op::SelectionMerge => self.translate_selection_merge(instruction),
             spirv::Op::LoopMerge => self.translate_loop_merge(instruction),
             spirv::Op::CompositeConstruct => self.translate_composite_construct(instruction),
+            spirv::Op::VectorShuffle => self.translate_vector_shuffle(instruction),
             spirv::Op::Function => self.translate_function(instruction),
             spirv::Op::FunctionParameter => self.translate_function_parameter(instruction),
             spirv::Op::Label => self.translate_label(instruction),
@@ -832,6 +833,68 @@ impl<'a> AssemblyTranslator<'a> {
             .builder
             .composite_construct(type_id, Some(result_id), constituents)
         {
+            self.emit_builder_error(error, MessagePosition::default());
+        }
+    }
+
+    fn translate_vector_shuffle(&mut self, instruction: &ParsedInstruction<'a>) {
+        let Some(result_type) = instruction.result_type() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpVectorShuffle missing result type",
+            );
+            return;
+        };
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpVectorShuffle missing result id",
+            );
+            return;
+        };
+        let mut operands = instruction.operands().iter();
+        let Some(vector1_operand) = operands.next() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpVectorShuffle missing first vector",
+            );
+            return;
+        };
+        let Some(vector2_operand) = operands.next() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpVectorShuffle missing second vector",
+            );
+            return;
+        };
+        let Some(vector1_id) = self.operand_as_id(vector1_operand, "first vector") else {
+            return;
+        };
+        let Some(vector2_id) = self.operand_as_id(vector2_operand, "second vector") else {
+            return;
+        };
+        let mut components = Vec::new();
+        for operand in operands {
+            match operand.value() {
+                OperandValue::Literal(literal) => components.push(literal_to_u32(literal)),
+                _ => {
+                    self.module_builder.emit_error(
+                        operand.span().start(),
+                        "Shuffle components must be literals",
+                    );
+                    return;
+                }
+            }
+        }
+        let type_id = self.module_builder.resolve_type_id(result_type);
+        let result_id = self.module_builder.resolve_result_id(result_id);
+        if let Err(error) = self.builder.vector_shuffle(
+            type_id,
+            Some(result_id),
+            vector1_id,
+            vector2_id,
+            components,
+        ) {
             self.emit_builder_error(error, MessagePosition::default());
         }
     }
@@ -1911,5 +1974,44 @@ OpFunctionEnd";
             .find(|inst| inst.class.opcode == spirv::Op::CompositeConstruct)
             .expect("composite construct");
         assert_eq!(inst.operands.len(), 2);
+    }
+
+    #[test]
+    fn translator_emits_vector_shuffle() {
+        let source = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+            "%int = OpTypeInt 32 0",
+            "%vec2 = OpTypeVector %int 2",
+            "%vec4 = OpTypeVector %int 4",
+            "%zero = OpConstant %int 0",
+            "%one = OpConstant %int 1",
+            "%two = OpConstant %int 2",
+            "%three = OpConstant %int 3",
+            "%main = OpFunction %void None %void_fn",
+            "%entry = OpLabel",
+            "%v1 = OpCompositeConstruct %vec2 %zero %one",
+            "%v2 = OpCompositeConstruct %vec2 %two %three",
+            "%shuffle = OpVectorShuffle %vec4 %v1 %v2 0 1 2 3",
+            "OpReturn",
+            "OpFunctionEnd",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let (module, diagnostics) = assemble_instructions(&refs);
+        assert!(diagnostics.is_empty());
+        let function = module.functions.first().expect("function");
+        let shuffle = function
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .find(|inst| inst.class.opcode == spirv::Op::VectorShuffle)
+            .expect("vector shuffle");
+        assert_eq!(shuffle.operands.len(), 6);
     }
 }
