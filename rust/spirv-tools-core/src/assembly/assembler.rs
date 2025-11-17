@@ -146,6 +146,8 @@ impl<'a> AssemblyTranslator<'a> {
             spirv::Op::Phi => self.translate_phi(instruction),
             spirv::Op::ConstantTrue => self.translate_boolean_constant(instruction, true),
             spirv::Op::ConstantFalse => self.translate_boolean_constant(instruction, false),
+            spirv::Op::ConstantComposite => self.translate_constant_composite(instruction),
+            spirv::Op::ConstantNull => self.translate_constant_null(instruction),
             spirv::Op::Function => self.translate_function(instruction),
             spirv::Op::FunctionParameter => self.translate_function_parameter(instruction),
             spirv::Op::Label => self.translate_label(instruction),
@@ -954,6 +956,86 @@ impl<'a> AssemblyTranslator<'a> {
             spirv::Op::ConstantFalse
         };
         let inst = dr::Instruction::new(opcode, Some(type_id), Some(result_id), vec![]);
+        self.builder.module_mut().types_global_values.push(inst);
+    }
+
+    fn translate_constant_composite(&mut self, instruction: &ParsedInstruction<'a>) {
+        let Some(result_type) = instruction.result_type() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpConstantComposite missing result type",
+            );
+            return;
+        };
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpConstantComposite missing result id",
+            );
+            return;
+        };
+        if instruction.operands().is_empty() {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpConstantComposite requires at least one constituent",
+            );
+            return;
+        }
+        let mut constituents = Vec::new();
+        for operand in instruction.operands() {
+            match operand.value() {
+                OperandValue::Id(id) => constituents.push(self.module_builder.resolve_id_ref(*id)),
+                _ => {
+                    self.module_builder.emit_error(
+                        operand.span().start(),
+                        "Constituent must be an id reference",
+                    );
+                    return;
+                }
+            }
+        }
+        let type_id = self.module_builder.resolve_type_id(result_type);
+        let result_id = self.module_builder.resolve_result_id(result_id);
+        let operands = constituents.into_iter().map(dr::Operand::IdRef).collect();
+        let inst = dr::Instruction::new(
+            spirv::Op::ConstantComposite,
+            Some(type_id),
+            Some(result_id),
+            operands,
+        );
+        self.builder.module_mut().types_global_values.push(inst);
+    }
+
+    fn translate_constant_null(&mut self, instruction: &ParsedInstruction<'a>) {
+        let Some(result_type) = instruction.result_type() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpConstantNull missing result type",
+            );
+            return;
+        };
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpConstantNull missing result id",
+            );
+            return;
+        };
+        if !instruction.operands().is_empty() {
+            self.module_builder.emit_error(
+                MessagePosition::default(),
+                "OpConstantNull does not take operands",
+            );
+            return;
+        }
+        let type_id = self.module_builder.resolve_type_id(result_type);
+        let result_id = self.module_builder.resolve_result_id(result_id);
+        let inst = dr::Instruction::new(
+            spirv::Op::ConstantNull,
+            Some(type_id),
+            Some(result_id),
+            vec![],
+        );
         self.builder.module_mut().types_global_values.push(inst);
     }
 
@@ -2290,6 +2372,39 @@ OpFunctionEnd";
             }
         }
         assert!(extract_seen && insert_seen);
+    }
+
+    #[test]
+    fn translator_emits_constant_composite_and_null() {
+        let source = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+            "%int = OpTypeInt 32 0",
+            "%vec2 = OpTypeVector %int 2",
+            "%zero = OpConstant %int 0",
+            "%one = OpConstant %int 1",
+            "%vec_const = OpConstantComposite %vec2 %zero %one",
+            "%null_vec = OpConstantNull %vec2",
+            "%main = OpFunction %void None %void_fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let (module, diagnostics) = assemble_instructions(&refs);
+        assert!(diagnostics.is_empty());
+        let mut const_opcodes = module.types_global_values.iter().filter(|inst| {
+            inst.class.opcode == spirv::Op::ConstantComposite
+                || inst.class.opcode == spirv::Op::ConstantNull
+        });
+        assert!(const_opcodes.any(|inst| inst.class.opcode == spirv::Op::ConstantComposite));
+        assert!(const_opcodes.any(|inst| inst.class.opcode == spirv::Op::ConstantNull));
     }
 
     #[test]
