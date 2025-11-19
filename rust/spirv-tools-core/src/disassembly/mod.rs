@@ -13,7 +13,8 @@ const SUPPORTED_OPTION_BITS: u32 = BinaryToTextOptions::NO_HEADER.bits()
     | BinaryToTextOptions::SHOW_BYTE_OFFSET.bits()
     | BinaryToTextOptions::INDENT.bits()
     | BinaryToTextOptions::FRIENDLY_NAMES.bits()
-    | BinaryToTextOptions::NESTED_INDENT.bits();
+    | BinaryToTextOptions::NESTED_INDENT.bits()
+    | BinaryToTextOptions::COMMENT.bits();
 const HEADER_WORD_COUNT: usize = 5;
 const INDEX_MAGIC_NUMBER: usize = 0;
 const INDEX_VERSION: usize = 1;
@@ -96,6 +97,7 @@ struct FormattingOptions {
     indent: bool,
     friendly_names: bool,
     nested_indent: bool,
+    comments: bool,
 }
 
 impl TryFrom<BinaryToTextOptions> for FormattingOptions {
@@ -112,6 +114,7 @@ impl TryFrom<BinaryToTextOptions> for FormattingOptions {
             indent: bits.contains(BinaryToTextOptions::INDENT),
             friendly_names: bits.contains(BinaryToTextOptions::FRIENDLY_NAMES),
             nested_indent: bits.contains(BinaryToTextOptions::NESTED_INDENT),
+            comments: bits.contains(BinaryToTextOptions::COMMENT),
         })
     }
 }
@@ -159,6 +162,7 @@ fn render_module_text(module: &dr::Module, offsets: &[u32], options: &Formatting
     } else {
         None
     };
+    let mut comment_collector = CommentCollector::new(options.comments);
     if instructions.len() != offsets.len() {
         return module.disassemble();
     }
@@ -172,6 +176,7 @@ fn render_module_text(module: &dr::Module, offsets: &[u32], options: &Formatting
         offsets,
         options,
         friendly_names.as_ref(),
+        &mut comment_collector,
     ));
     text
 }
@@ -211,11 +216,15 @@ fn render_instructions(
     offsets: &[u32],
     options: &FormattingOptions,
     friendly_names: Option<&FriendlyNameTable>,
+    comment_collector: &mut CommentCollector,
 ) -> String {
     let mut aligner = CommentAligner::new();
     let mut text = String::new();
     for (index, (record, &offset)) in instructions.iter().zip(offsets).enumerate() {
         let instruction = record.instruction();
+        if options.comments {
+            comment_collector.observe(instruction);
+        }
         let mut line = sanitize_line(instruction.disassemble());
         apply_friendly_names(&mut line, friendly_names);
 
@@ -232,12 +241,26 @@ fn render_instructions(
         } else if block_indent > 0 {
             prepend_spaces(&mut line, block_indent);
         }
+        let mut comment_parts = Vec::new();
         if options.show_byte_offsets {
-            let comment = format!("0x{offset:08x}");
-            aligner.append_comment(&mut line, &comment);
-        } else {
-            aligner.reset();
+            comment_parts.push(format!("0x{offset:08x}"));
         }
+        if options.comments {
+            if let Some(comment) = comment_collector.inline_comment(instruction) {
+                comment_parts.push(comment);
+            }
+            if let Some(comment) = comment_collector.result_comment(instruction) {
+                comment_parts.push(comment);
+            }
+        }
+
+        if comment_parts.is_empty() {
+            aligner.reset();
+        } else {
+            let joined = comment_parts.join(", ");
+            aligner.append_comment(&mut line, &joined);
+        }
+
         text.push_str(&line);
         if index + 1 < instructions.len() || !line.is_empty() {
             text.push('\n');
@@ -556,14 +579,77 @@ impl MergeTracker {
     }
 }
 
+struct CommentCollector {
+    enabled: bool,
+    decorations: HashMap<u32, String>,
+}
+
+impl CommentCollector {
+    fn new(enabled: bool) -> Self {
+        Self {
+            enabled,
+            decorations: HashMap::new(),
+        }
+    }
+
+    fn observe(&mut self, instruction: &Instruction) {
+        if !self.enabled {
+            return;
+        }
+        if instruction.class.opcode == spirv::Op::Decorate {
+            self.record_decorate(instruction);
+        }
+    }
+
+    fn inline_comment(&self, instruction: &Instruction) -> Option<String> {
+        if !self.enabled {
+            return None;
+        }
+        if instruction.class.opcode == spirv::Op::Name {
+            if let Some(id) = instruction.operands.first().and_then(extract_id_ref) {
+                return Some(format!("id %{}", id));
+            }
+        }
+        None
+    }
+
+    fn result_comment(&self, instruction: &Instruction) -> Option<String> {
+        if !self.enabled {
+            return None;
+        }
+        instruction
+            .result_id
+            .and_then(|id| self.decorations.get(&id).cloned())
+    }
+
+    fn record_decorate(&mut self, instruction: &Instruction) {
+        let Some(target) = instruction.operands.first().and_then(extract_id_ref) else {
+            return;
+        };
+        let mut parts = Vec::new();
+        for operand in instruction.operands.iter().skip(1) {
+            parts.push(operand.to_string());
+        }
+        if parts.is_empty() {
+            return;
+        }
+        let entry = self.decorations.entry(target).or_default();
+        if !entry.is_empty() {
+            entry.push_str(", ");
+        }
+        entry.push_str(&parts.join(" "));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::disassemble_binary;
     use crate::assembly::{assemble_text, BinaryToTextOptions};
     use rspirv::binary::Assemble;
-    use rspirv::dr::Builder;
+    use rspirv::dr::{self, Builder};
     use rspirv::spirv::{
-        AddressingModel, Capability, ExecutionModel, FunctionControl, MemoryModel,
+        AddressingModel, Capability, Decoration, ExecutionModel, FunctionControl,
+        MemoryModel, StorageClass,
     };
 
     #[test]
@@ -626,6 +712,7 @@ OpMemoryModel Logical GLSL450\n\
         assert!(super::supports_options(BinaryToTextOptions::NO_HEADER));
         assert!(super::supports_options(BinaryToTextOptions::INDENT));
         assert!(super::supports_options(BinaryToTextOptions::FRIENDLY_NAMES));
+        assert!(super::supports_options(BinaryToTextOptions::COMMENT));
         assert!(!super::supports_options(BinaryToTextOptions::COLOR));
     }
 
@@ -750,6 +837,32 @@ OpFunctionEnd";
             .map(|(idx, _)| idx)
             .expect("then return");
         assert!(leading_spaces(lines[then_return_idx]) > leading_spaces(lines[entry_idx]));
+    }
+
+    #[test]
+    fn disassembly_emits_decoration_comments() {
+        let mut builder = Builder::new();
+        builder.capability(Capability::Shader);
+        builder.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+        let float = builder.type_float(32);
+        let ptr = builder.type_pointer(None, StorageClass::UniformConstant, float);
+        let var = builder.variable(ptr, None, StorageClass::UniformConstant, None);
+        builder.decorate(var, Decoration::DescriptorSet, [dr::Operand::LiteralBit32(0)]);
+        builder.decorate(var, Decoration::Binding, [dr::Operand::LiteralBit32(1)]);
+        let void = builder.type_void();
+        let void_fn = builder.type_function(void, vec![]);
+        builder
+            .begin_function(void, None, FunctionControl::NONE, void_fn)
+            .expect("function");
+        builder.begin_block(None).expect("block");
+        builder.ret().expect("return");
+        builder.end_function().expect("end");
+        let module = builder.module();
+        let binary = module.assemble();
+        let options = BinaryToTextOptions::NO_HEADER | BinaryToTextOptions::COMMENT;
+        let disassembled = disassemble_binary(&binary, options).expect("disassemble");
+        assert!(disassembled.contains("DescriptorSet 0"));
+        assert!(disassembled.contains("Binding 1"));
     }
 
     fn leading_spaces(line: &str) -> usize {
