@@ -1,5 +1,7 @@
 use rspirv::binary::{Disassemble, Parser};
-use rspirv::dr::{self, Instruction, Loader, ModuleHeader};
+use rspirv::dr::{self, Instruction, Loader, ModuleHeader, Operand};
+use rspirv::spirv;
+use std::collections::HashMap;
 use std::mem::size_of_val;
 use std::slice;
 use thiserror::Error;
@@ -9,7 +11,8 @@ use crate::assembly::BinaryToTextOptions;
 const SUPPORTED_OPTION_BITS: u32 = BinaryToTextOptions::NO_HEADER.bits()
     | BinaryToTextOptions::PRINT.bits()
     | BinaryToTextOptions::SHOW_BYTE_OFFSET.bits()
-    | BinaryToTextOptions::INDENT.bits();
+    | BinaryToTextOptions::INDENT.bits()
+    | BinaryToTextOptions::FRIENDLY_NAMES.bits();
 const HEADER_WORD_COUNT: usize = 5;
 const INDEX_MAGIC_NUMBER: usize = 0;
 const INDEX_VERSION: usize = 1;
@@ -88,6 +91,7 @@ struct FormattingOptions {
     suppress_header: bool,
     show_byte_offsets: bool,
     indent: bool,
+    friendly_names: bool,
 }
 
 impl TryFrom<BinaryToTextOptions> for FormattingOptions {
@@ -102,12 +106,23 @@ impl TryFrom<BinaryToTextOptions> for FormattingOptions {
             suppress_header: bits.contains(BinaryToTextOptions::NO_HEADER),
             show_byte_offsets: bits.contains(BinaryToTextOptions::SHOW_BYTE_OFFSET),
             indent: bits.contains(BinaryToTextOptions::INDENT),
+            friendly_names: bits.contains(BinaryToTextOptions::FRIENDLY_NAMES),
         })
     }
 }
 
 fn render_module_text(module: &dr::Module, offsets: &[u32], options: &FormattingOptions) -> String {
     let instructions = collect_module_instructions(module);
+    let friendly_names = if options.friendly_names {
+        let table = FriendlyNameTable::from_module(module);
+        if table.is_empty() {
+            None
+        } else {
+            Some(table)
+        }
+    } else {
+        None
+    };
     if instructions.len() != offsets.len() {
         return module.disassemble();
     }
@@ -116,7 +131,12 @@ fn render_module_text(module: &dr::Module, offsets: &[u32], options: &Formatting
     if !options.suppress_header {
         text.push_str(&render_header(module));
     }
-    text.push_str(&render_instructions(&instructions, offsets, options));
+    text.push_str(&render_instructions(
+        &instructions,
+        offsets,
+        options,
+        friendly_names.as_ref(),
+    ));
     text
 }
 
@@ -154,11 +174,13 @@ fn render_instructions(
     instructions: &[&Instruction],
     offsets: &[u32],
     options: &FormattingOptions,
+    friendly_names: Option<&FriendlyNameTable>,
 ) -> String {
     let mut aligner = CommentAligner::new();
     let mut text = String::new();
     for (index, (instruction, &offset)) in instructions.iter().zip(offsets).enumerate() {
         let mut line = sanitize_line(instruction.disassemble());
+        apply_friendly_names(&mut line, friendly_names);
         if options.indent {
             apply_indent(&mut line);
         }
@@ -181,6 +203,66 @@ fn sanitize_line(mut line: String) -> String {
         line.pop();
     }
     line
+}
+
+fn apply_friendly_names(line: &mut String, names: Option<&FriendlyNameTable>) {
+    let Some(table) = names else {
+        return;
+    };
+    if table.is_empty() {
+        return;
+    }
+
+    let mut rewritten = String::with_capacity(line.len());
+    let mut chars = line.chars().peekable();
+    let mut in_string = false;
+
+    while let Some(ch) = chars.next() {
+        if ch == '"' {
+            in_string = !in_string;
+            rewritten.push(ch);
+            continue;
+        }
+
+        if in_string {
+            rewritten.push(ch);
+            if ch == '\\' {
+                if let Some(next) = chars.next() {
+                    rewritten.push(next);
+                }
+            }
+            continue;
+        }
+
+        if ch == '%' {
+            let mut digits = String::new();
+            while let Some(&next) = chars.peek() {
+                if next.is_ascii_digit() {
+                    digits.push(next);
+                    chars.next();
+                } else {
+                    break;
+                }
+            }
+
+            if !digits.is_empty() {
+                if let Ok(id) = digits.parse::<u32>() {
+                    if let Some(name) = table.lookup(id) {
+                        rewritten.push('%');
+                        rewritten.push_str(name);
+                        continue;
+                    }
+                }
+                rewritten.push('%');
+                rewritten.push_str(&digits);
+                continue;
+            }
+        }
+
+        rewritten.push(ch);
+    }
+
+    *line = rewritten;
 }
 
 fn apply_indent(line: &mut String) {
@@ -300,6 +382,11 @@ impl CommentAligner {
 mod tests {
     use super::disassemble_binary;
     use crate::assembly::{assemble_text, BinaryToTextOptions};
+    use rspirv::binary::Assemble;
+    use rspirv::dr::Builder;
+    use rspirv::spirv::{
+        AddressingModel, Capability, ExecutionModel, FunctionControl, MemoryModel,
+    };
 
     #[test]
     fn disassembles_simple_module() {
@@ -336,11 +423,11 @@ OpMemoryModel Logical GLSL450\n\
     fn unsupported_options_request_fallback() {
         let text = "OpCapability Shader";
         let binary = assemble_text(text).expect("assemble text");
-        let options = BinaryToTextOptions::FRIENDLY_NAMES;
+        let options = BinaryToTextOptions::COLOR;
         let error = disassemble_binary(&binary, options).expect_err("expected error");
         match error {
             super::DisassemblyError::Unsupported(bits) => {
-                assert!(bits.contains(BinaryToTextOptions::FRIENDLY_NAMES));
+                assert!(bits.contains(BinaryToTextOptions::COLOR));
             }
             other => panic!("unexpected error: {other:?}"),
         }
@@ -360,9 +447,8 @@ OpMemoryModel Logical GLSL450\n\
         assert!(super::supports_options(BinaryToTextOptions::empty()));
         assert!(super::supports_options(BinaryToTextOptions::NO_HEADER));
         assert!(super::supports_options(BinaryToTextOptions::INDENT));
-        assert!(!super::supports_options(
-            BinaryToTextOptions::FRIENDLY_NAMES
-        ));
+        assert!(super::supports_options(BinaryToTextOptions::FRIENDLY_NAMES));
+        assert!(!super::supports_options(BinaryToTextOptions::COLOR));
     }
 
     #[test]
@@ -419,5 +505,177 @@ OpFunctionEnd";
             id4 = pad("%4"),
         );
         assert_eq!(disassembled, expected);
+    }
+
+    #[test]
+    fn disassembly_uses_friendly_names_when_available() {
+        let mut builder = Builder::new();
+        builder.capability(Capability::Shader);
+        builder.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+        let void = builder.type_void();
+        let void_fn = builder.type_function(void, vec![]);
+        let main = builder
+            .begin_function(void, None, FunctionControl::NONE, void_fn)
+            .expect("begin function");
+        builder.name(main, "my_main");
+        builder.entry_point(ExecutionModel::Vertex, main, "main", Vec::new());
+        builder.begin_block(None).expect("block");
+        builder.ret().expect("return");
+        builder.end_function().expect("end function");
+        let module = builder.module();
+        let binary = module.assemble();
+        let options = BinaryToTextOptions::NO_HEADER | BinaryToTextOptions::FRIENDLY_NAMES;
+        let disassembled = disassemble_binary(&binary, options).expect("disassemble");
+        assert!(disassembled.contains("%my_main = OpFunction"));
+        assert!(disassembled.contains("OpEntryPoint Vertex %my_main \"main\""));
+    }
+}
+
+#[derive(Default)]
+struct FriendlyNameTable {
+    names: HashMap<u32, String>,
+}
+
+impl FriendlyNameTable {
+    fn from_module(module: &dr::Module) -> Self {
+        let mut builder = FriendlyNameBuilder::new();
+        for instruction in &module.debug_names {
+            if instruction.class.opcode == spirv::Op::Name {
+                if let Some(id) = instruction.operands.first().and_then(extract_id_ref) {
+                    if let Some(name) = instruction
+                        .operands
+                        .get(1)
+                        .and_then(|operand| extract_literal_string(operand))
+                    {
+                        builder.assign_name(id, name);
+                    }
+                }
+            }
+        }
+
+        for instruction in module.all_inst_iter() {
+            if let Some(id) = instruction.result_id {
+                builder.ensure_name(id);
+            }
+        }
+
+        Self {
+            names: builder.finish(),
+        }
+    }
+
+    fn lookup(&self, id: u32) -> Option<&str> {
+        self.names.get(&id).map(|name| name.as_str())
+    }
+
+    fn is_empty(&self) -> bool {
+        self.names.is_empty()
+    }
+}
+
+struct FriendlyNameBuilder {
+    names: HashMap<u32, String>,
+    used: HashMap<String, u32>,
+    fallback: u32,
+}
+
+impl FriendlyNameBuilder {
+    fn new() -> Self {
+        Self {
+            names: HashMap::new(),
+            used: HashMap::new(),
+            fallback: 1,
+        }
+    }
+
+    fn assign_name(&mut self, id: u32, raw: &str) {
+        if self.names.contains_key(&id) {
+            return;
+        }
+        let base = sanitize_identifier(raw);
+        let name = self.unique_name(base);
+        self.names.insert(id, name);
+    }
+
+    fn ensure_name(&mut self, id: u32) {
+        if self.names.contains_key(&id) {
+            return;
+        }
+        let base = format!("_{}", self.fallback);
+        self.fallback += 1;
+        let name = self.unique_name(base);
+        self.names.insert(id, name);
+    }
+
+    fn unique_name(&mut self, base: String) -> String {
+        let normalized = if base.is_empty() {
+            "_".to_owned()
+        } else {
+            base
+        };
+        let counter = self.used.entry(normalized.clone()).or_insert(0);
+        let result = if *counter == 0 {
+            normalized.clone()
+        } else {
+            format!("{}_{}", normalized, counter)
+        };
+        *counter += 1;
+        result
+    }
+
+    fn finish(self) -> HashMap<u32, String> {
+        self.names
+    }
+}
+
+fn sanitize_identifier(raw: &str) -> String {
+    let mut sanitized = String::new();
+    let mut last_was_sep = false;
+    for ch in raw.chars() {
+        let mapped = if ch.is_ascii_alphanumeric() || ch == '_' {
+            ch
+        } else {
+            '_'
+        };
+        if mapped == '_' {
+            if last_was_sep {
+                continue;
+            }
+            last_was_sep = true;
+        } else {
+            last_was_sep = false;
+        }
+        sanitized.push(mapped);
+    }
+
+    let mut trimmed = sanitized.trim_matches('_').to_string();
+    if trimmed.is_empty() {
+        trimmed.push('_');
+    }
+
+    if trimmed
+        .chars()
+        .next()
+        .map(|ch| ch.is_ascii_digit())
+        .unwrap_or(false)
+    {
+        trimmed.insert(0, '_');
+    }
+
+    trimmed
+}
+
+fn extract_id_ref(operand: &Operand) -> Option<u32> {
+    match operand {
+        Operand::IdRef(id) => Some(*id),
+        _ => None,
+    }
+}
+
+fn extract_literal_string(operand: &Operand) -> Option<&str> {
+    if let Operand::LiteralString(value) = operand {
+        Some(value.as_str())
+    } else {
+        None
     }
 }
