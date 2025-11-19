@@ -1,8 +1,12 @@
 use core::ffi::c_void;
 use core::ptr::NonNull;
-use spirv_tools_core::assembly::{assemble_text, BinaryToTextOptions, TextToBinaryOptions};
+use spirv_tools_core::assembly::{
+    assemble_text_with_env, BinaryToTextOptions, TextToBinaryOptions,
+};
 use spirv_tools_core::diagnostic::{DiagnosticMessage, MessagePosition};
+use spirv_tools_core::disassembly::{self, disassemble_binary, DisassemblyError};
 use spirv_tools_core::{MessageLevel, TargetEnv};
+use std::panic::{self, AssertUnwindSafe};
 use std::str;
 
 #[cxx::bridge(namespace = "spvtools::ffi")]
@@ -17,6 +21,18 @@ mod ffi {
     struct AssembleResult {
         success: bool,
         binary: Vec<u32>,
+    }
+
+    #[derive(Debug)]
+    struct DisassembleResult {
+        success: bool,
+        text: String,
+    }
+
+    #[derive(Debug)]
+    struct ValidateResult {
+        success: bool,
+        message: String,
     }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,9 +58,15 @@ mod ffi {
         fn list_target_envs(pad: usize, wrap: usize) -> String;
         fn sanitize_text_to_binary_options(options: u32) -> u32;
         fn sanitize_binary_to_text_options(options: u32) -> u32;
+        fn disassembler_supports_options(options: u32) -> bool;
         fn has_rust_context(handle: usize) -> bool;
         fn context_handle_from_raw(handle: usize) -> u64;
         fn try_assemble_text(context_handle: u64, text: &[u8], options: u32) -> AssembleResult;
+        fn try_disassemble_binary(
+            context_handle: u64,
+            binary: &[u32],
+            options: u32,
+        ) -> DisassembleResult;
     }
 
     unsafe extern "C++" {
@@ -62,6 +84,7 @@ mod ffi {
             text: &[u8],
             options: u32,
         ) -> AssembleResult;
+        fn validate_binary(env: u32, words: &[u32]) -> ValidateResult;
     }
 }
 
@@ -156,6 +179,11 @@ pub fn sanitize_binary_to_text_options(options: u32) -> u32 {
     BinaryToTextOptions::from(options).bits()
 }
 
+pub fn disassembler_supports_options(options: u32) -> bool {
+    let requested = BinaryToTextOptions::from(options);
+    disassembly::supports_options(requested)
+}
+
 pub fn has_rust_context(handle: usize) -> bool {
     let ptr = handle as *const ContextHandle;
     unsafe { ptr.as_ref().is_some() }
@@ -169,8 +197,22 @@ pub fn context_handle_from_raw(handle: usize) -> u64 {
     }
 }
 
+/// Validates a SPIR-V module for the provided target environment.
+pub fn validate_binary(env: TargetEnv, words: &[u32]) -> ffi::ValidateResult {
+    ffi::validate_binary(env.to_raw(), words)
+}
+
+const ENABLE_RUST_TEXT_ASSEMBLER: bool = false;
+
 pub fn try_assemble_text(context_handle: u64, text: &[u8], options: u32) -> ffi::AssembleResult {
     if context_handle == 0 {
+        return ffi::AssembleResult {
+            success: false,
+            binary: Vec::new(),
+        };
+    }
+
+    if !ENABLE_RUST_TEXT_ASSEMBLER {
         return ffi::AssembleResult {
             success: false,
             binary: Vec::new(),
@@ -186,15 +228,28 @@ pub fn try_assemble_text(context_handle: u64, text: &[u8], options: u32) -> ffi:
     };
 
     if let Ok(source) = str::from_utf8(text) {
-        let (maybe_binary, diagnostics) = assemble_text(source);
-        for diagnostic in diagnostics {
-            context.emit_diagnostic(&diagnostic);
-        }
-        if let Some(binary) = maybe_binary {
-            return ffi::AssembleResult {
-                success: true,
-                binary,
-            };
+        match panic::catch_unwind(AssertUnwindSafe(|| {
+            assemble_text_with_env(source, context.env())
+        })) {
+            Ok(Ok(binary)) => {
+                return ffi::AssembleResult {
+                    success: true,
+                    binary,
+                };
+            }
+            Ok(Err(error)) => {
+                for diagnostic in error.into_diagnostics() {
+                    context.emit_diagnostic(&diagnostic);
+                }
+            }
+            Err(_) => {
+                context.emit_message(
+                    MessageLevel::Error,
+                    Some("assembler"),
+                    MessagePosition::default(),
+                    "Rust assembler panicked; falling back to C++ implementation",
+                );
+            }
         }
     } else {
         context.emit_message(
@@ -206,6 +261,53 @@ pub fn try_assemble_text(context_handle: u64, text: &[u8], options: u32) -> ffi:
     }
 
     ffi::assemble_text_with_context(context.context_address(), text, options)
+}
+
+pub fn try_disassemble_binary(
+    context_handle: u64,
+    binary: &[u32],
+    options: u32,
+) -> ffi::DisassembleResult {
+    let requested =
+        BinaryToTextOptions::from_bits_truncate(options & !BinaryToTextOptions::NONE.bits());
+
+    if context_handle == 0 {
+        return ffi::DisassembleResult {
+            success: false,
+            text: String::new(),
+        };
+    }
+
+    let context = unsafe { (context_handle as *const ContextHandle).as_ref() };
+    let Some(context) = context else {
+        return ffi::DisassembleResult {
+            success: false,
+            text: String::new(),
+        };
+    };
+
+    match disassemble_binary(binary, requested) {
+        Ok(text) => ffi::DisassembleResult {
+            success: true,
+            text,
+        },
+        Err(DisassemblyError::Unsupported(_)) => ffi::DisassembleResult {
+            success: false,
+            text: String::new(),
+        },
+        Err(error) => {
+            context.emit_message(
+                MessageLevel::Error,
+                Some("disassembler"),
+                MessagePosition::default(),
+                &error.to_string(),
+            );
+            ffi::DisassembleResult {
+                success: false,
+                text: String::new(),
+            }
+        }
+    }
 }
 
 impl From<MessagePosition> for ffi::MessagePosition {

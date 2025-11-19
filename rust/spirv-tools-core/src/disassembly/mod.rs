@@ -8,7 +8,8 @@ use crate::assembly::BinaryToTextOptions;
 
 const SUPPORTED_OPTION_BITS: u32 = BinaryToTextOptions::NO_HEADER.bits()
     | BinaryToTextOptions::PRINT.bits()
-    | BinaryToTextOptions::SHOW_BYTE_OFFSET.bits();
+    | BinaryToTextOptions::SHOW_BYTE_OFFSET.bits()
+    | BinaryToTextOptions::INDENT.bits();
 const HEADER_WORD_COUNT: usize = 5;
 const INDEX_MAGIC_NUMBER: usize = 0;
 const INDEX_VERSION: usize = 1;
@@ -17,6 +18,7 @@ const INDEX_BOUND: usize = 3;
 const INDEX_SCHEMA: usize = 4;
 const COMMENT_COLUMN: usize = 50;
 const MAX_COMMENT_ALIGN: usize = 256;
+const STANDARD_INDENT_COLUMN: usize = 15;
 
 /// Errors that can be produced while disassembling SPIR-V binaries.
 #[derive(Debug, Error)]
@@ -85,6 +87,7 @@ pub fn supports_options(options: BinaryToTextOptions) -> bool {
 struct FormattingOptions {
     suppress_header: bool,
     show_byte_offsets: bool,
+    indent: bool,
 }
 
 impl TryFrom<BinaryToTextOptions> for FormattingOptions {
@@ -98,6 +101,7 @@ impl TryFrom<BinaryToTextOptions> for FormattingOptions {
         Ok(Self {
             suppress_header: bits.contains(BinaryToTextOptions::NO_HEADER),
             show_byte_offsets: bits.contains(BinaryToTextOptions::SHOW_BYTE_OFFSET),
+            indent: bits.contains(BinaryToTextOptions::INDENT),
         })
     }
 }
@@ -155,6 +159,9 @@ fn render_instructions(
     let mut text = String::new();
     for (index, (instruction, &offset)) in instructions.iter().zip(offsets).enumerate() {
         let mut line = sanitize_line(instruction.disassemble());
+        if options.indent {
+            apply_indent(&mut line);
+        }
         if options.show_byte_offsets {
             let comment = format!("0x{offset:08x}");
             aligner.append_comment(&mut line, &comment);
@@ -174,6 +181,39 @@ fn sanitize_line(mut line: String) -> String {
         line.pop();
     }
     line
+}
+
+fn apply_indent(line: &mut String) {
+    if line.is_empty() {
+        return;
+    }
+
+    if let Some(eq_index) = line.find(" = ") {
+        if line.starts_with('%') {
+            let (head, tail) = line.split_at(eq_index);
+            let trimmed_head = head.trim();
+            let head_width = trimmed_head.chars().count();
+            if head_width < STANDARD_INDENT_COLUMN {
+                let padding = STANDARD_INDENT_COLUMN - head_width;
+                let mut indented = String::with_capacity(line.len() + padding);
+                indented.push_str(&" ".repeat(padding));
+                indented.push_str(trimmed_head);
+                indented.push_str(tail);
+                *line = indented;
+            } else if head != trimmed_head {
+                let mut normalized = String::with_capacity(line.len());
+                normalized.push_str(trimmed_head);
+                normalized.push_str(tail);
+                *line = normalized;
+            }
+            return;
+        }
+    }
+
+    let mut indented = String::with_capacity(STANDARD_INDENT_COLUMN + line.len());
+    indented.push_str(&" ".repeat(STANDARD_INDENT_COLUMN));
+    indented.push_str(line.trim_start());
+    *line = indented;
 }
 
 fn collect_instruction_offsets(words: &[u32]) -> Vec<u32> {
@@ -319,6 +359,7 @@ OpMemoryModel Logical GLSL450\n\
     fn supports_options_covers_zero_and_no_header() {
         assert!(super::supports_options(BinaryToTextOptions::empty()));
         assert!(super::supports_options(BinaryToTextOptions::NO_HEADER));
+        assert!(super::supports_options(BinaryToTextOptions::INDENT));
         assert!(!super::supports_options(
             BinaryToTextOptions::FRIENDLY_NAMES
         ));
@@ -338,6 +379,45 @@ OpMemoryModel Logical Simple\n\
 OpMemoryModel Logical Simple                        ; 0x0000001c\n\
 %1 = OpTypeVoid                                     ; 0x00000028\n\
 %2 = OpTypeFunction %1                              ; 0x00000030\n";
+        assert_eq!(disassembled, expected);
+    }
+
+    #[test]
+    fn disassembly_applies_indent_formatting() {
+        let text = "\
+OpCapability Shader\n\
+OpMemoryModel Logical Simple\n\
+%void = OpTypeVoid\n\
+%void_fn = OpTypeFunction %void\n\
+%main = OpFunction %void None %void_fn\n\
+%entry = OpLabel\n\
+OpReturn\n\
+OpFunctionEnd";
+        let binary = assemble_text(text).expect("assemble text");
+        let options = BinaryToTextOptions::NO_HEADER | BinaryToTextOptions::INDENT;
+        let disassembled = disassemble_binary(&binary, options).expect("disassemble");
+
+        let indent = " ".repeat(super::STANDARD_INDENT_COLUMN);
+        let pad = |name: &str| -> String {
+            let spaces = super::STANDARD_INDENT_COLUMN.saturating_sub(name.chars().count());
+            format!("{}{} = ", " ".repeat(spaces), name)
+        };
+
+        let expected = format!(
+            "{indent}OpCapability Shader\n\
+{indent}OpMemoryModel Logical Simple\n\
+{id1}OpTypeVoid\n\
+{id2}OpTypeFunction %1\n\
+{id3}OpFunction  %1  None %2\n\
+{id4}OpLabel\n\
+{indent}OpReturn\n\
+{indent}OpFunctionEnd\n",
+            indent = indent,
+            id1 = pad("%1"),
+            id2 = pad("%2"),
+            id3 = pad("%3"),
+            id4 = pad("%4"),
+        );
         assert_eq!(disassembled, expected);
     }
 }
