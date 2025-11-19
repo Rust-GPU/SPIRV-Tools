@@ -15,7 +15,8 @@ const SUPPORTED_OPTION_BITS: u32 = BinaryToTextOptions::NO_HEADER.bits()
     | BinaryToTextOptions::FRIENDLY_NAMES.bits()
     | BinaryToTextOptions::NESTED_INDENT.bits()
     | BinaryToTextOptions::COMMENT.bits()
-    | BinaryToTextOptions::REORDER_BLOCKS.bits();
+    | BinaryToTextOptions::REORDER_BLOCKS.bits()
+    | BinaryToTextOptions::COLOR.bits();
 const HEADER_WORD_COUNT: usize = 5;
 const INDEX_MAGIC_NUMBER: usize = 0;
 const INDEX_VERSION: usize = 1;
@@ -27,6 +28,9 @@ const MAX_COMMENT_ALIGN: usize = 256;
 const STANDARD_INDENT_COLUMN: usize = 15;
 const BLOCK_NEST_INDENT: usize = 2;
 const BLOCK_BODY_INDENT_OFFSET: usize = 2;
+const COLOR_BLUE: &str = "\x1b[34m";
+const COLOR_GREY: &str = "\x1b[90m";
+const COLOR_RESET: &str = "\x1b[0m";
 
 /// Errors that can be produced while disassembling SPIR-V binaries.
 #[derive(Debug, Error)]
@@ -100,6 +104,7 @@ struct FormattingOptions {
     nested_indent: bool,
     comments: bool,
     reorder_blocks: bool,
+    colorize: bool,
 }
 
 impl TryFrom<BinaryToTextOptions> for FormattingOptions {
@@ -118,6 +123,7 @@ impl TryFrom<BinaryToTextOptions> for FormattingOptions {
             nested_indent: bits.contains(BinaryToTextOptions::NESTED_INDENT),
             comments: bits.contains(BinaryToTextOptions::COMMENT),
             reorder_blocks: bits.contains(BinaryToTextOptions::REORDER_BLOCKS),
+            colorize: bits.contains(BinaryToTextOptions::COLOR),
         })
     }
 }
@@ -264,6 +270,8 @@ fn render_instructions(
             aligner.append_comment(&mut line, &joined);
         }
 
+        apply_color_formatting(&mut line, options.colorize);
+
         text.push_str(&line);
         if index + 1 < instructions.len() || !line.is_empty() {
             text.push('\n');
@@ -384,6 +392,41 @@ fn prepend_spaces(line: &mut String, count: usize) {
     prefixed.push_str(&" ".repeat(count));
     prefixed.push_str(line);
     *line = prefixed;
+}
+
+fn apply_color_formatting(line: &mut String, colorize: bool) {
+    if !colorize || line.is_empty() {
+        return;
+    }
+
+    color_result_identifier(line);
+    color_comment_section(line);
+}
+
+fn color_result_identifier(line: &mut String) {
+    if let Some(eq_index) = line.find(" = ") {
+        if let Some(percent_index) = line[..eq_index].rfind('%') {
+            let mut colored =
+                String::with_capacity(line.len() + COLOR_BLUE.len() + COLOR_RESET.len());
+            colored.push_str(&line[..percent_index]);
+            colored.push_str(COLOR_BLUE);
+            colored.push_str(&line[percent_index..eq_index]);
+            colored.push_str(COLOR_RESET);
+            colored.push_str(&line[eq_index..]);
+            *line = colored;
+        }
+    }
+}
+
+fn color_comment_section(line: &mut String) {
+    if let Some(comment_index) = line.find("; ") {
+        let mut colored = String::with_capacity(line.len() + COLOR_GREY.len() + COLOR_RESET.len());
+        colored.push_str(&line[..comment_index]);
+        colored.push_str(COLOR_GREY);
+        colored.push_str(&line[comment_index..]);
+        colored.push_str(COLOR_RESET);
+        *line = colored;
+    }
 }
 
 fn collect_instruction_offsets(words: &[u32]) -> Vec<u32> {
@@ -776,15 +819,12 @@ OpMemoryModel Logical GLSL450\n\
     }
 
     #[test]
-    fn unsupported_options_request_fallback() {
-        let text = "OpCapability Shader";
-        let binary = assemble_text(text).expect("assemble text");
-        let options = BinaryToTextOptions::COLOR;
-        let error = disassemble_binary(&binary, options).expect_err("expected error");
+    fn invalid_binary_reports_parse_error() {
+        let binary = vec![0xDEAD_BEEFu32];
+        let error = disassemble_binary(&binary, BinaryToTextOptions::NO_HEADER)
+            .expect_err("expected parse error");
         match error {
-            super::DisassemblyError::Unsupported(bits) => {
-                assert!(bits.contains(BinaryToTextOptions::COLOR));
-            }
+            super::DisassemblyError::Parse(message) => assert!(!message.is_empty()),
             other => panic!("unexpected error: {other:?}"),
         }
     }
@@ -806,7 +846,7 @@ OpMemoryModel Logical GLSL450\n\
         assert!(super::supports_options(BinaryToTextOptions::FRIENDLY_NAMES));
         assert!(super::supports_options(BinaryToTextOptions::COMMENT));
         assert!(super::supports_options(BinaryToTextOptions::REORDER_BLOCKS));
-        assert!(!super::supports_options(BinaryToTextOptions::COLOR));
+        assert!(super::supports_options(BinaryToTextOptions::COLOR));
     }
 
     #[test]
@@ -944,6 +984,31 @@ OpFunctionEnd";
         let disassembled = disassemble_binary(&binary, options).expect("disassemble");
         assert!(disassembled.contains("DescriptorSet 0"));
         assert!(disassembled.contains("Binding 1"));
+    }
+
+    #[test]
+    fn disassembly_applies_color_formatting() {
+        let mut builder = Builder::new();
+        builder.capability(Capability::Shader);
+        builder.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+        let void = builder.type_void();
+        let void_fn = builder.type_function(void, vec![]);
+        builder
+            .begin_function(void, None, FunctionControl::NONE, void_fn)
+            .expect("function");
+        builder.begin_block(None).expect("block");
+        builder.ret().expect("return");
+        builder.end_function().expect("end");
+        let module = builder.module();
+        let binary = module.assemble();
+        let options = BinaryToTextOptions::NO_HEADER
+            | BinaryToTextOptions::INDENT
+            | BinaryToTextOptions::COLOR
+            | BinaryToTextOptions::COMMENT
+            | BinaryToTextOptions::SHOW_BYTE_OFFSET;
+        let disassembled = disassemble_binary(&binary, options).expect("disassemble");
+        assert!(disassembled.contains(super::COLOR_BLUE));
+        assert!(disassembled.contains(super::COLOR_GREY));
     }
 
     #[test]
