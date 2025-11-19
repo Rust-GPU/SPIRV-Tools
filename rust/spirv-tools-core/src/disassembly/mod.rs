@@ -14,7 +14,8 @@ const SUPPORTED_OPTION_BITS: u32 = BinaryToTextOptions::NO_HEADER.bits()
     | BinaryToTextOptions::INDENT.bits()
     | BinaryToTextOptions::FRIENDLY_NAMES.bits()
     | BinaryToTextOptions::NESTED_INDENT.bits()
-    | BinaryToTextOptions::COMMENT.bits();
+    | BinaryToTextOptions::COMMENT.bits()
+    | BinaryToTextOptions::REORDER_BLOCKS.bits();
 const HEADER_WORD_COUNT: usize = 5;
 const INDEX_MAGIC_NUMBER: usize = 0;
 const INDEX_VERSION: usize = 1;
@@ -98,6 +99,7 @@ struct FormattingOptions {
     friendly_names: bool,
     nested_indent: bool,
     comments: bool,
+    reorder_blocks: bool,
 }
 
 impl TryFrom<BinaryToTextOptions> for FormattingOptions {
@@ -115,6 +117,7 @@ impl TryFrom<BinaryToTextOptions> for FormattingOptions {
             friendly_names: bits.contains(BinaryToTextOptions::FRIENDLY_NAMES),
             nested_indent: bits.contains(BinaryToTextOptions::NESTED_INDENT),
             comments: bits.contains(BinaryToTextOptions::COMMENT),
+            reorder_blocks: bits.contains(BinaryToTextOptions::REORDER_BLOCKS),
         })
     }
 }
@@ -151,7 +154,7 @@ impl<'a> InstructionRecord<'a> {
 }
 
 fn render_module_text(module: &dr::Module, offsets: &[u32], options: &FormattingOptions) -> String {
-    let instructions = collect_module_instructions(module);
+    let instructions = collect_module_instructions(module, options.reorder_blocks);
     let friendly_names = if options.friendly_names {
         let table = FriendlyNameTable::from_module(module);
         if table.is_empty() {
@@ -403,7 +406,10 @@ fn collect_instruction_offsets(words: &[u32]) -> Vec<u32> {
     offsets
 }
 
-fn collect_module_instructions(module: &dr::Module) -> Vec<InstructionRecord<'_>> {
+fn collect_module_instructions(
+    module: &dr::Module,
+    reorder_blocks: bool,
+) -> Vec<InstructionRecord<'_>> {
     let mut records = Vec::new();
     for instruction in &module.capabilities {
         records.push(InstructionRecord::new(
@@ -488,7 +494,13 @@ fn collect_module_instructions(module: &dr::Module) -> Vec<InstructionRecord<'_>
         }
 
         let mut tracker = MergeTracker::new();
-        for block in &function.blocks {
+        let block_indices = if reorder_blocks {
+            reorder_function_blocks(function)
+        } else {
+            (0..function.blocks.len()).collect()
+        };
+        for index in block_indices {
+            let block = &function.blocks[index];
             if let Some(ref label) = block.label {
                 tracker.enter_block(label.result_id);
                 records.push(InstructionRecord::new(
@@ -641,6 +653,86 @@ impl CommentCollector {
     }
 }
 
+fn reorder_function_blocks(function: &dr::Function) -> Vec<usize> {
+    if function.blocks.is_empty() {
+        return Vec::new();
+    }
+
+    let mut id_to_index = HashMap::new();
+    for (index, block) in function.blocks.iter().enumerate() {
+        if let Some(id) = block.label.as_ref().and_then(|inst| inst.result_id) {
+            id_to_index.insert(id, index);
+        }
+    }
+
+    let successors: Vec<Vec<usize>> = function
+        .blocks
+        .iter()
+        .map(|block| {
+            block_successor_ids(block)
+                .into_iter()
+                .filter_map(|id| id_to_index.get(&id).copied())
+                .collect()
+        })
+        .collect();
+
+    let mut order = Vec::with_capacity(function.blocks.len());
+    let mut visited = vec![false; function.blocks.len()];
+    fn dfs(
+        index: usize,
+        successors: &Vec<Vec<usize>>,
+        visited: &mut [bool],
+        order: &mut Vec<usize>,
+    ) {
+        if visited[index] {
+            return;
+        }
+        visited[index] = true;
+        order.push(index);
+        for &succ in &successors[index] {
+            dfs(succ, successors, visited, order);
+        }
+    }
+
+    dfs(0, &successors, &mut visited, &mut order);
+    for (index, flag) in visited.iter().enumerate() {
+        if !*flag {
+            order.push(index);
+        }
+    }
+    order
+}
+
+fn block_successor_ids(block: &dr::Block) -> Vec<u32> {
+    let mut successors = Vec::new();
+    let Some(terminator) = block.instructions.last() else {
+        return successors;
+    };
+    match terminator.class.opcode {
+        spirv::Op::Branch => {
+            if let Some(id) = terminator.operands.last().and_then(extract_id_ref) {
+                successors.push(id);
+            }
+        }
+        spirv::Op::BranchConditional => {
+            for operand in terminator.operands.iter().skip(1).take(2) {
+                if let Some(id) = extract_id_ref(operand) {
+                    successors.push(id);
+                }
+            }
+        }
+        spirv::Op::Switch => {
+            for operand in terminator.operands.iter().skip(1) {
+                if let Some(id) = extract_id_ref(operand) {
+                    successors.push(id);
+                }
+            }
+        }
+        _ => {}
+    }
+    successors
+}
+
 #[cfg(test)]
 mod tests {
     use super::disassemble_binary;
@@ -648,8 +740,8 @@ mod tests {
     use rspirv::binary::Assemble;
     use rspirv::dr::{self, Builder};
     use rspirv::spirv::{
-        AddressingModel, Capability, Decoration, ExecutionModel, FunctionControl,
-        MemoryModel, StorageClass,
+        AddressingModel, Capability, Decoration, ExecutionModel, FunctionControl, MemoryModel,
+        SelectionControl, StorageClass,
     };
 
     #[test]
@@ -713,6 +805,7 @@ OpMemoryModel Logical GLSL450\n\
         assert!(super::supports_options(BinaryToTextOptions::INDENT));
         assert!(super::supports_options(BinaryToTextOptions::FRIENDLY_NAMES));
         assert!(super::supports_options(BinaryToTextOptions::COMMENT));
+        assert!(super::supports_options(BinaryToTextOptions::REORDER_BLOCKS));
         assert!(!super::supports_options(BinaryToTextOptions::COLOR));
     }
 
@@ -797,46 +890,30 @@ OpFunctionEnd";
 
     #[test]
     fn disassembly_nested_indent_tracks_block_depth() {
-        let text = "\
-OpCapability Shader\n\
-OpMemoryModel Logical Simple\n\
-%bool = OpTypeBool\n\
-%void = OpTypeVoid\n\
-%void_fn = OpTypeFunction %void\n\
-%true = OpConstantTrue %bool\n\
-%main = OpFunction %void None %void_fn\n\
-%entry = OpLabel\n\
-OpSelectionMerge %merge None\n\
-OpBranchConditional %true %then %merge\n\
-%then = OpLabel\n\
-OpReturn\n\
-%merge = OpLabel\n\
-OpReturn\n\
-OpFunctionEnd";
-        let binary = assemble_text(text).expect("assemble text");
+        let binary = build_selection_module(false);
         let options = BinaryToTextOptions::NO_HEADER
             | BinaryToTextOptions::INDENT
-            | BinaryToTextOptions::NESTED_INDENT;
+            | BinaryToTextOptions::NESTED_INDENT
+            | BinaryToTextOptions::FRIENDLY_NAMES;
         let disassembled = disassemble_binary(&binary, options).expect("disassemble");
         let lines: Vec<&str> = disassembled.lines().collect();
-        let label_indices: Vec<usize> = lines
+        let entry_idx = lines
             .iter()
-            .enumerate()
-            .filter(|(_, line)| line.contains("OpLabel"))
-            .map(|(idx, _)| idx)
-            .collect();
-        assert!(label_indices.len() >= 2);
-        let entry_idx = label_indices[0];
-        let then_idx = label_indices[1];
+            .position(|line| line.contains("%entry = OpLabel"))
+            .expect("entry label");
+        let then_idx = lines
+            .iter()
+            .position(|line| line.contains("%then = OpLabel"))
+            .expect("then label");
         assert!(leading_spaces(lines[then_idx]) > leading_spaces(lines[entry_idx]));
-        let then_return_idx = lines
+        let then_branch_idx = lines
             .iter()
             .enumerate()
             .skip(then_idx)
-            .find(|(_, line)| line.contains("OpReturn"))
+            .find(|(_, line)| line.contains("OpBranch"))
             .map(|(idx, _)| idx)
-            .expect("then return");
-        assert!(leading_spaces(lines[then_return_idx]) > leading_spaces(lines[entry_idx]));
+            .expect("then branch");
+        assert!(leading_spaces(lines[then_branch_idx]) > leading_spaces(lines[entry_idx]));
     }
 
     #[test]
@@ -847,7 +924,11 @@ OpFunctionEnd";
         let float = builder.type_float(32);
         let ptr = builder.type_pointer(None, StorageClass::UniformConstant, float);
         let var = builder.variable(ptr, None, StorageClass::UniformConstant, None);
-        builder.decorate(var, Decoration::DescriptorSet, [dr::Operand::LiteralBit32(0)]);
+        builder.decorate(
+            var,
+            Decoration::DescriptorSet,
+            [dr::Operand::LiteralBit32(0)],
+        );
         builder.decorate(var, Decoration::Binding, [dr::Operand::LiteralBit32(1)]);
         let void = builder.type_void();
         let void_fn = builder.type_function(void, vec![]);
@@ -865,8 +946,68 @@ OpFunctionEnd";
         assert!(disassembled.contains("Binding 1"));
     }
 
+    #[test]
+    fn disassembly_reorders_blocks_when_requested() {
+        let binary = build_selection_module(true);
+        let options = BinaryToTextOptions::NO_HEADER
+            | BinaryToTextOptions::REORDER_BLOCKS
+            | BinaryToTextOptions::FRIENDLY_NAMES;
+        let disassembled = disassemble_binary(&binary, options).expect("disassemble");
+        let lines: Vec<&str> = disassembled.lines().collect();
+        let entry_idx = lines
+            .iter()
+            .position(|line| line.contains("%entry = OpLabel"))
+            .expect("entry");
+        let merge_idx = lines
+            .iter()
+            .position(|line| line.contains("%merge = OpLabel"))
+            .expect("merge");
+        assert!(merge_idx > entry_idx);
+    }
+
     fn leading_spaces(line: &str) -> usize {
         line.chars().take_while(|ch| ch.is_whitespace()).count()
+    }
+
+    fn build_selection_module(permuted: bool) -> Vec<u32> {
+        let mut builder = Builder::new();
+        builder.capability(Capability::Shader);
+        builder.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+        let void = builder.type_void();
+        let bool_type = builder.type_bool();
+        let void_fn = builder.type_function(void, vec![]);
+        let true_id = builder.constant_true(bool_type);
+        builder
+            .begin_function(void, None, FunctionControl::NONE, void_fn)
+            .expect("function");
+        let entry_label = builder.begin_block(None).expect("entry block");
+        builder.name(entry_label, "entry");
+        let merge_label = builder.id();
+        let then_label = builder.id();
+        builder.name(merge_label, "merge");
+        builder.name(then_label, "then");
+        builder
+            .selection_merge(merge_label, SelectionControl::NONE)
+            .expect("merge");
+        builder
+            .branch_conditional(true_id, then_label, merge_label, std::iter::empty())
+            .expect("branch conditional");
+        builder.begin_block(Some(merge_label)).expect("merge block");
+        builder.ret().expect("return");
+        builder.begin_block(Some(then_label)).expect("then block");
+        builder.branch(merge_label).expect("branch");
+        builder.end_function().expect("end function");
+
+        let mut module = builder.module();
+        if permuted {
+            if let Some(function) = module.functions.get_mut(0) {
+                if function.blocks.len() >= 3 {
+                    let merge_block = function.blocks.remove(function.blocks.len() - 1);
+                    function.blocks.insert(1, merge_block);
+                }
+            }
+        }
+        module.assemble()
     }
 }
 
