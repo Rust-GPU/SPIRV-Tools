@@ -12,7 +12,8 @@ const SUPPORTED_OPTION_BITS: u32 = BinaryToTextOptions::NO_HEADER.bits()
     | BinaryToTextOptions::PRINT.bits()
     | BinaryToTextOptions::SHOW_BYTE_OFFSET.bits()
     | BinaryToTextOptions::INDENT.bits()
-    | BinaryToTextOptions::FRIENDLY_NAMES.bits();
+    | BinaryToTextOptions::FRIENDLY_NAMES.bits()
+    | BinaryToTextOptions::NESTED_INDENT.bits();
 const HEADER_WORD_COUNT: usize = 5;
 const INDEX_MAGIC_NUMBER: usize = 0;
 const INDEX_VERSION: usize = 1;
@@ -22,6 +23,8 @@ const INDEX_SCHEMA: usize = 4;
 const COMMENT_COLUMN: usize = 50;
 const MAX_COMMENT_ALIGN: usize = 256;
 const STANDARD_INDENT_COLUMN: usize = 15;
+const BLOCK_NEST_INDENT: usize = 2;
+const BLOCK_BODY_INDENT_OFFSET: usize = 2;
 
 /// Errors that can be produced while disassembling SPIR-V binaries.
 #[derive(Debug, Error)]
@@ -92,6 +95,7 @@ struct FormattingOptions {
     show_byte_offsets: bool,
     indent: bool,
     friendly_names: bool,
+    nested_indent: bool,
 }
 
 impl TryFrom<BinaryToTextOptions> for FormattingOptions {
@@ -107,7 +111,39 @@ impl TryFrom<BinaryToTextOptions> for FormattingOptions {
             show_byte_offsets: bits.contains(BinaryToTextOptions::SHOW_BYTE_OFFSET),
             indent: bits.contains(BinaryToTextOptions::INDENT),
             friendly_names: bits.contains(BinaryToTextOptions::FRIENDLY_NAMES),
+            nested_indent: bits.contains(BinaryToTextOptions::NESTED_INDENT),
         })
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BlockPosition {
+    Global,
+    Label,
+    Body,
+}
+
+struct InstructionRecord<'a> {
+    instruction: &'a Instruction,
+    depth: u32,
+    position: BlockPosition,
+}
+
+impl<'a> InstructionRecord<'a> {
+    fn new(instruction: &'a Instruction, depth: u32, position: BlockPosition) -> Self {
+        Self {
+            instruction,
+            depth,
+            position,
+        }
+    }
+
+    fn instruction(&self) -> &'a Instruction {
+        self.instruction
+    }
+
+    fn is_block_body(&self) -> bool {
+        matches!(self.position, BlockPosition::Body)
     }
 }
 
@@ -171,18 +207,30 @@ fn vendor_prefix(name: &str) -> &str {
 }
 
 fn render_instructions(
-    instructions: &[&Instruction],
+    instructions: &[InstructionRecord],
     offsets: &[u32],
     options: &FormattingOptions,
     friendly_names: Option<&FriendlyNameTable>,
 ) -> String {
     let mut aligner = CommentAligner::new();
     let mut text = String::new();
-    for (index, (instruction, &offset)) in instructions.iter().zip(offsets).enumerate() {
+    for (index, (record, &offset)) in instructions.iter().zip(offsets).enumerate() {
+        let instruction = record.instruction();
         let mut line = sanitize_line(instruction.disassemble());
         apply_friendly_names(&mut line, friendly_names);
+
+        let mut block_indent = 0usize;
+        if options.nested_indent {
+            block_indent += (record.depth as usize) * BLOCK_NEST_INDENT;
+            if record.is_block_body() {
+                block_indent += BLOCK_BODY_INDENT_OFFSET;
+            }
+        }
+
         if options.indent {
-            apply_indent(&mut line);
+            apply_indent(&mut line, block_indent);
+        } else if block_indent > 0 {
+            prepend_spaces(&mut line, block_indent);
         }
         if options.show_byte_offsets {
             let comment = format!("0x{offset:08x}");
@@ -265,37 +313,51 @@ fn apply_friendly_names(line: &mut String, names: Option<&FriendlyNameTable>) {
     *line = rewritten;
 }
 
-fn apply_indent(line: &mut String) {
+fn apply_indent(line: &mut String, base_indent: usize) {
     if line.is_empty() {
+        if base_indent > 0 {
+            *line = " ".repeat(base_indent);
+        }
         return;
     }
 
     if let Some(eq_index) = line.find(" = ") {
         if line.starts_with('%') {
-            let (head, tail) = line.split_at(eq_index);
+            let head = &line[..eq_index];
             let trimmed_head = head.trim();
             let head_width = trimmed_head.chars().count();
-            if head_width < STANDARD_INDENT_COLUMN {
-                let padding = STANDARD_INDENT_COLUMN - head_width;
-                let mut indented = String::with_capacity(line.len() + padding);
-                indented.push_str(&" ".repeat(padding));
-                indented.push_str(trimmed_head);
-                indented.push_str(tail);
-                *line = indented;
-            } else if head != trimmed_head {
-                let mut normalized = String::with_capacity(line.len());
-                normalized.push_str(trimmed_head);
-                normalized.push_str(tail);
-                *line = normalized;
+            let mut indented =
+                String::with_capacity(base_indent + STANDARD_INDENT_COLUMN + line.len());
+            if base_indent > 0 {
+                indented.push_str(&" ".repeat(base_indent));
             }
+            if head_width < STANDARD_INDENT_COLUMN {
+                indented.push_str(&" ".repeat(STANDARD_INDENT_COLUMN - head_width));
+            }
+            indented.push_str(trimmed_head);
+            indented.push_str(&line[eq_index..]);
+            *line = indented;
             return;
         }
     }
 
-    let mut indented = String::with_capacity(STANDARD_INDENT_COLUMN + line.len());
+    let mut indented = String::with_capacity(base_indent + STANDARD_INDENT_COLUMN + line.len());
+    if base_indent > 0 {
+        indented.push_str(&" ".repeat(base_indent));
+    }
     indented.push_str(&" ".repeat(STANDARD_INDENT_COLUMN));
     indented.push_str(line.trim_start());
     *line = indented;
+}
+
+fn prepend_spaces(line: &mut String, count: usize) {
+    if count == 0 {
+        return;
+    }
+    let mut prefixed = String::with_capacity(count + line.len());
+    prefixed.push_str(&" ".repeat(count));
+    prefixed.push_str(line);
+    *line = prefixed;
 }
 
 fn collect_instruction_offsets(words: &[u32]) -> Vec<u32> {
@@ -318,37 +380,116 @@ fn collect_instruction_offsets(words: &[u32]) -> Vec<u32> {
     offsets
 }
 
-fn collect_module_instructions(module: &dr::Module) -> Vec<&Instruction> {
-    let mut instructions = Vec::new();
-    instructions.extend(module.capabilities.iter());
-    instructions.extend(module.extensions.iter());
-    instructions.extend(module.ext_inst_imports.iter());
-    if let Some(ref inst) = module.memory_model {
-        instructions.push(inst);
+fn collect_module_instructions(module: &dr::Module) -> Vec<InstructionRecord<'_>> {
+    let mut records = Vec::new();
+    for instruction in &module.capabilities {
+        records.push(InstructionRecord::new(
+            instruction,
+            0,
+            BlockPosition::Global,
+        ));
     }
-    instructions.extend(module.entry_points.iter());
-    instructions.extend(module.execution_modes.iter());
-    instructions.extend(module.debug_string_source.iter());
-    instructions.extend(module.debug_names.iter());
-    instructions.extend(module.debug_module_processed.iter());
-    instructions.extend(module.annotations.iter());
-    instructions.extend(module.types_global_values.iter());
+    for instruction in &module.extensions {
+        records.push(InstructionRecord::new(
+            instruction,
+            0,
+            BlockPosition::Global,
+        ));
+    }
+    for instruction in &module.ext_inst_imports {
+        records.push(InstructionRecord::new(
+            instruction,
+            0,
+            BlockPosition::Global,
+        ));
+    }
+    if let Some(ref inst) = module.memory_model {
+        records.push(InstructionRecord::new(inst, 0, BlockPosition::Global));
+    }
+    for instruction in &module.entry_points {
+        records.push(InstructionRecord::new(
+            instruction,
+            0,
+            BlockPosition::Global,
+        ));
+    }
+    for instruction in &module.execution_modes {
+        records.push(InstructionRecord::new(
+            instruction,
+            0,
+            BlockPosition::Global,
+        ));
+    }
+    for instruction in &module.debug_string_source {
+        records.push(InstructionRecord::new(
+            instruction,
+            0,
+            BlockPosition::Global,
+        ));
+    }
+    for instruction in &module.debug_names {
+        records.push(InstructionRecord::new(
+            instruction,
+            0,
+            BlockPosition::Global,
+        ));
+    }
+    for instruction in &module.debug_module_processed {
+        records.push(InstructionRecord::new(
+            instruction,
+            0,
+            BlockPosition::Global,
+        ));
+    }
+    for instruction in &module.annotations {
+        records.push(InstructionRecord::new(
+            instruction,
+            0,
+            BlockPosition::Global,
+        ));
+    }
+    for instruction in &module.types_global_values {
+        records.push(InstructionRecord::new(
+            instruction,
+            0,
+            BlockPosition::Global,
+        ));
+    }
+
     for function in &module.functions {
         if let Some(ref def) = function.def {
-            instructions.push(def);
+            records.push(InstructionRecord::new(def, 0, BlockPosition::Global));
         }
-        instructions.extend(function.parameters.iter());
+        for parameter in &function.parameters {
+            records.push(InstructionRecord::new(parameter, 0, BlockPosition::Global));
+        }
+
+        let mut tracker = MergeTracker::new();
         for block in &function.blocks {
             if let Some(ref label) = block.label {
-                instructions.push(label);
+                tracker.enter_block(label.result_id);
+                records.push(InstructionRecord::new(
+                    label,
+                    tracker.current_depth(),
+                    BlockPosition::Label,
+                ));
             }
-            instructions.extend(block.instructions.iter());
+            for instruction in &block.instructions {
+                records.push(InstructionRecord::new(
+                    instruction,
+                    tracker.current_depth(),
+                    BlockPosition::Body,
+                ));
+                tracker.observe(instruction);
+            }
         }
+
         if let Some(ref end) = function.end {
-            instructions.push(end);
+            records.push(InstructionRecord::new(end, 0, BlockPosition::Global));
         }
     }
-    instructions
+
+    records
 }
 
 struct CommentAligner {
@@ -375,6 +516,43 @@ impl CommentAligner {
 
     fn reset(&mut self) {
         self.last_alignment = 0;
+    }
+}
+
+struct MergeTracker {
+    stack: Vec<u32>,
+}
+
+impl MergeTracker {
+    fn new() -> Self {
+        Self { stack: Vec::new() }
+    }
+
+    fn enter_block(&mut self, label_id: Option<u32>) {
+        if let Some(id) = label_id {
+            while let Some(&merge_id) = self.stack.last() {
+                if merge_id == id {
+                    self.stack.pop();
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
+    fn current_depth(&self) -> u32 {
+        self.stack.len() as u32
+    }
+
+    fn observe(&mut self, instruction: &Instruction) {
+        match instruction.class.opcode {
+            spirv::Op::SelectionMerge | spirv::Op::LoopMerge => {
+                if let Some(target) = instruction.operands.first().and_then(extract_id_ref) {
+                    self.stack.push(target);
+                }
+            }
+            _ => {}
+        }
     }
 }
 
@@ -528,6 +706,54 @@ OpFunctionEnd";
         let disassembled = disassemble_binary(&binary, options).expect("disassemble");
         assert!(disassembled.contains("%my_main = OpFunction"));
         assert!(disassembled.contains("OpEntryPoint Vertex %my_main \"main\""));
+    }
+
+    #[test]
+    fn disassembly_nested_indent_tracks_block_depth() {
+        let text = "\
+OpCapability Shader\n\
+OpMemoryModel Logical Simple\n\
+%bool = OpTypeBool\n\
+%void = OpTypeVoid\n\
+%void_fn = OpTypeFunction %void\n\
+%true = OpConstantTrue %bool\n\
+%main = OpFunction %void None %void_fn\n\
+%entry = OpLabel\n\
+OpSelectionMerge %merge None\n\
+OpBranchConditional %true %then %merge\n\
+%then = OpLabel\n\
+OpReturn\n\
+%merge = OpLabel\n\
+OpReturn\n\
+OpFunctionEnd";
+        let binary = assemble_text(text).expect("assemble text");
+        let options = BinaryToTextOptions::NO_HEADER
+            | BinaryToTextOptions::INDENT
+            | BinaryToTextOptions::NESTED_INDENT;
+        let disassembled = disassemble_binary(&binary, options).expect("disassemble");
+        let lines: Vec<&str> = disassembled.lines().collect();
+        let label_indices: Vec<usize> = lines
+            .iter()
+            .enumerate()
+            .filter(|(_, line)| line.contains("OpLabel"))
+            .map(|(idx, _)| idx)
+            .collect();
+        assert!(label_indices.len() >= 2);
+        let entry_idx = label_indices[0];
+        let then_idx = label_indices[1];
+        assert!(leading_spaces(lines[then_idx]) > leading_spaces(lines[entry_idx]));
+        let then_return_idx = lines
+            .iter()
+            .enumerate()
+            .skip(then_idx)
+            .find(|(_, line)| line.contains("OpReturn"))
+            .map(|(idx, _)| idx)
+            .expect("then return");
+        assert!(leading_spaces(lines[then_return_idx]) > leading_spaces(lines[entry_idx]));
+    }
+
+    fn leading_spaces(line: &str) -> usize {
+        line.chars().take_while(|ch| ch.is_whitespace()).count()
     }
 }
 
