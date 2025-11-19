@@ -44,9 +44,19 @@ Tasks for this milestone:
     - [x] Extend optional operand coverage to copy-memory instructions (dual masks) and other ops that require literal/ID payloads.
     - [ ] Add composite instruction coverage (e.g., `OpCompositeConstruct`, `OpVectorShuffle`) so complex data assembly no longer falls back.
       - [x] Implement `OpCompositeConstruct`, `OpTypeVector`, and `OpVectorShuffle` translators.
-      - [x] Extend coverage to `OpCompositeExtract`, `OpCompositeInsert`, and `OpPhi` boolean helpers; next up `OpVectorShuffle`/composite corner cases.
+      - [x] Extend coverage to `OpCompositeExtract`, `OpCompositeInsert`, and `OpPhi` boolean helpers. Vector shuffle inputs now reuse tracked type metadata so we reject mismatched component counts/types.
+      - [x] Track array/struct layouts to validate composite accesses (including array bounds) and add regression tests covering both valid and invalid cases.
+      - [x] Extend the same metadata to matrices (column vectors + column counts) and nested aggregates so multi-level composite extracts/inserts no longer fall back.
+      - [x] Track lexer spans on result/type identifiers and surface them through the translator so diagnostics report real line/column information instead of anonymous locations.
+      - [x] Support GLSL/OpenCL extended instruction sets (named opcodes, literal integers, rounding modes, variadic operands) so `OpExtInst` can stay in Rust for those imports.
 - [x] Expose the Rust assembler via `try_assemble_text`, returning success/failure and hooking diagnostics into the existing consumers. Fall back to the legacy C++ assembler only while gaps remain.
+- [x] Guard the FFI entry points so they fall back to the C++ assembler/disassembler unless explicitly re-enabled. This keeps CI green while we continue fleshing out opcode and option coverage on the Rust side.
+  - [x] Allow the Rust disassembler to service `NO_HEADER` requests (and the incidental `PRINT` flag) while leaving other options to the legacy implementation, keeping the fallback behavior explicit in both Rust and C++.
+  - [x] Enable byte-offset emission in the Rust disassembler so `NO_HEADER | SHOW_BYTE_OFFSET` requests stay entirely in Rust while unsupported combinations are rejected via typed formatting options.
 - [ ] Mirror the improvements in the disassembler path (options filtering, message routing) so both directions benefit from the Rust context.
+
+## CLI Development
+- [x] Introduce a `spirv-tools-cli` crate that wraps the core disassembly logic with `clap`, providing an initial `spirv-dis` binary capable of mirroring the `--no-header`/`--offsets` flags while reading from stdin or files.
 
 When the flag is enabled CMake continues to drive `cargo build -p spirv-tools-ffi` (profile configurable via `SPIRV_RUST_PROFILE`) and links the resulting staticlib into the core library while compiling the generated `rust/cxxbridge/spirv-tools-ffi.cc` shim.
 
@@ -68,6 +78,6 @@ cxxbridge rust/spirv-tools-ffi/src/lib.rs --output rust/cxxbridge/spirv-tools-ff
 - Mapping of large switch-based operand logic into data-driven Rust structures without performance regressions.
 
 ## Next Up
-1. Flesh out the assembler's coverage for optional operands and composite/control-flow instructions (selection/loop merges plus composite constructs done; next up phi nodes, composite extract/insert, and disassembler parity) so the Rust path no longer requires the C++ fallback for typical shaders.
-2. Improve diagnostic positions/line tracking for parser errors so message consumers receive accurate spans, then gate the fallback so it only triggers on genuine unsupported features.
-3. After the assembler path is stable, replicate the context plumbing inside the disassembler and ensure GN/Bazel builds can opt into the Rust implementation alongside CMake.
+1. Flesh out the assembler's coverage for optional operands and composite/control-flow instructions (selection/loop merges plus vector/array/struct/matrix composites done; next up matrices with row-major decorations, composite constants, and the disassembler path) so the Rust implementation matches the C++ feature set without falling back.
+2. Improve diagnostic positions/line tracking for parser errors so message consumers receive accurate spans, then re-enable the FFI hook in `try_assemble_text` for the contexts/options we fully support.
+3. After the assembler path is stable (and the disassembler honours formatting options), replicate the context plumbing inside the disassembler and ensure GN/Bazel builds can opt into the Rust implementation alongside CMake.
