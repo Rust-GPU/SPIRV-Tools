@@ -57,6 +57,7 @@ Tasks for this milestone:
 
 ## CLI Development
 - [x] Introduce a `spirv-tools-cli` crate that wraps the core disassembly logic with `clap`, providing an initial `spirv-dis` binary capable of mirroring the `--no-header`/`--offsets` flags while reading from stdin or files.
+- [x] Add `spirv-as` and `spirv-val` binaries so the Rust workspace mirrors the C++ tool surface, sharing reusable helpers for option parsing and file/stdin plumbing. The validator CLI currently delegates to the existing C++ validator over the FFI bridge and is covered by unit + integration tests to guard success/failure paths.
 
 When the flag is enabled CMake continues to drive `cargo build -p spirv-tools-ffi` (profile configurable via `SPIRV_RUST_PROFILE`) and links the resulting staticlib into the core library while compiling the generated `rust/cxxbridge/spirv-tools-ffi.cc` shim.
 
@@ -81,3 +82,4 @@ cxxbridge rust/spirv-tools-ffi/src/lib.rs --output rust/cxxbridge/spirv-tools-ff
 1. Flesh out the assembler's coverage for optional operands and composite/control-flow instructions (selection/loop merges plus vector/array/struct/matrix composites done; next up matrices with row-major decorations, composite constants, and the disassembler path) so the Rust implementation matches the C++ feature set without falling back.
 2. Improve diagnostic positions/line tracking for parser errors so message consumers receive accurate spans, then re-enable the FFI hook in `try_assemble_text` for the contexts/options we fully support.
 3. After the assembler path is stable (and the disassembler honours formatting options), replicate the context plumbing inside the disassembler and ensure GN/Bazel builds can opt into the Rust implementation alongside CMake.
+4. Keep growing the `spirv-tools-cli` workspace so each legacy CLI has a Rust counterpart with shared Clap parsing, typed configs, and end-to-end tests (once the underlying functionality is ported).

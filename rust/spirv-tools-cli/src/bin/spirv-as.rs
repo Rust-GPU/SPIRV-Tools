@@ -22,7 +22,7 @@ struct Args {
     #[arg(long = "preserve-numeric-ids")]
     preserve_numeric_ids: bool,
 
-    /// Target environment (e.g., "universal1.6", "vulkan1.2"). Defaults to universal1.6.
+    /// Target environment (e.g., "spv1.6", "vulkan1.2"). Defaults to spv1.6.
     #[arg(long = "target-env", value_name = "ENV")]
     target_env: Option<String>,
 }
