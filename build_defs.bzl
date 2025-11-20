@@ -22,6 +22,9 @@ COMMON_COPTS = [
         "-Wconversion",
         "-Wno-sign-conversion",
     ],
+}) + select({
+    "//:enable_rust_target_env": ["-DSPIRV_RUST_TARGET_ENV"],
+    "//conditions:default": [],
 })
 
 TEST_COPTS = COMMON_COPTS + [

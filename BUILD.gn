@@ -203,6 +203,42 @@ config("spvtools_internal_config") {
   }
 }
 
+config("spvtools_rust_config") {
+  defines = [ "SPIRV_RUST_TARGET_ENV" ]
+}
+
+spirv_tools_rust_sources = []
+spirv_tools_rust_libs = []
+spirv_tools_rust_deps = []
+
+if (spirv_tools_enable_rust_target_env) {
+  rust_manifest = "//rust/Cargo.toml"
+  rust_inputs = exec_script("//rust/scripts/list_rust_sources.py", [], "list lines")
+  rust_output_dir = "$target_out_dir/spirv-tools-rust"
+  rust_target_dir = "$rust_output_dir/cargo"
+  rust_archive = "$rust_output_dir/libspirv_tools_ffi.a"
+
+  action("spirv_tools_ffi_rust") {
+    script = "//rust/scripts/build_rust_ffi.py"
+    inputs = rust_inputs
+    outputs = [ rust_archive ]
+    args = [
+      "--manifest-path",
+      rebase_path(rust_manifest, root_build_dir),
+      "--profile",
+      spirv_tools_rust_profile,
+      "--target-dir",
+      rebase_path(rust_target_dir, root_build_dir),
+      "--output",
+      rebase_path(rust_archive, root_build_dir),
+    ]
+  }
+
+  spirv_tools_rust_sources = [ "rust/cxxbridge/spirv-tools-ffi.cc" ]
+  spirv_tools_rust_deps = [ ":spirv_tools_ffi_rust" ]
+  spirv_tools_rust_libs = [ rebase_path(rust_archive, root_build_dir) ]
+}
+
 source_set("spvtools_headers") {
   sources = [
     "include/spirv-tools/libspirv.h",
@@ -312,11 +348,18 @@ static_library("spvtools") {
     "${spirv_headers}:spv_headers",
   ]
 
+  sources += spirv_tools_rust_sources
+  deps += spirv_tools_rust_deps
+  libs += spirv_tools_rust_libs
+
   if (build_with_chromium) {
     configs -= [ "//build/config/compiler:chromium_code" ]
     configs += [ "//build/config/compiler:no_chromium_code" ]
   }
   configs += [ ":spvtools_internal_config" ]
+  if (spirv_tools_enable_rust_target_env) {
+    configs += [ ":spvtools_rust_config" ]
+  }
 }
 
 static_library("spvtools_val") {

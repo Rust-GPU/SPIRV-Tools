@@ -21,6 +21,30 @@ package(
 
 licenses(["notice"])
 
+config_setting(
+    name = "enable_rust_target_env",
+    define_values = {"spirv_tools_enable_rust": "true"},
+)
+
+config_setting(
+    name = "spirv_rust_profile_debug",
+    define_values = {"spirv_tools_rust_profile": "debug"},
+)
+
+
+def _build_rust_cmd(profile):
+    return (
+        "$(location :build_rust_ffi) "
+        "--manifest-path $(location rust/Cargo.toml) "
+        "--profile {profile} --target-dir $(@D)/cargo --output $@"
+    ).format(profile = profile)
+
+
+py_binary(
+    name = "build_rust_ffi",
+    srcs = ["rust/scripts/build_rust_ffi.py"],
+)
+
 exports_files([
     "CHANGES",
     "LICENSE",
@@ -110,6 +134,55 @@ genrule(
     tools = [":update_build_version"],
 )
 
+genrule(
+    name = "spirv_tools_rust_ffi",
+    srcs = glob(
+        [
+            "rust/**/*.rs",
+            "rust/**/Cargo.toml",
+            "rust/Cargo.lock",
+            "rust/**/build.rs",
+            "rust/scripts/*.py",
+        ],
+        exclude = ["rust/target/**"],
+    ),
+    outs = ["rust/libspirv_tools_ffi.a"],
+    cmd = select({
+        "//:spirv_rust_profile_debug": _build_rust_cmd("debug"),
+        "//conditions:default": _build_rust_cmd("release"),
+    }),
+    cmd_bat = select({
+        "//:spirv_rust_profile_debug": _build_rust_cmd("debug"),
+        "//conditions:default": _build_rust_cmd("release"),
+    }),
+    tools = [":build_rust_ffi"],
+    tags = ["requires-cargo"],
+)
+
+cc_import(
+    name = "spirv_tools_rust_archive",
+    static_library = ":spirv_tools_rust_ffi",
+    visibility = ["//visibility:private"],
+)
+
+cc_library(
+    name = "spirv_tools_rust_bridge",
+    srcs = select({
+        "//:enable_rust_target_env": ["rust/cxxbridge/spirv-tools-ffi.cc"],
+        "//conditions:default": [],
+    }),
+    hdrs = select({
+        "//:enable_rust_target_env": ["rust/cxxbridge/spirv-tools-ffi.h"],
+        "//conditions:default": [],
+    }),
+    copts = COMMON_COPTS,
+    deps = select({
+        "//:enable_rust_target_env": [":spirv_tools_rust_archive"],
+        "//conditions:default": [],
+    }),
+    visibility = ["//visibility:private"],
+)
+
 # Libraries
 
 cc_library(
@@ -159,7 +232,10 @@ cc_library(
     deps = [
         "@spirv_headers//:spirv_common_headers",
         "@spirv_headers//:spirv_cpp11_headers",
-    ],
+    ] + select({
+        "//:enable_rust_target_env": [":spirv_tools_rust_bridge"],
+        "//conditions:default": [],
+    }),
 )
 
 cc_library(

@@ -23,3 +23,11 @@ spirv_tools_standalone = true
 # The path to SPIRV-Tools' dependencies
 spirv_tools_googletest_dir = "//external/googletest"
 spirv_tools_spirv_headers_dir = "//external/spirv-headers"
+
+if (!defined(spirv_tools_enable_rust_target_env)) {
+  spirv_tools_enable_rust_target_env = false
+}
+
+if (!defined(spirv_tools_rust_profile)) {
+  spirv_tools_rust_profile = "release"
+}
