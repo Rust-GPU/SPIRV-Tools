@@ -6,7 +6,14 @@ use std::mem::size_of_val;
 use std::slice;
 use thiserror::Error;
 
+#[cfg(test)]
+use once_cell::sync::Lazy;
+#[cfg(test)]
+use std::sync::Mutex;
+
 use crate::assembly::BinaryToTextOptions;
+use crate::diagnostic::{DiagnosticMessage, MessagePosition};
+use crate::message::MessageLevel;
 
 const SUPPORTED_OPTION_BITS: u32 = BinaryToTextOptions::NO_HEADER.bits()
     | BinaryToTextOptions::PRINT.bits()
@@ -16,7 +23,8 @@ const SUPPORTED_OPTION_BITS: u32 = BinaryToTextOptions::NO_HEADER.bits()
     | BinaryToTextOptions::NESTED_INDENT.bits()
     | BinaryToTextOptions::COMMENT.bits()
     | BinaryToTextOptions::REORDER_BLOCKS.bits()
-    | BinaryToTextOptions::COLOR.bits();
+    | BinaryToTextOptions::COLOR.bits()
+    | BinaryToTextOptions::HEX.bits();
 const HEADER_WORD_COUNT: usize = 5;
 const INDEX_MAGIC_NUMBER: usize = 0;
 const INDEX_VERSION: usize = 1;
@@ -32,15 +40,46 @@ const COLOR_BLUE: &str = "\x1b[34m";
 const COLOR_GREY: &str = "\x1b[90m";
 const COLOR_RESET: &str = "\x1b[0m";
 
+#[cfg(test)]
+static PRINT_LOG: Lazy<Mutex<Vec<String>>> = Lazy::new(|| Mutex::new(Vec::new()));
+
 /// Errors that can be produced while disassembling SPIR-V binaries.
 #[derive(Debug, Error)]
 pub enum DisassemblyError {
     /// The binary failed to parse into a valid module.
-    #[error("failed to parse SPIR-V binary: {0}")]
-    Parse(String),
+    #[error("failed to parse SPIR-V binary: {message}")]
+    Parse {
+        /// Human-readable summary describing the parse failure.
+        message: String,
+        /// Structured diagnostics suitable for forwarding to message consumers.
+        diagnostics: Vec<DiagnosticMessage<'static>>,
+    },
     /// The requested disassembly options are not supported by the Rust backend yet.
     #[error("unsupported binary-to-text options: {0:?}")]
     Unsupported(BinaryToTextOptions),
+}
+
+impl DisassemblyError {
+    fn parse_error(message: String) -> Self {
+        let diagnostic = DiagnosticMessage::new(
+            MessageLevel::Error,
+            MessagePosition::default(),
+            message.clone(),
+        )
+        .with_source("disassembler");
+        Self::Parse {
+            message,
+            diagnostics: vec![diagnostic],
+        }
+    }
+
+    /// Returns the diagnostics describing this error, if any.
+    pub fn diagnostics(&self) -> &[DiagnosticMessage<'static>] {
+        match self {
+            DisassemblyError::Parse { diagnostics, .. } => diagnostics,
+            DisassemblyError::Unsupported(_) => &[],
+        }
+    }
 }
 
 /// Disassembles the provided SPIR-V binary words into textual assembly.
@@ -56,13 +95,17 @@ pub fn disassemble_binary(
     let mut loader = Loader::new();
     Parser::new(words_as_bytes(words), &mut loader)
         .parse()
-        .map_err(|error| DisassemblyError::Parse(error.to_string()))?;
+        .map_err(|error| DisassemblyError::parse_error(error.to_string()))?;
     let mut module = loader.module();
     update_module_header(&mut module, words);
     let offsets = collect_instruction_offsets(words);
     let mut text = render_module_text(&module, &offsets, &formatting);
     if !text.ends_with('\n') {
         text.push('\n');
+    }
+    if formatting.print_to_stdout {
+        emit_disassembly_text(&text);
+        text.clear();
     }
     Ok(text)
 }
@@ -95,6 +138,12 @@ pub fn supports_options(options: BinaryToTextOptions) -> bool {
     unsupported_options(effective).is_empty()
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LiteralFormat {
+    Decimal,
+    Hexadecimal,
+}
+
 #[derive(Clone, Copy, Debug)]
 struct FormattingOptions {
     suppress_header: bool,
@@ -105,6 +154,8 @@ struct FormattingOptions {
     comments: bool,
     reorder_blocks: bool,
     colorize: bool,
+    print_to_stdout: bool,
+    literal_format: LiteralFormat,
 }
 
 impl TryFrom<BinaryToTextOptions> for FormattingOptions {
@@ -124,7 +175,27 @@ impl TryFrom<BinaryToTextOptions> for FormattingOptions {
             comments: bits.contains(BinaryToTextOptions::COMMENT),
             reorder_blocks: bits.contains(BinaryToTextOptions::REORDER_BLOCKS),
             colorize: bits.contains(BinaryToTextOptions::COLOR),
+            print_to_stdout: bits.contains(BinaryToTextOptions::PRINT),
+            literal_format: if bits.contains(BinaryToTextOptions::HEX) {
+                LiteralFormat::Hexadecimal
+            } else {
+                LiteralFormat::Decimal
+            },
         })
+    }
+}
+
+fn emit_disassembly_text(text: &str) {
+    #[cfg(test)]
+    {
+        PRINT_LOG.lock().unwrap().push(text.to_string());
+    }
+    #[cfg(not(test))]
+    {
+        use std::io::{self, Write};
+        let mut stdout = io::stdout();
+        let _ = stdout.write_all(text.as_bytes());
+        let _ = stdout.flush();
     }
 }
 
@@ -234,7 +305,7 @@ fn render_instructions(
         if options.comments {
             comment_collector.observe(instruction);
         }
-        let mut line = sanitize_line(instruction.disassemble());
+        let mut line = sanitize_line(disassemble_with_format(instruction, options.literal_format));
         apply_friendly_names(&mut line, friendly_names);
 
         let mut block_indent = 0usize;
@@ -285,6 +356,50 @@ fn sanitize_line(mut line: String) -> String {
         line.pop();
     }
     line
+}
+
+fn disassemble_with_format(instruction: &Instruction, literal_format: LiteralFormat) -> String {
+    let space = if instruction.operands.is_empty() {
+        ""
+    } else {
+        " "
+    };
+    let operands = disassemble_operands(&instruction.operands, literal_format);
+    format!(
+        "{rid}Op{opcode}{rtype}{space}{operands}",
+        rid = instruction
+            .result_id
+            .map_or(String::new(), |w| format!("%{} = ", w)),
+        opcode = instruction.class.opname,
+        rtype = instruction
+            .result_type
+            .map_or(String::new(), |w| format!("  %{}{}", w, space)),
+        space = space,
+        operands = operands,
+    )
+}
+
+fn disassemble_operands(operands: &[Operand], literal_format: LiteralFormat) -> String {
+    operands
+        .iter()
+        .map(|operand| format_operand(operand, literal_format))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn format_operand(operand: &Operand, literal_format: LiteralFormat) -> String {
+    match (literal_format, operand) {
+        (LiteralFormat::Hexadecimal, Operand::LiteralBit32(value)) => {
+            format!("0x{value:08x}")
+        }
+        (LiteralFormat::Hexadecimal, Operand::LiteralBit64(value)) => {
+            format!("0x{value:016x}")
+        }
+        (LiteralFormat::Hexadecimal, Operand::LiteralExtInstInteger(value)) => {
+            format!("0x{value:x}")
+        }
+        _ => operand.disassemble(),
+    }
 }
 
 fn apply_friendly_names(line: &mut String, names: Option<&FriendlyNameTable>) {
@@ -824,7 +939,7 @@ OpMemoryModel Logical GLSL450\n\
         let error = disassemble_binary(&binary, BinaryToTextOptions::NO_HEADER)
             .expect_err("expected parse error");
         match error {
-            super::DisassemblyError::Parse(message) => assert!(!message.is_empty()),
+            super::DisassemblyError::Parse { message, .. } => assert!(!message.is_empty()),
             other => panic!("unexpected error: {other:?}"),
         }
     }
@@ -847,6 +962,7 @@ OpMemoryModel Logical GLSL450\n\
         assert!(super::supports_options(BinaryToTextOptions::COMMENT));
         assert!(super::supports_options(BinaryToTextOptions::REORDER_BLOCKS));
         assert!(super::supports_options(BinaryToTextOptions::COLOR));
+        assert!(super::supports_options(BinaryToTextOptions::HEX));
     }
 
     #[test]
@@ -1030,6 +1146,46 @@ OpFunctionEnd";
         assert!(merge_idx > entry_idx);
     }
 
+    #[test]
+    fn disassembly_print_option_writes_stdout() {
+        let _ = take_print_log();
+        let mut builder = Builder::new();
+        builder.capability(Capability::Shader);
+        builder.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+        let void = builder.type_void();
+        let void_fn = builder.type_function(void, vec![]);
+        builder
+            .begin_function(void, None, FunctionControl::NONE, void_fn)
+            .expect("function");
+        builder.begin_block(None).expect("entry block");
+        builder.ret().expect("return");
+        builder.end_function().expect("end function");
+        let module = builder.module();
+        let binary = module.assemble();
+        let options = BinaryToTextOptions::NO_HEADER
+            | BinaryToTextOptions::PRINT
+            | BinaryToTextOptions::FRIENDLY_NAMES;
+        let text = disassemble_binary(&binary, options).expect("disassemble");
+        assert!(text.is_empty());
+        let printed = take_print_log();
+        assert!(!printed.is_empty());
+        assert!(printed.iter().any(|entry| entry.contains("OpFunction")));
+    }
+
+    #[test]
+    fn disassembly_formats_literals_as_hex() {
+        let text = "\
+OpCapability Shader\n\
+OpMemoryModel Logical GLSL450\n\
+%uint = OpTypeInt 32 0\n\
+%val = OpConstant %uint 42\n";
+        let binary = assemble_text(text).expect("assemble");
+        let options = BinaryToTextOptions::NO_HEADER | BinaryToTextOptions::HEX;
+        let output = disassemble_binary(&binary, options).expect("disassemble");
+        assert!(output.contains("0x0000002a"), "{output}");
+        assert!(!output.contains(" 42"));
+    }
+
     fn leading_spaces(line: &str) -> usize {
         line.chars().take_while(|ch| ch.is_whitespace()).count()
     }
@@ -1073,6 +1229,11 @@ OpFunctionEnd";
             }
         }
         module.assemble()
+    }
+
+    #[cfg(test)]
+    fn take_print_log() -> Vec<String> {
+        super::PRINT_LOG.lock().unwrap().drain(..).collect()
     }
 }
 
