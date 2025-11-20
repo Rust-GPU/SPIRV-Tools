@@ -50,7 +50,7 @@ pub enum LexError {
 }
 
 /// Half-open span covering a token inside the source text.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Span {
     start: MessagePosition,
     end: MessagePosition,
@@ -59,6 +59,14 @@ pub struct Span {
 impl Span {
     fn new(start: MessagePosition, end: MessagePosition) -> Self {
         Self { start, end }
+    }
+
+    /// Creates a span covering a single position.
+    pub const fn from_point(position: MessagePosition) -> Self {
+        Self {
+            start: position,
+            end: position,
+        }
     }
 
     /// Returns the starting source location.
@@ -184,17 +192,24 @@ pub struct Lexer<'a> {
     offset: usize,
     line: u32,
     column: u32,
+    index_offset: u32,
 }
 
 impl<'a> Lexer<'a> {
     /// Creates a new lexer for the given assembly string.
     pub fn new(input: &'a str) -> Self {
+        Self::with_origin(input, MessagePosition::default())
+    }
+
+    /// Creates a lexer whose tokens are offset by the provided origin.
+    pub fn with_origin(input: &'a str, origin: MessagePosition) -> Self {
         Self {
             input,
             bytes: input.as_bytes(),
             offset: 0,
-            line: 0,
-            column: 0,
+            line: origin.line(),
+            column: origin.column(),
+            index_offset: origin.index(),
         }
     }
 
@@ -317,8 +332,10 @@ impl<'a> Lexer<'a> {
     }
 
     fn position(&self) -> MessagePosition {
-        let index = u32::try_from(self.offset).unwrap_or(u32::MAX);
-        MessagePosition::new(self.line, self.column, index)
+        let absolute_index = self
+            .index_offset
+            .saturating_add(u32::try_from(self.offset).unwrap_or(u32::MAX));
+        MessagePosition::new(self.line, self.column, absolute_index)
     }
 }
 

@@ -51,6 +51,14 @@ Tasks for this milestone:
 - [x] Emit diagnostics when a member receives conflicting major-ness decorations, when `MatrixStride` is missing for row/column-major members, and when decorations target non-struct members. Add focused assembler tests covering valid/invalid combinations.
 - [x] Surface the stored metadata through the translator so upcoming composite instructions and future validator ports can consume it without re-parsing decorations.
 
+## Active Milestone: Parser Diagnostics
+Accurate diagnostics are critical when wiring the Rust assembler through the existing C API. We need to carry full line/column/index information through lexing/parsing so the emitted diagnostics can be compared directly against the legacy implementation.
+
+Tasks for this milestone:
+- [x] Teach the lexer/parser to honor an arbitrary source origin so each instruction line in `assemble_text` reports the correct global line/column/index even after trimming whitespace.
+- [x] Add assembler tests that assert diagnostics originating from later lines (with indentation) report their true positions, preventing regressions.
+- [ ] Re-enable the Rust assembler for any contexts that benefit from the improved diagnostics (e.g., text still using unsupported opcodes), document the behavior in `porting-plan.md`, and ensure the FFI toggles are covered by tests.
+
 ## Active Milestone: Binary/Text Infrastructure
 With the foundational workspace pieces in place, we now focus on the assembler and disassembler pipeline. This milestone delivers a Rust-native text/binary conversion path that can be swapped into the existing C entry points behind the FFI bridge.
 
@@ -107,6 +115,5 @@ cxxbridge rust/spirv-tools-ffi/src/lib.rs --output rust/cxxbridge/spirv-tools-ff
 - Mapping of large switch-based operand logic into data-driven Rust structures without performance regressions.
 
 ## Next Up
-1. Improve diagnostic positions/line tracking for parser errors so message consumers receive accurate spans, then re-enable the FFI hook in `try_assemble_text` for the contexts/options we fully support.
-2. After the assembler path is stable (and the disassembler honours formatting options), replicate the context plumbing inside the disassembler and ensure GN/Bazel builds can opt into the Rust implementation alongside CMake.
-3. Keep growing the `spirv-tools-cli` workspace so each legacy CLI has a Rust counterpart with shared Clap parsing, typed configs, and end-to-end tests (once the underlying functionality is ported).
+1. After the assembler path is stable (and the disassembler honours formatting options), replicate the context plumbing inside the disassembler and ensure GN/Bazel builds can opt into the Rust implementation alongside CMake.
+2. Keep growing the `spirv-tools-cli` workspace so each legacy CLI has a Rust counterpart with shared Clap parsing, typed configs, and end-to-end tests (once the underlying functionality is ported).

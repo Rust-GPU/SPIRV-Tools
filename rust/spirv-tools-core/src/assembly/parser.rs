@@ -5,7 +5,7 @@ use rspirv::spirv;
 use super::instruction::{
     IdRef, InstructionLayout, LiteralNumber, OperandDescriptor, ResultId, SpirvId, TypeId,
 };
-use super::lexer::{Lexer, Punctuation, Span, Token, TokenKind, WordToken};
+use super::lexer::{LexError, Lexer, Punctuation, Span, Token, TokenKind, WordToken};
 use crate::diagnostic::{DiagnosticMessage, MessagePosition};
 use crate::message::MessageLevel;
 use rspirv::grammar::{OperandKind, OperandQuantifier};
@@ -14,6 +14,7 @@ use rspirv::grammar::{OperandKind, OperandQuantifier};
 #[derive(Debug)]
 pub struct ParsedInstruction<'a> {
     layout: InstructionLayout,
+    opcode_span: Span,
     result_type: Option<TypeId<'a>>,
     result_id: Option<ResultId<'a>>,
     operands: Vec<ParsedOperand<'a>>,
@@ -38,6 +39,16 @@ impl<'a> ParsedInstruction<'a> {
     /// Returns the parsed operands including descriptor metadata.
     pub fn operands(&self) -> &[ParsedOperand<'a>] {
         &self.operands
+    }
+
+    /// Returns the span of the opcode token for this instruction.
+    pub fn opcode_span(&self) -> Span {
+        self.opcode_span
+    }
+
+    /// Returns the starting position of the opcode token.
+    pub fn opcode_position(&self) -> MessagePosition {
+        self.opcode_span.start()
     }
 }
 
@@ -143,6 +154,14 @@ impl ParseError {
         }
     }
 
+    fn from_lex(error: LexError) -> Self {
+        match error {
+            LexError::UnterminatedString { position } => {
+                Self::new(position, "unterminated string literal")
+            }
+        }
+    }
+
     /// Returns the diagnostic payload suitable for emission.
     pub fn diagnostic(&self) -> &DiagnosticMessage<'static> {
         &self.diagnostic
@@ -156,7 +175,15 @@ impl ParseError {
 
 /// High-level entry point: parse a single instruction from the provided text.
 pub fn parse_instruction(text: &str) -> Result<ParsedInstruction<'_>, ParseError> {
-    Parser::new(text).parse_instruction()
+    Parser::new(text)?.parse_instruction()
+}
+
+/// Parses a single instruction using the provided source origin for diagnostics.
+pub fn parse_instruction_with_origin(
+    text: &str,
+    origin: MessagePosition,
+) -> Result<ParsedInstruction<'_>, ParseError> {
+    Parser::with_origin(text, origin)?.parse_instruction()
 }
 
 struct Parser<'a> {
@@ -164,22 +191,24 @@ struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    fn new(input: &'a str) -> Self {
-        let mut lexer = Lexer::new(input);
+    fn new(input: &'a str) -> Result<Self, ParseError> {
+        Self::with_origin(input, MessagePosition::default())
+    }
+
+    fn with_origin(input: &'a str, origin: MessagePosition) -> Result<Self, ParseError> {
+        let mut lexer = Lexer::with_origin(input, origin);
         let mut tokens = Vec::new();
         loop {
-            let token = lexer
-                .next_token()
-                .expect("lexer errors handled in ParseError");
+            let token = lexer.next_token().map_err(ParseError::from_lex)?;
             let at_end = matches!(token.kind(), TokenKind::EndOfFile);
             tokens.push(token);
             if at_end {
                 break;
             }
         }
-        Self {
+        Ok(Self {
             stream: TokenStream::new(tokens),
-        }
+        })
     }
 
     fn parse_instruction(mut self) -> Result<ParsedInstruction<'a>, ParseError> {
@@ -189,7 +218,7 @@ impl<'a> Parser<'a> {
         let (result_id, opcode_token) = if self.stream.consume_equals() {
             let id = parse_identifier(first_word.word, first_word.span, "result id")?;
             let opcode = self.stream.expect_word("opcode")?;
-            (Some(ResultId::new(id)), opcode)
+            (Some(ResultId::new(id, first_word.span)), opcode)
         } else {
             (None, first_word)
         };
@@ -219,46 +248,54 @@ impl<'a> Parser<'a> {
         if layout.result_type().is_some() {
             let type_token = self.stream.expect_word("result type")?;
             let type_id = parse_identifier(type_token.word, type_token.span, "result type")?;
-            parsed_result_type = Some(TypeId::new(type_id));
+            parsed_result_type = Some(TypeId::new(type_id, type_token.span));
         }
 
         let mut operands = Vec::new();
         for descriptor in layout.operands() {
             match descriptor.quantifier() {
                 OperandQuantifier::One => {
-                    operands.push(self.parse_operand(descriptor)?);
+                    operands.push(self.parse_operand(descriptor, opcode)?);
                 }
                 OperandQuantifier::ZeroOrOne => {
                     if self.stream.peek_is_end() {
                         continue;
                     }
-                    operands.push(self.parse_operand(descriptor)?);
+                    operands.push(self.parse_operand(descriptor, opcode)?);
                 }
                 OperandQuantifier::ZeroOrMore => {
                     while !self.stream.peek_is_end() {
-                        operands.push(self.parse_operand(descriptor)?);
+                        operands.push(self.parse_operand(descriptor, opcode)?);
                     }
                 }
             }
         }
 
         if !self.stream.peek_is_end() {
-            if matches!(
-                layout.opcode(),
-                spirv::Op::ExecutionMode | spirv::Op::ExecutionModeId | spirv::Op::LoopMerge
-            ) {
-                self.parse_trailing_literals(&mut operands)?;
-            } else {
-                let extra = self.stream.next().expect("peek checked");
-                return Err(ParseError::new(
-                    extra.span().start(),
-                    "Unexpected tokens after instruction",
-                ));
+            match layout.opcode() {
+                spirv::Op::ExecutionMode | spirv::Op::ExecutionModeId | spirv::Op::LoopMerge => {
+                    self.parse_trailing_literals(&mut operands, opcode)?;
+                }
+                spirv::Op::Decorate
+                | spirv::Op::DecorateId
+                | spirv::Op::DecorateString
+                | spirv::Op::MemberDecorate
+                | spirv::Op::MemberDecorateString => {
+                    self.parse_annotation_operands(&mut operands)?;
+                }
+                _ => {
+                    let extra = self.stream.next().expect("peek checked");
+                    return Err(ParseError::new(
+                        extra.span().start(),
+                        "Unexpected tokens after instruction",
+                    ));
+                }
             }
         }
 
         Ok(ParsedInstruction {
             layout,
+            opcode_span: opcode_token.span,
             result_type: parsed_result_type,
             result_id,
             operands,
@@ -268,11 +305,70 @@ impl<'a> Parser<'a> {
     fn parse_trailing_literals(
         &mut self,
         operands: &mut Vec<ParsedOperand<'a>>,
+        opcode: spirv::Op,
     ) -> Result<(), ParseError> {
         let descriptor =
             OperandDescriptor::new(OperandKind::LiteralInteger, OperandQuantifier::ZeroOrMore);
         while !self.stream.peek_is_end() {
-            operands.push(self.parse_operand(descriptor)?);
+            operands.push(self.parse_operand(descriptor, opcode)?);
+        }
+        Ok(())
+    }
+
+    fn parse_annotation_operands(
+        &mut self,
+        operands: &mut Vec<ParsedOperand<'a>>,
+    ) -> Result<(), ParseError> {
+        while !self.stream.peek_is_end() {
+            let token = self.stream.expect_any("decoration operand")?;
+            let span = token.span();
+            let (descriptor, value) = match token.kind() {
+                TokenKind::Word(word) => {
+                    if let Some(named) = word.named_id() {
+                        (
+                            OperandDescriptor::new(
+                                OperandKind::IdRef,
+                                OperandQuantifier::ZeroOrMore,
+                            ),
+                            OperandValue::Id(IdRef::new(SpirvId::named(named), span)),
+                        )
+                    } else if let Some(literal) = parse_loose_integer(word.as_str()) {
+                        (
+                            OperandDescriptor::new(
+                                OperandKind::LiteralInteger,
+                                OperandQuantifier::ZeroOrMore,
+                            ),
+                            OperandValue::Literal(literal),
+                        )
+                    } else {
+                        (
+                            OperandDescriptor::new(
+                                OperandKind::LiteralContextDependentNumber,
+                                OperandQuantifier::ZeroOrMore,
+                            ),
+                            OperandValue::Word(word),
+                        )
+                    }
+                }
+                TokenKind::StringLiteral(literal) => (
+                    OperandDescriptor::new(
+                        OperandKind::LiteralString,
+                        OperandQuantifier::ZeroOrMore,
+                    ),
+                    OperandValue::String(literal.value()),
+                ),
+                TokenKind::Punctuation(_) | TokenKind::EndOfFile => {
+                    return Err(ParseError::new(
+                        span.start(),
+                        "Unexpected token in decoration operand list",
+                    ));
+                }
+            };
+            operands.push(ParsedOperand {
+                descriptor,
+                value,
+                span,
+            });
         }
         Ok(())
     }
@@ -280,28 +376,50 @@ impl<'a> Parser<'a> {
     fn parse_operand(
         &mut self,
         descriptor: OperandDescriptor,
+        opcode: spirv::Op,
     ) -> Result<ParsedOperand<'a>, ParseError> {
         let token = self.stream.expect_any("operand")?;
         let span = token.span();
+        let allow_ext_inst_operand = opcode == spirv::Op::ExtInst
+            && descriptor.kind() == OperandKind::IdRef
+            && descriptor.quantifier() == OperandQuantifier::ZeroOrMore;
         let value = match token.kind() {
             TokenKind::Word(word) => match descriptor.kind() {
                 OperandKind::IdRef | OperandKind::IdResult | OperandKind::IdResultType => {
-                    OperandValue::Id(IdRef::new(parse_identifier(word, span, "id")?))
+                    if allow_ext_inst_operand {
+                        if let Some(named) = word.named_id() {
+                            OperandValue::Id(IdRef::new(SpirvId::named(named), span))
+                        } else if let Ok(literal) = parse_integer(word, span) {
+                            OperandValue::Literal(literal)
+                        } else {
+                            OperandValue::Word(word)
+                        }
+                    } else {
+                        let id = parse_identifier(word, span, "id")?;
+                        OperandValue::Id(IdRef::new(id, span))
+                    }
                 }
                 OperandKind::LiteralInteger | OperandKind::LiteralContextDependentNumber => {
                     OperandValue::Literal(parse_integer(word, span)?)
                 }
+                OperandKind::LiteralExtInstInteger => match parse_integer(word, span) {
+                    Ok(literal) => OperandValue::Literal(literal),
+                    Err(_) => OperandValue::Word(word),
+                },
                 OperandKind::PairIdRefIdRef => {
-                    let first = IdRef::new(parse_identifier(word, span, "id")?);
+                    let first = IdRef::new(parse_identifier(word, span, "id")?, span);
                     let second = self.stream.expect_word("second id in pair")?;
-                    let second_id = IdRef::new(parse_identifier(second.word, second.span, "id")?);
+                    let second_id = IdRef::new(
+                        parse_identifier(second.word, second.span, "id")?,
+                        second.span,
+                    );
                     OperandValue::IdPair(first, second_id)
                 }
                 OperandKind::MemoryAccess => self.parse_memory_access_operand(word, span)?,
                 _ => OperandValue::Word(word),
             },
             TokenKind::StringLiteral(lit) => {
-                if descriptor.kind() != OperandKind::LiteralString {
+                if descriptor.kind() != OperandKind::LiteralString && !allow_ext_inst_operand {
                     return Err(ParseError::new(
                         span.start(),
                         "String literal not allowed for this operand",
@@ -375,7 +493,7 @@ impl<'a> Parser<'a> {
     fn parse_scope_operand(&mut self, label: &str) -> Result<IdRef<'a>, ParseError> {
         let located = self.stream.expect_word(label)?;
         let id = parse_identifier(located.word, located.span, label)?;
-        Ok(IdRef::new(id))
+        Ok(IdRef::new(id, located.span))
     }
 }
 
@@ -475,6 +593,14 @@ fn parse_integer(word: WordToken<'_>, span: Span) -> Result<LiteralNumber, Parse
             span.start(),
             "Failed to parse integer literal",
         ))
+    }
+}
+
+fn parse_loose_integer(text: &str) -> Option<LiteralNumber> {
+    if text.starts_with('-') {
+        text.parse::<i64>().ok().map(LiteralNumber::signed)
+    } else {
+        text.parse::<u64>().ok().map(LiteralNumber::unsigned)
     }
 }
 

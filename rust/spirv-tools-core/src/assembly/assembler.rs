@@ -12,7 +12,9 @@ use thiserror::Error;
 use super::decoration::decoration_operand_descriptors;
 use super::ext_inst::{ExtInstImportInfo, ResolvedExtInst};
 use super::instruction::{IdRef, LiteralNumber, ResultId, SpirvId, TypeId};
-use super::parser::{parse_instruction, OperandValue, ParsedInstruction, ParsedOperand};
+use super::parser::{
+    parse_instruction_with_origin, OperandValue, ParsedInstruction, ParsedOperand,
+};
 use crate::diagnostic::{DiagnosticMessage, MessagePosition};
 use crate::message::MessageLevel;
 use crate::target_env::TargetEnv;
@@ -3405,21 +3407,74 @@ fn assemble_text_with_translator<'a>(
 ) -> Result<Vec<u32>, AssemblyError> {
     let mut diagnostics = Vec::new();
 
-    for raw_line in text.lines() {
-        let line = raw_line.trim();
-        if line.is_empty() || line.starts_with(';') {
-            continue;
+    let mut line_start = 0usize;
+    let mut line_index = 0usize;
+    for (idx, byte) in text.as_bytes().iter().enumerate() {
+        if *byte == b'\n' {
+            let mut line_end = idx;
+            if line_end > line_start && text.as_bytes()[line_end - 1] == b'\r' {
+                line_end -= 1;
+            }
+            process_line(
+                text,
+                line_start,
+                line_end,
+                line_index,
+                &mut translator,
+                &mut diagnostics,
+            );
+            line_start = idx + 1;
+            line_index += 1;
         }
-
-        match parse_instruction(line) {
-            Ok(parsed) => translator.translate(&parsed),
-            Err(error) => diagnostics.push(error.into_diagnostic()),
-        }
+    }
+    if line_start < text.len() {
+        process_line(
+            text,
+            line_start,
+            text.len(),
+            line_index,
+            &mut translator,
+            &mut diagnostics,
+        );
     }
 
     let (module, translator_diagnostics) = translator.finish();
     diagnostics.extend(translator_diagnostics);
     finalize_result(module.assemble(), diagnostics)
+}
+
+fn process_line<'a>(
+    source: &'a str,
+    line_start: usize,
+    line_end: usize,
+    line_index: usize,
+    translator: &mut AssemblyTranslator<'a>,
+    diagnostics: &mut Vec<DiagnosticMessage<'static>>,
+) {
+    if line_start >= line_end {
+        return;
+    }
+    let line_slice = &source[line_start..line_end];
+    let leading_ws = line_slice.len() - line_slice.trim_start().len();
+    let trailing_ws = line_slice.len() - line_slice.trim_end().len();
+    if leading_ws >= line_slice.len() - trailing_ws {
+        return;
+    }
+    let content_start = line_start + leading_ws;
+    let content_end = line_end - trailing_ws;
+    let line = &source[content_start..content_end];
+    if line.is_empty() || line.starts_with(';') {
+        return;
+    }
+    let line_number = u32::try_from(line_index).unwrap_or(u32::MAX);
+    let column_offset = u32::try_from(leading_ws).unwrap_or(u32::MAX);
+    let index_offset = u32::try_from(content_start).unwrap_or(u32::MAX);
+    let origin = MessagePosition::new(line_number, column_offset, index_offset);
+
+    match parse_instruction_with_origin(line, origin) {
+        Ok(parsed) => translator.translate(&parsed),
+        Err(error) => diagnostics.push(error.into_diagnostic()),
+    }
 }
 
 #[cfg(test)]
@@ -3628,6 +3683,18 @@ OpFunctionEnd";
                 dr::Operand::LiteralBit32(16),
             ]
         );
+    }
+
+    #[test]
+    fn diagnostics_report_original_positions() {
+        let text = "OpCapability Shader\n    OpTypo Thing\n";
+        let diagnostics = assemble_text(text)
+            .expect_err("expected diagnostics")
+            .into_diagnostics();
+        assert!(!diagnostics.is_empty());
+        let position = diagnostics[0].position();
+        assert_eq!(position.line(), 1);
+        assert_eq!(position.column(), 4);
     }
 
     #[test]
