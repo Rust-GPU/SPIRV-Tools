@@ -57,7 +57,7 @@ Accurate diagnostics are critical when wiring the Rust assembler through the exi
 Tasks for this milestone:
 - [x] Teach the lexer/parser to honor an arbitrary source origin so each instruction line in `assemble_text` reports the correct global line/column/index even after trimming whitespace.
 - [x] Add assembler tests that assert diagnostics originating from later lines (with indentation) report their true positions, preventing regressions.
-- [ ] Re-enable the Rust assembler for any contexts that benefit from the improved diagnostics (e.g., text still using unsupported opcodes), document the behavior in `porting-plan.md`, and ensure the FFI toggles are covered by tests.
+- [x] Re-enable the Rust assembler for contexts that benefit from the improved diagnostics, document the behavior, and add FFI tests so `try_assemble_text` exercises the Rust path end-to-end.
 
 ## Active Milestone: Binary/Text Infrastructure
 With the foundational workspace pieces in place, we now focus on the assembler and disassembler pipeline. This milestone delivers a Rust-native text/binary conversion path that can be swapped into the existing C entry points behind the FFI bridge.

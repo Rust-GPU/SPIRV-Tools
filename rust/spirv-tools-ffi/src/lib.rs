@@ -202,7 +202,7 @@ pub fn validate_binary(env: TargetEnv, words: &[u32]) -> ffi::ValidateResult {
     ffi::validate_binary(env.to_raw(), words)
 }
 
-const ENABLE_RUST_TEXT_ASSEMBLER: bool = false;
+const ENABLE_RUST_TEXT_ASSEMBLER: bool = true;
 
 pub fn try_assemble_text(context_handle: u64, text: &[u8], options: u32) -> ffi::AssembleResult {
     if context_handle == 0 {
@@ -295,13 +295,10 @@ pub fn try_disassemble_binary(
             success: false,
             text: String::new(),
         },
-        Err(error) => {
-            context.emit_message(
-                MessageLevel::Error,
-                Some("disassembler"),
-                MessagePosition::default(),
-                &error.to_string(),
-            );
+        Err(DisassemblyError::Parse { diagnostics, .. }) => {
+            for diagnostic in diagnostics {
+                context.emit_diagnostic(&diagnostic);
+            }
             ffi::DisassembleResult {
                 success: false,
                 text: String::new(),
@@ -427,5 +424,27 @@ mod tests {
 
         let round_trip = MessagePosition::from(ffi_pos);
         assert_eq!(round_trip, position);
+    }
+
+    #[test]
+    fn rust_assembler_runs_for_valid_text() {
+        let env = TargetEnv::Universal1_0.to_raw();
+        let pointer = NonNull::<c_void>::dangling().as_ptr() as usize;
+        let handle = create_context(env, pointer);
+        assert_ne!(handle, 0);
+
+        let text = b"OpCapability Shader\n\
+OpMemoryModel Logical GLSL450\n\
+%void = OpTypeVoid\n\
+%void_fn = OpTypeFunction %void\n\
+%main = OpFunction %void None %void_fn\n\
+%entry = OpLabel\n\
+OpReturn\n\
+OpFunctionEnd\n";
+        let result = try_assemble_text(handle, text, TextToBinaryOptions::NONE.bits());
+        assert!(result.success);
+        assert!(!result.binary.is_empty());
+
+        unsafe { destroy_context(handle) };
     }
 }
