@@ -1,16 +1,21 @@
+use core::convert::TryFrom;
 use std::borrow::Cow;
 use std::collections::{btree_map::Entry, BTreeMap};
 use std::str::FromStr;
 
 use rspirv::binary::Assemble;
 use rspirv::dr::{self, Error as BuildError, InsertPoint};
-use rspirv::grammar::OperandKind;
+use rspirv::grammar::{LogicalOperand, OperandKind, OperandQuantifier};
 use rspirv::spirv;
+use thiserror::Error;
 
+use super::decoration::decoration_operand_descriptors;
+use super::ext_inst::{ExtInstImportInfo, ResolvedExtInst};
 use super::instruction::{IdRef, LiteralNumber, ResultId, SpirvId, TypeId};
 use super::parser::{parse_instruction, OperandValue, ParsedInstruction, ParsedOperand};
 use crate::diagnostic::{DiagnosticMessage, MessagePosition};
 use crate::message::MessageLevel;
+use crate::target_env::TargetEnv;
 
 /// Tracks textual identifiers and diagnostics while constructing a module.
 #[derive(Debug)]
@@ -18,6 +23,196 @@ pub struct ModuleBuilder<'a> {
     named_ids: BTreeMap<&'a str, u32>,
     next_numeric_id: u32,
     diagnostics: Vec<DiagnosticMessage<'static>>,
+    value_types: BTreeMap<u32, u32>,
+    composite_types: BTreeMap<u32, CompositeTypeInfo>,
+    integer_constants: BTreeMap<u32, u64>,
+    ext_inst_imports: BTreeMap<u32, ExtInstImportInfo>,
+}
+
+#[derive(Debug, Error)]
+enum MemberDecorationError {
+    #[error("Decoration target must reference a type defined earlier")]
+    UnknownType,
+    #[error("Matrix layout decorations are only valid for struct members")]
+    NotStruct,
+    #[error("Struct member index {member_index} exceeds available field count {field_count}")]
+    InvalidMemberIndex {
+        member_index: usize,
+        field_count: usize,
+    },
+}
+
+/// Composite type metadata tracked by the assembler so diagnostics can reason about operand
+/// layouts without falling back to the C++ implementation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CompositeTypeInfo {
+    /// Vector layout (component type + width).
+    Vector(VectorTypeInfo),
+    /// Array layout (element type + literal length).
+    Array(ArrayTypeInfo),
+    /// Struct layout (field list).
+    Struct(StructTypeInfo),
+    /// Matrix layout (column vector type + column count).
+    Matrix(MatrixTypeInfo),
+}
+
+/// Describes a vector type tracked inside the module builder so we can validate operands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VectorTypeInfo {
+    component_type: u32,
+    component_count: u32,
+}
+
+impl VectorTypeInfo {
+    /// Creates a new vector descriptor capturing the component type and width.
+    pub const fn new(component_type: u32, component_count: u32) -> Self {
+        Self {
+            component_type,
+            component_count,
+        }
+    }
+
+    /// Returns the component type id referenced by this vector.
+    pub const fn component_type(self) -> u32 {
+        self.component_type
+    }
+
+    /// Returns the number of components contained in the vector.
+    pub const fn component_count(self) -> u32 {
+        self.component_count
+    }
+}
+
+/// Describes an array type (element type + length constant identifier).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ArrayTypeInfo {
+    element_type: u32,
+    length_constant: u32,
+}
+
+impl ArrayTypeInfo {
+    /// Creates a new array descriptor capturing the element type and length constant id.
+    pub const fn new(element_type: u32, length_constant: u32) -> Self {
+        Self {
+            element_type,
+            length_constant,
+        }
+    }
+
+    /// Returns the element type identifier encoded by this array.
+    pub const fn element_type(self) -> u32 {
+        self.element_type
+    }
+
+    /// Returns the identifier of the literal constant describing the array length.
+    pub const fn length_constant(self) -> u32 {
+        self.length_constant
+    }
+}
+
+/// Describes a struct type using its field type list and member layout metadata.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StructTypeInfo {
+    field_types: Vec<u32>,
+    member_layouts: Vec<MemberLayout>,
+}
+
+/// Describes a matrix type tracked inside the module builder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MatrixTypeInfo {
+    column_type: u32,
+    column_count: u32,
+}
+
+impl StructTypeInfo {
+    /// Creates a struct layout descriptor using the provided field type list.
+    pub fn new(field_types: Vec<u32>) -> Self {
+        let member_layouts = vec![MemberLayout::default(); field_types.len()];
+        Self {
+            field_types,
+            member_layouts,
+        }
+    }
+
+    /// Returns the field type at the given index if it exists.
+    pub fn field_type(&self, index: usize) -> Option<u32> {
+        self.field_types.get(index).copied()
+    }
+
+    /// Returns the number of fields contained in the struct.
+    pub fn field_count(&self) -> usize {
+        self.field_types.len()
+    }
+
+    /// Returns the layout metadata for a member if tracked.
+    pub fn member_layout(&self, index: usize) -> Option<MemberLayout> {
+        self.member_layouts.get(index).copied()
+    }
+
+    /// Returns mutable access to a member layout record.
+    pub fn member_layout_mut(&mut self, index: usize) -> Option<&mut MemberLayout> {
+        self.member_layouts.get_mut(index)
+    }
+
+    /// Returns all tracked member layouts.
+    pub fn member_layouts(&self) -> &[MemberLayout] {
+        &self.member_layouts
+    }
+}
+
+impl MatrixTypeInfo {
+    /// Creates a new matrix descriptor capturing the column vector type and count.
+    pub const fn new(column_type: u32, column_count: u32) -> Self {
+        Self {
+            column_type,
+            column_count,
+        }
+    }
+
+    /// Returns the type id describing an individual column (which must be a vector).
+    pub const fn column_type(self) -> u32 {
+        self.column_type
+    }
+
+    /// Returns the number of columns contained within the matrix.
+    pub const fn column_count(self) -> u32 {
+        self.column_count
+    }
+}
+
+/// Indicates whether a matrix is laid out row- or column-major.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MatrixMajorness {
+    RowMajor,
+    ColumnMajor,
+}
+
+impl MatrixMajorness {
+    fn as_str(self) -> &'static str {
+        match self {
+            MatrixMajorness::RowMajor => "RowMajor",
+            MatrixMajorness::ColumnMajor => "ColMajor",
+        }
+    }
+}
+
+/// Captures matrix layout metadata attached to a struct member.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct MemberLayout {
+    majorness: Option<MemberMajorness>,
+    matrix_stride: Option<MemberMatrixStride>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct MemberMajorness {
+    kind: MatrixMajorness,
+    position: MessagePosition,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct MemberMatrixStride {
+    value: u32,
+    position: MessagePosition,
 }
 
 impl<'a> Default for ModuleBuilder<'a> {
@@ -33,6 +228,10 @@ impl<'a> ModuleBuilder<'a> {
             named_ids: BTreeMap::new(),
             next_numeric_id: 1,
             diagnostics: Vec::new(),
+            value_types: BTreeMap::new(),
+            composite_types: BTreeMap::new(),
+            integer_constants: BTreeMap::new(),
+            ext_inst_imports: BTreeMap::new(),
         }
     }
 
@@ -51,6 +250,16 @@ impl<'a> ModuleBuilder<'a> {
         self.resolve_spirv_id(id.as_spirv_id())
     }
 
+    /// Records the instruction set kind for an `OpExtInstImport` result id.
+    pub fn note_ext_inst_import(&mut self, id: u32, info: ExtInstImportInfo) {
+        self.ext_inst_imports.insert(id, info);
+    }
+
+    /// Returns the recorded instruction set for an `OpExtInst` import if known.
+    pub fn ext_inst_import(&self, id: u32) -> Option<&ExtInstImportInfo> {
+        self.ext_inst_imports.get(&id)
+    }
+
     /// Emits an assembler diagnostic.
     pub fn emit_error(&mut self, position: MessagePosition, message: impl Into<Cow<'static, str>>) {
         self.diagnostics.push(
@@ -64,7 +273,8 @@ impl<'a> ModuleBuilder<'a> {
     }
 
     /// Consumes the builder and returns the diagnostics alongside the next ID bound.
-    pub fn finish(self) -> (Vec<DiagnosticMessage<'static>>, u32) {
+    pub fn finish(mut self) -> (Vec<DiagnosticMessage<'static>>, u32) {
+        self.validate_member_layouts();
         (self.diagnostics, self.next_numeric_id)
     }
 
@@ -97,6 +307,272 @@ impl<'a> ModuleBuilder<'a> {
         }
         self.next_numeric_id = self.next_numeric_id.max(numeric + 1);
     }
+
+    fn bind_typed_result(
+        &mut self,
+        result_type: TypeId<'a>,
+        result_id: ResultId<'a>,
+    ) -> (u32, u32) {
+        let type_id = self.resolve_type_id(result_type);
+        let value_id = self.resolve_result_id(result_id);
+        self.value_types.insert(value_id, type_id);
+        (type_id, value_id)
+    }
+
+    fn note_numeric_result_type(&mut self, value_id: u32, type_id: u32) {
+        self.value_types.insert(value_id, type_id);
+    }
+
+    fn value_type(&self, value_id: u32) -> Option<u32> {
+        self.value_types.get(&value_id).copied()
+    }
+
+    fn composite_type(&self, type_id: u32) -> Option<&CompositeTypeInfo> {
+        self.composite_types.get(&type_id)
+    }
+
+    fn vector_type(&self, type_id: u32) -> Option<VectorTypeInfo> {
+        self.composite_types
+            .get(&type_id)
+            .and_then(|info| match info {
+                CompositeTypeInfo::Vector(vector) => Some(*vector),
+                _ => None,
+            })
+    }
+
+    fn note_vector_type(&mut self, type_id: u32, info: VectorTypeInfo) {
+        self.composite_types
+            .insert(type_id, CompositeTypeInfo::Vector(info));
+    }
+
+    fn note_array_type(&mut self, type_id: u32, info: ArrayTypeInfo) {
+        self.composite_types
+            .insert(type_id, CompositeTypeInfo::Array(info));
+    }
+
+    fn note_struct_type(&mut self, type_id: u32, info: StructTypeInfo) {
+        self.composite_types
+            .insert(type_id, CompositeTypeInfo::Struct(info));
+    }
+
+    fn note_matrix_type(&mut self, type_id: u32, info: MatrixTypeInfo) {
+        self.composite_types
+            .insert(type_id, CompositeTypeInfo::Matrix(info));
+    }
+
+    fn array_length(&self, info: &ArrayTypeInfo) -> Option<u32> {
+        self.integer_constants
+            .get(&info.length_constant())
+            .and_then(|value| u32::try_from(*value).ok())
+    }
+
+    fn note_integer_constant(&mut self, result_id: u32, value: u64) {
+        self.integer_constants.insert(result_id, value);
+    }
+
+    fn struct_info(&self, type_id: u32) -> Option<&StructTypeInfo> {
+        self.composite_types
+            .get(&type_id)
+            .and_then(|info| match info {
+                CompositeTypeInfo::Struct(struct_info) => Some(struct_info),
+                _ => None,
+            })
+    }
+
+    fn struct_info_mut(&mut self, type_id: u32) -> Option<&mut StructTypeInfo> {
+        self.composite_types
+            .get_mut(&type_id)
+            .and_then(|info| match info {
+                CompositeTypeInfo::Struct(struct_info) => Some(struct_info),
+                _ => None,
+            })
+    }
+
+    fn resolve_struct_member_type(
+        &self,
+        type_id: u32,
+        member_index: usize,
+    ) -> Result<u32, MemberDecorationError> {
+        match self.composite_types.get(&type_id) {
+            Some(CompositeTypeInfo::Struct(info)) => {
+                info.field_type(member_index)
+                    .ok_or(MemberDecorationError::InvalidMemberIndex {
+                        member_index,
+                        field_count: info.field_count(),
+                    })
+            }
+            Some(_) => Err(MemberDecorationError::NotStruct),
+            None => Err(MemberDecorationError::UnknownType),
+        }
+    }
+
+    fn type_contains_matrix(&self, type_id: u32) -> bool {
+        match self.composite_types.get(&type_id) {
+            Some(CompositeTypeInfo::Matrix(_)) => true,
+            Some(CompositeTypeInfo::Array(info)) => self.type_contains_matrix(info.element_type()),
+            _ => false,
+        }
+    }
+
+    fn apply_member_majorness(
+        &mut self,
+        type_id: u32,
+        member_index: usize,
+        majorness: MatrixMajorness,
+        position: MessagePosition,
+    ) {
+        let member_type = match self.resolve_struct_member_type(type_id, member_index) {
+            Ok(found) => found,
+            Err(error) => {
+                self.emit_member_decoration_error(error, position);
+                return;
+            }
+        };
+        if !self.type_contains_matrix(member_type) {
+            self.emit_error(
+                position,
+                format!(
+                    "{} decoration requires the member type to be a matrix or array of matrices",
+                    majorness.as_str()
+                ),
+            );
+            return;
+        }
+
+        let mut error: Option<String> = None;
+        if let Some(info) = self.struct_info_mut(type_id) {
+            if let Some(layout) = info.member_layout_mut(member_index) {
+                if let Some(existing) = layout.majorness {
+                    if existing.kind == majorness {
+                        error = Some(format!(
+                            "{} decoration already specified for this member",
+                            majorness.as_str()
+                        ));
+                    } else {
+                        error = Some(
+                            "RowMajor and ColMajor decorations cannot both target the same member"
+                                .to_string(),
+                        );
+                    }
+                } else {
+                    layout.majorness = Some(MemberMajorness {
+                        kind: majorness,
+                        position,
+                    });
+                }
+            }
+        }
+
+        if let Some(message) = error {
+            self.emit_error(position, message);
+        }
+    }
+
+    fn apply_member_matrix_stride(
+        &mut self,
+        type_id: u32,
+        member_index: usize,
+        stride: u32,
+        position: MessagePosition,
+    ) {
+        let member_type = match self.resolve_struct_member_type(type_id, member_index) {
+            Ok(found) => found,
+            Err(error) => {
+                self.emit_member_decoration_error(error, position);
+                return;
+            }
+        };
+
+        if !self.type_contains_matrix(member_type) {
+            self.emit_error(
+                position,
+                "MatrixStride decoration requires the member type to contain a matrix",
+            );
+            return;
+        }
+
+        if stride == 0 {
+            self.emit_error(position, "MatrixStride must be greater than zero");
+            return;
+        }
+
+        let mut error: Option<String> = None;
+        if let Some(info) = self.struct_info_mut(type_id) {
+            if let Some(layout) = info.member_layout_mut(member_index) {
+                if layout.matrix_stride.is_some() {
+                    error =
+                        Some("MatrixStride decoration already specified for this member".into());
+                } else {
+                    layout.matrix_stride = Some(MemberMatrixStride {
+                        value: stride,
+                        position,
+                    });
+                }
+            }
+        }
+
+        if let Some(message) = error {
+            self.emit_error(position, message);
+        }
+    }
+
+    fn emit_member_decoration_error(
+        &mut self,
+        error: MemberDecorationError,
+        position: MessagePosition,
+    ) {
+        self.emit_error(position, error.to_string());
+    }
+
+    fn validate_member_layouts(&mut self) {
+        let struct_ids: Vec<u32> = self
+            .composite_types
+            .iter()
+            .filter_map(|(id, info)| matches!(info, CompositeTypeInfo::Struct(_)).then_some(*id))
+            .collect();
+        for struct_id in struct_ids {
+            let layouts = match self.struct_info(struct_id) {
+                Some(info) => info.member_layouts().to_vec(),
+                None => continue,
+            };
+            for layout in layouts {
+                if let Some(majorness) = layout.majorness {
+                    if layout.matrix_stride.is_none() {
+                        self.emit_error(
+                            majorness.position,
+                            format!(
+                                "{} decoration requires an accompanying MatrixStride",
+                                majorness.kind.as_str()
+                            ),
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Error emitted when the assembler produces diagnostics instead of a finished module.
+#[derive(Debug, Error)]
+#[error("assembly failed with diagnostics")]
+pub struct AssemblyError {
+    diagnostics: Vec<DiagnosticMessage<'static>>,
+}
+
+impl AssemblyError {
+    fn new(diagnostics: Vec<DiagnosticMessage<'static>>) -> Self {
+        Self { diagnostics }
+    }
+
+    /// Borrows the underlying diagnostics describing the failure.
+    pub fn diagnostics(&self) -> &[DiagnosticMessage<'static>] {
+        &self.diagnostics
+    }
+
+    /// Consumes this error and returns the owned diagnostics.
+    pub fn into_diagnostics(self) -> Vec<DiagnosticMessage<'static>> {
+        self.diagnostics
+    }
 }
 
 /// Drives translation from parsed instructions to SPIR-V DR form.
@@ -114,9 +590,16 @@ impl<'a> Default for AssemblyTranslator<'a> {
 impl<'a> AssemblyTranslator<'a> {
     /// Creates a new translator with an empty module.
     pub fn new() -> Self {
+        Self::with_target_env(TargetEnv::Universal1_6)
+    }
+
+    /// Creates a new translator configured for the requested target environment.
+    pub fn with_target_env(env: TargetEnv) -> Self {
+        let mut builder = dr::Builder::new();
+        configure_builder_for_env(&mut builder, env);
         Self {
             module_builder: ModuleBuilder::new(),
-            builder: dr::Builder::new(),
+            builder,
         }
     }
 
@@ -124,12 +607,17 @@ impl<'a> AssemblyTranslator<'a> {
     pub fn translate(&mut self, instruction: &ParsedInstruction<'a>) {
         match instruction.opcode() {
             spirv::Op::Capability => self.translate_capability(instruction),
+            spirv::Op::ExtInstImport => self.translate_ext_inst_import(instruction),
             spirv::Op::TypeVoid => self.translate_type_void(instruction),
             spirv::Op::TypeBool => self.translate_type_bool(instruction),
             spirv::Op::TypeInt => self.translate_type_int(instruction),
+            spirv::Op::TypeFloat => self.translate_type_float(instruction),
             spirv::Op::TypeFunction => self.translate_type_function(instruction),
             spirv::Op::TypePointer => self.translate_type_pointer(instruction),
             spirv::Op::TypeVector => self.translate_type_vector(instruction),
+            spirv::Op::TypeArray => self.translate_type_array(instruction),
+            spirv::Op::TypeStruct => self.translate_type_struct(instruction),
+            spirv::Op::TypeMatrix => self.translate_type_matrix(instruction),
             spirv::Op::MemoryModel => self.translate_memory_model(instruction),
             spirv::Op::EntryPoint => self.translate_entry_point(instruction),
             spirv::Op::ExecutionMode => self.translate_execution_mode(instruction),
@@ -139,10 +627,16 @@ impl<'a> AssemblyTranslator<'a> {
             spirv::Op::CopyMemorySized => self.translate_copy_memory(instruction, true),
             spirv::Op::SelectionMerge => self.translate_selection_merge(instruction),
             spirv::Op::LoopMerge => self.translate_loop_merge(instruction),
+            spirv::Op::Decorate => self.translate_decorate(instruction),
+            spirv::Op::DecorateId => self.translate_decorate_id(instruction),
+            spirv::Op::DecorateString => self.translate_decorate_string(instruction),
+            spirv::Op::MemberDecorate => self.translate_member_decorate(instruction),
+            spirv::Op::MemberDecorateString => self.translate_member_decorate_string(instruction),
             spirv::Op::CompositeConstruct => self.translate_composite_construct(instruction),
             spirv::Op::VectorShuffle => self.translate_vector_shuffle(instruction),
             spirv::Op::CompositeExtract => self.translate_composite_extract(instruction),
             spirv::Op::CompositeInsert => self.translate_composite_insert(instruction),
+            spirv::Op::ExtInst => self.translate_ext_inst(instruction),
             spirv::Op::Phi => self.translate_phi(instruction),
             spirv::Op::ConstantTrue => self.translate_boolean_constant(instruction, true),
             spirv::Op::ConstantFalse => self.translate_boolean_constant(instruction, false),
@@ -153,9 +647,9 @@ impl<'a> AssemblyTranslator<'a> {
             spirv::Op::Label => self.translate_label(instruction),
             spirv::Op::Branch => self.translate_branch(instruction),
             spirv::Op::BranchConditional => self.translate_branch_conditional(instruction),
-            spirv::Op::Return => self.translate_return(),
+            spirv::Op::Return => self.translate_return(instruction),
             spirv::Op::ReturnValue => self.translate_return_value(instruction),
-            spirv::Op::FunctionEnd => self.translate_function_end(),
+            spirv::Op::FunctionEnd => self.translate_function_end(instruction),
             spirv::Op::Constant => self.translate_constant(instruction),
             spirv::Op::Variable => self.translate_variable(instruction),
             spirv::Op::Load => self.translate_load(instruction),
@@ -168,30 +662,73 @@ impl<'a> AssemblyTranslator<'a> {
             | spirv::Op::FMul => self.translate_binary_arithmetic(instruction),
             _ => self
                 .module_builder
-                .emit_error(MessagePosition::default(), "unsupported opcode"),
+                .emit_error(instruction.opcode_position(), "unsupported opcode"),
         }
     }
 
     fn translate_capability(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
         let Some(operand) = instruction.operands().first() else {
             self.module_builder
-                .emit_error(MessagePosition::default(), "OpCapability missing enumerant");
+                .emit_error(opcode_pos, "OpCapability missing enumerant");
             return;
         };
         let Some(capability) =
-            self.parse_enum_operand::<spirv::Capability>(Some(operand), "capability")
+            self.parse_enum_operand::<spirv::Capability>(Some(operand), "capability", opcode_pos)
         else {
             return;
         };
         self.builder.capability(capability);
     }
 
-    fn translate_type_void(&mut self, instruction: &ParsedInstruction<'a>) {
+    fn translate_ext_inst_import(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
         let Some(result_id) = instruction.result_id() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpTypeVoid requires a result id",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpExtInstImport missing result id");
+            return;
+        };
+        let Some(name_operand) = instruction.operands().first() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpExtInstImport missing import name");
+            return;
+        };
+        let name = match name_operand.value() {
+            OperandValue::String(value) => *value,
+            _ => {
+                self.module_builder.emit_error(
+                    name_operand.span().start(),
+                    "OpExtInstImport operand must be a literal string",
+                );
+                return;
+            }
+        };
+        if instruction.operands().len() > 1 {
+            if let Some(extra) = instruction.operands().get(1) {
+                self.module_builder.emit_error(
+                    extra.span().start(),
+                    "OpExtInstImport only accepts a single operand",
+                );
+            }
+            return;
+        }
+        let numeric_id = self.module_builder.resolve_result_id(result_id);
+        let info = ExtInstImportInfo::new(name);
+        let inst = dr::Instruction::new(
+            spirv::Op::ExtInstImport,
+            None,
+            Some(numeric_id),
+            vec![dr::Operand::LiteralString(name.to_string())],
+        );
+        self.builder.module_mut().ext_inst_imports.push(inst);
+        self.module_builder.note_ext_inst_import(numeric_id, info);
+    }
+
+    fn translate_type_void(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypeVoid requires a result id");
             return;
         };
         let result_id = self.module_builder.resolve_result_id(result_id);
@@ -199,18 +736,15 @@ impl<'a> AssemblyTranslator<'a> {
     }
 
     fn translate_type_bool(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
         let Some(result_id) = instruction.result_id() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpTypeBool requires a result id",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypeBool requires a result id");
             return;
         };
         if !instruction.operands().is_empty() {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpTypeBool does not take operands",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypeBool does not take operands");
             return;
         }
         let result_id = self.module_builder.resolve_result_id(result_id);
@@ -218,20 +752,17 @@ impl<'a> AssemblyTranslator<'a> {
     }
 
     fn translate_type_int(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
         let Some(result_id) = instruction.result_id() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpTypeInt requires a result identifier",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypeInt requires a result identifier");
             return;
         };
 
         let mut operands = instruction.operands().iter();
         let Some(width_operand) = operands.next() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpTypeInt missing width literal",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypeInt missing width literal");
             return;
         };
         let width_literal = match width_operand.value() {
@@ -245,10 +776,8 @@ impl<'a> AssemblyTranslator<'a> {
             }
         };
         let Some(signed_operand) = operands.next() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpTypeInt missing signedness literal",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypeInt missing signedness literal");
             return;
         };
         let signed_literal = match signed_operand.value() {
@@ -268,27 +797,59 @@ impl<'a> AssemblyTranslator<'a> {
         self.builder.type_int_id(Some(result_id), width, signedness);
     }
 
+    fn translate_type_float(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypeFloat requires a result identifier");
+            return;
+        };
+        let mut operands = instruction.operands().iter();
+        let Some(width_operand) = operands.next() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypeFloat missing width literal");
+            return;
+        };
+        let width_literal = match width_operand.value() {
+            OperandValue::Literal(lit) => lit,
+            _ => {
+                self.module_builder.emit_error(
+                    width_operand.span().start(),
+                    "Width operand must be literal",
+                );
+                return;
+            }
+        };
+        if let Some(extra) = operands.next() {
+            self.module_builder.emit_error(
+                extra.span().start(),
+                "OpTypeFloat received unexpected operands",
+            );
+            return;
+        }
+        let width = literal_to_u32(width_literal);
+        let result_id = self.module_builder.resolve_result_id(result_id);
+        self.builder.type_float_id(Some(result_id), width);
+    }
+
     fn translate_constant(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
         let Some(result_type) = instruction.result_type() else {
             self.module_builder
-                .emit_error(MessagePosition::default(), "OpConstant missing result type");
+                .emit_error(opcode_pos, "OpConstant missing result type");
             return;
         };
         let Some(result_id) = instruction.result_id() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpConstant requires a result identifier",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpConstant requires a result identifier");
             return;
         };
 
         let literal_operand = match instruction.operands().first() {
             Some(operand) => operand,
             None => {
-                self.module_builder.emit_error(
-                    MessagePosition::default(),
-                    "OpConstant missing literal operand",
-                );
+                self.module_builder
+                    .emit_error(opcode_pos, "OpConstant missing literal operand");
                 return;
             }
         };
@@ -303,23 +864,25 @@ impl<'a> AssemblyTranslator<'a> {
             }
         };
 
-        let type_id = self.module_builder.resolve_type_id(result_type);
-        let result_id = self.module_builder.resolve_result_id(result_id);
+        let (type_id, result_id) = self
+            .module_builder
+            .bind_typed_result(result_type, result_id);
         let inst = dr::Instruction::new(
             spirv::Op::Constant,
             Some(type_id),
             Some(result_id),
             vec![dr::Operand::LiteralBit32(literal_to_u32(literal))],
         );
+        self.module_builder
+            .note_integer_constant(result_id, literal_to_u64(literal));
         self.builder.module_mut().types_global_values.push(inst);
     }
 
     fn translate_type_function(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
         let Some(result_id) = instruction.result_id() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpTypeFunction missing result id",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypeFunction missing result id");
             return;
         };
 
@@ -327,10 +890,8 @@ impl<'a> AssemblyTranslator<'a> {
         let return_operand = match operands.next() {
             Some(operand) => operand,
             None => {
-                self.module_builder.emit_error(
-                    MessagePosition::default(),
-                    "OpTypeFunction missing return type",
-                );
+                self.module_builder
+                    .emit_error(opcode_pos, "OpTypeFunction missing return type");
                 return;
             }
         };
@@ -367,14 +928,15 @@ impl<'a> AssemblyTranslator<'a> {
     }
 
     fn translate_function(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
         let Some(result_type) = instruction.result_type() else {
             self.module_builder
-                .emit_error(MessagePosition::default(), "OpFunction missing result type");
+                .emit_error(opcode_pos, "OpFunction missing result type");
             return;
         };
         let Some(result_id) = instruction.result_id() else {
             self.module_builder
-                .emit_error(MessagePosition::default(), "OpFunction missing result id");
+                .emit_error(opcode_pos, "OpFunction missing result id");
             return;
         };
 
@@ -382,10 +944,8 @@ impl<'a> AssemblyTranslator<'a> {
         let control_operand = match operands.next() {
             Some(operand) => operand,
             None => {
-                self.module_builder.emit_error(
-                    MessagePosition::default(),
-                    "OpFunction missing control operand",
-                );
+                self.module_builder
+                    .emit_error(opcode_pos, "OpFunction missing control operand");
                 return;
             }
         };
@@ -396,10 +956,8 @@ impl<'a> AssemblyTranslator<'a> {
         let function_type_operand = match operands.next() {
             Some(operand) => operand,
             None => {
-                self.module_builder.emit_error(
-                    MessagePosition::default(),
-                    "OpFunction missing function type",
-                );
+                self.module_builder
+                    .emit_error(opcode_pos, "OpFunction missing function type");
                 return;
             }
         };
@@ -414,65 +972,68 @@ impl<'a> AssemblyTranslator<'a> {
             }
         };
 
-        let result_type = self.module_builder.resolve_type_id(result_type);
-        let result_id = self.module_builder.resolve_result_id(result_id);
+        let (result_type, result_id) = self
+            .module_builder
+            .bind_typed_result(result_type, result_id);
         if let Err(error) =
             self.builder
                 .begin_function(result_type, Some(result_id), control, function_type)
         {
-            self.emit_builder_error(error, MessagePosition::default());
+            self.emit_builder_error(error, opcode_pos);
         }
     }
 
     fn translate_function_parameter(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
         let Some(result_type) = instruction.result_type() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpFunctionParameter missing result type",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpFunctionParameter missing result type");
             return;
         };
         let Some(result_id) = instruction.result_id() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpFunctionParameter missing result id",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpFunctionParameter missing result id");
             return;
         };
 
         let type_id = self.module_builder.resolve_type_id(result_type);
         match self.builder.function_parameter(type_id) {
-            Ok(parameter_id) => self.module_builder.bind_result_id(result_id, parameter_id),
-            Err(error) => self.emit_builder_error(error, MessagePosition::default()),
+            Ok(parameter_id) => {
+                self.module_builder.bind_result_id(result_id, parameter_id);
+                self.module_builder
+                    .note_numeric_result_type(parameter_id, type_id);
+            }
+            Err(error) => self.emit_builder_error(error, opcode_pos),
         }
     }
 
     fn translate_label(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
         let Some(result_id) = instruction.result_id() else {
             self.module_builder
-                .emit_error(MessagePosition::default(), "OpLabel missing result id");
+                .emit_error(opcode_pos, "OpLabel missing result id");
             return;
         };
         let label_id = self.module_builder.resolve_result_id(result_id);
         if let Err(error) = self.builder.begin_block(Some(label_id)) {
-            self.emit_builder_error(error, MessagePosition::default());
+            self.emit_builder_error(error, opcode_pos);
         }
     }
 
-    fn translate_return(&mut self) {
+    fn translate_return(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
         if let Err(error) = self.builder.ret() {
-            self.emit_builder_error(error, MessagePosition::default());
+            self.emit_builder_error(error, opcode_pos);
         }
     }
 
     fn translate_return_value(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
         let operand = match instruction.operands().first() {
             Some(operand) => operand,
             None => {
-                self.module_builder.emit_error(
-                    MessagePosition::default(),
-                    "OpReturnValue missing result id",
-                );
+                self.module_builder
+                    .emit_error(opcode_pos, "OpReturnValue missing result id");
                 return;
             }
         };
@@ -484,38 +1045,36 @@ impl<'a> AssemblyTranslator<'a> {
         }
     }
 
-    fn translate_function_end(&mut self) {
+    fn translate_function_end(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
         if let Err(error) = self.builder.end_function() {
-            self.emit_builder_error(error, MessagePosition::default());
+            self.emit_builder_error(error, opcode_pos);
         }
     }
 
     fn translate_type_pointer(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
         let Some(result_id) = instruction.result_id() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpTypePointer missing result id",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypePointer missing result id");
             return;
         };
         let mut operands = instruction.operands().iter();
         let Some(storage_operand) = operands.next() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpTypePointer missing storage class",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypePointer missing storage class");
             return;
         };
-        let Some(storage_class) =
-            self.parse_enum_operand::<spirv::StorageClass>(Some(storage_operand), "storage class")
-        else {
+        let Some(storage_class) = self.parse_enum_operand::<spirv::StorageClass>(
+            Some(storage_operand),
+            "storage class",
+            opcode_pos,
+        ) else {
             return;
         };
         let Some(pointee_operand) = operands.next() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpTypePointer missing pointee type",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypePointer missing pointee type");
             return;
         };
         let Some(pointee_id) = self.operand_as_id(pointee_operand, "pointee type") else {
@@ -534,27 +1093,24 @@ impl<'a> AssemblyTranslator<'a> {
     }
 
     fn translate_type_vector(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
         let Some(result_id) = instruction.result_id() else {
             self.module_builder
-                .emit_error(MessagePosition::default(), "OpTypeVector missing result id");
+                .emit_error(opcode_pos, "OpTypeVector missing result id");
             return;
         };
         let mut operands = instruction.operands().iter();
         let Some(component_operand) = operands.next() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpTypeVector missing component type",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypeVector missing component type");
             return;
         };
         let Some(component_type) = self.operand_as_id(component_operand, "component type") else {
             return;
         };
         let Some(count_operand) = operands.next() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpTypeVector missing component count",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypeVector missing component count");
             return;
         };
         let count_literal = match count_operand.value() {
@@ -578,29 +1134,181 @@ impl<'a> AssemblyTranslator<'a> {
         let result_id = self.module_builder.resolve_result_id(result_id);
         self.builder
             .type_vector_id(Some(result_id), component_type, component_count);
+        self.module_builder.note_vector_type(
+            result_id,
+            VectorTypeInfo::new(component_type, component_count),
+        );
+    }
+
+    fn translate_type_array(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypeArray missing result id");
+            return;
+        };
+        let mut operands = instruction.operands().iter();
+        let Some(element_operand) = operands.next() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypeArray missing element type");
+            return;
+        };
+        let Some(element_type) = self.operand_as_id(element_operand, "element type") else {
+            return;
+        };
+        let Some(length_operand) = operands.next() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypeArray missing length id");
+            return;
+        };
+        let Some(length_id) = self.operand_as_id(length_operand, "length id") else {
+            return;
+        };
+        if let Some(extra) = operands.next() {
+            self.module_builder.emit_error(
+                extra.span().start(),
+                "OpTypeArray received unexpected operands",
+            );
+            return;
+        }
+        let result_id = self.module_builder.resolve_result_id(result_id);
+        let inst = dr::Instruction::new(
+            spirv::Op::TypeArray,
+            None,
+            Some(result_id),
+            vec![
+                dr::Operand::IdRef(element_type),
+                dr::Operand::IdRef(length_id),
+            ],
+        );
+        self.builder.module_mut().types_global_values.push(inst);
+        self.module_builder
+            .note_array_type(result_id, ArrayTypeInfo::new(element_type, length_id));
+    }
+
+    fn translate_type_struct(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypeStruct missing result id");
+            return;
+        };
+        let mut field_types = Vec::new();
+        for operand in instruction.operands() {
+            match operand.value() {
+                OperandValue::Id(id) => field_types.push(self.module_builder.resolve_id_ref(*id)),
+                _ => {
+                    self.module_builder.emit_error(
+                        operand.span().start(),
+                        "Struct members must be id references",
+                    );
+                    return;
+                }
+            }
+        }
+        let result_id = self.module_builder.resolve_result_id(result_id);
+        let operands = field_types
+            .iter()
+            .copied()
+            .map(dr::Operand::IdRef)
+            .collect();
+        let inst = dr::Instruction::new(spirv::Op::TypeStruct, None, Some(result_id), operands);
+        self.builder.module_mut().types_global_values.push(inst);
+        self.module_builder
+            .note_struct_type(result_id, StructTypeInfo::new(field_types));
+    }
+
+    fn translate_type_matrix(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypeMatrix missing result id");
+            return;
+        };
+        let mut operands = instruction.operands().iter();
+        let Some(column_operand) = operands.next() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypeMatrix missing column type");
+            return;
+        };
+        let Some(column_type) = self.operand_as_id(column_operand, "column type") else {
+            return;
+        };
+        if self.module_builder.vector_type(column_type).is_none() {
+            self.module_builder.emit_error(
+                column_operand.span().start(),
+                "Matrix column type must be a previously defined vector",
+            );
+            return;
+        }
+        let Some(count_operand) = operands.next() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypeMatrix missing column count");
+            return;
+        };
+        let column_count_literal = match count_operand.value() {
+            OperandValue::Literal(literal) => literal,
+            _ => {
+                self.module_builder.emit_error(
+                    count_operand.span().start(),
+                    "Matrix column count must be a literal",
+                );
+                return;
+            }
+        };
+        if let Some(extra) = operands.next() {
+            self.module_builder.emit_error(
+                extra.span().start(),
+                "OpTypeMatrix received unexpected operands",
+            );
+            return;
+        }
+        let column_count = literal_to_u32(column_count_literal);
+        let result_id = self.module_builder.resolve_result_id(result_id);
+        let inst = dr::Instruction::new(
+            spirv::Op::TypeMatrix,
+            None,
+            Some(result_id),
+            vec![
+                dr::Operand::IdRef(column_type),
+                dr::Operand::LiteralBit32(column_count),
+            ],
+        );
+        self.builder.module_mut().types_global_values.push(inst);
+        self.module_builder
+            .note_matrix_type(result_id, MatrixTypeInfo::new(column_type, column_count));
     }
 
     fn translate_memory_model(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
         let mut operands = instruction.operands().iter();
-        let addressing = match self
-            .parse_enum_operand::<spirv::AddressingModel>(operands.next(), "addressing model")
-        {
+        let addressing = match self.parse_enum_operand::<spirv::AddressingModel>(
+            operands.next(),
+            "addressing model",
+            opcode_pos,
+        ) {
             Some(value) => value,
             None => return,
         };
-        let memory =
-            match self.parse_enum_operand::<spirv::MemoryModel>(operands.next(), "memory model") {
-                Some(value) => value,
-                None => return,
-            };
+        let memory = match self.parse_enum_operand::<spirv::MemoryModel>(
+            operands.next(),
+            "memory model",
+            opcode_pos,
+        ) {
+            Some(value) => value,
+            None => return,
+        };
         self.builder.memory_model(addressing, memory);
     }
 
     fn translate_entry_point(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
         let mut operands = instruction.operands().iter();
-        let execution_model = match self
-            .parse_enum_operand::<spirv::ExecutionModel>(operands.next(), "execution model")
-        {
+        let execution_model = match self.parse_enum_operand::<spirv::ExecutionModel>(
+            operands.next(),
+            "execution model",
+            opcode_pos,
+        ) {
             Some(value) => value,
             None => return,
         };
@@ -608,10 +1316,8 @@ impl<'a> AssemblyTranslator<'a> {
         let function_operand = match operands.next() {
             Some(operand) => operand,
             None => {
-                self.module_builder.emit_error(
-                    MessagePosition::default(),
-                    "OpEntryPoint missing function identifier",
-                );
+                self.module_builder
+                    .emit_error(opcode_pos, "OpEntryPoint missing function identifier");
                 return;
             }
         };
@@ -629,10 +1335,8 @@ impl<'a> AssemblyTranslator<'a> {
         let name_operand = match operands.next() {
             Some(operand) => operand,
             None => {
-                self.module_builder.emit_error(
-                    MessagePosition::default(),
-                    "OpEntryPoint missing name literal",
-                );
+                self.module_builder
+                    .emit_error(opcode_pos, "OpEntryPoint missing name literal");
                 return;
             }
         };
@@ -663,24 +1367,21 @@ impl<'a> AssemblyTranslator<'a> {
     }
 
     fn translate_access_chain(&mut self, instruction: &ParsedInstruction<'a>, in_bounds: bool) {
+        let opcode_pos = instruction.opcode_position();
         let Some(result_type) = instruction.result_type() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "Access chain missing result type",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "Access chain missing result type");
             return;
         };
         let Some(result_id) = instruction.result_id() else {
             self.module_builder
-                .emit_error(MessagePosition::default(), "Access chain missing result id");
+                .emit_error(opcode_pos, "Access chain missing result id");
             return;
         };
         let mut operands = instruction.operands().iter();
         let Some(base_operand) = operands.next() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "Access chain missing base pointer",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "Access chain missing base pointer");
             return;
         };
         let Some(base_id) = self.operand_as_id(base_operand, "base pointer") else {
@@ -699,8 +1400,9 @@ impl<'a> AssemblyTranslator<'a> {
                 }
             }
         }
-        let result_type_id = self.module_builder.resolve_type_id(result_type);
-        let result_id = self.module_builder.resolve_result_id(result_id);
+        let (result_type_id, result_id) = self
+            .module_builder
+            .bind_typed_result(result_type, result_id);
         let result = if in_bounds {
             self.builder
                 .in_bounds_access_chain(result_type_id, Some(result_id), base_id, indexes)
@@ -709,28 +1411,29 @@ impl<'a> AssemblyTranslator<'a> {
                 .access_chain(result_type_id, Some(result_id), base_id, indexes)
         };
         if let Err(error) = result {
-            self.emit_builder_error(error, MessagePosition::default());
+            self.emit_builder_error(error, opcode_pos);
         }
     }
 
     fn translate_execution_mode(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
         let mut operands = instruction.operands().iter();
         let entry_operand = match operands.next() {
             Some(operand) => operand,
             None => {
-                self.module_builder.emit_error(
-                    MessagePosition::default(),
-                    "OpExecutionMode missing entry point",
-                );
+                self.module_builder
+                    .emit_error(opcode_pos, "OpExecutionMode missing entry point");
                 return;
             }
         };
         let Some(entry_point) = self.operand_as_id(entry_operand, "entry point") else {
             return;
         };
-        let Some(execution_mode) =
-            self.parse_enum_operand::<spirv::ExecutionMode>(operands.next(), "execution mode")
-        else {
+        let Some(execution_mode) = self.parse_enum_operand::<spirv::ExecutionMode>(
+            operands.next(),
+            "execution mode",
+            opcode_pos,
+        ) else {
             return;
         };
         let mut parameters = Vec::new();
@@ -751,22 +1454,19 @@ impl<'a> AssemblyTranslator<'a> {
     }
 
     fn translate_selection_merge(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
         let mut operands = instruction.operands().iter();
         let Some(merge_operand) = operands.next() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpSelectionMerge missing merge block",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpSelectionMerge missing merge block");
             return;
         };
         let Some(merge_id) = self.operand_as_id(merge_operand, "merge block") else {
             return;
         };
         let Some(control_operand) = operands.next() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpSelectionMerge missing control mask",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpSelectionMerge missing control mask");
             return;
         };
         let Some(selection_control) = self.parse_selection_control(control_operand) else {
@@ -778,26 +1478,21 @@ impl<'a> AssemblyTranslator<'a> {
     }
 
     fn translate_loop_merge(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
         let mut operands = instruction.operands().iter();
         let Some(merge_operand) = operands.next() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpLoopMerge missing merge block",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpLoopMerge missing merge block");
             return;
         };
         let Some(continue_operand) = operands.next() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpLoopMerge missing continue target",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpLoopMerge missing continue target");
             return;
         };
         let Some(control_operand) = operands.next() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpLoopMerge missing control mask",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpLoopMerge missing control mask");
             return;
         };
         let Some(merge_id) = self.operand_as_id(merge_operand, "merge block") else {
@@ -820,23 +1515,20 @@ impl<'a> AssemblyTranslator<'a> {
     }
 
     fn translate_composite_construct(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
         let Some(result_type) = instruction.result_type() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpCompositeConstruct missing result type",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpCompositeConstruct missing result type");
             return;
         };
         let Some(result_id) = instruction.result_id() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpCompositeConstruct missing result id",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpCompositeConstruct missing result id");
             return;
         };
         if instruction.operands().is_empty() {
             self.module_builder.emit_error(
-                MessagePosition::default(),
+                opcode_pos,
                 "OpCompositeConstruct requires at least one constituent",
             );
             return;
@@ -854,44 +1546,38 @@ impl<'a> AssemblyTranslator<'a> {
                 }
             }
         }
-        let type_id = self.module_builder.resolve_type_id(result_type);
-        let result_id = self.module_builder.resolve_result_id(result_id);
+        let (type_id, result_id) = self
+            .module_builder
+            .bind_typed_result(result_type, result_id);
         if let Err(error) = self
             .builder
             .composite_construct(type_id, Some(result_id), constituents)
         {
-            self.emit_builder_error(error, MessagePosition::default());
+            self.emit_builder_error(error, opcode_pos);
         }
     }
 
     fn translate_vector_shuffle(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
         let Some(result_type) = instruction.result_type() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpVectorShuffle missing result type",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpVectorShuffle missing result type");
             return;
         };
         let Some(result_id) = instruction.result_id() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpVectorShuffle missing result id",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpVectorShuffle missing result id");
             return;
         };
         let mut operands = instruction.operands().iter();
         let Some(vector1_operand) = operands.next() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpVectorShuffle missing first vector",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpVectorShuffle missing first vector");
             return;
         };
         let Some(vector2_operand) = operands.next() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpVectorShuffle missing second vector",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpVectorShuffle missing second vector");
             return;
         };
         let Some(vector1_id) = self.operand_as_id(vector1_operand, "first vector") else {
@@ -903,7 +1589,9 @@ impl<'a> AssemblyTranslator<'a> {
         let mut components = Vec::new();
         for operand in operands {
             match operand.value() {
-                OperandValue::Literal(literal) => components.push(literal_to_u32(literal)),
+                OperandValue::Literal(literal) => {
+                    components.push((literal_to_u32(literal), operand.span().start()))
+                }
                 _ => {
                     self.module_builder.emit_error(
                         operand.span().start(),
@@ -913,43 +1601,119 @@ impl<'a> AssemblyTranslator<'a> {
                 }
             }
         }
-        let type_id = self.module_builder.resolve_type_id(result_type);
-        let result_id = self.module_builder.resolve_result_id(result_id);
+        let component_position = components
+            .first()
+            .map(|(_, span)| *span)
+            .unwrap_or_else(|| vector2_operand.span().start());
+        let (type_id, result_id) = self
+            .module_builder
+            .bind_typed_result(result_type, result_id);
+        let Some(result_vector) = self.module_builder.vector_type(type_id) else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpVectorShuffle result type must be a vector");
+            return;
+        };
+        let expected_components = result_vector.component_count() as usize;
+        if components.len() != expected_components {
+            self.module_builder.emit_error(
+                component_position,
+                format!(
+                    "OpVectorShuffle expects {expected_components} component literals but received {}",
+                    components.len()
+                ),
+            );
+            return;
+        }
+
+        let Some(vector1_type_id) = self.module_builder.value_type(vector1_id) else {
+            self.module_builder.emit_error(
+                vector1_operand.span().start(),
+                "First vector operand has no known type",
+            );
+            return;
+        };
+        let Some(vector1_info) = self.module_builder.vector_type(vector1_type_id) else {
+            self.module_builder.emit_error(
+                vector1_operand.span().start(),
+                "First vector operand must be a vector",
+            );
+            return;
+        };
+        let Some(vector2_type_id) = self.module_builder.value_type(vector2_id) else {
+            self.module_builder.emit_error(
+                vector2_operand.span().start(),
+                "Second vector operand has no known type",
+            );
+            return;
+        };
+        let Some(vector2_info) = self.module_builder.vector_type(vector2_type_id) else {
+            self.module_builder.emit_error(
+                vector2_operand.span().start(),
+                "Second vector operand must be a vector",
+            );
+            return;
+        };
+        if vector1_info.component_type() != result_vector.component_type() {
+            self.module_builder.emit_error(
+                vector1_operand.span().start(),
+                "First vector operand type does not match the result vector component type",
+            );
+            return;
+        }
+        if vector2_info.component_type() != result_vector.component_type() {
+            self.module_builder.emit_error(
+                vector2_operand.span().start(),
+                "Second vector operand type does not match the result vector component type",
+            );
+            return;
+        }
+
+        let total_components =
+            u64::from(vector1_info.component_count()) + u64::from(vector2_info.component_count());
+        for (value, position) in &components {
+            if *value != u32::MAX && u64::from(*value) >= total_components {
+                self.module_builder.emit_error(
+                    *position,
+                    format!(
+                        "Shuffle component {value} exceeds the available inputs ({total_components})",
+                    ),
+                );
+                return;
+            }
+        }
+
+        let literal_components: Vec<u32> = components.iter().map(|(value, _)| *value).collect();
         if let Err(error) = self.builder.vector_shuffle(
             type_id,
             Some(result_id),
             vector1_id,
             vector2_id,
-            components,
+            literal_components,
         ) {
-            self.emit_builder_error(error, MessagePosition::default());
+            self.emit_builder_error(error, opcode_pos);
         }
     }
 
     fn translate_boolean_constant(&mut self, instruction: &ParsedInstruction<'a>, value: bool) {
+        let opcode_pos = instruction.opcode_position();
         let Some(result_type) = instruction.result_type() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "Boolean constant missing result type",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "Boolean constant missing result type");
             return;
         };
         let Some(result_id) = instruction.result_id() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "Boolean constant missing result id",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "Boolean constant missing result id");
             return;
         };
         if !instruction.operands().is_empty() {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "Boolean constants do not take operands",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "Boolean constants do not take operands");
             return;
         }
-        let type_id = self.module_builder.resolve_type_id(result_type);
-        let result_id = self.module_builder.resolve_result_id(result_id);
+        let (type_id, result_id) = self
+            .module_builder
+            .bind_typed_result(result_type, result_id);
         let opcode = if value {
             spirv::Op::ConstantTrue
         } else {
@@ -960,23 +1724,20 @@ impl<'a> AssemblyTranslator<'a> {
     }
 
     fn translate_constant_composite(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
         let Some(result_type) = instruction.result_type() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpConstantComposite missing result type",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpConstantComposite missing result type");
             return;
         };
         let Some(result_id) = instruction.result_id() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpConstantComposite missing result id",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpConstantComposite missing result id");
             return;
         };
         if instruction.operands().is_empty() {
             self.module_builder.emit_error(
-                MessagePosition::default(),
+                opcode_pos,
                 "OpConstantComposite requires at least one constituent",
             );
             return;
@@ -994,8 +1755,9 @@ impl<'a> AssemblyTranslator<'a> {
                 }
             }
         }
-        let type_id = self.module_builder.resolve_type_id(result_type);
-        let result_id = self.module_builder.resolve_result_id(result_id);
+        let (type_id, result_id) = self
+            .module_builder
+            .bind_typed_result(result_type, result_id);
         let operands = constituents.into_iter().map(dr::Operand::IdRef).collect();
         let inst = dr::Instruction::new(
             spirv::Op::ConstantComposite,
@@ -1007,29 +1769,25 @@ impl<'a> AssemblyTranslator<'a> {
     }
 
     fn translate_constant_null(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
         let Some(result_type) = instruction.result_type() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpConstantNull missing result type",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpConstantNull missing result type");
             return;
         };
         let Some(result_id) = instruction.result_id() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpConstantNull missing result id",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpConstantNull missing result id");
             return;
         };
         if !instruction.operands().is_empty() {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpConstantNull does not take operands",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpConstantNull does not take operands");
             return;
         }
-        let type_id = self.module_builder.resolve_type_id(result_type);
-        let result_id = self.module_builder.resolve_result_id(result_id);
+        let (type_id, result_id) = self
+            .module_builder
+            .bind_typed_result(result_type, result_id);
         let inst = dr::Instruction::new(
             spirv::Op::ConstantNull,
             Some(type_id),
@@ -1040,26 +1798,21 @@ impl<'a> AssemblyTranslator<'a> {
     }
 
     fn translate_composite_extract(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
         let Some(result_type) = instruction.result_type() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpCompositeExtract missing result type",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpCompositeExtract missing result type");
             return;
         };
         let Some(result_id) = instruction.result_id() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpCompositeExtract missing result id",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpCompositeExtract missing result id");
             return;
         };
         let mut operands = instruction.operands().iter();
         let Some(composite_operand) = operands.next() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpCompositeExtract missing composite value",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpCompositeExtract missing composite value");
             return;
         };
         let Some(composite_id) = self.operand_as_id(composite_operand, "composite value") else {
@@ -1068,7 +1821,9 @@ impl<'a> AssemblyTranslator<'a> {
         let mut indexes = Vec::new();
         for operand in operands {
             match operand.value() {
-                OperandValue::Literal(literal) => indexes.push(literal_to_u32(literal)),
+                OperandValue::Literal(literal) => {
+                    indexes.push((literal_to_u32(literal), operand.span().start()))
+                }
                 _ => {
                     self.module_builder.emit_error(
                         operand.span().start(),
@@ -1079,53 +1834,67 @@ impl<'a> AssemblyTranslator<'a> {
             }
         }
         if indexes.is_empty() {
+            self.module_builder
+                .emit_error(opcode_pos, "OpCompositeExtract requires at least one index");
+            return;
+        }
+        let mismatch_position = indexes
+            .first()
+            .map(|(_, span)| *span)
+            .unwrap_or_else(|| composite_operand.span().start());
+        let (type_id, result_id) = self
+            .module_builder
+            .bind_typed_result(result_type, result_id);
+        let Some(composite_type_id) = self.module_builder.value_type(composite_id) else {
             self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpCompositeExtract requires at least one index",
+                composite_operand.span().start(),
+                "Composite operand has no known type",
+            );
+            return;
+        };
+        let Some(expected_type) = self.resolve_composite_access(composite_type_id, &indexes) else {
+            return;
+        };
+        if expected_type != type_id {
+            self.module_builder.emit_error(
+                mismatch_position,
+                "Result type does not match the selected component type",
             );
             return;
         }
-        let type_id = self.module_builder.resolve_type_id(result_type);
-        let result_id = self.module_builder.resolve_result_id(result_id);
+        let literal_indexes: Vec<u32> = indexes.iter().map(|(value, _)| *value).collect();
         if let Err(error) =
             self.builder
-                .composite_extract(type_id, Some(result_id), composite_id, indexes)
+                .composite_extract(type_id, Some(result_id), composite_id, literal_indexes)
         {
-            self.emit_builder_error(error, MessagePosition::default());
+            self.emit_builder_error(error, opcode_pos);
         }
     }
 
     fn translate_composite_insert(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
         let Some(result_type) = instruction.result_type() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpCompositeInsert missing result type",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpCompositeInsert missing result type");
             return;
         };
         let Some(result_id) = instruction.result_id() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpCompositeInsert missing result id",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpCompositeInsert missing result id");
             return;
         };
         let mut operands = instruction.operands().iter();
         let Some(object_operand) = operands.next() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpCompositeInsert missing object operand",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpCompositeInsert missing object operand");
             return;
         };
         let Some(object_id) = self.operand_as_id(object_operand, "object operand") else {
             return;
         };
         let Some(composite_operand) = operands.next() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpCompositeInsert missing composite operand",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpCompositeInsert missing composite operand");
             return;
         };
         let Some(composite_id) = self.operand_as_id(composite_operand, "composite operand") else {
@@ -1134,7 +1903,9 @@ impl<'a> AssemblyTranslator<'a> {
         let mut indexes = Vec::new();
         for operand in operands {
             match operand.value() {
-                OperandValue::Literal(literal) => indexes.push(literal_to_u32(literal)),
+                OperandValue::Literal(literal) => {
+                    indexes.push((literal_to_u32(literal), operand.span().start()))
+                }
                 _ => {
                     self.module_builder.emit_error(
                         operand.span().start(),
@@ -1145,34 +1916,351 @@ impl<'a> AssemblyTranslator<'a> {
             }
         }
         if indexes.is_empty() {
+            self.module_builder
+                .emit_error(opcode_pos, "OpCompositeInsert requires at least one index");
+            return;
+        }
+        let (type_id, result_id) = self
+            .module_builder
+            .bind_typed_result(result_type, result_id);
+        let Some(composite_type_id) = self.module_builder.value_type(composite_id) else {
             self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpCompositeInsert requires at least one index",
+                composite_operand.span().start(),
+                "Composite operand has no known type",
+            );
+            return;
+        };
+        if composite_type_id != type_id {
+            self.module_builder.emit_error(
+                composite_operand.span().start(),
+                "Result type must match the composite operand type",
             );
             return;
         }
-        let type_id = self.module_builder.resolve_type_id(result_type);
-        let result_id = self.module_builder.resolve_result_id(result_id);
+        let Some(target_type) = self.resolve_composite_access(composite_type_id, &indexes) else {
+            return;
+        };
+        let Some(object_type_id) = self.module_builder.value_type(object_id) else {
+            self.module_builder.emit_error(
+                object_operand.span().start(),
+                "Object operand has no known type",
+            );
+            return;
+        };
+        if object_type_id != target_type {
+            self.module_builder.emit_error(
+                object_operand.span().start(),
+                "Object operand type must match the selected component type",
+            );
+            return;
+        }
+        let literal_indexes: Vec<u32> = indexes.iter().map(|(value, _)| *value).collect();
         if let Err(error) = self.builder.composite_insert(
             type_id,
             Some(result_id),
             object_id,
             composite_id,
-            indexes,
+            literal_indexes,
         ) {
-            self.emit_builder_error(error, MessagePosition::default());
+            self.emit_builder_error(error, opcode_pos);
         }
     }
 
-    fn translate_phi(&mut self, instruction: &ParsedInstruction<'a>) {
+    fn translate_ext_inst(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
         let Some(result_type) = instruction.result_type() else {
             self.module_builder
-                .emit_error(MessagePosition::default(), "OpPhi missing result type");
+                .emit_error(opcode_pos, "OpExtInst missing result type");
             return;
         };
         let Some(result_id) = instruction.result_id() else {
             self.module_builder
-                .emit_error(MessagePosition::default(), "OpPhi missing result id");
+                .emit_error(opcode_pos, "OpExtInst missing result id");
+            return;
+        };
+        let mut operands = instruction.operands().iter();
+        let Some(set_operand) = operands.next() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpExtInst missing instruction set");
+            return;
+        };
+        let Some(set_id) = self.operand_as_id(set_operand, "instruction set") else {
+            return;
+        };
+        let Some(import_info) = self.module_builder.ext_inst_import(set_id).cloned() else {
+            self.module_builder.emit_error(
+                set_operand.span().start(),
+                "OpExtInst references an unknown instruction set",
+            );
+            return;
+        };
+        let Some(opcode_operand) = operands.next() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpExtInst missing opcode operand");
+            return;
+        };
+        let Some(resolved) = self.resolve_ext_inst_opcode(&import_info, opcode_operand) else {
+            return;
+        };
+        let mut encoded_operands = vec![
+            dr::Operand::IdRef(set_id),
+            dr::Operand::LiteralExtInstInteger(resolved.opcode),
+        ];
+        if let Some(descriptors) = resolved.operands {
+            for descriptor in descriptors {
+                match descriptor.quantifier {
+                    OperandQuantifier::One => {
+                        let Some(next_operand) = operands.next() else {
+                            self.module_builder
+                                .emit_error(opcode_pos, "Extended instruction missing operands");
+                            return;
+                        };
+                        let Some(encoded) =
+                            self.encode_ext_inst_operand(descriptor, next_operand, opcode_pos)
+                        else {
+                            return;
+                        };
+                        encoded_operands.push(encoded);
+                    }
+                    OperandQuantifier::ZeroOrOne => {
+                        if operands.as_slice().is_empty() {
+                            continue;
+                        }
+                        let next_operand = operands.next().expect("peeked operand");
+                        let Some(encoded) =
+                            self.encode_ext_inst_operand(descriptor, next_operand, opcode_pos)
+                        else {
+                            return;
+                        };
+                        encoded_operands.push(encoded);
+                    }
+                    OperandQuantifier::ZeroOrMore => {
+                        for next_operand in operands.by_ref() {
+                            let Some(encoded) =
+                                self.encode_ext_inst_operand(descriptor, next_operand, opcode_pos)
+                            else {
+                                return;
+                            };
+                            encoded_operands.push(encoded);
+                        }
+                    }
+                }
+            }
+            if let Some(extra) = operands.next() {
+                self.module_builder.emit_error(
+                    extra.span().start(),
+                    "Extended instruction received unexpected operands",
+                );
+                return;
+            }
+        } else {
+            for operand in operands {
+                let Some(encoded) = self.encode_generic_ext_inst_operand(operand) else {
+                    return;
+                };
+                encoded_operands.push(encoded);
+            }
+        }
+
+        let (type_id, result_id) = self
+            .module_builder
+            .bind_typed_result(result_type, result_id);
+        let inst = dr::Instruction::new(
+            spirv::Op::ExtInst,
+            Some(type_id),
+            Some(result_id),
+            encoded_operands,
+        );
+        self.push_block_instruction(inst, opcode_pos);
+    }
+
+    fn translate_decorate(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
+        let Some(target_operand) = instruction.operands().first() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpDecorate missing target id");
+            return;
+        };
+        let Some(decoration_operand) = instruction.operands().get(1) else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpDecorate missing decoration enumerant");
+            return;
+        };
+        let Some(target_id) = self.operand_as_id(target_operand, "decorated id") else {
+            return;
+        };
+        let Some(decoration) = self.parse_enum_operand::<spirv::Decoration>(
+            Some(decoration_operand),
+            "decoration",
+            opcode_pos,
+        ) else {
+            return;
+        };
+        let mut operands = vec![
+            dr::Operand::IdRef(target_id),
+            dr::Operand::Decoration(decoration),
+        ];
+        if let Some(extra) =
+            self.encode_decoration_operands(decoration, instruction.operands(), 2, opcode_pos)
+        {
+            operands.extend(extra);
+        } else {
+            return;
+        }
+        self.push_annotation_instruction(dr::Instruction::new(
+            spirv::Op::Decorate,
+            None,
+            None,
+            operands,
+        ));
+    }
+
+    fn translate_decorate_id(&mut self, instruction: &ParsedInstruction<'a>) {
+        self.translate_decorate(instruction);
+    }
+
+    fn translate_decorate_string(&mut self, instruction: &ParsedInstruction<'a>) {
+        self.translate_decorate(instruction);
+    }
+
+    fn translate_member_decorate(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
+        let Some(struct_operand) = instruction.operands().first() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpMemberDecorate missing struct id");
+            return;
+        };
+        let Some(member_operand) = instruction.operands().get(1) else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpMemberDecorate missing member index");
+            return;
+        };
+        let Some(decoration_operand) = instruction.operands().get(2) else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpMemberDecorate missing decoration enumerant");
+            return;
+        };
+        let Some(struct_id) = self.operand_as_id(struct_operand, "struct id") else {
+            return;
+        };
+        let Some(member_index_value) = (match member_operand.value() {
+            OperandValue::Literal(literal) => Some(literal_to_u32(literal)),
+            _ => {
+                self.module_builder.emit_error(
+                    member_operand.span().start(),
+                    "Member index must be a literal",
+                );
+                None
+            }
+        }) else {
+            return;
+        };
+        let Ok(member_index) = usize::try_from(member_index_value) else {
+            self.module_builder
+                .emit_error(member_operand.span().start(), "Member index is too large");
+            return;
+        };
+        let Some(decoration) = self.parse_enum_operand::<spirv::Decoration>(
+            Some(decoration_operand),
+            "decoration",
+            opcode_pos,
+        ) else {
+            return;
+        };
+        let mut operands = vec![
+            dr::Operand::IdRef(struct_id),
+            dr::Operand::LiteralBit32(member_index_value),
+            dr::Operand::Decoration(decoration),
+        ];
+        if let Some(extra) =
+            self.encode_decoration_operands(decoration, instruction.operands(), 3, opcode_pos)
+        {
+            operands.extend(extra);
+        } else {
+            return;
+        }
+        self.apply_member_decorate_metadata(struct_id, member_index, decoration, instruction);
+        self.push_annotation_instruction(dr::Instruction::new(
+            spirv::Op::MemberDecorate,
+            None,
+            None,
+            operands,
+        ));
+    }
+
+    fn translate_member_decorate_string(&mut self, instruction: &ParsedInstruction<'a>) {
+        self.translate_member_decorate(instruction);
+    }
+
+    fn apply_member_decorate_metadata(
+        &mut self,
+        struct_id: u32,
+        member_index: usize,
+        decoration: spirv::Decoration,
+        instruction: &ParsedInstruction<'a>,
+    ) {
+        match decoration {
+            spirv::Decoration::RowMajor => {
+                let position = instruction
+                    .operands()
+                    .get(2)
+                    .map(|operand| operand.span().start())
+                    .unwrap_or_default();
+                self.module_builder.apply_member_majorness(
+                    struct_id,
+                    member_index,
+                    MatrixMajorness::RowMajor,
+                    position,
+                );
+            }
+            spirv::Decoration::ColMajor => {
+                let position = instruction
+                    .operands()
+                    .get(2)
+                    .map(|operand| operand.span().start())
+                    .unwrap_or_default();
+                self.module_builder.apply_member_majorness(
+                    struct_id,
+                    member_index,
+                    MatrixMajorness::ColumnMajor,
+                    position,
+                );
+            }
+            spirv::Decoration::MatrixStride => {
+                let Some(stride_operand) = instruction.operands().get(3) else {
+                    return;
+                };
+                let stride = match stride_operand.value() {
+                    OperandValue::Literal(literal) => literal_to_u32(literal),
+                    _ => {
+                        self.module_builder.emit_error(
+                            stride_operand.span().start(),
+                            "MatrixStride requires an integer literal",
+                        );
+                        return;
+                    }
+                };
+                self.module_builder.apply_member_matrix_stride(
+                    struct_id,
+                    member_index,
+                    stride,
+                    stride_operand.span().start(),
+                );
+            }
+            _ => {}
+        }
+    }
+
+    fn translate_phi(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
+        let Some(result_type) = instruction.result_type() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpPhi missing result type");
+            return;
+        };
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpPhi missing result id");
             return;
         };
         let mut incoming = Vec::new();
@@ -1192,26 +2280,28 @@ impl<'a> AssemblyTranslator<'a> {
         }
         if incoming.is_empty() {
             self.module_builder
-                .emit_error(MessagePosition::default(), "OpPhi requires incoming edges");
+                .emit_error(opcode_pos, "OpPhi requires incoming edges");
             return;
         }
-        let type_id = self.module_builder.resolve_type_id(result_type);
-        let result_id = self.module_builder.resolve_result_id(result_id);
+        let (type_id, result_id) = self
+            .module_builder
+            .bind_typed_result(result_type, result_id);
         if let Err(error) = self.builder.phi(type_id, Some(result_id), incoming) {
-            self.emit_builder_error(error, MessagePosition::default());
+            self.emit_builder_error(error, opcode_pos);
         }
     }
 
     fn translate_copy_memory(&mut self, instruction: &ParsedInstruction<'a>, sized: bool) {
+        let opcode_pos = instruction.opcode_position();
         let mut operands = instruction.operands().iter();
         let Some(target_operand) = operands.next() else {
             self.module_builder
-                .emit_error(MessagePosition::default(), "OpCopyMemory missing target");
+                .emit_error(opcode_pos, "OpCopyMemory missing target");
             return;
         };
         let Some(source_operand) = operands.next() else {
             self.module_builder
-                .emit_error(MessagePosition::default(), "OpCopyMemory missing source");
+                .emit_error(opcode_pos, "OpCopyMemory missing source");
             return;
         };
         let Some(target_id) = self.operand_as_id(target_operand, "target pointer") else {
@@ -1223,10 +2313,8 @@ impl<'a> AssemblyTranslator<'a> {
         let mut dr_operands = vec![dr::Operand::IdRef(target_id), dr::Operand::IdRef(source_id)];
         if sized {
             let Some(size_operand) = operands.next() else {
-                self.module_builder.emit_error(
-                    MessagePosition::default(),
-                    "OpCopyMemorySized missing size operand",
-                );
+                self.module_builder
+                    .emit_error(opcode_pos, "OpCopyMemorySized missing size operand");
                 return;
             };
             let Some(size_id) = self.operand_as_id(size_operand, "size operand") else {
@@ -1249,15 +2337,16 @@ impl<'a> AssemblyTranslator<'a> {
             spirv::Op::CopyMemory
         };
         let inst = dr::Instruction::new(opcode, None, None, dr_operands);
-        self.push_block_instruction(inst);
+        self.push_block_instruction(inst, opcode_pos);
     }
 
     fn translate_branch(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
         let operand = match instruction.operands().first() {
             Some(op) => op,
             None => {
                 self.module_builder
-                    .emit_error(MessagePosition::default(), "OpBranch missing target");
+                    .emit_error(opcode_pos, "OpBranch missing target");
                 return;
             }
         };
@@ -1270,26 +2359,21 @@ impl<'a> AssemblyTranslator<'a> {
     }
 
     fn translate_branch_conditional(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
         let mut operands = instruction.operands().iter();
         let Some(condition_operand) = operands.next() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpBranchConditional missing condition",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpBranchConditional missing condition");
             return;
         };
         let Some(true_operand) = operands.next() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpBranchConditional missing true label",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpBranchConditional missing true label");
             return;
         };
         let Some(false_operand) = operands.next() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpBranchConditional missing false label",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpBranchConditional missing false label");
             return;
         };
         let Some(condition_id) = self.operand_as_id(condition_operand, "condition id") else {
@@ -1318,32 +2402,33 @@ impl<'a> AssemblyTranslator<'a> {
             self.builder
                 .branch_conditional(condition_id, true_label, false_label, branch_weights)
         {
-            self.emit_builder_error(error, MessagePosition::default());
+            self.emit_builder_error(error, opcode_pos);
         }
     }
 
     fn translate_variable(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
         let Some(result_type) = instruction.result_type() else {
             self.module_builder
-                .emit_error(MessagePosition::default(), "OpVariable missing result type");
+                .emit_error(opcode_pos, "OpVariable missing result type");
             return;
         };
         let Some(result_id) = instruction.result_id() else {
             self.module_builder
-                .emit_error(MessagePosition::default(), "OpVariable missing result id");
+                .emit_error(opcode_pos, "OpVariable missing result id");
             return;
         };
         let mut operands = instruction.operands().iter();
         let Some(storage_operand) = operands.next() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpVariable missing storage class",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpVariable missing storage class");
             return;
         };
-        let Some(storage_class) =
-            self.parse_enum_operand::<spirv::StorageClass>(Some(storage_operand), "storage class")
-        else {
+        let Some(storage_class) = self.parse_enum_operand::<spirv::StorageClass>(
+            Some(storage_operand),
+            "storage class",
+            opcode_pos,
+        ) else {
             return;
         };
         let initializer = match operands.next() {
@@ -1360,28 +2445,30 @@ impl<'a> AssemblyTranslator<'a> {
             );
             return;
         }
-        let type_id = self.module_builder.resolve_type_id(result_type);
-        let result_id = self.module_builder.resolve_result_id(result_id);
+        let (type_id, result_id) = self
+            .module_builder
+            .bind_typed_result(result_type, result_id);
         let initializer_id = initializer;
         self.builder
             .variable(type_id, Some(result_id), storage_class, initializer_id);
     }
 
     fn translate_load(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
         let Some(result_type) = instruction.result_type() else {
             self.module_builder
-                .emit_error(MessagePosition::default(), "OpLoad missing result type");
+                .emit_error(opcode_pos, "OpLoad missing result type");
             return;
         };
         let Some(result_id) = instruction.result_id() else {
             self.module_builder
-                .emit_error(MessagePosition::default(), "OpLoad missing result id");
+                .emit_error(opcode_pos, "OpLoad missing result id");
             return;
         };
         let mut operands = instruction.operands().iter();
         let Some(pointer_operand) = operands.next() else {
             self.module_builder
-                .emit_error(MessagePosition::default(), "OpLoad missing pointer operand");
+                .emit_error(opcode_pos, "OpLoad missing pointer operand");
             return;
         };
         let Some(pointer_id) = self.operand_as_id(pointer_operand, "pointer operand") else {
@@ -1396,25 +2483,25 @@ impl<'a> AssemblyTranslator<'a> {
             );
             return;
         }
-        let type_id = self.module_builder.resolve_type_id(result_type);
-        let result_id = self.module_builder.resolve_result_id(result_id);
+        let (type_id, result_id) = self
+            .module_builder
+            .bind_typed_result(result_type, result_id);
         let inst =
             dr::Instruction::new(spirv::Op::Load, Some(type_id), Some(result_id), dr_operands);
-        self.push_block_instruction(inst);
+        self.push_block_instruction(inst, opcode_pos);
     }
 
     fn translate_store(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
         let mut operands = instruction.operands().iter();
         let Some(pointer_operand) = operands.next() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "OpStore missing pointer operand",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "OpStore missing pointer operand");
             return;
         };
         let Some(object_operand) = operands.next() else {
             self.module_builder
-                .emit_error(MessagePosition::default(), "OpStore missing object operand");
+                .emit_error(opcode_pos, "OpStore missing object operand");
             return;
         };
         let Some(pointer_id) = self.operand_as_id(pointer_operand, "pointer operand") else {
@@ -1436,37 +2523,30 @@ impl<'a> AssemblyTranslator<'a> {
             return;
         }
         let inst = dr::Instruction::new(spirv::Op::Store, None, None, dr_operands);
-        self.push_block_instruction(inst);
+        self.push_block_instruction(inst, opcode_pos);
     }
 
     fn translate_binary_arithmetic(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
         let Some(result_type) = instruction.result_type() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "Binary operation missing result type",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "Binary operation missing result type");
             return;
         };
         let Some(result_id) = instruction.result_id() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "Binary operation missing result id",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "Binary operation missing result id");
             return;
         };
         let mut operands = instruction.operands().iter();
         let Some(lhs_operand) = operands.next() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "Binary operation missing operands",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "Binary operation missing operands");
             return;
         };
         let Some(rhs_operand) = operands.next() else {
-            self.module_builder.emit_error(
-                MessagePosition::default(),
-                "Binary operation requires two operands",
-            );
+            self.module_builder
+                .emit_error(opcode_pos, "Binary operation requires two operands");
             return;
         };
         if let Some(extra) = operands.next() {
@@ -1482,15 +2562,16 @@ impl<'a> AssemblyTranslator<'a> {
         let Some(rhs_id) = self.operand_as_id(rhs_operand, "right operand") else {
             return;
         };
-        let type_id = self.module_builder.resolve_type_id(result_type);
-        let result_id = self.module_builder.resolve_result_id(result_id);
+        let (type_id, result_id) = self
+            .module_builder
+            .bind_typed_result(result_type, result_id);
         let inst = dr::Instruction::new(
             instruction.opcode(),
             Some(type_id),
             Some(result_id),
             vec![dr::Operand::IdRef(lhs_id), dr::Operand::IdRef(rhs_id)],
         );
-        self.push_block_instruction(inst);
+        self.push_block_instruction(inst, opcode_pos);
     }
 
     fn operand_as_id(&mut self, operand: &ParsedOperand<'a>, label: &str) -> Option<u32> {
@@ -1506,13 +2587,17 @@ impl<'a> AssemblyTranslator<'a> {
         }
     }
 
-    fn push_block_instruction(&mut self, instruction: dr::Instruction) {
+    fn push_block_instruction(&mut self, instruction: dr::Instruction, position: MessagePosition) {
         if let Err(error) = self
             .builder
             .insert_into_block(InsertPoint::End, instruction)
         {
-            self.emit_builder_error(error, MessagePosition::default());
+            self.emit_builder_error(error, position);
         }
+    }
+
+    fn push_annotation_instruction(&mut self, instruction: dr::Instruction) {
+        self.builder.module_mut().annotations.push(instruction);
     }
 
     fn take_memory_access_operand(
@@ -1554,10 +2639,462 @@ impl<'a> AssemblyTranslator<'a> {
         }
     }
 
+    fn encode_decoration_operands(
+        &mut self,
+        decoration: spirv::Decoration,
+        operands: &[ParsedOperand<'a>],
+        start_index: usize,
+        opcode_pos: MessagePosition,
+    ) -> Option<Vec<dr::Operand>> {
+        let mut encoded = Vec::new();
+        let mut index = start_index;
+        let descriptors = decoration_operand_descriptors(decoration);
+        for descriptor in descriptors {
+            match descriptor.quantifier() {
+                OperandQuantifier::One => {
+                    let Some(next) = operands.get(index) else {
+                        self.module_builder
+                            .emit_error(opcode_pos, "Decoration missing required operand");
+                        return None;
+                    };
+                    let value = self.encode_operand_for_kind(next, descriptor.kind())?;
+                    encoded.push(value);
+                    index += 1;
+                }
+                OperandQuantifier::ZeroOrOne => {
+                    if let Some(next) = operands.get(index) {
+                        let value = self.encode_operand_for_kind(next, descriptor.kind())?;
+                        encoded.push(value);
+                        index += 1;
+                    }
+                }
+                OperandQuantifier::ZeroOrMore => {
+                    while let Some(next) = operands.get(index) {
+                        let value = self.encode_operand_for_kind(next, descriptor.kind())?;
+                        encoded.push(value);
+                        index += 1;
+                    }
+                }
+            }
+        }
+        if index != operands.len() {
+            if let Some(extra) = operands.get(index) {
+                self.module_builder.emit_error(
+                    extra.span().start(),
+                    "Decoration received unexpected operands",
+                );
+            }
+            return None;
+        }
+        Some(encoded)
+    }
+
+    fn encode_operand_for_kind(
+        &mut self,
+        operand: &ParsedOperand<'a>,
+        kind: OperandKind,
+    ) -> Option<dr::Operand> {
+        use rspirv::grammar::OperandKind::*;
+        match kind {
+            IdRef => self
+                .operand_as_id(operand, "decoration id")
+                .map(dr::Operand::IdRef),
+            IdScope => self
+                .operand_as_id(operand, "decoration scope id")
+                .map(dr::Operand::IdScope),
+            IdMemorySemantics => self
+                .operand_as_id(operand, "decoration memory semantics id")
+                .map(dr::Operand::IdMemorySemantics),
+            LiteralInteger | LiteralContextDependentNumber => match operand.value() {
+                OperandValue::Literal(literal) => Some(encode_literal_operand(literal)),
+                _ => {
+                    self.module_builder
+                        .emit_error(operand.span().start(), "Expected literal integer operand");
+                    None
+                }
+            },
+            LiteralString => match operand.value() {
+                OperandValue::String(value) => Some(dr::Operand::LiteralString(value.to_string())),
+                _ => {
+                    self.module_builder
+                        .emit_error(operand.span().start(), "Expected string literal operand");
+                    None
+                }
+            },
+            LiteralFloat => self.encode_float_operand(operand),
+            BuiltIn => self.encode_enumerant_operand::<spirv::BuiltIn>(operand, "built-in"),
+            FunctionParameterAttribute => self
+                .encode_enumerant_operand::<spirv::FunctionParameterAttribute>(
+                    operand,
+                    "function parameter attribute",
+                ),
+            FPRoundingMode => {
+                self.encode_enumerant_operand::<spirv::FPRoundingMode>(operand, "FP rounding mode")
+            }
+            FPFastMathMode => self.encode_fp_fast_math_mode(operand),
+            FPDenormMode => {
+                self.encode_enumerant_operand::<spirv::FPDenormMode>(operand, "FP denorm mode")
+            }
+            FPOperationMode => self
+                .encode_enumerant_operand::<spirv::FPOperationMode>(operand, "FP operation mode"),
+            LinkageType => {
+                self.encode_enumerant_operand::<spirv::LinkageType>(operand, "linkage type")
+            }
+            AccessQualifier => {
+                self.encode_enumerant_operand::<spirv::AccessQualifier>(operand, "access qualifier")
+            }
+            HostAccessQualifier => self.encode_enumerant_operand::<spirv::HostAccessQualifier>(
+                operand,
+                "host access qualifier",
+            ),
+            InitializationModeQualifier => self
+                .encode_enumerant_operand::<spirv::InitializationModeQualifier>(
+                    operand,
+                    "initialization mode",
+                ),
+            LoadCacheControl => {
+                self.encode_enumerant_operand::<spirv::LoadCacheControl>(operand, "cache control")
+            }
+            StoreCacheControl => {
+                self.encode_enumerant_operand::<spirv::StoreCacheControl>(operand, "cache control")
+            }
+            _ => {
+                // Decoration operands should only reference the operand kinds enumerated in the
+                // grammar subset we generated. If we reach here, the grammar introduced a new
+                // operand kind that needs encoding support.
+                self.module_builder.emit_error(
+                    operand.span().start(),
+                    format!("Unsupported decoration operand kind: {:?}", kind),
+                );
+                None
+            }
+        }
+    }
+
+    fn encode_float_operand(&mut self, operand: &ParsedOperand<'a>) -> Option<dr::Operand> {
+        match operand.value() {
+            OperandValue::Literal(literal) => Some(encode_literal_operand(literal)),
+            OperandValue::Word(word) => {
+                let text = word.as_str();
+                match text.parse::<f64>() {
+                    Ok(value64) => {
+                        if value64.is_nan() {
+                            Some(dr::Operand::LiteralBit32(f32::NAN.to_bits()))
+                        } else {
+                            let value32 = value64 as f32;
+                            if value64 == (value32 as f64) {
+                                Some(dr::Operand::LiteralBit32(value32.to_bits()))
+                            } else {
+                                Some(dr::Operand::LiteralBit64(value64.to_bits()))
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        self.module_builder
+                            .emit_error(operand.span().start(), "Failed to parse float literal");
+                        None
+                    }
+                }
+            }
+            _ => {
+                self.module_builder
+                    .emit_error(operand.span().start(), "Float literal expected");
+                None
+            }
+        }
+    }
+
+    fn encode_fp_fast_math_mode(&mut self, operand: &ParsedOperand<'a>) -> Option<dr::Operand> {
+        match operand.value() {
+            OperandValue::Literal(literal) => Some(dr::Operand::FPFastMathMode(
+                spirv::FPFastMathMode::from_bits_truncate(literal_to_u32(literal)),
+            )),
+            OperandValue::Word(word) => {
+                let mut mode = spirv::FPFastMathMode::empty();
+                for part in word.as_str().split('|').map(str::trim) {
+                    if part.is_empty() || part == "None" {
+                        continue;
+                    }
+                    let flag = match part {
+                        "NotNaN" => spirv::FPFastMathMode::NOT_NAN,
+                        "NotInf" => spirv::FPFastMathMode::NOT_INF,
+                        "NSZ" => spirv::FPFastMathMode::NSZ,
+                        "AllowRecip" => spirv::FPFastMathMode::ALLOW_RECIP,
+                        "Fast" => spirv::FPFastMathMode::FAST,
+                        "AllowContractFastINTEL" => {
+                            spirv::FPFastMathMode::ALLOW_CONTRACT_FAST_INTEL
+                        }
+                        "AllowReassocINTEL" => spirv::FPFastMathMode::ALLOW_REASSOC_INTEL,
+                        other => {
+                            self.module_builder.emit_error(
+                                operand.span().start(),
+                                format!("Unknown FPFastMathMode flag '{other}'"),
+                            );
+                            return None;
+                        }
+                    };
+                    mode |= flag;
+                }
+                Some(dr::Operand::FPFastMathMode(mode))
+            }
+            _ => {
+                self.module_builder.emit_error(
+                    operand.span().start(),
+                    "FPFastMathMode operand must be literal or enumerant",
+                );
+                None
+            }
+        }
+    }
+
+    fn encode_enumerant_operand<E>(
+        &mut self,
+        operand: &ParsedOperand<'a>,
+        label: &str,
+    ) -> Option<dr::Operand>
+    where
+        E: FromStr,
+        dr::Operand: From<E>,
+    {
+        self.parse_enum_operand_value::<E>(operand, label)
+            .map(dr::Operand::from)
+    }
+
+    fn parse_enum_operand_value<E>(&mut self, operand: &ParsedOperand<'a>, label: &str) -> Option<E>
+    where
+        E: FromStr,
+    {
+        self.parse_enum_operand::<E>(Some(operand), label, operand.span().start())
+    }
+
+    fn resolve_composite_access(
+        &mut self,
+        mut type_id: u32,
+        indexes: &[(u32, MessagePosition)],
+    ) -> Option<u32> {
+        for (depth, (index, position)) in indexes.iter().enumerate() {
+            let Some(info) = self.module_builder.composite_type(type_id) else {
+                self.module_builder
+                    .emit_error(*position, "Operand type is not a composite value");
+                return None;
+            };
+            match info {
+                CompositeTypeInfo::Vector(vector) => {
+                    let vector = *vector;
+                    if *index >= vector.component_count() {
+                        self.module_builder.emit_error(
+                            *position,
+                            format!(
+                                "Composite extract index {index} exceeds vector width {}",
+                                vector.component_count()
+                            ),
+                        );
+                        return None;
+                    }
+                    if depth + 1 != indexes.len() {
+                        self.module_builder
+                            .emit_error(*position, "Cannot descend past a vector component");
+                        return None;
+                    }
+                    type_id = vector.component_type();
+                }
+                CompositeTypeInfo::Array(array) => {
+                    let array = *array;
+                    let Some(length) = self.module_builder.array_length(&array) else {
+                        self.module_builder.emit_error(
+                            *position,
+                            "Array length must be defined by an integer constant",
+                        );
+                        return None;
+                    };
+                    if *index >= length {
+                        self.module_builder.emit_error(
+                            *position,
+                            format!("Array index {index} exceeds array length {length}",),
+                        );
+                        return None;
+                    }
+                    type_id = array.element_type();
+                }
+                CompositeTypeInfo::Struct(struct_info) => {
+                    let Ok(field_index) = usize::try_from(*index) else {
+                        self.module_builder
+                            .emit_error(*position, "Struct index exceeds implementation limits");
+                        return None;
+                    };
+                    let Some(field_type) = struct_info.field_type(field_index) else {
+                        self.module_builder.emit_error(
+                            *position,
+                            format!(
+                                "Struct index {index} exceeds field count {}",
+                                struct_info.field_count()
+                            ),
+                        );
+                        return None;
+                    };
+                    type_id = field_type;
+                }
+                CompositeTypeInfo::Matrix(matrix) => {
+                    let matrix = *matrix;
+                    if *index >= matrix.column_count() {
+                        self.module_builder.emit_error(
+                            *position,
+                            format!(
+                                "Matrix column index {index} exceeds column count {}",
+                                matrix.column_count()
+                            ),
+                        );
+                        return None;
+                    }
+                    type_id = matrix.column_type();
+                }
+            }
+        }
+        Some(type_id)
+    }
+
+    fn resolve_ext_inst_opcode(
+        &mut self,
+        info: &ExtInstImportInfo,
+        operand: &ParsedOperand<'a>,
+    ) -> Option<ResolvedExtInst<'static>> {
+        match operand.value() {
+            OperandValue::Literal(literal) => Some(ResolvedExtInst {
+                opcode: literal_to_u32(literal),
+                operands: None,
+            }),
+            OperandValue::Word(word) => {
+                if let Some(inst) = info.kind.lookup(word.as_str()) {
+                    return Some(inst.into());
+                }
+                if let Ok(value) = word.as_str().parse::<u32>() {
+                    return Some(ResolvedExtInst {
+                        opcode: value,
+                        operands: None,
+                    });
+                }
+                if info.kind.has_grammar() {
+                    self.module_builder.emit_error(
+                        operand.span().start(),
+                        format!(
+                            "Unknown {} extended instruction '{}'",
+                            info.name,
+                            word.as_str()
+                        ),
+                    );
+                } else {
+                    self.module_builder.emit_error(
+                        operand.span().start(),
+                        format!(
+                            "Instruction set '{}' does not support named opcodes; use numeric identifiers",
+                            info.name
+                        ),
+                    );
+                }
+                None
+            }
+            _ => {
+                self.module_builder.emit_error(
+                    operand.span().start(),
+                    "Extended instruction opcode must be a literal or enumerant name",
+                );
+                None
+            }
+        }
+    }
+
+    fn encode_ext_inst_operand(
+        &mut self,
+        descriptor: &LogicalOperand,
+        operand: &ParsedOperand<'a>,
+        opcode_pos: MessagePosition,
+    ) -> Option<dr::Operand> {
+        match descriptor.kind {
+            OperandKind::IdRef => self
+                .operand_as_id(operand, "extended instruction operand")
+                .map(dr::Operand::IdRef),
+            OperandKind::LiteralInteger
+            | OperandKind::LiteralContextDependentNumber
+            | OperandKind::LiteralExtInstInteger => match operand.value() {
+                OperandValue::Literal(literal) => {
+                    Some(dr::Operand::LiteralBit32(literal_to_u32(literal)))
+                }
+                _ => {
+                    self.module_builder.emit_error(
+                        operand.span().start(),
+                        "Extended instruction literal operand expected",
+                    );
+                    None
+                }
+            },
+            OperandKind::FPRoundingMode => {
+                let mode = self.parse_enum_operand::<spirv::FPRoundingMode>(
+                    Some(operand),
+                    "rounding mode",
+                    opcode_pos,
+                )?;
+                Some(dr::Operand::FPRoundingMode(mode))
+            }
+            OperandKind::LiteralString => match operand.value() {
+                OperandValue::String(value) => Some(dr::Operand::LiteralString(value.to_string())),
+                _ => {
+                    self.module_builder.emit_error(
+                        operand.span().start(),
+                        "Extended instruction string operand expected",
+                    );
+                    None
+                }
+            },
+            _ => {
+                self.module_builder.emit_error(
+                    opcode_pos,
+                    format!(
+                        "Extended instruction operand kind {:?} is not supported",
+                        descriptor.kind
+                    ),
+                );
+                None
+            }
+        }
+    }
+
+    fn encode_generic_ext_inst_operand(
+        &mut self,
+        operand: &ParsedOperand<'a>,
+    ) -> Option<dr::Operand> {
+        match operand.value() {
+            OperandValue::Id(id) => {
+                Some(dr::Operand::IdRef(self.module_builder.resolve_id_ref(*id)))
+            }
+            OperandValue::Literal(literal) => {
+                Some(dr::Operand::LiteralBit32(literal_to_u32(literal)))
+            }
+            OperandValue::String(value) => Some(dr::Operand::LiteralString(value.to_string())),
+            OperandValue::Word(word) => {
+                self.module_builder.emit_error(
+                    operand.span().start(),
+                    format!(
+                        "Named opcode '{}' is not supported for this instruction set",
+                        word.as_str()
+                    ),
+                );
+                None
+            }
+            _ => {
+                self.module_builder.emit_error(
+                    operand.span().start(),
+                    "Extended instruction operand must be an id or literal",
+                );
+                None
+            }
+        }
+    }
+
     fn parse_enum_operand<E>(
         &mut self,
         operand: Option<&ParsedOperand<'a>>,
         label: &str,
+        missing_position: MessagePosition,
     ) -> Option<E>
     where
         E: FromStr,
@@ -1566,7 +3103,7 @@ impl<'a> AssemblyTranslator<'a> {
             Some(value) => value,
             None => {
                 self.module_builder
-                    .emit_error(MessagePosition::default(), format!("Missing {label}"));
+                    .emit_error(missing_position, format!("Missing {label}"));
                 return None;
             }
         };
@@ -1615,27 +3152,51 @@ impl<'a> AssemblyTranslator<'a> {
                 "DependencyInfinite" => control |= spirv::LoopControl::DEPENDENCY_INFINITE,
                 "DependencyLength" => {
                     control |= spirv::LoopControl::DEPENDENCY_LENGTH;
-                    additional_operands.push(self.expect_loop_control_literal(remaining, part)?);
+                    additional_operands.push(self.expect_loop_control_literal(
+                        remaining,
+                        operand.span().start(),
+                        part,
+                    )?);
                 }
                 "MinIterations" => {
                     control |= spirv::LoopControl::MIN_ITERATIONS;
-                    additional_operands.push(self.expect_loop_control_literal(remaining, part)?);
+                    additional_operands.push(self.expect_loop_control_literal(
+                        remaining,
+                        operand.span().start(),
+                        part,
+                    )?);
                 }
                 "MaxIterations" => {
                     control |= spirv::LoopControl::MAX_ITERATIONS;
-                    additional_operands.push(self.expect_loop_control_literal(remaining, part)?);
+                    additional_operands.push(self.expect_loop_control_literal(
+                        remaining,
+                        operand.span().start(),
+                        part,
+                    )?);
                 }
                 "IterationMultiple" => {
                     control |= spirv::LoopControl::ITERATION_MULTIPLE;
-                    additional_operands.push(self.expect_loop_control_literal(remaining, part)?);
+                    additional_operands.push(self.expect_loop_control_literal(
+                        remaining,
+                        operand.span().start(),
+                        part,
+                    )?);
                 }
                 "PeelCount" => {
                     control |= spirv::LoopControl::PEEL_COUNT;
-                    additional_operands.push(self.expect_loop_control_literal(remaining, part)?);
+                    additional_operands.push(self.expect_loop_control_literal(
+                        remaining,
+                        operand.span().start(),
+                        part,
+                    )?);
                 }
                 "PartialCount" => {
                     control |= spirv::LoopControl::PARTIAL_COUNT;
-                    additional_operands.push(self.expect_loop_control_literal(remaining, part)?);
+                    additional_operands.push(self.expect_loop_control_literal(
+                        remaining,
+                        operand.span().start(),
+                        part,
+                    )?);
                 }
                 other => {
                     self.module_builder.emit_error(
@@ -1652,11 +3213,12 @@ impl<'a> AssemblyTranslator<'a> {
     fn expect_loop_control_literal(
         &mut self,
         remaining: &mut std::slice::Iter<'_, ParsedOperand<'a>>,
+        flag_position: MessagePosition,
         label: &str,
     ) -> Option<dr::Operand> {
         let Some(operand) = remaining.next() else {
             self.module_builder.emit_error(
-                MessagePosition::default(),
+                flag_position,
                 format!("Loop control flag {label} requires a literal operand"),
             );
             return None;
@@ -1760,22 +3322,32 @@ impl<'a> AssemblyTranslator<'a> {
 
     /// Finalizes the translation and returns the constructed module plus diagnostics.
     pub fn finish(self) -> (dr::Module, Vec<DiagnosticMessage<'static>>) {
-        let module = self.builder.module();
-        let (diagnostics, _) = self.module_builder.finish();
+        let (diagnostics, next_id) = self.module_builder.finish();
+        let mut module = self.builder.module();
+        match module.header.as_mut() {
+            Some(header) => header.bound = next_id,
+            None => module.header = Some(dr::ModuleHeader::new(next_id)),
+        }
         (module, diagnostics)
     }
+}
+
+fn configure_builder_for_env(builder: &mut dr::Builder, env: TargetEnv) {
+    let version = env.spirv_version();
+    builder.set_version(version.major(), version.minor());
 }
 
 /// Assembles a sequence of parsed instructions into a SPIR-V module, returning both the module and
 /// any diagnostics emitted along the way.
 pub fn assemble_instructions<'a>(
     instructions: &[&'a ParsedInstruction<'a>],
-) -> (dr::Module, Vec<DiagnosticMessage<'static>>) {
+) -> Result<dr::Module, AssemblyError> {
     let mut translator = AssemblyTranslator::new();
     for instruction in instructions {
         translator.translate(instruction);
     }
-    translator.finish()
+    let (module, diagnostics) = translator.finish();
+    finalize_result(module, diagnostics)
 }
 
 fn literal_to_u32(literal: &LiteralNumber) -> u32 {
@@ -1785,10 +3357,52 @@ fn literal_to_u32(literal: &LiteralNumber) -> u32 {
     }
 }
 
+fn literal_to_u64(literal: &LiteralNumber) -> u64 {
+    match literal {
+        LiteralNumber::Unsigned(value) => *value,
+        LiteralNumber::Signed(value) => *value as u64,
+    }
+}
+
+fn encode_literal_operand(literal: &LiteralNumber) -> dr::Operand {
+    match literal {
+        LiteralNumber::Unsigned(value) if *value <= u32::MAX as u64 => {
+            dr::Operand::LiteralBit32(*value as u32)
+        }
+        LiteralNumber::Unsigned(value) => dr::Operand::LiteralBit64(*value),
+        LiteralNumber::Signed(value) if *value >= i32::MIN as i64 && *value <= i32::MAX as i64 => {
+            dr::Operand::LiteralBit32(*value as u32)
+        }
+        LiteralNumber::Signed(value) => dr::Operand::LiteralBit64(*value as u64),
+    }
+}
+
+fn finalize_result<T>(
+    value: T,
+    diagnostics: Vec<DiagnosticMessage<'static>>,
+) -> Result<T, AssemblyError> {
+    if diagnostics.is_empty() {
+        Ok(value)
+    } else {
+        Err(AssemblyError::new(diagnostics))
+    }
+}
+
 /// Assembles a block of textual SPIR-V instructions separated by newlines into a binary module.
 /// Returns the assembled words on success along with any diagnostics emitted along the way.
-pub fn assemble_text(text: &str) -> (Option<Vec<u32>>, Vec<DiagnosticMessage<'static>>) {
-    let mut translator = AssemblyTranslator::new();
+pub fn assemble_text(text: &str) -> Result<Vec<u32>, AssemblyError> {
+    assemble_text_with_translator(text, AssemblyTranslator::new())
+}
+
+/// Assembles SPIR-V text using the provided target environment to configure the module header.
+pub fn assemble_text_with_env(text: &str, env: TargetEnv) -> Result<Vec<u32>, AssemblyError> {
+    assemble_text_with_translator(text, AssemblyTranslator::with_target_env(env))
+}
+
+fn assemble_text_with_translator<'a>(
+    text: &'a str,
+    mut translator: AssemblyTranslator<'a>,
+) -> Result<Vec<u32>, AssemblyError> {
     let mut diagnostics = Vec::new();
 
     for raw_line in text.lines() {
@@ -1805,18 +3419,15 @@ pub fn assemble_text(text: &str) -> (Option<Vec<u32>>, Vec<DiagnosticMessage<'st
 
     let (module, translator_diagnostics) = translator.finish();
     diagnostics.extend(translator_diagnostics);
-
-    if diagnostics.is_empty() {
-        (Some(module.assemble()), diagnostics)
-    } else {
-        (None, diagnostics)
-    }
+    finalize_result(module.assemble(), diagnostics)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{assemble_instructions, assemble_text, AssemblyTranslator};
+    use super::{assemble_instructions, assemble_text, assemble_text_with_env, AssemblyTranslator};
     use crate::assembly::parser::parse_instruction;
+    use crate::target_env::TargetEnv;
+    use crate::version::SpirvVersion;
     use rspirv::{dr, spirv};
 
     #[test]
@@ -1877,17 +3488,16 @@ mod tests {
     fn assemble_instructions_streams_sequence() {
         let type_inst = parse_instruction("%uint = OpTypeInt 32 0").unwrap();
         let mem_model = parse_instruction("OpMemoryModel Logical GLSL450").unwrap();
-        let (module, diagnostics) = assemble_instructions(&[&type_inst, &mem_model]);
-        assert!(diagnostics.is_empty());
+        let module =
+            assemble_instructions(&[&type_inst, &mem_model]).expect("assemble instructions");
         assert!(module.memory_model.is_some());
     }
 
     #[test]
     fn assemble_text_parses_multiple_lines() {
         let text = "%uint = OpTypeInt 32 0\nOpMemoryModel Logical GLSL450";
-        let (binary, diagnostics) = assemble_text(text);
-        assert!(diagnostics.is_empty());
-        assert!(binary.is_some());
+        let binary = assemble_text(text).expect("assemble text");
+        assert!(!binary.is_empty());
     }
 
     #[test]
@@ -1900,9 +3510,8 @@ OpMemoryModel Logical GLSL450\n\
 %entry = OpLabel\n\
 OpReturn\n\
 OpFunctionEnd";
-        let (binary, diagnostics) = assemble_text(text);
-        assert!(diagnostics.is_empty());
-        assert!(binary.is_some());
+        let binary = assemble_text(text).expect("assemble text");
+        assert!(!binary.is_empty());
     }
 
     #[test]
@@ -1934,8 +3543,7 @@ OpFunctionEnd";
             })
             .collect();
         let refs: Vec<_> = parsed.iter().collect();
-        let (module, diagnostics) = assemble_instructions(&refs);
-        assert!(diagnostics.is_empty());
+        let module = assemble_instructions(&refs).expect("assemble instructions");
         assert_eq!(module.capabilities.len(), 1);
         assert_eq!(module.execution_modes.len(), 1);
         assert_eq!(module.entry_points.len(), 1);
@@ -1946,6 +3554,406 @@ OpFunctionEnd";
             .instructions
             .iter()
             .any(|inst| inst.class.opcode == spirv::Op::IAdd));
+    }
+
+    #[test]
+    fn translator_emits_glsl_ext_inst_with_named_opcode() {
+        let source = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%glsl = OpExtInstImport \"GLSL.std.450\"",
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+            "%float = OpTypeFloat 32",
+            "%zero = OpConstant %float 0",
+            "%main = OpFunction %void None %void_fn",
+            "%entry = OpLabel",
+            "%abs = OpExtInst %float %glsl FAbs %zero",
+            "OpReturn",
+            "OpFunctionEnd",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let module = assemble_instructions(&refs).expect("assemble instructions");
+        assert_eq!(module.ext_inst_imports.len(), 1);
+        let function = module.functions.first().expect("function");
+        let block = function.blocks.first().expect("entry block");
+        let ext_inst = block
+            .instructions
+            .iter()
+            .find(|inst| inst.class.opcode == spirv::Op::ExtInst)
+            .expect("ext inst instruction");
+        assert!(matches!(
+            ext_inst.operands.as_slice(),
+            [
+                dr::Operand::IdRef(_),
+                dr::Operand::LiteralExtInstInteger(4),
+                dr::Operand::IdRef(_)
+            ]
+        ));
+    }
+
+    #[test]
+    fn translator_emits_member_decorate_matrix_stride() {
+        let source = [
+            "%float = OpTypeFloat 32",
+            "%vec4 = OpTypeVector %float 4",
+            "%mat = OpTypeMatrix %vec4 4",
+            "%struct = OpTypeStruct %mat",
+            "OpMemberDecorate %struct 0 MatrixStride 16",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let module = assemble_instructions(&refs).expect("assemble instructions");
+        let struct_id = module
+            .types_global_values
+            .iter()
+            .find(|inst| inst.class.opcode == spirv::Op::TypeStruct)
+            .and_then(|inst| inst.result_id)
+            .expect("struct id");
+        let annotation = module.annotations.first().expect("annotation");
+        assert_eq!(annotation.class.opcode, spirv::Op::MemberDecorate);
+        assert_eq!(
+            annotation.operands.as_slice(),
+            [
+                dr::Operand::IdRef(struct_id),
+                dr::Operand::LiteralBit32(0),
+                dr::Operand::Decoration(spirv::Decoration::MatrixStride),
+                dr::Operand::LiteralBit32(16),
+            ]
+        );
+    }
+
+    #[test]
+    fn row_major_requires_matrix_stride() {
+        let source = [
+            "%float = OpTypeFloat 32",
+            "%vec2 = OpTypeVector %float 2",
+            "%mat = OpTypeMatrix %vec2 2",
+            "%struct = OpTypeStruct %mat",
+            "OpMemberDecorate %struct 0 RowMajor",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let diagnostics = assemble_instructions(&refs)
+            .expect_err("expected diagnostics")
+            .into_diagnostics();
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].message(),
+            "RowMajor decoration requires an accompanying MatrixStride"
+        );
+    }
+
+    #[test]
+    fn matrix_layout_requires_matrix_member_type() {
+        let source = [
+            "%float = OpTypeFloat 32",
+            "%struct = OpTypeStruct %float",
+            "OpMemberDecorate %struct 0 RowMajor",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let diagnostics = assemble_instructions(&refs)
+            .expect_err("expected diagnostics")
+            .into_diagnostics();
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].message(),
+            "RowMajor decoration requires the member type to be a matrix or array of matrices"
+        );
+    }
+
+    #[test]
+    fn matrix_stride_requires_matrix_member() {
+        let source = [
+            "%float = OpTypeFloat 32",
+            "%struct = OpTypeStruct %float",
+            "OpMemberDecorate %struct 0 MatrixStride 16",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let diagnostics = assemble_instructions(&refs)
+            .expect_err("expected diagnostics")
+            .into_diagnostics();
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].message(),
+            "MatrixStride decoration requires the member type to contain a matrix"
+        );
+    }
+
+    #[test]
+    fn conflicting_matrix_major_decorations_report_diagnostic() {
+        let source = [
+            "%float = OpTypeFloat 32",
+            "%vec2 = OpTypeVector %float 2",
+            "%mat = OpTypeMatrix %vec2 2",
+            "%struct = OpTypeStruct %mat",
+            "OpMemberDecorate %struct 0 RowMajor",
+            "OpMemberDecorate %struct 0 MatrixStride 16",
+            "OpMemberDecorate %struct 0 ColMajor",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let diagnostics = assemble_instructions(&refs)
+            .expect_err("expected diagnostics")
+            .into_diagnostics();
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].message(),
+            "RowMajor and ColMajor decorations cannot both target the same member"
+        );
+    }
+
+    #[test]
+    fn translator_emits_builtin_decorations() {
+        let source = [
+            "%float = OpTypeFloat 32",
+            "%ptr = OpTypePointer Input %float",
+            "%var = OpVariable %ptr Input",
+            "OpDecorate %var BuiltIn Position",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let module = assemble_instructions(&refs).expect("assemble instructions");
+        let var_id = module
+            .types_global_values
+            .iter()
+            .find(|inst| inst.class.opcode == spirv::Op::Variable)
+            .and_then(|inst| inst.result_id)
+            .expect("variable id");
+        let annotation = module.annotations.first().expect("annotation");
+        assert_eq!(annotation.class.opcode, spirv::Op::Decorate);
+        assert_eq!(
+            annotation.operands.as_slice(),
+            [
+                dr::Operand::IdRef(var_id),
+                dr::Operand::Decoration(spirv::Decoration::BuiltIn),
+                dr::Operand::BuiltIn(spirv::BuiltIn::Position),
+            ]
+        );
+    }
+
+    #[test]
+    fn translator_emits_linkage_attributes() {
+        let source = [
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %void_fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+            "OpDecorate %main LinkageAttributes \"main\" Import",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let module = assemble_instructions(&refs).expect("assemble instructions");
+        let function_id = module
+            .functions
+            .first()
+            .and_then(|func| func.def.as_ref())
+            .and_then(|inst| inst.result_id)
+            .expect("function id");
+        let annotation = module.annotations.first().expect("annotation");
+        assert_eq!(annotation.class.opcode, spirv::Op::Decorate);
+        assert_eq!(
+            annotation.operands.as_slice(),
+            [
+                dr::Operand::IdRef(function_id),
+                dr::Operand::Decoration(spirv::Decoration::LinkageAttributes),
+                dr::Operand::LiteralString("main".to_string()),
+                dr::Operand::LinkageType(spirv::LinkageType::Import),
+            ]
+        );
+    }
+
+    #[test]
+    fn translator_emits_decorate_id_operands() {
+        let source = [
+            "%uint = OpTypeInt 32 0",
+            "%ptr = OpTypePointer Uniform %uint",
+            "%var = OpVariable %ptr Uniform",
+            "%const = OpConstant %uint 16",
+            "OpDecorateId %var AlignmentId %const",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let module = assemble_instructions(&refs).expect("assemble instructions");
+        let var_id = module
+            .types_global_values
+            .iter()
+            .find(|inst| inst.class.opcode == spirv::Op::Variable)
+            .and_then(|inst| inst.result_id)
+            .expect("var id");
+        let const_id = module
+            .types_global_values
+            .iter()
+            .find(|inst| inst.class.opcode == spirv::Op::Constant)
+            .and_then(|inst| inst.result_id)
+            .expect("const id");
+        let annotation = module.annotations.first().expect("annotation");
+        assert_eq!(annotation.class.opcode, spirv::Op::Decorate);
+        assert_eq!(
+            annotation.operands.as_slice(),
+            [
+                dr::Operand::IdRef(var_id),
+                dr::Operand::Decoration(spirv::Decoration::AlignmentId),
+                dr::Operand::IdRef(const_id),
+            ]
+        );
+    }
+
+    #[test]
+    fn translator_handles_opencl_ext_inst_literal_operands() {
+        let source = [
+            "OpCapability Kernel",
+            "OpMemoryModel Physical64 OpenCL",
+            "%opencl = OpExtInstImport \"OpenCL.std\"",
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+            "%float = OpTypeFloat 32",
+            "%vec2 = OpTypeVector %float 2",
+            "%ulong = OpTypeInt 64 0",
+            "%ptr = OpTypePointer CrossWorkgroup %float",
+            "%offset = OpConstant %ulong 1",
+            "%addr = OpVariable %ptr CrossWorkgroup",
+            "%main = OpFunction %void None %void_fn",
+            "%entry = OpLabel",
+            "%load = OpExtInst %vec2 %opencl vloadn %offset %addr 2",
+            "OpReturn",
+            "OpFunctionEnd",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let module = assemble_instructions(&refs).expect("assemble instructions");
+        let function = module.functions.first().expect("function");
+        let block = function.blocks.first().expect("entry block");
+        let ext_inst = block
+            .instructions
+            .iter()
+            .find(|inst| inst.class.opcode == spirv::Op::ExtInst)
+            .expect("ext inst instruction");
+        assert!(matches!(
+            ext_inst.operands.as_slice(),
+            [
+                dr::Operand::IdRef(_),
+                dr::Operand::LiteralExtInstInteger(_),
+                dr::Operand::IdRef(_),
+                dr::Operand::IdRef(_),
+                dr::Operand::LiteralBit32(2)
+            ]
+        ));
+    }
+
+    #[test]
+    fn translator_handles_opencl_rounding_mode_operands() {
+        let source = [
+            "OpCapability Kernel",
+            "OpMemoryModel Physical64 OpenCL",
+            "%opencl = OpExtInstImport \"OpenCL.std\"",
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+            "%float = OpTypeFloat 32",
+            "%vec2 = OpTypeVector %float 2",
+            "%ptr = OpTypePointer CrossWorkgroup %float",
+            "%float_0 = OpConstant %float 0",
+            "%value = OpConstantComposite %vec2 %float_0 %float_0",
+            "%var = OpVariable %ptr CrossWorkgroup",
+            "%main = OpFunction %void None %void_fn",
+            "%entry = OpLabel",
+            "%call = OpExtInst %void %opencl vstore_half_r %value %var %value RTE",
+            "OpReturn",
+            "OpFunctionEnd",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let module = assemble_instructions(&refs).expect("assemble instructions");
+        let function = module.functions.first().expect("function");
+        let block = function.blocks.first().expect("entry block");
+        let ext_inst = block
+            .instructions
+            .iter()
+            .find(|inst| inst.class.opcode == spirv::Op::ExtInst)
+            .expect("ext inst instruction");
+        assert!(matches!(
+            ext_inst.operands.as_slice(),
+            [
+                dr::Operand::IdRef(_),
+                dr::Operand::LiteralExtInstInteger(_),
+                dr::Operand::IdRef(_),
+                dr::Operand::IdRef(_),
+                dr::Operand::IdRef(_),
+                dr::Operand::FPRoundingMode(spirv::FPRoundingMode::RTE)
+            ]
+        ));
+    }
+
+    #[test]
+    fn translator_handles_opencl_printf_variadic_operands() {
+        let source = [
+            "OpCapability Kernel",
+            "OpMemoryModel Physical64 OpenCL",
+            "%opencl = OpExtInstImport \"OpenCL.std\"",
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+            "%uint = OpTypeInt 32 0",
+            "%ptr = OpTypePointer CrossWorkgroup %uint",
+            "%value = OpVariable %ptr CrossWorkgroup",
+            "%format = OpVariable %ptr CrossWorkgroup",
+            "%main = OpFunction %void None %void_fn",
+            "%entry = OpLabel",
+            "%call = OpExtInst %void %opencl printf %format %value %value",
+            "OpReturn",
+            "OpFunctionEnd",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let module = assemble_instructions(&refs).expect("assemble instructions");
+        let function = module.functions.first().expect("function");
+        let block = function.blocks.first().expect("entry block");
+        let ext_inst = block
+            .instructions
+            .iter()
+            .find(|inst| inst.class.opcode == spirv::Op::ExtInst)
+            .expect("ext inst instruction");
+        assert_eq!(ext_inst.operands.len(), 5);
     }
 
     #[test]
@@ -1972,8 +3980,7 @@ OpFunctionEnd";
             .map(|line| parse_instruction(line).expect("parse"))
             .collect();
         let refs: Vec<_> = parsed.iter().collect();
-        let (module, diagnostics) = assemble_instructions(&refs);
-        assert!(diagnostics.is_empty());
+        let module = assemble_instructions(&refs).expect("assemble instructions");
         let function = module.functions.first().expect("function");
         let block = function.blocks.first().expect("entry block");
         let load = block
@@ -2032,8 +4039,7 @@ OpFunctionEnd";
             .map(|line| parse_instruction(line).expect("parse"))
             .collect();
         let refs: Vec<_> = parsed.iter().collect();
-        let (module, diagnostics) = assemble_instructions(&refs);
-        assert!(diagnostics.is_empty());
+        let module = assemble_instructions(&refs).expect("assemble instructions");
         let function = module.functions.first().expect("function");
         let block = function.blocks.first().expect("block");
         let access_chain = block
@@ -2072,8 +4078,7 @@ OpFunctionEnd";
             .map(|line| parse_instruction(line).expect("parse"))
             .collect();
         let refs: Vec<_> = parsed.iter().collect();
-        let (module, diagnostics) = assemble_instructions(&refs);
-        assert!(diagnostics.is_empty());
+        let module = assemble_instructions(&refs).expect("assemble instructions");
         let function = module.functions.first().expect("function");
         let all_insts: Vec<_> = function
             .blocks
@@ -2114,8 +4119,7 @@ OpFunctionEnd";
             .map(|line| parse_instruction(line).expect("parse"))
             .collect();
         let refs: Vec<_> = parsed.iter().collect();
-        let (module, diagnostics) = assemble_instructions(&refs);
-        assert!(diagnostics.is_empty());
+        let module = assemble_instructions(&refs).expect("assemble instructions");
         let function = module.functions.first().expect("function");
         let block = function.blocks.first().expect("block");
         let mut copies = block.instructions.iter().filter(|inst| {
@@ -2179,8 +4183,7 @@ OpFunctionEnd";
             .map(|line| parse_instruction(line).expect("parse"))
             .collect();
         let refs: Vec<_> = parsed.iter().collect();
-        let (module, diagnostics) = assemble_instructions(&refs);
-        assert!(diagnostics.is_empty());
+        let module = assemble_instructions(&refs).expect("assemble instructions");
         let function = module.functions.first().expect("function");
         let selection_merge = function
             .blocks
@@ -2223,8 +4226,7 @@ OpFunctionEnd";
             .map(|line| parse_instruction(line).expect("parse"))
             .collect();
         let refs: Vec<_> = parsed.iter().collect();
-        let (module, diagnostics) = assemble_instructions(&refs);
-        assert!(diagnostics.is_empty());
+        let module = assemble_instructions(&refs).expect("assemble instructions");
         let function = module.functions.first().expect("function");
         let loop_merge = function
             .blocks
@@ -2267,8 +4269,7 @@ OpFunctionEnd";
             .map(|line| parse_instruction(line).expect("parse"))
             .collect();
         let refs: Vec<_> = parsed.iter().collect();
-        let (module, diagnostics) = assemble_instructions(&refs);
-        assert!(diagnostics.is_empty());
+        let module = assemble_instructions(&refs).expect("assemble instructions");
         let function = module.functions.first().expect("function");
         let block = function.blocks.first().expect("block");
         let inst = block
@@ -2306,8 +4307,7 @@ OpFunctionEnd";
             .map(|line| parse_instruction(line).expect("parse"))
             .collect();
         let refs: Vec<_> = parsed.iter().collect();
-        let (module, diagnostics) = assemble_instructions(&refs);
-        assert!(diagnostics.is_empty());
+        let module = assemble_instructions(&refs).expect("assemble instructions");
         let function = module.functions.first().expect("function");
         let shuffle = function
             .blocks
@@ -2316,6 +4316,76 @@ OpFunctionEnd";
             .find(|inst| inst.class.opcode == spirv::Op::VectorShuffle)
             .expect("vector shuffle");
         assert_eq!(shuffle.operands.len(), 6);
+    }
+
+    #[test]
+    fn vector_shuffle_rejects_component_count_mismatch() {
+        let source = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+            "%int = OpTypeInt 32 0",
+            "%vec2 = OpTypeVector %int 2",
+            "%vec4 = OpTypeVector %int 4",
+            "%zero = OpConstant %int 0",
+            "%one = OpConstant %int 1",
+            "%main = OpFunction %void None %void_fn",
+            "%entry = OpLabel",
+            "%v1 = OpCompositeConstruct %vec2 %zero %one",
+            "%v2 = OpCompositeConstruct %vec2 %one %zero",
+            "%shuffle = OpVectorShuffle %vec4 %v1 %v2 0 1 2",
+            "OpReturn",
+            "OpFunctionEnd",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let diagnostics = assemble_instructions(&refs)
+            .expect_err("expected diagnostics")
+            .into_diagnostics();
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].message(),
+            "OpVectorShuffle expects 4 component literals but received 3"
+        );
+    }
+
+    #[test]
+    fn vector_shuffle_rejects_out_of_bounds_component() {
+        let source = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+            "%int = OpTypeInt 32 0",
+            "%vec2 = OpTypeVector %int 2",
+            "%vec4 = OpTypeVector %int 4",
+            "%zero = OpConstant %int 0",
+            "%one = OpConstant %int 1",
+            "%main = OpFunction %void None %void_fn",
+            "%entry = OpLabel",
+            "%v1 = OpCompositeConstruct %vec2 %zero %one",
+            "%v2 = OpCompositeConstruct %vec2 %one %zero",
+            "%shuffle = OpVectorShuffle %vec4 %v1 %v2 0 1 5 3",
+            "OpReturn",
+            "OpFunctionEnd",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let diagnostics = assemble_instructions(&refs)
+            .expect_err("expected diagnostics")
+            .into_diagnostics();
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].message(),
+            "Shuffle component 5 exceeds the available inputs (4)"
+        );
     }
 
     #[test]
@@ -2342,8 +4412,7 @@ OpFunctionEnd";
             .map(|line| parse_instruction(line).expect("parse"))
             .collect();
         let refs: Vec<_> = parsed.iter().collect();
-        let (module, diagnostics) = assemble_instructions(&refs);
-        assert!(diagnostics.is_empty());
+        let module = assemble_instructions(&refs).expect("assemble instructions");
         let function = module.functions.first().expect("function");
         let mut extract_seen = false;
         let mut insert_seen = false;
@@ -2375,6 +4444,311 @@ OpFunctionEnd";
     }
 
     #[test]
+    fn translator_handles_array_composite_extract() {
+        let source = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+            "%int = OpTypeInt 32 0",
+            "%four = OpConstant %int 4",
+            "%zero = OpConstant %int 0",
+            "%one = OpConstant %int 1",
+            "%two = OpConstant %int 2",
+            "%three = OpConstant %int 3",
+            "%arr = OpTypeArray %int %four",
+            "%main = OpFunction %void None %void_fn",
+            "%entry = OpLabel",
+            "%value = OpCompositeConstruct %arr %zero %one %two %three",
+            "%elem = OpCompositeExtract %int %value 2",
+            "OpReturn",
+            "OpFunctionEnd",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let module = assemble_instructions(&refs).expect("assemble instructions");
+        let function = module.functions.first().expect("function");
+        let block = function.blocks.first().expect("block");
+        let extract = block
+            .instructions
+            .iter()
+            .find(|inst| inst.class.opcode == spirv::Op::CompositeExtract)
+            .expect("extract instruction");
+        assert!(matches!(
+            extract.operands.as_slice(),
+            [dr::Operand::IdRef(_), dr::Operand::LiteralBit32(2)]
+        ));
+    }
+
+    #[test]
+    fn translator_handles_struct_composite_insert() {
+        let source = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+            "%int = OpTypeInt 32 0",
+            "%zero = OpConstant %int 0",
+            "%one = OpConstant %int 1",
+            "%two = OpConstant %int 2",
+            "%struct = OpTypeStruct %int %int",
+            "%main = OpFunction %void None %void_fn",
+            "%entry = OpLabel",
+            "%value = OpCompositeConstruct %struct %zero %one",
+            "%result = OpCompositeInsert %struct %two %value 1",
+            "OpReturn",
+            "OpFunctionEnd",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let module = assemble_instructions(&refs).expect("assemble instructions");
+        let function = module.functions.first().expect("function");
+        let block = function.blocks.first().expect("block");
+        let insert = block
+            .instructions
+            .iter()
+            .find(|inst| inst.class.opcode == spirv::Op::CompositeInsert)
+            .expect("insert instruction");
+        assert!(matches!(
+            insert.operands.as_slice(),
+            [
+                dr::Operand::IdRef(_),
+                dr::Operand::IdRef(_),
+                dr::Operand::LiteralBit32(1)
+            ]
+        ));
+    }
+
+    #[test]
+    fn translator_handles_matrix_composite_extract() {
+        let source = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+            "%float = OpTypeFloat 32",
+            "%vec2 = OpTypeVector %float 2",
+            "%mat2 = OpTypeMatrix %vec2 2",
+            "%float_0 = OpConstant %float 0",
+            "%float_1 = OpConstant %float 1",
+            "%float_2 = OpConstant %float 2",
+            "%float_3 = OpConstant %float 3",
+            "%col0 = OpConstantComposite %vec2 %float_0 %float_1",
+            "%col1 = OpConstantComposite %vec2 %float_2 %float_3",
+            "%mat = OpConstantComposite %mat2 %col0 %col1",
+            "%struct = OpTypeStruct %mat2",
+            "%value = OpConstantComposite %struct %mat",
+            "%main = OpFunction %void None %void_fn",
+            "%entry = OpLabel",
+            "%elem = OpCompositeExtract %float %value 0 1 0",
+            "OpReturn",
+            "OpFunctionEnd",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let module = assemble_instructions(&refs).expect("assemble instructions");
+        let function = module.functions.first().expect("function");
+        let block = function.blocks.first().expect("block");
+        let extract = block
+            .instructions
+            .iter()
+            .find(|inst| inst.class.opcode == spirv::Op::CompositeExtract)
+            .expect("extract instruction");
+        assert_eq!(extract.operands.len(), 4);
+    }
+
+    #[test]
+    fn translator_handles_nested_composite_extract() {
+        let source = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+            "%float = OpTypeFloat 32",
+            "%uint = OpTypeInt 32 0",
+            "%two = OpConstant %uint 2",
+            "%vec2 = OpTypeVector %float 2",
+            "%mat2 = OpTypeMatrix %vec2 2",
+            "%arr = OpTypeArray %mat2 %two",
+            "%struct = OpTypeStruct %arr",
+            "%f0 = OpConstant %float 0",
+            "%f1 = OpConstant %float 1",
+            "%f2 = OpConstant %float 2",
+            "%f3 = OpConstant %float 3",
+            "%f4 = OpConstant %float 4",
+            "%f5 = OpConstant %float 5",
+            "%f6 = OpConstant %float 6",
+            "%f7 = OpConstant %float 7",
+            "%col0 = OpConstantComposite %vec2 %f0 %f1",
+            "%col1 = OpConstantComposite %vec2 %f2 %f3",
+            "%col2 = OpConstantComposite %vec2 %f4 %f5",
+            "%col3 = OpConstantComposite %vec2 %f6 %f7",
+            "%mat_a = OpConstantComposite %mat2 %col0 %col1",
+            "%mat_b = OpConstantComposite %mat2 %col2 %col3",
+            "%arr_val = OpConstantComposite %arr %mat_a %mat_b",
+            "%value = OpConstantComposite %struct %arr_val",
+            "%main = OpFunction %void None %void_fn",
+            "%entry = OpLabel",
+            "%elem = OpCompositeExtract %float %value 0 1 0 1",
+            "OpReturn",
+            "OpFunctionEnd",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        assemble_instructions(&refs).expect("assemble instructions");
+    }
+
+    #[test]
+    fn composite_extract_reports_out_of_range_index() {
+        let source = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+            "%int = OpTypeInt 32 0",
+            "%vec2 = OpTypeVector %int 2",
+            "%zero = OpConstant %int 0",
+            "%one = OpConstant %int 1",
+            "%main = OpFunction %void None %void_fn",
+            "%entry = OpLabel",
+            "%v = OpCompositeConstruct %vec2 %zero %one",
+            "%elem = OpCompositeExtract %int %v 3",
+            "OpReturn",
+            "OpFunctionEnd",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let diagnostics = assemble_instructions(&refs)
+            .expect_err("expected diagnostics")
+            .into_diagnostics();
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].message(),
+            "Composite extract index 3 exceeds vector width 2"
+        );
+    }
+
+    #[test]
+    fn composite_extract_rejects_array_index_out_of_bounds() {
+        let source = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+            "%int = OpTypeInt 32 0",
+            "%four = OpConstant %int 4",
+            "%zero = OpConstant %int 0",
+            "%one = OpConstant %int 1",
+            "%two = OpConstant %int 2",
+            "%three = OpConstant %int 3",
+            "%arr = OpTypeArray %int %four",
+            "%main = OpFunction %void None %void_fn",
+            "%entry = OpLabel",
+            "%value = OpCompositeConstruct %arr %zero %one %two %three",
+            "%elem = OpCompositeExtract %int %value 5",
+            "OpReturn",
+            "OpFunctionEnd",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let diagnostics = assemble_instructions(&refs)
+            .expect_err("expected diagnostics")
+            .into_diagnostics();
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].message(),
+            "Array index 5 exceeds array length 4"
+        );
+    }
+
+    #[test]
+    fn composite_extract_rejects_matrix_column_index() {
+        let source = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+            "%float = OpTypeFloat 32",
+            "%vec2 = OpTypeVector %float 2",
+            "%mat2 = OpTypeMatrix %vec2 2",
+            "%f0 = OpConstant %float 0",
+            "%f1 = OpConstant %float 1",
+            "%col0 = OpConstantComposite %vec2 %f0 %f1",
+            "%col1 = OpConstantComposite %vec2 %f1 %f0",
+            "%mat = OpConstantComposite %mat2 %col0 %col1",
+            "%main = OpFunction %void None %void_fn",
+            "%entry = OpLabel",
+            "%elem = OpCompositeExtract %vec2 %mat 3",
+            "OpReturn",
+            "OpFunctionEnd",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let diagnostics = assemble_instructions(&refs)
+            .expect_err("expected diagnostics")
+            .into_diagnostics();
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].message(),
+            "Matrix column index 3 exceeds column count 2"
+        );
+    }
+
+    #[test]
+    fn composite_insert_requires_matching_object_type() {
+        let source = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+            "%int = OpTypeInt 32 0",
+            "%vec2 = OpTypeVector %int 2",
+            "%zero = OpConstant %int 0",
+            "%one = OpConstant %int 1",
+            "%main = OpFunction %void None %void_fn",
+            "%entry = OpLabel",
+            "%v = OpCompositeConstruct %vec2 %zero %one",
+            "%result = OpCompositeInsert %vec2 %v %v 0",
+            "OpReturn",
+            "OpFunctionEnd",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let diagnostics = assemble_instructions(&refs)
+            .expect_err("expected diagnostics")
+            .into_diagnostics();
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].message(),
+            "Object operand type must match the selected component type"
+        );
+    }
+
+    #[test]
     fn translator_emits_constant_composite_and_null() {
         let source = [
             "OpCapability Shader",
@@ -2397,8 +4771,7 @@ OpFunctionEnd";
             .map(|line| parse_instruction(line).expect("parse"))
             .collect();
         let refs: Vec<_> = parsed.iter().collect();
-        let (module, diagnostics) = assemble_instructions(&refs);
-        assert!(diagnostics.is_empty());
+        let module = assemble_instructions(&refs).expect("assemble instructions");
         let mut const_opcodes = module.types_global_values.iter().filter(|inst| {
             inst.class.opcode == spirv::Op::ConstantComposite
                 || inst.class.opcode == spirv::Op::ConstantNull
@@ -2436,8 +4809,7 @@ OpFunctionEnd";
             .map(|line| parse_instruction(line).expect("parse"))
             .collect();
         let refs: Vec<_> = parsed.iter().collect();
-        let (module, diagnostics) = assemble_instructions(&refs);
-        assert!(diagnostics.is_empty());
+        let module = assemble_instructions(&refs).expect("assemble instructions");
         let function = module.functions.first().expect("function");
         let phi = function
             .blocks
@@ -2446,5 +4818,13 @@ OpFunctionEnd";
             .find(|inst| inst.class.opcode == spirv::Op::Phi)
             .expect("phi instruction");
         assert_eq!(phi.operands.len(), 4);
+    }
+
+    #[test]
+    fn assembler_stamps_target_env_version() {
+        let binary =
+            assemble_text_with_env("", TargetEnv::Universal1_0).expect("assemble text with env");
+        assert!(binary.len() > 1);
+        assert_eq!(binary[1], SpirvVersion::new(1, 0).to_word());
     }
 }
