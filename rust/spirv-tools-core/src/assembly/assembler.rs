@@ -13,10 +13,11 @@ use super::decoration::decoration_operand_descriptors;
 use super::ext_inst::{ExtInstImportInfo, ResolvedExtInst};
 use super::instruction::{IdRef, LiteralNumber, ResultId, SpirvId, TypeId};
 use super::parser::{
-    parse_instruction_with_origin, OperandValue, ParsedInstruction, ParsedOperand,
+    parse_instruction_with_origin, OperandValue, ParseError, ParsedInstruction, ParsedOperand,
 };
 use crate::diagnostic::{DiagnosticMessage, MessagePosition};
 use crate::message::MessageLevel;
+use crate::string_literal::parse_string_literal;
 use crate::target_env::TargetEnv;
 
 /// Tracks textual identifiers and diagnostics while constructing a module.
@@ -265,7 +266,7 @@ impl<'a> ModuleBuilder<'a> {
     /// Emits an assembler diagnostic.
     pub fn emit_error(&mut self, position: MessagePosition, message: impl Into<Cow<'static, str>>) {
         self.diagnostics.push(
-            DiagnosticMessage::new(MessageLevel::Error, position, message).with_source("assembler"),
+            DiagnosticMessage::new(MessageLevel::Error, position, message).with_source("input"),
         );
     }
 
@@ -696,7 +697,7 @@ impl<'a> AssemblyTranslator<'a> {
             return;
         };
         let name = match name_operand.value() {
-            OperandValue::String(value) => *value,
+            OperandValue::String(value) => parse_string_literal(value),
             _ => {
                 self.module_builder.emit_error(
                     name_operand.span().start(),
@@ -715,12 +716,12 @@ impl<'a> AssemblyTranslator<'a> {
             return;
         }
         let numeric_id = self.module_builder.resolve_result_id(result_id);
-        let info = ExtInstImportInfo::new(name);
+        let info = ExtInstImportInfo::new(&name);
         let inst = dr::Instruction::new(
             spirv::Op::ExtInstImport,
             None,
             Some(numeric_id),
-            vec![dr::Operand::LiteralString(name.to_string())],
+            vec![dr::Operand::LiteralString(name)],
         );
         self.builder.module_mut().ext_inst_imports.push(inst);
         self.module_builder.note_ext_inst_import(numeric_id, info);
@@ -822,6 +823,13 @@ impl<'a> AssemblyTranslator<'a> {
                 return;
             }
         };
+        let encoding = match operands.next() {
+            Some(operand) => match self.parse_fp_encoding_operand(operand) {
+                Some(value) => Some(value),
+                None => return,
+            },
+            None => None,
+        };
         if let Some(extra) = operands.next() {
             self.module_builder.emit_error(
                 extra.span().start(),
@@ -831,7 +839,7 @@ impl<'a> AssemblyTranslator<'a> {
         }
         let width = literal_to_u32(width_literal);
         let result_id = self.module_builder.resolve_result_id(result_id);
-        self.builder.type_float_id(Some(result_id), width);
+        self.builder.type_float_id(Some(result_id), width, encoding);
     }
 
     fn translate_constant(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -1343,7 +1351,7 @@ impl<'a> AssemblyTranslator<'a> {
             }
         };
         let entry_name = match name_operand.value() {
-            OperandValue::String(name) => *name,
+            OperandValue::String(name) => parse_string_literal(name),
             _ => {
                 self.module_builder.emit_error(
                     name_operand.span().start(),
@@ -1365,7 +1373,7 @@ impl<'a> AssemblyTranslator<'a> {
         }
 
         self.builder
-            .entry_point(execution_model, function_id, entry_name, interfaces);
+            .entry_point(execution_model, function_id, &entry_name, interfaces);
     }
 
     fn translate_access_chain(&mut self, instruction: &ParsedInstruction<'a>, in_bounds: bool) {
@@ -2716,7 +2724,9 @@ impl<'a> AssemblyTranslator<'a> {
                 }
             },
             LiteralString => match operand.value() {
-                OperandValue::String(value) => Some(dr::Operand::LiteralString(value.to_string())),
+                OperandValue::String(value) => {
+                    Some(dr::Operand::LiteralString(parse_string_literal(value)))
+                }
                 _ => {
                     self.module_builder
                         .emit_error(operand.span().start(), "Expected string literal operand");
@@ -2823,10 +2833,15 @@ impl<'a> AssemblyTranslator<'a> {
                         "NSZ" => spirv::FPFastMathMode::NSZ,
                         "AllowRecip" => spirv::FPFastMathMode::ALLOW_RECIP,
                         "Fast" => spirv::FPFastMathMode::FAST,
-                        "AllowContractFastINTEL" => {
-                            spirv::FPFastMathMode::ALLOW_CONTRACT_FAST_INTEL
+                        "AllowContract" | "AllowContractFastINTEL" => {
+                            spirv::FPFastMathMode::ALLOW_CONTRACT
                         }
-                        "AllowReassocINTEL" => spirv::FPFastMathMode::ALLOW_REASSOC_INTEL,
+                        "AllowReassoc" | "AllowReassocINTEL" => {
+                            spirv::FPFastMathMode::ALLOW_REASSOC
+                        }
+                        "AllowTransform" | "AllowTransformINTEL" => {
+                            spirv::FPFastMathMode::ALLOW_TRANSFORM
+                        }
                         other => {
                             self.module_builder.emit_error(
                                 operand.span().start(),
@@ -2843,6 +2858,44 @@ impl<'a> AssemblyTranslator<'a> {
                 self.module_builder.emit_error(
                     operand.span().start(),
                     "FPFastMathMode operand must be literal or enumerant",
+                );
+                None
+            }
+        }
+    }
+
+    fn parse_fp_encoding_operand(
+        &mut self,
+        operand: &ParsedOperand<'a>,
+    ) -> Option<spirv::FPEncoding> {
+        match operand.value() {
+            OperandValue::Literal(literal) => {
+                let value = literal_to_u32(literal);
+                match spirv::FPEncoding::from_u32(value) {
+                    Some(encoding) => Some(encoding),
+                    None => {
+                        self.module_builder.emit_error(
+                            operand.span().start(),
+                            format!("Unknown FPEncoding literal {value}"),
+                        );
+                        None
+                    }
+                }
+            }
+            OperandValue::Word(word) => match word.as_str().parse::<spirv::FPEncoding>() {
+                Ok(encoding) => Some(encoding),
+                Err(_) => {
+                    self.module_builder.emit_error(
+                        operand.span().start(),
+                        format!("Unknown FPEncoding '{}'", word.as_str()),
+                    );
+                    None
+                }
+            },
+            _ => {
+                self.module_builder.emit_error(
+                    operand.span().start(),
+                    "FPEncoding operand must be literal or enumerant",
                 );
                 None
             }
@@ -3038,7 +3091,9 @@ impl<'a> AssemblyTranslator<'a> {
                 Some(dr::Operand::FPRoundingMode(mode))
             }
             OperandKind::LiteralString => match operand.value() {
-                OperandValue::String(value) => Some(dr::Operand::LiteralString(value.to_string())),
+                OperandValue::String(value) => {
+                    Some(dr::Operand::LiteralString(parse_string_literal(value)))
+                }
                 _ => {
                     self.module_builder.emit_error(
                         operand.span().start(),
@@ -3071,7 +3126,9 @@ impl<'a> AssemblyTranslator<'a> {
             OperandValue::Literal(literal) => {
                 Some(dr::Operand::LiteralBit32(literal_to_u32(literal)))
             }
-            OperandValue::String(value) => Some(dr::Operand::LiteralString(value.to_string())),
+            OperandValue::String(value) => {
+                Some(dr::Operand::LiteralString(parse_string_literal(value)))
+            }
             OperandValue::Word(word) => {
                 self.module_builder.emit_error(
                     operand.span().start(),
@@ -3407,35 +3464,47 @@ fn assemble_text_with_translator<'a>(
 ) -> Result<Vec<u32>, AssemblyError> {
     let mut diagnostics = Vec::new();
 
+    let mut line_bounds = Vec::new();
     let mut line_start = 0usize;
-    let mut line_index = 0usize;
     for (idx, byte) in text.as_bytes().iter().enumerate() {
         if *byte == b'\n' {
             let mut line_end = idx;
             if line_end > line_start && text.as_bytes()[line_end - 1] == b'\r' {
                 line_end -= 1;
             }
-            process_line(
-                text,
-                line_start,
-                line_end,
-                line_index,
-                &mut translator,
-                &mut diagnostics,
-            );
+            line_bounds.push((line_start, line_end));
             line_start = idx + 1;
-            line_index += 1;
         }
     }
     if line_start < text.len() {
-        process_line(
-            text,
-            line_start,
-            text.len(),
-            line_index,
-            &mut translator,
-            &mut diagnostics,
-        );
+        line_bounds.push((line_start, text.len()));
+    }
+
+    let mut line_index = 0usize;
+    while line_index < line_bounds.len() {
+        let (start, _) = line_bounds[line_index];
+        let mut last_line = line_index;
+        let mut span_end = line_bounds[last_line].1;
+        loop {
+            match process_line(text, start, span_end, line_index, &mut translator) {
+                Ok(()) => {
+                    line_index = last_line + 1;
+                    break;
+                }
+                Err(error) => {
+                    let is_unterminated =
+                        error.diagnostic().message() == "unterminated string literal";
+                    if is_unterminated && last_line + 1 < line_bounds.len() {
+                        last_line += 1;
+                        span_end = line_bounds[last_line].1;
+                        continue;
+                    }
+                    diagnostics.push(error.into_diagnostic());
+                    line_index = last_line + 1;
+                    break;
+                }
+            }
+        }
     }
 
     let (module, translator_diagnostics) = translator.finish();
@@ -3449,22 +3518,21 @@ fn process_line<'a>(
     line_end: usize,
     line_index: usize,
     translator: &mut AssemblyTranslator<'a>,
-    diagnostics: &mut Vec<DiagnosticMessage<'static>>,
-) {
+) -> Result<(), ParseError> {
     if line_start >= line_end {
-        return;
+        return Ok(());
     }
     let line_slice = &source[line_start..line_end];
     let leading_ws = line_slice.len() - line_slice.trim_start().len();
     let trailing_ws = line_slice.len() - line_slice.trim_end().len();
     if leading_ws >= line_slice.len() - trailing_ws {
-        return;
+        return Ok(());
     }
     let content_start = line_start + leading_ws;
     let content_end = line_end - trailing_ws;
     let line = &source[content_start..content_end];
     if line.is_empty() || line.starts_with(';') {
-        return;
+        return Ok(());
     }
     let line_number = u32::try_from(line_index).unwrap_or(u32::MAX);
     let column_offset = u32::try_from(leading_ws).unwrap_or(u32::MAX);
@@ -3472,8 +3540,11 @@ fn process_line<'a>(
     let origin = MessagePosition::new(line_number, column_offset, index_offset);
 
     match parse_instruction_with_origin(line, origin) {
-        Ok(parsed) => translator.translate(&parsed),
-        Err(error) => diagnostics.push(error.into_diagnostic()),
+        Ok(parsed) => {
+            translator.translate(&parsed);
+            Ok(())
+        }
+        Err(error) => Err(error),
     }
 }
 

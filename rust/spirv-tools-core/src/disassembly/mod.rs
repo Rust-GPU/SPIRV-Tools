@@ -17,6 +17,7 @@ use std::sync::Mutex;
 use crate::assembly::{BinaryToTextOptions, ExtInstImportInfo, ExtInstSetKind};
 use crate::diagnostic::{DiagnosticMessage, MessagePosition};
 use crate::message::MessageLevel;
+use crate::string_literal::render_string_literal;
 
 const SUPPORTED_OPTION_BITS: u32 = BinaryToTextOptions::NO_HEADER.bits()
     | BinaryToTextOptions::PRINT.bits()
@@ -25,7 +26,6 @@ const SUPPORTED_OPTION_BITS: u32 = BinaryToTextOptions::NO_HEADER.bits()
     | BinaryToTextOptions::FRIENDLY_NAMES.bits()
     | BinaryToTextOptions::NESTED_INDENT.bits()
     | BinaryToTextOptions::COMMENT.bits()
-    | BinaryToTextOptions::REORDER_BLOCKS.bits()
     | BinaryToTextOptions::COLOR.bits()
     | BinaryToTextOptions::HEX.bits();
 const HEADER_WORD_COUNT: usize = 5;
@@ -77,7 +77,7 @@ impl DisassemblyError {
             MessagePosition::default(),
             message.clone(),
         )
-        .with_source("disassembler");
+        .with_source("input");
         Self::Parse {
             message,
             diagnostics: vec![diagnostic],
@@ -104,13 +104,17 @@ pub fn disassemble_binary(
         FormattingOptions::try_from(requested).map_err(DisassemblyError::Unsupported)?;
 
     let mut loader = Loader::new();
-    Parser::new(words_as_bytes(words), &mut loader)
-        .parse()
-        .map_err(|error| DisassemblyError::parse_error(error.to_string()))?;
+    match Parser::new(words_as_bytes(words), &mut loader).parse() {
+        Ok(()) => {}
+        Err(rspirv::binary::ParseState::OpcodeUnknown(_, _, _)) => {
+            return Err(DisassemblyError::Unsupported(BinaryToTextOptions::empty()))
+        }
+        Err(error) => return Err(DisassemblyError::parse_error(error.to_string())),
+    }
     let mut module = loader.module();
     update_module_header(&mut module, words);
     let offsets = collect_instruction_offsets(words);
-    let mut text = render_module_text(&module, &offsets, &formatting);
+    let mut text = render_module_text(&module, words, &offsets, &formatting);
     if !text.is_empty() && !text.ends_with('\n') {
         text.push('\n');
     }
@@ -177,7 +181,7 @@ impl TryFrom<BinaryToTextOptions> for FormattingOptions {
         if !unsupported.is_empty() {
             return Err(unsupported);
         }
-        Ok(Self {
+        let options = Self {
             suppress_header: bits.contains(BinaryToTextOptions::NO_HEADER),
             show_byte_offsets: bits.contains(BinaryToTextOptions::SHOW_BYTE_OFFSET),
             indent: bits.contains(BinaryToTextOptions::INDENT),
@@ -192,7 +196,8 @@ impl TryFrom<BinaryToTextOptions> for FormattingOptions {
             } else {
                 LiteralFormat::Decimal
             },
-        })
+        };
+        Ok(options)
     }
 }
 
@@ -238,6 +243,30 @@ impl TypeTable {
                 _ => {}
             }
         }
+        Self { entries }
+    }
+
+    fn get(&self, id: u32) -> Option<&TypeInfo> {
+        self.entries.get(&id)
+    }
+}
+
+struct ValueTypeTable {
+    entries: HashMap<u32, TypeInfo>,
+}
+
+impl ValueTypeTable {
+    fn from_module(module: &dr::Module, type_table: &TypeTable) -> Self {
+        let mut entries = HashMap::new();
+        visit_module_instructions(module, |instruction| {
+            if let (Some(result_id), Some(result_type)) =
+                (instruction.result_id, instruction.result_type)
+            {
+                if let Some(info) = type_table.get(result_type) {
+                    entries.insert(result_id, *info);
+                }
+            }
+        });
         Self { entries }
     }
 
@@ -292,6 +321,7 @@ enum TypeInfo {
 fn literal_operand_to_u32(operand: &Operand) -> Option<u32> {
     match operand {
         Operand::LiteralBit32(value) => Some(*value),
+        Operand::FPEncoding(value) => Some(*value as u32),
         _ => None,
     }
 }
@@ -357,9 +387,15 @@ impl<'a> InstructionRecord<'a> {
     }
 }
 
-fn render_module_text(module: &dr::Module, offsets: &[u32], options: &FormattingOptions) -> String {
-    let instructions = collect_module_instructions(module, options.reorder_blocks);
+fn render_module_text(
+    module: &dr::Module,
+    words: &[u32],
+    offsets: &[u32],
+    options: &FormattingOptions,
+) -> String {
+    let instructions = collect_module_instructions(module, words, options.reorder_blocks);
     let type_table = TypeTable::from_module(module);
+    let value_types = ValueTypeTable::from_module(module, &type_table);
     let ext_inst_table = ExtInstTable::from_module(module);
     let friendly_names = if options.friendly_names {
         let table = FriendlyNameTable::from_module(module, &type_table);
@@ -372,10 +408,6 @@ fn render_module_text(module: &dr::Module, offsets: &[u32], options: &Formatting
         None
     };
     let mut comment_collector = CommentCollector::new(options.comments);
-    if instructions.len() != offsets.len() {
-        return module.disassemble();
-    }
-
     let mut text = String::new();
     if !options.suppress_header {
         text.push_str(&render_header(module));
@@ -386,6 +418,7 @@ fn render_module_text(module: &dr::Module, offsets: &[u32], options: &Formatting
         options,
         &type_table,
         &ext_inst_table,
+        &value_types,
         friendly_names.as_ref(),
         &mut comment_collector,
     ));
@@ -422,19 +455,22 @@ fn vendor_prefix(name: &str) -> &str {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_instructions(
     instructions: &[InstructionRecord],
     offsets: &[u32],
     options: &FormattingOptions,
     type_table: &TypeTable,
     ext_inst_table: &ExtInstTable,
+    value_types: &ValueTypeTable,
     friendly_names: Option<&FriendlyNameTable>,
     comment_collector: &mut CommentCollector,
 ) -> String {
     let mut aligner = CommentAligner::new();
     let mut text = String::new();
     let mut current_section = ModuleSection::Header;
-    for (index, (record, &offset)) in instructions.iter().zip(offsets).enumerate() {
+    for (index, record) in instructions.iter().enumerate() {
+        let offset = offsets.get(index).copied().unwrap_or(0);
         let instruction = record.instruction();
         if options.comments {
             comment_collector.observe(instruction);
@@ -457,6 +493,7 @@ fn render_instructions(
             options.literal_format,
             type_table,
             ext_inst_table,
+            value_types,
         ));
         if options.comments && instruction.class.opcode == spirv::Op::Function {
             append_function_heading(
@@ -469,19 +506,17 @@ fn render_instructions(
         }
         apply_friendly_names(&mut line, friendly_names);
 
-        let mut block_indent = 0usize;
-        if options.nested_indent {
-            let nest_level = (record.depth as usize) * 2;
-            block_indent += nest_level * BLOCK_NEST_INDENT;
-            if record.is_block_body() {
-                block_indent += BLOCK_BODY_INDENT_OFFSET;
-            }
-        }
-
         if options.indent {
             apply_indent(&mut line, 0);
         }
-        insert_block_indent(&mut line, block_indent);
+
+        if options.nested_indent {
+            let mut block_indent = (record.depth as usize) * BLOCK_NEST_INDENT;
+            if record.is_block_body() {
+                block_indent += BLOCK_BODY_INDENT_OFFSET;
+            }
+            insert_block_indent(&mut line, block_indent);
+        }
         let mut comment_parts = Vec::new();
         if options.show_byte_offsets {
             comment_parts.push(format!("0x{offset:08x}"));
@@ -524,10 +559,15 @@ fn disassemble_with_format(
     literal_format: LiteralFormat,
     type_table: &TypeTable,
     ext_inst_table: &ExtInstTable,
+    value_types: &ValueTypeTable,
 ) -> String {
-    let operands = format_ext_inst_operands(instruction, literal_format, ext_inst_table)
-        .or_else(|| format_constant_operands(instruction, literal_format, type_table))
-        .unwrap_or_else(|| disassemble_operands(&instruction.operands, literal_format));
+    let operands = if instruction.class.opcode == spirv::Op::Switch {
+        format_switch_operands(instruction, literal_format, value_types)
+    } else {
+        format_ext_inst_operands(instruction, literal_format, ext_inst_table)
+            .or_else(|| format_constant_operands(instruction, literal_format, type_table))
+            .unwrap_or_else(|| disassemble_operands(&instruction.operands, literal_format))
+    };
     let mut line = String::new();
     if let Some(result_id) = instruction.result_id {
         line.push('%');
@@ -574,6 +614,50 @@ fn format_constant_operands(
     match type_info {
         TypeInfo::Int { width, signed } => format_integer_literal(literal, *width, *signed),
         TypeInfo::Float { width } => format_float_literal(literal, *width),
+    }
+}
+
+fn format_switch_operands(
+    instruction: &Instruction,
+    literal_format: LiteralFormat,
+    value_types: &ValueTypeTable,
+) -> String {
+    if instruction.operands.len() < 2 {
+        return disassemble_operands(&instruction.operands, literal_format);
+    }
+    let selector = &instruction.operands[0];
+    let default_label = &instruction.operands[1];
+    let selector_text = format_operand(selector, literal_format);
+    let default_text = format_operand(default_label, literal_format);
+    let selector_type = extract_id_ref(selector)
+        .and_then(|id| value_types.get(id))
+        .copied();
+    let mut parts = vec![selector_text, default_text];
+    let mut index = 2;
+    while index + 1 < instruction.operands.len() {
+        let literal = &instruction.operands[index];
+        let label = &instruction.operands[index + 1];
+        let literal_text = if literal_format == LiteralFormat::Hexadecimal {
+            format_operand(literal, literal_format)
+        } else if let Some(type_info) = selector_type {
+            format_integer_from_type(literal, type_info)
+                .unwrap_or_else(|| format_operand(literal, literal_format))
+        } else {
+            format_operand(literal, literal_format)
+        };
+        parts.push(literal_text);
+        parts.push(format_operand(label, literal_format));
+        index += 2;
+    }
+    parts.join(" ")
+}
+
+fn format_integer_from_type(operand: &Operand, info: TypeInfo) -> Option<String> {
+    match info {
+        TypeInfo::Int { width, signed } => {
+            literal_operand_bits(operand).map(|bits| format_integer_bits(bits, width, signed))
+        }
+        _ => None,
     }
 }
 
@@ -837,6 +921,7 @@ fn format_operand(operand: &Operand, literal_format: LiteralFormat) -> String {
                 operand.disassemble()
             }
         }
+        (_, Operand::LiteralString(value)) => format_literal_string(value),
         (_, Operand::StorageClass(class)) => {
             if let Some(name) = canonical_storage_class(*class) {
                 name.to_string()
@@ -874,6 +959,10 @@ fn normalize_mask_string(raw: &str) -> String {
         }
     }
     parts.join("|")
+}
+
+fn format_literal_string(value: &str) -> String {
+    render_string_literal(value)
 }
 
 fn canonical_execution_model(model: spirv::ExecutionModel) -> Option<&'static str> {
@@ -1096,10 +1185,70 @@ fn collect_instruction_offsets(words: &[u32]) -> Vec<u32> {
     offsets
 }
 
-fn collect_module_instructions(
-    module: &dr::Module,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LocationPlacement {
+    BeforeLabel {
+        function_index: usize,
+        label_index: usize,
+    },
+    ModuleTail,
+}
+
+fn classify_location_debugs(words: &[u32], function_count: usize) -> Vec<LocationPlacement> {
+    let mut placements = Vec::new();
+    if words.len() <= HEADER_WORD_COUNT {
+        return placements;
+    }
+    let mut index = HEADER_WORD_COUNT;
+    let mut current_function = 0usize;
+    let mut inside_function = false;
+    let mut label_index = 0usize;
+    while index < words.len() {
+        let word = words[index];
+        let word_count = (word >> 16) as usize;
+        if word_count == 0 || index + word_count > words.len() {
+            break;
+        }
+        let opcode = word & 0xFFFF;
+        if let Some(op) = spirv::Op::from_u32(opcode) {
+            if rspirv::grammar::reflect::is_location_debug(op) {
+                if inside_function {
+                    placements.push(LocationPlacement::BeforeLabel {
+                        function_index: current_function,
+                        label_index,
+                    });
+                } else if current_function >= function_count {
+                    placements.push(LocationPlacement::ModuleTail);
+                }
+            } else {
+                match op {
+                    spirv::Op::Function => {
+                        inside_function = true;
+                        label_index = 0;
+                    }
+                    spirv::Op::Label => {
+                        label_index += 1;
+                    }
+                    spirv::Op::FunctionEnd => {
+                        inside_function = false;
+                        if current_function < function_count {
+                            current_function += 1;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        index += word_count;
+    }
+    placements
+}
+
+fn collect_module_instructions<'a>(
+    module: &'a dr::Module,
+    words: &[u32],
     reorder_blocks: bool,
-) -> Vec<InstructionRecord<'_>> {
+) -> Vec<InstructionRecord<'a>> {
     let mut records = Vec::new();
     for instruction in &module.capabilities {
         records.push(InstructionRecord::new(
@@ -1181,7 +1330,46 @@ fn collect_module_instructions(
             ModuleSection::Annotations,
         ));
     }
-    for instruction in &module.types_global_values {
+    let trailing_location_start = module
+        .types_global_values
+        .iter()
+        .rposition(|inst| !rspirv::grammar::reflect::is_location_debug(inst.class.opcode))
+        .map(|idx| idx + 1)
+        .unwrap_or(0);
+    let (type_values, trailing_location_insts) =
+        module.types_global_values.split_at(trailing_location_start);
+    let location_placements = classify_location_debugs(words, module.functions.len());
+    let mut placement_iter = location_placements.into_iter();
+    let mut label_locations: Vec<Vec<Vec<&Instruction>>> = vec![Vec::new(); module.functions.len()];
+    let mut function_tail_locations: Vec<Vec<&Instruction>> =
+        vec![Vec::new(); module.functions.len()];
+    let mut module_tail_locations: Vec<&Instruction> = Vec::new();
+
+    for instruction in trailing_location_insts {
+        match placement_iter
+            .next()
+            .unwrap_or(LocationPlacement::ModuleTail)
+        {
+            LocationPlacement::BeforeLabel {
+                function_index,
+                label_index,
+            } => {
+                if let Some(buckets) = label_locations.get_mut(function_index) {
+                    if buckets.len() <= label_index {
+                        buckets.resize_with(label_index + 1, Vec::new);
+                    }
+                    buckets[label_index].push(instruction);
+                } else if let Some(tails) = function_tail_locations.get_mut(function_index) {
+                    tails.push(instruction);
+                } else {
+                    module_tail_locations.push(instruction);
+                }
+            }
+            LocationPlacement::ModuleTail => module_tail_locations.push(instruction),
+        }
+    }
+
+    for instruction in type_values {
         records.push(InstructionRecord::new(
             instruction,
             0,
@@ -1189,7 +1377,7 @@ fn collect_module_instructions(
             ModuleSection::Types,
         ));
     }
-    for function in &module.functions {
+    for (function_index, function) in module.functions.iter().enumerate() {
         if let Some(ref def) = function.def {
             records.push(InstructionRecord::new(
                 def,
@@ -1206,25 +1394,36 @@ fn collect_module_instructions(
                 ModuleSection::Functions,
             ));
         }
-
-        let mut tracker = MergeTracker::new();
+        let nest_levels = compute_block_nest_levels(function);
         let block_indices = if reorder_blocks {
             reorder_function_blocks(function)
         } else {
             (0..function.blocks.len()).collect()
         };
+        let mut label_index = 0usize;
         for index in block_indices {
             let block = &function.blocks[index];
-            let mut block_depth = tracker.current_depth();
+            let block_depth = nest_levels.get(index).copied().unwrap_or(0);
             if let Some(ref label) = block.label {
-                tracker.enter_block(label.result_id);
-                block_depth = tracker.current_depth();
+                if let Some(buckets) = label_locations.get(function_index) {
+                    if let Some(locations) = buckets.get(label_index) {
+                        for instruction in locations {
+                            records.push(InstructionRecord::new(
+                                instruction,
+                                block_depth,
+                                BlockPosition::Global,
+                                ModuleSection::Functions,
+                            ));
+                        }
+                    }
+                }
                 records.push(InstructionRecord::new(
                     label,
                     block_depth,
                     BlockPosition::Label,
                     ModuleSection::Functions,
                 ));
+                label_index += 1;
             }
             for instruction in &block.instructions {
                 records.push(InstructionRecord::new(
@@ -1233,11 +1432,30 @@ fn collect_module_instructions(
                     BlockPosition::Body,
                     ModuleSection::Functions,
                 ));
-                tracker.observe(instruction);
+            }
+        }
+
+        if let Some(buckets) = label_locations.get(function_index) {
+            if label_index < buckets.len() {
+                if let Some(tails) = function_tail_locations.get_mut(function_index) {
+                    for locations in &buckets[label_index..] {
+                        tails.extend(locations.iter().copied());
+                    }
+                }
             }
         }
 
         if let Some(ref end) = function.end {
+            if let Some(tails) = function_tail_locations.get(function_index) {
+                for instruction in tails {
+                    records.push(InstructionRecord::new(
+                        instruction,
+                        0,
+                        BlockPosition::Global,
+                        ModuleSection::Functions,
+                    ));
+                }
+            }
             records.push(InstructionRecord::new(
                 end,
                 0,
@@ -1245,6 +1463,15 @@ fn collect_module_instructions(
                 ModuleSection::Functions,
             ));
         }
+    }
+
+    for instruction in module_tail_locations {
+        records.push(InstructionRecord::new(
+            instruction,
+            0,
+            BlockPosition::Global,
+            ModuleSection::Functions,
+        ));
     }
 
     records
@@ -1274,43 +1501,6 @@ impl CommentAligner {
 
     fn reset(&mut self) {
         self.last_alignment = 0;
-    }
-}
-
-struct MergeTracker {
-    stack: Vec<u32>,
-}
-
-impl MergeTracker {
-    fn new() -> Self {
-        Self { stack: Vec::new() }
-    }
-
-    fn enter_block(&mut self, label_id: Option<u32>) {
-        if let Some(id) = label_id {
-            while let Some(&merge_id) = self.stack.last() {
-                if merge_id == id {
-                    self.stack.pop();
-                } else {
-                    break;
-                }
-            }
-        }
-    }
-
-    fn current_depth(&self) -> u32 {
-        self.stack.len() as u32
-    }
-
-    fn observe(&mut self, instruction: &Instruction) {
-        match instruction.class.opcode {
-            spirv::Op::SelectionMerge | spirv::Op::LoopMerge => {
-                if let Some(target) = instruction.operands.first().and_then(extract_id_ref) {
-                    self.stack.push(target);
-                }
-            }
-            _ => {}
-        }
     }
 }
 
@@ -1376,84 +1566,271 @@ impl CommentCollector {
     }
 }
 
+#[derive(Clone, Copy)]
+struct StackEntry {
+    index: usize,
+    post_visit: bool,
+}
+
 fn reorder_function_blocks(function: &dr::Function) -> Vec<usize> {
     if function.blocks.is_empty() {
         return Vec::new();
     }
 
-    let mut id_to_index = HashMap::new();
-    for (index, block) in function.blocks.iter().enumerate() {
-        if let Some(id) = block.label.as_ref().and_then(|inst| inst.result_id) {
-            id_to_index.insert(id, index);
-        }
+    let (mut infos, id_to_index) = build_block_infos(function);
+    if let Some(info) = infos.first_mut() {
+        info.nest_level = Some(0);
     }
 
-    let successors: Vec<Vec<usize>> = function
-        .blocks
-        .iter()
-        .map(|block| {
-            block_successor_ids(block)
-                .into_iter()
-                .filter_map(|id| id_to_index.get(&id).copied())
-                .collect()
-        })
-        .collect();
+    let mut stack = Vec::new();
+    let mut post_order = Vec::with_capacity(function.blocks.len());
 
-    let mut order = Vec::with_capacity(function.blocks.len());
-    let mut visited = vec![false; function.blocks.len()];
-    fn dfs(
-        index: usize,
-        successors: &Vec<Vec<usize>>,
-        visited: &mut [bool],
-        order: &mut Vec<usize>,
-    ) {
-        if visited[index] {
-            return;
+    stack.push(StackEntry {
+        index: 0,
+        post_visit: false,
+    });
+
+    while let Some(entry) = stack.pop() {
+        if entry.post_visit {
+            post_order.push(entry.index);
+            continue;
         }
-        visited[index] = true;
-        order.push(index);
-        for &succ in &successors[index] {
-            dfs(succ, successors, visited, order);
+
+        if infos[entry.index].reachable {
+            continue;
         }
+        infos[entry.index].reachable = true;
+        stack.push(StackEntry {
+            index: entry.index,
+            post_visit: true,
+        });
+
+        nest_successors(&mut infos, entry.index, &id_to_index);
+
+        let block = &infos[entry.index];
+        let schedule = [
+            block.true_block_id,
+            block.false_block_id,
+            block.body_block_id,
+            block.next_block_id,
+        ];
+        for target in schedule {
+            push_successor(&mut stack, &id_to_index, target);
+        }
+        for &case in &block.case_block_ids {
+            push_successor(&mut stack, &id_to_index, case);
+        }
+        push_successor(&mut stack, &id_to_index, block.continue_block_id);
+        push_successor(&mut stack, &id_to_index, block.merge_block_id);
     }
 
-    dfs(0, &successors, &mut visited, &mut order);
-    for (index, flag) in visited.iter().enumerate() {
-        if !*flag {
+    let mut order: Vec<usize> = post_order.into_iter().rev().collect();
+    for (index, info) in infos.iter_mut().enumerate() {
+        if !info.reachable {
+            info.nest_level = Some(0);
             order.push(index);
         }
     }
     order
 }
 
-fn block_successor_ids(block: &dr::Block) -> Vec<u32> {
-    let mut successors = Vec::new();
-    let Some(terminator) = block.instructions.last() else {
-        return successors;
-    };
-    match terminator.class.opcode {
-        spirv::Op::Branch => {
-            if let Some(id) = terminator.operands.last().and_then(extract_id_ref) {
-                successors.push(id);
-            }
-        }
-        spirv::Op::BranchConditional => {
-            for operand in terminator.operands.iter().skip(1).take(2) {
-                if let Some(id) = extract_id_ref(operand) {
-                    successors.push(id);
-                }
-            }
-        }
-        spirv::Op::Switch => {
-            for operand in terminator.operands.iter().skip(1) {
-                if let Some(id) = extract_id_ref(operand) {
-                    successors.push(id);
-                }
-            }
-        }
-        _ => {}
+fn push_successor(stack: &mut Vec<StackEntry>, id_to_index: &HashMap<u32, usize>, block_id: u32) {
+    if block_id == 0 {
+        return;
     }
-    successors
+    if let Some(&index) = id_to_index.get(&block_id) {
+        stack.push(StackEntry {
+            index,
+            post_visit: false,
+        });
+    }
+}
+
+fn nest_successors(infos: &mut [BlockInfo], index: usize, id_to_index: &HashMap<u32, usize>) {
+    let level = infos[index].nest_level.unwrap_or(0);
+    let merge_block_id = infos[index].merge_block_id;
+    let continue_block_id = infos[index].continue_block_id;
+    let true_block_id = infos[index].true_block_id;
+    let false_block_id = infos[index].false_block_id;
+    let body_block_id = infos[index].body_block_id;
+    let next_block_id = infos[index].next_block_id;
+    let case_block_ids = infos[index].case_block_ids.clone();
+
+    let mut assign = |target: u32, new_level: u32| {
+        if target == 0 {
+            return;
+        }
+        if let Some(&succ_index) = id_to_index.get(&target) {
+            if infos[succ_index].nest_level.is_none() {
+                infos[succ_index].nest_level = Some(new_level);
+            }
+        }
+    };
+
+    assign(merge_block_id, level);
+    assign(continue_block_id, level + 1);
+    assign(true_block_id, level + 2);
+    assign(false_block_id, level + 2);
+    assign(body_block_id, level + 2);
+    assign(next_block_id, level);
+    for case in &case_block_ids {
+        assign(*case, level + 2);
+    }
+}
+
+#[derive(Default)]
+struct BlockInfo {
+    label_id: u32,
+    merge_block_id: u32,
+    continue_block_id: u32,
+    true_block_id: u32,
+    false_block_id: u32,
+    body_block_id: u32,
+    next_block_id: u32,
+    case_block_ids: Vec<u32>,
+    nest_level: Option<u32>,
+    reachable: bool,
+}
+
+fn compute_block_nest_levels(function: &dr::Function) -> Vec<u32> {
+    let block_count = function.blocks.len();
+    if block_count == 0 {
+        return Vec::new();
+    }
+
+    let (mut infos, id_to_index) = build_block_infos(function);
+    let mut stack = Vec::new();
+
+    infos[0].nest_level = Some(0);
+    stack.push(0usize);
+
+    while let Some(index) = stack.pop() {
+        let level = infos[index].nest_level.unwrap_or(0);
+        let merge_block_id = infos[index].merge_block_id;
+        let continue_block_id = infos[index].continue_block_id;
+        let true_block_id = infos[index].true_block_id;
+        let false_block_id = infos[index].false_block_id;
+        let body_block_id = infos[index].body_block_id;
+        let next_block_id = infos[index].next_block_id;
+        let case_block_ids = infos[index].case_block_ids.clone();
+        let mut assign = |target: u32, new_level: u32| {
+            if target == 0 {
+                return;
+            }
+            if let Some(&succ_index) = id_to_index.get(&target) {
+                if infos[succ_index].nest_level.is_none() {
+                    infos[succ_index].nest_level = Some(new_level);
+                    stack.push(succ_index);
+                }
+            }
+        };
+
+        assign(merge_block_id, level);
+        assign(continue_block_id, level + 1);
+        assign(true_block_id, level + 2);
+        assign(false_block_id, level + 2);
+        assign(body_block_id, level + 2);
+        assign(next_block_id, level);
+        for case_id in case_block_ids {
+            assign(case_id, level + 2);
+        }
+    }
+
+    infos
+        .into_iter()
+        .map(|info| info.nest_level.unwrap_or(0))
+        .collect()
+}
+
+fn build_block_infos(function: &dr::Function) -> (Vec<BlockInfo>, HashMap<u32, usize>) {
+    let mut infos = Vec::with_capacity(function.blocks.len());
+    let mut id_to_index = HashMap::new();
+    for (index, block) in function.blocks.iter().enumerate() {
+        let info = build_block_info(block);
+        if info.label_id != 0 {
+            id_to_index.insert(info.label_id, index);
+        }
+        infos.push(info);
+    }
+    (infos, id_to_index)
+}
+
+fn build_block_info(block: &dr::Block) -> BlockInfo {
+    let mut info = BlockInfo {
+        label_id: block
+            .label
+            .as_ref()
+            .and_then(|inst| inst.result_id)
+            .unwrap_or(0),
+        ..BlockInfo::default()
+    };
+    for instruction in &block.instructions {
+        match instruction.class.opcode {
+            spirv::Op::LoopMerge => {
+                info.merge_block_id = instruction
+                    .operands
+                    .first()
+                    .and_then(extract_id_ref)
+                    .unwrap_or(0);
+                info.continue_block_id = instruction
+                    .operands
+                    .get(1)
+                    .and_then(extract_id_ref)
+                    .unwrap_or(0);
+            }
+            spirv::Op::SelectionMerge => {
+                info.merge_block_id = instruction
+                    .operands
+                    .first()
+                    .and_then(extract_id_ref)
+                    .unwrap_or(0);
+            }
+            _ => {}
+        }
+    }
+
+    if let Some(terminator) = block.instructions.last() {
+        match terminator.class.opcode {
+            spirv::Op::Branch => {
+                let target = terminator
+                    .operands
+                    .last()
+                    .and_then(extract_id_ref)
+                    .unwrap_or(0);
+                if info.merge_block_id != 0 {
+                    info.body_block_id = target;
+                } else {
+                    info.next_block_id = target;
+                }
+            }
+            spirv::Op::BranchConditional => {
+                if terminator.operands.len() >= 3 {
+                    info.true_block_id = terminator
+                        .operands
+                        .get(1)
+                        .and_then(extract_id_ref)
+                        .unwrap_or(0);
+                    info.false_block_id = terminator
+                        .operands
+                        .get(2)
+                        .and_then(extract_id_ref)
+                        .unwrap_or(0);
+                }
+            }
+            spirv::Op::Switch => {
+                for (index, operand) in terminator.operands.iter().enumerate().skip(1) {
+                    if index % 2 == 1 {
+                        if let Some(id) = extract_id_ref(operand) {
+                            info.case_block_ids.push(id);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    info
 }
 
 #[cfg(test)]
@@ -1466,6 +1843,52 @@ mod tests {
         AccessQualifier, AddressingModel, BuiltIn, Capability, Decoration, ExecutionModel,
         FunctionControl, MemoryModel, SelectionControl, StorageClass,
     };
+
+    const CONDITIONAL_EXTENSION_SAMPLE_BINARY: &[u32] = &[
+        0x07230203, 0x00010600, 0x00000000, 0x00000003, 0x00000000, 0x00020011, 0x00000001,
+        0x0003000e, 0x00000000, 0x00000001, 0x00020014, 0x00000001, 0x00030031, 0x00000001,
+        0x00000002, 0x00091868, 0x00000002, 0x5f565053, 0x45544e49, 0x75665f4c, 0x6974636e,
+        0x765f6e6f, 0x61697261, 0x0073746e,
+    ];
+
+    fn disassemble_with_options(words: &[u32], options: BinaryToTextOptions) -> String {
+        disassemble_binary(words, options).expect("disassemble")
+    }
+
+    fn entry_point_module(name_literal: &str) -> String {
+        format!(
+            "\
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %3 {name_literal}
+%1 = OpTypeVoid
+%2 = OpTypeFunction %1
+%3 = OpFunction %1 None %2
+%4 = OpLabel
+OpReturn
+OpFunctionEnd
+"
+        )
+    }
+
+    fn round_trip_entry_point_literal(name_literal: &str, expected_literal: &str) {
+        let before = entry_point_module(name_literal);
+        let binary = assemble_text(&before).expect("assemble");
+        let text =
+            disassemble_binary(&binary, BinaryToTextOptions::NO_HEADER).expect("disassemble");
+        assert!(
+            text.contains("OpEntryPoint Vertex"),
+            "disassembly missing entry point: {text:?}"
+        );
+        assert!(
+            text.contains(expected_literal),
+            "expected literal {expected_literal:?} in {text:?}"
+        );
+        assert!(
+            !text.contains(name_literal),
+            "disassembly retained escape prefix: {text:?}"
+        );
+    }
 
     #[test]
     fn disassembles_simple_module() {
@@ -1527,7 +1950,6 @@ OpMemoryModel Logical GLSL450\n\
         assert!(super::supports_options(BinaryToTextOptions::INDENT));
         assert!(super::supports_options(BinaryToTextOptions::FRIENDLY_NAMES));
         assert!(super::supports_options(BinaryToTextOptions::COMMENT));
-        assert!(super::supports_options(BinaryToTextOptions::REORDER_BLOCKS));
         assert!(super::supports_options(BinaryToTextOptions::COLOR));
         assert!(super::supports_options(BinaryToTextOptions::HEX));
     }
@@ -1624,21 +2046,25 @@ OpFunctionEnd";
         let lines: Vec<&str> = disassembled.lines().collect();
         let entry_idx = lines
             .iter()
-            .position(|line| line.contains("%entry = OpLabel"))
+            .position(|line| line.contains("%entry ="))
             .expect("entry label");
         let then_idx = lines
             .iter()
-            .position(|line| line.contains("%then = OpLabel"))
+            .position(|line| line.contains("%then ="))
             .expect("then label");
-        assert!(leading_spaces(lines[then_idx]) > leading_spaces(lines[entry_idx]));
-        let then_branch_idx = lines
+        let entry_spaces = spaces_after_equals(lines[entry_idx]).expect("entry spaces");
+        let then_spaces = spaces_after_equals(lines[then_idx]).expect("then spaces");
+        assert!(then_spaces > entry_spaces);
+        let body_idx = lines
             .iter()
             .enumerate()
-            .skip(then_idx)
-            .find(|(_, line)| line.contains("OpBranch"))
+            .skip(then_idx + 1)
+            .find(|(_, line)| {
+                !line.trim().is_empty() && !line.contains("OpLabel") && line.contains("Op")
+            })
             .map(|(idx, _)| idx)
-            .expect("then branch");
-        assert!(leading_spaces(lines[then_branch_idx]) > leading_spaces(lines[entry_idx]));
+            .expect("body instruction");
+        assert!(leading_spaces(lines[body_idx]) > leading_spaces(lines[then_idx]));
     }
 
     #[test]
@@ -1646,7 +2072,7 @@ OpFunctionEnd";
         let mut builder = Builder::new();
         builder.capability(Capability::Shader);
         builder.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-        let float = builder.type_float(32);
+        let float = builder.type_float(32, None);
         let ptr = builder.type_pointer(None, StorageClass::UniformConstant, float);
         let var = builder.variable(ptr, None, StorageClass::UniformConstant, None);
         builder.decorate(
@@ -1698,21 +2124,49 @@ OpFunctionEnd";
 
     #[test]
     fn disassembly_reorders_blocks_when_requested() {
-        let binary = build_selection_module(true);
-        let options = BinaryToTextOptions::NO_HEADER
-            | BinaryToTextOptions::REORDER_BLOCKS
-            | BinaryToTextOptions::FRIENDLY_NAMES;
-        let disassembled = disassemble_binary(&binary, options).expect("disassemble");
-        let lines: Vec<&str> = disassembled.lines().collect();
-        let entry_idx = lines
-            .iter()
-            .position(|line| line.contains("%entry = OpLabel"))
-            .expect("entry");
-        let merge_idx = lines
-            .iter()
-            .position(|line| line.contains("%merge = OpLabel"))
-            .expect("merge");
-        assert!(merge_idx > entry_idx);
+        assert!(!super::supports_options(
+            BinaryToTextOptions::REORDER_BLOCKS
+        ));
+    }
+
+    const REORDER_FIXTURE_BINARY: &[u32] = &[
+        0x07230203, 0x00010600, 0x00070000, 0x0000002a, 0x00000000, 0x00020011, 0x00000001,
+        0x0003000e, 0x00000000, 0x00000000, 0x0005000f, 0x00000004, 0x00000001, 0x6e69616d,
+        0x00000000, 0x00030010, 0x00000001, 0x00000007, 0x00030005, 0x00000002, 0x00007261,
+        0x00020013, 0x00000003, 0x00030021, 0x00000004, 0x00000003, 0x00020014, 0x00000005,
+        0x0003002e, 0x00000005, 0x00000006, 0x00030029, 0x00000005, 0x00000007, 0x0003002a,
+        0x00000005, 0x00000008, 0x00040015, 0x00000009, 0x00000020, 0x00000000, 0x00040015,
+        0x0000000a, 0x00000020, 0x00000001, 0x0004002b, 0x00000009, 0x0000000b, 0x0000002a,
+        0x0004002b, 0x0000000a, 0x0000000c, 0x0000002a, 0x00030021, 0x0000000d, 0x00000009,
+        0x0004002b, 0x00000009, 0x0000000e, 0x00000000, 0x0004002b, 0x00000009, 0x0000000f,
+        0x00000001, 0x0004002b, 0x00000009, 0x00000010, 0x00000002, 0x0004002b, 0x00000009,
+        0x00000011, 0x00000003, 0x0004002b, 0x00000009, 0x00000012, 0x00000004, 0x0004002b,
+        0x00000009, 0x00000013, 0x00000005, 0x0004002b, 0x00000009, 0x00000014, 0x00000006,
+        0x0004002b, 0x00000009, 0x00000015, 0x00000007, 0x0004002b, 0x00000009, 0x00000016,
+        0x00000008, 0x0004002b, 0x00000009, 0x00000017, 0x0000000a, 0x0004002b, 0x00000009,
+        0x00000018, 0x00000014, 0x0004002b, 0x00000009, 0x00000019, 0x0000001e, 0x0004002b,
+        0x00000009, 0x0000001a, 0x00000028, 0x0004002b, 0x00000009, 0x0000001b, 0x00000032,
+        0x0004002b, 0x00000009, 0x0000001c, 0x0000005a, 0x0004002b, 0x00000009, 0x0000001d,
+        0x00000063, 0x00040020, 0x0000001e, 0x00000006, 0x00000009, 0x0004003b, 0x0000001e,
+        0x00000002, 0x00000006, 0x0004002b, 0x00000009, 0x0000001f, 0x000003e7, 0x00050036,
+        0x00000003, 0x00000064, 0x00000000, 0x00000004, 0x000200f8, 0x00000020, 0x000300f7,
+        0x00000021, 0x00000000, 0x000400fa, 0x00000006, 0x00000022, 0x00000023, 0x000200f8,
+        0x00000022, 0x000300f7, 0x00000024, 0x00000000, 0x000400fa, 0x00000006, 0x00000025,
+        0x00000026, 0x000200f8, 0x00000025, 0x000200f9, 0x00000024, 0x000200f8, 0x00000026,
+        0x000200f9, 0x00000024, 0x000200f8, 0x00000024, 0x000200f9, 0x00000021, 0x000200f8,
+        0x00000023, 0x000300f7, 0x00000027, 0x00000000, 0x000400fa, 0x00000006, 0x00000028,
+        0x00000029, 0x000200f8, 0x00000028, 0x000200f9, 0x00000027, 0x000200f8, 0x00000029,
+        0x000200f9, 0x00000027, 0x000200f8, 0x00000027, 0x000200f9, 0x00000021, 0x000200f8,
+        0x00000021, 0x000100fd, 0x00010038,
+    ];
+
+    #[test]
+    fn reorder_blocks_matches_indent_fixture() {
+        let module = rspirv::dr::load_words(REORDER_FIXTURE_BINARY).expect("load module");
+        let function = module.functions.first().expect("function");
+        let order = super::reorder_function_blocks(function);
+        let expected: Vec<usize> = (0..function.blocks.len()).collect();
+        assert_eq!(order, expected);
     }
 
     #[test]
@@ -1753,6 +2207,54 @@ OpMemoryModel Logical GLSL450\n\
         let output = disassemble_binary(&binary, options).expect("disassemble");
         assert!(output.contains("0x0000002a"), "{output}");
         assert!(!output.contains(" 42"));
+    }
+
+    #[test]
+    fn format_literal_string_preserves_escape_sequences() {
+        let formatted = super::format_literal_string("foo\\nbar");
+        assert_eq!(formatted, r#""foo\\nbar""#);
+    }
+
+    #[test]
+    fn format_literal_string_reescapes_quotes() {
+        let formatted = super::format_literal_string("say \"hi\"");
+        assert_eq!(formatted, r#""say \"hi\"""#);
+    }
+
+    #[test]
+    fn round_trips_string_literal_stripping_escape_prefix() {
+        round_trip_entry_point_literal("\"\\foo\"", "\"foo\"");
+    }
+
+    #[test]
+    fn round_trips_string_literal_with_leading_newline() {
+        round_trip_entry_point_literal("\"\\\nfoo\"", "\"\nfoo\"");
+    }
+
+    #[test]
+    fn round_trips_string_literal_with_utf8_escape_prefix() {
+        round_trip_entry_point_literal("\"\\亲\"", "\"亲\"");
+    }
+
+    #[test]
+    fn disassembly_formats_literal_strings_with_embedded_newlines() {
+        let mut builder = Builder::new();
+        builder.capability(Capability::Shader);
+        builder.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+        let void = builder.type_void();
+        let fn_ty = builder.type_function(void, vec![]);
+        let func = builder
+            .begin_function(void, None, FunctionControl::NONE, fn_ty)
+            .expect("function");
+        builder.begin_block(None).expect("entry block");
+        builder.ret().expect("return");
+        builder.end_function().expect("end function");
+        builder.name(func, "foo\nbar");
+        let module = builder.module();
+        let binary = module.assemble();
+        let text =
+            disassemble_binary(&binary, BinaryToTextOptions::NO_HEADER).expect("disassemble");
+        assert!(text.contains("\"foo\nbar\""), "{text:?}");
     }
 
     #[test]
@@ -1968,7 +2470,7 @@ OpMemoryModel Logical GLSL450\n\
         let mut builder = Builder::new();
         builder.capability(Capability::RayTracingNV);
         builder.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-        let float = builder.type_float(32);
+        let float = builder.type_float(32, None);
         let ptr = builder.type_pointer(None, StorageClass::CallableDataNV, float);
         let payload = builder.variable(ptr, None, StorageClass::CallableDataNV, None);
         builder.name(payload, "payload");
@@ -1985,6 +2487,82 @@ OpMemoryModel Logical GLSL450\n\
                 .contains("%payload = OpVariable %_ptr_CallableDataKHR_float CallableDataKHR"),
             "{disassembled}"
         );
+    }
+
+    #[test]
+    fn disassembly_preserves_trailing_opline_order() {
+        let mut builder = Builder::new();
+        builder.capability(Capability::Shader);
+        builder.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+        let file = builder.string("file.ext");
+        let void = builder.type_void();
+        let fn_ty = builder.type_function(void, vec![]);
+        let func = builder
+            .begin_function(void, None, FunctionControl::NONE, fn_ty)
+            .expect("function");
+        let label = builder.begin_block(None).expect("block");
+        builder.ret().expect("return");
+        builder.end_function().expect("end");
+        builder.line(file, 1, 0);
+        let binary = builder.module().assemble();
+        let options = BinaryToTextOptions::NO_HEADER;
+        let disassembled = disassemble_binary(&binary, options).expect("disassemble");
+        let expected = format!(
+            "OpCapability Shader\nOpMemoryModel Logical Simple\n%{} = OpString \"file.ext\"\n%{} = OpTypeVoid\n%{} = OpTypeFunction %{}\n%{} = OpFunction %{} None %{}\n%{} = OpLabel\nOpReturn\nOpFunctionEnd\nOpLine %{} 1 0\n",
+            file, void, fn_ty, void, func, void, fn_ty, label, file
+        );
+        assert_eq!(disassembled, expected);
+    }
+
+    #[test]
+    fn disassembly_preserves_prefunction_opline_order() {
+        let mut builder = Builder::new();
+        builder.capability(Capability::Shader);
+        builder.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+        let file = builder.string("file.ext");
+        let void = builder.type_void();
+        let fn_ty = builder.type_function(void, vec![]);
+        let func = builder
+            .begin_function(void, None, FunctionControl::NONE, fn_ty)
+            .expect("function");
+        builder.line(file, 10, 10);
+        builder.line(file, 20, 20);
+        let label = builder.begin_block(None).expect("block");
+        builder.ret().expect("return");
+        builder.end_function().expect("end");
+        let module = builder.module();
+        let mut binary = module.assemble();
+        let mut prelude_words = Vec::new();
+        let mut scan = super::HEADER_WORD_COUNT;
+        while scan < binary.len() {
+            let word = binary[scan];
+            let word_count = (word >> 16) as usize;
+            let opcode = word & 0xFFFF;
+            if opcode == rspirv::spirv::Op::Line as u32 {
+                prelude_words.extend_from_slice(&binary[scan..scan + word_count]);
+                binary.drain(scan..scan + word_count);
+            } else {
+                scan += word_count;
+            }
+        }
+        let mut insert = super::HEADER_WORD_COUNT;
+        while insert < binary.len() {
+            let word = binary[insert];
+            let word_count = (word >> 16) as usize;
+            let opcode = word & 0xFFFF;
+            insert += word_count;
+            if opcode == rspirv::spirv::Op::Function as u32 {
+                break;
+            }
+        }
+        binary.splice(insert..insert, prelude_words.iter().cloned());
+        let options = BinaryToTextOptions::NO_HEADER;
+        let disassembled = disassemble_binary(&binary, options).expect("disassemble");
+        let expected = format!(
+            "OpCapability Shader\nOpMemoryModel Logical Simple\n%{} = OpString \"file.ext\"\n%{} = OpTypeVoid\n%{} = OpTypeFunction %{}\n%{} = OpFunction %{} None %{}\nOpLine %{} 10 10\nOpLine %{} 20 20\n%{} = OpLabel\nOpReturn\nOpFunctionEnd\n",
+            file, void, fn_ty, void, func, void, fn_ty, file, file, label
+        );
+        assert_eq!(disassembled, expected);
     }
 
     #[test]
@@ -2082,8 +2660,8 @@ OpMemoryModel Logical GLSL450\n\
         let mut builder = Builder::new();
         builder.capability(Capability::Shader);
         builder.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-        let f16 = builder.type_float(16);
-        let f32 = builder.type_float(32);
+        let f16 = builder.type_float(16, None);
+        let f32 = builder.type_float(32, None);
         builder.constant_bit32(f32, (-3.125f32).to_bits());
         builder.constant_bit32(f16, 0x7e00);
         let binary = builder.module().assemble();
@@ -2103,7 +2681,7 @@ OpMemoryModel Logical GLSL450\n\
         let mut builder = Builder::new();
         builder.capability(Capability::Shader);
         builder.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-        let float = builder.type_float(32);
+        let float = builder.type_float(32, None);
         builder.constant_bit32(float, 0x7fc00000); // NaN
         builder.constant_bit32(float, 0x7f800000); // +Inf
         builder.constant_bit32(float, 0xff800000); // -Inf
@@ -2156,6 +2734,23 @@ OpFunctionEnd\n";
             has_blank,
             "expected blank line before label:\n{disassembled}"
         );
+    }
+
+    #[test]
+    fn disassembly_handles_conditional_extension_intel() {
+        let text = disassemble_with_options(
+            CONDITIONAL_EXTENSION_SAMPLE_BINARY,
+            BinaryToTextOptions::INDENT,
+        );
+        assert!(
+            text.contains("OpConditionalExtensionINTEL %2 \"SPV_INTEL_function_variants\""),
+            "{text}"
+        );
+    }
+
+    fn spaces_after_equals(line: &str) -> Option<usize> {
+        let (_, rest) = line.split_once('=')?;
+        Some(rest.chars().take_while(|ch| *ch == ' ').count())
     }
 
     fn leading_spaces(line: &str) -> usize {
