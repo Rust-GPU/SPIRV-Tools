@@ -7,5 +7,5 @@ members = [
 resolver = "2"
 
 [patch.crates-io]
-rspirv = { path = "../third_party/rspirv/rspirv" }
-spirv = { path = "../third_party/rspirv/spirv" }
+rspirv = { git = "https://github.com/gfx-rs/rspirv", branch = "sdk-update" }
+spirv = { git = "https://github.com/gfx-rs/rspirv", branch = "sdk-update", package = "spirv" }
