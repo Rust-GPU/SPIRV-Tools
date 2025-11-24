@@ -36,6 +36,7 @@
 #include "source/instruction.h"
 #include "source/opcode.h"
 #include "source/operand.h"
+#include "source/table.h"
 #include "source/spirv_constant.h"
 #include "source/spirv_target_env.h"
 #include "source/table.h"
@@ -1025,7 +1026,21 @@ spv_result_t spvTextToBinaryWithOptions(const spv_const_context context,
 #endif
 
 #if defined(SPIRV_RUST_TARGET_ENV)
-  if (has_rust_context) {
+  std::unique_ptr<spv_context_t> rewired_context;
+  spv_context_t* rust_context = nullptr;
+  if (has_rust_context && context) {
+    rewired_context = std::make_unique<spv_context_t>(*context);
+    rust_context = rewired_context.get();
+    if (pDiagnostic) {
+      *pDiagnostic = nullptr;
+      spvtools::UseDiagnosticAsMessageConsumer(rust_context, pDiagnostic);
+    }
+  }
+
+  spvtools::ScopedRebindRustContext rebind_guard(rust_context_handle, context,
+                                                 rust_context);
+
+  if (has_rust_context && rust_context) {
     ::rust::Slice<const uint8_t> text_slice(
         reinterpret_cast<const uint8_t*>(input_text), input_text_size);
     auto rust_result = spvtools::ffi::try_assemble_text(rust_context_handle,

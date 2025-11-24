@@ -8,6 +8,8 @@ use spirv_tools_core::disassembly::{self, disassemble_binary, DisassemblyError};
 use spirv_tools_core::{MessageLevel, TargetEnv};
 use std::panic::{self, AssertUnwindSafe};
 use std::str;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::Once;
 
 #[cxx::bridge(namespace = "spvtools::ffi")]
 mod ffi {
@@ -61,6 +63,9 @@ mod ffi {
         fn disassembler_supports_options(options: u32) -> bool;
         fn has_rust_context(handle: usize) -> bool;
         fn context_handle_from_raw(handle: usize) -> u64;
+        fn set_rust_text_assembler_override(enable: bool);
+        fn clear_rust_text_assembler_override();
+        fn rebind_context(handle: u64, context_ptr: usize);
         fn try_assemble_text(context_handle: u64, text: &[u8], options: u32) -> AssembleResult;
         fn try_disassemble_binary(
             context_handle: u64,
@@ -197,12 +202,60 @@ pub fn context_handle_from_raw(handle: usize) -> u64 {
     }
 }
 
+pub fn rebind_context(handle: u64, context_ptr: usize) {
+    if handle == 0 {
+        return;
+    }
+
+    let context_handle = match unsafe { (handle as *mut ContextHandle).as_mut() } {
+        Some(handle) => handle,
+        None => return,
+    };
+
+    let pointer = match NonNull::new(context_ptr as *mut c_void) {
+        Some(pointer) => pointer,
+        None => return,
+    };
+
+    context_handle.rebind(pointer);
+}
+
 /// Validates a SPIR-V module for the provided target environment.
 pub fn validate_binary(env: TargetEnv, words: &[u32]) -> ffi::ValidateResult {
     ffi::validate_binary(env.to_raw(), words)
 }
 
-const ENABLE_RUST_TEXT_ASSEMBLER: bool = true;
+static ENABLE_RUST_TEXT_ASSEMBLER: AtomicBool = AtomicBool::new(false);
+static INIT_RUST_TEXT_ASSEMBLER: Once = Once::new();
+static RUST_TEXT_ASSEMBLER_OVERRIDE: AtomicU8 = AtomicU8::new(0);
+
+fn rust_text_assembler_enabled() -> bool {
+    match RUST_TEXT_ASSEMBLER_OVERRIDE.load(Ordering::Relaxed) {
+        1 => return true,
+        2 => return false,
+        _ => {}
+    }
+    INIT_RUST_TEXT_ASSEMBLER.call_once(|| {
+        if std::env::var_os("SPIRV_TOOLS_ENABLE_RUST_ASSEMBLER").is_some() {
+            ENABLE_RUST_TEXT_ASSEMBLER.store(true, Ordering::Relaxed);
+        }
+    });
+    ENABLE_RUST_TEXT_ASSEMBLER.load(Ordering::Relaxed)
+}
+
+#[cfg(test)]
+fn force_enable_rust_text_assembler_for_testing() {
+    ENABLE_RUST_TEXT_ASSEMBLER.store(true, Ordering::Relaxed);
+}
+
+pub fn set_rust_text_assembler_override(enable: bool) {
+    let value = if enable { 1 } else { 2 };
+    RUST_TEXT_ASSEMBLER_OVERRIDE.store(value, Ordering::Relaxed);
+}
+
+pub fn clear_rust_text_assembler_override() {
+    RUST_TEXT_ASSEMBLER_OVERRIDE.store(0, Ordering::Relaxed);
+}
 
 pub fn try_assemble_text(context_handle: u64, text: &[u8], options: u32) -> ffi::AssembleResult {
     if context_handle == 0 {
@@ -212,7 +265,7 @@ pub fn try_assemble_text(context_handle: u64, text: &[u8], options: u32) -> ffi:
         };
     }
 
-    if !ENABLE_RUST_TEXT_ASSEMBLER {
+    if !rust_text_assembler_enabled() {
         return ffi::AssembleResult {
             success: false,
             binary: Vec::new(),
@@ -227,6 +280,7 @@ pub fn try_assemble_text(context_handle: u64, text: &[u8], options: u32) -> ffi:
         };
     };
 
+    let mut pending = Vec::new();
     if let Ok(source) = str::from_utf8(text) {
         match panic::catch_unwind(AssertUnwindSafe(|| {
             assemble_text_with_env(source, context.env())
@@ -238,29 +292,37 @@ pub fn try_assemble_text(context_handle: u64, text: &[u8], options: u32) -> ffi:
                 };
             }
             Ok(Err(error)) => {
-                for diagnostic in error.into_diagnostics() {
-                    context.emit_diagnostic(&diagnostic);
-                }
+                pending = error.into_diagnostics();
             }
             Err(_) => {
-                context.emit_message(
-                    MessageLevel::Error,
-                    Some("assembler"),
-                    MessagePosition::default(),
-                    "Rust assembler panicked; falling back to C++ implementation",
+                pending.push(
+                    DiagnosticMessage::new(
+                        MessageLevel::Error,
+                        MessagePosition::default(),
+                        "Rust assembler panicked; falling back to C++ implementation",
+                    )
+                    .with_source("input"),
                 );
             }
         }
     } else {
-        context.emit_message(
-            MessageLevel::Error,
-            Some("assembler"),
-            MessagePosition::default(),
-            "Assembly text must be valid UTF-8",
+        pending.push(
+            DiagnosticMessage::new(
+                MessageLevel::Error,
+                MessagePosition::default(),
+                "Assembly text must be valid UTF-8",
+            )
+            .with_source("input"),
         );
     }
 
-    ffi::assemble_text_with_context(context.context_address(), text, options)
+    let fallback = ffi::assemble_text_with_context(context.context_address(), text, options);
+    if !fallback.success {
+        for diagnostic in pending {
+            context.emit_diagnostic(&diagnostic);
+        }
+    }
+    fallback
 }
 
 pub fn try_disassemble_binary(
@@ -271,6 +333,13 @@ pub fn try_disassemble_binary(
     let requested =
         BinaryToTextOptions::from_bits_truncate(options & !BinaryToTextOptions::NONE.bits());
 
+    if requested.contains(BinaryToTextOptions::REORDER_BLOCKS) {
+        return ffi::DisassembleResult {
+            success: false,
+            text: String::new(),
+        };
+    }
+
     if context_handle == 0 {
         return ffi::DisassembleResult {
             success: false,
@@ -279,7 +348,7 @@ pub fn try_disassemble_binary(
     }
 
     let context = unsafe { (context_handle as *const ContextHandle).as_ref() };
-    let Some(context) = context else {
+    let Some(_context) = context else {
         return ffi::DisassembleResult {
             success: false,
             text: String::new(),
@@ -295,15 +364,10 @@ pub fn try_disassemble_binary(
             success: false,
             text: String::new(),
         },
-        Err(DisassemblyError::Parse { diagnostics, .. }) => {
-            for diagnostic in diagnostics {
-                context.emit_diagnostic(&diagnostic);
-            }
-            ffi::DisassembleResult {
-                success: false,
-                text: String::new(),
-            }
-        }
+        Err(DisassemblyError::Parse { .. }) => ffi::DisassembleResult {
+            success: false,
+            text: String::new(),
+        },
     }
 }
 
@@ -364,6 +428,10 @@ impl ContextHandle {
             diagnostic.position(),
             diagnostic.message(),
         );
+    }
+
+    fn rebind(&mut self, context: NonNull<c_void>) {
+        self.context = context;
     }
 }
 
@@ -428,6 +496,7 @@ mod tests {
 
     #[test]
     fn rust_assembler_runs_for_valid_text() {
+        force_enable_rust_text_assembler_for_testing();
         let env = TargetEnv::Universal1_0.to_raw();
         let pointer = NonNull::<c_void>::dangling().as_ptr() as usize;
         let handle = create_context(env, pointer);
@@ -444,6 +513,35 @@ OpFunctionEnd\n";
         let result = try_assemble_text(handle, text, TextToBinaryOptions::NONE.bits());
         assert!(result.success);
         assert!(!result.binary.is_empty());
+
+        unsafe { destroy_context(handle) };
+    }
+
+    #[test]
+    fn rust_disassembler_handles_simple_binary() {
+        force_enable_rust_text_assembler_for_testing();
+        let binary = assemble_text_with_env(
+            "OpCapability Shader\n\
+OpMemoryModel Logical GLSL450\n\
+%void = OpTypeVoid\n\
+%void_fn = OpTypeFunction %void\n\
+%main = OpFunction %void None %void_fn\n\
+%entry = OpLabel\n\
+OpReturn\n\
+OpFunctionEnd\n",
+            TargetEnv::Universal1_0,
+        )
+        .expect("assemble");
+
+        let env = TargetEnv::Universal1_0.to_raw();
+        let pointer = NonNull::<c_void>::dangling().as_ptr() as usize;
+        let handle = create_context(env, pointer);
+        assert_ne!(handle, 0);
+
+        let options = (BinaryToTextOptions::NO_HEADER | BinaryToTextOptions::INDENT).bits();
+        let result = try_disassemble_binary(handle, &binary, options);
+        assert!(result.success);
+        assert!(result.text.contains("OpFunction"));
 
         unsafe { destroy_context(handle) };
     }

@@ -455,16 +455,13 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
-        let make_pointer_available_scope = if mask
-            .contains(spirv::MemoryAccess::MAKE_POINTER_AVAILABLE)
-            || mask.contains(spirv::MemoryAccess::MAKE_POINTER_AVAILABLE_KHR)
-        {
-            Some(self.parse_scope_operand("MakePointerAvailable scope")?)
-        } else {
-            None
-        };
+        let make_pointer_available_scope =
+            if mask.contains(spirv::MemoryAccess::MAKE_POINTER_AVAILABLE) {
+                Some(self.parse_scope_operand("MakePointerAvailable scope")?)
+            } else {
+                None
+            };
         let make_pointer_visible_scope = if mask.contains(spirv::MemoryAccess::MAKE_POINTER_VISIBLE)
-            || mask.contains(spirv::MemoryAccess::MAKE_POINTER_VISIBLE_KHR)
         {
             Some(self.parse_scope_operand("MakePointerVisible scope")?)
         } else {
@@ -636,12 +633,15 @@ fn memory_access_flag(name: &str) -> Option<spirv::MemoryAccess> {
         "Volatile" => Some(spirv::MemoryAccess::VOLATILE),
         "Aligned" => Some(spirv::MemoryAccess::ALIGNED),
         "Nontemporal" => Some(spirv::MemoryAccess::NONTEMPORAL),
-        "MakePointerAvailable" => Some(spirv::MemoryAccess::MAKE_POINTER_AVAILABLE),
-        "MakePointerAvailableKHR" => Some(spirv::MemoryAccess::MAKE_POINTER_AVAILABLE_KHR),
-        "MakePointerVisible" => Some(spirv::MemoryAccess::MAKE_POINTER_VISIBLE),
-        "MakePointerVisibleKHR" => Some(spirv::MemoryAccess::MAKE_POINTER_VISIBLE_KHR),
-        "NonPrivatePointer" => Some(spirv::MemoryAccess::NON_PRIVATE_POINTER),
-        "NonPrivatePointerKHR" => Some(spirv::MemoryAccess::NON_PRIVATE_POINTER_KHR),
+        "MakePointerAvailable" | "MakePointerAvailableKHR" => {
+            Some(spirv::MemoryAccess::MAKE_POINTER_AVAILABLE)
+        }
+        "MakePointerVisible" | "MakePointerVisibleKHR" => {
+            Some(spirv::MemoryAccess::MAKE_POINTER_VISIBLE)
+        }
+        "NonPrivatePointer" | "NonPrivatePointerKHR" => {
+            Some(spirv::MemoryAccess::NON_PRIVATE_POINTER)
+        }
         _ => None,
     }
 }

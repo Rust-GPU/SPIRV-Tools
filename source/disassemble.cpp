@@ -24,6 +24,7 @@
 #include <cstring>
 #include <iomanip>
 #include <ios>
+#include <iostream>
 #include <memory>
 #include <set>
 #include <sstream>
@@ -37,7 +38,11 @@
 #include "source/opcode.h"
 #include "source/parsed_operand.h"
 #include "source/print.h"
+#include "source/table.h"
 #include "source/spirv_constant.h"
+#if defined(SPIRV_RUST_TARGET_ENV)
+#include "rust/cxxbridge/spirv-tools-ffi.h"
+#endif
 #include "source/spirv_endian.h"
 #include "source/table2.h"
 #include "source/util/hex_float.h"
@@ -46,6 +51,27 @@
 
 namespace spvtools {
 namespace {
+
+spv_result_t AssignTextResult(const std::string& source, spv_text* text_result) {
+  if (!text_result) {
+    return SPV_SUCCESS;
+  }
+  char* buffer = new char[source.size() + 1];
+  if (!buffer) {
+    return SPV_ERROR_OUT_OF_MEMORY;
+  }
+  std::memcpy(buffer, source.data(), source.size());
+  buffer[source.size()] = '\0';
+  spv_text text = new spv_text_t();
+  if (!text) {
+    delete[] buffer;
+    return SPV_ERROR_OUT_OF_MEMORY;
+  }
+  text->str = buffer;
+  text->length = source.size();
+  *text_result = text;
+  return SPV_SUCCESS;
+}
 
 // Indices to ControlFlowGraph's list of blocks from one block to its successors
 struct BlockSuccessors {
@@ -1040,16 +1066,29 @@ std::string spvInstructionBinaryToText(const spv_target_env env,
                                        const uint32_t options) {
   spv_context context = spvContextCreate(env);
 
+  const uint64_t rust_context_handle =
+      spvtools::GetRustContextHandle(context);
+  const bool has_rust_context = rust_context_handle != 0;
+
+  const uint32_t sanitized_options =
+#if defined(SPIRV_RUST_TARGET_ENV)
+      has_rust_context
+          ? spvtools::ffi::sanitize_binary_to_text_options(options)
+          : options;
+#else
+      options;
+#endif
+
   // Generate friendly names for Ids if requested.
   std::unique_ptr<FriendlyNameMapper> friendly_mapper;
   NameMapper name_mapper = GetTrivialNameMapper();
-  if (options & SPV_BINARY_TO_TEXT_OPTION_FRIENDLY_NAMES) {
+  if (sanitized_options & SPV_BINARY_TO_TEXT_OPTION_FRIENDLY_NAMES) {
     friendly_mapper = MakeUnique<FriendlyNameMapper>(context, code, wordCount);
     name_mapper = friendly_mapper->GetNameMapper();
   }
 
   // Now disassemble!
-  Disassembler disassembler(options, name_mapper);
+  Disassembler disassembler(sanitized_options, name_mapper);
   WrappedDisassembler wrapped(&disassembler, instCode, instWordCount);
   spvBinaryParse(context, &wrapped, code, wordCount, DisassembleTargetHeader,
                  DisassembleTargetInstruction, nullptr);
@@ -1078,17 +1117,56 @@ spv_result_t spvBinaryToText(const spv_const_context context,
     spvtools::UseDiagnosticAsMessageConsumer(&hijack_context, pDiagnostic);
   }
 
+  const uint64_t rust_context_handle = spvtools::GetRustContextHandle(context);
+  const bool has_rust_context = rust_context_handle != 0;
+
+  const uint32_t sanitized_options =
+#if defined(SPIRV_RUST_TARGET_ENV)
+      has_rust_context
+          ? spvtools::ffi::sanitize_binary_to_text_options(options)
+          : options;
+#else
+      options;
+#endif
+#if defined(SPIRV_RUST_TARGET_ENV)
+  spvtools::ScopedRebindRustContext rebind_guard(rust_context_handle, context,
+                                                 &hijack_context);
+  const uint32_t effective_options = sanitized_options &
+                                    ~SPV_BINARY_TO_TEXT_OPTION_NONE;
+  const bool rust_supports_options =
+      (effective_options & SPV_BINARY_TO_TEXT_OPTION_REORDER_BLOCKS) == 0 &&
+      spvtools::ffi::disassembler_supports_options(effective_options);
+  const bool has_binary = code != nullptr || wordCount == 0;
+  if (has_rust_context && effective_options != 0 && rust_supports_options &&
+      has_binary) {
+    ::rust::Slice<const uint32_t> binary_slice(code, wordCount);
+    auto rust_result = spvtools::ffi::try_disassemble_binary(
+        rust_context_handle, binary_slice, sanitized_options);
+    if (rust_result.success) {
+      std::string rust_text = static_cast<std::string>(rust_result.text);
+      if (sanitized_options & SPV_BINARY_TO_TEXT_OPTION_PRINT) {
+        if (pText) {
+          *pText = nullptr;
+        }
+        return SPV_SUCCESS;
+      }
+      const auto status = spvtools::AssignTextResult(rust_text, pText);
+      return status;
+    }
+  }
+#endif
+
   // Generate friendly names for Ids if requested.
   std::unique_ptr<spvtools::FriendlyNameMapper> friendly_mapper;
   spvtools::NameMapper name_mapper = spvtools::GetTrivialNameMapper();
-  if (options & SPV_BINARY_TO_TEXT_OPTION_FRIENDLY_NAMES) {
+  if (sanitized_options & SPV_BINARY_TO_TEXT_OPTION_FRIENDLY_NAMES) {
     friendly_mapper = spvtools::MakeUnique<spvtools::FriendlyNameMapper>(
         &hijack_context, code, wordCount);
     name_mapper = friendly_mapper->GetNameMapper();
   }
 
   // Now disassemble!
-  spvtools::Disassembler disassembler(options, name_mapper);
+  spvtools::Disassembler disassembler(sanitized_options, name_mapper);
   if (auto error =
           spvBinaryParse(&hijack_context, &disassembler, code, wordCount,
                          spvtools::DisassembleHeader,

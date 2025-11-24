@@ -14,6 +14,7 @@
 
 #include "source/table.h"
 
+#include <cstddef>
 #include <utility>
 
 #if defined(SPIRV_RUST_TARGET_ENV)
@@ -23,11 +24,6 @@
 spv_context spvContextCreate(spv_target_env env) {
 #if defined(SPIRV_RUST_TARGET_ENV)
   if (!spvtools::ffi::is_valid_env(static_cast<uint32_t>(env))) {
-    return nullptr;
-  }
-  auto rust_context =
-      spvtools::ffi::create_context(static_cast<uint32_t>(env));
-  if (rust_context == 0) {
     return nullptr;
   }
 #else
@@ -64,11 +60,23 @@ spv_context spvContextCreate(spv_target_env env) {
   }
 #endif
 
-auto* context = new spv_context_t{env, nullptr /* a null default consumer */
+  auto* context = new spv_context_t{env, nullptr /* a null default consumer */
 #if defined(SPIRV_RUST_TARGET_ENV)
-                                    , reinterpret_cast<void*>(rust_context)
+                                    , nullptr
 #endif
   };
+
+#if defined(SPIRV_RUST_TARGET_ENV)
+  auto rust_context = spvtools::ffi::create_context(
+      static_cast<uint32_t>(env),
+      reinterpret_cast<std::size_t>(context));
+  if (rust_context == 0) {
+    delete context;
+    return nullptr;
+  }
+  context->rust_context = reinterpret_cast<void*>(rust_context);
+#endif
+
   return context;
 }
 
@@ -87,3 +95,31 @@ void spvtools::SetContextMessageConsumer(spv_context context,
                                          spvtools::MessageConsumer consumer) {
   context->consumer = std::move(consumer);
 }
+
+#if defined(SPIRV_RUST_TARGET_ENV)
+uint64_t spvtools::GetRustContextHandle(spv_const_context context) {
+  if (!context || !context->rust_context) {
+    return 0;
+  }
+  const auto raw = reinterpret_cast<std::size_t>(context->rust_context);
+  return spvtools::ffi::context_handle_from_raw(raw);
+}
+
+spvtools::ScopedRebindRustContext::ScopedRebindRustContext(
+    uint64_t handle, spv_const_context original, spv_context_t* replacement)
+    : handle_(handle),
+      original_(reinterpret_cast<std::size_t>(original)),
+      bound_(false) {
+  if (handle_ != 0 && replacement != nullptr) {
+    spvtools::ffi::rebind_context(
+        handle_, reinterpret_cast<std::size_t>(replacement));
+    bound_ = true;
+  }
+}
+
+spvtools::ScopedRebindRustContext::~ScopedRebindRustContext() {
+  if (bound_ && original_ != 0) {
+    spvtools::ffi::rebind_context(handle_, original_);
+  }
+}
+#endif

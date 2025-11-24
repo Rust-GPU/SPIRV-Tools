@@ -11,6 +11,16 @@ impl SpirvVersion {
         Self { major, minor }
     }
 
+    /// Returns the major component of the version.
+    pub const fn major(self) -> u8 {
+        self.major
+    }
+
+    /// Returns the minor component of the version.
+    pub const fn minor(self) -> u8 {
+        self.minor
+    }
+
     /// Parses a packed SPIR-V version word.
     pub const fn from_word(word: u32) -> Self {
         Self {

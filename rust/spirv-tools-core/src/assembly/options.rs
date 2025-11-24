@@ -76,6 +76,16 @@ mod tests {
     }
 
     #[test]
+    fn binary_to_text_defaults_do_not_enable_friendly_names() {
+        let raw = BinaryToTextOptions::INDENT.bits()
+            | BinaryToTextOptions::NESTED_INDENT.bits()
+            | BinaryToTextOptions::NO_HEADER.bits()
+            | BinaryToTextOptions::COMMENT.bits();
+        let flags = BinaryToTextOptions::from(raw);
+        assert!(!flags.contains(BinaryToTextOptions::FRIENDLY_NAMES));
+    }
+
+    #[test]
     fn unknown_bits_are_dropped() {
         let raw = 0xFFFF_FFFF;
         let flags = BinaryToTextOptions::from(raw);

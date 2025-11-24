@@ -6,3 +6,5 @@
 pub mod assembly;
 /// Disassembler-specific utilities reused by the binaries.
 pub mod disassemble;
+/// Validator helpers reused by CLI binaries.
+pub mod validation;

@@ -5,3 +5,7 @@ members = [
     "spirv-tools-ffi",
 ]
 resolver = "2"
+
+[patch.crates-io]
+rspirv = { path = "../third_party/rspirv/rspirv" }
+spirv = { path = "../third_party/rspirv/spirv" }

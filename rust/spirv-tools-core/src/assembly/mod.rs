@@ -2,6 +2,10 @@
 
 /// Translator that turns parsed instructions into DR modules.
 pub mod assembler;
+/// Decoration operand metadata derived from the SPIR-V grammar.
+pub mod decoration;
+/// Extended instruction helpers.
+pub mod ext_inst;
 /// Grammar-backed instruction metadata and operand newtypes.
 pub mod instruction;
 /// Tokenization primitives for SPIR-V assembly text.
@@ -11,7 +15,10 @@ pub mod options;
 /// Parser and builder utilities for SPIR-V assembly instructions.
 pub mod parser;
 
-pub use assembler::{assemble_text, AssemblyTranslator, ModuleBuilder};
+pub use assembler::{
+    assemble_text, assemble_text_with_env, AssemblyError, AssemblyTranslator, ModuleBuilder,
+};
+pub use ext_inst::{ExtInstImportInfo, ExtInstSetKind, ResolvedExtInst};
 pub use instruction::{
     IdRef, InstructionLayout, LiteralNumber, OperandDescriptor, ResultId, SpirvId, TypeId,
 };

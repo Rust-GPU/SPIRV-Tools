@@ -3,7 +3,9 @@ use rspirv::grammar::{CoreInstructionTable, Instruction as GrammarInstruction, L
 use rspirv::grammar::{OperandKind, OperandQuantifier};
 use rspirv::spirv;
 
-use super::lexer::NamedId;
+use super::lexer::{NamedId, Span};
+#[cfg(test)]
+use crate::diagnostic::MessagePosition;
 /// Wrapper around the SPIR-V grammar for a single instruction.
 #[derive(Clone, Copy, Debug)]
 pub struct InstructionLayout {
@@ -181,17 +183,25 @@ macro_rules! id_newtype {
     ($name:ident) => {
         #[doc = concat!("Typed SPIR-V ", stringify!($name), " identifier.")]
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-        pub struct $name<'a>(SpirvId<'a>);
+        pub struct $name<'a> {
+            id: SpirvId<'a>,
+            span: Span,
+        }
 
         impl<'a> $name<'a> {
-            /// Wraps the provided identifier.
-            pub const fn new(id: SpirvId<'a>) -> Self {
-                Self(id)
+            /// Wraps the provided identifier and its source span.
+            pub const fn new(id: SpirvId<'a>, span: Span) -> Self {
+                Self { id, span }
             }
 
             /// Returns the underlying representation.
             pub const fn as_spirv_id(self) -> SpirvId<'a> {
-                self.0
+                self.id
+            }
+
+            /// Returns the span covering this identifier.
+            pub const fn span(self) -> Span {
+                self.span
             }
         }
     };
@@ -268,7 +278,8 @@ mod tests {
     #[test]
     fn id_wrappers_store_numeric_ids() {
         let numeric = NonZeroU32::new(42).unwrap();
-        let result_id = ResultId::new(SpirvId::numeric(numeric));
+        let span = Span::from_point(MessagePosition::new(0, 0, 0));
+        let result_id = ResultId::new(SpirvId::numeric(numeric), span);
         assert_eq!(result_id.as_spirv_id().as_numeric(), Some(numeric));
     }
 

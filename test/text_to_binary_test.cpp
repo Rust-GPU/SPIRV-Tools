@@ -24,6 +24,9 @@
 #include "source/util/hex_float.h"
 #include "test/test_fixture.h"
 #include "test/unit_spirv.h"
+#if defined(SPIRV_RUST_TARGET_ENV)
+#include "rust/cxxbridge/spirv-tools-ffi.h"
+#endif
 
 namespace spvtools {
 namespace {
@@ -34,8 +37,24 @@ using spvtest::MakeInstruction;
 using spvtest::ScopedContext;
 using spvtest::TextToBinaryTest;
 using testing::Eq;
+using testing::HasSubstr;
 using testing::IsNull;
 using testing::NotNull;
+
+#if defined(SPIRV_RUST_TARGET_ENV)
+class ScopedRustAssemblerOverride {
+ public:
+  ScopedRustAssemblerOverride() {
+    spvtools::ffi::set_rust_text_assembler_override(true);
+  }
+  ScopedRustAssemblerOverride(const ScopedRustAssemblerOverride&) = delete;
+  ScopedRustAssemblerOverride& operator=(const ScopedRustAssemblerOverride&) =
+      delete;
+  ~ScopedRustAssemblerOverride() {
+    spvtools::ffi::clear_rust_text_assembler_override();
+  }
+};
+#endif  // defined(SPIRV_RUST_TARGET_ENV)
 
 // An mask parsing test case.
 struct MaskCase {
@@ -259,6 +278,27 @@ TEST(CreateContext, VulkanEnvironment) {
   EXPECT_THAT(c, NotNull());
   spvContextDestroy(c);
 }
+
+#if defined(SPIRV_RUST_TARGET_ENV)
+TEST(TextToBinaryTest, RustAssemblerReportsDiagnosticsThroughContext) {
+  ScopedRustAssemblerOverride override_rust_assembler;
+  spv_context context = spvContextCreate(SPV_ENV_UNIVERSAL_1_5);
+  ASSERT_THAT(context, NotNull());
+
+  const char* text = "OpCapability Shader";
+  spv_binary binary = nullptr;
+  spv_diagnostic diagnostic = nullptr;
+  EXPECT_EQ(SPV_ERROR_INVALID_TEXT,
+            spvTextToBinary(context, text, strlen(text), &binary, &diagnostic));
+  ASSERT_THAT(diagnostic, NotNull());
+  EXPECT_THAT(diagnostic->error, HasSubstr("OpMemoryModel"));
+  EXPECT_THAT(binary, IsNull());
+
+  spvDiagnosticDestroy(diagnostic);
+  spvBinaryDestroy(binary);
+  spvContextDestroy(context);
+}
+#endif  // defined(SPIRV_RUST_TARGET_ENV)
 
 }  // namespace
 }  // namespace spvtools

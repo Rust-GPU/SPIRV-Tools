@@ -64,7 +64,8 @@ fn read_stdin_string() -> Result<String, AssembleCliError> {
     Ok(buffer)
 }
 
-fn parse_target_env(spec: Option<&str>) -> Result<TargetEnv, AssembleCliError> {
+/// Parses an optional target environment string into a `TargetEnv` value.
+pub fn parse_target_env(spec: Option<&str>) -> Result<TargetEnv, AssembleCliError> {
     match spec {
         Some(name) => TargetEnv::parse_name(name)
             .ok_or_else(|| AssembleCliError::UnknownTargetEnv(name.to_string())),

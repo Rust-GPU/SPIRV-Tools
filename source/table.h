@@ -15,6 +15,9 @@
 #ifndef SOURCE_TABLE_H_
 #define SOURCE_TABLE_H_
 
+#include <cstddef>
+#include <cstdint>
+
 #include "source/extensions.h"
 #include "source/latest_version_spirv_header.h"
 #include "source/util/index_range.h"
@@ -36,6 +39,28 @@ namespace spvtools {
 // Sets the message consumer to |consumer| in the given |context|. The original
 // message consumer will be overwritten.
 void SetContextMessageConsumer(spv_context context, MessageConsumer consumer);
+
+#if defined(SPIRV_RUST_TARGET_ENV)
+uint64_t GetRustContextHandle(spv_const_context context);
+
+class ScopedRebindRustContext {
+ public:
+  ScopedRebindRustContext(uint64_t handle, spv_const_context original,
+                          spv_context_t* replacement);
+  ScopedRebindRustContext(const ScopedRebindRustContext&) = delete;
+  ScopedRebindRustContext& operator=(const ScopedRebindRustContext&) = delete;
+  ~ScopedRebindRustContext();
+
+  bool is_bound() const { return bound_; }
+
+ private:
+  uint64_t handle_;
+  std::size_t original_;
+  bool bound_;
+};
+#else
+inline uint64_t GetRustContextHandle(spv_const_context) { return 0; }
+#endif
 }  // namespace spvtools
 
 #endif  // SOURCE_TABLE_H_

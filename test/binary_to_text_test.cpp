@@ -31,6 +31,7 @@ using spvtest::TextToBinaryTest;
 using ::testing::Combine;
 using ::testing::Eq;
 using ::testing::HasSubstr;
+using ::testing::NotNull;
 
 class BinaryToText : public ::testing::Test {
  public:
@@ -2686,6 +2687,23 @@ INSTANTIATE_TEST_SUITE_P(GeneratorStrings, GeneratorStringTest,
                              {1000, 18, "Unknown(1000); 18"},
                              {65535, 32767, "Unknown(65535); 32767"},
                          }));
+
+#if defined(SPIRV_RUST_TARGET_ENV)
+TEST_F(BinaryToText, RustDisassemblerReportsDiagnosticsThroughContext) {
+  const uint32_t bad_code[] = {0x07230203};
+  spv_text text = nullptr;
+  spv_diagnostic diagnostic = nullptr;
+  EXPECT_EQ(SPV_ERROR_INVALID_BINARY,
+            spvBinaryToText(context, bad_code, 1,
+                             SPV_BINARY_TO_TEXT_OPTION_NO_HEADER, &text,
+                             &diagnostic));
+  ASSERT_THAT(diagnostic, NotNull());
+  EXPECT_THAT(diagnostic->error, HasSubstr("word"));
+  EXPECT_THAT(text, Eq(nullptr));
+  spvTextDestroy(text);
+  spvDiagnosticDestroy(diagnostic);
+}
+#endif  // defined(SPIRV_RUST_TARGET_ENV)
 
 // TODO(dneto): Test new instructions and enums in SPIR-V 1.3
 
