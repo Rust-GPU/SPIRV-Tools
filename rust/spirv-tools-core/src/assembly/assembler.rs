@@ -3786,46 +3786,51 @@ mod tests {
 
     #[test]
     fn assembler_renumbers_numeric_ids_by_default() {
-        let before = "\
-OpCapability Addresses\n\
-OpCapability Kernel\n\
-OpCapability GenericPointer\n\
-OpCapability Linkage\n\
-OpMemoryModel Physical32 OpenCL\n\
-%i32 = OpTypeInt 32 1\n\
-%u32 = OpTypeInt 32 0\n\
-%f32 = OpTypeFloat 32\n\
-%200 = OpTypeVoid\n\
-%300 = OpTypeFunction %200\n\
-%main = OpFunction %200 None %300\n\
-%entry = OpLabel\n\
-%100 = OpConstant %u32 100\n\
-%1 = OpConstant %u32 200\n\
-%2 = OpConstant %u32 300\n\
-OpReturn\n\
-OpFunctionEnd\n";
+        let before = [
+            "OpCapability Addresses",
+            "OpCapability Kernel",
+            "OpCapability GenericPointer",
+            "OpCapability Linkage",
+            "OpMemoryModel Physical32 OpenCL",
+            "%i32 = OpTypeInt 32 1",
+            "%u32 = OpTypeInt 32 0",
+            "%f32 = OpTypeFloat 32",
+            "%200 = OpTypeVoid",
+            "%300 = OpTypeFunction %200",
+            "%main = OpFunction %200 None %300",
+            "%entry = OpLabel",
+            "%100 = OpConstant %u32 100",
+            "%1 = OpConstant %u32 200",
+            "%2 = OpConstant %u32 300",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
 
-        let expected = "\
-OpCapability Addresses\n\
-OpCapability Kernel\n\
-OpCapability GenericPointer\n\
-OpCapability Linkage\n\
-OpMemoryModel Physical32 OpenCL\n\
-%1 = OpTypeInt 32 1\n\
-%2 = OpTypeInt 32 0\n\
-%3 = OpTypeFloat 32\n\
-%4 = OpTypeVoid\n\
-%5 = OpTypeFunction %4\n\
-%8 = OpConstant %2 100\n\
-%9 = OpConstant %2 200\n\
-%10 = OpConstant %2 300\n\
-%6 = OpFunction %4 None %5\n\
-%7 = OpLabel\n\
-OpReturn\n\
-OpFunctionEnd\n";
+        let expected = [
+            "OpCapability Addresses",
+            "OpCapability Kernel",
+            "OpCapability GenericPointer",
+            "OpCapability Linkage",
+            "OpMemoryModel Physical32 OpenCL",
+            "%1 = OpTypeInt 32 1",
+            "%2 = OpTypeInt 32 0",
+            "%3 = OpTypeFloat 32",
+            "%4 = OpTypeVoid",
+            "%5 = OpTypeFunction %4",
+            "%8 = OpConstant %2 100",
+            "%9 = OpConstant %2 200",
+            "%10 = OpConstant %2 300",
+            "%6 = OpFunction %4 None %5",
+            "%7 = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n")
+            + "\n";
 
         let text = round_trip_with_options(
-            before,
+            &before,
             TextToBinaryOptions::NONE,
             BinaryToTextOptions::NO_HEADER,
         );
@@ -3834,46 +3839,51 @@ OpFunctionEnd\n";
 
     #[test]
     fn assembler_preserves_numeric_ids_when_requested() {
-        let before = "\
-OpCapability Addresses\n\
-OpCapability Kernel\n\
-OpCapability GenericPointer\n\
-OpCapability Linkage\n\
-OpMemoryModel Physical32 OpenCL\n\
-%i32 = OpTypeInt 32 1\n\
-%u32 = OpTypeInt 32 0\n\
-%f32 = OpTypeFloat 32\n\
-%200 = OpTypeVoid\n\
-%300 = OpTypeFunction %200\n\
-%main = OpFunction %200 None %300\n\
-%entry = OpLabel\n\
-%100 = OpConstant %u32 100\n\
-%1 = OpConstant %u32 200\n\
-%2 = OpConstant %u32 300\n\
-OpReturn\n\
-OpFunctionEnd\n";
+        let before = [
+            "OpCapability Addresses",
+            "OpCapability Kernel",
+            "OpCapability GenericPointer",
+            "OpCapability Linkage",
+            "OpMemoryModel Physical32 OpenCL",
+            "%i32 = OpTypeInt 32 1",
+            "%u32 = OpTypeInt 32 0",
+            "%f32 = OpTypeFloat 32",
+            "%200 = OpTypeVoid",
+            "%300 = OpTypeFunction %200",
+            "%main = OpFunction %200 None %300",
+            "%entry = OpLabel",
+            "%100 = OpConstant %u32 100",
+            "%1 = OpConstant %u32 200",
+            "%2 = OpConstant %u32 300",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
 
-        let expected = "\
-OpCapability Addresses\n\
-OpCapability Kernel\n\
-OpCapability GenericPointer\n\
-OpCapability Linkage\n\
-OpMemoryModel Physical32 OpenCL\n\
-%3 = OpTypeInt 32 1\n\
-%4 = OpTypeInt 32 0\n\
-%5 = OpTypeFloat 32\n\
-%200 = OpTypeVoid\n\
-%300 = OpTypeFunction %200\n\
-%100 = OpConstant %4 100\n\
-%1 = OpConstant %4 200\n\
-%2 = OpConstant %4 300\n\
-%6 = OpFunction %200 None %300\n\
-%7 = OpLabel\n\
-OpReturn\n\
-OpFunctionEnd\n";
+        let expected = [
+            "OpCapability Addresses",
+            "OpCapability Kernel",
+            "OpCapability GenericPointer",
+            "OpCapability Linkage",
+            "OpMemoryModel Physical32 OpenCL",
+            "%3 = OpTypeInt 32 1",
+            "%4 = OpTypeInt 32 0",
+            "%5 = OpTypeFloat 32",
+            "%200 = OpTypeVoid",
+            "%300 = OpTypeFunction %200",
+            "%100 = OpConstant %4 100",
+            "%1 = OpConstant %4 200",
+            "%2 = OpConstant %4 300",
+            "%6 = OpFunction %200 None %300",
+            "%7 = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n")
+            + "\n";
 
         let text = round_trip_with_options(
-            before,
+            &before,
             TextToBinaryOptions::PRESERVE_NUMERIC_IDS,
             BinaryToTextOptions::NO_HEADER,
         );
