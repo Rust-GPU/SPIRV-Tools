@@ -543,4 +543,33 @@ OpFunctionEnd\n",
 
         unsafe { destroy_context(handle) };
     }
+
+    #[test]
+    fn rust_disassembler_handles_default_options() {
+        force_enable_rust_text_assembler_for_testing();
+        let binary = assemble_text_with_env(
+            "OpCapability Shader\n\
+OpMemoryModel Logical GLSL450\n\
+%void = OpTypeVoid\n\
+%void_fn = OpTypeFunction %void\n\
+%main = OpFunction %void None %void_fn\n\
+%entry = OpLabel\n\
+OpReturn\n\
+OpFunctionEnd\n",
+            TargetEnv::Universal1_0,
+        )
+        .expect("assemble");
+
+        let env = TargetEnv::Universal1_0.to_raw();
+        let pointer = NonNull::<c_void>::dangling().as_ptr() as usize;
+        let handle = create_context(env, pointer);
+        assert_ne!(handle, 0);
+
+        let options = BinaryToTextOptions::NONE.bits();
+        let result = try_disassemble_binary(handle, &binary, options);
+        assert!(result.success);
+        assert!(result.text.contains("OpFunction"));
+
+        unsafe { destroy_context(handle) };
+    }
 }

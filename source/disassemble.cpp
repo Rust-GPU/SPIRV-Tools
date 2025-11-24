@@ -1136,8 +1136,7 @@ spv_result_t spvBinaryToText(const spv_const_context context,
   const bool rust_supports_options =
       spvtools::ffi::disassembler_supports_options(effective_options);
   const bool has_binary = code != nullptr || wordCount == 0;
-  if (has_rust_context && effective_options != 0 && rust_supports_options &&
-      has_binary) {
+  if (has_rust_context && rust_supports_options && has_binary) {
     ::rust::Slice<const uint32_t> binary_slice(code, wordCount);
     auto rust_result = spvtools::ffi::try_disassemble_binary(
         rust_context_handle, binary_slice, sanitized_options);
