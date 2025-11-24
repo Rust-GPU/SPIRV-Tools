@@ -333,41 +333,39 @@ pub fn try_disassemble_binary(
     let requested =
         BinaryToTextOptions::from_bits_truncate(options & !BinaryToTextOptions::NONE.bits());
 
-    if requested.contains(BinaryToTextOptions::REORDER_BLOCKS) {
-        return ffi::DisassembleResult {
-            success: false,
-            text: String::new(),
-        };
-    }
-
-    if context_handle == 0 {
-        return ffi::DisassembleResult {
-            success: false,
-            text: String::new(),
-        };
-    }
-
     let context = unsafe { (context_handle as *const ContextHandle).as_ref() };
-    let Some(_context) = context else {
-        return ffi::DisassembleResult {
-            success: false,
-            text: String::new(),
-        };
-    };
 
     match disassemble_binary(binary, requested) {
         Ok(text) => ffi::DisassembleResult {
             success: true,
             text,
         },
-        Err(DisassemblyError::Unsupported(_)) => ffi::DisassembleResult {
-            success: false,
-            text: String::new(),
-        },
-        Err(DisassemblyError::Parse { .. }) => ffi::DisassembleResult {
-            success: false,
-            text: String::new(),
-        },
+        Err(DisassemblyError::Unsupported(unsupported)) => {
+            if let Some(context) = context {
+                let diagnostic = DiagnosticMessage::new(
+                    MessageLevel::Error,
+                    MessagePosition::default(),
+                    format!("unsupported binary-to-text options: {unsupported:?}"),
+                )
+                .with_source("disassembler");
+                context.emit_diagnostic(&diagnostic);
+            }
+            ffi::DisassembleResult {
+                success: false,
+                text: String::new(),
+            }
+        }
+        Err(DisassemblyError::Parse { diagnostics, .. }) => {
+            if let Some(context) = context {
+                for diagnostic in &diagnostics {
+                    context.emit_diagnostic(diagnostic);
+                }
+            }
+            ffi::DisassembleResult {
+                success: false,
+                text: String::new(),
+            }
+        }
     }
 }
 
