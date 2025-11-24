@@ -36,6 +36,7 @@ pub struct AssembleConfig {
 
 /// Runs the assembler for the provided configuration, returning SPIR-V words.
 pub fn run_assemble(config: &AssembleConfig) -> Result<Vec<u32>, AssembleCliError> {
+    let env = parse_target_env(config.target_env.as_deref())?;
     let source = match &config.input {
         InputSource::Stdin => read_stdin_string()?,
         InputSource::Path(path) => fs::read_to_string(path).map_err(|err| match err.kind() {
@@ -44,7 +45,6 @@ pub fn run_assemble(config: &AssembleConfig) -> Result<Vec<u32>, AssembleCliErro
         })?,
     };
 
-    let env = parse_target_env(config.target_env.as_deref())?;
     let mut options = TextToBinaryOptions::NONE;
     if config.preserve_numeric_ids {
         options |= TextToBinaryOptions::PRESERVE_NUMERIC_IDS;
@@ -87,6 +87,7 @@ mod tests {
     use super::{run_assemble, words_to_bytes, AssembleCliError, AssembleConfig, InputSource};
     use spirv_tools_core::assembly::assemble_text;
     use std::io::Write;
+    use std::path::PathBuf;
     use tempfile::NamedTempFile;
 
     #[test]
@@ -114,6 +115,19 @@ mod tests {
         };
         match run_assemble(&config) {
             Err(AssembleCliError::UnknownTargetEnv(env)) => assert_eq!(env, "unknown+env"),
+            other => panic!("expected unknown env error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn unknown_env_short_circuits_before_io() {
+        let config = AssembleConfig {
+            input: InputSource::Path(PathBuf::from("/definitely/missing/file.spvasm")),
+            target_env: Some("bad-env".to_string()),
+            preserve_numeric_ids: false,
+        };
+        match run_assemble(&config) {
+            Err(AssembleCliError::UnknownTargetEnv(env)) => assert_eq!(env, "bad-env"),
             other => panic!("expected unknown env error, got {other:?}"),
         }
     }
