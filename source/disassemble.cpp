@@ -1134,7 +1134,6 @@ spv_result_t spvBinaryToText(const spv_const_context context,
   const uint32_t effective_options = sanitized_options &
                                     ~SPV_BINARY_TO_TEXT_OPTION_NONE;
   const bool rust_supports_options =
-      (effective_options & SPV_BINARY_TO_TEXT_OPTION_REORDER_BLOCKS) == 0 &&
       spvtools::ffi::disassembler_supports_options(effective_options);
   const bool has_binary = code != nullptr || wordCount == 0;
   if (has_rust_context && effective_options != 0 && rust_supports_options &&
