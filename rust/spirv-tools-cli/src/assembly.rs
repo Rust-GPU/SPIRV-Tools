@@ -120,6 +120,22 @@ mod tests {
     }
 
     #[test]
+    fn reports_utf8_errors_from_files() {
+        let mut temp = NamedTempFile::new().expect("temp file");
+        // Write invalid UTF-8.
+        temp.write_all(&[0xff, 0xfe, 0xfd]).expect("write bytes");
+        let config = AssembleConfig {
+            input: InputSource::Path(temp.path().to_path_buf()),
+            target_env: None,
+            preserve_numeric_ids: false,
+        };
+        match run_assemble(&config) {
+            Err(AssembleCliError::Utf8) => {}
+            other => panic!("expected Utf8 error, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn unknown_env_short_circuits_before_io() {
         let config = AssembleConfig {
             input: InputSource::Path(PathBuf::from("/definitely/missing/file.spvasm")),
