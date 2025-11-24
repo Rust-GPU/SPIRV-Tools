@@ -22,11 +22,11 @@ pub mod target_env;
 pub mod version;
 
 pub use assembly::{
-    assemble_text, assemble_text_with_env, parse_instruction, AssemblyTranslator,
-    BinaryToTextOptions, IdRef, InstructionLayout, LexError, Lexer, LiteralNumber, ModuleBuilder,
-    NamedId, OperandDescriptor, OperandValue, ParseError, ParsedInstruction, ParsedOperand,
-    Punctuation, ResultId, Span, SpirvId, StringLiteral, TextToBinaryOptions, Token, TokenKind,
-    TypeId, WordToken,
+    assemble_text, assemble_text_with_env, assemble_text_with_options, parse_instruction,
+    AssemblyTranslator, BinaryToTextOptions, IdRef, InstructionLayout, LexError, Lexer,
+    LiteralNumber, ModuleBuilder, NamedId, OperandDescriptor, OperandValue, ParseError,
+    ParsedInstruction, ParsedOperand, Punctuation, ResultId, Span, SpirvId, StringLiteral,
+    TextToBinaryOptions, Token, TokenKind, TypeId, WordToken,
 };
 pub use diagnostic::{DiagnosticMessage, MessagePosition};
 pub use disassembly::{disassemble_binary, DisassemblyError};

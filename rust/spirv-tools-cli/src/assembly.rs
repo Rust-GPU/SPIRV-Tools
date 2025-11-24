@@ -2,7 +2,7 @@ use std::fs;
 use std::io::{self, Read};
 
 use crate::disassemble::InputSource;
-use spirv_tools_core::assembly::{assemble_text_with_env, AssemblyError, TextToBinaryOptions};
+use spirv_tools_core::assembly::{assemble_text_with_options, AssemblyError, TextToBinaryOptions};
 use spirv_tools_core::target_env::TargetEnv;
 use thiserror::Error;
 
@@ -50,7 +50,7 @@ pub fn run_assemble(config: &AssembleConfig) -> Result<Vec<u32>, AssembleCliErro
         options |= TextToBinaryOptions::PRESERVE_NUMERIC_IDS;
     }
 
-    assemble_text_with_env(&source, env).map_err(AssembleCliError::Assembly)
+    assemble_text_with_options(&source, env, options).map_err(AssembleCliError::Assembly)
 }
 
 fn read_stdin_string() -> Result<String, AssembleCliError> {

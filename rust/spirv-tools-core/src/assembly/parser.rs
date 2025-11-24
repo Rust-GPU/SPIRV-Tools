@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::num::NonZeroU32;
 
 use rspirv::spirv;
 
@@ -572,7 +573,15 @@ fn parse_identifier<'a>(
     let named = word.named_id().ok_or_else(|| {
         ParseError::new(span.start(), format!("Expected {label} beginning with '%'"))
     })?;
-    Ok(SpirvId::named(named))
+    let name = named.name();
+    if let Ok(value) = name.parse::<u32>() {
+        let Some(nonzero) = NonZeroU32::new(value) else {
+            return Err(ParseError::new(span.start(), "Result ids cannot be 0"));
+        };
+        Ok(SpirvId::numeric(nonzero))
+    } else {
+        Ok(SpirvId::named(named))
+    }
 }
 
 fn parse_integer(word: WordToken<'_>, span: Span) -> Result<LiteralNumber, ParseError> {
@@ -657,16 +666,13 @@ mod tests {
         let parsed = parse_instruction("%2 = OpTypeInt 32 1").expect("parse");
         assert_eq!(parsed.opcode(), spirv::Op::TypeInt);
         assert!(parsed.result_type().is_none());
-        assert_eq!(
-            parsed
-                .result_id()
-                .unwrap()
-                .as_spirv_id()
-                .as_named()
-                .unwrap()
-                .name(),
-            "2"
-        );
+        let numeric = parsed
+            .result_id()
+            .unwrap()
+            .as_spirv_id()
+            .as_numeric()
+            .unwrap();
+        assert_eq!(numeric.get(), 2);
         assert!(matches!(
             parsed.operands()[0].value(),
             OperandValue::Literal(_)

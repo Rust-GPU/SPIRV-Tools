@@ -1,7 +1,7 @@
 use core::ffi::c_void;
 use core::ptr::NonNull;
 use spirv_tools_core::assembly::{
-    assemble_text_with_env, BinaryToTextOptions, TextToBinaryOptions,
+    assemble_text_with_options, BinaryToTextOptions, TextToBinaryOptions,
 };
 use spirv_tools_core::diagnostic::{DiagnosticMessage, MessagePosition};
 use spirv_tools_core::disassembly::{self, disassemble_binary, DisassemblyError};
@@ -10,6 +10,9 @@ use std::panic::{self, AssertUnwindSafe};
 use std::str;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Once;
+
+#[cfg(test)]
+use spirv_tools_core::assembly::assemble_text_with_env;
 
 #[cxx::bridge(namespace = "spvtools::ffi")]
 mod ffi {
@@ -281,9 +284,10 @@ pub fn try_assemble_text(context_handle: u64, text: &[u8], options: u32) -> ffi:
     };
 
     let mut pending = Vec::new();
+    let options = TextToBinaryOptions::from(options);
     if let Ok(source) = str::from_utf8(text) {
         match panic::catch_unwind(AssertUnwindSafe(|| {
-            assemble_text_with_env(source, context.env())
+            assemble_text_with_options(source, context.env(), options)
         })) {
             Ok(Ok(binary)) => {
                 return ffi::AssembleResult {
@@ -316,7 +320,7 @@ pub fn try_assemble_text(context_handle: u64, text: &[u8], options: u32) -> ffi:
         );
     }
 
-    let fallback = ffi::assemble_text_with_context(context.context_address(), text, options);
+    let fallback = ffi::assemble_text_with_context(context.context_address(), text, options.into());
     if !fallback.success {
         for diagnostic in pending {
             context.emit_diagnostic(&diagnostic);

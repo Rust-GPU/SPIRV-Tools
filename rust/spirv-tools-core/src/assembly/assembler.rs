@@ -1,6 +1,6 @@
 use core::convert::TryFrom;
 use std::borrow::Cow;
-use std::collections::{btree_map::Entry, BTreeMap};
+use std::collections::BTreeMap;
 use std::str::FromStr;
 
 use rspirv::binary::Assemble;
@@ -12,6 +12,7 @@ use thiserror::Error;
 use super::decoration::decoration_operand_descriptors;
 use super::ext_inst::{ExtInstImportInfo, ResolvedExtInst};
 use super::instruction::{IdRef, LiteralNumber, ResultId, SpirvId, TypeId};
+use super::options::TextToBinaryOptions;
 use super::parser::{
     parse_instruction_with_origin, OperandValue, ParseError, ParsedInstruction, ParsedOperand,
 };
@@ -24,12 +25,14 @@ use crate::target_env::TargetEnv;
 #[derive(Debug)]
 pub struct ModuleBuilder<'a> {
     named_ids: BTreeMap<&'a str, u32>,
+    numeric_ids: BTreeMap<u32, u32>,
     next_numeric_id: u32,
     diagnostics: Vec<DiagnosticMessage<'static>>,
     value_types: BTreeMap<u32, u32>,
     composite_types: BTreeMap<u32, CompositeTypeInfo>,
     integer_constants: BTreeMap<u32, u64>,
     ext_inst_imports: BTreeMap<u32, ExtInstImportInfo>,
+    preserve_numeric_ids: bool,
 }
 
 #[derive(Debug, Error)]
@@ -227,15 +230,32 @@ impl<'a> Default for ModuleBuilder<'a> {
 impl<'a> ModuleBuilder<'a> {
     /// Creates a new builder that assigns numeric IDs starting at 1.
     pub fn new() -> Self {
+        Self::with_numeric_preservation(false)
+    }
+
+    /// Creates a new builder and optionally preserves explicit numeric IDs.
+    pub fn with_numeric_preservation(preserve_numeric_ids: bool) -> Self {
         Self {
             named_ids: BTreeMap::new(),
+            numeric_ids: BTreeMap::new(),
             next_numeric_id: 1,
             diagnostics: Vec::new(),
             value_types: BTreeMap::new(),
             composite_types: BTreeMap::new(),
             integer_constants: BTreeMap::new(),
             ext_inst_imports: BTreeMap::new(),
+            preserve_numeric_ids,
         }
+    }
+
+    /// Returns true if explicit numeric identifiers should be preserved.
+    pub fn preserve_numeric_ids(&self) -> bool {
+        self.preserve_numeric_ids
+    }
+
+    /// Reserves an explicit numeric id so auto-assigned ids will not reuse it.
+    pub fn reserve_numeric_id(&mut self, id: u32) {
+        self.numeric_ids.entry(id).or_insert(id);
     }
 
     /// Resolves a result identifier to a numeric ID.
@@ -283,19 +303,30 @@ impl<'a> ModuleBuilder<'a> {
 
     fn resolve_spirv_id(&mut self, id: SpirvId<'a>) -> u32 {
         match id {
-            SpirvId::Named(named) => match self.named_ids.entry(named.name()) {
-                Entry::Occupied(entry) => *entry.get(),
-                Entry::Vacant(entry) => {
-                    let allocated = self.next_numeric_id;
-                    self.next_numeric_id += 1;
-                    entry.insert(allocated);
+            SpirvId::Named(named) => {
+                if let Some(existing) = self.named_ids.get(named.name()) {
+                    *existing
+                } else {
+                    let allocated = self.allocate_fresh_id();
+                    self.named_ids.insert(named.name(), allocated);
                     allocated
                 }
-            },
+            }
             SpirvId::Numeric(raw) => {
                 let value = raw.get();
-                self.next_numeric_id = self.next_numeric_id.max(value + 1);
-                value
+                if self.preserve_numeric_ids {
+                    self.numeric_ids.entry(value).or_insert(value);
+                    if self.next_numeric_id == value {
+                        self.skip_reserved_ids();
+                    }
+                    value
+                } else if let Some(existing) = self.numeric_ids.get(&value) {
+                    *existing
+                } else {
+                    let allocated = self.allocate_fresh_id();
+                    self.numeric_ids.insert(value, allocated);
+                    allocated
+                }
             }
         }
     }
@@ -307,8 +338,25 @@ impl<'a> ModuleBuilder<'a> {
     fn bind_spirv_id(&mut self, id: SpirvId<'a>, numeric: u32) {
         if let SpirvId::Named(named) = id {
             self.named_ids.insert(named.name(), numeric);
+        } else if let SpirvId::Numeric(value) = id {
+            if !self.preserve_numeric_ids {
+                self.numeric_ids.insert(value.get(), numeric);
+            }
         }
         self.next_numeric_id = self.next_numeric_id.max(numeric + 1);
+    }
+
+    fn allocate_fresh_id(&mut self) -> u32 {
+        self.skip_reserved_ids();
+        let allocated = self.next_numeric_id;
+        self.next_numeric_id += 1;
+        allocated
+    }
+
+    fn skip_reserved_ids(&mut self) {
+        while self.numeric_ids.contains_key(&self.next_numeric_id) {
+            self.next_numeric_id += 1;
+        }
     }
 
     fn bind_typed_result(
@@ -598,11 +646,30 @@ impl<'a> AssemblyTranslator<'a> {
 
     /// Creates a new translator configured for the requested target environment.
     pub fn with_target_env(env: TargetEnv) -> Self {
+        Self::with_target_env_and_options(env, TextToBinaryOptions::NONE)
+    }
+
+    /// Creates a translator configured for the provided environment and options.
+    pub fn with_target_env_and_options(env: TargetEnv, options: TextToBinaryOptions) -> Self {
         let mut builder = dr::Builder::new();
         configure_builder_for_env(&mut builder, env);
+        let preserve_numeric_ids = options.contains(TextToBinaryOptions::PRESERVE_NUMERIC_IDS);
         Self {
-            module_builder: ModuleBuilder::new(),
+            module_builder: ModuleBuilder::with_numeric_preservation(preserve_numeric_ids),
             builder,
+        }
+    }
+
+    fn reserve_numeric_result_ids(&mut self, instructions: &[ParsedInstruction<'a>]) {
+        if !self.module_builder.preserve_numeric_ids() {
+            return;
+        }
+        for instruction in instructions {
+            if let Some(result) = instruction.result_id() {
+                if let Some(numeric) = result.as_spirv_id().as_numeric() {
+                    self.module_builder.reserve_numeric_id(numeric.get());
+                }
+            }
         }
     }
 
@@ -3455,7 +3522,19 @@ pub fn assemble_text(text: &str) -> Result<Vec<u32>, AssemblyError> {
 
 /// Assembles SPIR-V text using the provided target environment to configure the module header.
 pub fn assemble_text_with_env(text: &str, env: TargetEnv) -> Result<Vec<u32>, AssemblyError> {
-    assemble_text_with_translator(text, AssemblyTranslator::with_target_env(env))
+    assemble_text_with_options(text, env, TextToBinaryOptions::NONE)
+}
+
+/// Assembles SPIR-V text with the provided options and target environment.
+pub fn assemble_text_with_options(
+    text: &str,
+    env: TargetEnv,
+    options: TextToBinaryOptions,
+) -> Result<Vec<u32>, AssemblyError> {
+    assemble_text_with_translator(
+        text,
+        AssemblyTranslator::with_target_env_and_options(env, options),
+    )
 }
 
 fn assemble_text_with_translator<'a>(
@@ -3463,6 +3542,7 @@ fn assemble_text_with_translator<'a>(
     mut translator: AssemblyTranslator<'a>,
 ) -> Result<Vec<u32>, AssemblyError> {
     let mut diagnostics = Vec::new();
+    let mut instructions = Vec::new();
 
     let mut line_bounds = Vec::new();
     let mut line_start = 0usize;
@@ -3486,8 +3566,13 @@ fn assemble_text_with_translator<'a>(
         let mut last_line = line_index;
         let mut span_end = line_bounds[last_line].1;
         loop {
-            match process_line(text, start, span_end, line_index, &mut translator) {
-                Ok(()) => {
+            match process_line(text, start, span_end, line_index) {
+                Ok(Some(parsed)) => {
+                    instructions.push(parsed);
+                    line_index = last_line + 1;
+                    break;
+                }
+                Ok(None) => {
                     line_index = last_line + 1;
                     break;
                 }
@@ -3507,6 +3592,11 @@ fn assemble_text_with_translator<'a>(
         }
     }
 
+    translator.reserve_numeric_result_ids(&instructions);
+    for instruction in &instructions {
+        translator.translate(instruction);
+    }
+
     let (module, translator_diagnostics) = translator.finish();
     diagnostics.extend(translator_diagnostics);
     finalize_result(module.assemble(), diagnostics)
@@ -3517,41 +3607,39 @@ fn process_line<'a>(
     line_start: usize,
     line_end: usize,
     line_index: usize,
-    translator: &mut AssemblyTranslator<'a>,
-) -> Result<(), ParseError> {
+) -> Result<Option<ParsedInstruction<'a>>, ParseError> {
     if line_start >= line_end {
-        return Ok(());
+        return Ok(None);
     }
     let line_slice = &source[line_start..line_end];
     let leading_ws = line_slice.len() - line_slice.trim_start().len();
     let trailing_ws = line_slice.len() - line_slice.trim_end().len();
     if leading_ws >= line_slice.len() - trailing_ws {
-        return Ok(());
+        return Ok(None);
     }
     let content_start = line_start + leading_ws;
     let content_end = line_end - trailing_ws;
     let line = &source[content_start..content_end];
     if line.is_empty() || line.starts_with(';') {
-        return Ok(());
+        return Ok(None);
     }
     let line_number = u32::try_from(line_index).unwrap_or(u32::MAX);
     let column_offset = u32::try_from(leading_ws).unwrap_or(u32::MAX);
     let index_offset = u32::try_from(content_start).unwrap_or(u32::MAX);
     let origin = MessagePosition::new(line_number, column_offset, index_offset);
 
-    match parse_instruction_with_origin(line, origin) {
-        Ok(parsed) => {
-            translator.translate(&parsed);
-            Ok(())
-        }
-        Err(error) => Err(error),
-    }
+    parse_instruction_with_origin(line, origin).map(Some)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{assemble_instructions, assemble_text, assemble_text_with_env, AssemblyTranslator};
+    use super::{
+        assemble_instructions, assemble_text, assemble_text_with_env, assemble_text_with_options,
+        AssemblyTranslator,
+    };
     use crate::assembly::parser::parse_instruction;
+    use crate::assembly::{BinaryToTextOptions, TextToBinaryOptions};
+    use crate::disassembly::disassemble_binary;
     use crate::target_env::TargetEnv;
     use crate::version::SpirvVersion;
     use rspirv::{dr, spirv};
@@ -3593,6 +3681,112 @@ mod tests {
         assert!(diagnostics.is_empty());
         let inst = module.entry_points.first().expect("entry point");
         assert_eq!(inst.class.opcode, rspirv::spirv::Op::EntryPoint);
+    }
+
+    fn round_trip_with_options(
+        text: &str,
+        options: TextToBinaryOptions,
+        disassemble_opts: BinaryToTextOptions,
+    ) -> String {
+        let binary =
+            assemble_text_with_options(text, TargetEnv::Universal1_0, options).expect("assemble");
+        disassemble_binary(&binary, disassemble_opts).expect("disassemble")
+    }
+
+    #[test]
+    fn assembler_renumbers_numeric_ids_by_default() {
+        let before = "\
+OpCapability Addresses\n\
+OpCapability Kernel\n\
+OpCapability GenericPointer\n\
+OpCapability Linkage\n\
+OpMemoryModel Physical32 OpenCL\n\
+%i32 = OpTypeInt 32 1\n\
+%u32 = OpTypeInt 32 0\n\
+%f32 = OpTypeFloat 32\n\
+%200 = OpTypeVoid\n\
+%300 = OpTypeFunction %200\n\
+%main = OpFunction %200 None %300\n\
+%entry = OpLabel\n\
+%100 = OpConstant %u32 100\n\
+%1 = OpConstant %u32 200\n\
+%2 = OpConstant %u32 300\n\
+OpReturn\n\
+OpFunctionEnd\n";
+
+        let expected = "\
+OpCapability Addresses\n\
+OpCapability Kernel\n\
+OpCapability GenericPointer\n\
+OpCapability Linkage\n\
+OpMemoryModel Physical32 OpenCL\n\
+%1 = OpTypeInt 32 1\n\
+%2 = OpTypeInt 32 0\n\
+%3 = OpTypeFloat 32\n\
+%4 = OpTypeVoid\n\
+%5 = OpTypeFunction %4\n\
+%8 = OpConstant %2 100\n\
+%9 = OpConstant %2 200\n\
+%10 = OpConstant %2 300\n\
+%6 = OpFunction %4 None %5\n\
+%7 = OpLabel\n\
+OpReturn\n\
+OpFunctionEnd\n";
+
+        let text = round_trip_with_options(
+            before,
+            TextToBinaryOptions::NONE,
+            BinaryToTextOptions::NO_HEADER,
+        );
+        assert_eq!(text, expected);
+    }
+
+    #[test]
+    fn assembler_preserves_numeric_ids_when_requested() {
+        let before = "\
+OpCapability Addresses\n\
+OpCapability Kernel\n\
+OpCapability GenericPointer\n\
+OpCapability Linkage\n\
+OpMemoryModel Physical32 OpenCL\n\
+%i32 = OpTypeInt 32 1\n\
+%u32 = OpTypeInt 32 0\n\
+%f32 = OpTypeFloat 32\n\
+%200 = OpTypeVoid\n\
+%300 = OpTypeFunction %200\n\
+%main = OpFunction %200 None %300\n\
+%entry = OpLabel\n\
+%100 = OpConstant %u32 100\n\
+%1 = OpConstant %u32 200\n\
+%2 = OpConstant %u32 300\n\
+OpReturn\n\
+OpFunctionEnd\n";
+
+        let expected = "\
+OpCapability Addresses\n\
+OpCapability Kernel\n\
+OpCapability GenericPointer\n\
+OpCapability Linkage\n\
+OpMemoryModel Physical32 OpenCL\n\
+%3 = OpTypeInt 32 1\n\
+%4 = OpTypeInt 32 0\n\
+%5 = OpTypeFloat 32\n\
+%200 = OpTypeVoid\n\
+%300 = OpTypeFunction %200\n\
+%100 = OpConstant %4 100\n\
+%1 = OpConstant %4 200\n\
+%2 = OpConstant %4 300\n\
+%6 = OpFunction %200 None %300\n\
+%7 = OpLabel\n\
+OpReturn\n\
+OpFunctionEnd\n";
+
+        let text = round_trip_with_options(
+            before,
+            TextToBinaryOptions::PRESERVE_NUMERIC_IDS,
+            BinaryToTextOptions::NO_HEADER,
+        );
+        assert_eq!(text, expected);
     }
 
     #[test]
