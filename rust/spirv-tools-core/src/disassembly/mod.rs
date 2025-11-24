@@ -27,7 +27,8 @@ const SUPPORTED_OPTION_BITS: u32 = BinaryToTextOptions::NO_HEADER.bits()
     | BinaryToTextOptions::NESTED_INDENT.bits()
     | BinaryToTextOptions::COMMENT.bits()
     | BinaryToTextOptions::COLOR.bits()
-    | BinaryToTextOptions::HEX.bits();
+    | BinaryToTextOptions::HEX.bits()
+    | BinaryToTextOptions::REORDER_BLOCKS.bits();
 const HEADER_WORD_COUNT: usize = 5;
 const INDEX_MAGIC_NUMBER: usize = 0;
 const INDEX_VERSION: usize = 1;
@@ -1739,20 +1740,16 @@ fn reorder_function_blocks(function: &dr::Function) -> Vec<usize> {
         nest_successors(&mut infos, entry.index, &id_to_index);
 
         let block = &infos[entry.index];
-        let schedule = [
-            block.true_block_id,
-            block.false_block_id,
-            block.body_block_id,
-            block.next_block_id,
-        ];
-        for target in schedule {
-            push_successor(&mut stack, &id_to_index, target);
-        }
-        for &case in &block.case_block_ids {
+        // Push lower-priority successors first so branch bodies are visited before merges.
+        push_successor(&mut stack, &id_to_index, block.merge_block_id);
+        push_successor(&mut stack, &id_to_index, block.continue_block_id);
+        for &case in block.case_block_ids.iter().rev() {
             push_successor(&mut stack, &id_to_index, case);
         }
-        push_successor(&mut stack, &id_to_index, block.continue_block_id);
-        push_successor(&mut stack, &id_to_index, block.merge_block_id);
+        push_successor(&mut stack, &id_to_index, block.next_block_id);
+        push_successor(&mut stack, &id_to_index, block.body_block_id);
+        push_successor(&mut stack, &id_to_index, block.false_block_id);
+        push_successor(&mut stack, &id_to_index, block.true_block_id);
     }
 
     let mut order: Vec<usize> = post_order.into_iter().rev().collect();
@@ -2081,6 +2078,7 @@ OpMemoryModel Logical GLSL450\n\
         assert!(super::supports_options(BinaryToTextOptions::INDENT));
         assert!(super::supports_options(BinaryToTextOptions::FRIENDLY_NAMES));
         assert!(super::supports_options(BinaryToTextOptions::COMMENT));
+        assert!(super::supports_options(BinaryToTextOptions::REORDER_BLOCKS));
         assert!(super::supports_options(BinaryToTextOptions::COLOR));
         assert!(super::supports_options(BinaryToTextOptions::HEX));
     }
@@ -2255,9 +2253,29 @@ OpFunctionEnd";
 
     #[test]
     fn disassembly_reorders_blocks_when_requested() {
-        assert!(!super::supports_options(
-            BinaryToTextOptions::REORDER_BLOCKS
-        ));
+        let binary = build_selection_module(false);
+        let base_options = BinaryToTextOptions::NO_HEADER | BinaryToTextOptions::FRIENDLY_NAMES;
+        let unreordered =
+            disassemble_binary(&binary, base_options).expect("disassemble without reorder");
+        let reordered =
+            disassemble_binary(&binary, base_options | BinaryToTextOptions::REORDER_BLOCKS)
+                .expect("disassemble with reorder");
+
+        let label_index = |text: &str, needle: &str| -> usize {
+            text.lines()
+                .position(|line| line.contains(needle) && line.contains("OpLabel"))
+                .unwrap_or(usize::MAX)
+        };
+
+        let unreordered_then = label_index(&unreordered, "%then");
+        let unreordered_merge = label_index(&unreordered, "%merge");
+        assert!(unreordered_merge < unreordered_then);
+
+        let reordered_entry = label_index(&reordered, "%entry");
+        let reordered_then = label_index(&reordered, "%then");
+        let reordered_merge = label_index(&reordered, "%merge");
+        assert!(reordered_then < reordered_merge);
+        assert!(reordered_entry < reordered_then);
     }
 
     const REORDER_FIXTURE_BINARY: &[u32] = &[
@@ -2296,7 +2314,7 @@ OpFunctionEnd";
         let module = rspirv::dr::load_words(REORDER_FIXTURE_BINARY).expect("load module");
         let function = module.functions.first().expect("function");
         let order = super::reorder_function_blocks(function);
-        let expected: Vec<usize> = (0..function.blocks.len()).collect();
+        let expected: Vec<usize> = vec![0, 5, 7, 6, 8, 1, 3, 2, 4, 9];
         assert_eq!(order, expected);
     }
 
