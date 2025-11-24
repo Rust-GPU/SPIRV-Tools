@@ -395,12 +395,11 @@ impl rspirv::binary::Consumer for ExtendedLoader {
                     .push(self.block.take().unwrap());
             }
             _ => {
-                if self.block.is_none() {
-                    return ParseAction::Error(Box::new(rspirv::dr::Error::DetachedInstruction(
-                        Some(inst),
-                    )));
+                if let Some(block) = self.block.as_mut() {
+                    block.instructions.push(inst);
+                } else {
+                    self.module.types_global_values.push(inst);
                 }
-                self.block.as_mut().unwrap().instructions.push(inst);
             }
         }
         ParseAction::Continue
@@ -1710,13 +1709,14 @@ fn reorder_function_blocks(function: &dr::Function) -> Vec<usize> {
     }
 
     let (mut infos, id_to_index) = build_block_infos(function);
-    if let Some(info) = infos.first_mut() {
-        info.nest_level = Some(0);
-    }
-
     let mut stack = Vec::new();
     let mut post_order = Vec::with_capacity(function.blocks.len());
+    let mut visited = vec![false; infos.len()];
 
+    if let Some(info) = infos.first_mut() {
+        info.nest_level = Some(0);
+        info.reachable = true;
+    }
     stack.push(StackEntry {
         index: 0,
         post_visit: false,
@@ -1728,28 +1728,32 @@ fn reorder_function_blocks(function: &dr::Function) -> Vec<usize> {
             continue;
         }
 
-        if infos[entry.index].reachable {
+        if visited.get(entry.index).copied().unwrap_or(false) {
             continue;
         }
-        infos[entry.index].reachable = true;
+        if let Some(flag) = visited.get_mut(entry.index) {
+            *flag = true;
+        }
         stack.push(StackEntry {
             index: entry.index,
             post_visit: true,
         });
 
         nest_successors(&mut infos, entry.index, &id_to_index);
+        infos[entry.index].reachable = true;
 
         let block = &infos[entry.index];
-        // Push lower-priority successors first so branch bodies are visited before merges.
-        push_successor(&mut stack, &id_to_index, block.merge_block_id);
-        push_successor(&mut stack, &id_to_index, block.continue_block_id);
-        for &case in block.case_block_ids.iter().rev() {
+        // Push higher-priority successors first; reverse post-order traversal will then
+        // print structured bodies before their merges.
+        push_successor(&mut stack, &id_to_index, block.true_block_id);
+        push_successor(&mut stack, &id_to_index, block.false_block_id);
+        push_successor(&mut stack, &id_to_index, block.body_block_id);
+        push_successor(&mut stack, &id_to_index, block.next_block_id);
+        for &case in &block.case_block_ids {
             push_successor(&mut stack, &id_to_index, case);
         }
-        push_successor(&mut stack, &id_to_index, block.next_block_id);
-        push_successor(&mut stack, &id_to_index, block.body_block_id);
-        push_successor(&mut stack, &id_to_index, block.false_block_id);
-        push_successor(&mut stack, &id_to_index, block.true_block_id);
+        push_successor(&mut stack, &id_to_index, block.continue_block_id);
+        push_successor(&mut stack, &id_to_index, block.merge_block_id);
     }
 
     let mut order: Vec<usize> = post_order.into_iter().rev().collect();
@@ -1964,7 +1968,10 @@ fn build_block_info(block: &dr::Block) -> BlockInfo {
 #[cfg(test)]
 mod tests {
     use super::{disassemble_binary, FRIENDLY_NAME_SAMPLE_BINARY};
-    use crate::assembly::{assemble_text, BinaryToTextOptions};
+    use crate::assembly::{
+        assemble_text, assemble_text_with_options, BinaryToTextOptions, TextToBinaryOptions,
+    };
+    use crate::target_env::TargetEnv;
     use rspirv::binary::Assemble;
     use rspirv::dr::{self, Builder};
     use rspirv::spirv::{
@@ -1997,6 +2004,20 @@ OpReturn
 OpFunctionEnd
 "
         )
+    }
+
+    fn encode_and_decode_fixture(
+        text: &str,
+        disassemble_options: BinaryToTextOptions,
+        assemble_options: TextToBinaryOptions,
+    ) -> String {
+        let binary = assemble_text_with_options(text, TargetEnv::Universal1_0, assemble_options)
+            .expect("assemble");
+        disassemble_binary(
+            &binary,
+            disassemble_options | BinaryToTextOptions::NO_HEADER,
+        )
+        .expect("disassemble")
     }
 
     fn round_trip_entry_point_literal(name_literal: &str, expected_literal: &str) {
@@ -2278,6 +2299,281 @@ OpFunctionEnd";
         assert!(reordered_entry < reordered_then);
     }
 
+    #[test]
+    fn disassembly_matches_indent_fixture_sample() {
+        let input = "\
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+%1 = OpTypeInt 32 0
+%2 = OpTypeStruct %1 %3 %4 %5 %6 %7 %8 %9 %10 ; force IDs into double digits
+%11 = OpConstant %1 42
+OpStore %2 %3 Aligned|Volatile 4 ; bogus, but not indented
+";
+        let expected = r#"               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+          %1 = OpTypeInt 32 0
+          %2 = OpTypeStruct %1 %3 %4 %5 %6 %7 %8 %9 %10
+         %11 = OpConstant %1 42
+               OpStore %2 %3 Volatile|Aligned 4
+"#;
+        let output = encode_and_decode_fixture(
+            input,
+            BinaryToTextOptions::INDENT,
+            TextToBinaryOptions::NONE,
+        );
+        assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn disassembly_matches_indent_fixture_nested_if() {
+        let input = "\
+OpCapability Shader
+OpMemoryModel Logical Simple
+OpEntryPoint Fragment %100 \"main\"
+OpExecutionMode %100 OriginUpperLeft
+OpName %var \"var\"
+%void = OpTypeVoid
+%3 = OpTypeFunction %void
+%bool = OpTypeBool
+%5 = OpConstantNull %bool
+%true = OpConstantTrue %bool
+%false = OpConstantFalse %bool
+%uint = OpTypeInt 32 0
+%int = OpTypeInt 32 1
+%uint_42 = OpConstant %uint 42
+%int_42 = OpConstant %int 42
+%13 = OpTypeFunction %uint
+%uint_0 = OpConstant %uint 0
+%uint_1 = OpConstant %uint 1
+%uint_2 = OpConstant %uint 2
+%uint_3 = OpConstant %uint 3
+%uint_4 = OpConstant %uint 4
+%uint_5 = OpConstant %uint 5
+%uint_6 = OpConstant %uint 6
+%uint_7 = OpConstant %uint 7
+%uint_8 = OpConstant %uint 8
+%uint_10 = OpConstant %uint 10
+%uint_20 = OpConstant %uint 20
+%uint_30 = OpConstant %uint 30
+%uint_40 = OpConstant %uint 40
+%uint_50 = OpConstant %uint 50
+%uint_90 = OpConstant %uint 90
+%uint_99 = OpConstant %uint 99
+%_ptr_Private_uint = OpTypePointer Private %uint
+%var = OpVariable %_ptr_Private_uint Private
+%uint_999 = OpConstant %uint 999
+%100 = OpFunction %void None %3
+%10 = OpLabel
+OpStore %var %uint_0
+OpSelectionMerge %99 None
+OpBranchConditional %5 %30 %40
+%30 = OpLabel
+OpStore %var %uint_1
+OpBranch %99
+%40 = OpLabel
+OpStore %var %uint_2
+OpBranch %99
+%99 = OpLabel
+OpStore %var %uint_999
+OpReturn
+OpFunctionEnd
+";
+        let expected = r#"               OpCapability Shader
+               OpMemoryModel Logical Simple
+               OpEntryPoint Fragment %100 "main"
+               OpExecutionMode %100 OriginUpperLeft
+               OpName %1 "var"
+          %2 = OpTypeVoid
+          %3 = OpTypeFunction %2
+          %4 = OpTypeBool
+          %5 = OpConstantNull %4
+          %6 = OpConstantTrue %4
+          %7 = OpConstantFalse %4
+          %8 = OpTypeInt 32 0
+          %9 = OpTypeInt 32 1
+         %11 = OpConstant %8 42
+         %12 = OpConstant %9 42
+         %13 = OpTypeFunction %8
+         %14 = OpConstant %8 0
+         %15 = OpConstant %8 1
+         %16 = OpConstant %8 2
+         %17 = OpConstant %8 3
+         %18 = OpConstant %8 4
+         %19 = OpConstant %8 5
+         %20 = OpConstant %8 6
+         %21 = OpConstant %8 7
+         %22 = OpConstant %8 8
+         %23 = OpConstant %8 10
+         %24 = OpConstant %8 20
+         %25 = OpConstant %8 30
+         %26 = OpConstant %8 40
+         %27 = OpConstant %8 50
+         %28 = OpConstant %8 90
+         %29 = OpConstant %8 99
+         %31 = OpTypePointer Private %8
+          %1 = OpVariable %31 Private
+         %32 = OpConstant %8 999
+        %100 = OpFunction %2 None %3
+
+         %10 = OpLabel
+                 OpStore %1 %14
+                 OpSelectionMerge %99 None
+                 OpBranchConditional %5 %30 %40
+
+         %30 =     OpLabel
+                     OpStore %1 %15
+                     OpBranch %99
+
+         %40 =     OpLabel
+                     OpStore %1 %16
+                     OpBranch %99
+
+         %99 = OpLabel
+                 OpStore %1 %32
+                 OpReturn
+               OpFunctionEnd
+"#;
+        let output = encode_and_decode_fixture(
+            input,
+            BinaryToTextOptions::INDENT | BinaryToTextOptions::NESTED_INDENT,
+            TextToBinaryOptions::PRESERVE_NUMERIC_IDS,
+        );
+        assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn disassembly_matches_indent_fixture_reordered_if() {
+        let input = "\
+               OpCapability Shader
+               OpMemoryModel Logical Simple
+               OpEntryPoint Fragment %100 \"main\"
+               OpExecutionMode %100 OriginUpperLeft
+               OpName %1 \"var\"
+          %2 = OpTypeVoid
+          %3 = OpTypeFunction %2
+          %4 = OpTypeBool
+          %5 = OpConstantNull %4
+          %6 = OpConstantTrue %4
+          %7 = OpConstantFalse %4
+          %8 = OpTypeInt 32 0
+          %9 = OpTypeInt 32 1
+         %11 = OpConstant %8 42
+         %12 = OpConstant %9 42
+         %13 = OpTypeFunction %8
+         %14 = OpConstant %8 0
+         %15 = OpConstant %8 1
+         %16 = OpConstant %8 2
+         %17 = OpConstant %8 3
+         %18 = OpConstant %8 4
+         %19 = OpConstant %8 5
+         %21 = OpConstant %8 6
+         %22 = OpConstant %8 7
+         %23 = OpConstant %8 8
+         %24 = OpConstant %8 10
+         %25 = OpConstant %8 20
+         %26 = OpConstant %8 30
+         %27 = OpConstant %8 40
+         %28 = OpConstant %8 50
+         %29 = OpConstant %8 90
+         %31 = OpConstant %8 99
+         %32 = OpTypePointer Private %8
+          %1 = OpVariable %32 Private
+         %33 = OpConstant %8 999
+        %100 = OpFunction %2 None %3
+         %10 = OpLabel
+               OpSelectionMerge %99 None
+               OpBranchConditional %5 %20 %50
+         %99 = OpLabel
+               OpReturn
+         %20 = OpLabel
+               OpSelectionMerge %49 None
+               OpBranchConditional %5 %30 %40
+         %49 = OpLabel
+               OpBranch %99
+         %40 = OpLabel
+               OpBranch %49
+         %30 = OpLabel
+               OpBranch %49
+         %50 = OpLabel
+               OpSelectionMerge %79 None
+               OpBranchConditional %5 %60 %70
+         %79 = OpLabel
+               OpBranch %99
+         %60 = OpLabel
+               OpBranch %79
+         %70 = OpLabel
+               OpBranch %79
+               OpFunctionEnd
+";
+        let expected = r#"               OpCapability Shader
+               OpMemoryModel Logical Simple
+               OpEntryPoint Fragment %100 "main"
+               OpExecutionMode %100 OriginUpperLeft
+               OpName %1 "var"
+          %2 = OpTypeVoid
+          %3 = OpTypeFunction %2
+          %4 = OpTypeBool
+          %5 = OpConstantNull %4
+          %6 = OpConstantTrue %4
+          %7 = OpConstantFalse %4
+          %8 = OpTypeInt 32 0
+          %9 = OpTypeInt 32 1
+         %11 = OpConstant %8 42
+         %12 = OpConstant %9 42
+         %13 = OpTypeFunction %8
+         %14 = OpConstant %8 0
+         %15 = OpConstant %8 1
+         %16 = OpConstant %8 2
+         %17 = OpConstant %8 3
+         %18 = OpConstant %8 4
+         %19 = OpConstant %8 5
+         %21 = OpConstant %8 6
+         %22 = OpConstant %8 7
+         %23 = OpConstant %8 8
+         %24 = OpConstant %8 10
+         %25 = OpConstant %8 20
+         %26 = OpConstant %8 30
+         %27 = OpConstant %8 40
+         %28 = OpConstant %8 50
+         %29 = OpConstant %8 90
+         %31 = OpConstant %8 99
+         %32 = OpTypePointer Private %8
+          %1 = OpVariable %32 Private
+         %33 = OpConstant %8 999
+        %100 = OpFunction %2 None %3
+         %10 = OpLabel
+               OpSelectionMerge %99 None
+               OpBranchConditional %5 %20 %50
+         %20 = OpLabel
+               OpSelectionMerge %49 None
+               OpBranchConditional %5 %30 %40
+         %30 = OpLabel
+               OpBranch %49
+         %40 = OpLabel
+               OpBranch %49
+         %49 = OpLabel
+               OpBranch %99
+         %50 = OpLabel
+               OpSelectionMerge %79 None
+               OpBranchConditional %5 %60 %70
+         %60 = OpLabel
+               OpBranch %79
+         %70 = OpLabel
+               OpBranch %79
+         %79 = OpLabel
+               OpBranch %99
+         %99 = OpLabel
+               OpReturn
+               OpFunctionEnd
+"#;
+        let output = encode_and_decode_fixture(
+            input,
+            BinaryToTextOptions::INDENT | BinaryToTextOptions::REORDER_BLOCKS,
+            TextToBinaryOptions::PRESERVE_NUMERIC_IDS,
+        );
+        assert_eq!(output, expected);
+    }
+
     const REORDER_FIXTURE_BINARY: &[u32] = &[
         0x07230203, 0x00010600, 0x00070000, 0x0000002a, 0x00000000, 0x00020011, 0x00000001,
         0x0003000e, 0x00000000, 0x00000000, 0x0005000f, 0x00000004, 0x00000001, 0x6e69616d,
@@ -2314,7 +2610,7 @@ OpFunctionEnd";
         let module = rspirv::dr::load_words(REORDER_FIXTURE_BINARY).expect("load module");
         let function = module.functions.first().expect("function");
         let order = super::reorder_function_blocks(function);
-        let expected: Vec<usize> = vec![0, 5, 7, 6, 8, 1, 3, 2, 4, 9];
+        let expected: Vec<usize> = (0..function.blocks.len()).collect();
         assert_eq!(order, expected);
     }
 

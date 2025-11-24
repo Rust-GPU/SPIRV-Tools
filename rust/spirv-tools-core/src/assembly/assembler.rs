@@ -691,6 +691,8 @@ impl<'a> AssemblyTranslator<'a> {
             spirv::Op::MemoryModel => self.translate_memory_model(instruction),
             spirv::Op::EntryPoint => self.translate_entry_point(instruction),
             spirv::Op::ExecutionMode => self.translate_execution_mode(instruction),
+            spirv::Op::Name => self.translate_name(instruction),
+            spirv::Op::MemberName => self.translate_member_name(instruction),
             spirv::Op::AccessChain => self.translate_access_chain(instruction, false),
             spirv::Op::InBoundsAccessChain => self.translate_access_chain(instruction, true),
             spirv::Op::CopyMemory => self.translate_copy_memory(instruction, false),
@@ -1270,6 +1272,7 @@ impl<'a> AssemblyTranslator<'a> {
                 .emit_error(opcode_pos, "OpTypeStruct missing result id");
             return;
         };
+        let result_id = self.module_builder.resolve_result_id(result_id);
         let mut field_types = Vec::new();
         for operand in instruction.operands() {
             match operand.value() {
@@ -1283,7 +1286,6 @@ impl<'a> AssemblyTranslator<'a> {
                 }
             }
         }
-        let result_id = self.module_builder.resolve_result_id(result_id);
         let operands = field_types
             .iter()
             .copied()
@@ -1441,6 +1443,91 @@ impl<'a> AssemblyTranslator<'a> {
 
         self.builder
             .entry_point(execution_model, function_id, &entry_name, interfaces);
+    }
+
+    fn translate_name(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
+        let mut operands = instruction.operands().iter();
+        let Some(target_operand) = operands.next() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpName missing target id");
+            return;
+        };
+        let Some(name_operand) = operands.next() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpName missing name operand");
+            return;
+        };
+        let Some(target_id) = self.operand_as_id(target_operand, "target id") else {
+            return;
+        };
+        let name = match name_operand.value() {
+            OperandValue::String(value) => parse_string_literal(value),
+            _ => {
+                self.module_builder.emit_error(
+                    name_operand.span().start(),
+                    "OpName operand must be a literal string",
+                );
+                return;
+            }
+        };
+        if let Some(extra) = operands.next() {
+            self.module_builder
+                .emit_error(extra.span().start(), "OpName received unexpected operands");
+            return;
+        }
+        self.builder.name(target_id, name);
+    }
+
+    fn translate_member_name(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
+        let mut operands = instruction.operands().iter();
+        let Some(target_operand) = operands.next() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpMemberName missing target id");
+            return;
+        };
+        let Some(member_index_operand) = operands.next() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpMemberName missing member index operand");
+            return;
+        };
+        let Some(name_operand) = operands.next() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpMemberName missing name operand");
+            return;
+        };
+        let Some(target_id) = self.operand_as_id(target_operand, "target id") else {
+            return;
+        };
+        let member_index = match member_index_operand.value() {
+            OperandValue::Literal(literal) => literal_to_u32(literal),
+            _ => {
+                self.module_builder.emit_error(
+                    member_index_operand.span().start(),
+                    "OpMemberName member index must be a literal number",
+                );
+                return;
+            }
+        };
+        let name = match name_operand.value() {
+            OperandValue::String(value) => parse_string_literal(value),
+            _ => {
+                self.module_builder.emit_error(
+                    name_operand.span().start(),
+                    "OpMemberName operand must be a literal string",
+                );
+                return;
+            }
+        };
+        if let Some(extra) = operands.next() {
+            self.module_builder.emit_error(
+                extra.span().start(),
+                "OpMemberName received unexpected operands",
+            );
+            return;
+        }
+        self.builder.member_name(target_id, member_index, name);
     }
 
     fn translate_access_chain(&mut self, instruction: &ParsedInstruction<'a>, in_bounds: bool) {
@@ -2665,11 +2752,15 @@ impl<'a> AssemblyTranslator<'a> {
     }
 
     fn push_block_instruction(&mut self, instruction: dr::Instruction, position: MessagePosition) {
-        if let Err(error) = self
+        match self
             .builder
             .insert_into_block(InsertPoint::End, instruction)
         {
-            self.emit_builder_error(error, position);
+            Ok(()) => {}
+            Err(BuildError::DetachedInstruction(Some(inst))) => {
+                self.builder.module_mut().types_global_values.push(inst);
+            }
+            Err(error) => self.emit_builder_error(error, position),
         }
     }
 
