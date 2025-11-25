@@ -62,6 +62,7 @@ Tasks for this milestone:
 - [x] Require `OpMemoryModel` to be present before enabling function processing, with a focused regression test.
 - [x] Enforce memory model ordering (reject functions before `OpMemoryModel`, duplicate memory model instructions, and out-of-order section placement) via a layout pre-pass with typed section and memory-model state.
 - [x] Surface precise diagnostics for instructions that appear before `OpMemoryModel` so the Rust validator matches legacy error specificity while using newtyped ids/bounds.
+- [x] Track declared capabilities and reject duplicates; introduce typed decoration/operand ids (including member targets) so structural checks operate on strongly-typed handles.
 - [ ] Add broader structural checks for logical layout ordering (capabilities/extensions/debug/annotations) before enabling the validator over the FFI/CLI.
 - [ ] Expose the Rust validator through the FFI and `spirv-val` CLI behind a feature flag once coverage matches the legacy validator for the supported rules.
 
