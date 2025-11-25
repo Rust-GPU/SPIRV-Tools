@@ -25,16 +25,16 @@ pub enum ValidationError {
     #[error("OpMemoryModel must appear before any function definitions")]
     FunctionBeforeMemoryModel,
     /// An instruction was found before the required memory model declaration.
-    #[error("instruction {opcode} cannot appear before OpMemoryModel")]
+    #[error("instruction {opcode:?} cannot appear before OpMemoryModel")]
     InstructionBeforeMemoryModel {
         /// The opcode that violated the ordering.
-        opcode: u32,
+        opcode: rspirv::spirv::Op,
     },
     /// Global instructions are out of the required logical layout order.
-    #[error("instruction {opcode} appears out of order in the logical layout")]
+    #[error("instruction {opcode:?} appears out of order in the logical layout")]
     LayoutOutOfOrder {
         /// The opcode that violated the ordering.
-        opcode: u32,
+        opcode: rspirv::spirv::Op,
     },
     /// The module declared an invalid id bound (must be greater than zero).
     #[error("declared id bound {bound} is invalid")]
@@ -136,7 +136,7 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
                     if self.current_section > SECTION_MEMORY_MODEL {
                         return rspirv::binary::ParseAction::Error(Box::new(
                             ValidationError::LayoutOutOfOrder {
-                                opcode: rspirv::spirv::Op::MemoryModel as u32,
+                                opcode: rspirv::spirv::Op::MemoryModel,
                             },
                         ));
                     }
@@ -161,18 +161,14 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
                     let section = section_index(opcode);
                     if section < self.current_section {
                         return rspirv::binary::ParseAction::Error(Box::new(
-                            ValidationError::LayoutOutOfOrder {
-                                opcode: opcode as u32,
-                            },
+                            ValidationError::LayoutOutOfOrder { opcode },
                         ));
                     }
                     self.current_section = self.current_section.max(section);
                     if section > SECTION_MEMORY_MODEL && self.memory_models == 0 {
                         if self.pre_memory_model_violation.is_none() {
                             self.pre_memory_model_violation =
-                                Some(ValidationError::InstructionBeforeMemoryModel {
-                                    opcode: opcode as u32,
-                                });
+                                Some(ValidationError::InstructionBeforeMemoryModel { opcode });
                         }
                         return rspirv::binary::ParseAction::Continue;
                     }
@@ -327,7 +323,7 @@ mod tests {
         assert_eq!(
             error,
             ValidationError::InstructionBeforeMemoryModel {
-                opcode: rspirv::spirv::Op::TypeVoid as u32
+                opcode: rspirv::spirv::Op::TypeVoid,
             }
         );
     }
