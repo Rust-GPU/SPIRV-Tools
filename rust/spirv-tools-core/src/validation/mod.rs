@@ -253,6 +253,12 @@ pub enum ValidationError {
         /// The declared id bound from the module header.
         bound: DeclaredBound,
     },
+    /// The module header declared a non-zero reserved word (must be zero).
+    #[error("module reserved word must be zero (found {reserved})")]
+    InvalidReservedWord {
+        /// The declared reserved value from the module header.
+        reserved: u32,
+    },
     /// The module declared an id bound that is exceeded by at least one id.
     #[error("id {id} exceeds declared id bound {bound}")]
     IdExceedsBound {
@@ -395,6 +401,13 @@ impl MemoryModelState {
 /// Validates a SPIR-V module against invariants that can be checked without target-specific
 /// knowledge.
 pub fn validate_module(words: &[u32], _env: TargetEnv) -> Result<(), ValidationError> {
+    if words.len() >= 5 {
+        // Word 4 of the header is reserved and must be zero for all modules.
+        let reserved = words[4];
+        if reserved != 0 {
+            return Err(ValidationError::InvalidReservedWord { reserved });
+        }
+    }
     run_layout_check(words)?;
     let mut loader = rspirv::dr::Loader::new();
     if let Err(error) = rspirv::binary::parse_words(words, &mut loader) {
@@ -438,7 +451,17 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
             }
         }
 
-        fn consume_header(&mut self, _: rspirv::dr::ModuleHeader) -> rspirv::binary::ParseAction {
+        fn consume_header(
+            &mut self,
+            header: rspirv::dr::ModuleHeader,
+        ) -> rspirv::binary::ParseAction {
+            if header.reserved_word != 0 {
+                return rspirv::binary::ParseAction::Error(Box::new(
+                    ValidationError::InvalidReservedWord {
+                        reserved: header.reserved_word,
+                    },
+                ));
+            }
             rspirv::binary::ParseAction::Continue
         }
 
@@ -582,8 +605,14 @@ fn check_id(id: Id, bound: CheckedBound) -> Option<ValidationError> {
 }
 
 fn validate_header(module: &Module) -> Result<(), ValidationError> {
-    if module.header.is_none() {
-        return Err(ValidationError::MissingHeader);
+    let header = module
+        .header
+        .as_ref()
+        .ok_or(ValidationError::MissingHeader)?;
+    if header.reserved_word != 0 {
+        return Err(ValidationError::InvalidReservedWord {
+            reserved: header.reserved_word,
+        });
     }
     Ok(())
 }
@@ -848,6 +877,24 @@ mod tests {
                 capability: rspirv::spirv::Capability::Shader
             }
         );
+    }
+
+    #[test]
+    fn validate_module_rejects_non_zero_schema() {
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            1,
+            1,         // non-zero reserved word
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(error, ValidationError::InvalidReservedWord { reserved: 1 });
     }
 
     #[test]
