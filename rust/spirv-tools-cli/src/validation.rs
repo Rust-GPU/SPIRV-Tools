@@ -3,8 +3,8 @@ use std::io::{self, Read};
 
 use crate::assembly::parse_target_env;
 use crate::disassemble::InputSource;
+use spirv_tools_core::validation::MaybeValidModule;
 use spirv_tools_core::TargetEnv;
-use spirv_tools_ffi;
 use thiserror::Error;
 
 /// Errors that can occur while validating SPIR-V modules.
@@ -41,12 +41,10 @@ pub fn run_validate(config: &ValidateConfig) -> Result<(), ValidateCliError> {
     };
     let words = bytes_to_words(&bytes)?;
     let env = parse_env(config.target_env.as_deref())?;
-    let result = spirv_tools_ffi::validate_binary(env, &words);
-    if result.success {
-        Ok(())
-    } else {
-        Err(ValidateCliError::Failed(result.message))
-    }
+    MaybeValidModule::Binary(&words)
+        .validate(env)
+        .map(|_| ())
+        .map_err(|err| ValidateCliError::Failed(err.to_string()))
 }
 
 fn read_stdin_bytes() -> io::Result<Vec<u8>> {

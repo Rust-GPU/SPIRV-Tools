@@ -400,18 +400,26 @@ impl MemoryModelState {
 
 /// A validated module containing the original binary plus the parsed representation.
 #[derive(Debug)]
-pub struct ValidatedModule {
+pub struct ValidModule {
     words: Vec<u32>,
     module: Module,
+    env: TargetEnv,
 }
 
-impl ValidatedModule {
+impl ValidModule {
+    /// Returns the validated words.
     pub fn words(&self) -> &[u32] {
         &self.words
     }
 
+    /// Returns the parsed module.
     pub fn module(&self) -> &Module {
         &self.module
+    }
+
+    /// Returns the target environment this module was validated against.
+    pub fn env(&self) -> TargetEnv {
+        self.env
     }
 }
 
@@ -421,7 +429,7 @@ pub fn validate_module(words: &[u32], env: TargetEnv) -> Result<(), ValidationEr
     validate_words(words, env).map(|_| ())
 }
 
-fn validate_words(words: &[u32], _env: TargetEnv) -> Result<ValidatedModule, ValidationError> {
+fn validate_words(words: &[u32], _env: TargetEnv) -> Result<ValidModule, ValidationError> {
     if words.len() >= 5 {
         // Word 4 of the header is reserved and must be zero for all modules.
         let reserved = words[4];
@@ -438,13 +446,14 @@ fn validate_words(words: &[u32], _env: TargetEnv) -> Result<ValidatedModule, Val
     validate_header(&module)?;
     validate_id_bound(&module)?;
     validate_memory_model(&module)?;
-    Ok(ValidatedModule {
+    Ok(ValidModule {
         words: words.to_vec(),
         module,
+        env: _env,
     })
 }
 
-/// Input sources that can be validated before becoming a `ValidatedModule`.
+/// Input sources that can be validated before becoming a `ValidModule`.
 pub enum MaybeValidModule<'a> {
     /// Pre-assembled SPIR-V words.
     Binary(&'a [u32]),
@@ -454,7 +463,7 @@ pub enum MaybeValidModule<'a> {
 
 impl<'a> MaybeValidModule<'a> {
     /// Validate the provided input, assembling text when necessary.
-    pub fn validate(self, env: TargetEnv) -> Result<ValidatedModule, ValidationError> {
+    pub fn validate(self, env: TargetEnv) -> Result<ValidModule, ValidationError> {
         match self {
             MaybeValidModule::Binary(words) => validate_words(words, env),
             MaybeValidModule::Text(text) => {
