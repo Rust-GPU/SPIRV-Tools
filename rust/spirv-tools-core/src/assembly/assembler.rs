@@ -677,6 +677,10 @@ impl<'a> AssemblyTranslator<'a> {
     pub fn translate(&mut self, instruction: &ParsedInstruction<'a>) {
         match instruction.opcode() {
             spirv::Op::Capability => self.translate_capability(instruction),
+            spirv::Op::Extension => self.translate_extension(instruction),
+            spirv::Op::ConditionalExtensionINTEL => {
+                self.translate_conditional_extension(instruction)
+            }
             spirv::Op::ExtInstImport => self.translate_ext_inst_import(instruction),
             spirv::Op::TypeVoid => self.translate_type_void(instruction),
             spirv::Op::TypeBool => self.translate_type_bool(instruction),
@@ -751,6 +755,96 @@ impl<'a> AssemblyTranslator<'a> {
             return;
         };
         self.builder.capability(capability);
+    }
+
+    fn translate_extension(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
+        if instruction.result_id().is_some() {
+            self.module_builder
+                .emit_error(opcode_pos, "OpExtension does not produce a result id");
+            return;
+        }
+        let Some(name_operand) = instruction.operands().first() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpExtension missing extension name");
+            return;
+        };
+        let name = match name_operand.value() {
+            OperandValue::String(value) => parse_string_literal(value),
+            _ => {
+                self.module_builder.emit_error(
+                    name_operand.span().start(),
+                    "OpExtension operand must be a literal string",
+                );
+                return;
+            }
+        };
+        if let Some(extra) = instruction.operands().get(1) {
+            self.module_builder.emit_error(
+                extra.span().start(),
+                "OpExtension received unexpected operands",
+            );
+            return;
+        }
+        self.builder.extension(name);
+    }
+
+    fn translate_conditional_extension(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
+        if instruction.result_id().is_some() {
+            self.module_builder.emit_error(
+                opcode_pos,
+                "OpConditionalExtensionINTEL does not produce a result id",
+            );
+            return;
+        }
+        let mut operands = instruction.operands().iter();
+        let Some(condition_operand) = operands.next() else {
+            self.module_builder.emit_error(
+                opcode_pos,
+                "OpConditionalExtensionINTEL missing condition id",
+            );
+            return;
+        };
+        let Some(extension_operand) = operands.next() else {
+            self.module_builder.emit_error(
+                opcode_pos,
+                "OpConditionalExtensionINTEL missing extension name",
+            );
+            return;
+        };
+        let Some(condition_id) =
+            self.operand_as_id(condition_operand, "OpConditionalExtensionINTEL condition")
+        else {
+            return;
+        };
+        let extension = match extension_operand.value() {
+            OperandValue::String(value) => parse_string_literal(value),
+            _ => {
+                self.module_builder.emit_error(
+                    extension_operand.span().start(),
+                    "OpConditionalExtensionINTEL extension must be a literal string",
+                );
+                return;
+            }
+        };
+        if let Some(extra) = operands.next() {
+            self.module_builder.emit_error(
+                extra.span().start(),
+                "OpConditionalExtensionINTEL received unexpected operands",
+            );
+            return;
+        }
+        let inst = dr::Instruction::new(
+            spirv::Op::ConditionalExtensionINTEL,
+            None,
+            None,
+            vec![
+                dr::Operand::IdRef(condition_id),
+                dr::Operand::LiteralString(extension),
+            ],
+        );
+        self.builder.module_mut().extensions.push(inst);
     }
 
     fn translate_ext_inst_import(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -3772,6 +3866,22 @@ mod tests {
         assert!(diagnostics.is_empty());
         let inst = module.entry_points.first().expect("entry point");
         assert_eq!(inst.class.opcode, rspirv::spirv::Op::EntryPoint);
+    }
+
+    #[test]
+    fn translator_emits_extension_instruction() {
+        let parsed =
+            parse_instruction("OpExtension \"SPV_KHR_ray_tracing\"").expect("parse extension");
+        let mut translator = AssemblyTranslator::new();
+        translator.translate(&parsed);
+        let (module, diagnostics) = translator.finish();
+        assert!(diagnostics.is_empty());
+        let inst = module.extensions.first().expect("extension");
+        assert_eq!(inst.class.opcode, spirv::Op::Extension);
+        assert_eq!(
+            inst.operands,
+            vec![dr::Operand::LiteralString("SPV_KHR_ray_tracing".into())]
+        );
     }
 
     fn round_trip_with_options(
