@@ -76,10 +76,16 @@ struct ExtensionSet {
 }
 
 impl ExtensionSet {
-    fn insert(&mut self, extension: &str) -> Result<(), ValidationError> {
+    fn insert(&mut self, extension: &str, env: TargetEnv) -> Result<(), ValidationError> {
         if !self.values.insert(extension.to_string()) {
             return Err(ValidationError::DuplicateExtension {
                 extension: extension.to_string(),
+            });
+        }
+        if !env.is_extension_allowed(extension) {
+            return Err(ValidationError::DisallowedExtension {
+                extension: extension.to_string(),
+                env,
             });
         }
         Ok(())
@@ -458,6 +464,14 @@ pub enum ValidationError {
         /// The extension name that was duplicated.
         extension: String,
     },
+    /// An extension was declared that is not permitted in the target environment.
+    #[error("extension {extension} is not allowed for target environment {env:?}")]
+    DisallowedExtension {
+        /// The extension name that is not allowed.
+        extension: String,
+        /// The target environment in use.
+        env: TargetEnv,
+    },
     /// A decoration group reference did not point to a declared group.
     #[error("decoration group {group} is not declared")]
     UnknownDecorationGroup {
@@ -695,6 +709,7 @@ fn validate_words(words: ModuleWords, env: TargetEnv) -> Result<ValidModule, Val
     let header = ValidatedHeader::from_module(&module)?;
     let defined_ids = validate_id_bound(&module, header)?;
     let opcodes = collect_result_opcodes(&module);
+    validate_extensions(&module, env)?;
     validate_memory_model(&module)?;
     validate_member_decorations(&module, &defined_ids)?;
     validate_decoration_groups(&module, &defined_ids)?;
@@ -759,7 +774,6 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
         current_section: Section,
         function_state: FunctionState,
         capabilities: CapabilitySet,
-        extensions: ExtensionSet,
     }
 
     impl LayoutChecker {
@@ -769,7 +783,6 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
                 current_section: Section::Capabilities,
                 function_state: FunctionState::Outside,
                 capabilities: CapabilitySet::default(),
-                extensions: ExtensionSet::default(),
             }
         }
     }
@@ -851,11 +864,7 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
                             },
                         ));
                     }
-                    if let Some(extension) = extension_operand(&inst) {
-                        if let Err(err) = self.extensions.insert(extension) {
-                            return rspirv::binary::ParseAction::Error(Box::new(err));
-                        }
-                    }
+                    // Extension allowlist is checked later with the target environment context.
                 }
                 rspirv::spirv::Op::Function => {
                     if !self.memory_model_state.is_seen() {
@@ -931,6 +940,16 @@ fn extension_operand(inst: &rspirv::dr::Instruction) -> Option<&str> {
             None
         }
     })
+}
+
+fn validate_extensions(module: &Module, env: TargetEnv) -> Result<(), ValidationError> {
+    let mut extensions = ExtensionSet::default();
+    for inst in &module.extensions {
+        if let Some(extension) = extension_operand(inst) {
+            extensions.insert(extension, env)?;
+        }
+    }
+    Ok(())
 }
 
 fn member_decoration_target(inst: &rspirv::dr::Instruction) -> Option<MemberDecorationTargetId> {

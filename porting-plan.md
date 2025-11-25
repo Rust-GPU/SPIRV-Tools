@@ -75,6 +75,18 @@ Tasks for this milestone:
 - [ ] Add broader structural checks for logical layout ordering (capabilities/extensions/debug/annotations) before enabling the validator over the FFI/CLI.
 - [x] Expose the Rust validator through the FFI and `spirv-val` CLI; feature-gate or deepen coverage as parity improves.
 
+## Active Milestone: Structural Validator Rules
+Enforce target-environment specific structural rules and reuse validated modules across interfaces.
+
+Tasks for this milestone:
+- [x] Thread `ModuleWords`/`ValidModule` through CLI/FFI validation entry points so validated words can be reused without re-parsing.
+- [x] Validate entry-point targets are `OpFunction`/`OpVariable` and report typed errors, with binary regression tests where the text assembler would reject inputs.
+- [x] Add an environment-aware extension validation hook (`DisallowedExtension`) so target-specific allowlists can be enforced.
+- [ ] Implement per-target-environment extension allowlists in `TargetEnv::is_extension_allowed` with regression tests.
+- [ ] Enforce capability allowlists per target environment and surface typed diagnostics.
+- [ ] Broaden decoration/category constraints (capability/extension ordering, decoration target categories) with paired text/binary tests.
+- [ ] Cache validated modules across CLI/FFI invocations when the same input is reused, avoiding redundant parsing/validation.
+
 ## Active Milestone: Matrix Layout Decorations
 Row/column-major annotations plus matrix strides are still processed purely in C++. We now want the Rust assembler to record and validate those decorations so later passes (composite extract/insert, validator plumbing, CLI formatting) can rely on that metadata without falling back.
 
@@ -160,6 +172,6 @@ Percentages are approximate and will be updated as new checklists are added for 
 - Mapping of large switch-based operand logic into data-driven Rust structures without performance regressions.
 
 ## Next Up
-1. Finish reconciling remaining disassembly fixtures (`BinaryToText.*`, `IndentTest.*`, float_controls2) and update the gating bits accordingly.
-2. Expand the new validator module with structural layout checks (memory model presence, logical ordering) and start plumbing it through the FFI/CLI behind a flag when parity is sufficient. A layout pre-pass now enforces memory-model ordering and id bounds; next steps are broader structural rules and FFI integration.
-3. Keep growing the `spirv-tools-cli` workspace so each legacy CLI has a Rust counterpart with shared Clap parsing, typed configs, and end-to-end tests (once the underlying functionality is ported).
+1. Add per-target-environment extension/capability allowlists and regression tests that cover both text and binary inputs.
+2. Expand structural validation for decoration target categories and capability/extension ordering, plus cache validated modules across FFI/CLI paths to avoid redundant parsing.
+3. Follow up on any remaining disassembly fixtures only after the structural validator parity lands, keeping CLI coverage in sync.

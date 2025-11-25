@@ -404,6 +404,16 @@ pub fn read_env_from_text(text: &[u8]) -> Option<TargetEnv> {
     None
 }
 
+impl TargetEnv {
+    /// Returns whether an extension is permitted for this target environment.
+    ///
+    /// The current implementation conservatively allows all extensions; future work can
+    /// specialize this per environment as we port more of the validator.
+    pub fn is_extension_allowed(self, _extension: &str) -> bool {
+        true
+    }
+}
+
 impl From<TargetEnv> for u32 {
     fn from(value: TargetEnv) -> Self {
         value.to_raw()
