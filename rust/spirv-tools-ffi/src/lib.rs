@@ -5,6 +5,7 @@ use spirv_tools_core::assembly::{
 };
 use spirv_tools_core::diagnostic::{DiagnosticMessage, MessagePosition};
 use spirv_tools_core::disassembly::{self, disassemble_binary, DisassemblyError};
+use spirv_tools_core::validation::MaybeValidModule;
 use spirv_tools_core::{MessageLevel, TargetEnv};
 use std::panic::{self, AssertUnwindSafe};
 use std::str;
@@ -75,6 +76,7 @@ mod ffi {
             binary: &[u32],
             options: u32,
         ) -> DisassembleResult;
+        fn validate_binary_rust(env: u32, binary: &[u32]) -> ValidateResult;
     }
 
     unsafe extern "C++" {
@@ -190,6 +192,28 @@ pub fn sanitize_binary_to_text_options(options: u32) -> u32 {
 pub fn disassembler_supports_options(options: u32) -> bool {
     let requested = BinaryToTextOptions::from(options);
     disassembly::supports_options(requested)
+}
+
+pub fn validate_binary_rust(env: u32, binary: &[u32]) -> ffi::ValidateResult {
+    let env = match TargetEnv::from_raw(env) {
+        Some(env) => env,
+        None => {
+            return ffi::ValidateResult {
+                success: false,
+                message: format!("unknown target environment {}", env),
+            }
+        }
+    };
+    match MaybeValidModule::Binary(binary).validate(env) {
+        Ok(_) => ffi::ValidateResult {
+            success: true,
+            message: String::new(),
+        },
+        Err(err) => ffi::ValidateResult {
+            success: false,
+            message: err.to_string(),
+        },
+    }
 }
 
 pub fn has_rust_context(handle: usize) -> bool {
@@ -460,6 +484,7 @@ pub unsafe fn destroy_context(handle: u64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use spirv_tools_core::assembly::assemble_text_with_env;
 
     #[test]
     fn rejects_invalid_environment() {
@@ -517,6 +542,30 @@ OpFunctionEnd\n";
         assert!(!result.binary.is_empty());
 
         unsafe { destroy_context(handle) };
+    }
+
+    #[test]
+    fn rust_validator_handles_valid_and_invalid_modules() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let binary = assemble_text_with_env(text, TargetEnv::Universal1_6).unwrap();
+        let ok = validate_binary_rust(TargetEnv::Universal1_6.to_raw(), &binary);
+        assert!(ok.success);
+        assert!(ok.message.is_empty());
+
+        let mut invalid = binary.clone();
+        invalid[4] = 1; // reserved word must be zero
+        let bad = validate_binary_rust(TargetEnv::Universal1_6.to_raw(), &invalid);
+        assert!(!bad.success);
+        assert!(!bad.message.is_empty());
     }
 
     #[test]
