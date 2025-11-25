@@ -624,6 +624,12 @@ pub enum ValidationError {
         /// The opcode actually defining that id.
         opcode: rspirv::spirv::Op,
     },
+    /// An execution mode targets a function that is not declared as an entry point.
+    #[error("execution mode target {function} is not declared as an entry point")]
+    ExecutionModeWithoutEntryPoint {
+        /// The function targeted by the execution mode.
+        function: Id,
+    },
     /// A member decoration targeted an id that is not a struct type.
     #[error("member decorations must target struct types (found {target})")]
     MemberDecorationTargetNotStruct {
@@ -865,7 +871,8 @@ fn validate_words(words: ModuleWords, env: TargetEnv) -> Result<ValidModule, Val
     validate_member_decorations(&module, &defined_ids)?;
     validate_decoration_groups(&module, &defined_ids)?;
     validate_decorations(&module, &defined_ids)?;
-    validate_entry_points(&module, &defined_ids, &opcodes)?;
+    let entry_points = validate_entry_points(&module, &defined_ids, &opcodes)?;
+    validate_execution_modes(&module, &entry_points)?;
     Ok(ValidModule {
         words,
         module,
@@ -1614,7 +1621,8 @@ fn validate_entry_points(
     module: &Module,
     defined_ids: &HashSet<ResultId>,
     opcodes: &HashMap<ResultId, rspirv::spirv::Op>,
-) -> Result<(), ValidationError> {
+) -> Result<HashSet<ResultId>, ValidationError> {
+    let mut entry_points = HashSet::new();
     for ep in &module.entry_points {
         let mut operands = ep.operands.iter();
         // First operand is ExecutionModel; skip it.
@@ -1641,6 +1649,7 @@ fn validate_entry_points(
                 });
             }
         }
+        entry_points.insert(function_id);
         // Skip the name operand.
         let _ = operands.next();
         for operand in operands {
@@ -1664,6 +1673,29 @@ fn validate_entry_points(
                     }
                 }
             }
+        }
+    }
+    Ok(entry_points)
+}
+
+fn validate_execution_modes(
+    module: &Module,
+    entry_points: &HashSet<ResultId>,
+) -> Result<(), ValidationError> {
+    for mode in &module.execution_modes {
+        let mut operands = mode.operands.iter();
+        // First operand is the target entry point function.
+        let Some(rspirv::dr::Operand::IdRef(target)) = operands.next() else {
+            continue;
+        };
+        let function = ResultId::try_from(*target).map_err(|_| ValidationError::ZeroId {
+            kind: IdKind::Operand,
+            opcode: mode.class.opcode,
+        })?;
+        if !entry_points.contains(&function) {
+            return Err(ValidationError::ExecutionModeWithoutEntryPoint {
+                function: function.into_inner(),
+            });
         }
     }
     Ok(())
@@ -2431,6 +2463,82 @@ mod tests {
             Arc::as_ptr(&second),
             "cached entries should reuse the same allocation"
         );
+    }
+
+    #[test]
+    fn execution_mode_requires_entry_point() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+            "OpExecutionMode %main OriginUpperLeft",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("execution modes must target entry points");
+        assert_eq!(
+            error,
+            ValidationError::ExecutionModeWithoutEntryPoint {
+                function: Id::try_from(3).unwrap()
+            }
+        );
+    }
+
+    #[test]
+    fn execution_mode_must_target_entry_point_function() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Fragment %main \"main\"",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%helper = OpFunction %void None %fn",
+            "%hentry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+            "OpExecutionMode %helper OriginUpperLeft",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("execution mode should target entry point");
+        assert!(matches!(
+            error,
+            ValidationError::ExecutionModeWithoutEntryPoint { function }
+                if function == Id::try_from(4).unwrap()
+        ));
+    }
+
+    #[test]
+    fn execution_mode_accepts_entry_point() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Fragment %main \"main\"",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+            "OpExecutionMode %main OriginUpperLeft",
+        ]
+        .join("\n");
+        text.as_str()
+            .validate(TargetEnv::Universal1_6)
+            .expect("execution mode targets entry point");
     }
 
     #[test]
