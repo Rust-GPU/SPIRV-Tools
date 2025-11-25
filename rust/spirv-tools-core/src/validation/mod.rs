@@ -700,6 +700,10 @@ pub enum DecorationTargetKind {
     StructType,
     /// Array, runtime array, or pointer types.
     ArrayOrPointerType,
+    /// Functions.
+    Function,
+    /// Functions or variables.
+    FunctionOrVariable,
     /// Variable-like declarations (variables and untyped variables).
     Variable,
     /// Memory object declarations (variables, parameters, raw access chains).
@@ -719,6 +723,8 @@ impl fmt::Display for DecorationTargetKind {
             DecorationTargetKind::ArrayOrPointerType => {
                 write!(f, "array, runtime array, or pointer type")
             }
+            DecorationTargetKind::Function => write!(f, "function"),
+            DecorationTargetKind::FunctionOrVariable => write!(f, "function or variable"),
             DecorationTargetKind::Variable => write!(f, "variable"),
             DecorationTargetKind::MemoryObjectDeclaration => {
                 write!(f, "memory object declaration")
@@ -1902,6 +1908,18 @@ fn validate_decoration_target_categories(
                     None
                 } else {
                     Some(DecorationTargetKind::Variable)
+                }
+            }
+            rspirv::spirv::Decoration::LinkageAttributes => {
+                if matches!(
+                    opcode,
+                    rspirv::spirv::Op::Function
+                        | rspirv::spirv::Op::Variable
+                        | rspirv::spirv::Op::UntypedVariableKHR
+                ) {
+                    None
+                } else {
+                    Some(DecorationTargetKind::FunctionOrVariable)
                 }
             }
             _ => None,
@@ -3517,6 +3535,35 @@ mod tests {
             let error = module
                 .validate(TargetEnv::Universal1_6)
                 .expect_err("memory object decorations must target memory object declarations");
+            assert_eq!(error, expected);
+        }
+    }
+
+    #[test]
+    fn linkage_attributes_require_function_or_variable() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Linkage",
+            "OpMemoryModel Logical GLSL450",
+            "%1 = OpTypeInt 32 0",
+            "OpDecorate %1 LinkageAttributes \"foo\" Import",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble LinkageAttributes decoration");
+        let expected = ValidationError::InvalidDecorationTargetKind {
+            decoration: rspirv::spirv::Decoration::LinkageAttributes,
+            target: Id::try_from(1).unwrap(),
+            found: rspirv::spirv::Op::TypeInt,
+            expected: DecorationTargetKind::FunctionOrVariable,
+        };
+
+        for module in [
+            MaybeValidModule::Text(text.as_str()),
+            MaybeValidModule::Binary(binary.as_slice()),
+        ] {
+            let error = module
+                .validate(TargetEnv::Universal1_6)
+                .expect_err("LinkageAttributes must target functions or variables");
             assert_eq!(error, expected);
         }
     }
