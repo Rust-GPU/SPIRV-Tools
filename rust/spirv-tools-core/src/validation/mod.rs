@@ -631,10 +631,10 @@ pub enum ValidationError {
         function: Id,
     },
     /// A member decoration targeted an id that is not a struct type.
-    #[error("member decorations must target struct types (found {target})")]
+    #[error("member decorations must target struct types (target {target:?})")]
     MemberDecorationTargetNotStruct {
         /// The target id that was not a struct.
-        target: DecorationTargetId,
+        target: MemberDecorationTargetId,
     },
     /// An instruction used a zero id where a non-zero id is required.
     #[error("{kind} for {opcode:?} must be non-zero")]
@@ -869,7 +869,7 @@ fn validate_words(words: ModuleWords, env: TargetEnv) -> Result<ValidModule, Val
     validate_capabilities(&module, env, &extensions)?;
     validate_memory_model(&module)?;
     validate_member_decorations(&module, &defined_ids)?;
-    validate_decoration_groups(&module, &defined_ids)?;
+    validate_decoration_groups(&module, &defined_ids, &opcodes)?;
     validate_decorations(&module, &defined_ids)?;
     let entry_points = validate_entry_points(&module, &defined_ids, &opcodes)?;
     validate_execution_modes(&module, &entry_points)?;
@@ -1490,43 +1490,28 @@ fn validate_member_decorations(
     }
 
     for inst in &module.annotations {
-        match inst.class.opcode {
-            rspirv::spirv::Op::MemberDecorate | rspirv::spirv::Op::MemberDecorateString => {
-                let mut operands = inst.operands.iter();
-                let target = operands.find_map(|op| {
-                    if let rspirv::dr::Operand::IdRef(id) = op {
-                        DecorationTargetId::try_from(*id).ok()
-                    } else {
-                        None
-                    }
-                });
-                if let Some(target) = target {
-                    let target_id =
-                        ResultId::try_from(u32::from(Id::from(target))).map_err(|_| {
-                            ValidationError::ZeroId {
-                                kind: IdKind::Operand,
-                                opcode: inst.class.opcode,
-                            }
-                        })?;
-                    if !defined_ids.contains(&target_id) {
-                        return Err(ValidationError::MissingDecorationTarget {
-                            target: target.into(),
-                        });
-                    }
-                    let target_id =
-                        ResultId::try_from(u32::from(Id::from(target))).map_err(|_| {
-                            ValidationError::ZeroId {
-                                kind: IdKind::Operand,
-                                opcode: inst.class.opcode,
-                            }
-                        })?;
-                    let op = types.get(&target_id).copied();
-                    if op != Some(rspirv::spirv::Op::TypeStruct) {
-                        return Err(ValidationError::MemberDecorationTargetNotStruct { target });
-                    }
+        if matches!(
+            inst.class.opcode,
+            rspirv::spirv::Op::MemberDecorate | rspirv::spirv::Op::MemberDecorateString
+        ) {
+            if let Some(target) = member_decoration_target(inst) {
+                let target_id =
+                    ResultId::try_from(u32::from(Id::from(target.target()))).map_err(|_| {
+                        ValidationError::ZeroId {
+                            kind: IdKind::Operand,
+                            opcode: inst.class.opcode,
+                        }
+                    })?;
+                if !defined_ids.contains(&target_id) {
+                    return Err(ValidationError::MissingDecorationTarget {
+                        target: target.target().into_inner().into_inner(),
+                    });
+                }
+                let op = types.get(&target_id).copied();
+                if op != Some(rspirv::spirv::Op::TypeStruct) {
+                    return Err(ValidationError::MemberDecorationTargetNotStruct { target });
                 }
             }
-            _ => {}
         }
     }
 
@@ -1536,6 +1521,7 @@ fn validate_member_decorations(
 fn validate_decoration_groups(
     module: &Module,
     defined_ids: &HashSet<ResultId>,
+    opcodes: &HashMap<ResultId, rspirv::spirv::Op>,
 ) -> Result<(), ValidationError> {
     let groups: HashSet<ResultId> = module
         .annotations
@@ -1566,7 +1552,8 @@ fn validate_decoration_groups(
                         });
                     }
                 }
-                for operand in inst.operands.iter().skip(1) {
+                let mut operands = inst.operands.iter().skip(1);
+                while let Some(operand) = operands.next() {
                     if let rspirv::dr::Operand::IdRef(id) = operand {
                         let target =
                             ResultId::try_from(*id).map_err(|_| ValidationError::ZeroId {
@@ -1577,6 +1564,30 @@ fn validate_decoration_groups(
                             return Err(ValidationError::MissingDecorationTarget {
                                 target: target.into_inner(),
                             });
+                        }
+                        if inst.class.opcode == rspirv::spirv::Op::GroupMemberDecorate {
+                            let member_index = operands
+                                .next()
+                                .and_then(|op| {
+                                    if let rspirv::dr::Operand::LiteralBit32(member) = op {
+                                        Some(*member)
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .unwrap_or(0);
+                            if let Some(opcode) = opcodes.get(&target) {
+                                if *opcode != rspirv::spirv::Op::TypeStruct {
+                                    let target_operand = OperandId::try_from(u32::from(target))
+                                        .expect("validated non-zero id");
+                                    return Err(ValidationError::MemberDecorationTargetNotStruct {
+                                        target: MemberDecorationTargetId::new(
+                                            DecorationTargetId::new(target_operand),
+                                            MemberIndex::new(member_index),
+                                        ),
+                                    });
+                                }
+                            }
                         }
                     }
                 }
@@ -1769,8 +1780,8 @@ fn validate_instruction_ids(
 mod tests {
     use super::{
         validate_module, CheckedBound, DeclaredBound, DecorationTargetId, ExtensionName, Id,
-        IdKind, MaybeValidModule, ModuleWords, Schema, SpirvVersion, ValidModuleCache,
-        ValidatableModule, ValidationError,
+        IdKind, MaybeValidModule, MemberDecorationTargetId, MemberIndex, ModuleWords, OperandId,
+        Schema, SpirvVersion, ValidModuleCache, ValidatableModule, ValidationError,
     };
     use crate::assembly::assemble_text;
     use crate::target_env::TargetEnv;
@@ -2875,7 +2886,10 @@ mod tests {
         assert_eq!(
             error,
             ValidationError::MemberDecorationTargetNotStruct {
-                target: DecorationTargetId::try_from(1).unwrap()
+                target: MemberDecorationTargetId::new(
+                    DecorationTargetId::try_from(1).unwrap(),
+                    MemberIndex::new(0)
+                )
             }
         );
     }
@@ -2969,6 +2983,48 @@ mod tests {
         ];
         let expected = ValidationError::MissingDecorationTarget {
             target: Id::try_from(4).unwrap(),
+        };
+        let error = MaybeValidModule::Binary(&binary)
+            .validate(TargetEnv::Universal1_6)
+            .unwrap_err();
+        assert_eq!(error, expected);
+    }
+
+    #[test]
+    fn group_member_decorate_requires_struct_targets() {
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            6,          // bound (ids up to 5)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 73), // OpDecorationGroup %1
+            1,
+            op(4, 75), // OpGroupMemberDecorate %1 %4 0 (%4 is not a struct)
+            1,
+            4,
+            0,
+            op(4, 21), // OpTypeInt %2 32
+            2,
+            32,
+            0,
+            op(3, 33), // OpTypeFunction %3 %2
+            3,
+            2,
+            op(3, 22), // OpTypeFloat %4 32 (non-struct target)
+            4,
+            32,
+        ];
+        let expected = ValidationError::MemberDecorationTargetNotStruct {
+            target: MemberDecorationTargetId::new(
+                DecorationTargetId::new(OperandId::try_from(4u32).unwrap()),
+                MemberIndex::new(0),
+            ),
         };
         let error = MaybeValidModule::Binary(&binary)
             .validate(TargetEnv::Universal1_6)
