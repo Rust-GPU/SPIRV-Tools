@@ -648,6 +648,20 @@ pub enum ValidationError {
         /// The number of members in the struct.
         member_count: usize,
     },
+    /// A decoration targeted an id with an incompatible opcode.
+    #[error(
+        "decoration {decoration:?} requires target kind {expected}, but id {target} has opcode {found:?}"
+    )]
+    InvalidDecorationTargetKind {
+        /// The decoration being applied.
+        decoration: rspirv::spirv::Decoration,
+        /// The target id.
+        target: Id,
+        /// The opcode defining the target.
+        found: rspirv::spirv::Op,
+        /// The expected target kind.
+        expected: DecorationTargetKind,
+    },
     /// An instruction used a zero id where a non-zero id is required.
     #[error("{kind} for {opcode:?} must be non-zero")]
     ZeroId {
@@ -675,6 +689,43 @@ impl fmt::Display for IdKind {
             IdKind::Result => write!(f, "result id"),
             IdKind::ResultType => write!(f, "result type id"),
             IdKind::Operand => write!(f, "operand id"),
+        }
+    }
+}
+
+/// Categories of targets required by specific decorations.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum DecorationTargetKind {
+    /// Struct type targets.
+    StructType,
+    /// Array, runtime array, or pointer types.
+    ArrayOrPointerType,
+    /// Variable-like declarations (variables and untyped variables).
+    Variable,
+    /// Memory object declarations (variables, parameters, raw access chains).
+    MemoryObjectDeclaration,
+    /// Pointer types.
+    Pointer,
+    /// Scalar specialization constants.
+    ScalarSpecConstant,
+    /// Non-specialization constants.
+    Constant,
+}
+
+impl fmt::Display for DecorationTargetKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DecorationTargetKind::StructType => write!(f, "struct type"),
+            DecorationTargetKind::ArrayOrPointerType => {
+                write!(f, "array, runtime array, or pointer type")
+            }
+            DecorationTargetKind::Variable => write!(f, "variable"),
+            DecorationTargetKind::MemoryObjectDeclaration => {
+                write!(f, "memory object declaration")
+            }
+            DecorationTargetKind::Pointer => write!(f, "pointer type"),
+            DecorationTargetKind::ScalarSpecConstant => write!(f, "scalar specialization constant"),
+            DecorationTargetKind::Constant => write!(f, "constant"),
         }
     }
 }
@@ -877,12 +928,15 @@ fn validate_words(words: ModuleWords, env: TargetEnv) -> Result<ValidModule, Val
     let header = ValidatedHeader::from_module(&module)?;
     let defined_ids = validate_id_bound(&module, header)?;
     let opcodes = collect_result_opcodes(&module);
+    let definitions = collect_result_instructions(&module);
+    let capabilities = collect_declared_capabilities(&module);
     let extensions = validate_extensions(&module, env)?;
     validate_capabilities(&module, env, &extensions)?;
     validate_memory_model(&module)?;
     let struct_member_counts = validate_member_decorations(&module, &defined_ids)?;
     validate_decoration_groups(&module, &defined_ids, &opcodes, &struct_member_counts)?;
     validate_decorations(&module, &defined_ids)?;
+    validate_decoration_target_categories(&module, &opcodes, &definitions, &capabilities)?;
     let entry_points = validate_entry_points(&module, &defined_ids, &opcodes)?;
     validate_execution_modes(&module, &entry_points)?;
     Ok(ValidModule {
@@ -1665,6 +1719,206 @@ fn validate_decorations(
     Ok(())
 }
 
+fn is_scalar_spec_constant(opcode: rspirv::spirv::Op) -> bool {
+    matches!(
+        opcode,
+        rspirv::spirv::Op::SpecConstantTrue
+            | rspirv::spirv::Op::SpecConstantFalse
+            | rspirv::spirv::Op::SpecConstant
+    )
+}
+
+fn is_constant_opcode(opcode: rspirv::spirv::Op) -> bool {
+    matches!(
+        opcode,
+        rspirv::spirv::Op::Constant
+            | rspirv::spirv::Op::ConstantTrue
+            | rspirv::spirv::Op::ConstantFalse
+            | rspirv::spirv::Op::SpecConstantTrue
+            | rspirv::spirv::Op::SpecConstantFalse
+            | rspirv::spirv::Op::SpecConstant
+            | rspirv::spirv::Op::SpecConstantComposite
+    )
+}
+
+fn is_memory_object_declaration(opcode: rspirv::spirv::Op) -> bool {
+    matches!(
+        opcode,
+        rspirv::spirv::Op::Variable
+            | rspirv::spirv::Op::UntypedVariableKHR
+            | rspirv::spirv::Op::FunctionParameter
+            | rspirv::spirv::Op::RawAccessChainNV
+    )
+}
+
+fn is_pointer_type(
+    type_id: Option<u32>,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+) -> bool {
+    type_id
+        .and_then(|id| ResultId::try_from(id).ok())
+        .and_then(|id| definitions.get(&id))
+        .map(|inst| {
+            matches!(
+                inst.class.opcode,
+                rspirv::spirv::Op::TypePointer | rspirv::spirv::Op::TypeUntypedPointerKHR
+            )
+        })
+        .unwrap_or(false)
+}
+
+fn validate_decoration_target_categories(
+    module: &Module,
+    opcodes: &HashMap<ResultId, rspirv::spirv::Op>,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    capabilities: &HashSet<rspirv::spirv::Capability>,
+) -> Result<(), ValidationError> {
+    for inst in &module.annotations {
+        if !matches!(
+            inst.class.opcode,
+            rspirv::spirv::Op::Decorate | rspirv::spirv::Op::DecorateId
+        ) {
+            continue;
+        }
+        let mut operands = inst.operands.iter();
+        let target = match operands.next() {
+            Some(rspirv::dr::Operand::IdRef(id)) => {
+                ResultId::try_from(*id).map_err(|_| ValidationError::ZeroId {
+                    kind: IdKind::Operand,
+                    opcode: inst.class.opcode,
+                })?
+            }
+            _ => continue,
+        };
+        let decoration = match operands.next() {
+            Some(rspirv::dr::Operand::Decoration(dec)) => *dec,
+            _ => continue,
+        };
+        let target_inst = match definitions.get(&target) {
+            Some(inst) => inst,
+            None => continue,
+        };
+        let opcode = match opcodes.get(&target) {
+            Some(opcode) => *opcode,
+            None => continue,
+        };
+        let target_id = Id::try_from(u32::from(target)).expect("non-zero id validated");
+        let target_type_id = target_inst.result_type;
+
+        let expected = match decoration {
+            rspirv::spirv::Decoration::SpecId => {
+                if !is_scalar_spec_constant(opcode) {
+                    Some(DecorationTargetKind::ScalarSpecConstant)
+                } else {
+                    None
+                }
+            }
+            rspirv::spirv::Decoration::Block
+            | rspirv::spirv::Decoration::BufferBlock
+            | rspirv::spirv::Decoration::GLSLShared
+            | rspirv::spirv::Decoration::GLSLPacked
+            | rspirv::spirv::Decoration::CPacked => {
+                if opcode != rspirv::spirv::Op::TypeStruct {
+                    Some(DecorationTargetKind::StructType)
+                } else {
+                    None
+                }
+            }
+            rspirv::spirv::Decoration::ArrayStride => {
+                if matches!(
+                    opcode,
+                    rspirv::spirv::Op::TypeArray
+                        | rspirv::spirv::Op::TypeRuntimeArray
+                        | rspirv::spirv::Op::TypePointer
+                        | rspirv::spirv::Op::TypeUntypedPointerKHR
+                ) {
+                    None
+                } else {
+                    Some(DecorationTargetKind::ArrayOrPointerType)
+                }
+            }
+            rspirv::spirv::Decoration::BuiltIn => {
+                let builtin = operands.next().and_then(|op| {
+                    if let rspirv::dr::Operand::BuiltIn(value) = op {
+                        Some(*value)
+                    } else if let rspirv::dr::Operand::LiteralBit32(raw) = op {
+                        rspirv::spirv::BuiltIn::from_u32(*raw)
+                    } else {
+                        None
+                    }
+                });
+                if capabilities.contains(&rspirv::spirv::Capability::Shader)
+                    && builtin == Some(rspirv::spirv::BuiltIn::WorkgroupSize)
+                    && !is_constant_opcode(opcode)
+                {
+                    Some(DecorationTargetKind::Constant)
+                } else if matches!(
+                    opcode,
+                    rspirv::spirv::Op::Variable | rspirv::spirv::Op::UntypedVariableKHR
+                ) || is_constant_opcode(opcode)
+                {
+                    None
+                } else {
+                    Some(DecorationTargetKind::Variable)
+                }
+            }
+            rspirv::spirv::Decoration::NoPerspective
+            | rspirv::spirv::Decoration::Flat
+            | rspirv::spirv::Decoration::Patch
+            | rspirv::spirv::Decoration::Centroid
+            | rspirv::spirv::Decoration::Sample
+            | rspirv::spirv::Decoration::Restrict
+            | rspirv::spirv::Decoration::Aliased
+            | rspirv::spirv::Decoration::Volatile
+            | rspirv::spirv::Decoration::Coherent
+            | rspirv::spirv::Decoration::NonWritable
+            | rspirv::spirv::Decoration::NonReadable
+            | rspirv::spirv::Decoration::XfbBuffer
+            | rspirv::spirv::Decoration::XfbStride
+            | rspirv::spirv::Decoration::Component
+            | rspirv::spirv::Decoration::Stream
+            | rspirv::spirv::Decoration::RestrictPointer
+            | rspirv::spirv::Decoration::AliasedPointer
+            | rspirv::spirv::Decoration::PerPrimitiveEXT => {
+                if !is_memory_object_declaration(opcode) {
+                    Some(DecorationTargetKind::MemoryObjectDeclaration)
+                } else if !is_pointer_type(target_type_id, definitions) {
+                    Some(DecorationTargetKind::Pointer)
+                } else {
+                    None
+                }
+            }
+            rspirv::spirv::Decoration::Invariant
+            | rspirv::spirv::Decoration::Constant
+            | rspirv::spirv::Decoration::Location
+            | rspirv::spirv::Decoration::Index
+            | rspirv::spirv::Decoration::Binding
+            | rspirv::spirv::Decoration::DescriptorSet
+            | rspirv::spirv::Decoration::InputAttachmentIndex => {
+                if matches!(
+                    opcode,
+                    rspirv::spirv::Op::Variable | rspirv::spirv::Op::UntypedVariableKHR
+                ) {
+                    None
+                } else {
+                    Some(DecorationTargetKind::Variable)
+                }
+            }
+            _ => None,
+        };
+
+        if let Some(expected) = expected {
+            return Err(ValidationError::InvalidDecorationTargetKind {
+                decoration,
+                target: target_id,
+                found: opcode,
+                expected,
+            });
+        }
+    }
+    Ok(())
+}
+
 fn validate_entry_points(
     module: &Module,
     defined_ids: &HashSet<ResultId>,
@@ -1761,6 +2015,26 @@ fn collect_result_opcodes(module: &Module) -> HashMap<ResultId, rspirv::spirv::O
     map
 }
 
+fn collect_result_instructions(module: &Module) -> HashMap<ResultId, rspirv::dr::Instruction> {
+    let mut map = HashMap::new();
+    for inst in module.all_inst_iter() {
+        if let Some(result_id) = inst.result_id {
+            if let Ok(id) = ResultId::try_from(result_id) {
+                map.insert(id, inst.clone());
+            }
+        }
+    }
+    map
+}
+
+fn collect_declared_capabilities(module: &Module) -> HashSet<rspirv::spirv::Capability> {
+    module
+        .capabilities
+        .iter()
+        .filter_map(capability_operand)
+        .collect()
+}
+
 fn validate_instruction_ids(
     results: &mut HashSet<ResultId>,
     instruction: &rspirv::dr::Instruction,
@@ -1816,9 +2090,10 @@ fn validate_instruction_ids(
 #[cfg(test)]
 mod tests {
     use super::{
-        validate_module, CheckedBound, DeclaredBound, DecorationTargetId, ExtensionName, Id,
-        IdKind, MaybeValidModule, MemberDecorationTargetId, MemberIndex, ModuleWords, OperandId,
-        Schema, SpirvVersion, ValidModuleCache, ValidatableModule, ValidationError,
+        validate_module, CheckedBound, DeclaredBound, DecorationTargetId, DecorationTargetKind,
+        ExtensionName, Id, IdKind, MaybeValidModule, MemberDecorationTargetId, MemberIndex,
+        ModuleWords, OperandId, Schema, SpirvVersion, ValidModuleCache, ValidatableModule,
+        ValidationError,
     };
     use crate::assembly::assemble_text;
     use crate::target_env::TargetEnv;
@@ -3097,6 +3372,153 @@ mod tests {
             .validate(TargetEnv::Universal1_6)
             .unwrap_err();
         assert_eq!(error, expected);
+    }
+
+    #[test]
+    fn spec_id_requires_scalar_specialization_constant() {
+        let text = [
+            "OpCapability Addresses",
+            "OpCapability Kernel",
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%1 = OpTypeInt 32 1",
+            "%2 = OpConstant %1 1",
+            "OpDecorate %2 SpecId 7",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble spec id decoration");
+        let expected = ValidationError::InvalidDecorationTargetKind {
+            decoration: rspirv::spirv::Decoration::SpecId,
+            target: Id::try_from(2).unwrap(),
+            found: rspirv::spirv::Op::Constant,
+            expected: DecorationTargetKind::ScalarSpecConstant,
+        };
+
+        for module in [
+            MaybeValidModule::Text(text.as_str()),
+            MaybeValidModule::Binary(binary.as_slice()),
+        ] {
+            let error = module
+                .validate(TargetEnv::Universal1_6)
+                .expect_err("SpecId must target scalar specialization constants");
+            assert_eq!(error, expected);
+        }
+    }
+
+    #[test]
+    fn block_requires_struct_type_target() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%1 = OpTypeInt 32 0",
+            "OpDecorate %1 Block",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble block decoration");
+        let expected = ValidationError::InvalidDecorationTargetKind {
+            decoration: rspirv::spirv::Decoration::Block,
+            target: Id::try_from(1).unwrap(),
+            found: rspirv::spirv::Op::TypeInt,
+            expected: DecorationTargetKind::StructType,
+        };
+
+        for module in [
+            MaybeValidModule::Text(text.as_str()),
+            MaybeValidModule::Binary(binary.as_slice()),
+        ] {
+            let error = module
+                .validate(TargetEnv::Universal1_6)
+                .expect_err("Block must target a struct type");
+            assert_eq!(error, expected);
+        }
+    }
+
+    #[test]
+    fn array_stride_requires_array_or_pointer_target() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%1 = OpTypeInt 32 0",
+            "OpDecorate %1 ArrayStride 16",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble array stride decoration");
+        let expected = ValidationError::InvalidDecorationTargetKind {
+            decoration: rspirv::spirv::Decoration::ArrayStride,
+            target: Id::try_from(1).unwrap(),
+            found: rspirv::spirv::Op::TypeInt,
+            expected: DecorationTargetKind::ArrayOrPointerType,
+        };
+
+        for module in [
+            MaybeValidModule::Text(text.as_str()),
+            MaybeValidModule::Binary(binary.as_slice()),
+        ] {
+            let error = module
+                .validate(TargetEnv::Universal1_6)
+                .expect_err("ArrayStride must target array/runtime array/pointer types");
+            assert_eq!(error, expected);
+        }
+    }
+
+    #[test]
+    fn workgroup_size_builtin_requires_constant_when_shader() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%1 = OpTypeInt 32 0",
+            "%2 = OpTypeVector %1 3",
+            "%3 = OpTypePointer Input %2",
+            "%4 = OpVariable %3 Input",
+            "OpDecorate %4 BuiltIn WorkgroupSize",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble workgroup size builtin");
+        let expected = ValidationError::InvalidDecorationTargetKind {
+            decoration: rspirv::spirv::Decoration::BuiltIn,
+            target: Id::try_from(4).unwrap(),
+            found: rspirv::spirv::Op::Variable,
+            expected: DecorationTargetKind::Constant,
+        };
+
+        for module in [
+            MaybeValidModule::Text(text.as_str()),
+            MaybeValidModule::Binary(binary.as_slice()),
+        ] {
+            let error = module
+                .validate(TargetEnv::Universal1_6)
+                .expect_err("WorkgroupSize must target a constant when Shader is declared");
+            assert_eq!(error, expected);
+        }
+    }
+
+    #[test]
+    fn memory_object_decorations_require_memory_objects() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%1 = OpTypeInt 32 0",
+            "%2 = OpConstant %1 0",
+            "OpDecorate %2 NoPerspective",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble NoPerspective decoration");
+        let expected = ValidationError::InvalidDecorationTargetKind {
+            decoration: rspirv::spirv::Decoration::NoPerspective,
+            target: Id::try_from(2).unwrap(),
+            found: rspirv::spirv::Op::Constant,
+            expected: DecorationTargetKind::MemoryObjectDeclaration,
+        };
+
+        for module in [
+            MaybeValidModule::Text(text.as_str()),
+            MaybeValidModule::Binary(binary.as_slice()),
+        ] {
+            let error = module
+                .validate(TargetEnv::Universal1_6)
+                .expect_err("memory object decorations must target memory object declarations");
+            assert_eq!(error, expected);
+        }
     }
 
     #[test]
