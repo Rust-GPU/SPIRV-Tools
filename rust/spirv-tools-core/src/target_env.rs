@@ -419,6 +419,17 @@ impl TargetEnv {
             _ => true,
         }
     }
+
+    /// Returns whether a capability is permitted for this target environment.
+    ///
+    /// The WebGPU environment allows only the core Shader capability today; other
+    /// environments currently accept all capabilities until a full allowlist is ported.
+    pub fn is_capability_allowed(self, capability: rspirv::spirv::Capability) -> bool {
+        match self {
+            TargetEnv::WebGpu0 => capability == rspirv::spirv::Capability::Shader,
+            _ => true,
+        }
+    }
 }
 
 impl From<TargetEnv> for u32 {

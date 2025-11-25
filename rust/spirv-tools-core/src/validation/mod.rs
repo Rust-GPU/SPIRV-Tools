@@ -61,9 +61,24 @@ struct CapabilitySet {
 }
 
 impl CapabilitySet {
-    fn insert(&mut self, capability: rspirv::spirv::Capability) -> Result<(), ValidationError> {
+    fn insert_unchecked(
+        &mut self,
+        capability: rspirv::spirv::Capability,
+    ) -> Result<(), ValidationError> {
         if !self.values.insert(capability) {
             return Err(ValidationError::DuplicateCapability { capability });
+        }
+        Ok(())
+    }
+
+    fn insert(
+        &mut self,
+        capability: rspirv::spirv::Capability,
+        env: TargetEnv,
+    ) -> Result<(), ValidationError> {
+        self.insert_unchecked(capability)?;
+        if !env.is_capability_allowed(capability) {
+            return Err(ValidationError::DisallowedCapability { capability, env });
         }
         Ok(())
     }
@@ -463,6 +478,14 @@ pub enum ValidationError {
         /// The capability that was duplicated.
         capability: rspirv::spirv::Capability,
     },
+    /// A capability is not permitted for the target environment.
+    #[error("capability {capability:?} is not allowed for target environment {env:?}")]
+    DisallowedCapability {
+        /// The capability that was not allowed.
+        capability: rspirv::spirv::Capability,
+        /// The target environment in use.
+        env: TargetEnv,
+    },
     /// Duplicate extension declarations were found.
     #[error("extension {extension} is declared more than once")]
     DuplicateExtension {
@@ -705,7 +728,7 @@ fn validate_words(words: ModuleWords, env: TargetEnv) -> Result<ValidModule, Val
     if let Some(&schema) = words.as_slice().get(4) {
         Schema::validate(schema)?;
     }
-    run_layout_check(words.as_slice())?;
+    run_layout_check(words.as_slice(), env)?;
     let mut loader = rspirv::dr::Loader::new();
     if let Err(error) = rspirv::binary::parse_words(words.as_slice(), &mut loader) {
         return Err(ValidationError::Parse(error.to_string()));
@@ -773,23 +796,25 @@ impl<'a> ValidatableModule<'a> for &'a str {
     }
 }
 
-fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
+fn run_layout_check(words: &[u32], env: TargetEnv) -> Result<(), ValidationError> {
     struct LayoutChecker {
         memory_model_state: MemoryModelState,
         current_section: Section,
         function_state: FunctionState,
         capabilities: CapabilitySet,
         extensions: ExtensionSet,
+        env: TargetEnv,
     }
 
     impl LayoutChecker {
-        fn new() -> Self {
+        fn new(env: TargetEnv) -> Self {
             Self {
                 memory_model_state: MemoryModelState::new(),
                 current_section: Section::Capabilities,
                 function_state: FunctionState::Outside,
                 capabilities: CapabilitySet::default(),
                 extensions: ExtensionSet::default(),
+                env,
             }
         }
     }
@@ -858,7 +883,7 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
                         ));
                     }
                     if let Some(cap) = capability_operand(&inst) {
-                        if let Err(err) = self.capabilities.insert(cap) {
+                        if let Err(err) = self.capabilities.insert(cap, self.env) {
                             return rspirv::binary::ParseAction::Error(Box::new(err));
                         }
                     }
@@ -905,7 +930,7 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
         }
     }
 
-    let mut checker = LayoutChecker::new();
+    let mut checker = LayoutChecker::new(env);
     match rspirv::binary::parse_words(words, &mut checker) {
         Ok(()) => Ok(()),
         Err(rspirv::binary::ParseState::ConsumerError(err)) => {
@@ -1562,6 +1587,32 @@ mod tests {
             error,
             ValidationError::DuplicateCapability {
                 capability: rspirv::spirv::Capability::Shader
+            }
+        );
+    }
+
+    #[test]
+    fn webgpu_rejects_non_shader_capabilities() {
+        let text = [
+            "OpCapability Kernel",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::WebGpu0)
+            .expect_err("WebGPU should reject Kernel capability");
+        assert_eq!(
+            error,
+            ValidationError::DisallowedCapability {
+                capability: rspirv::spirv::Capability::Kernel,
+                env: TargetEnv::WebGpu0
             }
         );
     }
