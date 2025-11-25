@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::fmt;
 use std::num::NonZeroU32;
 
 use rspirv::dr::Module;
@@ -37,6 +38,17 @@ pub struct MemberDecorationTargetId {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct MemberIndex(u32);
 
+/// The schema (reserved word) from the module header.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct Schema(u32);
+
+/// A validated module header with a checked bound and schema.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct ValidatedHeader {
+    bound: CheckedBound,
+    schema: Schema,
+}
+
 /// A set of declared capabilities for a module.
 #[derive(Debug, Default)]
 struct CapabilitySet {
@@ -52,15 +64,15 @@ impl CapabilitySet {
     }
 }
 
+/// Errors produced when attempting to construct zero-valued ids.
+#[derive(Debug, Error, Copy, Clone, PartialEq, Eq)]
+#[error("ids must be non-zero")]
+pub struct ZeroIdError;
+
 impl Id {
     /// Wraps an existing non-zero id.
     pub fn new(value: NonZeroU32) -> Self {
         Self(value)
-    }
-
-    /// Attempts to create an `Id` from a raw value, returning `None` if zero.
-    pub fn from_raw(raw: u32) -> Option<Self> {
-        NonZeroU32::new(raw).map(Self)
     }
 
     /// Returns the underlying non-zero id.
@@ -80,6 +92,14 @@ macro_rules! id_wrapper {
             /// Unwraps the inner `Id`.
             pub fn into_inner(self) -> Id {
                 self.0
+            }
+        }
+
+        impl TryFrom<u32> for $name {
+            type Error = ZeroIdError;
+
+            fn try_from(value: u32) -> Result<Self, Self::Error> {
+                Id::try_from(value).map(Self)
             }
         }
 
@@ -131,6 +151,14 @@ impl From<DecorationTargetId> for Id {
     }
 }
 
+impl TryFrom<u32> for DecorationTargetId {
+    type Error = ZeroIdError;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        OperandId::try_from(value).map(DecorationTargetId::new)
+    }
+}
+
 impl MemberDecorationTargetId {
     /// Creates a member decoration target from a struct id and member index.
     pub fn new(target: DecorationTargetId, member: MemberIndex) -> Self {
@@ -160,6 +188,62 @@ impl MemberIndex {
     }
 }
 
+impl Schema {
+    /// The only valid schema value; SPIR-V reserves this header field.
+    pub const ZERO: Schema = Schema(0);
+
+    /// Validates the raw schema value from the module header.
+    pub fn validate(raw: u32) -> Result<Self, ValidationError> {
+        if raw == 0 {
+            Ok(Schema::ZERO)
+        } else {
+            Err(ValidationError::InvalidReservedWord { reserved: raw })
+        }
+    }
+
+    /// Returns the raw schema value (always zero for valid modules).
+    pub fn raw(self) -> u32 {
+        self.0
+    }
+}
+
+impl fmt::Display for Schema {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl ValidatedHeader {
+    /// Creates a validated header from its components.
+    pub fn new(bound: CheckedBound, schema: Schema) -> Self {
+        Self { bound, schema }
+    }
+
+    /// Parses and validates a module header, ensuring the bound and schema are valid.
+    pub fn from_module(module: &Module) -> Result<Self, ValidationError> {
+        let header = module
+            .header
+            .as_ref()
+            .ok_or(ValidationError::MissingHeader)?;
+        let schema = Schema::validate(header.reserved_word)?;
+        let declared_bound = DeclaredBound(header.bound);
+        let bound = CheckedBound::new(declared_bound).ok_or(ValidationError::InvalidIdBound {
+            bound: declared_bound,
+        })?;
+        Ok(Self { bound, schema })
+    }
+
+    /// Returns the validated id bound associated with this header.
+    pub fn bound(self) -> CheckedBound {
+        self.bound
+    }
+
+    /// Returns the validated schema value (always zero for valid modules).
+    pub fn schema(self) -> Schema {
+        self.schema
+    }
+}
+
 impl From<Id> for u32 {
     fn from(id: Id) -> Self {
         id.0.get()
@@ -172,8 +256,16 @@ impl From<NonZeroU32> for Id {
     }
 }
 
-impl std::fmt::Display for Id {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl TryFrom<u32> for Id {
+    type Error = ZeroIdError;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        NonZeroU32::new(value).map(Id).ok_or(ZeroIdError)
+    }
+}
+
+impl fmt::Display for Id {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
     }
 }
@@ -211,8 +303,8 @@ impl From<NonZeroU32> for IdBound {
     }
 }
 
-impl std::fmt::Display for IdBound {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for IdBound {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
     }
 }
@@ -279,6 +371,35 @@ pub enum ValidationError {
         /// The capability that was duplicated.
         capability: rspirv::spirv::Capability,
     },
+    /// An instruction used a zero id where a non-zero id is required.
+    #[error("{kind} for {opcode:?} must be non-zero")]
+    ZeroId {
+        /// The category of id that was zero.
+        kind: IdKind,
+        /// The opcode containing the invalid id.
+        opcode: rspirv::spirv::Op,
+    },
+}
+
+/// Categories of ids that must be non-zero.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum IdKind {
+    /// Result id produced by an instruction.
+    Result,
+    /// Result type id associated with an instruction.
+    ResultType,
+    /// Ids that appear within operands.
+    Operand,
+}
+
+impl fmt::Display for IdKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            IdKind::Result => write!(f, "result id"),
+            IdKind::ResultType => write!(f, "result type id"),
+            IdKind::Operand => write!(f, "operand id"),
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -342,8 +463,8 @@ impl CheckedBound {
     }
 }
 
-impl std::fmt::Display for CheckedBound {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for CheckedBound {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.declared.fmt(f)
     }
 }
@@ -404,15 +525,16 @@ pub struct ValidModule {
     words: Vec<u32>,
     module: Module,
     env: TargetEnv,
+    header: ValidatedHeader,
 }
 
 impl ValidModule {
-    /// Returns the validated words.
+    /// Returns the validated words that were successfully checked.
     pub fn words(&self) -> &[u32] {
         &self.words
     }
 
-    /// Returns the parsed module.
+    /// Returns the parsed module corresponding to the validated words.
     pub fn module(&self) -> &Module {
         &self.module
     }
@@ -420,6 +542,11 @@ impl ValidModule {
     /// Returns the target environment this module was validated against.
     pub fn env(&self) -> TargetEnv {
         self.env
+    }
+
+    /// Returns the validated module header.
+    pub fn header(&self) -> ValidatedHeader {
+        self.header
     }
 }
 
@@ -429,13 +556,9 @@ pub fn validate_module(words: &[u32], env: TargetEnv) -> Result<(), ValidationEr
     validate_words(words, env).map(|_| ())
 }
 
-fn validate_words(words: &[u32], _env: TargetEnv) -> Result<ValidModule, ValidationError> {
-    if words.len() >= 5 {
-        // Word 4 of the header is reserved and must be zero for all modules.
-        let reserved = words[4];
-        if reserved != 0 {
-            return Err(ValidationError::InvalidReservedWord { reserved });
-        }
+fn validate_words(words: &[u32], env: TargetEnv) -> Result<ValidModule, ValidationError> {
+    if let Some(&schema) = words.get(4) {
+        Schema::validate(schema)?;
     }
     run_layout_check(words)?;
     let mut loader = rspirv::dr::Loader::new();
@@ -443,13 +566,14 @@ fn validate_words(words: &[u32], _env: TargetEnv) -> Result<ValidModule, Validat
         return Err(ValidationError::Parse(error.to_string()));
     }
     let module = loader.module();
-    validate_header(&module)?;
-    validate_id_bound(&module)?;
+    let header = ValidatedHeader::from_module(&module)?;
+    validate_id_bound(&module, header)?;
     validate_memory_model(&module)?;
     Ok(ValidModule {
         words: words.to_vec(),
         module,
-        env: _env,
+        env,
+        header,
     })
 }
 
@@ -472,6 +596,24 @@ impl<'a> MaybeValidModule<'a> {
                 validate_words(&binary, env)
             }
         }
+    }
+}
+
+/// Convenience trait for validating either binary words or assembly text.
+pub trait ValidatableModule<'a> {
+    /// Validates the module input for the requested target environment.
+    fn validate(self, env: TargetEnv) -> Result<ValidModule, ValidationError>;
+}
+
+impl<'a> ValidatableModule<'a> for &'a [u32] {
+    fn validate(self, env: TargetEnv) -> Result<ValidModule, ValidationError> {
+        MaybeValidModule::Binary(self).validate(env)
+    }
+}
+
+impl<'a> ValidatableModule<'a> for &'a str {
+    fn validate(self, env: TargetEnv) -> Result<ValidModule, ValidationError> {
+        MaybeValidModule::Text(self).validate(env)
     }
 }
 
@@ -510,12 +652,8 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
             &mut self,
             header: rspirv::dr::ModuleHeader,
         ) -> rspirv::binary::ParseAction {
-            if header.reserved_word != 0 {
-                return rspirv::binary::ParseAction::Error(Box::new(
-                    ValidationError::InvalidReservedWord {
-                        reserved: header.reserved_word,
-                    },
-                ));
+            if let Err(err) = Schema::validate(header.reserved_word) {
+                return rspirv::binary::ParseAction::Error(Box::new(err));
             }
             rspirv::binary::ParseAction::Continue
         }
@@ -633,7 +771,7 @@ fn member_decoration_target(inst: &rspirv::dr::Instruction) -> Option<MemberDeco
             let mut operands = inst.operands.iter();
             let target = operands.find_map(|op| {
                 if let rspirv::dr::Operand::IdRef(id) = op {
-                    NonZeroU32::new(*id).map(DecorationTargetId::from)
+                    DecorationTargetId::try_from(*id).ok()
                 } else {
                     None
                 }
@@ -659,19 +797,6 @@ fn check_id(id: Id, bound: CheckedBound) -> Option<ValidationError> {
     }
 }
 
-fn validate_header(module: &Module) -> Result<(), ValidationError> {
-    let header = module
-        .header
-        .as_ref()
-        .ok_or(ValidationError::MissingHeader)?;
-    if header.reserved_word != 0 {
-        return Err(ValidationError::InvalidReservedWord {
-            reserved: header.reserved_word,
-        });
-    }
-    Ok(())
-}
-
 fn validate_memory_model(module: &Module) -> Result<(), ValidationError> {
     if module.memory_model.is_none() {
         return Err(ValidationError::MissingMemoryModel);
@@ -679,56 +804,64 @@ fn validate_memory_model(module: &Module) -> Result<(), ValidationError> {
     Ok(())
 }
 
-fn validate_id_bound(module: &Module) -> Result<(), ValidationError> {
-    let header = module
-        .header
-        .as_ref()
-        .ok_or(ValidationError::MissingHeader)?;
-    let declared_bound = DeclaredBound(header.bound);
-    let bound = CheckedBound::new(declared_bound).ok_or(ValidationError::InvalidIdBound {
-        bound: declared_bound,
-    })?;
+fn validate_id_bound(module: &Module, header: ValidatedHeader) -> Result<(), ValidationError> {
+    let bound = header.bound();
     let mut results: HashSet<ResultId> = HashSet::new();
 
     for instruction in module.all_inst_iter() {
-        if let Some(id) = instruction.result_id {
-            if let Some(raw_id) = NonZeroU32::new(id) {
-                let valid_id = ResultId::from(raw_id);
-                if !results.insert(valid_id) {
-                    return Err(ValidationError::DuplicateResultId {
-                        id: valid_id.into_inner(),
-                    });
-                }
-                if let Some(error) = check_id(valid_id.into_inner(), bound) {
-                    return Err(error);
-                }
-            }
-        }
-        if let Some(result_type) = instruction.result_type {
-            if let Some(raw_type) = NonZeroU32::new(result_type) {
-                let result_type = TypeId::from(raw_type);
-                if let Some(error) = check_id(result_type.into_inner(), bound) {
-                    return Err(error);
-                }
-            }
-        }
-        for operand in &instruction.operands {
-            if let rspirv::dr::Operand::IdRef(id) = operand {
-                if let Some(raw_operand) = NonZeroU32::new(*id) {
-                    let id = Id::from(OperandId::from(raw_operand));
-                    if let Some(error) = check_id(id, bound) {
-                        return Err(error);
-                    }
-                }
-            }
-        }
+        validate_instruction_ids(&mut results, instruction, bound)?;
+    }
 
-        if let Some(member_target) = member_decoration_target(instruction) {
-            if let Some(error) = check_id(member_target.target().into_inner().into_inner(), bound) {
+    Ok(())
+}
+
+fn validate_instruction_ids(
+    results: &mut HashSet<ResultId>,
+    instruction: &rspirv::dr::Instruction,
+    bound: CheckedBound,
+) -> Result<(), ValidationError> {
+    let opcode = instruction.class.opcode;
+    if let Some(id) = instruction.result_id {
+        let valid_id = ResultId::try_from(id).map_err(|_| ValidationError::ZeroId {
+            kind: IdKind::Result,
+            opcode,
+        })?;
+        if !results.insert(valid_id) {
+            return Err(ValidationError::DuplicateResultId {
+                id: valid_id.into_inner(),
+            });
+        }
+        if let Some(error) = check_id(valid_id.into_inner(), bound) {
+            return Err(error);
+        }
+    }
+    if let Some(result_type) = instruction.result_type {
+        let result_type = TypeId::try_from(result_type).map_err(|_| ValidationError::ZeroId {
+            kind: IdKind::ResultType,
+            opcode,
+        })?;
+        if let Some(error) = check_id(result_type.into_inner(), bound) {
+            return Err(error);
+        }
+    }
+    for operand in &instruction.operands {
+        if let rspirv::dr::Operand::IdRef(id) = operand {
+            let operand_id = OperandId::try_from(*id).map_err(|_| ValidationError::ZeroId {
+                kind: IdKind::Operand,
+                opcode,
+            })?;
+            let id = Id::from(operand_id);
+            if let Some(error) = check_id(id, bound) {
                 return Err(error);
             }
-            // Member index itself is a literal and does not participate in bound checking.
         }
+    }
+
+    if let Some(member_target) = member_decoration_target(instruction) {
+        if let Some(error) = check_id(member_target.target().into_inner().into_inner(), bound) {
+            return Err(error);
+        }
+        // Member index itself is a literal and does not participate in bound checking.
     }
 
     Ok(())
@@ -737,7 +870,8 @@ fn validate_id_bound(module: &Module) -> Result<(), ValidationError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        validate_module, CheckedBound, DeclaredBound, Id, MaybeValidModule, ValidationError,
+        validate_module, CheckedBound, DeclaredBound, Id, IdKind, MaybeValidModule, Schema,
+        ValidatableModule, ValidationError,
     };
     use crate::assembly::assemble_text;
     use crate::target_env::TargetEnv;
@@ -959,6 +1093,61 @@ mod tests {
     }
 
     #[test]
+    fn validate_module_rejects_zero_result_id() {
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            5,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid with a zero result id
+            0,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::ZeroId {
+                kind: IdKind::Result,
+                opcode: rspirv::spirv::Op::TypeVoid
+            }
+        );
+    }
+
+    #[test]
+    fn validate_module_rejects_zero_operand_id() {
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            5,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %0 (invalid operand id)
+            2,
+            0,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::ZeroId {
+                kind: IdKind::Operand,
+                opcode: rspirv::spirv::Op::TypeFunction
+            }
+        );
+    }
+
+    #[test]
     fn validate_module_rejects_non_zero_schema() {
         let text = [
             "OpCapability Shader",
@@ -987,5 +1176,31 @@ mod tests {
         ];
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(error, ValidationError::MissingMemoryModel);
+    }
+
+    #[test]
+    fn validatable_trait_covers_text_and_binary() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+        ]
+        .join("\n");
+        let valid_text = text
+            .as_str()
+            .validate(TargetEnv::Universal1_6)
+            .expect("valid text");
+        assert_eq!(valid_text.header().schema(), Schema::ZERO);
+
+        let binary = assemble_text(&text).expect("assemble");
+        let valid_binary = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect("valid binary");
+        assert_eq!(
+            valid_binary.header().bound().declared(),
+            DeclaredBound(binary[3])
+        );
     }
 }

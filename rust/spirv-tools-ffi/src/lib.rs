@@ -12,9 +12,6 @@ use std::str;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Once;
 
-#[cfg(test)]
-use spirv_tools_core::assembly::assemble_text_with_env;
-
 #[cxx::bridge(namespace = "spvtools::ffi")]
 mod ffi {
     #[derive(Debug)]
