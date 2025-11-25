@@ -143,7 +143,7 @@ pub enum ValidationError {
         /// The offending id value.
         id: Id,
         /// The declared id bound from the module header.
-        bound: IdBound,
+        bound: CheckedBound,
     },
     /// Duplicate result ids were found in the module.
     #[error("id {id} is defined more than once")]
@@ -184,6 +184,39 @@ impl std::fmt::Display for DeclaredBound {
 impl From<u32> for DeclaredBound {
     fn from(value: u32) -> Self {
         DeclaredBound(value)
+    }
+}
+
+/// A validated (non-zero) id bound paired with the originally declared value.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct CheckedBound {
+    declared: DeclaredBound,
+    validated: IdBound,
+}
+
+impl CheckedBound {
+    /// Creates a checked bound from a declared bound, returning `None` when the declared value is zero.
+    pub fn new(declared: DeclaredBound) -> Option<Self> {
+        IdBound::from_raw(declared.0).map(|validated| Self {
+            declared,
+            validated,
+        })
+    }
+
+    /// Returns the originally declared bound (which may be zero).
+    pub fn declared(self) -> DeclaredBound {
+        self.declared
+    }
+
+    /// Returns the validated, non-zero bound.
+    pub fn validated(self) -> IdBound {
+        self.validated
+    }
+}
+
+impl std::fmt::Display for CheckedBound {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.declared.fmt(f)
     }
 }
 
@@ -394,14 +427,14 @@ fn validate_id_bound(module: &Module) -> Result<(), ValidationError> {
         .as_ref()
         .ok_or(ValidationError::MissingHeader)?;
     let declared_bound = DeclaredBound(header.bound);
-    let bound = IdBound::from_raw(header.bound).ok_or(ValidationError::InvalidIdBound {
+    let bound = CheckedBound::new(declared_bound).ok_or(ValidationError::InvalidIdBound {
         bound: declared_bound,
     })?;
     let mut results = HashSet::new();
 
-    let check_id = |id: u32, bound: IdBound| {
+    let check_id = |id: u32, bound: CheckedBound| {
         Id::try_from(id).ok().and_then(|id| {
-            if id.get() >= bound.get() {
+            if id.get() >= bound.validated().get() {
                 Some(ValidationError::IdExceedsBound { id, bound })
             } else {
                 None
@@ -439,7 +472,7 @@ fn validate_id_bound(module: &Module) -> Result<(), ValidationError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_module, Id, IdBound, ValidationError};
+    use super::{validate_module, CheckedBound, DeclaredBound, Id, ValidationError};
     use crate::assembly::assemble_text;
     use crate::target_env::TargetEnv;
 
@@ -470,7 +503,7 @@ mod tests {
             error,
             ValidationError::IdExceedsBound {
                 id: Id::from_raw(1).unwrap(),
-                bound: IdBound::from_raw(1).unwrap()
+                bound: CheckedBound::new(DeclaredBound(1)).unwrap()
             }
         );
     }
@@ -546,7 +579,7 @@ mod tests {
             error,
             ValidationError::IdExceedsBound {
                 id: Id::from_raw(2).unwrap(),
-                bound: IdBound::from_raw(2).unwrap(),
+                bound: CheckedBound::new(DeclaredBound(2)).unwrap(),
             }
         );
     }
