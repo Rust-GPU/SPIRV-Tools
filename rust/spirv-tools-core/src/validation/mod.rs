@@ -534,6 +534,50 @@ pub enum ValidationError {
         /// The target environment's SPIR-V version.
         target_version: SpirvVersion,
     },
+    /// A capability requires another capability that was not declared.
+    #[error("capability {capability:?} requires capability {required_capability:?}")]
+    MissingRequiredCapability {
+        /// The capability that is missing.
+        required_capability: rspirv::spirv::Capability,
+        /// The capability that referenced it.
+        capability: rspirv::spirv::Capability,
+    },
+    /// An instruction requires a capability that was not declared.
+    #[error("instruction {opcode:?} requires capability {required_capability:?}")]
+    MissingInstructionCapability {
+        /// The opcode requiring the capability.
+        opcode: rspirv::spirv::Op,
+        /// The missing capability.
+        required_capability: rspirv::spirv::Capability,
+    },
+    /// An instruction requires an extension that was not declared.
+    #[error("instruction {opcode:?} requires extension {required_extension}")]
+    MissingInstructionExtension {
+        /// The opcode requiring the extension.
+        opcode: rspirv::spirv::Op,
+        /// The missing extension.
+        required_extension: ExtensionName,
+    },
+    /// An operand requires a capability that was not declared.
+    #[error("operand {operand_index} of {opcode:?} requires capability {required_capability:?}")]
+    MissingOperandCapability {
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+        /// Operand index within the instruction.
+        operand_index: usize,
+        /// Missing capability.
+        required_capability: rspirv::spirv::Capability,
+    },
+    /// An operand requires an extension that was not declared.
+    #[error("operand {operand_index} of {opcode:?} requires extension {required_extension}")]
+    MissingOperandExtension {
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+        /// Operand index within the instruction.
+        operand_index: usize,
+        /// Missing extension.
+        required_extension: ExtensionName,
+    },
     /// Duplicate extension declarations were found.
     #[error("extension {extension} is declared more than once")]
     DuplicateExtension {
@@ -1059,6 +1103,11 @@ fn validate_capabilities(
     env: TargetEnv,
     extensions: &ExtensionSet,
 ) -> Result<(), ValidationError> {
+    let declared: HashSet<_> = module
+        .capabilities
+        .iter()
+        .filter_map(capability_operand)
+        .collect();
     for inst in &module.capabilities {
         if let Some(capability) = capability_operand(inst) {
             if !env.is_capability_allowed(capability) {
@@ -1083,6 +1132,74 @@ fn validate_capabilities(
                         capability,
                         required_version,
                         target_version,
+                    });
+                }
+            }
+            for required_cap in required_capabilities_for_capability(capability) {
+                if !declared.contains(required_cap) {
+                    return Err(ValidationError::MissingRequiredCapability {
+                        required_capability: *required_cap,
+                        capability,
+                    });
+                }
+            }
+        }
+    }
+    validate_instruction_requirements(module, &declared, extensions)?;
+    Ok(())
+}
+
+fn validate_instruction_requirements(
+    module: &Module,
+    capabilities: &HashSet<rspirv::spirv::Capability>,
+    extensions: &ExtensionSet,
+) -> Result<(), ValidationError> {
+    for inst in module.all_inst_iter() {
+        for &required_cap in inst.class.capabilities {
+            if !capabilities.contains(&required_cap) {
+                return Err(ValidationError::MissingInstructionCapability {
+                    opcode: inst.class.opcode,
+                    required_capability: required_cap,
+                });
+            }
+        }
+        for &required_ext in inst.class.extensions {
+            if !extensions
+                .values
+                .iter()
+                .any(|ext| ext.as_str() == required_ext)
+            {
+                return Err(ValidationError::MissingInstructionExtension {
+                    opcode: inst.class.opcode,
+                    required_extension: ExtensionName::from(required_ext),
+                });
+            }
+        }
+        for (index, operand) in inst.operands.iter().enumerate() {
+            if matches!(operand, rspirv::dr::Operand::Capability(_)) {
+                // Capability dependencies are validated separately to avoid over-constraining
+                // the declaration order.
+                continue;
+            }
+            for required_cap in operand.required_capabilities() {
+                if !capabilities.contains(&required_cap) {
+                    return Err(ValidationError::MissingOperandCapability {
+                        opcode: inst.class.opcode,
+                        operand_index: index,
+                        required_capability: required_cap,
+                    });
+                }
+            }
+            for required_ext in operand.required_extensions() {
+                if !extensions
+                    .values
+                    .iter()
+                    .any(|ext| ext.as_str() == required_ext)
+                {
+                    return Err(ValidationError::MissingOperandExtension {
+                        opcode: inst.class.opcode,
+                        operand_index: index,
+                        required_extension: ExtensionName::from(required_ext),
                     });
                 }
             }
@@ -1152,6 +1269,48 @@ fn required_spirv_version_for_capability(
         | AtomicFloat16VectorNV => Some(SpirvVersion::new(1, 3)),
         TileShadingQCOM => Some(SpirvVersion::new(1, 6)),
         _ => None,
+    }
+}
+
+fn required_capabilities_for_capability(
+    capability: rspirv::spirv::Capability,
+) -> &'static [rspirv::spirv::Capability] {
+    use rspirv::spirv::Capability::*;
+    match capability {
+        // Shader-based feature capabilities require the Shader capability.
+        Geometry
+        | Tessellation
+        | MeshShadingNV
+        | MeshShadingEXT
+        | RayTracingNV
+        | RayTracingKHR
+        | RayQueryKHR
+        | RayTracingMotionBlurNV
+        | RayTracingOpacityMicromapEXT
+        | RayTracingDisplacementMicromapNV
+        | RayTracingSpheresGeometryNV
+        | RayTracingLinearSweptSpheresGeometryNV
+        | RayTracingClusterAccelerationStructureNV
+        | RayTracingPositionFetchKHR
+        | FragmentShadingRateKHR
+        | FragmentDensityEXT
+        | FragmentShaderSampleInterlockEXT
+        | FragmentShaderShadingRateInterlockEXT
+        | FragmentShaderPixelInterlockEXT
+        | SampleRateShading
+        | ImageFootprintNV
+        | ShaderSMBuiltinsNV
+        | AtomicFloat16AddEXT
+        | AtomicFloat32AddEXT
+        | AtomicFloat64AddEXT
+        | AtomicFloat16MinMaxEXT
+        | AtomicFloat32MinMaxEXT
+        | AtomicFloat64MinMaxEXT
+        | AtomicFloat16VectorNV
+        | TileShadingQCOM => &[Shader],
+        // OpenCL address-related capabilities require Kernel.
+        Addresses | GenericPointer | DeviceEnqueue | Pipes => &[Kernel],
+        _ => &[],
     }
 }
 
@@ -1967,6 +2126,7 @@ mod tests {
     #[test]
     fn capability_requiring_extension_must_declare_it() {
         let text = [
+            "OpCapability Shader",
             "OpCapability RayTracingKHR",
             "OpMemoryModel Logical GLSL450",
             "%void = OpTypeVoid",
@@ -1990,6 +2150,7 @@ mod tests {
         );
 
         let text_with_extension = [
+            "OpCapability Shader",
             "OpCapability RayTracingKHR",
             "OpExtension \"SPV_KHR_ray_tracing\"",
             "OpMemoryModel Logical GLSL450",
@@ -2096,6 +2257,7 @@ mod tests {
     #[test]
     fn capability_requires_min_spirv_version() {
         let text = [
+            "OpCapability Shader",
             "OpCapability FragmentShadingRateKHR",
             "OpExtension \"SPV_KHR_fragment_shading_rate\"",
             "OpMemoryModel Logical GLSL450",
@@ -2122,6 +2284,63 @@ mod tests {
         text.as_str()
             .validate(TargetEnv::Universal1_6)
             .expect("succeeds on newer SPIR-V");
+    }
+
+    #[test]
+    fn instruction_requires_capability() {
+        use rspirv::{binary::Assemble, dr::Builder};
+        let mut builder = Builder::new();
+        builder.set_version(1, 5);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+        builder.type_acceleration_structure_khr();
+        let module = builder.module();
+        let words = module.assemble();
+        let error = words
+            .as_slice()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect_err("missing RayTracingKHR capability");
+        assert_eq!(
+            error,
+            ValidationError::MissingInstructionCapability {
+                opcode: rspirv::spirv::Op::TypeAccelerationStructureKHR,
+                required_capability: rspirv::spirv::Capability::RayTracingNV
+            }
+        );
+    }
+
+    #[test]
+    fn operand_requires_extension() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%i32 = OpTypeInt 32 0",
+            "%ptr_fn_i32 = OpTypePointer Function %i32",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "%var = OpVariable %ptr_fn_i32 Function",
+            "%val = OpLoad %i32 %var NonPrivatePointer",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect_err("missing vulkan memory model capability");
+        assert_eq!(
+            error,
+            ValidationError::MissingOperandCapability {
+                opcode: rspirv::spirv::Op::Load,
+                operand_index: 1,
+                required_capability: rspirv::spirv::Capability::VulkanMemoryModel
+            }
+        );
     }
 
     #[test]
