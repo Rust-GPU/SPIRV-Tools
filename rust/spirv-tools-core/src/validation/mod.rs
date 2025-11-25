@@ -1486,41 +1486,36 @@ mod tests {
 
     #[test]
     fn group_decorate_requires_declared_group() {
+        // The text assembler refuses to emit binaries with invalid decoration groups, so we
+        // hand-build the binary to drive the validator directly.
         let binary = vec![
             0x07230203, // magic
             0x00010000, // version
             0,          // generator
-            5,          // bound (ids 0..4)
+            2,          // bound (ids up to 1)
             0,          // schema
             op(2, 17),  // OpCapability Shader
             rspirv::spirv::Capability::Shader as u32,
+            0x0006000b, // OpExtInstImport %1 "GLSL.std.450"
+            1,
+            0x4c53_4c47,
+            0x2e73_7464,
+            0x3035_342e,
+            0,         // null terminator for the import string
             op(3, 14), // OpMemoryModel Logical GLSL450
             0,
             1,
-            op(2, 73), // OpDecorationGroup %3
-            3,
-            op(3, 74), // OpGroupDecorate %4 %1 (invalid group id)
-            4,
+            0x0003004a, // OpGroupDecorate %1 %1 (invalid group id)
             1,
-            op(2, 19), // OpTypeVoid %1
-            1,
-            op(4, 21), // OpTypeInt %4 32 0 (used incorrectly as decoration group)
-            4,
-            32,
-            0,
-            op(3, 33), // OpTypeFunction %2 %1
-            2,
             1,
         ];
+        let expected = ValidationError::UnknownDecorationGroup {
+            group: Id::try_from(1).unwrap(),
+        };
         let error = MaybeValidModule::Binary(&binary)
             .validate(TargetEnv::Universal1_6)
             .unwrap_err();
-        assert_eq!(
-            error,
-            ValidationError::UnknownDecorationGroup {
-                group: Id::try_from(4).unwrap()
-            }
-        );
+        assert_eq!(error, expected);
     }
 
     #[test]
