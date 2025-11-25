@@ -739,13 +739,20 @@ impl fmt::Display for DecorationTargetKind {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum Section {
     Capabilities,
+    Extensions,
+    ExtInstImport,
     MemoryModel,
-    EntryAndModes,
-    Debug,
-    Names,
+    SamplerImageAddressMode,
+    EntryPoint,
+    ExecutionMode,
+    Debug1,
+    Debug2,
+    Debug3,
     Annotations,
     TypesGlobals,
+    FunctionDeclarations,
     Functions,
+    GraphDefinitions,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -1070,7 +1077,10 @@ fn run_layout_check(words: &[u32], _env: TargetEnv) -> Result<(), ValidationErro
                 return rspirv::binary::ParseAction::Continue;
             }
 
-            match inst.class.opcode {
+            let opcode = inst.class.opcode;
+            let section = instruction_section(self.current_section, &inst);
+
+            match opcode {
                 rspirv::spirv::Op::MemoryModel => {
                     if self.current_section > Section::MemoryModel {
                         return rspirv::binary::ParseAction::Error(Box::new(
@@ -1082,10 +1092,9 @@ fn run_layout_check(words: &[u32], _env: TargetEnv) -> Result<(), ValidationErro
                     if let Err(err) = self.memory_model_state.mark_seen() {
                         return rspirv::binary::ParseAction::Error(Box::new(err));
                     }
-                    self.current_section = self.current_section.max(Section::MemoryModel);
                 }
                 rspirv::spirv::Op::Capability => {
-                    if Section::Capabilities < self.current_section {
+                    if section < self.current_section {
                         return rspirv::binary::ParseAction::Error(Box::new(
                             ValidationError::LayoutOutOfOrder {
                                 opcode: rspirv::spirv::Op::Capability,
@@ -1099,7 +1108,7 @@ fn run_layout_check(words: &[u32], _env: TargetEnv) -> Result<(), ValidationErro
                     }
                 }
                 rspirv::spirv::Op::Extension => {
-                    if Section::Capabilities < self.current_section {
+                    if section < self.current_section {
                         return rspirv::binary::ParseAction::Error(Box::new(
                             ValidationError::LayoutOutOfOrder {
                                 opcode: rspirv::spirv::Op::Extension,
@@ -1111,7 +1120,6 @@ fn run_layout_check(words: &[u32], _env: TargetEnv) -> Result<(), ValidationErro
                             return rspirv::binary::ParseAction::Error(Box::new(err));
                         }
                     }
-                    // Extension allowlist is checked later with the target environment context.
                 }
                 rspirv::spirv::Op::Function => {
                     if !self.memory_model_state.is_seen() {
@@ -1120,21 +1128,18 @@ fn run_layout_check(words: &[u32], _env: TargetEnv) -> Result<(), ValidationErro
                         ));
                     }
                     self.function_state = FunctionState::Inside;
-                    self.current_section = self.current_section.max(Section::Functions);
                 }
-                opcode => {
-                    let section = section_index(opcode);
-                    if section < self.current_section {
-                        return rspirv::binary::ParseAction::Error(Box::new(
-                            ValidationError::LayoutOutOfOrder { opcode },
-                        ));
-                    }
-                    self.current_section = self.current_section.max(section);
-                    if section > Section::MemoryModel && !self.memory_model_state.is_seen() {
-                        self.memory_model_state.record_violation(opcode);
-                        return rspirv::binary::ParseAction::Continue;
-                    }
-                }
+                _ => {}
+            }
+
+            if section < self.current_section {
+                return rspirv::binary::ParseAction::Error(Box::new(
+                    ValidationError::LayoutOutOfOrder { opcode },
+                ));
+            }
+            self.current_section = self.current_section.max(section);
+            if section > Section::MemoryModel && !self.memory_model_state.is_seen() {
+                self.memory_model_state.record_violation(opcode);
             }
             rspirv::binary::ParseAction::Continue
         }
@@ -1154,18 +1159,70 @@ fn run_layout_check(words: &[u32], _env: TargetEnv) -> Result<(), ValidationErro
     }
 }
 
-fn section_index(opcode: rspirv::spirv::Op) -> Section {
+fn instruction_section(current: Section, inst: &rspirv::dr::Instruction) -> Section {
     use rspirv::spirv::Op::*;
+    let opcode = inst.class.opcode;
+    let opname = inst.class.opname;
+    if opname.starts_with("OpType")
+        || opname.starts_with("OpConstant")
+        || opname.starts_with("OpSpecConstant")
+    {
+        return Section::TypesGlobals;
+    }
     match opcode {
-        Capability | Extension | ExtInstImport => Section::Capabilities,
+        Capability | ConditionalCapabilityINTEL => Section::Capabilities,
+        Extension | ConditionalExtensionINTEL => Section::Extensions,
+        ExtInstImport => Section::ExtInstImport,
         MemoryModel => Section::MemoryModel,
-        EntryPoint | ExecutionMode | ExecutionModeId => Section::EntryAndModes,
-        String | SourceExtension | Source | SourceContinued | ModuleProcessed => Section::Debug,
-        Name | MemberName => Section::Names,
+        SamplerImageAddressingModeNV => Section::SamplerImageAddressMode,
+        EntryPoint | ConditionalEntryPointINTEL => Section::EntryPoint,
+        ExecutionMode | ExecutionModeId => Section::ExecutionMode,
+        SourceContinued | Source | SourceExtension | String => Section::Debug1,
+        Name | MemberName => Section::Debug2,
+        ModuleProcessed => Section::Debug3,
         Decorate | DecorateId | MemberDecorate | DecorateString | MemberDecorateString
         | DecorationGroup | GroupDecorate | GroupMemberDecorate => Section::Annotations,
-        Function => Section::Functions,
-        _ => Section::TypesGlobals,
+        Variable | UntypedVariableKHR => {
+            if current == Section::TypesGlobals {
+                Section::TypesGlobals
+            } else {
+                Section::Functions
+            }
+        }
+        ExtInst | ExtInstWithForwardRefsKHR => {
+            if current == Section::TypesGlobals {
+                Section::TypesGlobals
+            } else if current == Section::GraphDefinitions {
+                Section::GraphDefinitions
+            } else {
+                Section::Functions
+            }
+        }
+        Line | NoLine | Undef => {
+            if current == Section::TypesGlobals {
+                Section::TypesGlobals
+            } else {
+                Section::Functions
+            }
+        }
+        Function | FunctionParameter | FunctionEnd => {
+            if current == Section::FunctionDeclarations {
+                Section::FunctionDeclarations
+            } else {
+                Section::Functions
+            }
+        }
+        GraphEntryPointARM | GraphARM | GraphInputARM | GraphSetOutputARM | GraphEndARM => {
+            Section::GraphDefinitions
+        }
+        CompositeExtract => {
+            if current == Section::GraphDefinitions {
+                Section::GraphDefinitions
+            } else {
+                Section::Functions
+            }
+        }
+        _ => Section::Functions,
     }
 }
 
@@ -2229,6 +2286,37 @@ mod tests {
     }
 
     #[test]
+    fn execution_mode_must_follow_entry_point() {
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            5,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(3, 16), // OpExecutionMode %1 OriginUpperLeft (before EntryPoint)
+            1,
+            rspirv::spirv::ExecutionMode::OriginUpperLeft as u32,
+            op(5, 15), // OpEntryPoint Fragment %1 "main"
+            rspirv::spirv::ExecutionModel::Fragment as u32,
+            1,
+            0x6e69616d,
+            0,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::EntryPoint
+            }
+        );
+    }
+
+    #[test]
     fn validate_module_detects_duplicate_result_ids() {
         let text = [
             "OpCapability Shader",
@@ -2420,6 +2508,36 @@ mod tests {
             error,
             ValidationError::LayoutOutOfOrder {
                 opcode: rspirv::spirv::Op::Extension
+            }
+        );
+    }
+
+    #[test]
+    fn capability_cannot_follow_extension_section() {
+        // Extensions must precede additional capabilities; a capability after an extension is out of order.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            5,
+            0,
+            op(6, 10), // OpExtension "SPV_KHR_ray_tracing"
+            0x5f56_5053,
+            0x5f52_484b,
+            0x5f79_6172,
+            0x6361_7274,
+            0x0067_6e69,
+            op(2, 17), // OpCapability Shader (out of order after extension)
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Capability
             }
         );
     }
