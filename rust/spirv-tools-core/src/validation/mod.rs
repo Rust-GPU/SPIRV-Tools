@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::fmt;
 use std::num::NonZeroU32;
+use std::sync::Arc;
 
 use rspirv::dr::Module;
 use thiserror::Error;
@@ -522,7 +523,7 @@ impl MemoryModelState {
 /// A validated module containing the original binary plus the parsed representation.
 #[derive(Debug)]
 pub struct ValidModule {
-    words: Vec<u32>,
+    words: Arc<[u32]>,
     module: Module,
     env: TargetEnv,
     header: ValidatedHeader,
@@ -553,16 +554,16 @@ impl ValidModule {
 /// Validates a SPIR-V module against invariants that can be checked without target-specific
 /// knowledge.
 pub fn validate_module(words: &[u32], env: TargetEnv) -> Result<(), ValidationError> {
-    validate_words(words, env).map(|_| ())
+    validate_words(Arc::from(words), env).map(|_| ())
 }
 
-fn validate_words(words: &[u32], env: TargetEnv) -> Result<ValidModule, ValidationError> {
+fn validate_words(words: Arc<[u32]>, env: TargetEnv) -> Result<ValidModule, ValidationError> {
     if let Some(&schema) = words.get(4) {
         Schema::validate(schema)?;
     }
-    run_layout_check(words)?;
+    run_layout_check(&words)?;
     let mut loader = rspirv::dr::Loader::new();
-    if let Err(error) = rspirv::binary::parse_words(words, &mut loader) {
+    if let Err(error) = rspirv::binary::parse_words(&words, &mut loader) {
         return Err(ValidationError::Parse(error.to_string()));
     }
     let module = loader.module();
@@ -570,7 +571,7 @@ fn validate_words(words: &[u32], env: TargetEnv) -> Result<ValidModule, Validati
     validate_id_bound(&module, header)?;
     validate_memory_model(&module)?;
     Ok(ValidModule {
-        words: words.to_vec(),
+        words,
         module,
         env,
         header,
@@ -589,11 +590,14 @@ impl<'a> MaybeValidModule<'a> {
     /// Validate the provided input, assembling text when necessary.
     pub fn validate(self, env: TargetEnv) -> Result<ValidModule, ValidationError> {
         match self {
-            MaybeValidModule::Binary(words) => validate_words(words, env),
+            MaybeValidModule::Binary(words) => validate_words(Arc::from(words), env),
             MaybeValidModule::Text(text) => {
-                let binary = crate::assembly::assemble_text(text)
-                    .map_err(|err| ValidationError::Parse(err.to_string()))?;
-                validate_words(&binary, env)
+                let binary = Arc::<[u32]>::from(
+                    crate::assembly::assemble_text(text)
+                        .map_err(|err| ValidationError::Parse(err.to_string()))?
+                        .into_boxed_slice(),
+                );
+                validate_words(binary, env)
             }
         }
     }
