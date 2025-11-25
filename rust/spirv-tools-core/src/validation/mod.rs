@@ -470,6 +470,12 @@ pub enum ValidationError {
         /// The missing target id.
         target: Id,
     },
+    /// A decoration targeted an id that is not valid for that opcode.
+    #[error("decoration target {target} is not defined")]
+    MissingDecorationTarget {
+        /// The target id that is missing.
+        target: Id,
+    },
     /// A member decoration targeted an id that is not a struct type.
     #[error("member decorations must target struct types (found {target})")]
     MemberDecorationTargetNotStruct {
@@ -681,6 +687,7 @@ fn validate_words(words: ModuleWords, env: TargetEnv) -> Result<ValidModule, Val
     validate_memory_model(&module)?;
     validate_member_decorations(&module, &defined_ids)?;
     validate_decoration_groups(&module, &defined_ids)?;
+    validate_decorations(&module, &defined_ids)?;
     Ok(ValidModule {
         words,
         module,
@@ -1065,6 +1072,35 @@ fn validate_decoration_groups(
         }
     }
 
+    Ok(())
+}
+
+fn validate_decorations(
+    module: &Module,
+    defined_ids: &HashSet<ResultId>,
+) -> Result<(), ValidationError> {
+    for inst in &module.annotations {
+        match inst.class.opcode {
+            rspirv::spirv::Op::Decorate | rspirv::spirv::Op::DecorateId => {
+                let mut operands = inst.operands.iter();
+                let target = operands.find_map(|op| {
+                    if let rspirv::dr::Operand::IdRef(id) = op {
+                        ResultId::try_from(*id).ok()
+                    } else {
+                        None
+                    }
+                });
+                if let Some(target) = target {
+                    if !defined_ids.contains(&target) {
+                        return Err(ValidationError::MissingDecorationTarget {
+                            target: target.into_inner(),
+                        });
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
     Ok(())
 }
 
@@ -1511,6 +1547,34 @@ mod tests {
         ];
         let expected = ValidationError::UnknownDecorationGroup {
             group: Id::try_from(1).unwrap(),
+        };
+        let error = MaybeValidModule::Binary(&binary)
+            .validate(TargetEnv::Universal1_6)
+            .unwrap_err();
+        assert_eq!(error, expected);
+    }
+
+    #[test]
+    fn decorate_requires_declared_target() {
+        // The text assembler enforces target existence up front, so use a binary to ensure the
+        // validator catches the missing target.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            3,          // bound (ids up to 2)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            0x00030047, // OpDecorate %2 RelaxedPrecision (target %2 is undefined)
+            2,
+            rspirv::spirv::Decoration::RelaxedPrecision as u32,
+        ];
+        let expected = ValidationError::MissingDecorationTarget {
+            target: Id::try_from(2).unwrap(),
         };
         let error = MaybeValidModule::Binary(&binary)
             .validate(TargetEnv::Universal1_6)
