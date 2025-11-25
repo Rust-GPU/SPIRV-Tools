@@ -3,7 +3,7 @@ use std::io::{self, Read};
 
 use crate::assembly::parse_target_env;
 use crate::disassemble::InputSource;
-use spirv_tools_core::validation::MaybeValidModule;
+use spirv_tools_core::validation::{MaybeValidModule, ModuleWords};
 use spirv_tools_core::TargetEnv;
 use thiserror::Error;
 
@@ -39,9 +39,9 @@ pub fn run_validate(config: &ValidateConfig) -> Result<(), ValidateCliError> {
         InputSource::Stdin => read_stdin_bytes()?,
         InputSource::Path(path) => fs::read(path)?,
     };
-    let words = bytes_to_words(&bytes)?;
+    let words: ModuleWords = bytes_to_words(&bytes)?.into_boxed_slice().into();
     let env = parse_env(config.target_env.as_deref())?;
-    MaybeValidModule::Binary(&words)
+    MaybeValidModule::Binary(words.as_slice())
         .validate(env)
         .map(|_| ())
         .map_err(|err| ValidateCliError::Failed(err.to_string()))

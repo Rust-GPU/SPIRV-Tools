@@ -69,6 +69,23 @@ impl CapabilitySet {
     }
 }
 
+/// A set of declared extensions for a module.
+#[derive(Debug, Default)]
+struct ExtensionSet {
+    values: HashSet<String>,
+}
+
+impl ExtensionSet {
+    fn insert(&mut self, extension: &str) -> Result<(), ValidationError> {
+        if !self.values.insert(extension.to_string()) {
+            return Err(ValidationError::DuplicateExtension {
+                extension: extension.to_string(),
+            });
+        }
+        Ok(())
+    }
+}
+
 /// Errors produced when attempting to construct zero-valued ids.
 #[derive(Debug, Error, Copy, Clone, PartialEq, Eq)]
 #[error("ids must be non-zero")]
@@ -290,6 +307,12 @@ impl From<Arc<[u32]>> for ModuleWords {
     }
 }
 
+impl From<Box<[u32]>> for ModuleWords {
+    fn from(words: Box<[u32]>) -> Self {
+        ModuleWords::new(words.into())
+    }
+}
+
 impl From<ModuleWords> for Arc<[u32]> {
     fn from(words: ModuleWords) -> Self {
         words.into_arc()
@@ -429,11 +452,23 @@ pub enum ValidationError {
         /// The capability that was duplicated.
         capability: rspirv::spirv::Capability,
     },
+    /// Duplicate extension declarations were found.
+    #[error("extension {extension} is declared more than once")]
+    DuplicateExtension {
+        /// The extension name that was duplicated.
+        extension: String,
+    },
     /// A decoration group reference did not point to a declared group.
     #[error("decoration group {group} is not declared")]
     UnknownDecorationGroup {
         /// The group id that was missing.
         group: Id,
+    },
+    /// A decoration targeted an id that does not exist in the module.
+    #[error("decoration targets unknown id {target}")]
+    UnknownDecorationTarget {
+        /// The missing target id.
+        target: Id,
     },
     /// A member decoration targeted an id that is not a struct type.
     #[error("member decorations must target struct types (found {target})")]
@@ -642,10 +677,10 @@ fn validate_words(words: ModuleWords, env: TargetEnv) -> Result<ValidModule, Val
     }
     let module = loader.module();
     let header = ValidatedHeader::from_module(&module)?;
-    validate_id_bound(&module, header)?;
+    let defined_ids = validate_id_bound(&module, header)?;
     validate_memory_model(&module)?;
-    validate_member_decorations(&module)?;
-    validate_decoration_groups(&module)?;
+    validate_member_decorations(&module, &defined_ids)?;
+    validate_decoration_groups(&module, &defined_ids)?;
     Ok(ValidModule {
         words,
         module,
@@ -705,6 +740,7 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
         current_section: Section,
         function_state: FunctionState,
         capabilities: CapabilitySet,
+        extensions: ExtensionSet,
     }
 
     impl LayoutChecker {
@@ -714,6 +750,7 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
                 current_section: Section::Capabilities,
                 function_state: FunctionState::Outside,
                 capabilities: CapabilitySet::default(),
+                extensions: ExtensionSet::default(),
             }
         }
     }
@@ -776,6 +813,13 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
                 rspirv::spirv::Op::Capability => {
                     if let Some(cap) = capability_operand(&inst) {
                         if let Err(err) = self.capabilities.insert(cap) {
+                            return rspirv::binary::ParseAction::Error(Box::new(err));
+                        }
+                    }
+                }
+                rspirv::spirv::Op::Extension => {
+                    if let Some(extension) = extension_operand(&inst) {
+                        if let Err(err) = self.extensions.insert(extension) {
                             return rspirv::binary::ParseAction::Error(Box::new(err));
                         }
                     }
@@ -846,6 +890,16 @@ fn capability_operand(inst: &rspirv::dr::Instruction) -> Option<rspirv::spirv::C
     })
 }
 
+fn extension_operand(inst: &rspirv::dr::Instruction) -> Option<&str> {
+    inst.operands.iter().find_map(|operand| {
+        if let rspirv::dr::Operand::LiteralString(extension) = operand {
+            Some(extension.as_str())
+        } else {
+            None
+        }
+    })
+}
+
 fn member_decoration_target(inst: &rspirv::dr::Instruction) -> Option<MemberDecorationTargetId> {
     use rspirv::spirv::Op::*;
     match inst.class.opcode {
@@ -886,7 +940,10 @@ fn validate_memory_model(module: &Module) -> Result<(), ValidationError> {
     Ok(())
 }
 
-fn validate_id_bound(module: &Module, header: ValidatedHeader) -> Result<(), ValidationError> {
+fn validate_id_bound(
+    module: &Module,
+    header: ValidatedHeader,
+) -> Result<HashSet<ResultId>, ValidationError> {
     let bound = header.bound();
     let mut results: HashSet<ResultId> = HashSet::new();
 
@@ -894,10 +951,13 @@ fn validate_id_bound(module: &Module, header: ValidatedHeader) -> Result<(), Val
         validate_instruction_ids(&mut results, instruction, bound)?;
     }
 
-    Ok(())
+    Ok(results)
 }
 
-fn validate_member_decorations(module: &Module) -> Result<(), ValidationError> {
+fn validate_member_decorations(
+    module: &Module,
+    defined_ids: &HashSet<ResultId>,
+) -> Result<(), ValidationError> {
     let mut types: HashMap<ResultId, rspirv::spirv::Op> = HashMap::new();
     for inst in &module.types_global_values {
         if let Some(result_id) = inst.result_id {
@@ -928,6 +988,18 @@ fn validate_member_decorations(module: &Module) -> Result<(), ValidationError> {
                                 opcode: inst.class.opcode,
                             }
                         })?;
+                    if !defined_ids.contains(&target_id) {
+                        return Err(ValidationError::UnknownDecorationTarget {
+                            target: target.into(),
+                        });
+                    }
+                    let target_id =
+                        ResultId::try_from(u32::from(Id::from(target))).map_err(|_| {
+                            ValidationError::ZeroId {
+                                kind: IdKind::Operand,
+                                opcode: inst.class.opcode,
+                            }
+                        })?;
                     let op = types.get(&target_id).copied();
                     if op != Some(rspirv::spirv::Op::TypeStruct) {
                         return Err(ValidationError::MemberDecorationTargetNotStruct { target });
@@ -941,7 +1013,10 @@ fn validate_member_decorations(module: &Module) -> Result<(), ValidationError> {
     Ok(())
 }
 
-fn validate_decoration_groups(module: &Module) -> Result<(), ValidationError> {
+fn validate_decoration_groups(
+    module: &Module,
+    defined_ids: &HashSet<ResultId>,
+) -> Result<(), ValidationError> {
     let groups: HashSet<ResultId> = module
         .annotations
         .iter()
@@ -969,6 +1044,20 @@ fn validate_decoration_groups(module: &Module) -> Result<(), ValidationError> {
                         return Err(ValidationError::UnknownDecorationGroup {
                             group: group.into_inner(),
                         });
+                    }
+                }
+                for operand in inst.operands.iter().skip(1) {
+                    if let rspirv::dr::Operand::IdRef(id) = operand {
+                        let target =
+                            ResultId::try_from(*id).map_err(|_| ValidationError::ZeroId {
+                                kind: IdKind::Operand,
+                                opcode: inst.class.opcode,
+                            })?;
+                        if !defined_ids.contains(&target) {
+                            return Err(ValidationError::UnknownDecorationTarget {
+                                target: target.into_inner(),
+                            });
+                        }
                     }
                 }
             }
@@ -1253,6 +1342,54 @@ mod tests {
             error,
             ValidationError::DuplicateCapability {
                 capability: rspirv::spirv::Capability::Shader
+            }
+        );
+    }
+
+    #[test]
+    fn validate_module_rejects_duplicate_extension() {
+        // Hand-assemble a module with duplicate OpExtension instructions.
+        let extension_word = 0x0006_000a; // word count 6, opcode OpExtension (10)
+        let extension_words = [
+            0x5f56_5053, // "SPV_"
+            0x5f52_484b, // "KHR_"
+            0x5f79_6172, // "ray_"
+            0x6361_7274, // "trac"
+            0x0067_6e69, // "ing\0"
+        ];
+        let binary = [
+            0x0723_0203, // magic
+            0x0001_0000, // version
+            0,           // generator
+            6,           // bound (ids up to 5)
+            0,           // schema
+            0x0002_0011, // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            extension_word,
+            extension_words[0],
+            extension_words[1],
+            extension_words[2],
+            extension_words[3],
+            extension_words[4],
+            extension_word, // duplicate extension
+            extension_words[0],
+            extension_words[1],
+            extension_words[2],
+            extension_words[3],
+            extension_words[4],
+            0x0003_000e, // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            0x0002_0013, // OpTypeVoid %1
+            1,
+        ];
+        let error = MaybeValidModule::Binary(&binary)
+            .validate(TargetEnv::Universal1_6)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::DuplicateExtension {
+                extension: "SPV_KHR_ray_tracing".to_string()
             }
         );
     }
