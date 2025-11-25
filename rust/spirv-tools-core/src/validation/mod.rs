@@ -2069,6 +2069,142 @@ mod tests {
     }
 
     #[test]
+    fn vulkan_1_0_rejects_group_non_uniform() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability GroupNonUniform",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Vulkan1_0)
+            .expect_err("GroupNonUniform is optional from Vulkan 1.1+");
+        assert_eq!(
+            error,
+            ValidationError::DisallowedCapability {
+                capability: rspirv::spirv::Capability::GroupNonUniform,
+                env: TargetEnv::Vulkan1_0
+            }
+        );
+    }
+
+    #[test]
+    fn vulkan_1_1_allows_group_non_uniform() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability GroupNonUniform",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let module = text
+            .as_str()
+            .validate(TargetEnv::Vulkan1_1)
+            .expect("Vulkan 1.1 allows GroupNonUniform");
+        assert_eq!(module.env(), TargetEnv::Vulkan1_1);
+    }
+
+    #[test]
+    fn vulkan_1_0_rejects_vulkan_memory_model() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability VulkanMemoryModel",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Vulkan1_0)
+            .expect_err("Vulkan memory model is 1.2+ optional");
+        assert_eq!(
+            error,
+            ValidationError::DisallowedCapability {
+                capability: rspirv::spirv::Capability::VulkanMemoryModel,
+                env: TargetEnv::Vulkan1_0
+            }
+        );
+    }
+
+    #[test]
+    fn vulkan_1_2_allows_physical_storage_buffer_addresses() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability PhysicalStorageBufferAddresses",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let module = text
+            .as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("PhysicalStorageBufferAddresses is optional in Vulkan 1.2");
+        assert_eq!(module.env(), TargetEnv::Vulkan1_2);
+    }
+
+    #[test]
+    fn opencl_allows_optional_float64() {
+        let text = [
+            "OpCapability Kernel",
+            "OpCapability Addresses",
+            "OpCapability Float64",
+            "OpMemoryModel Physical32 OpenCL",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        text.as_str()
+            .validate(TargetEnv::OpenCl1_2)
+            .expect("Float64 is optional in OpenCL 1.2");
+    }
+
+    #[test]
+    fn opencl_embedded_allows_optional_float64() {
+        let text = [
+            "OpCapability Kernel",
+            "OpCapability Addresses",
+            "OpCapability Float64",
+            "OpMemoryModel Physical32 OpenCL",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        text.as_str()
+            .validate(TargetEnv::OpenClEmbedded1_2)
+            .expect("Float64 is optional in OpenCL 1.2 embedded");
+    }
+
+    #[test]
     fn webgpu_rejects_non_shader_capabilities() {
         let text = [
             "OpCapability Kernel",
