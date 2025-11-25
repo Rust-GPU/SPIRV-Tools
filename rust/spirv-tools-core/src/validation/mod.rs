@@ -636,6 +636,18 @@ pub enum ValidationError {
         /// The target id that was not a struct.
         target: MemberDecorationTargetId,
     },
+    /// A member decoration referenced an out-of-range struct member.
+    #[error(
+        "member decoration index {member:?} is out of range for target {target:?} (member count {member_count})"
+    )]
+    MemberDecorationIndexOutOfRange {
+        /// The struct target.
+        target: DecorationTargetId,
+        /// The member index that was too large.
+        member: MemberIndex,
+        /// The number of members in the struct.
+        member_count: usize,
+    },
     /// An instruction used a zero id where a non-zero id is required.
     #[error("{kind} for {opcode:?} must be non-zero")]
     ZeroId {
@@ -868,8 +880,8 @@ fn validate_words(words: ModuleWords, env: TargetEnv) -> Result<ValidModule, Val
     let extensions = validate_extensions(&module, env)?;
     validate_capabilities(&module, env, &extensions)?;
     validate_memory_model(&module)?;
-    validate_member_decorations(&module, &defined_ids)?;
-    validate_decoration_groups(&module, &defined_ids, &opcodes)?;
+    let struct_member_counts = validate_member_decorations(&module, &defined_ids)?;
+    validate_decoration_groups(&module, &defined_ids, &opcodes, &struct_member_counts)?;
     validate_decorations(&module, &defined_ids)?;
     let entry_points = validate_entry_points(&module, &defined_ids, &opcodes)?;
     validate_execution_modes(&module, &entry_points)?;
@@ -1477,14 +1489,18 @@ fn validate_id_bound(
 fn validate_member_decorations(
     module: &Module,
     defined_ids: &HashSet<ResultId>,
-) -> Result<(), ValidationError> {
+) -> Result<HashMap<ResultId, usize>, ValidationError> {
     let mut types: HashMap<ResultId, rspirv::spirv::Op> = HashMap::new();
+    let mut struct_member_counts: HashMap<ResultId, usize> = HashMap::new();
     for inst in &module.types_global_values {
         if let Some(result_id) = inst.result_id {
             let id = ResultId::try_from(result_id).map_err(|_| ValidationError::ZeroId {
                 kind: IdKind::Result,
                 opcode: inst.class.opcode,
             })?;
+            if inst.class.opcode == rspirv::spirv::Op::TypeStruct {
+                struct_member_counts.insert(id, inst.operands.len());
+            }
             types.insert(id, inst.class.opcode);
         }
     }
@@ -1511,17 +1527,27 @@ fn validate_member_decorations(
                 if op != Some(rspirv::spirv::Op::TypeStruct) {
                     return Err(ValidationError::MemberDecorationTargetNotStruct { target });
                 }
+                if let Some(member_count) = struct_member_counts.get(&target_id) {
+                    if (target.member().0 as usize) >= *member_count {
+                        return Err(ValidationError::MemberDecorationIndexOutOfRange {
+                            target: target.target(),
+                            member: target.member(),
+                            member_count: *member_count,
+                        });
+                    }
+                }
             }
         }
     }
 
-    Ok(())
+    Ok(struct_member_counts)
 }
 
 fn validate_decoration_groups(
     module: &Module,
     defined_ids: &HashSet<ResultId>,
     opcodes: &HashMap<ResultId, rspirv::spirv::Op>,
+    struct_member_counts: &HashMap<ResultId, usize>,
 ) -> Result<(), ValidationError> {
     let groups: HashSet<ResultId> = module
         .annotations
@@ -1585,6 +1611,17 @@ fn validate_decoration_groups(
                                             DecorationTargetId::new(target_operand),
                                             MemberIndex::new(member_index),
                                         ),
+                                    });
+                                }
+                            }
+                            if let Some(member_count) = struct_member_counts.get(&target) {
+                                if (member_index as usize) >= *member_count {
+                                    return Err(ValidationError::MemberDecorationIndexOutOfRange {
+                                        target: DecorationTargetId::new(
+                                            OperandId::try_from(u32::from(target)).unwrap(),
+                                        ),
+                                        member: MemberIndex::new(member_index),
+                                        member_count: *member_count,
                                     });
                                 }
                             }
@@ -2895,6 +2932,29 @@ mod tests {
     }
 
     #[test]
+    fn member_decorate_requires_valid_member_index() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%u32 = OpTypeInt 32 0",
+            "%vec2 = OpTypeStruct %u32 %u32",
+            "OpMemberDecorate %vec2 2 Offset 0",
+        ]
+        .join("\n");
+        let error = MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Universal1_6)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::MemberDecorationIndexOutOfRange {
+                target: DecorationTargetId::try_from(2).unwrap(),
+                member: MemberIndex::new(2),
+                member_count: 2
+            }
+        );
+    }
+
+    #[test]
     fn group_decorate_requires_declared_group() {
         // The text assembler refuses to emit binaries with invalid decoration groups, so we
         // hand-build the binary to drive the validator directly.
@@ -3032,6 +3092,7 @@ mod tests {
         assert_eq!(error, expected);
     }
 
+    #[test]
     #[test]
     fn entry_point_function_must_reference_function_op() {
         let binary = vec![
