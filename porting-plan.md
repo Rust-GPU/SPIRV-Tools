@@ -137,7 +137,7 @@ cxxbridge rust/spirv-tools-ffi/src/lib.rs --output rust/cxxbridge/spirv-tools-ff
 |------|-------|--------|
 | Target-environment helpers | Rust target-env types + diagnostics | ✅ Complete |
 | Text assembler/disassembler stack | Lexer/parser, binary/text conversion, diagnostics, FFI plumbing | ✅ Complete |
-| Validator/optimizer/reducer ports | Move validator passes, optimizer, reducer into Rust, expose via FFI | ⏳ Not started |
+| Validator/optimizer/reducer ports | Move validator passes, optimizer, reducer into Rust, expose via FFI | ⏳ In progress (layout pre-pass and id-bound checks wired) |
 | Rust FFI bridge | Context ownership, assembler/disassembler exports, option sanitization | ~50 % (validator/optimizer exports TBD) |
 | CLI workspace | `spirv-dis`, `spirv-as`, `spirv-val` implemented; remaining tools mirror C++ | ~35 % (3/8 CLIs shipped) |
 | Build-system integration | CMake + GN + Bazel wiring for Rust staticlib | ✅ Complete for existing features |
@@ -151,5 +151,5 @@ Percentages are approximate and will be updated as new checklists are added for 
 
 ## Next Up
 1. Finish reconciling remaining disassembly fixtures (`BinaryToText.*`, `IndentTest.*`, float_controls2) and update the gating bits accordingly.
-2. Expand the new validator module with structural layout checks (memory model presence, logical ordering) and start plumbing it through the FFI/CLI behind a flag when parity is sufficient.
+2. Expand the new validator module with structural layout checks (memory model presence, logical ordering) and start plumbing it through the FFI/CLI behind a flag when parity is sufficient. A layout pre-pass now enforces memory-model ordering and id bounds; next steps are broader structural rules and FFI integration.
 3. Keep growing the `spirv-tools-cli` workspace so each legacy CLI has a Rust counterpart with shared Clap parsing, typed configs, and end-to-end tests (once the underlying functionality is ported).

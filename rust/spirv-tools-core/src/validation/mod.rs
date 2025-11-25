@@ -24,6 +24,12 @@ pub enum ValidationError {
     /// A function definition appeared before the memory model.
     #[error("OpMemoryModel must appear before any function definitions")]
     FunctionBeforeMemoryModel,
+    /// Global instructions are out of the required logical layout order.
+    #[error("instruction {opcode} appears out of order in the logical layout")]
+    LayoutOutOfOrder {
+        /// The opcode that violated the ordering.
+        opcode: u32,
+    },
     /// The module declared an invalid id bound (must be greater than zero).
     #[error("declared id bound {bound} is invalid")]
     InvalidIdBound {
@@ -64,11 +70,17 @@ pub fn validate_module(words: &[u32], _env: TargetEnv) -> Result<(), ValidationE
 fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
     struct LayoutChecker {
         memory_models: usize,
+        current_section: usize,
+        inside_function: usize,
     }
 
     impl LayoutChecker {
         fn new() -> Self {
-            Self { memory_models: 0 }
+            Self {
+                memory_models: 0,
+                current_section: 0,
+                inside_function: 0,
+            }
         }
     }
 
@@ -94,14 +106,36 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
             &mut self,
             inst: rspirv::dr::Instruction,
         ) -> rspirv::binary::ParseAction {
+            if self.inside_function > 0 {
+                match inst.class.opcode {
+                    rspirv::spirv::Op::MemoryModel => {
+                        return rspirv::binary::ParseAction::Error(Box::new(
+                            ValidationError::FunctionBeforeMemoryModel,
+                        ));
+                    }
+                    rspirv::spirv::Op::Function => self.inside_function += 1,
+                    rspirv::spirv::Op::FunctionEnd => self.inside_function -= 1,
+                    _ => {}
+                }
+                return rspirv::binary::ParseAction::Continue;
+            }
+
             match inst.class.opcode {
                 rspirv::spirv::Op::MemoryModel => {
+                    if self.current_section > SECTION_MEMORY_MODEL {
+                        return rspirv::binary::ParseAction::Error(Box::new(
+                            ValidationError::LayoutOutOfOrder {
+                                opcode: rspirv::spirv::Op::MemoryModel as u32,
+                            },
+                        ));
+                    }
                     self.memory_models += 1;
                     if self.memory_models > 1 {
                         return rspirv::binary::ParseAction::Error(Box::new(
                             ValidationError::DuplicateMemoryModel,
                         ));
                     }
+                    self.current_section = self.current_section.max(SECTION_MEMORY_MODEL);
                 }
                 rspirv::spirv::Op::Function => {
                     if self.memory_models == 0 {
@@ -109,8 +143,23 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
                             ValidationError::FunctionBeforeMemoryModel,
                         ));
                     }
+                    self.inside_function = 1;
+                    self.current_section = self.current_section.max(SECTION_FUNCTIONS);
                 }
-                _ => {}
+                opcode => {
+                    let section = section_index(opcode);
+                    if section < self.current_section {
+                        return rspirv::binary::ParseAction::Error(Box::new(
+                            ValidationError::LayoutOutOfOrder {
+                                opcode: opcode as u32,
+                            },
+                        ));
+                    }
+                    self.current_section = self.current_section.max(section);
+                    if section > SECTION_MEMORY_MODEL && self.memory_models == 0 {
+                        return rspirv::binary::ParseAction::Continue;
+                    }
+                }
             }
             rspirv::binary::ParseAction::Continue
         }
@@ -127,6 +176,30 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
             }
         }
         Err(other) => Err(ValidationError::Parse(other.to_string())),
+    }
+}
+
+const SECTION_CAPABILITIES: usize = 0;
+const SECTION_MEMORY_MODEL: usize = 1;
+const SECTION_ENTRY_AND_MODES: usize = 2;
+const SECTION_DEBUG: usize = 3;
+const SECTION_NAMES: usize = 4;
+const SECTION_ANNOTATIONS: usize = 5;
+const SECTION_TYPES_GLOBALS: usize = 6;
+const SECTION_FUNCTIONS: usize = 7;
+
+fn section_index(opcode: rspirv::spirv::Op) -> usize {
+    use rspirv::spirv::Op::*;
+    match opcode {
+        Capability | Extension | ExtInstImport => SECTION_CAPABILITIES,
+        MemoryModel => SECTION_MEMORY_MODEL,
+        EntryPoint | ExecutionMode | ExecutionModeId => SECTION_ENTRY_AND_MODES,
+        String | SourceExtension | Source | SourceContinued | ModuleProcessed => SECTION_DEBUG,
+        Name | MemberName => SECTION_NAMES,
+        Decorate | DecorateId | MemberDecorate | DecorateString | MemberDecorateString
+        | GroupDecorate | GroupMemberDecorate => SECTION_ANNOTATIONS,
+        Function => SECTION_FUNCTIONS,
+        _ => SECTION_TYPES_GLOBALS,
     }
 }
 
