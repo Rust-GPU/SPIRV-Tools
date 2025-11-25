@@ -74,16 +74,8 @@ impl CapabilitySet {
         Ok(())
     }
 
-    fn insert(
-        &mut self,
-        capability: rspirv::spirv::Capability,
-        env: TargetEnv,
-    ) -> Result<(), ValidationError> {
-        self.insert_unchecked(capability)?;
-        if !env.is_capability_allowed(capability) {
-            return Err(ValidationError::DisallowedCapability { capability, env });
-        }
-        Ok(())
+    fn insert(&mut self, capability: rspirv::spirv::Capability) -> Result<(), ValidationError> {
+        self.insert_unchecked(capability)
     }
 }
 
@@ -534,6 +526,18 @@ pub enum ValidationError {
         /// The target environment's SPIR-V version.
         target_version: SpirvVersion,
     },
+    /// An instruction requires a newer SPIR-V version than the target environment provides.
+    #[error(
+        "instruction {opcode:?} requires SPIR-V version {required_version}, but target provides {target_version}"
+    )]
+    InstructionRequiresSpirvVersion {
+        /// The opcode that is too new.
+        opcode: rspirv::spirv::Op,
+        /// The minimum SPIR-V version required.
+        required_version: SpirvVersion,
+        /// The target environment's SPIR-V version.
+        target_version: SpirvVersion,
+    },
     /// A capability requires another capability that was not declared.
     #[error("capability {capability:?} requires capability {required_capability:?}")]
     MissingRequiredCapability {
@@ -925,25 +929,23 @@ impl<'a> ValidatableModule<'a> for &'a str {
     }
 }
 
-fn run_layout_check(words: &[u32], env: TargetEnv) -> Result<(), ValidationError> {
+fn run_layout_check(words: &[u32], _env: TargetEnv) -> Result<(), ValidationError> {
     struct LayoutChecker {
         memory_model_state: MemoryModelState,
         current_section: Section,
         function_state: FunctionState,
         capabilities: CapabilitySet,
         extensions: ExtensionSet,
-        env: TargetEnv,
     }
 
     impl LayoutChecker {
-        fn new(env: TargetEnv) -> Self {
+        fn new() -> Self {
             Self {
                 memory_model_state: MemoryModelState::new(),
                 current_section: Section::Capabilities,
                 function_state: FunctionState::Outside,
                 capabilities: CapabilitySet::default(),
                 extensions: ExtensionSet::default(),
-                env,
             }
         }
     }
@@ -1012,7 +1014,7 @@ fn run_layout_check(words: &[u32], env: TargetEnv) -> Result<(), ValidationError
                         ));
                     }
                     if let Some(cap) = capability_operand(&inst) {
-                        if let Err(err) = self.capabilities.insert(cap, self.env) {
+                        if let Err(err) = self.capabilities.insert(cap) {
                             return rspirv::binary::ParseAction::Error(Box::new(err));
                         }
                     }
@@ -1059,7 +1061,7 @@ fn run_layout_check(words: &[u32], env: TargetEnv) -> Result<(), ValidationError
         }
     }
 
-    let mut checker = LayoutChecker::new(env);
+    let mut checker = LayoutChecker::new();
     match rspirv::binary::parse_words(words, &mut checker) {
         Ok(()) => Ok(()),
         Err(rspirv::binary::ParseState::ConsumerError(err)) => {
@@ -1110,8 +1112,22 @@ fn validate_capabilities(
         .collect();
     for inst in &module.capabilities {
         if let Some(capability) = capability_operand(inst) {
-            if !env.is_capability_allowed(capability) {
-                return Err(ValidationError::DisallowedCapability { capability, env });
+            if env.is_opencl()
+                && matches!(
+                    capability,
+                    rspirv::spirv::Capability::LiteralSampler
+                        | rspirv::spirv::Capability::Sampled1D
+                        | rspirv::spirv::Capability::Image1D
+                        | rspirv::spirv::Capability::SampledBuffer
+                        | rspirv::spirv::Capability::ImageBuffer
+                        | rspirv::spirv::Capability::ImageReadWrite
+                )
+                && !declared.contains(&rspirv::spirv::Capability::ImageBasic)
+            {
+                return Err(ValidationError::MissingRequiredCapability {
+                    required_capability: rspirv::spirv::Capability::ImageBasic,
+                    capability,
+                });
             }
             if let Some(required_ext) = required_extension_for_capability(capability) {
                 if !extensions
@@ -1124,6 +1140,13 @@ fn validate_capabilities(
                         required_extension: required_ext.to_string(),
                     });
                 }
+            }
+            let allowed_by_env = env.is_capability_allowed(capability);
+            let allowed_by_extension = capability_allowed_by_extension(capability, extensions);
+            let allowed_by_capability =
+                capability_enabled_by_capability(env, capability, &declared);
+            if !(allowed_by_env || allowed_by_extension || allowed_by_capability) {
+                return Err(ValidationError::DisallowedCapability { capability, env });
             }
             if let Some(required_version) = required_spirv_version_for_capability(capability) {
                 let target_version = env.spirv_version();
@@ -1149,11 +1172,49 @@ fn validate_capabilities(
     Ok(())
 }
 
+fn capability_allowed_by_extension(
+    capability: rspirv::spirv::Capability,
+    extensions: &ExtensionSet,
+) -> bool {
+    required_extension_for_capability(capability)
+        .map(|required_ext| {
+            extensions
+                .values
+                .iter()
+                .any(|ext| ext.as_str() == required_ext)
+        })
+        .unwrap_or(false)
+}
+
+fn capability_enabled_by_capability(
+    env: TargetEnv,
+    capability: rspirv::spirv::Capability,
+    declared: &HashSet<rspirv::spirv::Capability>,
+) -> bool {
+    use rspirv::spirv::Capability::*;
+    if !env.is_opencl() {
+        return false;
+    }
+    if !declared.contains(&ImageBasic) {
+        return false;
+    }
+    matches!(
+        capability,
+        LiteralSampler | Sampled1D | Image1D | SampledBuffer | ImageBuffer | ImageReadWrite
+    )
+}
+
 fn validate_instruction_requirements(
     module: &Module,
     capabilities: &HashSet<rspirv::spirv::Capability>,
     extensions: &ExtensionSet,
 ) -> Result<(), ValidationError> {
+    let target_version = module
+        .header
+        .as_ref()
+        .map(|h| h.version)
+        .unwrap_or_default();
+    let target_version = SpirvVersion::from_word(target_version);
     for inst in module.all_inst_iter() {
         for &required_cap in inst.class.capabilities {
             if !capabilities.contains(&required_cap) {
@@ -1172,6 +1233,15 @@ fn validate_instruction_requirements(
                 return Err(ValidationError::MissingInstructionExtension {
                     opcode: inst.class.opcode,
                     required_extension: ExtensionName::from(required_ext),
+                });
+            }
+        }
+        if let Some(required_version) = required_spirv_version_for_opcode(inst.class.opcode) {
+            if target_version < required_version {
+                return Err(ValidationError::InstructionRequiresSpirvVersion {
+                    opcode: inst.class.opcode,
+                    required_version,
+                    target_version,
                 });
             }
         }
@@ -1268,6 +1338,15 @@ fn required_spirv_version_for_capability(
         | AtomicFloat64MinMaxEXT
         | AtomicFloat16VectorNV => Some(SpirvVersion::new(1, 3)),
         TileShadingQCOM => Some(SpirvVersion::new(1, 6)),
+        _ => None,
+    }
+}
+
+fn required_spirv_version_for_opcode(opcode: rspirv::spirv::Op) -> Option<SpirvVersion> {
+    match opcode {
+        rspirv::spirv::Op::TypeAccelerationStructureKHR | rspirv::spirv::Op::TypeRayQueryKHR => {
+            Some(SpirvVersion::new(1, 4))
+        }
         _ => None,
     }
 }
@@ -2096,6 +2175,101 @@ mod tests {
     }
 
     #[test]
+    fn vulkan_allows_optional_geometry_capability() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Geometry",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let module = text
+            .as_str()
+            .validate(TargetEnv::Vulkan1_0)
+            .expect("optional Vulkan capability should be permitted");
+        assert_eq!(module.env(), TargetEnv::Vulkan1_0);
+    }
+
+    #[test]
+    fn opencl_requires_image_basic_for_image_capabilities() {
+        let text = [
+            "OpCapability Kernel",
+            "OpCapability Addresses",
+            "OpCapability Image1D",
+            "OpMemoryModel Physical32 OpenCL",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::OpenCl2_0)
+            .expect_err("Image1D requires ImageBasic");
+        assert_eq!(
+            error,
+            ValidationError::MissingRequiredCapability {
+                required_capability: rspirv::spirv::Capability::ImageBasic,
+                capability: rspirv::spirv::Capability::Image1D
+            }
+        );
+
+        let text_with_basic = [
+            "OpCapability Kernel",
+            "OpCapability Addresses",
+            "OpCapability ImageBasic",
+            "OpCapability Image1D",
+            "OpMemoryModel Physical32 OpenCL",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        text_with_basic
+            .as_str()
+            .validate(TargetEnv::OpenCl2_0)
+            .expect("ImageBasic enables other image capabilities");
+    }
+
+    #[test]
+    fn opencl_embedded_rejects_int64_capability() {
+        let text = [
+            "OpCapability Kernel",
+            "OpCapability Int64",
+            "OpMemoryModel Physical32 OpenCL",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::OpenClEmbedded1_2)
+            .expect_err("embedded OpenCL should reject Int64");
+        assert_eq!(
+            error,
+            ValidationError::DisallowedCapability {
+                capability: rspirv::spirv::Capability::Int64,
+                env: TargetEnv::OpenClEmbedded1_2
+            }
+        );
+    }
+
+    #[test]
     fn valid_module_cache_reuses_entries() {
         let text = [
             "OpCapability Shader",
@@ -2339,6 +2513,35 @@ mod tests {
                 opcode: rspirv::spirv::Op::Load,
                 operand_index: 1,
                 required_capability: rspirv::spirv::Capability::VulkanMemoryModel
+            }
+        );
+    }
+
+    #[test]
+    fn instruction_requires_spirv_version() {
+        use rspirv::{binary::Assemble, dr::Builder};
+        let mut builder = Builder::new();
+        builder.set_version(1, 3);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.capability(rspirv::spirv::Capability::RayQueryKHR);
+        builder.extension("SPV_KHR_ray_query");
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+        builder.type_ray_query_khr();
+        let module = builder.module();
+        let words = module.assemble();
+        let error = words
+            .as_slice()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect_err("Ray query requires SPIR-V 1.4+");
+        assert_eq!(
+            error,
+            ValidationError::InstructionRequiresSpirvVersion {
+                opcode: rspirv::spirv::Op::TypeRayQueryKHR,
+                required_version: SpirvVersion::new(1, 4),
+                target_version: SpirvVersion::new(1, 3),
             }
         );
     }

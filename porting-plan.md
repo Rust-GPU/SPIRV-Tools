@@ -32,8 +32,24 @@
    - Wire Rust implementations into existing CLI tools through the shared C API.
 
 
-## Active Milestone: Disassembler Parity & CLI Integration
-With the assembler covering the full operand space, the next milestone focuses on bringing the disassembler and CLI parity up to the same standard and wiring the FFI so all build systems can opt into the Rust implementation.
+## Active Milestone: Structural Validator Rules
+Enforce target-environment specific structural rules and reuse validated modules across interfaces.
+
+Tasks for this milestone:
+- [x] Thread `ModuleWords`/`ValidModule` through CLI/FFI validation entry points so validated words can be reused without re-parsing.
+- [x] Validate entry-point targets are `OpFunction`/`OpVariable` and report typed errors, with binary regression tests where the text assembler would reject inputs.
+- [x] Add an environment-aware extension validation hook (`DisallowedExtension`) so target-specific allowlists can be enforced.
+- [x] Reject extensions for WebGPU environments; extend per-target-environment allowlists in `TargetEnv::is_extension_allowed` with regression tests.
+- [x] Build Vulkan/OpenCL capability allowlists (guaranteed + optional tables up through Vulkan 1.4/OpenCL 2.2), including extension- and capability-enabled cases (e.g., ray tracing extensions, OpenCL image capabilities gated on `ImageBasic`).
+- [x] Add typed extension names plus env-aware extension gating (Vulkan/OpenCL prefix rules) and capability→extension dependencies (ray tracing, mesh shading, fragment shading rate/interlock, atomic float add/min/max, tile shading).
+- [x] Apply grammar-driven instruction/operand capability/extension requirements and SPIR-V version gating for newer opcodes/capabilities.
+- [ ] Broaden decoration/category constraints (capability/extension ordering, decoration target categories) with paired text/binary tests.
+- [ ] Cache validated modules across CLI/FFI invocations when the same input is reused, avoiding redundant parsing/validation.
+- [ ] Expose wider structural rules (capability/extension ordering in layout, per-target decoration constraints) mirroring the C++ validator tables.
+- [ ] Enable the Rust validator over the FFI/CLI by default once structural parity is sufficiently close to C++.
+
+## Completed Milestone: Disassembler Parity & CLI Integration
+With the assembler covering the full operand space, this milestone brought the disassembler and CLI parity up to the same standard and wired the FFI so all build systems can opt into the Rust implementation.
 
 Tasks for this milestone:
 - [x] Finish binary-to-text option parity so the Rust disassembler never falls back unexpectedly.
@@ -74,20 +90,6 @@ Tasks for this milestone:
 - [x] Entry points now assert the referenced function is actually an `OpFunction` and interfaces are `OpVariable`, with binary regression tests covering invalid targets.
 - [ ] Add broader structural checks for logical layout ordering (capabilities/extensions/debug/annotations) before enabling the validator over the FFI/CLI.
 - [x] Expose the Rust validator through the FFI and `spirv-val` CLI; feature-gate or deepen coverage as parity improves.
-
-## Active Milestone: Structural Validator Rules
-Enforce target-environment specific structural rules and reuse validated modules across interfaces.
-
-Tasks for this milestone:
-- [x] Thread `ModuleWords`/`ValidModule` through CLI/FFI validation entry points so validated words can be reused without re-parsing.
-- [x] Validate entry-point targets are `OpFunction`/`OpVariable` and report typed errors, with binary regression tests where the text assembler would reject inputs.
-- [x] Add an environment-aware extension validation hook (`DisallowedExtension`) so target-specific allowlists can be enforced.
-- [x] Reject extensions for WebGPU environments; extend per-target-environment allowlists in `TargetEnv::is_extension_allowed` with regression tests.
-- [x] Begin capability allowlists: WebGPU only allows Shader; Vulkan/OpenGL/Universal reject Kernel; OpenCL rejects Shader. Enforced during layout validation with regression tests.
-- [x] Add typed extension names plus env-aware extension gating (Vulkan/OpenCL prefix rules) and capability→extension dependencies (ray tracing, mesh shading, fragment shading rate/interlock, atomic float add/min/max, tile shading).
-- [ ] Enforce capability allowlists per target environment and surface typed diagnostics.
-- [ ] Broaden decoration/category constraints (capability/extension ordering, decoration target categories) with paired text/binary tests.
-- [ ] Cache validated modules across CLI/FFI invocations when the same input is reused, avoiding redundant parsing/validation.
 
 ## Active Milestone: Matrix Layout Decorations
 Row/column-major annotations plus matrix strides are still processed purely in C++. We now want the Rust assembler to record and validate those decorations so later passes (composite extract/insert, validator plumbing, CLI formatting) can rely on that metadata without falling back.
@@ -174,6 +176,6 @@ Percentages are approximate and will be updated as new checklists are added for 
 - Mapping of large switch-based operand logic into data-driven Rust structures without performance regressions.
 
 ## Next Up
-1. Add per-target-environment extension/capability allowlists and regression tests that cover both text and binary inputs.
-2. Expand structural validation for decoration target categories and capability/extension ordering, plus cache validated modules across FFI/CLI paths to avoid redundant parsing.
-3. Follow up on any remaining disassembly fixtures only after the structural validator parity lands, keeping CLI coverage in sync.
+1. Broaden structural validation for decoration target categories and capability/extension ordering (text + binary coverage), keeping parity with the C++ validator tables.
+2. Push validated-module caching deeper through FFI/CLI entry points to avoid reparsing/validating identical inputs.
+3. Fill in remaining SPIR-V version gating and per-instruction requirements from the grammar, then revisit disassembly fixtures once validator parity is solid.

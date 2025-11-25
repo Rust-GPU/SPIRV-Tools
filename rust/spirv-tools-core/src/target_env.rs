@@ -430,31 +430,263 @@ impl TargetEnv {
 
     /// Returns whether a capability is permitted for this target environment.
     ///
-    /// The WebGPU environment allows only the core Shader capability. OpenCL environments
-    /// reject Shader (they expect Kernel), while Vulkan/OpenGL/Universal reject Kernel.
-    /// Other capability/extension pairings remain permissive until a full allowlist is
-    /// ported from the C++ validator tables.
+    /// The WebGPU environment allows only the core Shader capability. Vulkan and OpenCL
+    /// allowlists follow the C++ validator tables so optional capabilities are permitted
+    /// when the environment version supports them. Other environments fall back to the
+    /// default (permissive) rules from the legacy validator.
     pub fn is_capability_allowed(self, capability: rspirv::spirv::Capability) -> bool {
-        use rspirv::spirv::Capability::*;
-        let opencl_only = matches!(
-            capability,
-            Kernel | Addresses | GenericPointer | DeviceEnqueue | Pipes
-        );
-        if opencl_only {
-            return self.is_opencl();
-        }
+        use rspirv::spirv::Capability;
         match self {
-            TargetEnv::WebGpu0 => capability == Shader,
-            TargetEnv::OpenCl1_2
-            | TargetEnv::OpenClEmbedded1_2
-            | TargetEnv::OpenCl2_0
-            | TargetEnv::OpenClEmbedded2_0
-            | TargetEnv::OpenCl2_1
-            | TargetEnv::OpenClEmbedded2_1
-            | TargetEnv::OpenCl2_2
-            | TargetEnv::OpenClEmbedded2_2 => capability != Shader,
-            _ => capability != Kernel,
+            TargetEnv::WebGpu0 => capability == Capability::Shader,
+            TargetEnv::Vulkan1_0 => {
+                is_support_guaranteed_vulkan_1_0(capability)
+                    || is_support_optional_vulkan_1_0(capability)
+            }
+            TargetEnv::Vulkan1_1 | TargetEnv::Vulkan1_1Spirv1_4 => {
+                is_support_guaranteed_vulkan_1_1(capability)
+                    || is_support_optional_vulkan_1_1(capability)
+            }
+            TargetEnv::Vulkan1_2 => {
+                is_support_guaranteed_vulkan_1_2(capability)
+                    || is_support_optional_vulkan_1_2(capability)
+            }
+            TargetEnv::Vulkan1_3 => {
+                is_support_guaranteed_vulkan_1_3(capability)
+                    || is_support_optional_vulkan_1_3(capability)
+            }
+            TargetEnv::Vulkan1_4 => {
+                is_support_guaranteed_vulkan_1_4(capability)
+                    || is_support_optional_vulkan_1_4(capability)
+            }
+            env if env.is_opencl() => is_opencl_capability_allowed(env, capability),
+            _ => true,
         }
+    }
+}
+
+fn is_support_guaranteed_vulkan_1_0(capability: rspirv::spirv::Capability) -> bool {
+    use rspirv::spirv::Capability::*;
+    matches!(
+        capability,
+        Matrix
+            | Shader
+            | InputAttachment
+            | Sampled1D
+            | Image1D
+            | SampledBuffer
+            | ImageBuffer
+            | ImageQuery
+            | DerivativeControl
+    )
+}
+
+fn is_support_guaranteed_vulkan_1_1(capability: rspirv::spirv::Capability) -> bool {
+    is_support_guaranteed_vulkan_1_0(capability)
+        || matches!(
+            capability,
+            rspirv::spirv::Capability::DeviceGroup | rspirv::spirv::Capability::MultiView
+        )
+}
+
+fn is_support_guaranteed_vulkan_1_2(capability: rspirv::spirv::Capability) -> bool {
+    is_support_guaranteed_vulkan_1_1(capability)
+        || matches!(capability, rspirv::spirv::Capability::ShaderNonUniform)
+}
+
+fn is_support_guaranteed_vulkan_1_3(capability: rspirv::spirv::Capability) -> bool {
+    use rspirv::spirv::Capability::*;
+    is_support_guaranteed_vulkan_1_2(capability)
+        || matches!(
+            capability,
+            DotProduct
+                | DotProductInputAll
+                | DotProductInput4x8Bit
+                | DotProductInput4x8BitPacked
+                | VulkanMemoryModel
+                | VulkanMemoryModelDeviceScope
+                | PhysicalStorageBufferAddresses
+                | DemoteToHelperInvocation
+        )
+}
+
+fn is_support_guaranteed_vulkan_1_4(capability: rspirv::spirv::Capability) -> bool {
+    use rspirv::spirv::Capability::*;
+    is_support_guaranteed_vulkan_1_3(capability)
+        || matches!(
+            capability,
+            UniformBufferArrayDynamicIndexing
+                | SampledImageArrayDynamicIndexing
+                | StorageBufferArrayDynamicIndexing
+                | StorageImageArrayDynamicIndexing
+                | Int16
+                | StorageBuffer16BitAccess
+                | VariablePointers
+                | VariablePointersStorageBuffer
+                | UniformTexelBufferArrayDynamicIndexing
+                | StorageTexelBufferArrayDynamicIndexing
+                | Int8
+                | StorageBuffer8BitAccess
+                | FloatControls2
+                | SampleRateShading
+                | StorageImageExtendedFormats
+                | ImageGatherExtended
+        )
+}
+
+fn is_support_optional_vulkan_1_0(capability: rspirv::spirv::Capability) -> bool {
+    use rspirv::spirv::Capability::*;
+    matches!(
+        capability,
+        Geometry
+            | Tessellation
+            | Float64
+            | Int64
+            | Int16
+            | TessellationPointSize
+            | GeometryPointSize
+            | ImageGatherExtended
+            | StorageImageMultisample
+            | UniformBufferArrayDynamicIndexing
+            | SampledImageArrayDynamicIndexing
+            | StorageBufferArrayDynamicIndexing
+            | StorageImageArrayDynamicIndexing
+            | ClipDistance
+            | CullDistance
+            | ImageCubeArray
+            | SampleRateShading
+            | SparseResidency
+            | MinLod
+            | SampledCubeArray
+            | ImageMSArray
+            | StorageImageExtendedFormats
+            | InterpolationFunction
+            | StorageImageReadWithoutFormat
+            | StorageImageWriteWithoutFormat
+            | MultiViewport
+            | Int64Atomics
+            | TransformFeedback
+            | GeometryStreams
+            | Float16
+            | Int8
+            | BFloat16TypeKHR
+            | Float8EXT
+    )
+}
+
+fn is_support_optional_vulkan_1_1(capability: rspirv::spirv::Capability) -> bool {
+    use rspirv::spirv::Capability::*;
+    is_support_optional_vulkan_1_0(capability)
+        || matches!(
+            capability,
+            GroupNonUniform
+                | GroupNonUniformVote
+                | GroupNonUniformArithmetic
+                | GroupNonUniformBallot
+                | GroupNonUniformShuffle
+                | GroupNonUniformShuffleRelative
+                | GroupNonUniformClustered
+                | GroupNonUniformQuad
+                | DrawParameters
+                | rspirv::spirv::Capability::StorageUniformBufferBlock16
+                | rspirv::spirv::Capability::StorageUniform16
+                | StoragePushConstant16
+                | StorageInputOutput16
+                | DeviceGroup
+                | MultiView
+                | VariablePointersStorageBuffer
+                | VariablePointers
+        )
+}
+
+fn is_support_optional_vulkan_1_2(capability: rspirv::spirv::Capability) -> bool {
+    use rspirv::spirv::Capability::*;
+    is_support_optional_vulkan_1_1(capability)
+        || matches!(
+            capability,
+            DenormPreserve
+                | DenormFlushToZero
+                | SignedZeroInfNanPreserve
+                | RoundingModeRTE
+                | RoundingModeRTZ
+                | VulkanMemoryModel
+                | VulkanMemoryModelDeviceScope
+                | StorageBuffer8BitAccess
+                | UniformAndStorageBuffer8BitAccess
+                | StoragePushConstant8
+                | ShaderViewportIndex
+                | ShaderLayer
+                | PhysicalStorageBufferAddresses
+                | RuntimeDescriptorArray
+                | UniformTexelBufferArrayDynamicIndexing
+                | StorageTexelBufferArrayDynamicIndexing
+                | UniformBufferArrayNonUniformIndexing
+                | SampledImageArrayNonUniformIndexing
+                | StorageBufferArrayNonUniformIndexing
+                | StorageImageArrayNonUniformIndexing
+                | InputAttachmentArrayNonUniformIndexing
+                | UniformTexelBufferArrayNonUniformIndexing
+                | StorageTexelBufferArrayNonUniformIndexing
+        )
+}
+
+fn is_support_optional_vulkan_1_3(capability: rspirv::spirv::Capability) -> bool {
+    is_support_optional_vulkan_1_2(capability)
+}
+
+fn is_support_optional_vulkan_1_4(capability: rspirv::spirv::Capability) -> bool {
+    is_support_optional_vulkan_1_3(capability)
+}
+
+fn is_support_optional_opencl_1_2(capability: rspirv::spirv::Capability) -> bool {
+    use rspirv::spirv::Capability::*;
+    matches!(capability, ImageBasic | Float64 | Float16)
+}
+
+fn is_support_guaranteed_opencl_1_2(capability: rspirv::spirv::Capability, embedded: bool) -> bool {
+    use rspirv::spirv::Capability::*;
+    matches!(
+        capability,
+        Addresses | Float16Buffer | Int16 | Int8 | Kernel | Linkage | Vector16
+    ) || (!embedded && capability == Int64)
+}
+
+fn is_support_guaranteed_opencl_2_0(capability: rspirv::spirv::Capability, embedded: bool) -> bool {
+    use rspirv::spirv::Capability::*;
+    is_support_guaranteed_opencl_1_2(capability, embedded)
+        || matches!(capability, DeviceEnqueue | GenericPointer | Groups | Pipes)
+}
+
+fn is_support_guaranteed_opencl_2_2(capability: rspirv::spirv::Capability, embedded: bool) -> bool {
+    use rspirv::spirv::Capability::*;
+    is_support_guaranteed_opencl_2_0(capability, embedded)
+        || matches!(capability, SubgroupDispatch | PipeStorage)
+}
+
+fn is_opencl_capability_allowed(env: TargetEnv, capability: rspirv::spirv::Capability) -> bool {
+    let embedded = matches!(
+        env,
+        TargetEnv::OpenClEmbedded1_2
+            | TargetEnv::OpenClEmbedded2_0
+            | TargetEnv::OpenClEmbedded2_1
+            | TargetEnv::OpenClEmbedded2_2
+    );
+    match env {
+        TargetEnv::OpenCl1_2 | TargetEnv::OpenClEmbedded1_2 => {
+            is_support_guaranteed_opencl_1_2(capability, embedded)
+                || is_support_optional_opencl_1_2(capability)
+        }
+        TargetEnv::OpenCl2_0
+        | TargetEnv::OpenClEmbedded2_0
+        | TargetEnv::OpenCl2_1
+        | TargetEnv::OpenClEmbedded2_1 => {
+            is_support_guaranteed_opencl_2_0(capability, embedded)
+                || is_support_optional_opencl_1_2(capability)
+        }
+        TargetEnv::OpenCl2_2 | TargetEnv::OpenClEmbedded2_2 => {
+            is_support_guaranteed_opencl_2_2(capability, embedded)
+                || is_support_optional_opencl_1_2(capability)
+        }
+        _ => false,
     }
 }
 
