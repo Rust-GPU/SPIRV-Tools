@@ -76,12 +76,17 @@ struct ExtensionSet {
 }
 
 impl ExtensionSet {
-    fn insert(&mut self, extension: &str, env: TargetEnv) -> Result<(), ValidationError> {
+    fn insert_unchecked(&mut self, extension: &str) -> Result<(), ValidationError> {
         if !self.values.insert(extension.to_string()) {
             return Err(ValidationError::DuplicateExtension {
                 extension: extension.to_string(),
             });
         }
+        Ok(())
+    }
+
+    fn insert(&mut self, extension: &str, env: TargetEnv) -> Result<(), ValidationError> {
+        self.insert_unchecked(extension)?;
         if !env.is_extension_allowed(extension) {
             return Err(ValidationError::DisallowedExtension {
                 extension: extension.to_string(),
@@ -774,6 +779,7 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
         current_section: Section,
         function_state: FunctionState,
         capabilities: CapabilitySet,
+        extensions: ExtensionSet,
     }
 
     impl LayoutChecker {
@@ -783,6 +789,7 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
                 current_section: Section::Capabilities,
                 function_state: FunctionState::Outside,
                 capabilities: CapabilitySet::default(),
+                extensions: ExtensionSet::default(),
             }
         }
     }
@@ -863,6 +870,11 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
                                 opcode: rspirv::spirv::Op::Extension,
                             },
                         ));
+                    }
+                    if let Some(extension) = extension_operand(&inst) {
+                        if let Err(err) = self.extensions.insert_unchecked(extension) {
+                            return rspirv::binary::ParseAction::Error(Box::new(err));
+                        }
                     }
                     // Extension allowlist is checked later with the target environment context.
                 }
