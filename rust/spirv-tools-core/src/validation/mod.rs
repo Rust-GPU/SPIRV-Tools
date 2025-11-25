@@ -11,6 +11,18 @@ use crate::target_env::TargetEnv;
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Id(NonZeroU32);
 
+/// Result ids must be non-zero and unique within a module.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct ResultId(Id);
+
+/// Type ids referenced by instructions (non-zero).
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct TypeId(Id);
+
+/// Operand ids appearing in instruction operands (non-zero).
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct OperandId(Id);
+
 impl Id {
     /// Wraps an existing non-zero id.
     pub fn new(value: NonZeroU32) -> Self {
@@ -27,6 +39,62 @@ impl Id {
         self.0.get()
     }
 }
+
+trait BoundedId {
+    fn into_id(self) -> Id;
+}
+
+impl BoundedId for Id {
+    fn into_id(self) -> Id {
+        self
+    }
+}
+
+macro_rules! id_wrapper {
+    ($name:ident) => {
+        impl $name {
+            /// Wraps a non-zero `Id` in the typed wrapper.
+            pub fn new(id: Id) -> Self {
+                Self(id)
+            }
+
+            /// Unwraps the inner `Id`.
+            pub fn into_inner(self) -> Id {
+                self.0
+            }
+        }
+
+        impl BoundedId for $name {
+            fn into_id(self) -> Id {
+                self.0
+            }
+        }
+
+        impl TryFrom<u32> for $name {
+            type Error = ();
+
+            fn try_from(value: u32) -> Result<Self, Self::Error> {
+                Id::try_from(value).map(Self::new)
+            }
+        }
+
+        impl From<$name> for Id {
+            fn from(value: $name) -> Self {
+                value.0
+            }
+        }
+
+        impl From<$name> for u32 {
+            fn from(value: $name) -> Self {
+                value.0.get()
+            }
+        }
+    };
+}
+
+id_wrapper!(ResultId);
+id_wrapper!(TypeId);
+id_wrapper!(OperandId);
 
 impl From<Id> for u32 {
     fn from(id: Id) -> Self {
@@ -407,6 +475,15 @@ fn section_index(opcode: rspirv::spirv::Op) -> Section {
     }
 }
 
+fn check_id<T: BoundedId>(id: T, bound: CheckedBound) -> Option<ValidationError> {
+    let id = id.into_id();
+    if id.get() >= bound.validated().get() {
+        Some(ValidationError::IdExceedsBound { id, bound })
+    } else {
+        None
+    }
+}
+
 fn validate_header(module: &Module) -> Result<(), ValidationError> {
     if module.header.is_none() {
         return Err(ValidationError::MissingHeader);
@@ -430,38 +507,34 @@ fn validate_id_bound(module: &Module) -> Result<(), ValidationError> {
     let bound = CheckedBound::new(declared_bound).ok_or(ValidationError::InvalidIdBound {
         bound: declared_bound,
     })?;
-    let mut results = HashSet::new();
-
-    let check_id = |id: u32, bound: CheckedBound| {
-        Id::try_from(id).ok().and_then(|id| {
-            if id.get() >= bound.validated().get() {
-                Some(ValidationError::IdExceedsBound { id, bound })
-            } else {
-                None
-            }
-        })
-    };
+    let mut results: HashSet<ResultId> = HashSet::new();
 
     for instruction in module.all_inst_iter() {
         if let Some(id) = instruction.result_id {
-            if let Some(valid_id) = Id::from_raw(id) {
+            if let Ok(valid_id) = ResultId::try_from(id) {
                 if !results.insert(valid_id) {
-                    return Err(ValidationError::DuplicateResultId { id: valid_id });
+                    return Err(ValidationError::DuplicateResultId {
+                        id: valid_id.into_inner(),
+                    });
                 }
-            }
-            if let Some(error) = check_id(id, bound) {
-                return Err(error);
+                if let Some(error) = check_id(valid_id, bound) {
+                    return Err(error);
+                }
             }
         }
         if let Some(result_type) = instruction.result_type {
-            if let Some(error) = check_id(result_type, bound) {
-                return Err(error);
+            if let Ok(result_type) = TypeId::try_from(result_type) {
+                if let Some(error) = check_id(result_type, bound) {
+                    return Err(error);
+                }
             }
         }
         for operand in &instruction.operands {
             if let rspirv::dr::Operand::IdRef(id) = operand {
-                if let Some(error) = check_id(*id, bound) {
-                    return Err(error);
+                if let Ok(operand_id) = OperandId::try_from(*id) {
+                    if let Some(error) = check_id(operand_id, bound) {
+                        return Err(error);
+                    }
                 }
             }
         }
