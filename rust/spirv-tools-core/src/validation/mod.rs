@@ -153,6 +153,18 @@ pub enum ValidationError {
     },
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum Section {
+    Capabilities,
+    MemoryModel,
+    EntryAndModes,
+    Debug,
+    Names,
+    Annotations,
+    TypesGlobals,
+    Functions,
+}
+
 /// Validates a SPIR-V module against invariants that can be checked without target-specific
 /// knowledge.
 pub fn validate_module(words: &[u32], _env: TargetEnv) -> Result<(), ValidationError> {
@@ -171,7 +183,7 @@ pub fn validate_module(words: &[u32], _env: TargetEnv) -> Result<(), ValidationE
 fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
     struct LayoutChecker {
         memory_models: usize,
-        current_section: usize,
+        current_section: Section,
         inside_function: usize,
         pre_memory_model_violation: Option<ValidationError>,
     }
@@ -180,7 +192,7 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
         fn new() -> Self {
             Self {
                 memory_models: 0,
-                current_section: 0,
+                current_section: Section::Capabilities,
                 inside_function: 0,
                 pre_memory_model_violation: None,
             }
@@ -228,7 +240,7 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
 
             match inst.class.opcode {
                 rspirv::spirv::Op::MemoryModel => {
-                    if self.current_section > SECTION_MEMORY_MODEL {
+                    if self.current_section > Section::MemoryModel {
                         return rspirv::binary::ParseAction::Error(Box::new(
                             ValidationError::LayoutOutOfOrder {
                                 opcode: rspirv::spirv::Op::MemoryModel,
@@ -241,7 +253,7 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
                             ValidationError::DuplicateMemoryModel,
                         ));
                     }
-                    self.current_section = self.current_section.max(SECTION_MEMORY_MODEL);
+                    self.current_section = self.current_section.max(Section::MemoryModel);
                 }
                 rspirv::spirv::Op::Function => {
                     if self.memory_models == 0 {
@@ -250,7 +262,7 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
                         ));
                     }
                     self.inside_function = 1;
-                    self.current_section = self.current_section.max(SECTION_FUNCTIONS);
+                    self.current_section = self.current_section.max(Section::Functions);
                 }
                 opcode => {
                     let section = section_index(opcode);
@@ -260,7 +272,7 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
                         ));
                     }
                     self.current_section = self.current_section.max(section);
-                    if section > SECTION_MEMORY_MODEL && self.memory_models == 0 {
+                    if section > Section::MemoryModel && self.memory_models == 0 {
                         if self.pre_memory_model_violation.is_none() {
                             self.pre_memory_model_violation =
                                 Some(ValidationError::InstructionBeforeMemoryModel { opcode });
@@ -287,27 +299,18 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
     }
 }
 
-const SECTION_CAPABILITIES: usize = 0;
-const SECTION_MEMORY_MODEL: usize = 1;
-const SECTION_ENTRY_AND_MODES: usize = 2;
-const SECTION_DEBUG: usize = 3;
-const SECTION_NAMES: usize = 4;
-const SECTION_ANNOTATIONS: usize = 5;
-const SECTION_TYPES_GLOBALS: usize = 6;
-const SECTION_FUNCTIONS: usize = 7;
-
-fn section_index(opcode: rspirv::spirv::Op) -> usize {
+fn section_index(opcode: rspirv::spirv::Op) -> Section {
     use rspirv::spirv::Op::*;
     match opcode {
-        Capability | Extension | ExtInstImport => SECTION_CAPABILITIES,
-        MemoryModel => SECTION_MEMORY_MODEL,
-        EntryPoint | ExecutionMode | ExecutionModeId => SECTION_ENTRY_AND_MODES,
-        String | SourceExtension | Source | SourceContinued | ModuleProcessed => SECTION_DEBUG,
-        Name | MemberName => SECTION_NAMES,
+        Capability | Extension | ExtInstImport => Section::Capabilities,
+        MemoryModel => Section::MemoryModel,
+        EntryPoint | ExecutionMode | ExecutionModeId => Section::EntryAndModes,
+        String | SourceExtension | Source | SourceContinued | ModuleProcessed => Section::Debug,
+        Name | MemberName => Section::Names,
         Decorate | DecorateId | MemberDecorate | DecorateString | MemberDecorateString
-        | GroupDecorate | GroupMemberDecorate => SECTION_ANNOTATIONS,
-        Function => SECTION_FUNCTIONS,
-        _ => SECTION_TYPES_GLOBALS,
+        | GroupDecorate | GroupMemberDecorate => Section::Annotations,
+        Function => Section::Functions,
+        _ => Section::TypesGlobals,
     }
 }
 
