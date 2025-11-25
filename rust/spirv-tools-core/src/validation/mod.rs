@@ -9,7 +9,7 @@ use std::{
 use rspirv::dr::Module;
 use thiserror::Error;
 
-use crate::target_env::TargetEnv;
+use crate::{target_env::TargetEnv, version::SpirvVersion};
 
 /// A non-zero SPIR-V id.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -521,6 +521,18 @@ pub enum ValidationError {
         capability: rspirv::spirv::Capability,
         /// The required extension name.
         required_extension: String,
+    },
+    /// A capability requires a newer SPIR-V version than the target environment provides.
+    #[error(
+        "capability {capability:?} requires SPIR-V version {required_version}, but target provides {target_version}"
+    )]
+    CapabilityRequiresSpirvVersion {
+        /// The capability that was not allowed.
+        capability: rspirv::spirv::Capability,
+        /// The minimum SPIR-V version required.
+        required_version: SpirvVersion,
+        /// The target environment's SPIR-V version.
+        target_version: SpirvVersion,
     },
     /// Duplicate extension declarations were found.
     #[error("extension {extension} is declared more than once")]
@@ -1064,6 +1076,16 @@ fn validate_capabilities(
                     });
                 }
             }
+            if let Some(required_version) = required_spirv_version_for_capability(capability) {
+                let target_version = env.spirv_version();
+                if target_version < required_version {
+                    return Err(ValidationError::CapabilityRequiresSpirvVersion {
+                        capability,
+                        required_version,
+                        target_version,
+                    });
+                }
+            }
         }
     }
     Ok(())
@@ -1096,6 +1118,39 @@ fn required_extension_for_capability(
         AtomicFloat16VectorNV => Some("SPV_NV_shader_atomic_float"),
         ShaderSMBuiltinsNV => Some("SPV_NV_shader_sm_builtins"),
         TileShadingQCOM => Some("SPV_QCOM_tile_shading"),
+        _ => None,
+    }
+}
+
+fn required_spirv_version_for_capability(
+    capability: rspirv::spirv::Capability,
+) -> Option<SpirvVersion> {
+    use rspirv::spirv::Capability::*;
+    match capability {
+        RayTracingKHR
+        | RayTracingPositionFetchKHR
+        | RayTracingNV
+        | RayTracingMotionBlurNV
+        | RayTracingOpacityMicromapEXT
+        | RayTracingDisplacementMicromapNV
+        | RayTracingSpheresGeometryNV
+        | RayTracingLinearSweptSpheresGeometryNV
+        | RayTracingClusterAccelerationStructureNV
+        | RayQueryKHR
+        | RayTracingProvisionalKHR => Some(SpirvVersion::new(1, 4)),
+        MeshShadingEXT | MeshShadingNV => Some(SpirvVersion::new(1, 4)),
+        FragmentShadingRateKHR | FragmentDensityEXT => Some(SpirvVersion::new(1, 5)),
+        FragmentShaderSampleInterlockEXT
+        | FragmentShaderShadingRateInterlockEXT
+        | FragmentShaderPixelInterlockEXT => Some(SpirvVersion::new(1, 4)),
+        AtomicFloat16AddEXT
+        | AtomicFloat32AddEXT
+        | AtomicFloat64AddEXT
+        | AtomicFloat16MinMaxEXT
+        | AtomicFloat32MinMaxEXT
+        | AtomicFloat64MinMaxEXT
+        | AtomicFloat16VectorNV => Some(SpirvVersion::new(1, 3)),
+        TileShadingQCOM => Some(SpirvVersion::new(1, 6)),
         _ => None,
     }
 }
@@ -1444,8 +1499,8 @@ fn validate_instruction_ids(
 mod tests {
     use super::{
         validate_module, CheckedBound, DeclaredBound, DecorationTargetId, ExtensionName, Id,
-        IdKind, MaybeValidModule, ModuleWords, Schema, ValidModuleCache, ValidatableModule,
-        ValidationError,
+        IdKind, MaybeValidModule, ModuleWords, Schema, SpirvVersion, ValidModuleCache,
+        ValidatableModule, ValidationError,
     };
     use crate::assembly::assemble_text;
     use crate::target_env::TargetEnv;
@@ -2036,6 +2091,37 @@ mod tests {
             .validate(TargetEnv::Universal1_6)
             .expect("extension should be accepted outside WebGPU");
         assert_eq!(validated.header().schema(), Schema::ZERO);
+    }
+
+    #[test]
+    fn capability_requires_min_spirv_version() {
+        let text = [
+            "OpCapability FragmentShadingRateKHR",
+            "OpExtension \"SPV_KHR_fragment_shading_rate\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Universal1_3)
+            .expect_err("requires SPIR-V 1.5");
+        assert_eq!(
+            error,
+            ValidationError::CapabilityRequiresSpirvVersion {
+                capability: rspirv::spirv::Capability::FragmentShadingRateKHR,
+                required_version: SpirvVersion::new(1, 5),
+                target_version: SpirvVersion::new(1, 3),
+            }
+        );
+        text.as_str()
+            .validate(TargetEnv::Universal1_6)
+            .expect("succeeds on newer SPIR-V");
     }
 
     #[test]

@@ -1,5 +1,5 @@
 /// Encodes a SPIR-V version as used in binary module headers.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Hash)]
 pub struct SpirvVersion {
     major: u8,
     minor: u8,
@@ -39,6 +39,12 @@ impl SpirvVersion {
         let self_word = self.to_word();
         let other_word = other.to_word();
         self_word >= other_word
+    }
+}
+
+impl std::fmt::Display for SpirvVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}", self.major, self.minor)
     }
 }
 
