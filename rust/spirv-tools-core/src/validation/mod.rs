@@ -44,8 +44,11 @@ struct CapabilitySet {
 }
 
 impl CapabilitySet {
-    fn insert(&mut self, capability: rspirv::spirv::Capability) {
-        self.values.insert(capability);
+    fn insert(&mut self, capability: rspirv::spirv::Capability) -> Result<(), ValidationError> {
+        if !self.values.insert(capability) {
+            return Err(ValidationError::DuplicateCapability { capability });
+        }
+        Ok(())
     }
 }
 
@@ -264,6 +267,12 @@ pub enum ValidationError {
         /// The result id that was defined multiple times.
         id: Id,
     },
+    /// Duplicate capability declarations were found.
+    #[error("capability {capability:?} is declared more than once")]
+    DuplicateCapability {
+        /// The capability that was duplicated.
+        capability: rspirv::spirv::Capability,
+    },
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -468,7 +477,9 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
                 }
                 rspirv::spirv::Op::Capability => {
                     if let Some(cap) = capability_operand(&inst) {
-                        self.capabilities.insert(cap);
+                        if let Err(err) = self.capabilities.insert(cap) {
+                            return rspirv::binary::ParseAction::Error(Box::new(err));
+                        }
                     }
                 }
                 rspirv::spirv::Op::Function => {
@@ -812,6 +823,31 @@ mod tests {
         ];
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(error, ValidationError::DuplicateMemoryModel);
+    }
+
+    #[test]
+    fn validate_module_rejects_duplicate_capability() {
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            5,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(2, 17), // Duplicate OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::DuplicateCapability {
+                capability: rspirv::spirv::Capability::Shader
+            }
+        );
     }
 
     #[test]
