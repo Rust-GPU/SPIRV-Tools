@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::convert::TryFrom;
 use std::num::NonZeroU32;
 
 use rspirv::dr::Module;
@@ -40,16 +39,6 @@ impl Id {
     }
 }
 
-trait BoundedId {
-    fn into_id(self) -> Id;
-}
-
-impl BoundedId for Id {
-    fn into_id(self) -> Id {
-        self
-    }
-}
-
 macro_rules! id_wrapper {
     ($name:ident) => {
         impl $name {
@@ -64,17 +53,9 @@ macro_rules! id_wrapper {
             }
         }
 
-        impl BoundedId for $name {
-            fn into_id(self) -> Id {
-                self.0
-            }
-        }
-
-        impl TryFrom<u32> for $name {
-            type Error = ();
-
-            fn try_from(value: u32) -> Result<Self, Self::Error> {
-                Id::try_from(value).map(Self::new)
+        impl From<NonZeroU32> for $name {
+            fn from(value: NonZeroU32) -> Self {
+                Self(Id::new(value))
             }
         }
 
@@ -105,14 +86,6 @@ impl From<Id> for u32 {
 impl From<NonZeroU32> for Id {
     fn from(value: NonZeroU32) -> Self {
         Id::new(value)
-    }
-}
-
-impl TryFrom<u32> for Id {
-    type Error = ();
-
-    fn try_from(value: u32) -> Result<Self, Self::Error> {
-        Id::from_raw(value).ok_or(())
     }
 }
 
@@ -152,14 +125,6 @@ impl From<IdBound> for u32 {
 impl From<NonZeroU32> for IdBound {
     fn from(value: NonZeroU32) -> Self {
         IdBound::new(value)
-    }
-}
-
-impl TryFrom<u32> for IdBound {
-    type Error = ();
-
-    fn try_from(value: u32) -> Result<Self, Self::Error> {
-        IdBound::from_raw(value).ok_or(())
     }
 }
 
@@ -475,8 +440,7 @@ fn section_index(opcode: rspirv::spirv::Op) -> Section {
     }
 }
 
-fn check_id<T: BoundedId>(id: T, bound: CheckedBound) -> Option<ValidationError> {
-    let id = id.into_id();
+fn check_id(id: Id, bound: CheckedBound) -> Option<ValidationError> {
     if id.get() >= bound.validated().get() {
         Some(ValidationError::IdExceedsBound { id, bound })
     } else {
@@ -511,28 +475,31 @@ fn validate_id_bound(module: &Module) -> Result<(), ValidationError> {
 
     for instruction in module.all_inst_iter() {
         if let Some(id) = instruction.result_id {
-            if let Ok(valid_id) = ResultId::try_from(id) {
+            if let Some(raw_id) = NonZeroU32::new(id) {
+                let valid_id = ResultId::from(raw_id);
                 if !results.insert(valid_id) {
                     return Err(ValidationError::DuplicateResultId {
                         id: valid_id.into_inner(),
                     });
                 }
-                if let Some(error) = check_id(valid_id, bound) {
+                if let Some(error) = check_id(valid_id.into_inner(), bound) {
                     return Err(error);
                 }
             }
         }
         if let Some(result_type) = instruction.result_type {
-            if let Ok(result_type) = TypeId::try_from(result_type) {
-                if let Some(error) = check_id(result_type, bound) {
+            if let Some(raw_type) = NonZeroU32::new(result_type) {
+                let result_type = TypeId::from(raw_type);
+                if let Some(error) = check_id(result_type.into_inner(), bound) {
                     return Err(error);
                 }
             }
         }
         for operand in &instruction.operands {
             if let rspirv::dr::Operand::IdRef(id) = operand {
-                if let Ok(operand_id) = OperandId::try_from(*id) {
-                    if let Some(error) = check_id(operand_id, bound) {
+                if let Some(raw_operand) = NonZeroU32::new(*id) {
+                    let operand_id = OperandId::from(raw_operand);
+                    if let Some(error) = check_id(operand_id.into_inner(), bound) {
                         return Err(error);
                     }
                 }
@@ -548,6 +515,7 @@ mod tests {
     use super::{validate_module, CheckedBound, DeclaredBound, Id, ValidationError};
     use crate::assembly::assemble_text;
     use crate::target_env::TargetEnv;
+    use std::num::NonZeroU32;
 
     fn op(word_count: u16, opcode: u16) -> u32 {
         ((word_count as u32) << 16) | opcode as u32
@@ -575,7 +543,7 @@ mod tests {
         assert_eq!(
             error,
             ValidationError::IdExceedsBound {
-                id: Id::from_raw(1).unwrap(),
+                id: Id::new(NonZeroU32::new(1).unwrap()),
                 bound: CheckedBound::new(DeclaredBound(1)).unwrap()
             }
         );
@@ -613,7 +581,7 @@ mod tests {
         assert_eq!(
             error,
             ValidationError::DuplicateResultId {
-                id: Id::from_raw(1).unwrap()
+                id: Id::new(NonZeroU32::new(1).unwrap())
             }
         );
     }
@@ -651,7 +619,7 @@ mod tests {
         assert_eq!(
             error,
             ValidationError::IdExceedsBound {
-                id: Id::from_raw(2).unwrap(),
+                id: Id::new(NonZeroU32::new(2).unwrap()),
                 bound: CheckedBound::new(DeclaredBound(2)).unwrap(),
             }
         );
