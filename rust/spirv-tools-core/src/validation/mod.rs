@@ -420,6 +420,28 @@ pub fn validate_module(words: &[u32], _env: TargetEnv) -> Result<(), ValidationE
     Ok(())
 }
 
+/// Input sources that can be validated.
+pub enum ValidationInput<'a> {
+    /// Pre-assembled SPIR-V words.
+    Binary(&'a [u32]),
+    /// SPIR-V assembly text to be assembled and validated.
+    Text(&'a str),
+}
+
+impl<'a> ValidationInput<'a> {
+    /// Validate the provided input, assembling text when necessary.
+    pub fn validate(self, env: TargetEnv) -> Result<(), ValidationError> {
+        match self {
+            ValidationInput::Binary(words) => validate_module(words, env),
+            ValidationInput::Text(text) => {
+                let binary = crate::assembly::assemble_text(text)
+                    .map_err(|err| ValidationError::Parse(err.to_string()))?;
+                validate_module(&binary, env)
+            }
+        }
+    }
+}
+
 fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
     struct LayoutChecker {
         memory_model_state: MemoryModelState,
@@ -881,18 +903,15 @@ mod tests {
 
     #[test]
     fn validate_module_rejects_non_zero_schema() {
-        let binary = vec![
-            0x07230203,
-            0x00010000,
-            0,
-            1,
-            1,         // non-zero reserved word
-            op(2, 17), // OpCapability Shader
-            rspirv::spirv::Capability::Shader as u32,
-            op(3, 14), // OpMemoryModel Logical GLSL450
-            0,
-            1,
-        ];
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+        ]
+        .join("\n");
+        let mut binary = assemble_text(&text).expect("assemble");
+        // Reserved word must be zero; flip it to a non-zero value to trigger the validation error.
+        binary[4] = 1;
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(error, ValidationError::InvalidReservedWord { reserved: 1 });
     }
