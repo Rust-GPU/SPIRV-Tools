@@ -476,6 +476,16 @@ pub enum ValidationError {
         /// The missing target id.
         target: Id,
     },
+    /// An entry point referenced an id of the wrong kind (non-function or non-interface variable).
+    #[error(
+        "entry point target {target} has opcode {opcode:?} which is invalid for this position"
+    )]
+    InvalidEntryPointTarget {
+        /// The target id.
+        target: Id,
+        /// The opcode actually defining that id.
+        opcode: rspirv::spirv::Op,
+    },
     /// A member decoration targeted an id that is not a struct type.
     #[error("member decorations must target struct types (found {target})")]
     MemberDecorationTargetNotStruct {
@@ -684,11 +694,12 @@ fn validate_words(words: ModuleWords, env: TargetEnv) -> Result<ValidModule, Val
     let module = loader.module();
     let header = ValidatedHeader::from_module(&module)?;
     let defined_ids = validate_id_bound(&module, header)?;
+    let opcodes = collect_result_opcodes(&module);
     validate_memory_model(&module)?;
     validate_member_decorations(&module, &defined_ids)?;
     validate_decoration_groups(&module, &defined_ids)?;
     validate_decorations(&module, &defined_ids)?;
-    validate_entry_points(&module, &defined_ids)?;
+    validate_entry_points(&module, &defined_ids, &opcodes)?;
     Ok(ValidModule {
         words,
         module,
@@ -1122,9 +1133,12 @@ fn validate_decorations(
 fn validate_entry_points(
     module: &Module,
     defined_ids: &HashSet<ResultId>,
+    opcodes: &HashMap<ResultId, rspirv::spirv::Op>,
 ) -> Result<(), ValidationError> {
     for ep in &module.entry_points {
         let mut operands = ep.operands.iter();
+        // First operand is ExecutionModel; skip it.
+        let _ = operands.next();
         let function_id = match operands.next() {
             Some(rspirv::dr::Operand::IdRef(id)) => {
                 ResultId::try_from(*id).map_err(|_| ValidationError::ZeroId {
@@ -1138,6 +1152,14 @@ fn validate_entry_points(
             return Err(ValidationError::MissingEntryPointTarget {
                 target: function_id.into_inner(),
             });
+        }
+        if let Some(opcode) = opcodes.get(&function_id) {
+            if *opcode != rspirv::spirv::Op::Function {
+                return Err(ValidationError::InvalidEntryPointTarget {
+                    target: function_id.into_inner(),
+                    opcode: *opcode,
+                });
+            }
         }
         // Skip the name operand.
         let _ = operands.next();
@@ -1153,10 +1175,30 @@ fn validate_entry_points(
                         target: interface_id.into_inner(),
                     });
                 }
+                if let Some(opcode) = opcodes.get(&interface_id) {
+                    if *opcode != rspirv::spirv::Op::Variable {
+                        return Err(ValidationError::InvalidEntryPointTarget {
+                            target: interface_id.into_inner(),
+                            opcode: *opcode,
+                        });
+                    }
+                }
             }
         }
     }
     Ok(())
+}
+
+fn collect_result_opcodes(module: &Module) -> HashMap<ResultId, rspirv::spirv::Op> {
+    let mut map = HashMap::new();
+    for inst in module.all_inst_iter() {
+        if let Some(result_id) = inst.result_id {
+            if let Ok(id) = ResultId::try_from(result_id) {
+                map.insert(id, inst.class.opcode);
+            }
+        }
+    }
+    map
 }
 
 fn validate_instruction_ids(
@@ -1725,6 +1767,97 @@ mod tests {
             .validate(TargetEnv::Universal1_6)
             .unwrap_err();
         assert_eq!(error, expected);
+    }
+
+    #[test]
+    fn entry_point_function_must_reference_function_op() {
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            5,          // bound
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(5, 15), // OpEntryPoint Vertex %1 "main"
+            rspirv::spirv::ExecutionModel::Vertex as u32,
+            1,
+            0x6e69616d, // "main" (null terminator implicit via padding)
+            0,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+            op(5, 54), // OpFunction %3 None %2
+            2,
+            3,
+            0,
+            2,
+            op(2, 248), // OpLabel %4
+            4,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+        let error = MaybeValidModule::Binary(&binary)
+            .validate(TargetEnv::Universal1_6)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::InvalidEntryPointTarget {
+                target: Id::try_from(1).unwrap(),
+                opcode: rspirv::spirv::Op::TypeVoid
+            }
+        );
+    }
+
+    #[test]
+    fn entry_point_interfaces_must_reference_variables() {
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            6,          // bound
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(6, 15), // OpEntryPoint Vertex %3 "main" %1 (interface %1 is not a variable)
+            rspirv::spirv::ExecutionModel::Vertex as u32,
+            3,
+            0x6e69616d,
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+            op(5, 54), // OpFunction %3 None %2
+            2,
+            3,
+            0,
+            2,
+            op(2, 248), // OpLabel %4
+            4,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+        let error = MaybeValidModule::Binary(&binary)
+            .validate(TargetEnv::Universal1_6)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::InvalidEntryPointTarget {
+                target: Id::try_from(1).unwrap(),
+                opcode: rspirv::spirv::Op::TypeVoid
+            }
+        );
     }
 
     #[test]
