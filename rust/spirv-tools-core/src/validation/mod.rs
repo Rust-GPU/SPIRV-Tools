@@ -12,8 +12,13 @@ use crate::target_env::TargetEnv;
 pub struct Id(NonZeroU32);
 
 impl Id {
-    /// Creates an `Id` if the raw value is non-zero.
-    pub fn new(raw: u32) -> Option<Self> {
+    /// Wraps an existing non-zero id.
+    pub fn new(value: NonZeroU32) -> Self {
+        Self(value)
+    }
+
+    /// Attempts to create an `Id` from a raw value, returning `None` if zero.
+    pub fn from_raw(raw: u32) -> Option<Self> {
         NonZeroU32::new(raw).map(Self)
     }
 
@@ -31,7 +36,7 @@ impl From<Id> for u32 {
 
 impl From<NonZeroU32> for Id {
     fn from(value: NonZeroU32) -> Self {
-        Id(value)
+        Id::new(value)
     }
 }
 
@@ -39,7 +44,7 @@ impl TryFrom<u32> for Id {
     type Error = ();
 
     fn try_from(value: u32) -> Result<Self, Self::Error> {
-        Id::new(value).ok_or(())
+        Id::from_raw(value).ok_or(())
     }
 }
 
@@ -54,8 +59,13 @@ impl std::fmt::Display for Id {
 pub struct IdBound(NonZeroU32);
 
 impl IdBound {
-    /// Creates an id bound if the raw value is non-zero.
-    pub fn new(raw: u32) -> Option<Self> {
+    /// Wraps an existing non-zero bound.
+    pub fn new(value: NonZeroU32) -> Self {
+        Self(value)
+    }
+
+    /// Attempts to create an id bound from a raw value, returning `None` if zero.
+    pub fn from_raw(raw: u32) -> Option<Self> {
         NonZeroU32::new(raw).map(Self)
     }
 
@@ -73,7 +83,7 @@ impl From<IdBound> for u32 {
 
 impl From<NonZeroU32> for IdBound {
     fn from(value: NonZeroU32) -> Self {
-        IdBound(value)
+        IdBound::new(value)
     }
 }
 
@@ -81,7 +91,7 @@ impl TryFrom<u32> for IdBound {
     type Error = ();
 
     fn try_from(value: u32) -> Result<Self, Self::Error> {
-        IdBound::new(value).ok_or(())
+        IdBound::from_raw(value).ok_or(())
     }
 }
 
@@ -320,7 +330,7 @@ fn validate_id_bound(module: &Module) -> Result<(), ValidationError> {
         .header
         .as_ref()
         .ok_or(ValidationError::MissingHeader)?;
-    let bound = IdBound::new(header.bound).ok_or(ValidationError::InvalidIdBound {
+    let bound = IdBound::from_raw(header.bound).ok_or(ValidationError::InvalidIdBound {
         bound: header.bound,
     })?;
     let mut results = HashMap::new();
@@ -337,7 +347,7 @@ fn validate_id_bound(module: &Module) -> Result<(), ValidationError> {
 
     for instruction in module.all_inst_iter() {
         if let Some(id) = instruction.result_id {
-            if let Some(valid_id) = Id::new(id) {
+            if let Some(valid_id) = Id::from_raw(id) {
                 if results.insert(valid_id, ()).is_some() {
                     return Err(ValidationError::DuplicateResultId { id: valid_id });
                 }
@@ -395,8 +405,8 @@ mod tests {
         assert_eq!(
             error,
             ValidationError::IdExceedsBound {
-                id: Id::new(1).unwrap(),
-                bound: IdBound::new(1).unwrap()
+                id: Id::from_raw(1).unwrap(),
+                bound: IdBound::from_raw(1).unwrap()
             }
         );
     }
@@ -433,7 +443,7 @@ mod tests {
         assert_eq!(
             error,
             ValidationError::DuplicateResultId {
-                id: Id::new(1).unwrap()
+                id: Id::from_raw(1).unwrap()
             }
         );
     }
@@ -471,8 +481,8 @@ mod tests {
         assert_eq!(
             error,
             ValidationError::IdExceedsBound {
-                id: Id::new(2).unwrap(),
-                bound: IdBound::new(2).unwrap(),
+                id: Id::from_raw(2).unwrap(),
+                bound: IdBound::from_raw(2).unwrap(),
             }
         );
     }
