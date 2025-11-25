@@ -44,7 +44,7 @@ Tasks for this milestone:
 - [x] Add typed extension names plus env-aware extension gating (Vulkan/OpenCL prefix rules) and capability→extension dependencies (ray tracing, mesh shading, fragment shading rate/interlock, atomic float add/min/max, tile shading).
 - [x] Apply grammar-driven instruction/operand capability/extension requirements and SPIR-V version gating for newer opcodes/capabilities.
 - [ ] Broaden decoration/category constraints (capability/extension ordering, decoration target categories) with paired text/binary tests.
-- [ ] Cache validated modules across CLI/FFI invocations when the same input is reused, avoiding redundant parsing/validation.
+- [x] Cache validated modules across CLI/FFI invocations when the same input is reused, avoiding redundant parsing/validation.
 - [ ] Expose wider structural rules (capability/extension ordering in layout, per-target decoration constraints) mirroring the C++ validator tables.
 - [ ] Enable the Rust validator over the FFI/CLI by default once structural parity is sufficiently close to C++.
 

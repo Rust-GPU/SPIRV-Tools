@@ -5,12 +5,18 @@ use spirv_tools_core::assembly::{
 };
 use spirv_tools_core::diagnostic::{DiagnosticMessage, MessagePosition};
 use spirv_tools_core::disassembly::{self, disassemble_binary, DisassemblyError};
-use spirv_tools_core::validation::MaybeValidModule;
+use spirv_tools_core::validation::ValidModuleCache;
 use spirv_tools_core::{MessageLevel, TargetEnv};
 use std::panic::{self, AssertUnwindSafe};
 use std::str;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use std::sync::Once;
+use std::sync::{Mutex, Once, OnceLock};
+
+static VALIDATION_CACHE: OnceLock<Mutex<ValidModuleCache>> = OnceLock::new();
+
+fn validation_cache() -> &'static Mutex<ValidModuleCache> {
+    VALIDATION_CACHE.get_or_init(Default::default)
+}
 
 #[cxx::bridge(namespace = "spvtools::ffi")]
 mod ffi {
@@ -201,7 +207,10 @@ pub fn validate_binary_rust(env: u32, binary: &[u32]) -> ffi::ValidateResult {
             }
         }
     };
-    match MaybeValidModule::Binary(binary).validate(env) {
+    let mut cache = validation_cache()
+        .lock()
+        .expect("validation cache mutex should not be poisoned");
+    match cache.validate_words(binary, env) {
         Ok(_) => ffi::ValidateResult {
             success: true,
             message: String::new(),

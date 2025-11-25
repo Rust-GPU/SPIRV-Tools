@@ -1,9 +1,10 @@
 use std::fs;
 use std::io::{self, Read};
+use std::sync::{Mutex, OnceLock};
 
 use crate::assembly::parse_target_env;
 use crate::disassemble::InputSource;
-use spirv_tools_core::validation::{MaybeValidModule, ModuleWords};
+use spirv_tools_core::validation::{ModuleWords, ValidModuleCache};
 use spirv_tools_core::TargetEnv;
 use thiserror::Error;
 
@@ -33,6 +34,12 @@ pub struct ValidateConfig {
     pub target_env: Option<String>,
 }
 
+static VALIDATION_CACHE: OnceLock<Mutex<ValidModuleCache>> = OnceLock::new();
+
+fn validation_cache() -> &'static Mutex<ValidModuleCache> {
+    VALIDATION_CACHE.get_or_init(Default::default)
+}
+
 /// Runs validation against the provided configuration.
 pub fn run_validate(config: &ValidateConfig) -> Result<(), ValidateCliError> {
     let bytes = match &config.input {
@@ -41,8 +48,11 @@ pub fn run_validate(config: &ValidateConfig) -> Result<(), ValidateCliError> {
     };
     let words: ModuleWords = bytes_to_words(&bytes)?.into_boxed_slice().into();
     let env = parse_env(config.target_env.as_deref())?;
-    MaybeValidModule::Binary(words.as_slice())
-        .validate(env)
+    let mut cache = validation_cache()
+        .lock()
+        .expect("validation cache mutex should not be poisoned");
+    cache
+        .validate_words(words.as_slice(), env)
         .map(|_| ())
         .map_err(|err| ValidateCliError::Failed(err.to_string()))
 }
@@ -126,5 +136,30 @@ OpFunctionEnd
             ValidateCliError::Failed(message) => assert!(!message.is_empty()),
             other => panic!("unexpected error: {other:?}"),
         }
+    }
+
+    #[test]
+    fn validation_reuses_cache_for_repeated_inputs() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical Simple
+OpEntryPoint Vertex %main "main"
+%void = OpTypeVoid
+%void_fn = OpTypeFunction %void
+%main = OpFunction %void None %void_fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let binary = assemble_text(text).expect("assemble text");
+        let mut file = NamedTempFile::new().expect("temp file");
+        file.write_all(&words_to_bytes(&binary)).expect("write");
+        let config = ValidateConfig {
+            input: InputSource::Path(file.path().to_path_buf()),
+            target_env: None,
+        };
+        run_validate(&config).expect("first validation");
+        // Second call should hit the cache and still succeed.
+        run_validate(&config).expect("second validation");
     }
 }
