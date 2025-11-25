@@ -24,6 +24,12 @@ pub enum ValidationError {
     /// A function definition appeared before the memory model.
     #[error("OpMemoryModel must appear before any function definitions")]
     FunctionBeforeMemoryModel,
+    /// An instruction was found before the required memory model declaration.
+    #[error("instruction {opcode} cannot appear before OpMemoryModel")]
+    InstructionBeforeMemoryModel {
+        /// The opcode that violated the ordering.
+        opcode: u32,
+    },
     /// Global instructions are out of the required logical layout order.
     #[error("instruction {opcode} appears out of order in the logical layout")]
     LayoutOutOfOrder {
@@ -72,6 +78,7 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
         memory_models: usize,
         current_section: usize,
         inside_function: usize,
+        pre_memory_model_violation: Option<ValidationError>,
     }
 
     impl LayoutChecker {
@@ -80,6 +87,7 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
                 memory_models: 0,
                 current_section: 0,
                 inside_function: 0,
+                pre_memory_model_violation: None,
             }
         }
     }
@@ -91,6 +99,9 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
 
         fn finalize(&mut self) -> rspirv::binary::ParseAction {
             if self.memory_models == 0 {
+                if let Some(error) = &self.pre_memory_model_violation {
+                    return rspirv::binary::ParseAction::Error(Box::new(error.clone()));
+                }
                 return rspirv::binary::ParseAction::Error(Box::new(
                     ValidationError::MissingMemoryModel,
                 ));
@@ -157,6 +168,12 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
                     }
                     self.current_section = self.current_section.max(section);
                     if section > SECTION_MEMORY_MODEL && self.memory_models == 0 {
+                        if self.pre_memory_model_violation.is_none() {
+                            self.pre_memory_model_violation =
+                                Some(ValidationError::InstructionBeforeMemoryModel {
+                                    opcode: opcode as u32,
+                                });
+                        }
                         return rspirv::binary::ParseAction::Continue;
                     }
                 }
@@ -307,7 +324,12 @@ mod tests {
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
-        assert_eq!(error, ValidationError::MissingMemoryModel);
+        assert_eq!(
+            error,
+            ValidationError::InstructionBeforeMemoryModel {
+                opcode: rspirv::spirv::Op::TypeVoid as u32
+            }
+        );
     }
 
     #[test]
@@ -415,5 +437,21 @@ mod tests {
         ];
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(error, ValidationError::DuplicateMemoryModel);
+    }
+
+    #[test]
+    fn validate_module_reports_missing_memory_model_without_other_globals() {
+        // A module that declares only capabilities should still fail for a missing memory model.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            1,          // bound
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            1,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(error, ValidationError::MissingMemoryModel);
     }
 }

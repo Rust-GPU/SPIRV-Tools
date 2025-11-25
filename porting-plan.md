@@ -53,15 +53,15 @@ Tasks for this milestone:
 - [ ] After the rspirv upgrade, re-tune the formatter to satisfy the legacy gtest fixtures (`BinaryToText.*`, `IndentTest.*`, string literal round-trips, float_controls2 round-trips). Key `BinaryToText/IndentTest` expectations (indent sample, nested-if, reordered-if) now have Rust parity tests and pass; remaining fixtures still need reconciliation. String literal escaping now mirrors the legacy toolchain (including multi-line literals), so the `StringLiterals/RoundTrip*` cases no longer require falling back.
   - The current gate now routes through the Rust disassembler for all option combinations (including default/zero options); diagnostics flow through the Rust context via the FFI, and `REORDER_BLOCKS` is handled natively.
 
-## Active Milestone: Validator Bootstrap
+## Active Milestone: Validator Core
 Lay the groundwork for a Rust-native validator by implementing target-agnostic checks and wiring them behind a typed API so we can begin porting individual validation rules.
 
 Tasks for this milestone:
 - [x] Introduce a `validation` module with typed errors (`ValidationError`) and a `validate_module` entry point that parses binaries and performs invariant checks.
 - [x] Validate id bounds (result ids, result types, operands) and detect duplicate result ids, with regression tests covering bound violations and duplicate definitions.
 - [x] Require `OpMemoryModel` to be present before enabling function processing, with a focused regression test.
-- [x] Enforce memory model ordering (reject functions before `OpMemoryModel` and duplicate memory model instructions) via a layout pre-pass.
-- [ ] Validate that the declared id bound is greater than all ids appearing in operands when target environments impose stricter limits (forward references, environment-specific caps).
+- [x] Enforce memory model ordering (reject functions before `OpMemoryModel`, duplicate memory model instructions, and out-of-order section placement) via a layout pre-pass.
+- [x] Surface precise diagnostics for instructions that appear before `OpMemoryModel` so the Rust validator matches legacy error specificity.
 - [ ] Add broader structural checks for logical layout ordering (capabilities/extensions/debug/annotations) before enabling the validator over the FFI/CLI.
 - [ ] Expose the Rust validator through the FFI and `spirv-val` CLI behind a feature flag once coverage matches the legacy validator for the supported rules.
 
