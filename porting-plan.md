@@ -53,6 +53,16 @@ Tasks for this milestone:
 - [ ] After the rspirv upgrade, re-tune the formatter to satisfy the legacy gtest fixtures (`BinaryToText.*`, `IndentTest.*`, string literal round-trips, float_controls2 round-trips). Key `BinaryToText/IndentTest` expectations (indent sample, nested-if, reordered-if) now have Rust parity tests and pass; remaining fixtures still need reconciliation. String literal escaping now mirrors the legacy toolchain (including multi-line literals), so the `StringLiterals/RoundTrip*` cases no longer require falling back.
   - The current gate now routes through the Rust disassembler for all option combinations (including default/zero options); diagnostics flow through the Rust context via the FFI, and `REORDER_BLOCKS` is handled natively.
 
+## Active Milestone: Validator Bootstrap
+Lay the groundwork for a Rust-native validator by implementing target-agnostic checks and wiring them behind a typed API so we can begin porting individual validation rules.
+
+Tasks for this milestone:
+- [x] Introduce a `validation` module with typed errors (`ValidationError`) and a `validate_module` entry point that parses binaries and performs invariant checks.
+- [x] Validate id bounds and detect duplicate result ids, with regression tests covering bound violations and duplicate definitions.
+- [ ] Validate that the declared id bound is greater than all ids appearing in operands (including forward references) when target environments impose stricter limits.
+- [ ] Add structural checks for required instructions (e.g., presence of `OpMemoryModel`) and logical layout ordering before enabling the validator over the FFI/CLI.
+- [ ] Expose the Rust validator through the FFI and `spirv-val` CLI behind a feature flag once coverage matches the legacy validator for the supported rules.
+
 ## Active Milestone: Matrix Layout Decorations
 Row/column-major annotations plus matrix strides are still processed purely in C++. We now want the Rust assembler to record and validate those decorations so later passes (composite extract/insert, validator plumbing, CLI formatting) can rely on that metadata without falling back.
 
@@ -138,5 +148,6 @@ Percentages are approximate and will be updated as new checklists are added for 
 - Mapping of large switch-based operand logic into data-driven Rust structures without performance regressions.
 
 ## Next Up
-1. After the assembler path is stable (and the disassembler honours formatting options), replicate the context plumbing inside the disassembler and ensure GN/Bazel builds can opt into the Rust implementation alongside CMake.
-2. Keep growing the `spirv-tools-cli` workspace so each legacy CLI has a Rust counterpart with shared Clap parsing, typed configs, and end-to-end tests (once the underlying functionality is ported).
+1. Finish reconciling remaining disassembly fixtures (`BinaryToText.*`, `IndentTest.*`, float_controls2) and update the gating bits accordingly.
+2. Expand the new validator module with structural layout checks (memory model presence, logical ordering) and start plumbing it through the FFI/CLI behind a flag when parity is sufficient.
+3. Keep growing the `spirv-tools-cli` workspace so each legacy CLI has a Rust counterpart with shared Clap parsing, typed configs, and end-to-end tests (once the underlying functionality is ported).

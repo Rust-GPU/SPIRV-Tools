@@ -18,6 +18,8 @@ pub mod result;
 pub mod string_literal;
 /// Target environment modeling.
 pub mod target_env;
+/// Validation helpers for SPIR-V modules.
+pub mod validation;
 /// Version helpers for SPIR-V and client APIs.
 pub mod version;
 
@@ -34,4 +36,5 @@ pub use endian::Endianness;
 pub use message::MessageLevel;
 pub use result::{InvalidSpvResult, SpvResult};
 pub use target_env::TargetEnv;
+pub use validation::{validate_module, ValidationError};
 pub use version::{SpirvVersion, VulkanVersion};
