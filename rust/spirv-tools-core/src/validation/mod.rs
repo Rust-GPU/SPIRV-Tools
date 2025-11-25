@@ -3569,6 +3569,39 @@ mod tests {
     }
 
     #[test]
+    fn builtin_requires_variable_or_constant_targets() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "OpDecorate %main BuiltIn Position",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble BuiltIn on function");
+        let expected = ValidationError::InvalidDecorationTargetKind {
+            decoration: rspirv::spirv::Decoration::BuiltIn,
+            target: Id::try_from(3).unwrap(),
+            found: rspirv::spirv::Op::Function,
+            expected: DecorationTargetKind::Variable,
+        };
+
+        for module in [
+            MaybeValidModule::Text(text.as_str()),
+            MaybeValidModule::Binary(binary.as_slice()),
+        ] {
+            let error = module
+                .validate(TargetEnv::Universal1_6)
+                .expect_err("BuiltIn must target variables/constants");
+            assert_eq!(error, expected);
+        }
+    }
+
+    #[test]
     fn entry_point_function_must_reference_function_op() {
         let binary = vec![
             0x07230203, // magic
