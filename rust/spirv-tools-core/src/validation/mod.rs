@@ -470,6 +470,12 @@ pub enum ValidationError {
         /// The target id that is missing.
         target: Id,
     },
+    /// An entry point referenced an undefined id.
+    #[error("entry point references unknown id {target}")]
+    MissingEntryPointTarget {
+        /// The missing target id.
+        target: Id,
+    },
     /// A member decoration targeted an id that is not a struct type.
     #[error("member decorations must target struct types (found {target})")]
     MemberDecorationTargetNotStruct {
@@ -682,6 +688,7 @@ fn validate_words(words: ModuleWords, env: TargetEnv) -> Result<ValidModule, Val
     validate_member_decorations(&module, &defined_ids)?;
     validate_decoration_groups(&module, &defined_ids)?;
     validate_decorations(&module, &defined_ids)?;
+    validate_entry_points(&module, &defined_ids)?;
     Ok(ValidModule {
         words,
         module,
@@ -1107,6 +1114,46 @@ fn validate_decorations(
                 }
             }
             _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn validate_entry_points(
+    module: &Module,
+    defined_ids: &HashSet<ResultId>,
+) -> Result<(), ValidationError> {
+    for ep in &module.entry_points {
+        let mut operands = ep.operands.iter();
+        let function_id = match operands.next() {
+            Some(rspirv::dr::Operand::IdRef(id)) => {
+                ResultId::try_from(*id).map_err(|_| ValidationError::ZeroId {
+                    kind: IdKind::Operand,
+                    opcode: rspirv::spirv::Op::EntryPoint,
+                })?
+            }
+            _ => continue,
+        };
+        if !defined_ids.contains(&function_id) {
+            return Err(ValidationError::MissingEntryPointTarget {
+                target: function_id.into_inner(),
+            });
+        }
+        // Skip the name operand.
+        let _ = operands.next();
+        for operand in operands {
+            if let rspirv::dr::Operand::IdRef(id) = operand {
+                let interface_id =
+                    ResultId::try_from(*id).map_err(|_| ValidationError::ZeroId {
+                        kind: IdKind::Operand,
+                        opcode: rspirv::spirv::Op::EntryPoint,
+                    })?;
+                if !defined_ids.contains(&interface_id) {
+                    return Err(ValidationError::MissingEntryPointTarget {
+                        target: interface_id.into_inner(),
+                    });
+                }
+            }
         }
     }
     Ok(())
