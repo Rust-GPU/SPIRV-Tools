@@ -182,3 +182,11 @@ Percentages are approximate and will be updated as new checklists are added for 
    - Added layout-order regression tests for section ordering (ExtInstImport, debug/names/annotations) and BuiltIn target categories to lock in current behavior.
 2. Push validated-module caching deeper through FFI/CLI entry points to avoid reparsing/validating identical inputs.
 3. Fill in remaining SPIR-V version gating and per-instruction requirements from the grammar, then revisit disassembly fixtures once validator parity is solid.
+
+## Upcoming Milestone: Capability/Extension Ordering Parity
+Align the Rust validator’s capability/extension ordering and layout checks with the C++ tables.
+
+Tasks for this milestone:
+- Import capability/extension ordering tables (including conditional capabilities/extensions) and enforce them with text/binary regression tests.
+- Mirror environment-specific decoration/layout constraints driven by the grammar data.
+- Thread validated-module reuse through FFI/CLI for these new checks to avoid reparsing.
