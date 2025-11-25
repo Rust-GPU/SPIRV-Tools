@@ -58,9 +58,10 @@ Lay the groundwork for a Rust-native validator by implementing target-agnostic c
 
 Tasks for this milestone:
 - [x] Introduce a `validation` module with typed errors (`ValidationError`) and a `validate_module` entry point that parses binaries and performs invariant checks.
-- [x] Validate id bounds and detect duplicate result ids, with regression tests covering bound violations and duplicate definitions.
-- [ ] Validate that the declared id bound is greater than all ids appearing in operands (including forward references) when target environments impose stricter limits.
-- [ ] Add structural checks for required instructions (e.g., presence of `OpMemoryModel`) and logical layout ordering before enabling the validator over the FFI/CLI.
+- [x] Validate id bounds (result ids, result types, operands) and detect duplicate result ids, with regression tests covering bound violations and duplicate definitions.
+- [x] Require `OpMemoryModel` to be present before enabling function processing, with a focused regression test.
+- [ ] Validate that the declared id bound is greater than all ids appearing in operands when target environments impose stricter limits (forward references, environment-specific caps).
+- [ ] Add structural checks for logical layout ordering before enabling the validator over the FFI/CLI.
 - [ ] Expose the Rust validator through the FFI and `spirv-val` CLI behind a feature flag once coverage matches the legacy validator for the supported rules.
 
 ## Active Milestone: Matrix Layout Decorations
