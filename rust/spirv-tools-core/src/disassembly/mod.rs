@@ -2041,16 +2041,18 @@ OpFunctionEnd
 
     #[test]
     fn disassembles_simple_module() {
-        let text = "\
-OpCapability Shader\n\
-OpMemoryModel Logical GLSL450\n\
-%void = OpTypeVoid\n\
-%void_fn = OpTypeFunction %void\n\
-%main = OpFunction %void None %void_fn\n\
-%entry = OpLabel\n\
-OpReturn\n\
-OpFunctionEnd";
-        let binary = assemble_text(text).expect("assemble text");
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %void_fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble text");
         let options = BinaryToTextOptions::NO_HEADER
             | BinaryToTextOptions::COMMENT
             | BinaryToTextOptions::INDENT;
@@ -2061,11 +2063,13 @@ OpFunctionEnd";
 
     #[test]
     fn disassembly_respects_no_header_option() {
-        let text = "\
-OpCapability Shader\n\
-OpMemoryModel Logical GLSL450\n\
-%void = OpTypeVoid";
-        let binary = assemble_text(text).expect("assemble text");
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble text");
         let options = BinaryToTextOptions::NONE | BinaryToTextOptions::NO_HEADER;
         let disassembled = disassemble_binary(&binary, options).expect("disassemble");
         assert!(!disassembled.starts_with(";"));
@@ -2106,59 +2110,56 @@ OpMemoryModel Logical GLSL450\n\
 
     #[test]
     fn disassembly_appends_byte_offsets() {
-        let text = "\
-OpCapability Shader\n\
-OpMemoryModel Logical Simple\n\
-%void = OpTypeVoid\n\
-%void_fn = OpTypeFunction %void\n";
-        let binary = assemble_text(text).expect("assemble text");
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical Simple",
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble text");
         let options = BinaryToTextOptions::NO_HEADER | BinaryToTextOptions::SHOW_BYTE_OFFSET;
         let disassembled = disassemble_binary(&binary, options).expect("disassemble");
-        let expected = "OpCapability Shader                                 ; 0x00000014\n\
-OpMemoryModel Logical Simple                        ; 0x0000001c\n\
-%1 = OpTypeVoid                                     ; 0x00000028\n\
-%2 = OpTypeFunction %1                              ; 0x00000030\n";
+        let expected = [
+            "OpCapability Shader                                 ; 0x00000014",
+            "OpMemoryModel Logical Simple                        ; 0x0000001c",
+            "%1 = OpTypeVoid                                     ; 0x00000028",
+            "%2 = OpTypeFunction %1                              ; 0x00000030",
+        ]
+        .join("\n")
+            + "\n";
         assert_eq!(disassembled, expected);
     }
 
     #[test]
     fn disassembly_applies_indent_formatting() {
-        let text = "\
-OpCapability Shader\n\
-OpMemoryModel Logical Simple\n\
-%void = OpTypeVoid\n\
-%void_fn = OpTypeFunction %void\n\
-%main = OpFunction %void None %void_fn\n\
-%entry = OpLabel\n\
-OpReturn\n\
-OpFunctionEnd";
-        let binary = assemble_text(text).expect("assemble text");
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical Simple",
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %void_fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble text");
         let options = BinaryToTextOptions::NO_HEADER | BinaryToTextOptions::INDENT;
         let disassembled = disassemble_binary(&binary, options).expect("disassemble");
 
-        let indent = " ".repeat(super::STANDARD_INDENT_COLUMN);
-        let pad = |name: &str| -> String {
-            let head_chars = name.chars().count();
-            let id_len = head_chars.saturating_sub(1);
-            let spaces = super::STANDARD_INDENT_COLUMN.saturating_sub(4 + id_len);
-            format!("{}{} = ", " ".repeat(spaces), name)
-        };
-
-        let expected = format!(
-            "{indent}OpCapability Shader\n\
-{indent}OpMemoryModel Logical Simple\n\
-{id1}OpTypeVoid\n\
-{id2}OpTypeFunction %1\n\
-{id3}OpFunction %1 None %2\n\
-{id4}OpLabel\n\
-{indent}OpReturn\n\
-{indent}OpFunctionEnd\n",
-            indent = indent,
-            id1 = pad("%1"),
-            id2 = pad("%2"),
-            id3 = pad("%3"),
-            id4 = pad("%4"),
-        );
+        let expected = [
+            "               OpCapability Shader",
+            "               OpMemoryModel Logical Simple",
+            "          %1 = OpTypeVoid",
+            "          %2 = OpTypeFunction %1",
+            "          %3 = OpFunction %1 None %2",
+            "          %4 = OpLabel",
+            "               OpReturn",
+            "               OpFunctionEnd",
+        ]
+        .join("\n")
+            + "\n";
         assert_eq!(disassembled, expected);
     }
 
@@ -2301,23 +2302,27 @@ OpFunctionEnd";
 
     #[test]
     fn disassembly_matches_indent_fixture_sample() {
-        let input = "\
-OpCapability Shader
-OpMemoryModel Logical GLSL450
-%1 = OpTypeInt 32 0
-%2 = OpTypeStruct %1 %3 %4 %5 %6 %7 %8 %9 %10 ; force IDs into double digits
-%11 = OpConstant %1 42
-OpStore %2 %3 Aligned|Volatile 4 ; bogus, but not indented
-";
-        let expected = r#"               OpCapability Shader
-               OpMemoryModel Logical GLSL450
-          %1 = OpTypeInt 32 0
-          %2 = OpTypeStruct %1 %3 %4 %5 %6 %7 %8 %9 %10
-         %11 = OpConstant %1 42
-               OpStore %2 %3 Volatile|Aligned 4
-"#;
+        let input = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%1 = OpTypeInt 32 0",
+            "%2 = OpTypeStruct %1 %3 %4 %5 %6 %7 %8 %9 %10 ; force IDs into double digits",
+            "%11 = OpConstant %1 42",
+            "OpStore %2 %3 Aligned|Volatile 4 ; bogus, but not indented",
+        ]
+        .join("\n");
+        let expected = [
+            "               OpCapability Shader",
+            "               OpMemoryModel Logical GLSL450",
+            "          %1 = OpTypeInt 32 0",
+            "          %2 = OpTypeStruct %1 %3 %4 %5 %6 %7 %8 %9 %10",
+            "         %11 = OpConstant %1 42",
+            "               OpStore %2 %3 Volatile|Aligned 4",
+        ]
+        .join("\n")
+            + "\n";
         let output = encode_and_decode_fixture(
-            input,
+            &input,
             BinaryToTextOptions::INDENT,
             TextToBinaryOptions::NONE,
         );
@@ -2326,115 +2331,119 @@ OpStore %2 %3 Aligned|Volatile 4 ; bogus, but not indented
 
     #[test]
     fn disassembly_matches_indent_fixture_nested_if() {
-        let input = "\
-OpCapability Shader
-OpMemoryModel Logical Simple
-OpEntryPoint Fragment %100 \"main\"
-OpExecutionMode %100 OriginUpperLeft
-OpName %var \"var\"
-%void = OpTypeVoid
-%3 = OpTypeFunction %void
-%bool = OpTypeBool
-%5 = OpConstantNull %bool
-%true = OpConstantTrue %bool
-%false = OpConstantFalse %bool
-%uint = OpTypeInt 32 0
-%int = OpTypeInt 32 1
-%uint_42 = OpConstant %uint 42
-%int_42 = OpConstant %int 42
-%13 = OpTypeFunction %uint
-%uint_0 = OpConstant %uint 0
-%uint_1 = OpConstant %uint 1
-%uint_2 = OpConstant %uint 2
-%uint_3 = OpConstant %uint 3
-%uint_4 = OpConstant %uint 4
-%uint_5 = OpConstant %uint 5
-%uint_6 = OpConstant %uint 6
-%uint_7 = OpConstant %uint 7
-%uint_8 = OpConstant %uint 8
-%uint_10 = OpConstant %uint 10
-%uint_20 = OpConstant %uint 20
-%uint_30 = OpConstant %uint 30
-%uint_40 = OpConstant %uint 40
-%uint_50 = OpConstant %uint 50
-%uint_90 = OpConstant %uint 90
-%uint_99 = OpConstant %uint 99
-%_ptr_Private_uint = OpTypePointer Private %uint
-%var = OpVariable %_ptr_Private_uint Private
-%uint_999 = OpConstant %uint 999
-%100 = OpFunction %void None %3
-%10 = OpLabel
-OpStore %var %uint_0
-OpSelectionMerge %99 None
-OpBranchConditional %5 %30 %40
-%30 = OpLabel
-OpStore %var %uint_1
-OpBranch %99
-%40 = OpLabel
-OpStore %var %uint_2
-OpBranch %99
-%99 = OpLabel
-OpStore %var %uint_999
-OpReturn
-OpFunctionEnd
-";
-        let expected = r#"               OpCapability Shader
-               OpMemoryModel Logical Simple
-               OpEntryPoint Fragment %100 "main"
-               OpExecutionMode %100 OriginUpperLeft
-               OpName %1 "var"
-          %2 = OpTypeVoid
-          %3 = OpTypeFunction %2
-          %4 = OpTypeBool
-          %5 = OpConstantNull %4
-          %6 = OpConstantTrue %4
-          %7 = OpConstantFalse %4
-          %8 = OpTypeInt 32 0
-          %9 = OpTypeInt 32 1
-         %11 = OpConstant %8 42
-         %12 = OpConstant %9 42
-         %13 = OpTypeFunction %8
-         %14 = OpConstant %8 0
-         %15 = OpConstant %8 1
-         %16 = OpConstant %8 2
-         %17 = OpConstant %8 3
-         %18 = OpConstant %8 4
-         %19 = OpConstant %8 5
-         %20 = OpConstant %8 6
-         %21 = OpConstant %8 7
-         %22 = OpConstant %8 8
-         %23 = OpConstant %8 10
-         %24 = OpConstant %8 20
-         %25 = OpConstant %8 30
-         %26 = OpConstant %8 40
-         %27 = OpConstant %8 50
-         %28 = OpConstant %8 90
-         %29 = OpConstant %8 99
-         %31 = OpTypePointer Private %8
-          %1 = OpVariable %31 Private
-         %32 = OpConstant %8 999
-        %100 = OpFunction %2 None %3
-
-         %10 = OpLabel
-                 OpStore %1 %14
-                 OpSelectionMerge %99 None
-                 OpBranchConditional %5 %30 %40
-
-         %30 =     OpLabel
-                     OpStore %1 %15
-                     OpBranch %99
-
-         %40 =     OpLabel
-                     OpStore %1 %16
-                     OpBranch %99
-
-         %99 = OpLabel
-                 OpStore %1 %32
-                 OpReturn
-               OpFunctionEnd
-"#;
+        let input = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical Simple",
+            "OpEntryPoint Fragment %100 \"main\"",
+            "OpExecutionMode %100 OriginUpperLeft",
+            "OpName %var \"var\"",
+            "%void = OpTypeVoid",
+            "%3 = OpTypeFunction %void",
+            "%bool = OpTypeBool",
+            "%5 = OpConstantNull %bool",
+            "%true = OpConstantTrue %bool",
+            "%false = OpConstantFalse %bool",
+            "%uint = OpTypeInt 32 0",
+            "%int = OpTypeInt 32 1",
+            "%uint_42 = OpConstant %uint 42",
+            "%int_42 = OpConstant %int 42",
+            "%13 = OpTypeFunction %uint",
+            "%uint_0 = OpConstant %uint 0",
+            "%uint_1 = OpConstant %uint 1",
+            "%uint_2 = OpConstant %uint 2",
+            "%uint_3 = OpConstant %uint 3",
+            "%uint_4 = OpConstant %uint 4",
+            "%uint_5 = OpConstant %uint 5",
+            "%uint_6 = OpConstant %uint 6",
+            "%uint_7 = OpConstant %uint 7",
+            "%uint_8 = OpConstant %uint 8",
+            "%uint_10 = OpConstant %uint 10",
+            "%uint_20 = OpConstant %uint 20",
+            "%uint_30 = OpConstant %uint 30",
+            "%uint_40 = OpConstant %uint 40",
+            "%uint_50 = OpConstant %uint 50",
+            "%uint_90 = OpConstant %uint 90",
+            "%uint_99 = OpConstant %uint 99",
+            "%_ptr_Private_uint = OpTypePointer Private %uint",
+            "%var = OpVariable %_ptr_Private_uint Private",
+            "%uint_999 = OpConstant %uint 999",
+            "%100 = OpFunction %void None %3",
+            "%10 = OpLabel",
+            "OpStore %var %uint_0",
+            "OpSelectionMerge %99 None",
+            "OpBranchConditional %5 %30 %40",
+            "%30 = OpLabel",
+            "OpStore %var %uint_1",
+            "OpBranch %99",
+            "%40 = OpLabel",
+            "OpStore %var %uint_2",
+            "OpBranch %99",
+            "%99 = OpLabel",
+            "OpStore %var %uint_999",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let expected = [
+            "               OpCapability Shader",
+            "               OpMemoryModel Logical Simple",
+            "               OpEntryPoint Fragment %100 \"main\"",
+            "               OpExecutionMode %100 OriginUpperLeft",
+            "               OpName %1 \"var\"",
+            "          %2 = OpTypeVoid",
+            "          %3 = OpTypeFunction %2",
+            "          %4 = OpTypeBool",
+            "          %5 = OpConstantNull %4",
+            "          %6 = OpConstantTrue %4",
+            "          %7 = OpConstantFalse %4",
+            "          %8 = OpTypeInt 32 0",
+            "          %9 = OpTypeInt 32 1",
+            "         %11 = OpConstant %8 42",
+            "         %12 = OpConstant %9 42",
+            "         %13 = OpTypeFunction %8",
+            "         %14 = OpConstant %8 0",
+            "         %15 = OpConstant %8 1",
+            "         %16 = OpConstant %8 2",
+            "         %17 = OpConstant %8 3",
+            "         %18 = OpConstant %8 4",
+            "         %19 = OpConstant %8 5",
+            "         %20 = OpConstant %8 6",
+            "         %21 = OpConstant %8 7",
+            "         %22 = OpConstant %8 8",
+            "         %23 = OpConstant %8 10",
+            "         %24 = OpConstant %8 20",
+            "         %25 = OpConstant %8 30",
+            "         %26 = OpConstant %8 40",
+            "         %27 = OpConstant %8 50",
+            "         %28 = OpConstant %8 90",
+            "         %29 = OpConstant %8 99",
+            "         %31 = OpTypePointer Private %8",
+            "          %1 = OpVariable %31 Private",
+            "         %32 = OpConstant %8 999",
+            "        %100 = OpFunction %2 None %3",
+            "",
+            "         %10 = OpLabel",
+            "                 OpStore %1 %14",
+            "                 OpSelectionMerge %99 None",
+            "                 OpBranchConditional %5 %30 %40",
+            "",
+            "         %30 =     OpLabel",
+            "                     OpStore %1 %15",
+            "                     OpBranch %99",
+            "",
+            "         %40 =     OpLabel",
+            "                     OpStore %1 %16",
+            "                     OpBranch %99",
+            "",
+            "         %99 = OpLabel",
+            "                 OpStore %1 %32",
+            "                 OpReturn",
+            "               OpFunctionEnd",
+        ]
+        .join("\n")
+            + "\n";
         let output = encode_and_decode_fixture(
-            input,
+            &input,
             BinaryToTextOptions::INDENT | BinaryToTextOptions::NESTED_INDENT,
             TextToBinaryOptions::PRESERVE_NUMERIC_IDS,
         );
@@ -2443,131 +2452,135 @@ OpFunctionEnd
 
     #[test]
     fn disassembly_matches_indent_fixture_reordered_if() {
-        let input = "\
-               OpCapability Shader
-               OpMemoryModel Logical Simple
-               OpEntryPoint Fragment %100 \"main\"
-               OpExecutionMode %100 OriginUpperLeft
-               OpName %1 \"var\"
-          %2 = OpTypeVoid
-          %3 = OpTypeFunction %2
-          %4 = OpTypeBool
-          %5 = OpConstantNull %4
-          %6 = OpConstantTrue %4
-          %7 = OpConstantFalse %4
-          %8 = OpTypeInt 32 0
-          %9 = OpTypeInt 32 1
-         %11 = OpConstant %8 42
-         %12 = OpConstant %9 42
-         %13 = OpTypeFunction %8
-         %14 = OpConstant %8 0
-         %15 = OpConstant %8 1
-         %16 = OpConstant %8 2
-         %17 = OpConstant %8 3
-         %18 = OpConstant %8 4
-         %19 = OpConstant %8 5
-         %21 = OpConstant %8 6
-         %22 = OpConstant %8 7
-         %23 = OpConstant %8 8
-         %24 = OpConstant %8 10
-         %25 = OpConstant %8 20
-         %26 = OpConstant %8 30
-         %27 = OpConstant %8 40
-         %28 = OpConstant %8 50
-         %29 = OpConstant %8 90
-         %31 = OpConstant %8 99
-         %32 = OpTypePointer Private %8
-          %1 = OpVariable %32 Private
-         %33 = OpConstant %8 999
-        %100 = OpFunction %2 None %3
-         %10 = OpLabel
-               OpSelectionMerge %99 None
-               OpBranchConditional %5 %20 %50
-         %99 = OpLabel
-               OpReturn
-         %20 = OpLabel
-               OpSelectionMerge %49 None
-               OpBranchConditional %5 %30 %40
-         %49 = OpLabel
-               OpBranch %99
-         %40 = OpLabel
-               OpBranch %49
-         %30 = OpLabel
-               OpBranch %49
-         %50 = OpLabel
-               OpSelectionMerge %79 None
-               OpBranchConditional %5 %60 %70
-         %79 = OpLabel
-               OpBranch %99
-         %60 = OpLabel
-               OpBranch %79
-         %70 = OpLabel
-               OpBranch %79
-               OpFunctionEnd
-";
-        let expected = r#"               OpCapability Shader
-               OpMemoryModel Logical Simple
-               OpEntryPoint Fragment %100 "main"
-               OpExecutionMode %100 OriginUpperLeft
-               OpName %1 "var"
-          %2 = OpTypeVoid
-          %3 = OpTypeFunction %2
-          %4 = OpTypeBool
-          %5 = OpConstantNull %4
-          %6 = OpConstantTrue %4
-          %7 = OpConstantFalse %4
-          %8 = OpTypeInt 32 0
-          %9 = OpTypeInt 32 1
-         %11 = OpConstant %8 42
-         %12 = OpConstant %9 42
-         %13 = OpTypeFunction %8
-         %14 = OpConstant %8 0
-         %15 = OpConstant %8 1
-         %16 = OpConstant %8 2
-         %17 = OpConstant %8 3
-         %18 = OpConstant %8 4
-         %19 = OpConstant %8 5
-         %21 = OpConstant %8 6
-         %22 = OpConstant %8 7
-         %23 = OpConstant %8 8
-         %24 = OpConstant %8 10
-         %25 = OpConstant %8 20
-         %26 = OpConstant %8 30
-         %27 = OpConstant %8 40
-         %28 = OpConstant %8 50
-         %29 = OpConstant %8 90
-         %31 = OpConstant %8 99
-         %32 = OpTypePointer Private %8
-          %1 = OpVariable %32 Private
-         %33 = OpConstant %8 999
-        %100 = OpFunction %2 None %3
-         %10 = OpLabel
-               OpSelectionMerge %99 None
-               OpBranchConditional %5 %20 %50
-         %20 = OpLabel
-               OpSelectionMerge %49 None
-               OpBranchConditional %5 %30 %40
-         %30 = OpLabel
-               OpBranch %49
-         %40 = OpLabel
-               OpBranch %49
-         %49 = OpLabel
-               OpBranch %99
-         %50 = OpLabel
-               OpSelectionMerge %79 None
-               OpBranchConditional %5 %60 %70
-         %60 = OpLabel
-               OpBranch %79
-         %70 = OpLabel
-               OpBranch %79
-         %79 = OpLabel
-               OpBranch %99
-         %99 = OpLabel
-               OpReturn
-               OpFunctionEnd
-"#;
+        let input = [
+            "               OpCapability Shader",
+            "               OpMemoryModel Logical Simple",
+            "               OpEntryPoint Fragment %100 \"main\"",
+            "               OpExecutionMode %100 OriginUpperLeft",
+            "               OpName %1 \"var\"",
+            "          %2 = OpTypeVoid",
+            "          %3 = OpTypeFunction %2",
+            "          %4 = OpTypeBool",
+            "          %5 = OpConstantNull %4",
+            "          %6 = OpConstantTrue %4",
+            "          %7 = OpConstantFalse %4",
+            "          %8 = OpTypeInt 32 0",
+            "          %9 = OpTypeInt 32 1",
+            "         %11 = OpConstant %8 42",
+            "         %12 = OpConstant %9 42",
+            "         %13 = OpTypeFunction %8",
+            "         %14 = OpConstant %8 0",
+            "         %15 = OpConstant %8 1",
+            "         %16 = OpConstant %8 2",
+            "         %17 = OpConstant %8 3",
+            "         %18 = OpConstant %8 4",
+            "         %19 = OpConstant %8 5",
+            "         %21 = OpConstant %8 6",
+            "         %22 = OpConstant %8 7",
+            "         %23 = OpConstant %8 8",
+            "         %24 = OpConstant %8 10",
+            "         %25 = OpConstant %8 20",
+            "         %26 = OpConstant %8 30",
+            "         %27 = OpConstant %8 40",
+            "         %28 = OpConstant %8 50",
+            "         %29 = OpConstant %8 90",
+            "         %31 = OpConstant %8 99",
+            "         %32 = OpTypePointer Private %8",
+            "          %1 = OpVariable %32 Private",
+            "         %33 = OpConstant %8 999",
+            "        %100 = OpFunction %2 None %3",
+            "         %10 = OpLabel",
+            "               OpSelectionMerge %99 None",
+            "               OpBranchConditional %5 %20 %50",
+            "         %99 = OpLabel",
+            "               OpReturn",
+            "         %20 = OpLabel",
+            "               OpSelectionMerge %49 None",
+            "               OpBranchConditional %5 %30 %40",
+            "         %49 = OpLabel",
+            "               OpBranch %99",
+            "         %40 = OpLabel",
+            "               OpBranch %49",
+            "         %30 = OpLabel",
+            "               OpBranch %49",
+            "         %50 = OpLabel",
+            "               OpSelectionMerge %79 None",
+            "               OpBranchConditional %5 %60 %70",
+            "         %79 = OpLabel",
+            "               OpBranch %99",
+            "         %60 = OpLabel",
+            "               OpBranch %79",
+            "         %70 = OpLabel",
+            "               OpBranch %79",
+            "               OpFunctionEnd",
+        ]
+        .join("\n");
+        let expected = [
+            "               OpCapability Shader",
+            "               OpMemoryModel Logical Simple",
+            "               OpEntryPoint Fragment %100 \"main\"",
+            "               OpExecutionMode %100 OriginUpperLeft",
+            "               OpName %1 \"var\"",
+            "          %2 = OpTypeVoid",
+            "          %3 = OpTypeFunction %2",
+            "          %4 = OpTypeBool",
+            "          %5 = OpConstantNull %4",
+            "          %6 = OpConstantTrue %4",
+            "          %7 = OpConstantFalse %4",
+            "          %8 = OpTypeInt 32 0",
+            "          %9 = OpTypeInt 32 1",
+            "         %11 = OpConstant %8 42",
+            "         %12 = OpConstant %9 42",
+            "         %13 = OpTypeFunction %8",
+            "         %14 = OpConstant %8 0",
+            "         %15 = OpConstant %8 1",
+            "         %16 = OpConstant %8 2",
+            "         %17 = OpConstant %8 3",
+            "         %18 = OpConstant %8 4",
+            "         %19 = OpConstant %8 5",
+            "         %21 = OpConstant %8 6",
+            "         %22 = OpConstant %8 7",
+            "         %23 = OpConstant %8 8",
+            "         %24 = OpConstant %8 10",
+            "         %25 = OpConstant %8 20",
+            "         %26 = OpConstant %8 30",
+            "         %27 = OpConstant %8 40",
+            "         %28 = OpConstant %8 50",
+            "         %29 = OpConstant %8 90",
+            "         %31 = OpConstant %8 99",
+            "         %32 = OpTypePointer Private %8",
+            "          %1 = OpVariable %32 Private",
+            "         %33 = OpConstant %8 999",
+            "        %100 = OpFunction %2 None %3",
+            "         %10 = OpLabel",
+            "               OpSelectionMerge %99 None",
+            "               OpBranchConditional %5 %20 %50",
+            "         %20 = OpLabel",
+            "               OpSelectionMerge %49 None",
+            "               OpBranchConditional %5 %30 %40",
+            "         %30 = OpLabel",
+            "               OpBranch %49",
+            "         %40 = OpLabel",
+            "               OpBranch %49",
+            "         %49 = OpLabel",
+            "               OpBranch %99",
+            "         %50 = OpLabel",
+            "               OpSelectionMerge %79 None",
+            "               OpBranchConditional %5 %60 %70",
+            "         %60 = OpLabel",
+            "               OpBranch %79",
+            "         %70 = OpLabel",
+            "               OpBranch %79",
+            "         %79 = OpLabel",
+            "               OpBranch %99",
+            "         %99 = OpLabel",
+            "               OpReturn",
+            "               OpFunctionEnd",
+        ]
+        .join("\n")
+            + "\n";
         let output = encode_and_decode_fixture(
-            input,
+            &input,
             BinaryToTextOptions::INDENT | BinaryToTextOptions::REORDER_BLOCKS,
             TextToBinaryOptions::PRESERVE_NUMERIC_IDS,
         );
@@ -2642,12 +2655,14 @@ OpFunctionEnd
 
     #[test]
     fn disassembly_formats_literals_as_hex() {
-        let text = "\
-OpCapability Shader\n\
-OpMemoryModel Logical GLSL450\n\
-%uint = OpTypeInt 32 0\n\
-%val = OpConstant %uint 42\n";
-        let binary = assemble_text(text).expect("assemble");
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%uint = OpTypeInt 32 0",
+            "%val = OpConstant %uint 42",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
         let options = BinaryToTextOptions::NO_HEADER | BinaryToTextOptions::HEX;
         let output = disassemble_binary(&binary, options).expect("disassemble");
         assert!(output.contains("0x0000002a"), "{output}");
@@ -3140,12 +3155,14 @@ OpMemoryModel Logical GLSL450\n\
 
     #[test]
     fn hex_option_overrides_constant_formatting() {
-        let text = "\
-OpCapability Shader\n\
-OpMemoryModel Logical GLSL450\n\
-%int = OpTypeInt 32 1\n\
-%val = OpConstant %int -42\n";
-        let binary = assemble_text(text).expect("assemble text");
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%int = OpTypeInt 32 1",
+            "%val = OpConstant %int -42",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble text");
         let options = BinaryToTextOptions::HEX | BinaryToTextOptions::NO_HEADER;
         let disassembled = disassemble_binary(&binary, options).expect("disassemble");
         assert!(disassembled.contains("0xffffffd6"), "{disassembled}");
@@ -3153,16 +3170,18 @@ OpMemoryModel Logical GLSL450\n\
 
     #[test]
     fn nested_indent_inserts_blank_line_before_labels() {
-        let text = "\
-OpCapability Shader\n\
-OpMemoryModel Logical GLSL450\n\
-%void = OpTypeVoid\n\
-%fn = OpTypeFunction %void\n\
-%main = OpFunction %void None %fn\n\
-%entry = OpLabel\n\
-OpReturn\n\
-OpFunctionEnd\n";
-        let binary = assemble_text(text).expect("assemble text");
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble text");
         let options = BinaryToTextOptions::NO_HEADER
             | BinaryToTextOptions::INDENT
             | BinaryToTextOptions::NESTED_INDENT;
