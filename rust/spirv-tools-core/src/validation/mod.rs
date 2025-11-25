@@ -3093,7 +3093,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn entry_point_function_must_reference_function_op() {
         let binary = vec![
             0x07230203, // magic
