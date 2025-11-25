@@ -1,4 +1,7 @@
-use crate::version::{SpirvVersion, VulkanVersion};
+use crate::{
+    validation::ExtensionName,
+    version::{SpirvVersion, VulkanVersion},
+};
 
 /// Rust representation of `spv_target_env`.
 #[repr(u32)]
@@ -409,24 +412,20 @@ impl TargetEnv {
     ///
     /// The WebGPU environment forbids all extensions; other environments currently allow
     /// all extensions until a full allowlist is ported. Vulkan-only extensions are
-    /// rejected for non-Vulkan environments.
-    pub fn is_extension_allowed(self, extension: &str) -> bool {
-        let lower = extension.to_ascii_lowercase();
-        match self {
-            TargetEnv::WebGpu0 => {
-                // WebGPU environments disallow vendor and KHR extensions entirely.
-                let _ = lower;
-                false
-            }
-            env if is_vulkan_env(env) => true,
-            _ => {
-                // Guard Vulkan-specific extensions outside of Vulkan environments.
-                if lower.contains("vulkan") {
-                    return false;
-                }
-                true
-            }
+    /// rejected for non-Vulkan environments. OpenCL-specific extensions are rejected
+    /// outside OpenCL environments.
+    pub fn is_extension_allowed(self, extension: &ExtensionName) -> bool {
+        let lower = extension.as_str().to_ascii_lowercase();
+        if matches!(self, TargetEnv::WebGpu0) {
+            return false;
         }
+        if lower.contains("opencl") && !self.is_opencl() {
+            return false;
+        }
+        if lower.contains("vulkan") && !self.is_vulkan() {
+            return false;
+        }
+        true
     }
 
     /// Returns whether a capability is permitted for this target environment.
@@ -437,6 +436,13 @@ impl TargetEnv {
     /// ported from the C++ validator tables.
     pub fn is_capability_allowed(self, capability: rspirv::spirv::Capability) -> bool {
         use rspirv::spirv::Capability::*;
+        let opencl_only = matches!(
+            capability,
+            Kernel | Addresses | GenericPointer | DeviceEnqueue | Pipes
+        );
+        if opencl_only {
+            return self.is_opencl();
+        }
         match self {
             TargetEnv::WebGpu0 => capability == Shader,
             TargetEnv::OpenCl1_2
@@ -450,18 +456,6 @@ impl TargetEnv {
             _ => capability != Kernel,
         }
     }
-}
-
-const fn is_vulkan_env(env: TargetEnv) -> bool {
-    matches!(
-        env,
-        TargetEnv::Vulkan1_0
-            | TargetEnv::Vulkan1_1
-            | TargetEnv::Vulkan1_1Spirv1_4
-            | TargetEnv::Vulkan1_2
-            | TargetEnv::Vulkan1_3
-            | TargetEnv::Vulkan1_4
-    )
 }
 
 impl From<TargetEnv> for u32 {

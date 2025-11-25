@@ -84,6 +84,7 @@ Tasks for this milestone:
 - [x] Add an environment-aware extension validation hook (`DisallowedExtension`) so target-specific allowlists can be enforced.
 - [x] Reject extensions for WebGPU environments; extend per-target-environment allowlists in `TargetEnv::is_extension_allowed` with regression tests.
 - [x] Begin capability allowlists: WebGPU only allows Shader; Vulkan/OpenGL/Universal reject Kernel; OpenCL rejects Shader. Enforced during layout validation with regression tests.
+- [x] Add typed extension names plus env-aware extension gating (Vulkan/OpenCL prefix rules) and capability→extension dependencies (ray tracing, mesh shading, fragment shading rate/interlock, atomic float add/min/max, tile shading).
 - [ ] Enforce capability allowlists per target environment and surface typed diagnostics.
 - [ ] Broaden decoration/category constraints (capability/extension ordering, decoration target categories) with paired text/binary tests.
 - [ ] Cache validated modules across CLI/FFI invocations when the same input is reused, avoiding redundant parsing/validation.

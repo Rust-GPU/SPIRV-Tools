@@ -1,9 +1,10 @@
-use std::collections::hash_map::DefaultHasher;
-use std::collections::{HashMap, HashSet};
-use std::fmt;
-use std::hash::{Hash, Hasher};
-use std::num::NonZeroU32;
-use std::sync::Arc;
+use std::{
+    collections::{hash_map::DefaultHasher, HashMap, HashSet},
+    fmt,
+    hash::{Hash, Hasher},
+    num::NonZeroU32,
+    sync::Arc,
+};
 
 use rspirv::dr::Module;
 use thiserror::Error;
@@ -87,28 +88,53 @@ impl CapabilitySet {
 }
 
 /// A set of declared extensions for a module.
+/// Strongly-typed extension name to avoid raw string misuse.
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct ExtensionName(String);
+
+impl ExtensionName {
+    /// Returns the underlying extension name as a string slice.
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl From<&str> for ExtensionName {
+    fn from(value: &str) -> Self {
+        ExtensionName(value.to_string())
+    }
+}
+
+impl From<String> for ExtensionName {
+    fn from(value: String) -> Self {
+        ExtensionName(value)
+    }
+}
+
+impl std::fmt::Display for ExtensionName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+/// A set of declared extensions for a module.
 #[derive(Debug, Default)]
 struct ExtensionSet {
-    values: HashSet<String>,
+    values: HashSet<ExtensionName>,
 }
 
 impl ExtensionSet {
-    fn insert_unchecked(&mut self, extension: &str) -> Result<(), ValidationError> {
-        if !self.values.insert(extension.to_string()) {
-            return Err(ValidationError::DuplicateExtension {
-                extension: extension.to_string(),
-            });
+    fn insert_unchecked(&mut self, extension: ExtensionName) -> Result<(), ValidationError> {
+        if !self.values.insert(extension.clone()) {
+            return Err(ValidationError::DuplicateExtension { extension });
         }
         Ok(())
     }
 
-    fn insert(&mut self, extension: &str, env: TargetEnv) -> Result<(), ValidationError> {
-        self.insert_unchecked(extension)?;
-        if !env.is_extension_allowed(extension) {
-            return Err(ValidationError::DisallowedExtension {
-                extension: extension.to_string(),
-                env,
-            });
+    fn insert(&mut self, extension: ExtensionName, env: TargetEnv) -> Result<(), ValidationError> {
+        self.insert_unchecked(extension.clone())?;
+        if !env.is_extension_allowed(&extension) {
+            return Err(ValidationError::DisallowedExtension { extension, env });
         }
         Ok(())
     }
@@ -488,17 +514,25 @@ pub enum ValidationError {
         /// The target environment in use.
         env: TargetEnv,
     },
+    /// A capability requires an extension that was not declared.
+    #[error("capability {capability:?} requires extension {required_extension}")]
+    DisallowedCapabilityMissingExtension {
+        /// The capability that was not allowed.
+        capability: rspirv::spirv::Capability,
+        /// The required extension name.
+        required_extension: String,
+    },
     /// Duplicate extension declarations were found.
     #[error("extension {extension} is declared more than once")]
     DuplicateExtension {
         /// The extension name that was duplicated.
-        extension: String,
+        extension: ExtensionName,
     },
     /// An extension was declared that is not permitted in the target environment.
     #[error("extension {extension} is not allowed for target environment {env:?}")]
     DisallowedExtension {
         /// The extension name that is not allowed.
-        extension: String,
+        extension: ExtensionName,
         /// The target environment in use.
         env: TargetEnv,
     },
@@ -765,7 +799,8 @@ fn validate_words(words: ModuleWords, env: TargetEnv) -> Result<ValidModule, Val
     let header = ValidatedHeader::from_module(&module)?;
     let defined_ids = validate_id_bound(&module, header)?;
     let opcodes = collect_result_opcodes(&module);
-    validate_extensions(&module, env)?;
+    let extensions = validate_extensions(&module, env)?;
+    validate_capabilities(&module, env, &extensions)?;
     validate_memory_model(&module)?;
     validate_member_decorations(&module, &defined_ids)?;
     validate_decoration_groups(&module, &defined_ids)?;
@@ -1007,24 +1042,82 @@ fn capability_operand(inst: &rspirv::dr::Instruction) -> Option<rspirv::spirv::C
     })
 }
 
-fn extension_operand(inst: &rspirv::dr::Instruction) -> Option<&str> {
+fn validate_capabilities(
+    module: &Module,
+    env: TargetEnv,
+    extensions: &ExtensionSet,
+) -> Result<(), ValidationError> {
+    for inst in &module.capabilities {
+        if let Some(capability) = capability_operand(inst) {
+            if !env.is_capability_allowed(capability) {
+                return Err(ValidationError::DisallowedCapability { capability, env });
+            }
+            if let Some(required_ext) = required_extension_for_capability(capability) {
+                if !extensions
+                    .values
+                    .iter()
+                    .any(|ext| ext.as_str() == required_ext)
+                {
+                    return Err(ValidationError::DisallowedCapabilityMissingExtension {
+                        capability,
+                        required_extension: required_ext.to_string(),
+                    });
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn required_extension_for_capability(
+    capability: rspirv::spirv::Capability,
+) -> Option<&'static str> {
+    use rspirv::spirv::Capability::*;
+    match capability {
+        RayTracingNV => Some("SPV_NV_ray_tracing"),
+        RayTracingKHR => Some("SPV_KHR_ray_tracing"),
+        RayQueryKHR => Some("SPV_KHR_ray_query"),
+        RayTracingPositionFetchKHR => Some("SPV_KHR_ray_tracing_position_fetch"),
+        CooperativeMatrixNV => Some("SPV_NV_cooperative_matrix"),
+        MeshShadingNV => Some("SPV_NV_mesh_shader"),
+        MeshShadingEXT => Some("SPV_EXT_mesh_shader"),
+        FragmentShadingRateKHR => Some("SPV_KHR_fragment_shading_rate"),
+        FragmentDensityEXT => Some("SPV_EXT_fragment_invocation_density"),
+        FragmentShaderSampleInterlockEXT
+        | FragmentShaderShadingRateInterlockEXT
+        | FragmentShaderPixelInterlockEXT => Some("SPV_EXT_fragment_shader_interlock"),
+        ImageFootprintNV => Some("SPV_NV_shader_image_footprint"),
+        AtomicFloat32MinMaxEXT | AtomicFloat64MinMaxEXT | AtomicFloat16MinMaxEXT => {
+            Some("SPV_EXT_shader_atomic_float_min_max")
+        }
+        AtomicFloat16AddEXT | AtomicFloat32AddEXT | AtomicFloat64AddEXT => {
+            Some("SPV_EXT_shader_atomic_float_add")
+        }
+        AtomicFloat16VectorNV => Some("SPV_NV_shader_atomic_float"),
+        ShaderSMBuiltinsNV => Some("SPV_NV_shader_sm_builtins"),
+        TileShadingQCOM => Some("SPV_QCOM_tile_shading"),
+        _ => None,
+    }
+}
+
+fn extension_operand(inst: &rspirv::dr::Instruction) -> Option<ExtensionName> {
     inst.operands.iter().find_map(|operand| {
         if let rspirv::dr::Operand::LiteralString(extension) = operand {
-            Some(extension.as_str())
+            Some(ExtensionName::from(extension.as_str()))
         } else {
             None
         }
     })
 }
 
-fn validate_extensions(module: &Module, env: TargetEnv) -> Result<(), ValidationError> {
+fn validate_extensions(module: &Module, env: TargetEnv) -> Result<ExtensionSet, ValidationError> {
     let mut extensions = ExtensionSet::default();
     for inst in &module.extensions {
         if let Some(extension) = extension_operand(inst) {
             extensions.insert(extension, env)?;
         }
     }
-    Ok(())
+    Ok(extensions)
 }
 
 fn member_decoration_target(inst: &rspirv::dr::Instruction) -> Option<MemberDecorationTargetId> {
@@ -1350,8 +1443,8 @@ fn validate_instruction_ids(
 #[cfg(test)]
 mod tests {
     use super::{
-        validate_module, CheckedBound, DeclaredBound, DecorationTargetId, Id, IdKind,
-        MaybeValidModule, ModuleWords, Schema, ValidModuleCache, ValidatableModule,
+        validate_module, CheckedBound, DeclaredBound, DecorationTargetId, ExtensionName, Id,
+        IdKind, MaybeValidModule, ModuleWords, Schema, ValidModuleCache, ValidatableModule,
         ValidationError,
     };
     use crate::assembly::assemble_text;
@@ -1657,6 +1750,32 @@ mod tests {
     }
 
     #[test]
+    fn vulkan_rejects_opencl_only_capabilities() {
+        let text = [
+            "OpCapability DeviceEnqueue",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect_err("Vulkan should reject DeviceEnqueue capability");
+        assert_eq!(
+            error,
+            ValidationError::DisallowedCapability {
+                capability: rspirv::spirv::Capability::DeviceEnqueue,
+                env: TargetEnv::Vulkan1_2
+            }
+        );
+    }
+
+    #[test]
     fn webgpu_rejects_non_shader_capabilities() {
         let text = [
             "OpCapability Kernel",
@@ -1729,8 +1848,35 @@ mod tests {
         assert_eq!(
             error,
             ValidationError::DisallowedExtension {
-                extension: "SPV_KHR_vulkan_memory_model".to_string(),
+                extension: ExtensionName::from("SPV_KHR_vulkan_memory_model"),
                 env: TargetEnv::OpenCl2_2
+            }
+        );
+    }
+
+    #[test]
+    fn non_opencl_env_rejects_opencl_extension() {
+        let text = [
+            "OpCapability Shader",
+            "OpExtension \"SPV_KHR_opencl_enqueue\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect_err("Vulkan should reject OpenCL-specific extension");
+        assert_eq!(
+            error,
+            ValidationError::DisallowedExtension {
+                extension: ExtensionName::from("SPV_KHR_opencl_enqueue"),
+                env: TargetEnv::Vulkan1_2
             }
         );
     }
@@ -1761,6 +1907,50 @@ mod tests {
             Arc::as_ptr(&second),
             "cached entries should reuse the same allocation"
         );
+    }
+
+    #[test]
+    fn capability_requiring_extension_must_declare_it() {
+        let text = [
+            "OpCapability RayTracingKHR",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect_err("capability should require extension");
+        assert_eq!(
+            error,
+            ValidationError::DisallowedCapabilityMissingExtension {
+                capability: rspirv::spirv::Capability::RayTracingKHR,
+                required_extension: "SPV_KHR_ray_tracing".to_string()
+            }
+        );
+
+        let text_with_extension = [
+            "OpCapability RayTracingKHR",
+            "OpExtension \"SPV_KHR_ray_tracing\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let validated = text_with_extension
+            .as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("extension present should allow capability");
+        assert_eq!(validated.header().schema(), Schema::ZERO);
     }
 
     #[test]
@@ -1806,7 +1996,7 @@ mod tests {
         assert_eq!(
             error,
             ValidationError::DuplicateExtension {
-                extension: "SPV_KHR_ray_tracing".to_string()
+                extension: ExtensionName::from("SPV_KHR_ray_tracing")
             }
         );
     }
@@ -1827,7 +2017,7 @@ mod tests {
         .join("\n");
 
         let expected_error = ValidationError::DisallowedExtension {
-            extension: "SPV_KHR_ray_tracing".to_string(),
+            extension: ExtensionName::from("SPV_KHR_ray_tracing"),
             env: TargetEnv::WebGpu0,
         };
 
