@@ -22,6 +22,22 @@ pub struct TypeId(Id);
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct OperandId(Id);
 
+/// Decoration targets (non-zero ids referenced by decoration instructions).
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct DecorationTargetId(OperandId);
+
+/// A set of declared capabilities for a module.
+#[derive(Debug, Default)]
+struct CapabilitySet {
+    values: HashSet<rspirv::spirv::Capability>,
+}
+
+impl CapabilitySet {
+    fn insert(&mut self, capability: rspirv::spirv::Capability) {
+        self.values.insert(capability);
+    }
+}
+
 impl Id {
     /// Wraps an existing non-zero id.
     pub fn new(value: NonZeroU32) -> Self {
@@ -76,6 +92,30 @@ macro_rules! id_wrapper {
 id_wrapper!(ResultId);
 id_wrapper!(TypeId);
 id_wrapper!(OperandId);
+
+impl DecorationTargetId {
+    /// Wraps a non-zero operand id in a decoration target.
+    pub fn new(id: OperandId) -> Self {
+        Self(id)
+    }
+
+    /// Returns the underlying operand id.
+    pub fn into_inner(self) -> OperandId {
+        self.0
+    }
+}
+
+impl From<NonZeroU32> for DecorationTargetId {
+    fn from(value: NonZeroU32) -> Self {
+        DecorationTargetId::new(OperandId::from(value))
+    }
+}
+
+impl From<DecorationTargetId> for Id {
+    fn from(value: DecorationTargetId) -> Self {
+        value.0.into_inner()
+    }
+}
 
 impl From<Id> for u32 {
     fn from(id: Id) -> Self {
@@ -323,6 +363,7 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
         memory_model_state: MemoryModelState,
         current_section: Section,
         function_state: FunctionState,
+        capabilities: CapabilitySet,
     }
 
     impl LayoutChecker {
@@ -331,6 +372,7 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
                 memory_model_state: MemoryModelState::new(),
                 current_section: Section::Capabilities,
                 function_state: FunctionState::Outside,
+                capabilities: CapabilitySet::default(),
             }
         }
     }
@@ -383,6 +425,11 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
                         return rspirv::binary::ParseAction::Error(Box::new(err));
                     }
                     self.current_section = self.current_section.max(Section::MemoryModel);
+                }
+                rspirv::spirv::Op::Capability => {
+                    if let Some(cap) = capability_operand(&inst) {
+                        self.capabilities.insert(cap);
+                    }
                 }
                 rspirv::spirv::Op::Function => {
                     if !self.memory_model_state.is_seen() {
@@ -438,6 +485,30 @@ fn section_index(opcode: rspirv::spirv::Op) -> Section {
         Function => Section::Functions,
         _ => Section::TypesGlobals,
     }
+}
+
+fn capability_operand(inst: &rspirv::dr::Instruction) -> Option<rspirv::spirv::Capability> {
+    inst.operands.iter().find_map(|operand| {
+        if let rspirv::dr::Operand::Capability(cap) = operand {
+            Some(*cap)
+        } else {
+            None
+        }
+    })
+}
+
+fn is_decoration_opcode(opcode: rspirv::spirv::Op) -> bool {
+    use rspirv::spirv::Op::*;
+    matches!(
+        opcode,
+        Decorate
+            | DecorateId
+            | DecorateString
+            | MemberDecorate
+            | MemberDecorateString
+            | GroupDecorate
+            | GroupMemberDecorate
+    )
 }
 
 fn check_id(id: Id, bound: CheckedBound) -> Option<ValidationError> {
@@ -498,8 +569,12 @@ fn validate_id_bound(module: &Module) -> Result<(), ValidationError> {
         for operand in &instruction.operands {
             if let rspirv::dr::Operand::IdRef(id) = operand {
                 if let Some(raw_operand) = NonZeroU32::new(*id) {
-                    let operand_id = OperandId::from(raw_operand);
-                    if let Some(error) = check_id(operand_id.into_inner(), bound) {
+                    let id = if is_decoration_opcode(instruction.class.opcode) {
+                        Id::from(DecorationTargetId::from(raw_operand))
+                    } else {
+                        Id::from(OperandId::from(raw_operand))
+                    };
+                    if let Some(error) = check_id(id, bound) {
                         return Err(error);
                     }
                 }
