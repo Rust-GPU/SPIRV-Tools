@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::num::NonZeroU32;
 
 use rspirv::dr::Module;
 use thiserror::Error;
@@ -14,6 +15,9 @@ pub enum ValidationError {
     /// The module header is missing.
     #[error("module header is missing")]
     MissingHeader,
+    /// The module is missing the required `OpMemoryModel` instruction.
+    #[error("OpMemoryModel is required before any function definitions")]
+    MissingMemoryModel,
     /// The module declared an invalid id bound (must be greater than zero).
     #[error("declared id bound {bound} is invalid")]
     InvalidIdBound {
@@ -46,6 +50,7 @@ pub fn validate_module(words: &[u32], _env: TargetEnv) -> Result<(), ValidationE
     let module = loader.module();
     validate_header(&module)?;
     validate_id_bound(&module)?;
+    validate_memory_model(&module)?;
     Ok(())
 }
 
@@ -56,15 +61,22 @@ fn validate_header(module: &Module) -> Result<(), ValidationError> {
     Ok(())
 }
 
+fn validate_memory_model(module: &Module) -> Result<(), ValidationError> {
+    if module.memory_model.is_none() {
+        return Err(ValidationError::MissingMemoryModel);
+    }
+    Ok(())
+}
+
 fn validate_id_bound(module: &Module) -> Result<(), ValidationError> {
     let header = module
         .header
         .as_ref()
         .ok_or(ValidationError::MissingHeader)?;
-    let bound = header.bound;
-    if bound == 0 {
-        return Err(ValidationError::InvalidIdBound { bound });
-    }
+    let bound = NonZeroU32::new(header.bound).ok_or(ValidationError::InvalidIdBound {
+        bound: header.bound,
+    })?;
+    let bound_value = bound.get();
     let mut results = HashMap::new();
 
     let check_id = |id: u32, bound: u32| {
@@ -83,13 +95,13 @@ fn validate_id_bound(module: &Module) -> Result<(), ValidationError> {
             if results.insert(id, ()).is_some() {
                 return Err(ValidationError::DuplicateResultId { id });
             }
-            if let Some(error) = check_id(id, bound) {
+            if let Some(error) = check_id(id, bound_value) {
                 return Err(error);
             }
         }
         for operand in &instruction.operands {
             if let rspirv::dr::Operand::IdRef(id) = operand {
-                if let Some(error) = check_id(*id, bound) {
+                if let Some(error) = check_id(*id, bound_value) {
                     return Err(error);
                 }
             }
@@ -120,6 +132,19 @@ mod tests {
         binary[3] = 1;
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(error, ValidationError::IdExceedsBound { id: 1, bound: 1 });
+    }
+
+    #[test]
+    fn validate_module_requires_memory_model() {
+        let text = [
+            "OpCapability Shader",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(error, ValidationError::MissingMemoryModel);
     }
 
     #[test]
