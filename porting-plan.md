@@ -179,5 +179,6 @@ Percentages are approximate and will be updated as new checklists are added for 
 
 ## Next Up
 1. Broaden structural validation for decoration target categories and capability/extension ordering (text + binary coverage), keeping parity with the C++ validator tables.
+   - Added layout-order regression tests for section ordering (ExtInstImport, debug/names/annotations) and BuiltIn target categories to lock in current behavior.
 2. Push validated-module caching deeper through FFI/CLI entry points to avoid reparsing/validating identical inputs.
 3. Fill in remaining SPIR-V version gating and per-instruction requirements from the grammar, then revisit disassembly fixtures once validator parity is solid.
