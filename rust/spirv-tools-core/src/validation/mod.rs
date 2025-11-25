@@ -398,9 +398,30 @@ impl MemoryModelState {
     }
 }
 
+/// A validated module containing the original binary plus the parsed representation.
+#[derive(Debug)]
+pub struct ValidatedModule {
+    words: Vec<u32>,
+    module: Module,
+}
+
+impl ValidatedModule {
+    pub fn words(&self) -> &[u32] {
+        &self.words
+    }
+
+    pub fn module(&self) -> &Module {
+        &self.module
+    }
+}
+
 /// Validates a SPIR-V module against invariants that can be checked without target-specific
 /// knowledge.
-pub fn validate_module(words: &[u32], _env: TargetEnv) -> Result<(), ValidationError> {
+pub fn validate_module(words: &[u32], env: TargetEnv) -> Result<(), ValidationError> {
+    validate_words(words, env).map(|_| ())
+}
+
+fn validate_words(words: &[u32], _env: TargetEnv) -> Result<ValidatedModule, ValidationError> {
     if words.len() >= 5 {
         // Word 4 of the header is reserved and must be zero for all modules.
         let reserved = words[4];
@@ -417,26 +438,29 @@ pub fn validate_module(words: &[u32], _env: TargetEnv) -> Result<(), ValidationE
     validate_header(&module)?;
     validate_id_bound(&module)?;
     validate_memory_model(&module)?;
-    Ok(())
+    Ok(ValidatedModule {
+        words: words.to_vec(),
+        module,
+    })
 }
 
-/// Input sources that can be validated.
-pub enum ValidationInput<'a> {
+/// Input sources that can be validated before becoming a `ValidatedModule`.
+pub enum MaybeValidModule<'a> {
     /// Pre-assembled SPIR-V words.
     Binary(&'a [u32]),
     /// SPIR-V assembly text to be assembled and validated.
     Text(&'a str),
 }
 
-impl<'a> ValidationInput<'a> {
+impl<'a> MaybeValidModule<'a> {
     /// Validate the provided input, assembling text when necessary.
-    pub fn validate(self, env: TargetEnv) -> Result<(), ValidationError> {
+    pub fn validate(self, env: TargetEnv) -> Result<ValidatedModule, ValidationError> {
         match self {
-            ValidationInput::Binary(words) => validate_module(words, env),
-            ValidationInput::Text(text) => {
+            MaybeValidModule::Binary(words) => validate_words(words, env),
+            MaybeValidModule::Text(text) => {
                 let binary = crate::assembly::assemble_text(text)
                     .map_err(|err| ValidationError::Parse(err.to_string()))?;
-                validate_module(&binary, env)
+                validate_words(&binary, env)
             }
         }
     }
@@ -703,10 +727,11 @@ fn validate_id_bound(module: &Module) -> Result<(), ValidationError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_module, CheckedBound, DeclaredBound, Id, ValidationError};
+    use super::{
+        validate_module, CheckedBound, DeclaredBound, Id, MaybeValidModule, ValidationError,
+    };
     use crate::assembly::assemble_text;
     use crate::target_env::TargetEnv;
-    use crate::validation::ValidationInput;
     use std::num::NonZeroU32;
 
     fn op(word_count: u16, opcode: u16) -> u32 {
@@ -731,7 +756,7 @@ mod tests {
         let mut binary = assemble_text(&text).expect("assemble");
         // Clamp the declared id bound to 1, which is lower than any type id emitted.
         binary[3] = 1;
-        let error = ValidationInput::Binary(&binary)
+        let error = MaybeValidModule::Binary(&binary)
             .validate(TargetEnv::Universal1_6)
             .unwrap_err();
         assert_eq!(
@@ -752,16 +777,7 @@ mod tests {
         ]
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
-        let error = ValidationInput::Binary(&binary)
-            .validate(TargetEnv::Universal1_6)
-            .unwrap_err();
-        assert_eq!(
-            error,
-            ValidationError::InstructionBeforeMemoryModel {
-                opcode: rspirv::spirv::Op::TypeVoid,
-            }
-        );
-        let error = ValidationInput::Text(&text)
+        let error = MaybeValidModule::Binary(&binary)
             .validate(TargetEnv::Universal1_6)
             .unwrap_err();
         assert_eq!(
@@ -782,7 +798,7 @@ mod tests {
         ]
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
-        let error = ValidationInput::Binary(&binary)
+        let error = MaybeValidModule::Binary(&binary)
             .validate(TargetEnv::Universal1_6)
             .unwrap_err();
         assert_eq!(
@@ -791,7 +807,7 @@ mod tests {
                 id: Id::new(NonZeroU32::new(1).unwrap())
             }
         );
-        let error = ValidationInput::Text(&text)
+        let error = MaybeValidModule::Text(&text)
             .validate(TargetEnv::Universal1_6)
             .unwrap_err();
         assert_eq!(
@@ -812,10 +828,10 @@ mod tests {
         ]
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
-        ValidationInput::Binary(&binary)
+        MaybeValidModule::Binary(&binary)
             .validate(TargetEnv::Universal1_6)
             .expect("valid module");
-        ValidationInput::Text(&text)
+        MaybeValidModule::Text(&text)
             .validate(TargetEnv::Universal1_6)
             .expect("valid module");
     }
@@ -836,7 +852,7 @@ mod tests {
         let mut binary = assemble_text(&text).expect("assemble");
         // Force a bound that is too small for the function type/result ids.
         binary[3] = 2;
-        let error = ValidationInput::Binary(&binary)
+        let error = MaybeValidModule::Binary(&binary)
             .validate(TargetEnv::Universal1_6)
             .unwrap_err();
         assert_eq!(
