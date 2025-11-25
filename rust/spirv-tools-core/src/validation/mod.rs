@@ -26,6 +26,17 @@ pub struct OperandId(Id);
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct DecorationTargetId(OperandId);
 
+/// Member decoration targets capture the struct id plus the member index.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct MemberDecorationTargetId {
+    target: DecorationTargetId,
+    member: MemberIndex,
+}
+
+/// A struct member index (can be zero).
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct MemberIndex(u32);
+
 /// A set of declared capabilities for a module.
 #[derive(Debug, Default)]
 struct CapabilitySet {
@@ -114,6 +125,35 @@ impl From<NonZeroU32> for DecorationTargetId {
 impl From<DecorationTargetId> for Id {
     fn from(value: DecorationTargetId) -> Self {
         value.0.into_inner()
+    }
+}
+
+impl MemberDecorationTargetId {
+    /// Creates a member decoration target from a struct id and member index.
+    pub fn new(target: DecorationTargetId, member: MemberIndex) -> Self {
+        Self { target, member }
+    }
+
+    /// Returns the struct id being decorated.
+    pub fn target(self) -> DecorationTargetId {
+        self.target
+    }
+
+    /// Returns the member index being decorated.
+    pub fn member(self) -> MemberIndex {
+        self.member
+    }
+}
+
+impl MemberIndex {
+    /// Constructs a member index from a raw literal (zero is allowed).
+    pub fn new(raw: u32) -> Self {
+        Self(raw)
+    }
+
+    /// Returns the underlying literal member index.
+    pub fn get(self) -> u32 {
+        self.0
     }
 }
 
@@ -497,18 +537,29 @@ fn capability_operand(inst: &rspirv::dr::Instruction) -> Option<rspirv::spirv::C
     })
 }
 
-fn is_decoration_opcode(opcode: rspirv::spirv::Op) -> bool {
+fn member_decoration_target(inst: &rspirv::dr::Instruction) -> Option<MemberDecorationTargetId> {
     use rspirv::spirv::Op::*;
-    matches!(
-        opcode,
-        Decorate
-            | DecorateId
-            | DecorateString
-            | MemberDecorate
-            | MemberDecorateString
-            | GroupDecorate
-            | GroupMemberDecorate
-    )
+    match inst.class.opcode {
+        MemberDecorate | MemberDecorateString => {
+            let mut operands = inst.operands.iter();
+            let target = operands.find_map(|op| {
+                if let rspirv::dr::Operand::IdRef(id) = op {
+                    NonZeroU32::new(*id).map(DecorationTargetId::from)
+                } else {
+                    None
+                }
+            })?;
+            let member_index = operands.find_map(|op| {
+                if let rspirv::dr::Operand::LiteralBit32(member) = op {
+                    Some(MemberIndex::new(*member))
+                } else {
+                    None
+                }
+            })?;
+            Some(MemberDecorationTargetId::new(target, member_index))
+        }
+        _ => None,
+    }
 }
 
 fn check_id(id: Id, bound: CheckedBound) -> Option<ValidationError> {
@@ -569,16 +620,19 @@ fn validate_id_bound(module: &Module) -> Result<(), ValidationError> {
         for operand in &instruction.operands {
             if let rspirv::dr::Operand::IdRef(id) = operand {
                 if let Some(raw_operand) = NonZeroU32::new(*id) {
-                    let id = if is_decoration_opcode(instruction.class.opcode) {
-                        Id::from(DecorationTargetId::from(raw_operand))
-                    } else {
-                        Id::from(OperandId::from(raw_operand))
-                    };
+                    let id = Id::from(OperandId::from(raw_operand));
                     if let Some(error) = check_id(id, bound) {
                         return Err(error);
                     }
                 }
             }
+        }
+
+        if let Some(member_target) = member_decoration_target(instruction) {
+            if let Some(error) = check_id(member_target.target().into_inner().into_inner(), bound) {
+                return Err(error);
+            }
+            // Member index itself is a literal and does not participate in bound checking.
         }
     }
 
