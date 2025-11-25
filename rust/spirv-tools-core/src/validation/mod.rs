@@ -706,6 +706,7 @@ mod tests {
     use super::{validate_module, CheckedBound, DeclaredBound, Id, ValidationError};
     use crate::assembly::assemble_text;
     use crate::target_env::TargetEnv;
+    use crate::validation::ValidationInput;
     use std::num::NonZeroU32;
 
     fn op(word_count: u16, opcode: u16) -> u32 {
@@ -730,7 +731,9 @@ mod tests {
         let mut binary = assemble_text(&text).expect("assemble");
         // Clamp the declared id bound to 1, which is lower than any type id emitted.
         binary[3] = 1;
-        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        let error = ValidationInput::Binary(&binary)
+            .validate(TargetEnv::Universal1_6)
+            .unwrap_err();
         assert_eq!(
             error,
             ValidationError::IdExceedsBound {
@@ -749,7 +752,18 @@ mod tests {
         ]
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
-        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        let error = ValidationInput::Binary(&binary)
+            .validate(TargetEnv::Universal1_6)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::InstructionBeforeMemoryModel {
+                opcode: rspirv::spirv::Op::TypeVoid,
+            }
+        );
+        let error = ValidationInput::Text(&text)
+            .validate(TargetEnv::Universal1_6)
+            .unwrap_err();
         assert_eq!(
             error,
             ValidationError::InstructionBeforeMemoryModel {
@@ -768,7 +782,18 @@ mod tests {
         ]
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
-        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        let error = ValidationInput::Binary(&binary)
+            .validate(TargetEnv::Universal1_6)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::DuplicateResultId {
+                id: Id::new(NonZeroU32::new(1).unwrap())
+            }
+        );
+        let error = ValidationInput::Text(&text)
+            .validate(TargetEnv::Universal1_6)
+            .unwrap_err();
         assert_eq!(
             error,
             ValidationError::DuplicateResultId {
@@ -787,7 +812,12 @@ mod tests {
         ]
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
-        validate_module(&binary, TargetEnv::Universal1_6).expect("valid module");
+        ValidationInput::Binary(&binary)
+            .validate(TargetEnv::Universal1_6)
+            .expect("valid module");
+        ValidationInput::Text(&text)
+            .validate(TargetEnv::Universal1_6)
+            .expect("valid module");
     }
 
     #[test]
@@ -806,7 +836,9 @@ mod tests {
         let mut binary = assemble_text(&text).expect("assemble");
         // Force a bound that is too small for the function type/result ids.
         binary[3] = 2;
-        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        let error = ValidationInput::Binary(&binary)
+            .validate(TargetEnv::Universal1_6)
+            .unwrap_err();
         assert_eq!(
             error,
             ValidationError::IdExceedsBound {
