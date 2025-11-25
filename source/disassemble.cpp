@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstring>
+#include <cstdlib>
 #include <iomanip>
 #include <ios>
 #include <iostream>
@@ -648,6 +649,15 @@ constexpr int kBlockBodyIndentOffset = 2;
 constexpr uint32_t kCommentColumn = 50;
 }  // namespace
 
+#if defined(SPIRV_RUST_TARGET_ENV)
+bool RustDisassemblerEnabled() {
+  const char* env = std::getenv("SPIRV_RUST_USE_DISASSEMBLER");
+  // Default to the C++ disassembler unless explicitly enabled.
+  if (!env || env[0] == '\0') return false;
+  return std::strcmp(env, "0") != 0;
+}
+#endif
+
 namespace disassemble {
 InstructionDisassembler::InstructionDisassembler(std::ostream& stream,
                                                  uint32_t options,
@@ -1136,7 +1146,9 @@ spv_result_t spvBinaryToText(const spv_const_context context,
   const bool rust_supports_options =
       spvtools::ffi::disassembler_supports_options(effective_options);
   const bool has_binary = code != nullptr || wordCount == 0;
-  if (has_rust_context && rust_supports_options && has_binary) {
+  if (spvtools::RustDisassemblerEnabled() && has_rust_context &&
+      rust_supports_options &&
+      has_binary) {
     ::rust::Slice<const uint32_t> binary_slice(code, wordCount);
     auto rust_result = spvtools::ffi::try_disassemble_binary(
         rust_context_handle, binary_slice, sanitized_options);
