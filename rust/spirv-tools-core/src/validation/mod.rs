@@ -7,7 +7,7 @@ use thiserror::Error;
 use crate::target_env::TargetEnv;
 
 /// Errors that can arise when validating a SPIR-V module.
-#[derive(Debug, Error, PartialEq, Eq)]
+#[derive(Debug, Error, PartialEq, Eq, Clone)]
 pub enum ValidationError {
     /// The module failed to parse before validation could run.
     #[error("failed to parse module: {0}")]
@@ -18,6 +18,12 @@ pub enum ValidationError {
     /// The module is missing the required `OpMemoryModel` instruction.
     #[error("OpMemoryModel is required before any function definitions")]
     MissingMemoryModel,
+    /// The module declared more than one memory model instruction.
+    #[error("multiple OpMemoryModel instructions are not allowed")]
+    DuplicateMemoryModel,
+    /// A function definition appeared before the memory model.
+    #[error("OpMemoryModel must appear before any function definitions")]
+    FunctionBeforeMemoryModel,
     /// The module declared an invalid id bound (must be greater than zero).
     #[error("declared id bound {bound} is invalid")]
     InvalidIdBound {
@@ -43,6 +49,7 @@ pub enum ValidationError {
 /// Validates a SPIR-V module against invariants that can be checked without target-specific
 /// knowledge.
 pub fn validate_module(words: &[u32], _env: TargetEnv) -> Result<(), ValidationError> {
+    run_layout_check(words)?;
     let mut loader = rspirv::dr::Loader::new();
     if let Err(error) = rspirv::binary::parse_words(words, &mut loader) {
         return Err(ValidationError::Parse(error.to_string()));
@@ -52,6 +59,75 @@ pub fn validate_module(words: &[u32], _env: TargetEnv) -> Result<(), ValidationE
     validate_id_bound(&module)?;
     validate_memory_model(&module)?;
     Ok(())
+}
+
+fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
+    struct LayoutChecker {
+        memory_models: usize,
+    }
+
+    impl LayoutChecker {
+        fn new() -> Self {
+            Self { memory_models: 0 }
+        }
+    }
+
+    impl rspirv::binary::Consumer for LayoutChecker {
+        fn initialize(&mut self) -> rspirv::binary::ParseAction {
+            rspirv::binary::ParseAction::Continue
+        }
+
+        fn finalize(&mut self) -> rspirv::binary::ParseAction {
+            if self.memory_models == 0 {
+                return rspirv::binary::ParseAction::Error(Box::new(
+                    ValidationError::MissingMemoryModel,
+                ));
+            }
+            rspirv::binary::ParseAction::Continue
+        }
+
+        fn consume_header(&mut self, _: rspirv::dr::ModuleHeader) -> rspirv::binary::ParseAction {
+            rspirv::binary::ParseAction::Continue
+        }
+
+        fn consume_instruction(
+            &mut self,
+            inst: rspirv::dr::Instruction,
+        ) -> rspirv::binary::ParseAction {
+            match inst.class.opcode {
+                rspirv::spirv::Op::MemoryModel => {
+                    self.memory_models += 1;
+                    if self.memory_models > 1 {
+                        return rspirv::binary::ParseAction::Error(Box::new(
+                            ValidationError::DuplicateMemoryModel,
+                        ));
+                    }
+                }
+                rspirv::spirv::Op::Function => {
+                    if self.memory_models == 0 {
+                        return rspirv::binary::ParseAction::Error(Box::new(
+                            ValidationError::FunctionBeforeMemoryModel,
+                        ));
+                    }
+                }
+                _ => {}
+            }
+            rspirv::binary::ParseAction::Continue
+        }
+    }
+
+    let mut checker = LayoutChecker::new();
+    match rspirv::binary::parse_words(words, &mut checker) {
+        Ok(()) => Ok(()),
+        Err(rspirv::binary::ParseState::ConsumerError(err)) => {
+            if let Some(validation) = err.downcast_ref::<ValidationError>() {
+                Err(validation.clone())
+            } else {
+                Err(ValidationError::Parse(err.to_string()))
+            }
+        }
+        Err(other) => Err(ValidationError::Parse(other.to_string())),
+    }
 }
 
 fn validate_header(module: &Module) -> Result<(), ValidationError> {
@@ -122,17 +198,26 @@ mod tests {
     use crate::assembly::assemble_text;
     use crate::target_env::TargetEnv;
 
+    fn op(word_count: u16, opcode: u16) -> u32 {
+        ((word_count as u32) << 16) | opcode as u32
+    }
+
     #[test]
     fn validate_module_rejects_missing_header() {
         let binary = vec![0x07230203, 0, 0, 0, 0];
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
-        assert_eq!(error, ValidationError::InvalidIdBound { bound: 0 });
+        assert_eq!(error, ValidationError::MissingMemoryModel);
     }
 
     #[test]
     fn validate_module_rejects_ids_beyond_bound() {
-        let text = "%void = OpTypeVoid";
-        let mut binary = assemble_text(text).expect("assemble");
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+        ]
+        .join("\n");
+        let mut binary = assemble_text(&text).expect("assemble");
         // Clamp the declared id bound to 1, which is lower than any type id emitted.
         binary[3] = 1;
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
@@ -154,7 +239,13 @@ mod tests {
 
     #[test]
     fn validate_module_detects_duplicate_result_ids() {
-        let text = ["%1 = OpTypeVoid", "%1 = OpTypeInt 32 0"].join("\n");
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%1 = OpTypeVoid",
+            "%1 = OpTypeInt 32 0",
+        ]
+        .join("\n");
         let binary = assemble_text(&text).expect("assemble");
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(error, ValidationError::DuplicateResultId { id: 1 });
@@ -191,5 +282,65 @@ mod tests {
         binary[3] = 2;
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(error, ValidationError::IdExceedsBound { id: 2, bound: 2 });
+    }
+
+    #[test]
+    fn validate_module_rejects_memory_model_after_function() {
+        // Manually build a module where OpMemoryModel appears after the function body.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version 1.0
+            0,          // generator
+            5,          // bound
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+            op(5, 54), // OpFunction %3
+            1,
+            3,
+            0,
+            2,
+            op(2, 248), // OpLabel %4
+            4,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+            op(3, 14),  // OpMemoryModel Logical GLSL450 (misordered)
+            0,
+            1,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(error, ValidationError::FunctionBeforeMemoryModel);
+    }
+
+    #[test]
+    fn validate_module_rejects_duplicate_memory_model() {
+        // Build a minimal module with two memory model instructions.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            5,
+            0,
+            op(2, 17), // OpCapability Shader
+            1,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(3, 14), // Duplicate OpMemoryModel
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(error, ValidationError::DuplicateMemoryModel);
     }
 }
