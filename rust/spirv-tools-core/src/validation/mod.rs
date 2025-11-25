@@ -6,6 +6,50 @@ use thiserror::Error;
 
 use crate::target_env::TargetEnv;
 
+/// A non-zero SPIR-V id.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct Id(NonZeroU32);
+
+impl Id {
+    /// Creates an `Id` if the raw value is non-zero.
+    pub fn new(raw: u32) -> Option<Self> {
+        NonZeroU32::new(raw).map(Self)
+    }
+
+    /// Returns the underlying non-zero id.
+    pub fn get(self) -> u32 {
+        self.0.get()
+    }
+}
+
+impl std::fmt::Display for Id {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+/// A declared upper bound for SPIR-V ids (must be non-zero).
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct IdBound(NonZeroU32);
+
+impl IdBound {
+    /// Creates an id bound if the raw value is non-zero.
+    pub fn new(raw: u32) -> Option<Self> {
+        NonZeroU32::new(raw).map(Self)
+    }
+
+    /// Returns the underlying non-zero bound value.
+    pub fn get(self) -> u32 {
+        self.0.get()
+    }
+}
+
+impl std::fmt::Display for IdBound {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 /// Errors that can arise when validating a SPIR-V module.
 #[derive(Debug, Error, PartialEq, Eq, Clone)]
 pub enum ValidationError {
@@ -46,15 +90,15 @@ pub enum ValidationError {
     #[error("id {id} exceeds declared id bound {bound}")]
     IdExceedsBound {
         /// The offending id value.
-        id: u32,
+        id: Id,
         /// The declared id bound from the module header.
-        bound: u32,
+        bound: IdBound,
     },
     /// Duplicate result ids were found in the module.
     #[error("id {id} is defined more than once")]
     DuplicateResultId {
         /// The result id that was defined multiple times.
-        id: u32,
+        id: Id,
     },
 }
 
@@ -235,17 +279,14 @@ fn validate_id_bound(module: &Module) -> Result<(), ValidationError> {
         .header
         .as_ref()
         .ok_or(ValidationError::MissingHeader)?;
-    let bound = NonZeroU32::new(header.bound).ok_or(ValidationError::InvalidIdBound {
+    let bound = IdBound::new(header.bound).ok_or(ValidationError::InvalidIdBound {
         bound: header.bound,
     })?;
-    let bound_value = bound.get();
     let mut results = HashMap::new();
 
-    let check_id = |id: u32, bound: u32| {
-        if id == 0 {
-            return None;
-        }
-        if id >= bound {
+    let check_id = |id: u32, bound: IdBound| {
+        let id = Id::new(id)?;
+        if id.get() >= bound.get() {
             Some(ValidationError::IdExceedsBound { id, bound })
         } else {
             None
@@ -254,21 +295,23 @@ fn validate_id_bound(module: &Module) -> Result<(), ValidationError> {
 
     for instruction in module.all_inst_iter() {
         if let Some(id) = instruction.result_id {
-            if results.insert(id, ()).is_some() {
-                return Err(ValidationError::DuplicateResultId { id });
+            if let Some(valid_id) = Id::new(id) {
+                if results.insert(valid_id, ()).is_some() {
+                    return Err(ValidationError::DuplicateResultId { id: valid_id });
+                }
             }
-            if let Some(error) = check_id(id, bound_value) {
+            if let Some(error) = check_id(id, bound) {
                 return Err(error);
             }
         }
         if let Some(result_type) = instruction.result_type {
-            if let Some(error) = check_id(result_type, bound_value) {
+            if let Some(error) = check_id(result_type, bound) {
                 return Err(error);
             }
         }
         for operand in &instruction.operands {
             if let rspirv::dr::Operand::IdRef(id) = operand {
-                if let Some(error) = check_id(*id, bound_value) {
+                if let Some(error) = check_id(*id, bound) {
                     return Err(error);
                 }
             }
@@ -280,7 +323,7 @@ fn validate_id_bound(module: &Module) -> Result<(), ValidationError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_module, ValidationError};
+    use super::{validate_module, Id, IdBound, ValidationError};
     use crate::assembly::assemble_text;
     use crate::target_env::TargetEnv;
 
@@ -307,7 +350,13 @@ mod tests {
         // Clamp the declared id bound to 1, which is lower than any type id emitted.
         binary[3] = 1;
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
-        assert_eq!(error, ValidationError::IdExceedsBound { id: 1, bound: 1 });
+        assert_eq!(
+            error,
+            ValidationError::IdExceedsBound {
+                id: Id::new(1).unwrap(),
+                bound: IdBound::new(1).unwrap()
+            }
+        );
     }
 
     #[test]
@@ -339,7 +388,12 @@ mod tests {
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
-        assert_eq!(error, ValidationError::DuplicateResultId { id: 1 });
+        assert_eq!(
+            error,
+            ValidationError::DuplicateResultId {
+                id: Id::new(1).unwrap()
+            }
+        );
     }
 
     #[test]
@@ -372,7 +426,13 @@ mod tests {
         // Force a bound that is too small for the function type/result ids.
         binary[3] = 2;
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
-        assert_eq!(error, ValidationError::IdExceedsBound { id: 2, bound: 2 });
+        assert_eq!(
+            error,
+            ValidationError::IdExceedsBound {
+                id: Id::new(2).unwrap(),
+                bound: IdBound::new(2).unwrap(),
+            }
+        );
     }
 
     #[test]
