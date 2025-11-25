@@ -1957,7 +1957,8 @@ mod tests {
 
     #[test]
     fn validate_module_rejects_memory_model_after_function() {
-        // Manually build a module where OpMemoryModel appears after the function body.
+        // The assembler canonicalizes layout, so build a binary with OpMemoryModel placed after the
+        // function body to exercise the layout check directly.
         let binary = vec![
             0x07230203, // magic
             0x00010000, // version 1.0
@@ -1990,7 +1991,8 @@ mod tests {
 
     #[test]
     fn validate_module_rejects_duplicate_memory_model() {
-        // Build a minimal module with two memory model instructions.
+        // The text path drops duplicate memory models, so keep a hand-built binary to assert the
+        // validator rejects them.
         let binary = vec![
             0x07230203,
             0x00010000,
@@ -2017,6 +2019,7 @@ mod tests {
 
     #[test]
     fn capability_must_appear_before_types() {
+        // The assembler reorders sections, so preserve the out-of-order capability via binary.
         let binary = vec![
             0x07230203,
             0x00010000,
@@ -2042,6 +2045,7 @@ mod tests {
 
     #[test]
     fn extension_must_precede_types_and_globals() {
+        // Keep the extension misordered in binary form; the assembler canonicalizes this section.
         let binary = vec![
             0x07230203,
             0x00010000,
@@ -2073,6 +2077,7 @@ mod tests {
 
     #[test]
     fn validate_module_rejects_duplicate_capability() {
+        // The assembler deduplicates capabilities; construct the binary manually to keep both.
         let binary = vec![
             0x07230203,
             0x00010000,
@@ -2840,6 +2845,7 @@ mod tests {
 
     #[test]
     fn validate_module_rejects_zero_result_id() {
+        // The assembler never emits id 0; keep this binary hand-crafted to drive the zero-id path.
         let binary = vec![
             0x07230203,
             0x00010000,
@@ -2866,6 +2872,7 @@ mod tests {
 
     #[test]
     fn validate_module_rejects_zero_operand_id() {
+        // Text assembly forbids %0 operands, so build the binary directly to cover the check.
         let binary = vec![
             0x07230203,
             0x00010000,
