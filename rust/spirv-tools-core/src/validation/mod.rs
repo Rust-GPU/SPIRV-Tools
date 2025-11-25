@@ -99,6 +99,11 @@ fn validate_id_bound(module: &Module) -> Result<(), ValidationError> {
                 return Err(error);
             }
         }
+        if let Some(result_type) = instruction.result_type {
+            if let Some(error) = check_id(result_type, bound_value) {
+                return Err(error);
+            }
+        }
         for operand in &instruction.operands {
             if let rspirv::dr::Operand::IdRef(id) = operand {
                 if let Some(error) = check_id(*id, bound_value) {
@@ -166,5 +171,25 @@ mod tests {
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
         validate_module(&binary, TargetEnv::Universal1_6).expect("valid module");
+    }
+
+    #[test]
+    fn validate_module_checks_operand_ids_against_bound() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let mut binary = assemble_text(&text).expect("assemble");
+        // Force a bound that is too small for the function type/result ids.
+        binary[3] = 2;
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(error, ValidationError::IdExceedsBound { id: 2, bound: 2 });
     }
 }
