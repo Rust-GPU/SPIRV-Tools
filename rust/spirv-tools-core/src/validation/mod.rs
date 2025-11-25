@@ -135,7 +135,7 @@ pub enum ValidationError {
     #[error("declared id bound {bound} is invalid")]
     InvalidIdBound {
         /// The declared id bound from the module header.
-        bound: u32,
+        bound: DeclaredBound,
     },
     /// The module declared an id bound that is exceeded by at least one id.
     #[error("id {id} exceeds declared id bound {bound}")]
@@ -171,6 +171,72 @@ enum FunctionState {
     Inside,
 }
 
+/// A declared (possibly zero) id bound from a module header.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct DeclaredBound(pub u32);
+
+impl std::fmt::Display for DeclaredBound {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl From<u32> for DeclaredBound {
+    fn from(value: u32) -> Self {
+        DeclaredBound(value)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MemoryModelState {
+    Missing {
+        first_violation: Option<rspirv::spirv::Op>,
+    },
+    Seen,
+}
+
+impl MemoryModelState {
+    fn new() -> Self {
+        Self::Missing {
+            first_violation: None,
+        }
+    }
+
+    fn record_violation(&mut self, opcode: rspirv::spirv::Op) {
+        if let MemoryModelState::Missing { first_violation } = self {
+            if first_violation.is_none() {
+                *first_violation = Some(opcode);
+            }
+        }
+    }
+
+    fn mark_seen(&mut self) -> Result<(), ValidationError> {
+        match self {
+            MemoryModelState::Missing { .. } => {
+                *self = MemoryModelState::Seen;
+                Ok(())
+            }
+            MemoryModelState::Seen => Err(ValidationError::DuplicateMemoryModel),
+        }
+    }
+
+    fn is_seen(&self) -> bool {
+        matches!(self, MemoryModelState::Seen)
+    }
+
+    fn finalize(self) -> Result<(), ValidationError> {
+        match self {
+            MemoryModelState::Seen => Ok(()),
+            MemoryModelState::Missing {
+                first_violation: Some(opcode),
+            } => Err(ValidationError::InstructionBeforeMemoryModel { opcode }),
+            MemoryModelState::Missing {
+                first_violation: None,
+            } => Err(ValidationError::MissingMemoryModel),
+        }
+    }
+}
+
 /// Validates a SPIR-V module against invariants that can be checked without target-specific
 /// knowledge.
 pub fn validate_module(words: &[u32], _env: TargetEnv) -> Result<(), ValidationError> {
@@ -188,19 +254,17 @@ pub fn validate_module(words: &[u32], _env: TargetEnv) -> Result<(), ValidationE
 
 fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
     struct LayoutChecker {
-        memory_model_seen: bool,
+        memory_model_state: MemoryModelState,
         current_section: Section,
         function_state: FunctionState,
-        pre_memory_model_violation: Option<ValidationError>,
     }
 
     impl LayoutChecker {
         fn new() -> Self {
             Self {
-                memory_model_seen: false,
+                memory_model_state: MemoryModelState::new(),
                 current_section: Section::Capabilities,
                 function_state: FunctionState::Outside,
-                pre_memory_model_violation: None,
             }
         }
     }
@@ -211,15 +275,10 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
         }
 
         fn finalize(&mut self) -> rspirv::binary::ParseAction {
-            if !self.memory_model_seen {
-                if let Some(error) = &self.pre_memory_model_violation {
-                    return rspirv::binary::ParseAction::Error(Box::new(error.clone()));
-                }
-                return rspirv::binary::ParseAction::Error(Box::new(
-                    ValidationError::MissingMemoryModel,
-                ));
+            match self.memory_model_state.finalize() {
+                Ok(()) => rspirv::binary::ParseAction::Continue,
+                Err(err) => rspirv::binary::ParseAction::Error(Box::new(err)),
             }
-            rspirv::binary::ParseAction::Continue
         }
 
         fn consume_header(&mut self, _: rspirv::dr::ModuleHeader) -> rspirv::binary::ParseAction {
@@ -254,16 +313,13 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
                             },
                         ));
                     }
-                    if self.memory_model_seen {
-                        return rspirv::binary::ParseAction::Error(Box::new(
-                            ValidationError::DuplicateMemoryModel,
-                        ));
+                    if let Err(err) = self.memory_model_state.mark_seen() {
+                        return rspirv::binary::ParseAction::Error(Box::new(err));
                     }
-                    self.memory_model_seen = true;
                     self.current_section = self.current_section.max(Section::MemoryModel);
                 }
                 rspirv::spirv::Op::Function => {
-                    if !self.memory_model_seen {
+                    if !self.memory_model_state.is_seen() {
                         return rspirv::binary::ParseAction::Error(Box::new(
                             ValidationError::FunctionBeforeMemoryModel,
                         ));
@@ -279,11 +335,8 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
                         ));
                     }
                     self.current_section = self.current_section.max(section);
-                    if section > Section::MemoryModel && !self.memory_model_seen {
-                        if self.pre_memory_model_violation.is_none() {
-                            self.pre_memory_model_violation =
-                                Some(ValidationError::InstructionBeforeMemoryModel { opcode });
-                        }
+                    if section > Section::MemoryModel && !self.memory_model_state.is_seen() {
+                        self.memory_model_state.record_violation(opcode);
                         return rspirv::binary::ParseAction::Continue;
                     }
                 }
@@ -340,8 +393,9 @@ fn validate_id_bound(module: &Module) -> Result<(), ValidationError> {
         .header
         .as_ref()
         .ok_or(ValidationError::MissingHeader)?;
+    let declared_bound = DeclaredBound(header.bound);
     let bound = IdBound::from_raw(header.bound).ok_or(ValidationError::InvalidIdBound {
-        bound: header.bound,
+        bound: declared_bound,
     })?;
     let mut results = HashSet::new();
 
