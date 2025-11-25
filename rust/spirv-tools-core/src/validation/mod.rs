@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::convert::TryFrom;
 use std::num::NonZeroU32;
 
@@ -165,6 +165,12 @@ enum Section {
     Functions,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum FunctionState {
+    Outside,
+    Inside,
+}
+
 /// Validates a SPIR-V module against invariants that can be checked without target-specific
 /// knowledge.
 pub fn validate_module(words: &[u32], _env: TargetEnv) -> Result<(), ValidationError> {
@@ -182,18 +188,18 @@ pub fn validate_module(words: &[u32], _env: TargetEnv) -> Result<(), ValidationE
 
 fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
     struct LayoutChecker {
-        memory_models: usize,
+        memory_model_seen: bool,
         current_section: Section,
-        inside_function: usize,
+        function_state: FunctionState,
         pre_memory_model_violation: Option<ValidationError>,
     }
 
     impl LayoutChecker {
         fn new() -> Self {
             Self {
-                memory_models: 0,
+                memory_model_seen: false,
                 current_section: Section::Capabilities,
-                inside_function: 0,
+                function_state: FunctionState::Outside,
                 pre_memory_model_violation: None,
             }
         }
@@ -205,7 +211,7 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
         }
 
         fn finalize(&mut self) -> rspirv::binary::ParseAction {
-            if self.memory_models == 0 {
+            if !self.memory_model_seen {
                 if let Some(error) = &self.pre_memory_model_violation {
                     return rspirv::binary::ParseAction::Error(Box::new(error.clone()));
                 }
@@ -224,15 +230,16 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
             &mut self,
             inst: rspirv::dr::Instruction,
         ) -> rspirv::binary::ParseAction {
-            if self.inside_function > 0 {
+            if matches!(self.function_state, FunctionState::Inside) {
                 match inst.class.opcode {
                     rspirv::spirv::Op::MemoryModel => {
                         return rspirv::binary::ParseAction::Error(Box::new(
                             ValidationError::FunctionBeforeMemoryModel,
                         ));
                     }
-                    rspirv::spirv::Op::Function => self.inside_function += 1,
-                    rspirv::spirv::Op::FunctionEnd => self.inside_function -= 1,
+                    rspirv::spirv::Op::FunctionEnd => {
+                        self.function_state = FunctionState::Outside;
+                    }
                     _ => {}
                 }
                 return rspirv::binary::ParseAction::Continue;
@@ -247,21 +254,21 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
                             },
                         ));
                     }
-                    self.memory_models += 1;
-                    if self.memory_models > 1 {
+                    if self.memory_model_seen {
                         return rspirv::binary::ParseAction::Error(Box::new(
                             ValidationError::DuplicateMemoryModel,
                         ));
                     }
+                    self.memory_model_seen = true;
                     self.current_section = self.current_section.max(Section::MemoryModel);
                 }
                 rspirv::spirv::Op::Function => {
-                    if self.memory_models == 0 {
+                    if !self.memory_model_seen {
                         return rspirv::binary::ParseAction::Error(Box::new(
                             ValidationError::FunctionBeforeMemoryModel,
                         ));
                     }
-                    self.inside_function = 1;
+                    self.function_state = FunctionState::Inside;
                     self.current_section = self.current_section.max(Section::Functions);
                 }
                 opcode => {
@@ -272,7 +279,7 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
                         ));
                     }
                     self.current_section = self.current_section.max(section);
-                    if section > Section::MemoryModel && self.memory_models == 0 {
+                    if section > Section::MemoryModel && !self.memory_model_seen {
                         if self.pre_memory_model_violation.is_none() {
                             self.pre_memory_model_violation =
                                 Some(ValidationError::InstructionBeforeMemoryModel { opcode });
@@ -336,7 +343,7 @@ fn validate_id_bound(module: &Module) -> Result<(), ValidationError> {
     let bound = IdBound::from_raw(header.bound).ok_or(ValidationError::InvalidIdBound {
         bound: header.bound,
     })?;
-    let mut results = HashMap::new();
+    let mut results = HashSet::new();
 
     let check_id = |id: u32, bound: IdBound| {
         Id::try_from(id).ok().and_then(|id| {
@@ -351,7 +358,7 @@ fn validate_id_bound(module: &Module) -> Result<(), ValidationError> {
     for instruction in module.all_inst_iter() {
         if let Some(id) = instruction.result_id {
             if let Some(valid_id) = Id::from_raw(id) {
-                if results.insert(valid_id, ()).is_some() {
+                if !results.insert(valid_id) {
                     return Err(ValidationError::DuplicateResultId { id: valid_id });
                 }
             }
