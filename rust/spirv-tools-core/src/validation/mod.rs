@@ -464,12 +464,6 @@ pub enum ValidationError {
         /// The group id that was missing.
         group: Id,
     },
-    /// A decoration targeted an id that does not exist in the module.
-    #[error("decoration targets unknown id {target}")]
-    UnknownDecorationTarget {
-        /// The missing target id.
-        target: Id,
-    },
     /// A decoration targeted an id that is not valid for that opcode.
     #[error("decoration target {target} is not defined")]
     MissingDecorationTarget {
@@ -818,6 +812,13 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
                     self.current_section = self.current_section.max(Section::MemoryModel);
                 }
                 rspirv::spirv::Op::Capability => {
+                    if Section::Capabilities < self.current_section {
+                        return rspirv::binary::ParseAction::Error(Box::new(
+                            ValidationError::LayoutOutOfOrder {
+                                opcode: rspirv::spirv::Op::Capability,
+                            },
+                        ));
+                    }
                     if let Some(cap) = capability_operand(&inst) {
                         if let Err(err) = self.capabilities.insert(cap) {
                             return rspirv::binary::ParseAction::Error(Box::new(err));
@@ -825,6 +826,13 @@ fn run_layout_check(words: &[u32]) -> Result<(), ValidationError> {
                     }
                 }
                 rspirv::spirv::Op::Extension => {
+                    if Section::Capabilities < self.current_section {
+                        return rspirv::binary::ParseAction::Error(Box::new(
+                            ValidationError::LayoutOutOfOrder {
+                                opcode: rspirv::spirv::Op::Extension,
+                            },
+                        ));
+                    }
                     if let Some(extension) = extension_operand(&inst) {
                         if let Err(err) = self.extensions.insert(extension) {
                             return rspirv::binary::ParseAction::Error(Box::new(err));
@@ -996,7 +1004,7 @@ fn validate_member_decorations(
                             }
                         })?;
                     if !defined_ids.contains(&target_id) {
-                        return Err(ValidationError::UnknownDecorationTarget {
+                        return Err(ValidationError::MissingDecorationTarget {
                             target: target.into(),
                         });
                     }
@@ -1061,7 +1069,7 @@ fn validate_decoration_groups(
                                 opcode: inst.class.opcode,
                             })?;
                         if !defined_ids.contains(&target) {
-                            return Err(ValidationError::UnknownDecorationTarget {
+                            return Err(ValidationError::MissingDecorationTarget {
                                 target: target.into_inner(),
                             });
                         }
@@ -1358,6 +1366,62 @@ mod tests {
     }
 
     #[test]
+    fn capability_must_appear_before_types() {
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            5,
+            0,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(2, 17), // OpCapability Shader (out of order)
+            rspirv::spirv::Capability::Shader as u32,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Capability
+            }
+        );
+    }
+
+    #[test]
+    fn extension_must_precede_types_and_globals() {
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            6,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(6, 10), // OpExtension "SPV_KHR_ray_tracing" (misordered)
+            0x5f56_5053,
+            0x5f52_484b,
+            0x5f79_6172,
+            0x6361_7274,
+            0x0067_6e69,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Extension
+            }
+        );
+    }
+
+    #[test]
     fn validate_module_rejects_duplicate_capability() {
         let binary = vec![
             0x07230203,
@@ -1575,6 +1639,40 @@ mod tests {
         ];
         let expected = ValidationError::MissingDecorationTarget {
             target: Id::try_from(2).unwrap(),
+        };
+        let error = MaybeValidModule::Binary(&binary)
+            .validate(TargetEnv::Universal1_6)
+            .unwrap_err();
+        assert_eq!(error, expected);
+    }
+
+    #[test]
+    fn group_member_decorate_requires_declared_targets() {
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            5,          // bound (ids up to 4)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 73), // OpDecorationGroup %1
+            1,
+            op(4, 75), // OpGroupMemberDecorate %1 %4 0 (target %4 is undefined)
+            1,
+            4,
+            0,
+            op(2, 19), // OpTypeVoid %2
+            2,
+            op(3, 33), // OpTypeFunction %3 %2
+            3,
+            2,
+        ];
+        let expected = ValidationError::MissingDecorationTarget {
+            target: Id::try_from(4).unwrap(),
         };
         let error = MaybeValidModule::Binary(&binary)
             .validate(TargetEnv::Universal1_6)
