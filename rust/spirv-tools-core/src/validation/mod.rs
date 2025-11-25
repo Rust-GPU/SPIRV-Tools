@@ -1603,6 +1603,65 @@ mod tests {
     }
 
     #[test]
+    fn webgpu_disallows_extensions_for_text_and_binary() {
+        let expected_error = ValidationError::DisallowedExtension {
+            extension: "SPV_KHR_ray_tracing".to_string(),
+            env: TargetEnv::WebGpu0,
+        };
+
+        // The current Rust assembler does not yet accept OpExtension, so construct the
+        // binary by hand to exercise validator behavior for WebGPU and permissive envs.
+        let extension_word = op(6, rspirv::spirv::Op::Extension as u16); // word count 6
+        let extension_words = [
+            0x5f56_5053, // "SPV_"
+            0x5f52_484b, // "KHR_"
+            0x5f79_6172, // "ray_"
+            0x6361_7274, // "trac"
+            0x0067_6e69, // "ing\0"
+        ];
+        let binary = vec![
+            0x0723_0203, // magic
+            0x0001_0000, // version
+            0,           // generator
+            5,           // bound (ids 0..4)
+            0,           // schema
+            op(2, rspirv::spirv::Op::Capability as u16),
+            rspirv::spirv::Capability::Shader as u32,
+            extension_word,
+            extension_words[0],
+            extension_words[1],
+            extension_words[2],
+            extension_words[3],
+            extension_words[4],
+            op(3, rspirv::spirv::Op::MemoryModel as u16),
+            rspirv::spirv::AddressingModel::Logical as u32,
+            rspirv::spirv::MemoryModel::GLSL450 as u32,
+            op(2, rspirv::spirv::Op::TypeVoid as u16),
+            1,
+            op(3, rspirv::spirv::Op::TypeFunction as u16),
+            2,
+            1,
+            op(5, rspirv::spirv::Op::Function as u16),
+            1,
+            3,
+            rspirv::spirv::FunctionControl::NONE.bits(),
+            2,
+            op(2, rspirv::spirv::Op::Label as u16),
+            4,
+            op(1, rspirv::spirv::Op::Return as u16),
+            op(1, rspirv::spirv::Op::FunctionEnd as u16),
+        ];
+        let binary_error = binary.as_slice().validate(TargetEnv::WebGpu0).unwrap_err();
+        assert_eq!(binary_error, expected_error);
+
+        let validated = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect("extension should be accepted outside WebGPU");
+        assert_eq!(validated.header().schema(), Schema::ZERO);
+    }
+
+    #[test]
     fn validate_module_rejects_zero_result_id() {
         let binary = vec![
             0x07230203,

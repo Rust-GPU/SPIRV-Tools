@@ -407,10 +407,17 @@ pub fn read_env_from_text(text: &[u8]) -> Option<TargetEnv> {
 impl TargetEnv {
     /// Returns whether an extension is permitted for this target environment.
     ///
-    /// The current implementation conservatively allows all extensions; future work can
-    /// specialize this per environment as we port more of the validator.
-    pub fn is_extension_allowed(self, _extension: &str) -> bool {
-        true
+    /// The WebGPU environment forbids all extensions; other environments currently allow
+    /// all extensions until a full allowlist is ported.
+    pub fn is_extension_allowed(self, extension: &str) -> bool {
+        match self {
+            TargetEnv::WebGpu0 => {
+                // WebGPU environments disallow vendor and KHR extensions entirely.
+                let _ = extension;
+                false
+            }
+            _ => true,
+        }
     }
 }
 
