@@ -50,6 +50,10 @@ pub struct ValidatedHeader {
     schema: Schema,
 }
 
+/// Shared, validated words backing a module.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ModuleWords(Arc<[u32]>);
+
 /// A set of declared capabilities for a module.
 #[derive(Debug, Default)]
 struct CapabilitySet {
@@ -242,6 +246,46 @@ impl ValidatedHeader {
     /// Returns the validated schema value (always zero for valid modules).
     pub fn schema(self) -> Schema {
         self.schema
+    }
+}
+
+impl ModuleWords {
+    /// Wraps already-owned SPIR-V words.
+    pub fn new(words: Arc<[u32]>) -> Self {
+        Self(words)
+    }
+
+    /// Clones the shared words as a slice reference.
+    pub fn as_slice(&self) -> &[u32] {
+        &self.0
+    }
+
+    /// Returns a shared reference-counted handle to the words.
+    pub fn shared(&self) -> Arc<[u32]> {
+        Arc::clone(&self.0)
+    }
+
+    /// Consumes the wrapper and returns the underlying `Arc`.
+    pub fn into_arc(self) -> Arc<[u32]> {
+        self.0
+    }
+}
+
+impl From<Arc<[u32]>> for ModuleWords {
+    fn from(words: Arc<[u32]>) -> Self {
+        ModuleWords::new(words)
+    }
+}
+
+impl From<ModuleWords> for Arc<[u32]> {
+    fn from(words: ModuleWords) -> Self {
+        words.into_arc()
+    }
+}
+
+impl AsRef<[u32]> for ModuleWords {
+    fn as_ref(&self) -> &[u32] {
+        self.as_slice()
     }
 }
 
@@ -523,7 +567,7 @@ impl MemoryModelState {
 /// A validated module containing the original binary plus the parsed representation.
 #[derive(Debug)]
 pub struct ValidModule {
-    words: Arc<[u32]>,
+    words: ModuleWords,
     module: Module,
     env: TargetEnv,
     header: ValidatedHeader,
@@ -532,7 +576,7 @@ pub struct ValidModule {
 impl ValidModule {
     /// Returns the validated words that were successfully checked.
     pub fn words(&self) -> &[u32] {
-        &self.words
+        self.words.as_slice()
     }
 
     /// Returns the parsed module corresponding to the validated words.
@@ -549,21 +593,26 @@ impl ValidModule {
     pub fn header(&self) -> ValidatedHeader {
         self.header
     }
+
+    /// Returns a shared handle to the validated words.
+    pub fn words_handle(&self) -> ModuleWords {
+        self.words.clone()
+    }
 }
 
 /// Validates a SPIR-V module against invariants that can be checked without target-specific
 /// knowledge.
 pub fn validate_module(words: &[u32], env: TargetEnv) -> Result<(), ValidationError> {
-    validate_words(Arc::from(words), env).map(|_| ())
+    validate_words(ModuleWords::from(Arc::from(words)), env).map(|_| ())
 }
 
-fn validate_words(words: Arc<[u32]>, env: TargetEnv) -> Result<ValidModule, ValidationError> {
-    if let Some(&schema) = words.get(4) {
+fn validate_words(words: ModuleWords, env: TargetEnv) -> Result<ValidModule, ValidationError> {
+    if let Some(&schema) = words.as_slice().get(4) {
         Schema::validate(schema)?;
     }
-    run_layout_check(&words)?;
+    run_layout_check(words.as_slice())?;
     let mut loader = rspirv::dr::Loader::new();
-    if let Err(error) = rspirv::binary::parse_words(&words, &mut loader) {
+    if let Err(error) = rspirv::binary::parse_words(words.as_slice(), &mut loader) {
         return Err(ValidationError::Parse(error.to_string()));
     }
     let module = loader.module();
@@ -590,13 +639,15 @@ impl<'a> MaybeValidModule<'a> {
     /// Validate the provided input, assembling text when necessary.
     pub fn validate(self, env: TargetEnv) -> Result<ValidModule, ValidationError> {
         match self {
-            MaybeValidModule::Binary(words) => validate_words(Arc::from(words), env),
+            MaybeValidModule::Binary(words) => {
+                validate_words(ModuleWords::from(Arc::from(words)), env)
+            }
             MaybeValidModule::Text(text) => {
-                let binary = Arc::<[u32]>::from(
+                let binary = ModuleWords::from(Arc::<[u32]>::from(
                     crate::assembly::assemble_text(text)
                         .map_err(|err| ValidationError::Parse(err.to_string()))?
                         .into_boxed_slice(),
-                );
+                ));
                 validate_words(binary, env)
             }
         }
@@ -874,12 +925,13 @@ fn validate_instruction_ids(
 #[cfg(test)]
 mod tests {
     use super::{
-        validate_module, CheckedBound, DeclaredBound, Id, IdKind, MaybeValidModule, Schema,
-        ValidatableModule, ValidationError,
+        validate_module, CheckedBound, DeclaredBound, Id, IdKind, MaybeValidModule, ModuleWords,
+        Schema, ValidatableModule, ValidationError,
     };
     use crate::assembly::assemble_text;
     use crate::target_env::TargetEnv;
     use std::num::NonZeroU32;
+    use std::sync::Arc;
 
     fn op(word_count: u16, opcode: u16) -> u32 {
         ((word_count as u32) << 16) | opcode as u32
@@ -1206,5 +1258,32 @@ mod tests {
             valid_binary.header().bound().declared(),
             DeclaredBound(binary[3])
         );
+    }
+
+    #[test]
+    fn valid_module_shares_words_without_copying() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+        let valid = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect("valid module");
+        let handle = valid.words_handle();
+        assert_eq!(handle.as_slice(), binary.as_slice());
+        let arc_from_handle = handle.shared();
+        let arc_from_valid = valid.words_handle().shared();
+        assert_eq!(
+            Arc::as_ptr(&arc_from_handle),
+            Arc::as_ptr(&arc_from_valid),
+            "validated modules should share backing storage"
+        );
+
+        let module_words: ModuleWords = ModuleWords::from(arc_from_handle);
+        assert_eq!(module_words.as_slice(), binary.as_slice());
     }
 }
