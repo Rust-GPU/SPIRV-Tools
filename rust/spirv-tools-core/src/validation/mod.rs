@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::num::NonZeroU32;
 
 use rspirv::dr::Module;
@@ -22,6 +23,26 @@ impl Id {
     }
 }
 
+impl From<Id> for u32 {
+    fn from(id: Id) -> Self {
+        id.0.get()
+    }
+}
+
+impl From<NonZeroU32> for Id {
+    fn from(value: NonZeroU32) -> Self {
+        Id(value)
+    }
+}
+
+impl TryFrom<u32> for Id {
+    type Error = ();
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        Id::new(value).ok_or(())
+    }
+}
+
 impl std::fmt::Display for Id {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
@@ -41,6 +62,26 @@ impl IdBound {
     /// Returns the underlying non-zero bound value.
     pub fn get(self) -> u32 {
         self.0.get()
+    }
+}
+
+impl From<IdBound> for u32 {
+    fn from(bound: IdBound) -> Self {
+        bound.0.get()
+    }
+}
+
+impl From<NonZeroU32> for IdBound {
+    fn from(value: NonZeroU32) -> Self {
+        IdBound(value)
+    }
+}
+
+impl TryFrom<u32> for IdBound {
+    type Error = ();
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        IdBound::new(value).ok_or(())
     }
 }
 
@@ -285,12 +326,13 @@ fn validate_id_bound(module: &Module) -> Result<(), ValidationError> {
     let mut results = HashMap::new();
 
     let check_id = |id: u32, bound: IdBound| {
-        let id = Id::new(id)?;
-        if id.get() >= bound.get() {
-            Some(ValidationError::IdExceedsBound { id, bound })
-        } else {
-            None
-        }
+        Id::try_from(id).ok().and_then(|id| {
+            if id.get() >= bound.get() {
+                Some(ValidationError::IdExceedsBound { id, bound })
+            } else {
+                None
+            }
+        })
     };
 
     for instruction in module.all_inst_iter() {
