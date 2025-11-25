@@ -429,6 +429,12 @@ pub enum ValidationError {
         /// The capability that was duplicated.
         capability: rspirv::spirv::Capability,
     },
+    /// A decoration group reference did not point to a declared group.
+    #[error("decoration group {group} is not declared")]
+    UnknownDecorationGroup {
+        /// The group id that was missing.
+        group: Id,
+    },
     /// A member decoration targeted an id that is not a struct type.
     #[error("member decorations must target struct types (found {target})")]
     MemberDecorationTargetNotStruct {
@@ -639,6 +645,7 @@ fn validate_words(words: ModuleWords, env: TargetEnv) -> Result<ValidModule, Val
     validate_id_bound(&module, header)?;
     validate_memory_model(&module)?;
     validate_member_decorations(&module)?;
+    validate_decoration_groups(&module)?;
     Ok(ValidModule {
         words,
         module,
@@ -823,7 +830,7 @@ fn section_index(opcode: rspirv::spirv::Op) -> Section {
         String | SourceExtension | Source | SourceContinued | ModuleProcessed => Section::Debug,
         Name | MemberName => Section::Names,
         Decorate | DecorateId | MemberDecorate | DecorateString | MemberDecorateString
-        | GroupDecorate | GroupMemberDecorate => Section::Annotations,
+        | DecorationGroup | GroupDecorate | GroupMemberDecorate => Section::Annotations,
         Function => Section::Functions,
         _ => Section::TypesGlobals,
     }
@@ -924,6 +931,44 @@ fn validate_member_decorations(module: &Module) -> Result<(), ValidationError> {
                     let op = types.get(&target_id).copied();
                     if op != Some(rspirv::spirv::Op::TypeStruct) {
                         return Err(ValidationError::MemberDecorationTargetNotStruct { target });
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_decoration_groups(module: &Module) -> Result<(), ValidationError> {
+    let groups: HashSet<ResultId> = module
+        .annotations
+        .iter()
+        .filter_map(|inst| {
+            if inst.class.opcode == rspirv::spirv::Op::DecorationGroup {
+                inst.result_id.and_then(|id| ResultId::try_from(id).ok())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    for inst in &module.annotations {
+        match inst.class.opcode {
+            rspirv::spirv::Op::GroupDecorate | rspirv::spirv::Op::GroupMemberDecorate => {
+                let group = inst.operands.iter().find_map(|op| {
+                    if let rspirv::dr::Operand::IdRef(id) = op {
+                        ResultId::try_from(*id).ok()
+                    } else {
+                        None
+                    }
+                });
+                if let Some(group) = group {
+                    if !groups.contains(&group) {
+                        return Err(ValidationError::UnknownDecorationGroup {
+                            group: group.into_inner(),
+                        });
                     }
                 }
             }
@@ -1298,6 +1343,45 @@ mod tests {
             error,
             ValidationError::MemberDecorationTargetNotStruct {
                 target: DecorationTargetId::try_from(1).unwrap()
+            }
+        );
+    }
+
+    #[test]
+    fn group_decorate_requires_declared_group() {
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            5,          // bound (ids 0..4)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 73), // OpDecorationGroup %3
+            3,
+            op(3, 74), // OpGroupDecorate %4 %1 (invalid group id)
+            4,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(4, 21), // OpTypeInt %4 32 0 (used incorrectly as decoration group)
+            4,
+            32,
+            0,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+        ];
+        let error = MaybeValidModule::Binary(&binary)
+            .validate(TargetEnv::Universal1_6)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::UnknownDecorationGroup {
+                group: Id::try_from(4).unwrap()
             }
         );
     }
