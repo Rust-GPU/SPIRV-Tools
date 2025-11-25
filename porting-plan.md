@@ -83,7 +83,7 @@ Tasks for this milestone:
 - [x] Validate entry-point targets are `OpFunction`/`OpVariable` and report typed errors, with binary regression tests where the text assembler would reject inputs.
 - [x] Add an environment-aware extension validation hook (`DisallowedExtension`) so target-specific allowlists can be enforced.
 - [x] Reject extensions for WebGPU environments; extend per-target-environment allowlists in `TargetEnv::is_extension_allowed` with regression tests.
-- [x] Begin capability allowlists (WebGPU rejects non-Shader capabilities) and enforce during layout validation.
+- [x] Begin capability allowlists: WebGPU only allows Shader; Vulkan/OpenGL/Universal reject Kernel; OpenCL rejects Shader. Enforced during layout validation with regression tests.
 - [ ] Enforce capability allowlists per target environment and surface typed diagnostics.
 - [ ] Broaden decoration/category constraints (capability/extension ordering, decoration target categories) with paired text/binary tests.
 - [ ] Cache validated modules across CLI/FFI invocations when the same input is reused, avoiding redundant parsing/validation.

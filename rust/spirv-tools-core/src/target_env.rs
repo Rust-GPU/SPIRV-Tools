@@ -408,28 +408,60 @@ impl TargetEnv {
     /// Returns whether an extension is permitted for this target environment.
     ///
     /// The WebGPU environment forbids all extensions; other environments currently allow
-    /// all extensions until a full allowlist is ported.
+    /// all extensions until a full allowlist is ported. Vulkan-only extensions are
+    /// rejected for non-Vulkan environments.
     pub fn is_extension_allowed(self, extension: &str) -> bool {
+        let lower = extension.to_ascii_lowercase();
         match self {
             TargetEnv::WebGpu0 => {
                 // WebGPU environments disallow vendor and KHR extensions entirely.
-                let _ = extension;
+                let _ = lower;
                 false
             }
-            _ => true,
+            env if is_vulkan_env(env) => true,
+            _ => {
+                // Guard Vulkan-specific extensions outside of Vulkan environments.
+                if lower.contains("vulkan") {
+                    return false;
+                }
+                true
+            }
         }
     }
 
     /// Returns whether a capability is permitted for this target environment.
     ///
-    /// The WebGPU environment allows only the core Shader capability today; other
-    /// environments currently accept all capabilities until a full allowlist is ported.
+    /// The WebGPU environment allows only the core Shader capability. OpenCL environments
+    /// reject Shader (they expect Kernel), while Vulkan/OpenGL/Universal reject Kernel.
+    /// Other capability/extension pairings remain permissive until a full allowlist is
+    /// ported from the C++ validator tables.
     pub fn is_capability_allowed(self, capability: rspirv::spirv::Capability) -> bool {
+        use rspirv::spirv::Capability::*;
         match self {
-            TargetEnv::WebGpu0 => capability == rspirv::spirv::Capability::Shader,
-            _ => true,
+            TargetEnv::WebGpu0 => capability == Shader,
+            TargetEnv::OpenCl1_2
+            | TargetEnv::OpenClEmbedded1_2
+            | TargetEnv::OpenCl2_0
+            | TargetEnv::OpenClEmbedded2_0
+            | TargetEnv::OpenCl2_1
+            | TargetEnv::OpenClEmbedded2_1
+            | TargetEnv::OpenCl2_2
+            | TargetEnv::OpenClEmbedded2_2 => capability != Shader,
+            _ => capability != Kernel,
         }
     }
+}
+
+const fn is_vulkan_env(env: TargetEnv) -> bool {
+    matches!(
+        env,
+        TargetEnv::Vulkan1_0
+            | TargetEnv::Vulkan1_1
+            | TargetEnv::Vulkan1_1Spirv1_4
+            | TargetEnv::Vulkan1_2
+            | TargetEnv::Vulkan1_3
+            | TargetEnv::Vulkan1_4
+    )
 }
 
 impl From<TargetEnv> for u32 {

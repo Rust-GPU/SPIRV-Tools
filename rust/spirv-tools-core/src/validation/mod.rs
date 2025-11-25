@@ -1,5 +1,7 @@
+use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::hash::{Hash, Hasher};
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
@@ -724,6 +726,32 @@ pub fn validate_module(words: &[u32], env: TargetEnv) -> Result<(), ValidationEr
     validate_words(ModuleWords::from(Arc::from(words)), env).map(|_| ())
 }
 
+/// A cache of validated modules keyed by target environment and module contents.
+#[derive(Default)]
+pub struct ValidModuleCache {
+    entries: std::collections::HashMap<(TargetEnv, u64), Arc<ValidModule>>,
+}
+
+impl ValidModuleCache {
+    /// Validate the provided binary words, returning a shared validated module and caching the result.
+    pub fn validate_words(
+        &mut self,
+        words: &[u32],
+        env: TargetEnv,
+    ) -> Result<Arc<ValidModule>, ValidationError> {
+        let hash = hash_words(words, env);
+        if let Some(cached) = self.entries.get(&(env, hash)) {
+            if cached.words_handle().as_slice() == words {
+                return Ok(Arc::clone(cached));
+            }
+        }
+        let validated = validate_words(ModuleWords::from(Arc::from(words)), env)?;
+        let validated = Arc::new(validated);
+        self.entries.insert((env, hash), Arc::clone(&validated));
+        Ok(validated)
+    }
+}
+
 fn validate_words(words: ModuleWords, env: TargetEnv) -> Result<ValidModule, ValidationError> {
     if let Some(&schema) = words.as_slice().get(4) {
         Schema::validate(schema)?;
@@ -749,6 +777,16 @@ fn validate_words(words: ModuleWords, env: TargetEnv) -> Result<ValidModule, Val
         env,
         header,
     })
+}
+
+fn hash_words(words: &[u32], env: TargetEnv) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    env.hash(&mut hasher);
+    words.len().hash(&mut hasher);
+    for word in words {
+        word.hash(&mut hasher);
+    }
+    hasher.finish()
 }
 
 /// Input sources that can be validated before becoming a `ValidModule`.
@@ -1313,7 +1351,8 @@ fn validate_instruction_ids(
 mod tests {
     use super::{
         validate_module, CheckedBound, DeclaredBound, DecorationTargetId, Id, IdKind,
-        MaybeValidModule, ModuleWords, Schema, ValidatableModule, ValidationError,
+        MaybeValidModule, ModuleWords, Schema, ValidModuleCache, ValidatableModule,
+        ValidationError,
     };
     use crate::assembly::assemble_text;
     use crate::target_env::TargetEnv;
@@ -1592,6 +1631,32 @@ mod tests {
     }
 
     #[test]
+    fn vulkan_rejects_kernel_capability() {
+        let text = [
+            "OpCapability Kernel",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect_err("Vulkan should reject Kernel capability");
+        assert_eq!(
+            error,
+            ValidationError::DisallowedCapability {
+                capability: rspirv::spirv::Capability::Kernel,
+                env: TargetEnv::Vulkan1_2
+            }
+        );
+    }
+
+    #[test]
     fn webgpu_rejects_non_shader_capabilities() {
         let text = [
             "OpCapability Kernel",
@@ -1614,6 +1679,87 @@ mod tests {
                 capability: rspirv::spirv::Capability::Kernel,
                 env: TargetEnv::WebGpu0
             }
+        );
+    }
+
+    #[test]
+    fn opencl_rejects_shader_capability() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical OpenCL",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::OpenCl2_2)
+            .expect_err("OpenCL should reject Shader capability");
+        assert_eq!(
+            error,
+            ValidationError::DisallowedCapability {
+                capability: rspirv::spirv::Capability::Shader,
+                env: TargetEnv::OpenCl2_2
+            }
+        );
+    }
+
+    #[test]
+    fn opencl_rejects_vulkan_specific_extension() {
+        let text = [
+            "OpCapability Kernel",
+            "OpExtension \"SPV_KHR_vulkan_memory_model\"",
+            "OpMemoryModel Logical OpenCL",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::OpenCl2_2)
+            .expect_err("OpenCL should reject Vulkan-specific extensions");
+        assert_eq!(
+            error,
+            ValidationError::DisallowedExtension {
+                extension: "SPV_KHR_vulkan_memory_model".to_string(),
+                env: TargetEnv::OpenCl2_2
+            }
+        );
+    }
+
+    #[test]
+    fn valid_module_cache_reuses_entries() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+        let mut cache = ValidModuleCache::default();
+        let first = cache
+            .validate_words(&binary, TargetEnv::Universal1_6)
+            .expect("first validation");
+        let second = cache
+            .validate_words(&binary, TargetEnv::Universal1_6)
+            .expect("cached validation");
+        assert_eq!(
+            Arc::as_ptr(&first),
+            Arc::as_ptr(&second),
+            "cached entries should reuse the same allocation"
         );
     }
 
