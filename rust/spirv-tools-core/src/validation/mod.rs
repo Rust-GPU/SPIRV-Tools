@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -190,6 +190,19 @@ impl MemberIndex {
     /// Returns the underlying literal member index.
     pub fn get(self) -> u32 {
         self.0
+    }
+}
+
+impl fmt::Display for DecorationTargetId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let id: Id = (*self).into();
+        id.fmt(f)
+    }
+}
+
+impl fmt::Display for MemberIndex {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
     }
 }
 
@@ -416,6 +429,12 @@ pub enum ValidationError {
         /// The capability that was duplicated.
         capability: rspirv::spirv::Capability,
     },
+    /// A member decoration targeted an id that is not a struct type.
+    #[error("member decorations must target struct types (found {target})")]
+    MemberDecorationTargetNotStruct {
+        /// The target id that was not a struct.
+        target: DecorationTargetId,
+    },
     /// An instruction used a zero id where a non-zero id is required.
     #[error("{kind} for {opcode:?} must be non-zero")]
     ZeroId {
@@ -619,6 +638,7 @@ fn validate_words(words: ModuleWords, env: TargetEnv) -> Result<ValidModule, Val
     let header = ValidatedHeader::from_module(&module)?;
     validate_id_bound(&module, header)?;
     validate_memory_model(&module)?;
+    validate_member_decorations(&module)?;
     Ok(ValidModule {
         words,
         module,
@@ -870,6 +890,50 @@ fn validate_id_bound(module: &Module, header: ValidatedHeader) -> Result<(), Val
     Ok(())
 }
 
+fn validate_member_decorations(module: &Module) -> Result<(), ValidationError> {
+    let mut types: HashMap<ResultId, rspirv::spirv::Op> = HashMap::new();
+    for inst in &module.types_global_values {
+        if let Some(result_id) = inst.result_id {
+            let id = ResultId::try_from(result_id).map_err(|_| ValidationError::ZeroId {
+                kind: IdKind::Result,
+                opcode: inst.class.opcode,
+            })?;
+            types.insert(id, inst.class.opcode);
+        }
+    }
+
+    for inst in &module.annotations {
+        match inst.class.opcode {
+            rspirv::spirv::Op::MemberDecorate | rspirv::spirv::Op::MemberDecorateString => {
+                let mut operands = inst.operands.iter();
+                let target = operands.find_map(|op| {
+                    if let rspirv::dr::Operand::IdRef(id) = op {
+                        DecorationTargetId::try_from(*id).ok()
+                    } else {
+                        None
+                    }
+                });
+                if let Some(target) = target {
+                    let target_id =
+                        ResultId::try_from(u32::from(Id::from(target))).map_err(|_| {
+                            ValidationError::ZeroId {
+                                kind: IdKind::Operand,
+                                opcode: inst.class.opcode,
+                            }
+                        })?;
+                    let op = types.get(&target_id).copied();
+                    if op != Some(rspirv::spirv::Op::TypeStruct) {
+                        return Err(ValidationError::MemberDecorationTargetNotStruct { target });
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Ok(())
+}
+
 fn validate_instruction_ids(
     results: &mut HashSet<ResultId>,
     instruction: &rspirv::dr::Instruction,
@@ -925,8 +989,8 @@ fn validate_instruction_ids(
 #[cfg(test)]
 mod tests {
     use super::{
-        validate_module, CheckedBound, DeclaredBound, Id, IdKind, MaybeValidModule, ModuleWords,
-        Schema, ValidatableModule, ValidationError,
+        validate_module, CheckedBound, DeclaredBound, DecorationTargetId, Id, IdKind,
+        MaybeValidModule, ModuleWords, Schema, ValidatableModule, ValidationError,
     };
     use crate::assembly::assemble_text;
     use crate::target_env::TargetEnv;
@@ -1216,6 +1280,26 @@ mod tests {
         binary[4] = 1;
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(error, ValidationError::InvalidReservedWord { reserved: 1 });
+    }
+
+    #[test]
+    fn member_decorate_requires_struct_target() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%u32 = OpTypeInt 32 0",
+            "OpMemberDecorate %u32 0 Offset 0",
+        ]
+        .join("\n");
+        let error = MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Universal1_6)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::MemberDecorationTargetNotStruct {
+                target: DecorationTargetId::try_from(1).unwrap()
+            }
+        );
     }
 
     #[test]
