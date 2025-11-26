@@ -4208,6 +4208,132 @@ mod tests {
     }
 
     #[test]
+    fn capability_cannot_appear_inside_functions() {
+        // Capabilities belong to the module header; placing one in the function section should
+        // trigger a layout error.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            6,          // bound (ids up to 5)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+            op(5, 54),  // OpFunction %1 %3 None %2
+            1,          // result type
+            3,          // result id
+            0,          // FunctionControl None
+            2,          // function type
+            op(2, 248), // OpLabel %4
+            4,
+            op(2, 17), // OpCapability Kernel (illegal inside function)
+            rspirv::spirv::Capability::Kernel as u32,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Capability
+            }
+        );
+    }
+
+    #[test]
+    fn extension_cannot_appear_inside_functions() {
+        // Extensions belong to the early module sections; reject an extension in the function body.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            6,          // bound (ids up to 5)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+            op(5, 54),  // OpFunction %1 %3 None %2
+            1,          // result type
+            3,          // result id
+            0,          // FunctionControl None
+            2,          // function type
+            op(2, 248), // OpLabel %4
+            4,
+            op(2, 10),   // OpExtension "X" (illegal inside function)
+            0x0000_0058, // "X"
+            op(1, 253),  // OpReturn
+            op(1, 56),   // OpFunctionEnd
+        ];
+
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Extension
+            }
+        );
+    }
+
+    #[test]
+    fn ext_inst_import_cannot_appear_inside_functions() {
+        // Imported instruction sets must be declared before functions; reject occurrences in the
+        // function section.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            6,          // bound (ids up to 5)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+            op(5, 54),  // OpFunction %1 %3 None %2
+            1,          // result type
+            3,          // result id
+            0,          // FunctionControl None
+            2,          // function type
+            op(2, 248), // OpLabel %4
+            4,
+            op(3, rspirv::spirv::Op::ExtInstImport as u16), // OpExtInstImport %5 "G" (illegal inside function)
+            5,
+            0x0000_0047, // "G"
+            op(1, 253),  // OpReturn
+            op(1, 56),   // OpFunctionEnd
+        ];
+
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::ExtInstImport
+            }
+        );
+    }
+
+    #[test]
     fn member_decorate_string_cannot_appear_inside_functions() {
         // OpMemberDecorateString must stay in the annotations section; placing it inside a
         // function body should be rejected.

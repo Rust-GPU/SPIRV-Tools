@@ -72,6 +72,7 @@ Tasks for this milestone:
   - Added layout regressions to keep `OpDecorateString` in the annotations section and out of function bodies.
   - Added layout regressions to keep `OpDecorateId` confined to the annotations section (not inside or after functions).
   - Added layout regressions to keep `OpGroupDecorate`/`OpGroupMemberDecorate` out of function bodies in addition to after-function checks.
+  - Added layout regressions rejecting capabilities, extensions, or imported instruction sets inside function bodies.
   - Added layout regression to reject `OpDecorationGroup` that appears after function definitions.
   - Added function entry block validation (functions must start with an `OpLabel`).
   - Added block terminator validation (each block must end with a terminator).
