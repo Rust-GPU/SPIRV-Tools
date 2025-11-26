@@ -3071,27 +3071,56 @@ mod tests {
             0x07230203,
             0x00010000,
             0,
-            3,
+            2,
             0,
             op(2, 17), // OpCapability Shader
             rspirv::spirv::Capability::Shader as u32,
             op(3, 14), // OpMemoryModel Logical GLSL450
             0,
             1,
-            op(2, 19), // OpTypeVoid %1
-            1,
             op(3, 71), // OpDecorate %1 RelaxedPrecision (annotation section)
             1,
             rspirv::spirv::Decoration::RelaxedPrecision as u32,
-            op(3, 4), // OpSourceExtension "ext" (misordered after annotations)
-            0x7478_65,
-            0,
+            op(2, 4), // OpSourceExtension "ext" (misordered after annotations)
+            0x0074_7865,
         ];
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
             ValidationError::LayoutOutOfOrder {
-                opcode: rspirv::spirv::Op::Decorate
+                opcode: rspirv::spirv::Op::SourceExtension
+            }
+        );
+    }
+
+    #[test]
+    fn source_continued_cannot_follow_annotations() {
+        // OpSourceContinued (debug) must not appear after the annotations section.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            2,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(3, 3), // OpSource Unknown 0 (establish debug section)
+            0,
+            0,
+            op(3, 71), // OpDecorate %1 RelaxedPrecision (annotation section)
+            1,
+            rspirv::spirv::Decoration::RelaxedPrecision as u32,
+            op(2, 2), // OpSourceContinued "c" (misordered after annotations)
+            0x0000_0063,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::SourceContinued
             }
         );
     }

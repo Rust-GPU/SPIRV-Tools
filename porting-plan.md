@@ -54,6 +54,7 @@ Tasks for this milestone:
   - Pulled capability metadata from the SPIR-V grammar to drive version/extension lookups and layered in manual overrides where the grammar leaves extension-only features (e.g., shader clock). Added a regression for VariablePointers requiring VariablePointersStorageBuffer to align with the dependency tables.
   - Enforced grammar-driven capability dependencies (with a soft exception for Shader→Matrix) and added regressions for ray tracing requiring Shader, group non-uniform arithmetic requiring GroupNonUniform, and OpenCL DeviceEnqueue requiring Kernel.
   - Added layout regressions to lock ordering of capabilities/extensions relative to debug/names/annotations (including `OpSource`/`OpModuleProcessed` and name/annotation section ordering) to match the C++ validator expectations.
+  - Added layout regressions covering misordered `OpSourceExtension`/`OpSourceContinued` after annotations to mirror the C++ validator behavior.
 - [x] Cache validated modules across CLI/FFI invocations when the same input is reused, avoiding redundant parsing/validation.
 - [ ] Expose wider structural rules (capability/extension ordering in layout, per-target decoration constraints) mirroring the C++ validator tables.
 - [ ] Enable the Rust validator over the FFI/CLI by default once structural parity is sufficiently close to C++.
