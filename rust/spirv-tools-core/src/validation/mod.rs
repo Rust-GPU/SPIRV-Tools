@@ -3167,6 +3167,33 @@ mod tests {
     }
 
     #[test]
+    fn universal_rejects_vulkan_specific_extension() {
+        let text = [
+            "OpCapability Shader",
+            "OpExtension \"SPV_KHR_vulkan_memory_model\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("Universal env should reject Vulkan-only extension");
+        assert_eq!(
+            error,
+            ValidationError::DisallowedExtension {
+                extension: ExtensionName::from("SPV_KHR_vulkan_memory_model"),
+                env: TargetEnv::Universal1_6
+            }
+        );
+    }
+
+    #[test]
     fn non_opencl_env_rejects_opencl_extension() {
         let text = [
             "OpCapability Shader",
@@ -3518,8 +3545,8 @@ mod tests {
 
         let validated = binary
             .as_slice()
-            .validate(TargetEnv::Universal1_6)
-            .expect("extension should be accepted outside WebGPU");
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("extension should be accepted for Vulkan environments");
         assert_eq!(validated.header().schema(), Schema::ZERO);
     }
 

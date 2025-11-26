@@ -413,13 +413,17 @@ impl TargetEnv {
     /// The WebGPU environment forbids all extensions; other environments currently allow
     /// all extensions until a full allowlist is ported. Vulkan-only extensions are
     /// rejected for non-Vulkan environments. OpenCL-specific extensions are rejected
-    /// outside OpenCL environments.
+    /// outside OpenCL environments, and Vulkan-only extensions are disallowed for
+    /// OpenCL/Universal targets to mirror the C++ tables.
     pub fn is_extension_allowed(self, extension: &ExtensionName) -> bool {
         let lower = extension.as_str().to_ascii_lowercase();
         if matches!(self, TargetEnv::WebGpu0) {
             return false;
         }
         if lower.contains("opencl") && !self.is_opencl() {
+            return false;
+        }
+        if is_vulkan_specific_extension(extension.as_str()) && !self.is_vulkan() {
             return false;
         }
         if lower.contains("vulkan") && !self.is_vulkan() {
@@ -462,6 +466,35 @@ impl TargetEnv {
             _ => true,
         }
     }
+}
+
+/// Vulkan-only extensions that should be rejected in non-Vulkan environments.
+fn is_vulkan_specific_extension(name: &str) -> bool {
+    const VULKAN_ONLY_EXTENSIONS: &[&str] = &[
+        "SPV_KHR_vulkan_memory_model",
+        "SPV_KHR_workgroup_memory_explicit_layout",
+        "SPV_KHR_storage_buffer_storage_class",
+        "SPV_KHR_physical_storage_buffer",
+        "SPV_KHR_untyped_pointers",
+        "SPV_EXT_descriptor_indexing",
+        "SPV_EXT_fragment_shader_interlock",
+        "SPV_EXT_mesh_shader",
+        "SPV_EXT_shader_atomic_float_add",
+        "SPV_EXT_shader_atomic_float_min_max",
+        "SPV_EXT_fragment_invocation_density",
+        "SPV_KHR_ray_tracing",
+        "SPV_KHR_ray_query",
+        "SPV_KHR_ray_tracing_position_fetch",
+        "SPV_NV_ray_tracing",
+        "SPV_NV_ray_tracing_motion_blur",
+        "SPV_NV_bindless_texture",
+        "SPV_NV_cooperative_matrix",
+        "SPV_NV_cooperative_matrix2",
+        "SPV_NV_mesh_shader",
+    ];
+    VULKAN_ONLY_EXTENSIONS
+        .iter()
+        .any(|ext| ext.eq_ignore_ascii_case(name))
 }
 
 fn is_support_guaranteed_vulkan_1_0(capability: rspirv::spirv::Capability) -> bool {
