@@ -2384,6 +2384,9 @@ fn check_id(id: Id, bound: CheckedBound) -> Option<ValidationError> {
     }
 }
 
+/// Returns the SPIR-V version to use when validating a module for a given target.
+/// This clamps the module-declared version to the environment's supported maximum
+/// so version checks remain deterministic.
 fn effective_spirv_version(env: TargetEnv, module_version: SpirvVersion) -> SpirvVersion {
     let env_version = env.spirv_version();
     if env_version.meets_or_exceeds(module_version) {
@@ -6322,6 +6325,19 @@ mod tests {
         text.as_str()
             .validate(TargetEnv::Universal1_6)
             .expect("succeeds on newer SPIR-V");
+    }
+
+    #[test]
+    fn effective_spirv_version_clamps_to_env() {
+        use super::effective_spirv_version;
+        assert_eq!(
+            effective_spirv_version(TargetEnv::Vulkan1_0, SpirvVersion::new(1, 3)),
+            TargetEnv::Vulkan1_0.spirv_version()
+        );
+        assert_eq!(
+            effective_spirv_version(TargetEnv::Vulkan1_3, SpirvVersion::new(1, 1)),
+            SpirvVersion::new(1, 1)
+        );
     }
 
     #[test]
