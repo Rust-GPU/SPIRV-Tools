@@ -6419,6 +6419,54 @@ mod tests {
     }
 
     #[test]
+    fn capability_version_clamps_to_env_when_module_is_newer() {
+        use rspirv::{binary::Assemble, dr::Builder};
+        let mut builder = Builder::new();
+        builder.set_version(1, 6);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.capability(rspirv::spirv::Capability::RayTracingKHR);
+        builder.extension("SPV_KHR_ray_tracing");
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+        let void = builder.type_void();
+        let fn_type = builder.type_function(void, std::iter::empty::<u32>());
+        builder
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_type)
+            .unwrap();
+        builder.begin_block(None).unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+        let words = builder.module().assemble();
+        let error = words
+            .as_slice()
+            .validate(TargetEnv::Vulkan1_0)
+            .expect_err("capability should be gated by env-clamped version");
+        match error {
+            ValidationError::CapabilityRequiresSpirvVersion {
+                capability,
+                required_version,
+                target_version,
+            } => {
+                assert_eq!(capability, rspirv::spirv::Capability::RayTracingKHR);
+                assert_eq!(required_version, SpirvVersion::new(1, 4));
+                assert_eq!(target_version, SpirvVersion::new(1, 0));
+            }
+            ValidationError::ExtensionRequiresSpirvVersion {
+                extension,
+                required_version,
+                target_version,
+            } => {
+                assert_eq!(extension, ExtensionName::from("SPV_KHR_ray_tracing"));
+                assert_eq!(required_version, SpirvVersion::new(1, 4));
+                assert_eq!(target_version, SpirvVersion::new(1, 0));
+            }
+            other => panic!("unexpected error {other:?}"),
+        }
+    }
+
+    #[test]
     fn shader_clock_capability_requires_extension() {
         let text = [
             "OpCapability Shader",
