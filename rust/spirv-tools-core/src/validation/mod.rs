@@ -727,6 +727,20 @@ pub enum ValidationError {
         /// The missing block target.
         target: Id,
     },
+    /// A phi instruction has an unexpected number of incoming predecessors.
+    #[error(
+        "phi in block {block:?} of function {function:?} has {found} incoming values, expected {expected}"
+    )]
+    PhiPredecessorCountMismatch {
+        /// The function containing the phi.
+        function: Id,
+        /// The block containing the phi.
+        block: Id,
+        /// The expected predecessor count.
+        expected: usize,
+        /// The number of incoming pairs provided by the phi.
+        found: usize,
+    },
 }
 
 /// Categories of ids that must be non-zero.
@@ -1065,6 +1079,13 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
             });
         }
 
+        let mut predecessors: std::collections::HashMap<Id, std::collections::HashSet<Id>> =
+            block_ids
+                .iter()
+                .copied()
+                .map(|id| (id, Default::default()))
+                .collect();
+
         for block in &function.blocks {
             let block_label_id = block
                 .label
@@ -1112,11 +1133,25 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                 rspirv::spirv::Op::Branch => {
                     if let Some(op) = terminator_inst.operands.get(0) {
                         check_target(op)?;
+                        if let rspirv::dr::Operand::IdRef(raw) = op {
+                            if let Ok(target) = Id::try_from(*raw) {
+                                if let Some(preds) = predecessors.get_mut(&target) {
+                                    preds.insert(block_label_id);
+                                }
+                            }
+                        }
                     }
                 }
                 rspirv::spirv::Op::BranchConditional => {
                     for op in terminator_inst.operands.iter().skip(1).take(2) {
                         check_target(op)?;
+                        if let rspirv::dr::Operand::IdRef(raw) = op {
+                            if let Ok(target) = Id::try_from(*raw) {
+                                if let Some(preds) = predecessors.get_mut(&target) {
+                                    preds.insert(block_label_id);
+                                }
+                            }
+                        }
                     }
                 }
                 rspirv::spirv::Op::Switch => {
@@ -1127,10 +1162,43 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                         // operands alternate: default target then pairs of (literal, target)
                         if index == 1 || index % 2 == 0 {
                             check_target(op)?;
+                            if let rspirv::dr::Operand::IdRef(raw) = op {
+                                if let Ok(target) = Id::try_from(*raw) {
+                                    if let Some(preds) = predecessors.get_mut(&target) {
+                                        preds.insert(block_label_id);
+                                    }
+                                }
+                            }
                         }
                     }
                 }
                 _ => {}
+            }
+        }
+
+        for block in &function.blocks {
+            let block_label_id = block
+                .label
+                .as_ref()
+                .and_then(|inst| inst.result_id)
+                .and_then(|raw| Id::try_from(raw).ok())
+                .unwrap_or(entry_label_id);
+            let expected_preds = predecessors
+                .get(&block_label_id)
+                .map(|set| set.len())
+                .unwrap_or(0);
+            for inst in &block.instructions {
+                if inst.class.opcode == rspirv::spirv::Op::Phi {
+                    let pair_count = inst.operands.len() / 2;
+                    if pair_count != expected_preds {
+                        return Err(ValidationError::PhiPredecessorCountMismatch {
+                            function: function_id,
+                            block: block_label_id,
+                            expected: expected_preds,
+                            found: pair_count,
+                        });
+                    }
+                }
             }
         }
     }
