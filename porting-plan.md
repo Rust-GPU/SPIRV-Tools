@@ -82,6 +82,15 @@ Tasks for this milestone:
 - [ ] Expose wider structural rules (capability/extension ordering in layout, per-target decoration constraints) mirroring the C++ validator tables.
 - [ ] Enable the Rust validator over the FFI/CLI by default once structural parity is sufficiently close to C++.
 
+## Upcoming Milestone: Capability/Extension Parity
+Bring the Rust validator to full capability/extension parity with the C++ tables using the grammar-driven dependency metadata and explicit per-environment rules.
+
+Tasks for this milestone:
+- Import the remaining capability/extension dependency tables (including operand-level requirements) from the grammar/C++ metadata and drive them from the effective SPIR-V version helper.
+- Add paired text/binary regressions for version/extension/capability gating, covering env-clamped cases and Vulkan/OpenCL/WebGPU allowlists.
+- Thread the effective version into any residual version checks (opcode tables, decoration/version ties) and ensure FFI/CLI callers can surface the clamped version for diagnostics without recomputation.
+- Audit per-target allowlists for extensions/capabilities and align them with the C++ validator, extending typed errors/tests where gaps remain.
+
 ## Completed Milestone: Disassembler Parity & CLI Integration
 With the assembler covering the full operand space, this milestone brought the disassembler and CLI parity up to the same standard and wired the FFI so all build systems can opt into the Rust implementation.
 
