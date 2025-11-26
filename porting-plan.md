@@ -94,6 +94,15 @@ Tasks for this milestone:
 - Thread the effective version into any residual version checks (opcode tables, decoration/version ties) and ensure FFI/CLI callers can surface the clamped version for diagnostics without recomputation.
 - Audit per-target allowlists for extensions/capabilities and align them with the C++ validator, extending typed errors/tests where gaps remain.
 
+## Upcoming Milestone: Layout/Decoration Parity
+Align remaining layout ordering rules and decoration target/category constraints with the C++ validator.
+
+Planned tasks:
+- Tighten capability/extension ordering to catch any remaining misorders relative to debug/names/annotations with paired text/binary regressions.
+- Enforce outstanding decoration target category rules (member vs. non-member, category-specific targets) with focused binary tests.
+- Add layout regressions for decoration opcodes to ensure they remain in the annotations section and precede functions.
+- Reaudit per-environment decoration/capability allowlists and wire validated-module reuse through FFI/CLI caching where ordering rules apply.
+
 ## Completed Milestone: Disassembler Parity & CLI Integration
 With the assembler covering the full operand space, this milestone brought the disassembler and CLI parity up to the same standard and wired the FFI so all build systems can opt into the Rust implementation.
 
