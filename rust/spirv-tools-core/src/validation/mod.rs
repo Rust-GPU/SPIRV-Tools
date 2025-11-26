@@ -1139,7 +1139,7 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
 
             match terminator_inst.class.opcode {
                 rspirv::spirv::Op::Branch => {
-                    if let Some(op) = terminator_inst.operands.get(0) {
+                    if let Some(op) = terminator_inst.operands.first() {
                         check_target(op)?;
                         if let rspirv::dr::Operand::IdRef(raw) = op {
                             if let Ok(target) = Id::try_from(*raw) {
