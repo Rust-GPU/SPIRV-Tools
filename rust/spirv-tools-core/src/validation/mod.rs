@@ -11,6 +11,9 @@ use thiserror::Error;
 
 use crate::{target_env::TargetEnv, version::SpirvVersion};
 
+mod capability_info;
+use capability_info::capability_info_from_grammar;
+
 /// A non-zero SPIR-V id.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Id(NonZeroU32);
@@ -1298,13 +1301,33 @@ fn validate_capabilities(
     env: TargetEnv,
     extensions: &ExtensionSet,
 ) -> Result<(), ValidationError> {
+    fn merge_versions(
+        grammar: Option<SpirvVersion>,
+        manual: Option<SpirvVersion>,
+    ) -> Option<SpirvVersion> {
+        match (grammar, manual) {
+            (Some(grammar), Some(manual)) => {
+                if grammar.meets_or_exceeds(manual) {
+                    Some(grammar)
+                } else {
+                    Some(manual)
+                }
+            }
+            (Some(grammar), None) => Some(grammar),
+            (None, Some(manual)) => Some(manual),
+            (None, None) => None,
+        }
+    }
+
     let declared: HashSet<_> = module
         .capabilities
         .iter()
         .filter_map(capability_operand)
         .collect();
+    let target_version = env.spirv_version();
     for inst in &module.capabilities {
         if let Some(capability) = capability_operand(inst) {
+            let grammar_requirements = capability_info_from_grammar(capability);
             if env.is_opencl()
                 && matches!(
                     capability,
@@ -1322,18 +1345,38 @@ fn validate_capabilities(
                     capability,
                 });
             }
-            if let Some(required_ext) = required_extension_for_capability(capability) {
-                if !extensions
-                    .values
-                    .iter()
-                    .any(|ext| ext.as_str() == required_ext)
-                {
-                    return Err(ValidationError::DisallowedCapabilityMissingExtension {
-                        capability,
-                        required_extension: required_ext.to_string(),
-                    });
+            let grammar_version = grammar_requirements.required_version;
+            let required_version = merge_versions(
+                grammar_version,
+                manual_required_spirv_version_for_capability(capability),
+            );
+            let version_satisfied = required_version
+                .map(|required| target_version >= required)
+                .unwrap_or(true);
+            if version_satisfied {
+                let grammar_requires_extension =
+                    !grammar_requirements.required_extensions.is_empty()
+                        && grammar_version.is_none_or(|required| target_version < required);
+                if grammar_requires_extension {
+                    for &required_ext in grammar_requirements.required_extensions {
+                        if !has_extension(extensions, required_ext) {
+                            return Err(ValidationError::DisallowedCapabilityMissingExtension {
+                                capability,
+                                required_extension: required_ext.to_string(),
+                            });
+                        }
+                    }
+                }
+                if let Some(required_ext) = required_extension_for_capability(capability) {
+                    if !has_extension(extensions, required_ext) {
+                        return Err(ValidationError::DisallowedCapabilityMissingExtension {
+                            capability,
+                            required_extension: required_ext.to_string(),
+                        });
+                    }
                 }
             }
+
             let allowed_by_env = env.is_capability_allowed(capability);
             let allowed_by_extension = capability_allowed_by_extension(capability, extensions);
             let allowed_by_capability =
@@ -1341,8 +1384,7 @@ fn validate_capabilities(
             if !(allowed_by_env || allowed_by_extension || allowed_by_capability) {
                 return Err(ValidationError::DisallowedCapability { capability, env });
             }
-            if let Some(required_version) = required_spirv_version_for_capability(capability) {
-                let target_version = env.spirv_version();
+            if let Some(required_version) = required_version {
                 if target_version < required_version {
                     return Err(ValidationError::CapabilityRequiresSpirvVersion {
                         capability,
@@ -1369,14 +1411,21 @@ fn capability_allowed_by_extension(
     capability: rspirv::spirv::Capability,
     extensions: &ExtensionSet,
 ) -> bool {
-    required_extension_for_capability(capability)
-        .map(|required_ext| {
-            extensions
-                .values
-                .iter()
-                .any(|ext| ext.as_str() == required_ext)
-        })
-        .unwrap_or(false)
+    let grammar_requirements = capability_info_from_grammar(capability);
+    grammar_requirements
+        .required_extensions
+        .iter()
+        .any(|required_ext| has_extension(extensions, required_ext))
+        || required_extension_for_capability(capability)
+            .map(|required_ext| has_extension(extensions, required_ext))
+            .unwrap_or(false)
+}
+
+fn has_extension(extensions: &ExtensionSet, required_extension: &str) -> bool {
+    extensions
+        .values
+        .iter()
+        .any(|ext| ext.as_str() == required_extension)
 }
 
 fn capability_enabled_by_capability(
@@ -1538,7 +1587,7 @@ fn required_extension_for_capability(
     }
 }
 
-fn required_spirv_version_for_capability(
+fn manual_required_spirv_version_for_capability(
     capability: rspirv::spirv::Capability,
 ) -> Option<SpirvVersion> {
     use rspirv::spirv::Capability::*;
@@ -1645,6 +1694,16 @@ fn required_capabilities_for_capability(
         | TileShadingQCOM => &[Shader],
         // OpenCL address-related capabilities require Kernel.
         Addresses | GenericPointer | DeviceEnqueue | Pipes => &[Kernel],
+        VariablePointers => &[VariablePointersStorageBuffer],
+        VariablePointersStorageBuffer => &[Shader],
+        GroupNonUniformVote
+        | GroupNonUniformArithmetic
+        | GroupNonUniformBallot
+        | GroupNonUniformShuffle
+        | GroupNonUniformShuffleRelative
+        | GroupNonUniformClustered
+        | GroupNonUniformQuad => &[GroupNonUniform],
+        SubgroupDispatch => &[DeviceEnqueue],
         _ => &[],
     }
 }
@@ -4101,6 +4160,53 @@ mod tests {
         text.as_str()
             .validate(TargetEnv::Universal1_6)
             .expect("DeviceGroup accepted on SPIR-V 1.3+");
+    }
+
+    #[test]
+    fn variable_pointers_requires_storage_buffer_capability() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability VariablePointers",
+            "OpExtension \"SPV_KHR_variable_pointers\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("VariablePointers requires VariablePointersStorageBuffer");
+        assert_eq!(
+            error,
+            ValidationError::MissingRequiredCapability {
+                required_capability: rspirv::spirv::Capability::VariablePointersStorageBuffer,
+                capability: rspirv::spirv::Capability::VariablePointers,
+            }
+        );
+
+        let with_dependency = [
+            "OpCapability Shader",
+            "OpCapability VariablePointersStorageBuffer",
+            "OpCapability VariablePointers",
+            "OpExtension \"SPV_KHR_variable_pointers\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        with_dependency
+            .as_str()
+            .validate(TargetEnv::Universal1_6)
+            .expect("dependency declared should satisfy requirement");
     }
 
     #[test]
