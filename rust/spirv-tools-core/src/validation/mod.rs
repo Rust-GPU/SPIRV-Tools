@@ -3065,6 +3065,65 @@ mod tests {
     }
 
     #[test]
+    fn string_cannot_follow_annotations() {
+        // OpString (debug) must not appear after the annotations section.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            3,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 73), // OpDecorationGroup %1 (annotation section)
+            1,
+            op(3, 7), // OpString %2 "s" (misordered after annotations)
+            2,
+            0x0000_0073,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::String
+            }
+        );
+    }
+
+    #[test]
+    fn string_cannot_follow_names() {
+        // Debug1 instructions (OpString) must precede the Names section.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            3,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(3, 5), // OpName %1 "x" (names section)
+            1,
+            0x0000_0078,
+            op(3, 7), // OpString %2 "s" (misordered after names section)
+            2,
+            0x0000_0073,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::String
+            }
+        );
+    }
+
+    #[test]
     fn source_extension_cannot_follow_annotations() {
         // OpSourceExtension (debug) must not appear after the annotations section.
         let binary = vec![
