@@ -3495,6 +3495,48 @@ mod tests {
     }
 
     #[test]
+    fn debug_names_cannot_appear_inside_functions() {
+        // Hand-built binary with OpName in the function section to ensure it is rejected.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            5,          // bound (ids up to 4)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+            op(5, 54), // OpFunction %1 %3 None %2
+            1,
+            3,
+            0,
+            2,
+            op(2, 248), // OpLabel %4
+            4,
+            op(3, 5), // OpName %4 "fn" (invalid inside function section)
+            4,
+            0x006e_0066, // "fn"
+            op(1, 253),  // OpReturn
+            op(1, 56),   // OpFunctionEnd
+        ];
+
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Name
+            }
+        );
+    }
+
+    #[test]
     fn execution_mode_must_follow_entry_point() {
         let binary = vec![
             0x07230203,
