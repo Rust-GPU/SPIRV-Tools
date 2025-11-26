@@ -3408,6 +3408,43 @@ mod tests {
     }
 
     #[test]
+    fn decorations_cannot_follow_functions() {
+        use rspirv::{binary::Assemble, dr::Builder, spirv::Decoration, spirv::Op};
+
+        let mut builder = Builder::new();
+        builder.set_version(1, 0);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+        let void = builder.type_void();
+        let fn_type = builder.type_function(void, std::iter::empty::<u32>());
+        let fn_id = builder
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_type)
+            .unwrap();
+        builder.begin_block(None).unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+
+        let mut words = builder.module().assemble();
+        words.push(op(3, Op::Decorate as u16));
+        words.push(fn_id);
+        words.push(Decoration::RelaxedPrecision as u32);
+
+        let error = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Decorate
+            }
+        );
+    }
+
+    #[test]
     fn execution_mode_must_follow_entry_point() {
         let binary = vec![
             0x07230203,
