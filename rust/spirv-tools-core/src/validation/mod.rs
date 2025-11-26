@@ -3003,6 +3003,96 @@ mod tests {
     }
 
     #[test]
+    fn names_cannot_follow_annotations() {
+        // Names/debug instructions must precede annotations.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            3,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 71), // OpDecorate %1 RelaxedPrecision (annotation section)
+            1,
+            rspirv::spirv::Decoration::RelaxedPrecision as u32,
+            op(3, 5), // OpName %1 "x" (misordered after annotations)
+            1,
+            0x0000_0078, // "x"
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Decorate
+            }
+        );
+    }
+
+    #[test]
+    fn module_processed_must_precede_annotations() {
+        // OpModuleProcessed belongs to the debug section and must precede annotations.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            3,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 71), // OpDecorate %1 RelaxedPrecision (annotation section)
+            1,
+            rspirv::spirv::Decoration::RelaxedPrecision as u32,
+            op(2, 330),  // OpModuleProcessed "tag" (misordered after annotations)
+            0x0067_6174, // "tag"
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Decorate
+            }
+        );
+    }
+
+    #[test]
+    fn module_processed_must_precede_types_and_globals() {
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            3,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(2, 330),  // OpModuleProcessed "tag" (too late after types/globals)
+            0x0067_6174, // "tag"
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::ModuleProcessed
+            }
+        );
+    }
+
+    #[test]
     fn ext_inst_import_must_precede_types_and_globals() {
         // Place OpExtInstImport after a type to trigger layout ordering.
         let binary = vec![
