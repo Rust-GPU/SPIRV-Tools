@@ -1157,12 +1157,13 @@ fn validate_words(words: ModuleWords, env: TargetEnv) -> Result<ValidModule, Val
     let module = loader.module();
     let header = ValidatedHeader::from_module(&module)?;
     let module_version = header.version();
+    let target_version = effective_spirv_version(env, module_version);
     let defined_ids = validate_id_bound(&module, header)?;
     let opcodes = collect_result_opcodes(&module);
     let definitions = collect_result_instructions(&module);
     let capabilities = collect_declared_capabilities(&module);
-    let extensions = validate_extensions(&module, env, module_version)?;
-    validate_capabilities(&module, env, module_version, &extensions)?;
+    let extensions = validate_extensions(&module, env, target_version)?;
+    validate_capabilities(&module, env, target_version, &extensions)?;
     validate_sampler_image_addressing_mode(&module, &capabilities)?;
     validate_memory_model(&module)?;
     validate_type_functions(&module, &opcodes)?;
@@ -1891,7 +1892,7 @@ fn capability_operand(inst: &rspirv::dr::Instruction) -> Option<rspirv::spirv::C
 fn validate_capabilities(
     module: &Module,
     env: TargetEnv,
-    module_version: SpirvVersion,
+    target_version: SpirvVersion,
     extensions: &ExtensionSet,
 ) -> Result<(), ValidationError> {
     fn merge_versions(
@@ -1917,12 +1918,6 @@ fn validate_capabilities(
         .iter()
         .filter_map(capability_operand)
         .collect();
-    let env_version = env.spirv_version();
-    let target_version = if env_version.meets_or_exceeds(module_version) {
-        module_version
-    } else {
-        env_version
-    };
     for inst in &module.capabilities {
         if let Some(capability) = capability_operand(inst) {
             let grammar_requirements = capability_info_from_grammar(capability);
@@ -2335,15 +2330,9 @@ fn extension_operand(inst: &rspirv::dr::Instruction) -> Option<ExtensionName> {
 fn validate_extensions(
     module: &Module,
     env: TargetEnv,
-    module_version: SpirvVersion,
+    target_version: SpirvVersion,
 ) -> Result<ExtensionSet, ValidationError> {
     let mut extensions = ExtensionSet::default();
-    let env_version = env.spirv_version();
-    let target_version = if env_version.meets_or_exceeds(module_version) {
-        module_version
-    } else {
-        env_version
-    };
     for inst in &module.extensions {
         if let Some(extension) = extension_operand(inst) {
             let required_check = extension.clone();
@@ -2392,6 +2381,15 @@ fn check_id(id: Id, bound: CheckedBound) -> Option<ValidationError> {
         Some(ValidationError::IdExceedsBound { id, bound })
     } else {
         None
+    }
+}
+
+fn effective_spirv_version(env: TargetEnv, module_version: SpirvVersion) -> SpirvVersion {
+    let env_version = env.spirv_version();
+    if env_version.meets_or_exceeds(module_version) {
+        module_version
+    } else {
+        env_version
     }
 }
 
