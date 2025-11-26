@@ -216,3 +216,12 @@ Tasks for this milestone:
 - Enforce capability/extension ordering relative to debug/names/annotations and module layout (no late section regressions), including conditional extensions/capabilities.
 - Add decoration ordering/category checks that remain in the C++ tables (e.g., per-target-env decoration placement quirks) with paired text/binary regressions.
 - Keep ValidModule caching wired through FFI/CLI for these ordering checks to avoid reparsing/renumbering.
+
+## Upcoming Milestone: Function and CFG Validation
+Bring function-body validation in line with the C++ validator so the Rust validator can be enabled by default.
+
+Tasks for this milestone:
+- Validate function definitions: block ordering, structured control flow (merge/continue rules), and minimal well-formedness (single entry, terminals).
+- Enforce SSA/phi correctness (dominance of defs, matching predecessor counts/types) and type checking for instructions beyond the current structural pass.
+- Validate interface linkage for variables and descriptor sets/bindings where applicable per environment.
+- Wire the Rust validator through FFI/CLI as the default path (behind a feature flag) once the above checks and layout parity are in place, backed by mirrored gtest/integration coverage.
