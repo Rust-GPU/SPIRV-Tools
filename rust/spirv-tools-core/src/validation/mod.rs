@@ -2317,6 +2317,61 @@ mod tests {
     }
 
     #[test]
+    fn sampler_image_address_mode_must_precede_entry_points() {
+        // The text assembler rejects this ordering, so keep a hand-crafted binary with
+        // OpSamplerImageAddressingModeNV placed after OpEntryPoint to exercise the validator.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version 1.0
+            0,          // generator
+            5,          // bound (ids 1..4)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(2, 17), // OpCapability BindlessTextureNV
+            rspirv::spirv::Capability::BindlessTextureNV as u32,
+            op(7, 10), // OpExtension "SPV_NV_bindless_texture"
+            0x5f56_5053,
+            0x625f_564e,
+            0x6c64_6e69,
+            0x5f73_7365,
+            0x7478_6574,
+            0x0065_7275,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(5, 15), // OpEntryPoint GLCompute %3 "main"
+            rspirv::spirv::ExecutionModel::GLCompute as u32,
+            3,
+            0x6e69616d,
+            0,
+            op(2, rspirv::spirv::Op::SamplerImageAddressingModeNV as u16), // OpSamplerImageAddressingModeNV 64 (misordered after entry point)
+            64,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+            op(5, 54), // OpFunction %3 None %2
+            1,
+            3,
+            0,
+            2,
+            op(2, 248), // OpLabel %4
+            4,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::SamplerImageAddressingModeNV
+            }
+        );
+    }
+
+    #[test]
     fn validate_module_detects_duplicate_result_ids() {
         let text = [
             "OpCapability Shader",
@@ -2559,6 +2614,37 @@ mod tests {
             op(2, 19), // OpTypeVoid %1
             1,
             0x0006000b, // OpExtInstImport %2 "GLSL.std.450" (misordered)
+            2,
+            0x4c53_4c47,
+            0x2e73_7464,
+            0x3035_342e,
+            0,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::ExtInstImport
+            }
+        );
+    }
+
+    #[test]
+    fn ext_inst_import_cannot_follow_memory_model() {
+        // The assembler canonicalizes layout, so construct the binary manually to keep
+        // OpExtInstImport after OpMemoryModel and ensure the validator flags it.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            3,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            0x0006000b, // OpExtInstImport %2 "GLSL.std.450" (too late)
             2,
             0x4c53_4c47,
             0x2e73_7464,
