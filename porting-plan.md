@@ -197,3 +197,11 @@ Tasks for this milestone:
 - Import capability/extension ordering tables (including conditional capabilities/extensions) and enforce them with text/binary regression tests.
 - Mirror environment-specific decoration/layout constraints driven by the grammar data.
 - Thread validated-module reuse through FFI/CLI for these new checks to avoid reparsing.
+
+## Upcoming Milestone: Layout Ordering Parity
+Tighten layout ordering to match the C++ validator’s section/decoration ordering rules.
+
+Tasks for this milestone:
+- Enforce capability/extension ordering relative to debug/names/annotations and module layout (no late section regressions), including conditional extensions/capabilities.
+- Add decoration ordering/category checks that remain in the C++ tables (e.g., per-target-env decoration placement quirks) with paired text/binary regressions.
+- Keep ValidModule caching wired through FFI/CLI for these ordering checks to avoid reparsing/renumbering.
