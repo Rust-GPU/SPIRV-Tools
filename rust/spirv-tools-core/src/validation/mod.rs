@@ -1809,7 +1809,8 @@ fn run_layout_check(words: &[u32], _env: TargetEnv) -> Result<(), ValidationErro
             inst: rspirv::dr::Instruction,
         ) -> rspirv::binary::ParseAction {
             if matches!(self.function_state, FunctionState::Inside) {
-                match inst.class.opcode {
+                let opcode = inst.class.opcode;
+                match opcode {
                     rspirv::spirv::Op::MemoryModel => {
                         return rspirv::binary::ParseAction::Error(Box::new(
                             ValidationError::FunctionBeforeMemoryModel,
@@ -1819,6 +1820,12 @@ fn run_layout_check(words: &[u32], _env: TargetEnv) -> Result<(), ValidationErro
                         self.function_state = FunctionState::Outside;
                     }
                     _ => {}
+                }
+                let section = instruction_section(self.current_section, &inst);
+                if section <= Section::Annotations {
+                    return rspirv::binary::ParseAction::Error(Box::new(
+                        ValidationError::LayoutOutOfOrder { opcode },
+                    ));
                 }
                 return rspirv::binary::ParseAction::Continue;
             }
@@ -3436,6 +3443,49 @@ mod tests {
             .as_slice()
             .validate(TargetEnv::Universal1_6)
             .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Decorate
+            }
+        );
+    }
+
+    #[test]
+    fn decorations_cannot_appear_inside_functions() {
+        // Hand-built binary with a decoration inside the function body to ensure layout checking
+        // rejects annotations in the function section.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            6,          // bound (ids up to 5)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+            op(5, 54),  // OpFunction %1 %4 None %2
+            1,          // result type
+            4,          // result id
+            0,          // FunctionControl None
+            2,          // function type
+            op(2, 248), // OpLabel %3
+            3,
+            op(3, 71), // OpDecorate %3 RelaxedPrecision (illegal in function section)
+            3,
+            rspirv::spirv::Decoration::RelaxedPrecision as u32,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
             ValidationError::LayoutOutOfOrder {
