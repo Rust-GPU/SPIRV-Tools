@@ -5651,6 +5651,40 @@ mod tests {
     }
 
     #[test]
+    fn extension_version_clamps_to_env_when_module_is_newer() {
+        use rspirv::{binary::Assemble, dr::Builder};
+        let mut builder = Builder::new();
+        builder.set_version(1, 6);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.extension("SPV_EXT_fragment_shader_interlock");
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+        let void = builder.type_void();
+        let fn_type = builder.type_function(void, std::iter::empty::<u32>());
+        builder
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_type)
+            .unwrap();
+        builder.begin_block(None).unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+        let words = builder.module().assemble();
+        let error = words
+            .as_slice()
+            .validate(TargetEnv::Vulkan1_0)
+            .expect_err("env version should clamp module version when gating extension");
+        assert_eq!(
+            error,
+            ValidationError::ExtensionRequiresSpirvVersion {
+                extension: ExtensionName::from("SPV_EXT_fragment_shader_interlock"),
+                required_version: SpirvVersion::new(1, 4),
+                target_version: TargetEnv::Vulkan1_0.spirv_version(),
+            }
+        );
+    }
+
+    #[test]
     fn fragment_shader_interlock_extension_requires_spirv_1_4() {
         let text = [
             "OpCapability Shader",
