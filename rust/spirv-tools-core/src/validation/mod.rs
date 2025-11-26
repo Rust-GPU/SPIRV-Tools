@@ -4332,6 +4332,90 @@ mod tests {
     }
 
     #[test]
+    fn source_cannot_appear_inside_functions() {
+        // Debug/Source instructions must not appear inside function bodies.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            5,          // bound (ids up to 4)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+            op(5, 54),  // OpFunction %1 %3 None %2
+            1,          // result type
+            3,          // result id
+            0,          // FunctionControl None
+            2,          // function type
+            op(2, 248), // OpLabel %4
+            4,
+            op(3, 3), // OpSource GLSL 450 (illegal inside function)
+            rspirv::spirv::SourceLanguage::GLSL as u32,
+            450,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Source
+            }
+        );
+    }
+
+    #[test]
+    fn source_cannot_follow_functions() {
+        // Debug/Source instructions must stay in the debug section before functions.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            5,          // bound (ids up to 4)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+            op(5, 54), // OpFunction %1 %3 None %2
+            1,
+            3,
+            0,
+            2,
+            op(2, 248), // OpLabel %4
+            4,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+            op(3, 3),   // OpSource GLSL 450 (after functions -> error)
+            rspirv::spirv::SourceLanguage::GLSL as u32,
+            450,
+        ];
+
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Source
+            }
+        );
+    }
+
+    #[test]
     fn memory_model_cannot_appear_inside_functions() {
         // OpMemoryModel must appear before functions; reject it inside a function body.
         let binary = vec![
