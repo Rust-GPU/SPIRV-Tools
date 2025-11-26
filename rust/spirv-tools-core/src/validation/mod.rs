@@ -749,6 +749,12 @@ pub enum ValidationError {
         /// The entry block id.
         entry: Id,
     },
+    /// A function declaration appeared after a function definition.
+    #[error("function declaration {function:?} appears after a function definition")]
+    FunctionDeclarationAfterDefinition {
+        /// The declared function id.
+        function: Id,
+    },
 }
 
 /// Categories of ids that must be non-zero.
@@ -1042,6 +1048,7 @@ fn validate_words(words: ModuleWords, env: TargetEnv) -> Result<ValidModule, Val
 }
 
 fn validate_functions(module: &Module) -> Result<(), ValidationError> {
+    let mut seen_definition = false;
     for function in &module.functions {
         let function_id = function
             .def
@@ -1049,6 +1056,17 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
             .and_then(|inst| inst.result_id)
             .and_then(|raw| Id::try_from(raw).ok())
             .unwrap_or(Id::try_from(1).expect("non-zero literal"));
+
+        let is_declaration = function.blocks.is_empty() && function.parameters.is_empty();
+        if is_declaration {
+            if seen_definition {
+                return Err(ValidationError::FunctionDeclarationAfterDefinition {
+                    function: function_id,
+                });
+            }
+            continue;
+        }
+        seen_definition = true;
 
         let entry_block =
             function
@@ -3092,7 +3110,7 @@ mod tests {
             0x07230203,
             0x00010000,
             0,
-            4,
+            7,
             0,
             op(2, 17), // OpCapability Shader
             rspirv::spirv::Capability::Shader as u32,
@@ -3101,21 +3119,74 @@ mod tests {
             1,
             op(2, 19), // OpTypeVoid %1
             1,
-            op(3, 33), // OpTypeFunction %2 %1
+            op(4, 21), // OpTypeInt %2 32 0
             2,
-            1,
-            op(5, 54), // OpFunction %3 None %2 (missing OpLabel)
-            1,
-            3,
+            32,
             0,
+            op(4, 33), // OpTypeFunction %3 %1 %2
+            3,
+            1,
             2,
+            op(5, 54), // OpFunction %4 None %3 (missing OpLabel)
+            1,
+            4,
+            0,
+            3,
+            op(3, 55), // OpFunctionParameter %5 %2
+            2,
+            5,
             op(1, 56), // OpFunctionEnd
         ];
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
             ValidationError::MissingFunctionEntryBlock {
-                function: Id::try_from(3).unwrap()
+                function: Id::try_from(4).unwrap()
+            }
+        );
+    }
+
+    #[test]
+    fn function_declarations_must_precede_definitions() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%1 = OpTypeVoid",
+            "%2 = OpTypeFunction %1",
+            "%3 = OpFunction %1 None %2",
+            "OpFunctionEnd",
+            "%4 = OpFunction %1 None %2",
+            "%5 = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let result = MaybeValidModule::Text(&text).validate(TargetEnv::Universal1_6);
+        assert!(result.is_ok(), "unexpected validation error: {result:?}");
+    }
+
+    #[test]
+    fn function_declaration_after_definition_is_rejected() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%1 = OpTypeVoid",
+            "%2 = OpTypeFunction %1",
+            "%3 = OpFunction %1 None %2",
+            "%4 = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+            "%5 = OpFunction %1 None %2",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Universal1_6)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::FunctionDeclarationAfterDefinition {
+                function: Id::try_from(5).unwrap()
             }
         );
     }
