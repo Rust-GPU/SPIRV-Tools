@@ -62,6 +62,7 @@ Tasks for this milestone:
   - Added layout regressions for late capabilities (including conditional capabilities) appearing after annotations to keep section ordering tight.
   - Added a layout regression to ensure imported instruction sets (`OpExtInstImport`) do not appear after annotations.
   - Added a layout regression for `OpConditionalExtensionINTEL` appearing after debug/names to keep extension ordering consistent.
+  - Added layout regressions for late extensions and capabilities after `OpExtInstImport` to lock the capabilities/extensions/import ordering.
 - [x] Cache validated modules across CLI/FFI invocations when the same input is reused, avoiding redundant parsing/validation.
 - [ ] Expose wider structural rules (capability/extension ordering in layout, per-target decoration constraints) mirroring the C++ validator tables.
 - [ ] Enable the Rust validator over the FFI/CLI by default once structural parity is sufficiently close to C++.

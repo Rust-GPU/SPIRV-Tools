@@ -3179,6 +3179,39 @@ mod tests {
     }
 
     #[test]
+    fn extension_cannot_follow_ext_inst_import() {
+        // Extensions must appear before imports; a later extension is out of order.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            2,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 11), // OpExtInstImport %1 "GLSL.std.450"
+            1,
+            0x004c_5347, // "GLS"
+            op(6, 10),   // OpExtension "SPV_KHR_ray_tracing" (misordered after imports)
+            0x5f56_5053,
+            0x5f52_484b,
+            0x5f79_6172,
+            0x6361_7274,
+            0x0067_6e69,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Extension
+            }
+        );
+    }
+
+    #[test]
     fn names_cannot_follow_annotations() {
         // Names/debug instructions must precede annotations.
         let binary = vec![
@@ -3206,6 +3239,33 @@ mod tests {
             error,
             ValidationError::LayoutOutOfOrder {
                 opcode: rspirv::spirv::Op::Decorate
+            }
+        );
+    }
+
+    #[test]
+    fn capability_cannot_follow_ext_inst_import() {
+        // Capabilities must precede extension imports.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            2,
+            0,
+            op(3, 11), // OpExtInstImport %1 "GLSL.std.450" (imports section)
+            1,
+            0x004c_5347,
+            op(2, 17), // OpCapability Geometry (misordered after imports)
+            rspirv::spirv::Capability::Geometry as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Capability
             }
         );
     }
