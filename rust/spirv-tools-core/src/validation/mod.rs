@@ -6623,6 +6623,35 @@ mod tests {
     }
 
     #[test]
+    fn memory_model_vulkan_requires_spirv_1_5() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut builder = Builder::new();
+        builder.set_version(1, 4);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.extension("SPV_KHR_vulkan_memory_model");
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Vulkan,
+        );
+
+        let words = builder.module().assemble();
+        let error = words
+            .as_slice()
+            .validate(TargetEnv::Vulkan1_1Spirv1_4)
+            .expect_err("Vulkan memory model requires SPIR-V 1.5");
+        assert_eq!(
+            error,
+            ValidationError::OperandRequiresSpirvVersion {
+                opcode: rspirv::spirv::Op::MemoryModel,
+                operand_index: 1,
+                required_version: SpirvVersion::new(1, 5),
+                target_version: TargetEnv::Vulkan1_1Spirv1_4.spirv_version(),
+            }
+        );
+    }
+
+    #[test]
     fn storage_buffer_requires_spirv_1_3() {
         let text = [
             "OpCapability Shader",
