@@ -2218,6 +2218,15 @@ fn validate_instruction_requirements(
                     });
                 }
             }
+            for &required_cap in manual_required_capabilities_for_operand(operand) {
+                if !capabilities.contains(&required_cap) {
+                    return Err(ValidationError::MissingOperandCapability {
+                        opcode: inst.class.opcode,
+                        operand_index: index,
+                        required_capability: required_cap,
+                    });
+                }
+            }
             for required_ext in operand.required_extensions() {
                 if !extensions
                     .values
@@ -2382,6 +2391,17 @@ fn manual_required_spirv_version_for_operand(
             Some(SpirvVersion::new(1, 6))
         }
         _ => None,
+    }
+}
+
+fn manual_required_capabilities_for_operand(
+    operand: &rspirv::dr::Operand,
+) -> &'static [rspirv::spirv::Capability] {
+    match operand {
+        rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::NonUniform) => {
+            &[rspirv::spirv::Capability::ShaderNonUniform]
+        }
+        _ => &[],
     }
 }
 
@@ -6947,6 +6967,33 @@ mod tests {
                 operand_index: 1,
                 required_version: SpirvVersion::new(1, 5),
                 target_version: SpirvVersion::new(1, 4),
+            }
+        );
+    }
+
+    #[test]
+    fn decoration_non_uniform_requires_capability() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%bool = OpTypeBool",
+            "%ptr = OpTypePointer Uniform %bool",
+            "%var = OpVariable %ptr Uniform",
+            "OpDecorate %var NonUniform",
+        ]
+        .join("\n");
+
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Universal1_5)
+            .expect_err("NonUniform decoration requires ShaderNonUniform capability");
+        assert_eq!(
+            error,
+            ValidationError::MissingOperandCapability {
+                opcode: rspirv::spirv::Op::Decorate,
+                operand_index: 1,
+                required_capability: rspirv::spirv::Capability::ShaderNonUniform,
             }
         );
     }
