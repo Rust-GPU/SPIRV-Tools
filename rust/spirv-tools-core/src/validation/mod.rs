@@ -741,6 +741,14 @@ pub enum ValidationError {
         /// The number of incoming pairs provided by the phi.
         found: usize,
     },
+    /// The entry block must not have predecessors.
+    #[error("entry block {entry:?} in function {function:?} must not have predecessors")]
+    EntryBlockHasPredecessor {
+        /// The function containing the entry block.
+        function: Id,
+        /// The entry block id.
+        entry: Id,
+    },
 }
 
 /// Categories of ids that must be non-zero.
@@ -1173,6 +1181,15 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                     }
                 }
                 _ => {}
+            }
+        }
+
+        if let Some(entry_preds) = predecessors.get(&entry_label_id) {
+            if !entry_preds.is_empty() {
+                return Err(ValidationError::EntryBlockHasPredecessor {
+                    function: function_id,
+                    entry: entry_label_id,
+                });
             }
         }
 
@@ -3267,6 +3284,49 @@ mod tests {
         } else {
             panic!("expected parse error, got {error:?}");
         }
+    }
+
+    #[test]
+    fn entry_block_cannot_have_predecessors() {
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            7,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+            op(5, 54), // OpFunction %3 None %2
+            1,
+            3,
+            0,
+            2,
+            op(2, 248), // OpLabel %4 (entry)
+            4,
+            op(2, 249), // OpBranch %5
+            5,
+            op(2, 248), // OpLabel %5 (second block)
+            5,
+            op(2, 249), // OpBranch %4 (back to entry)
+            4,
+            op(1, 56), // OpFunctionEnd
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::EntryBlockHasPredecessor {
+                function: Id::try_from(3).unwrap(),
+                entry: Id::try_from(4).unwrap()
+            }
+        );
     }
 
     #[test]
