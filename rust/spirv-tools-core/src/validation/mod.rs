@@ -582,6 +582,18 @@ pub enum ValidationError {
         /// Missing extension.
         required_extension: ExtensionName,
     },
+    /// `OpSamplerImageAddressingModeNV` was declared more than once.
+    #[error("OpSamplerImageAddressingModeNV should only be provided once")]
+    DuplicateSamplerImageAddressingMode,
+    /// `OpSamplerImageAddressingModeNV` is required when using `BindlessTextureNV`.
+    #[error("Missing required OpSamplerImageAddressingModeNV instruction")]
+    MissingSamplerImageAddressingMode,
+    /// `OpSamplerImageAddressingModeNV` used an invalid bit width.
+    #[error("OpSamplerImageAddressingModeNV bitwidth should be 64 or 32 (found {bit_width})")]
+    InvalidSamplerImageAddressingModeBitWidth {
+        /// The declared bit width.
+        bit_width: u32,
+    },
     /// Duplicate extension declarations were found.
     #[error("extension {extension} is declared more than once")]
     DuplicateExtension {
@@ -945,6 +957,7 @@ fn validate_words(words: ModuleWords, env: TargetEnv) -> Result<ValidModule, Val
     let capabilities = collect_declared_capabilities(&module);
     let extensions = validate_extensions(&module, env)?;
     validate_capabilities(&module, env, &extensions)?;
+    validate_sampler_image_addressing_mode(&module, &capabilities)?;
     validate_memory_model(&module)?;
     let struct_member_counts = validate_member_decorations(&module, &defined_ids)?;
     validate_decoration_groups(&module, &defined_ids, &opcodes, &struct_member_counts)?;
@@ -1022,6 +1035,7 @@ fn run_layout_check(words: &[u32], _env: TargetEnv) -> Result<(), ValidationErro
         function_state: FunctionState,
         capabilities: CapabilitySet,
         extensions: ExtensionSet,
+        sampler_image_address_mode: Option<u32>,
     }
 
     impl LayoutChecker {
@@ -1032,6 +1046,7 @@ fn run_layout_check(words: &[u32], _env: TargetEnv) -> Result<(), ValidationErro
                 function_state: FunctionState::Outside,
                 capabilities: CapabilitySet::default(),
                 extensions: ExtensionSet::default(),
+                sampler_image_address_mode: None,
             }
         }
     }
@@ -1042,10 +1057,20 @@ fn run_layout_check(words: &[u32], _env: TargetEnv) -> Result<(), ValidationErro
         }
 
         fn finalize(&mut self) -> rspirv::binary::ParseAction {
-            match self.memory_model_state.finalize() {
-                Ok(()) => rspirv::binary::ParseAction::Continue,
-                Err(err) => rspirv::binary::ParseAction::Error(Box::new(err)),
+            if let Err(err) = self.memory_model_state.finalize() {
+                return rspirv::binary::ParseAction::Error(Box::new(err));
             }
+            if self
+                .capabilities
+                .values
+                .contains(&rspirv::spirv::Capability::BindlessTextureNV)
+                && self.sampler_image_address_mode.is_none()
+            {
+                return rspirv::binary::ParseAction::Error(Box::new(
+                    ValidationError::MissingSamplerImageAddressingMode,
+                ));
+            }
+            rspirv::binary::ParseAction::Continue
         }
 
         fn consume_header(
@@ -1128,6 +1153,26 @@ fn run_layout_check(words: &[u32], _env: TargetEnv) -> Result<(), ValidationErro
                         ));
                     }
                     self.function_state = FunctionState::Inside;
+                }
+                rspirv::spirv::Op::SamplerImageAddressingModeNV => {
+                    if self.sampler_image_address_mode.is_some() {
+                        return rspirv::binary::ParseAction::Error(Box::new(
+                            ValidationError::DuplicateSamplerImageAddressingMode,
+                        ));
+                    }
+                    let bit_width = match inst.operands.first() {
+                        Some(rspirv::dr::Operand::LiteralBit32(value)) => *value,
+                        Some(rspirv::dr::Operand::LiteralBit64(value)) => *value as u32,
+                        _ => 0,
+                    };
+                    if bit_width != 32 && bit_width != 64 {
+                        return rspirv::binary::ParseAction::Error(Box::new(
+                            ValidationError::InvalidSamplerImageAddressingModeBitWidth {
+                                bit_width,
+                            },
+                        ));
+                    }
+                    self.sampler_image_address_mode = Some(bit_width);
                 }
                 _ => {}
             }
@@ -1414,11 +1459,46 @@ fn validate_instruction_requirements(
     Ok(())
 }
 
+fn validate_sampler_image_addressing_mode(
+    module: &Module,
+    capabilities: &HashSet<rspirv::spirv::Capability>,
+) -> Result<(), ValidationError> {
+    use rspirv::spirv::Op::SamplerImageAddressingModeNV;
+
+    let mut declared_bit_width: Option<u32> = None;
+    for inst in module
+        .all_inst_iter()
+        .filter(|inst| inst.class.opcode == SamplerImageAddressingModeNV)
+    {
+        if declared_bit_width.is_some() {
+            return Err(ValidationError::DuplicateSamplerImageAddressingMode);
+        }
+        let bit_width = match inst.operands.first() {
+            Some(rspirv::dr::Operand::LiteralBit32(value)) => *value,
+            Some(rspirv::dr::Operand::LiteralBit64(value)) => *value as u32,
+            _ => 0,
+        };
+        if bit_width != 32 && bit_width != 64 {
+            return Err(ValidationError::InvalidSamplerImageAddressingModeBitWidth { bit_width });
+        }
+        declared_bit_width = Some(bit_width);
+    }
+
+    if capabilities.contains(&rspirv::spirv::Capability::BindlessTextureNV)
+        && declared_bit_width.is_none()
+    {
+        return Err(ValidationError::MissingSamplerImageAddressingMode);
+    }
+
+    Ok(())
+}
+
 fn required_extension_for_capability(
     capability: rspirv::spirv::Capability,
 ) -> Option<&'static str> {
     use rspirv::spirv::Capability::*;
     match capability {
+        BindlessTextureNV => Some("SPV_NV_bindless_texture"),
         RayTracingNV => Some("SPV_NV_ray_tracing"),
         RayTracingKHR => Some("SPV_KHR_ray_tracing"),
         RayQueryKHR => Some("SPV_KHR_ray_query"),
@@ -2369,6 +2449,139 @@ mod tests {
                 opcode: rspirv::spirv::Op::SamplerImageAddressingModeNV
             }
         );
+    }
+
+    #[test]
+    fn sampler_image_address_mode_is_required_when_bindless_capability_declared() {
+        // BindlessTextureNV requires a single SamplerImageAddressingModeNV declaration.
+        let text = [
+            "OpCapability Shader",
+            "OpCapability BindlessTextureNV",
+            "OpExtension \"SPV_NV_bindless_texture\"",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint GLCompute %func \"main\"",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%func = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let expected = ValidationError::MissingSamplerImageAddressingMode;
+
+        let text_error = text
+            .as_str()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("sampler image address mode is required for bindless capability");
+        assert_eq!(text_error, expected);
+
+        let binary = assemble_text(&text).expect("assemble");
+        let binary_error = MaybeValidModule::Binary(&binary)
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("binary should also require sampler image address mode");
+        assert_eq!(binary_error, expected);
+    }
+
+    #[test]
+    fn sampler_image_address_mode_rejects_invalid_bit_width() {
+        // The assembler enforces valid bit widths, so use a hand-built binary with an invalid value.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version 1.0
+            0,          // generator
+            5,          // bound (ids 1..4)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(2, 17), // OpCapability BindlessTextureNV
+            rspirv::spirv::Capability::BindlessTextureNV as u32,
+            op(7, 10), // OpExtension "SPV_NV_bindless_texture"
+            0x5f56_5053,
+            0x625f_564e,
+            0x6c64_6e69,
+            0x5f73_7365,
+            0x7478_6574,
+            0x0065_7275,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, rspirv::spirv::Op::SamplerImageAddressingModeNV as u16), // invalid bit width
+            16,
+            op(5, 15), // OpEntryPoint GLCompute %3 "main"
+            rspirv::spirv::ExecutionModel::GLCompute as u32,
+            3,
+            0x6e69616d,
+            0,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+            op(5, 54), // OpFunction %3 None %2
+            1,
+            3,
+            0,
+            2,
+            op(2, 248), // OpLabel %4
+            4,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+        let expected = ValidationError::InvalidSamplerImageAddressingModeBitWidth { bit_width: 16 };
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(error, expected);
+    }
+
+    #[test]
+    fn sampler_image_address_mode_rejects_duplicates() {
+        // Keep two declarations in the binary to bypass assembler canonicalization.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version 1.0
+            0,          // generator
+            6,          // bound (ids 1..5)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(2, 17), // OpCapability BindlessTextureNV
+            rspirv::spirv::Capability::BindlessTextureNV as u32,
+            op(7, 10), // OpExtension "SPV_NV_bindless_texture"
+            0x5f56_5053,
+            0x625f_564e,
+            0x6c64_6e69,
+            0x5f73_7365,
+            0x7478_6574,
+            0x0065_7275,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, rspirv::spirv::Op::SamplerImageAddressingModeNV as u16), // first declaration
+            64,
+            op(2, rspirv::spirv::Op::SamplerImageAddressingModeNV as u16), // duplicate
+            64,
+            op(5, 15), // OpEntryPoint GLCompute %3 "main"
+            rspirv::spirv::ExecutionModel::GLCompute as u32,
+            3,
+            0x6e69616d,
+            0,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+            op(5, 54), // OpFunction %3 None %2
+            1,
+            3,
+            0,
+            2,
+            op(2, 248), // OpLabel %4
+            4,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(error, ValidationError::DuplicateSamplerImageAddressingMode);
     }
 
     #[test]
