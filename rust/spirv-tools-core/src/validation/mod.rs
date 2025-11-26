@@ -719,6 +719,14 @@ pub enum ValidationError {
         /// The block with stray instructions.
         block: Id,
     },
+    /// A terminator references a block that does not exist in the function.
+    #[error("block target {target:?} does not exist in function {function:?}")]
+    MissingBlockTarget {
+        /// The function containing the reference.
+        function: Id,
+        /// The missing block target.
+        target: Id,
+    },
 }
 
 /// Categories of ids that must be non-zero.
@@ -1034,6 +1042,18 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
             .and_then(|raw| Id::try_from(raw).ok())
             .unwrap_or(function_id);
 
+        let block_ids: std::collections::HashSet<Id> = function
+            .blocks
+            .iter()
+            .filter_map(|block| {
+                block
+                    .label
+                    .as_ref()
+                    .and_then(|inst| inst.result_id)
+                    .and_then(|raw| Id::try_from(raw).ok())
+            })
+            .collect();
+
         let missing_entry_label = entry_block
             .label
             .as_ref()
@@ -1071,6 +1091,46 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                     function: function_id,
                     block: block_label_id,
                 });
+            }
+
+            let terminator_inst = &block.instructions[terminator_index];
+            let check_target = |operand: &rspirv::dr::Operand| -> Result<(), ValidationError> {
+                if let rspirv::dr::Operand::IdRef(raw) = operand {
+                    if let Ok(target) = Id::try_from(*raw) {
+                        if !block_ids.contains(&target) {
+                            return Err(ValidationError::MissingBlockTarget {
+                                function: function_id,
+                                target,
+                            });
+                        }
+                    }
+                }
+                Ok(())
+            };
+
+            match terminator_inst.class.opcode {
+                rspirv::spirv::Op::Branch => {
+                    if let Some(op) = terminator_inst.operands.get(0) {
+                        check_target(op)?;
+                    }
+                }
+                rspirv::spirv::Op::BranchConditional => {
+                    for op in terminator_inst.operands.iter().skip(1).take(2) {
+                        check_target(op)?;
+                    }
+                }
+                rspirv::spirv::Op::Switch => {
+                    for (index, op) in terminator_inst.operands.iter().enumerate() {
+                        if index == 0 {
+                            continue; // selector
+                        }
+                        // operands alternate: default target then pairs of (literal, target)
+                        if index == 1 || index % 2 == 0 {
+                            check_target(op)?;
+                        }
+                    }
+                }
+                _ => {}
             }
         }
     }
@@ -3048,6 +3108,92 @@ mod tests {
         if let ValidationError::Parse(message) = error {
             assert!(
                 message.contains("instruction") && message.contains("not inside block"),
+                "unexpected parse error: {message}"
+            );
+        } else {
+            panic!("expected parse error, got {error:?}");
+        }
+    }
+
+    #[test]
+    fn branch_requires_existing_target() {
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            6,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+            op(5, 54), // OpFunction %3 None %2
+            1,
+            3,
+            0,
+            2,
+            op(2, 248), // OpLabel %4
+            4,
+            op(2, 249), // OpBranch %5 (undefined target)
+            5,
+            op(1, 56), // OpFunctionEnd
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::MissingBlockTarget {
+                function: Id::try_from(3).unwrap(),
+                target: Id::try_from(5).unwrap()
+            }
+        );
+    }
+
+    #[test]
+    fn switch_requires_existing_targets() {
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            8,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(4, 21), // OpTypeInt %2 32 0
+            2,
+            32,
+            0,
+            op(3, 33), // OpTypeFunction %3 %1
+            3,
+            1,
+            op(5, 54), // OpFunction %4 None %3
+            1,
+            4,
+            0,
+            3,
+            op(2, 248), // OpLabel %5
+            5,
+            op(5, 128), // OpSwitch %6 %7 0 %7 (both %6 and %7 undefined)
+            6,
+            7,
+            0,
+            7,
+            op(1, 56), // OpFunctionEnd
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        if let ValidationError::Parse(message) = error {
+            assert!(
+                message.contains("block") && message.contains("terminator"),
                 "unexpected parse error: {message}"
             );
         } else {
