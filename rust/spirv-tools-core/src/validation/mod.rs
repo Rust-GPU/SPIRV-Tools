@@ -6924,6 +6924,190 @@ mod tests {
     }
 
     #[test]
+    fn decoration_non_uniform_requires_spirv_1_5() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%bool = OpTypeBool",
+            "%ptr = OpTypePointer Uniform %bool",
+            "%var = OpVariable %ptr Uniform",
+            "OpDecorate %var NonUniform",
+        ]
+        .join("\n");
+
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Universal1_4)
+            .expect_err("NonUniform decoration requires SPIR-V 1.5");
+        assert_eq!(
+            error,
+            ValidationError::OperandRequiresSpirvVersion {
+                opcode: rspirv::spirv::Op::Decorate,
+                operand_index: 1,
+                required_version: SpirvVersion::new(1, 5),
+                target_version: SpirvVersion::new(1, 4),
+            }
+        );
+    }
+
+    #[test]
+    fn image_operands_make_texel_visible_requires_spirv_1_5() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut builder = Builder::new();
+        builder.set_version(1, 4);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = builder.type_void();
+        let int = builder.type_int(32, 0);
+        let float = builder.type_float(32, None);
+        let v2int = builder.type_vector(int, 2);
+        let v4float = builder.type_vector(float, 4);
+        let image = builder.type_image(
+            float,
+            rspirv::spirv::Dim::Dim2D,
+            0,
+            0,
+            0,
+            2,
+            rspirv::spirv::ImageFormat::Rgba32f,
+            None,
+        );
+        let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::UniformConstant, image);
+        let function_type = builder.type_function(void, std::iter::empty::<u32>());
+        let int_0 = builder.constant_bit32(int, 0);
+        let float_0 = builder.constant_bit32(float, 0.0f32.to_bits());
+        let coord = builder.constant_composite(v2int, [int_0, int_0]);
+        let texel = builder.constant_composite(v4float, [float_0, float_0, float_0, float_0]);
+        let img = builder.variable(
+            ptr,
+            None,
+            rspirv::spirv::StorageClass::UniformConstant,
+            None,
+        );
+
+        builder
+            .begin_function(
+                void,
+                None,
+                rspirv::spirv::FunctionControl::NONE,
+                function_type,
+            )
+            .unwrap();
+        builder.begin_block(None).unwrap();
+        let semantics =
+            builder.constant_bit32(int, rspirv::spirv::MemorySemantics::MAKE_VISIBLE.bits());
+        builder
+            .image_write(
+                img,
+                coord,
+                texel,
+                Some(rspirv::spirv::ImageOperands::MAKE_TEXEL_VISIBLE),
+                [rspirv::dr::Operand::IdRef(semantics)],
+            )
+            .unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+
+        let words = builder.module().assemble();
+        let error = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_4)
+            .expect_err("MakeTexelVisible image operand requires SPIR-V 1.5");
+        assert_eq!(
+            error,
+            ValidationError::OperandRequiresSpirvVersion {
+                opcode: rspirv::spirv::Op::ImageWrite,
+                operand_index: 3,
+                required_version: SpirvVersion::new(1, 5),
+                target_version: SpirvVersion::new(1, 4),
+            }
+        );
+    }
+
+    #[test]
+    fn image_operands_nontemporal_requires_spirv_1_6() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut builder = Builder::new();
+        builder.set_version(1, 5);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = builder.type_void();
+        let int = builder.type_int(32, 0);
+        let float = builder.type_float(32, None);
+        let v2int = builder.type_vector(int, 2);
+        let v4float = builder.type_vector(float, 4);
+        let image = builder.type_image(
+            float,
+            rspirv::spirv::Dim::Dim2D,
+            0,
+            0,
+            0,
+            2,
+            rspirv::spirv::ImageFormat::Rgba32f,
+            None,
+        );
+        let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::UniformConstant, image);
+        let function_type = builder.type_function(void, std::iter::empty::<u32>());
+        let int_0 = builder.constant_bit32(int, 0);
+        let float_0 = builder.constant_bit32(float, 0.0f32.to_bits());
+        let coord = builder.constant_composite(v2int, [int_0, int_0]);
+        let texel = builder.constant_composite(v4float, [float_0, float_0, float_0, float_0]);
+        let img = builder.variable(
+            ptr,
+            None,
+            rspirv::spirv::StorageClass::UniformConstant,
+            None,
+        );
+
+        builder
+            .begin_function(
+                void,
+                None,
+                rspirv::spirv::FunctionControl::NONE,
+                function_type,
+            )
+            .unwrap();
+        builder.begin_block(None).unwrap();
+        builder
+            .image_write(
+                img,
+                coord,
+                texel,
+                Some(rspirv::spirv::ImageOperands::NONTEMPORAL),
+                std::iter::empty::<rspirv::dr::Operand>(),
+            )
+            .unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+
+        let words = builder.module().assemble();
+        let error = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_5)
+            .expect_err("Nontemporal image operand requires SPIR-V 1.6");
+        assert_eq!(
+            error,
+            ValidationError::OperandRequiresSpirvVersion {
+                opcode: rspirv::spirv::Op::ImageWrite,
+                operand_index: 3,
+                required_version: SpirvVersion::new(1, 6),
+                target_version: SpirvVersion::new(1, 5),
+            }
+        );
+    }
+
+    #[test]
     fn memory_semantics_output_memory_requires_spirv_1_5() {
         use rspirv::{binary::Assemble, dr::Builder};
 
