@@ -66,6 +66,7 @@ Tasks for this milestone:
   - Added layout regressions for capabilities or extensions appearing after `OpMemoryModel` to keep early sections strict.
   - Added a layout regression to reject debug names (`OpName`) that appear inside function bodies so debug/annotation instructions stay out of the function section.
   - Added layout regressions to keep annotation opcodes (`OpDecorationGroup`, `OpGroupDecorate`) out of function bodies and after-function sections.
+  - Added layout regressions to keep member decoration opcodes (`OpMemberDecorate`, `OpGroupMemberDecorate`) confined to the annotations section.
   - Added function entry block validation (functions must start with an `OpLabel`).
   - Added block terminator validation (each block must end with a terminator).
   - Added a regression for stray instructions after a terminator to mirror function/CFG rules.
