@@ -3770,10 +3770,7 @@ mod tests {
                 required_capability,
                 capability,
             } => {
-                assert_eq!(
-                    required_capability,
-                    rspirv::spirv::Capability::ImageBasic
-                );
+                assert_eq!(required_capability, rspirv::spirv::Capability::ImageBasic);
                 assert!(
                     capability == rspirv::spirv::Capability::Image1D
                         || capability == rspirv::spirv::Capability::Sampled1D
@@ -4237,6 +4234,69 @@ mod tests {
         with_dependency
             .as_str()
             .validate(TargetEnv::Universal1_6)
+            .expect("dependency declared should satisfy requirement");
+    }
+
+    #[test]
+    fn shader_capability_does_not_require_matrix_soft_dependency() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        text.as_str()
+            .validate(TargetEnv::Universal1_6)
+            .expect("Shader should not require Matrix due to soft dependency");
+    }
+
+    #[test]
+    fn image_buffer_requires_sampled_buffer_capability() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability ImageBuffer",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect_err("ImageBuffer requires SampledBuffer capability");
+        assert_eq!(
+            error,
+            ValidationError::MissingRequiredCapability {
+                required_capability: rspirv::spirv::Capability::SampledBuffer,
+                capability: rspirv::spirv::Capability::ImageBuffer
+            }
+        );
+
+        let with_dependency = [
+            "OpCapability Shader",
+            "OpCapability SampledBuffer",
+            "OpCapability ImageBuffer",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        with_dependency
+            .as_str()
+            .validate(TargetEnv::Vulkan1_2)
             .expect("dependency declared should satisfy requirement");
     }
 
