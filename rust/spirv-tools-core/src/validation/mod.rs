@@ -1588,6 +1588,8 @@ fn required_spirv_version_for_extension(extension: &ExtensionName) -> Option<Spi
         "spv_khr_storage_buffer_storage_class" | "spv_khr_variable_pointers" => {
             Some(SpirvVersion::new(1, 3))
         }
+        "spv_khr_shader_clock" | "spv_khr_device_group" => Some(SpirvVersion::new(1, 3)),
+        "spv_khr_maximal_reconvergence" => Some(SpirvVersion::new(1, 6)),
         "spv_ext_descriptor_indexing" => Some(SpirvVersion::new(1, 5)),
         _ => None,
     }
@@ -3515,6 +3517,102 @@ mod tests {
         text.as_str()
             .validate(TargetEnv::Universal1_6)
             .expect("extension should be accepted with SPIR-V 1.3+");
+    }
+
+    #[test]
+    fn shader_clock_extension_requires_spirv_1_3() {
+        let text = [
+            "OpCapability Shader",
+            "OpExtension \"SPV_KHR_shader_clock\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Universal1_2)
+            .expect_err("shader clock requires SPIR-V 1.3");
+        assert_eq!(
+            error,
+            ValidationError::ExtensionRequiresSpirvVersion {
+                extension: ExtensionName::from("SPV_KHR_shader_clock"),
+                required_version: SpirvVersion::new(1, 3),
+                target_version: SpirvVersion::new(1, 2),
+            }
+        );
+
+        text.as_str()
+            .validate(TargetEnv::Universal1_6)
+            .expect("extension should be accepted with SPIR-V 1.3+");
+    }
+
+    #[test]
+    fn device_group_extension_requires_spirv_1_3() {
+        let text = [
+            "OpCapability Shader",
+            "OpExtension \"SPV_KHR_device_group\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Universal1_2)
+            .expect_err("device group requires SPIR-V 1.3");
+        assert_eq!(
+            error,
+            ValidationError::ExtensionRequiresSpirvVersion {
+                extension: ExtensionName::from("SPV_KHR_device_group"),
+                required_version: SpirvVersion::new(1, 3),
+                target_version: SpirvVersion::new(1, 2),
+            }
+        );
+
+        text.as_str()
+            .validate(TargetEnv::Universal1_6)
+            .expect("extension should be accepted with SPIR-V 1.3+");
+    }
+
+    #[test]
+    fn maximal_reconvergence_extension_requires_spirv_1_6() {
+        let text = [
+            "OpCapability Shader",
+            "OpExtension \"SPV_KHR_maximal_reconvergence\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Universal1_5)
+            .expect_err("maximal reconvergence requires SPIR-V 1.6");
+        assert_eq!(
+            error,
+            ValidationError::ExtensionRequiresSpirvVersion {
+                extension: ExtensionName::from("SPV_KHR_maximal_reconvergence"),
+                required_version: SpirvVersion::new(1, 6),
+                target_version: SpirvVersion::new(1, 5),
+            }
+        );
+
+        text.as_str()
+            .validate(TargetEnv::Universal1_6)
+            .expect("extension should be accepted with SPIR-V 1.6+");
     }
 
     #[test]
