@@ -75,6 +75,7 @@ Tasks for this milestone:
   - Validated function signatures against their `OpTypeFunction`: function types must be `OpTypeFunction`, return types must match, and parameter counts/types must align with the function type, with focused binary regressions.
   - Validated `OpTypeFunction` definitions themselves: return/parameter ids must name type instructions, parameters cannot be void, and malformed layouts now report typed errors with binary regressions.
   - Added return-type checks: non-void functions must use `OpReturnValue` with matching types, void functions must use `OpReturn`, and mismatches are reported with typed errors.
+  - Captured the module header's declared SPIR-V version inside `ValidatedHeader`/`ValidModule` so version-aware rules can reuse it without re-parsing.
 - [x] Cache validated modules across CLI/FFI invocations when the same input is reused, avoiding redundant parsing/validation.
 - [ ] Expose wider structural rules (capability/extension ordering in layout, per-target decoration constraints) mirroring the C++ validator tables.
 - [ ] Enable the Rust validator over the FFI/CLI by default once structural parity is sufficiently close to C++.

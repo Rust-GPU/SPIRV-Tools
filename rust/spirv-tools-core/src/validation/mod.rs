@@ -1161,7 +1161,7 @@ fn validate_words(words: ModuleWords, env: TargetEnv) -> Result<ValidModule, Val
     let definitions = collect_result_instructions(&module);
     let capabilities = collect_declared_capabilities(&module);
     let extensions = validate_extensions(&module, env)?;
-    validate_capabilities(&module, env, &extensions)?;
+    validate_capabilities(&module, env, header.version(), &extensions)?;
     validate_sampler_image_addressing_mode(&module, &capabilities)?;
     validate_memory_model(&module)?;
     validate_type_functions(&module, &opcodes)?;
@@ -1890,6 +1890,7 @@ fn capability_operand(inst: &rspirv::dr::Instruction) -> Option<rspirv::spirv::C
 fn validate_capabilities(
     module: &Module,
     env: TargetEnv,
+    module_version: SpirvVersion,
     extensions: &ExtensionSet,
 ) -> Result<(), ValidationError> {
     fn merge_versions(
@@ -2001,7 +2002,7 @@ fn validate_capabilities(
             }
         }
     }
-    validate_instruction_requirements(module, &declared, extensions)?;
+    validate_instruction_requirements(module, module_version, &declared, extensions)?;
     Ok(())
 }
 
@@ -2059,15 +2060,11 @@ fn is_soft_dependency(
 
 fn validate_instruction_requirements(
     module: &Module,
+    module_version: SpirvVersion,
     capabilities: &HashSet<rspirv::spirv::Capability>,
     extensions: &ExtensionSet,
 ) -> Result<(), ValidationError> {
-    let target_version = module
-        .header
-        .as_ref()
-        .map(|h| h.version)
-        .unwrap_or_default();
-    let target_version = SpirvVersion::from_word(target_version);
+    let target_version = module_version;
     for inst in module.all_inst_iter() {
         for &required_cap in inst.class.capabilities {
             if !capabilities.contains(&required_cap) {
