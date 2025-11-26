@@ -1097,6 +1097,11 @@ impl ValidModule {
         self.env
     }
 
+    /// Returns the declared SPIR-V version from the module header.
+    pub fn module_version(&self) -> SpirvVersion {
+        self.header.version()
+    }
+
     /// Returns the validated module header.
     pub fn header(&self) -> ValidatedHeader {
         self.header
@@ -3472,6 +3477,27 @@ mod tests {
         MaybeValidModule::Text(&text)
             .validate(TargetEnv::Universal1_6)
             .expect("valid module");
+    }
+
+    #[test]
+    fn validated_module_exposes_module_version() {
+        let binary = vec![
+            0x07230203, // magic number
+            SpirvVersion::new(1, 5).to_word(),
+            0,         // generator
+            1,         // bound
+            0,         // schema
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+        ];
+        let module = MaybeValidModule::Binary(&binary)
+            .validate(TargetEnv::Universal1_6)
+            .expect("module should validate");
+        assert_eq!(module.module_version(), SpirvVersion::new(1, 5));
+        assert_eq!(module.header().version(), SpirvVersion::new(1, 5));
     }
 
     #[test]
