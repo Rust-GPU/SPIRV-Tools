@@ -66,6 +66,7 @@ Tasks for this milestone:
   - Added layout regressions for capabilities or extensions appearing after `OpMemoryModel` to keep early sections strict.
   - Added function entry block validation (functions must start with an `OpLabel`).
   - Added block terminator validation (each block must end with a terminator).
+  - Added a regression for stray instructions after a terminator to mirror function/CFG rules.
 - [x] Cache validated modules across CLI/FFI invocations when the same input is reused, avoiding redundant parsing/validation.
 - [ ] Expose wider structural rules (capability/extension ordering in layout, per-target decoration constraints) mirroring the C++ validator tables.
 - [ ] Enable the Rust validator over the FFI/CLI by default once structural parity is sufficiently close to C++.

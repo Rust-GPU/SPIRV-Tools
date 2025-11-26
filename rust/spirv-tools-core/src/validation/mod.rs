@@ -711,6 +711,14 @@ pub enum ValidationError {
         /// The block missing a terminator.
         block: Id,
     },
+    /// A block contains instructions after its terminator.
+    #[error("block {block:?} in function {function:?} has instructions after its terminator")]
+    InstructionsAfterTerminator {
+        /// The function containing the block.
+        function: Id,
+        /// The block with stray instructions.
+        block: Id,
+    },
 }
 
 /// Categories of ids that must be non-zero.
@@ -1044,12 +1052,22 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                 .and_then(|inst| inst.result_id)
                 .and_then(|raw| Id::try_from(raw).ok())
                 .unwrap_or(entry_label_id);
-            let terminator = block.instructions.last();
-            let has_terminator = terminator
-                .map(|inst| rspirv::grammar::reflect::is_block_terminator(inst.class.opcode))
-                .unwrap_or(false);
-            if !has_terminator {
+            let mut first_terminator_index = None;
+            for (index, inst) in block.instructions.iter().enumerate() {
+                if rspirv::grammar::reflect::is_block_terminator(inst.class.opcode) {
+                    first_terminator_index = Some(index);
+                    break;
+                }
+            }
+            if first_terminator_index.is_none() {
                 return Err(ValidationError::MissingBlockTerminator {
+                    function: function_id,
+                    block: block_label_id,
+                });
+            }
+            let terminator_index = first_terminator_index.unwrap();
+            if terminator_index + 1 < block.instructions.len() {
+                return Err(ValidationError::InstructionsAfterTerminator {
                     function: function_id,
                     block: block_label_id,
                 });
@@ -2989,6 +3007,47 @@ mod tests {
         if let ValidationError::Parse(message) = error {
             assert!(
                 message.contains("block without terminator"),
+                "unexpected parse error: {message}"
+            );
+        } else {
+            panic!("expected parse error, got {error:?}");
+        }
+    }
+
+    #[test]
+    fn block_cannot_have_instructions_after_terminator() {
+        // A terminator must end the block; trailing instructions are invalid.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            5,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+            op(5, 54), // OpFunction %3 None %2
+            1,
+            3,
+            0,
+            2,
+            op(2, 248), // OpLabel %4
+            4,
+            op(1, 253), // OpReturn
+            op(1, 0),   // OpNop (illegal after terminator)
+            op(1, 56),  // OpFunctionEnd
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        if let ValidationError::Parse(message) = error {
+            assert!(
+                message.contains("instruction") && message.contains("not inside block"),
                 "unexpected parse error: {message}"
             );
         } else {
