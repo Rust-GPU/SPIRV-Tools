@@ -4291,6 +4291,47 @@ mod tests {
     }
 
     #[test]
+    fn extension_cannot_follow_functions() {
+        // Extensions must appear before functions; placing one after functions should be rejected.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            5,          // bound (ids up to 4)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+            op(5, 54), // OpFunction %1 %3 None %2
+            1,
+            3,
+            0,
+            2,
+            op(2, 248), // OpLabel %4
+            4,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+            op(2, 10),  // OpExtension "X" (after functions -> error)
+            0x0000_0058,
+        ];
+
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Extension
+            }
+        );
+    }
+
+    #[test]
     fn memory_model_cannot_appear_inside_functions() {
         // OpMemoryModel must appear before functions; reject it inside a function body.
         let binary = vec![
@@ -4356,6 +4397,49 @@ mod tests {
             0x0000_0047, // "G"
             op(1, 253),  // OpReturn
             op(1, 56),   // OpFunctionEnd
+        ];
+
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::ExtInstImport
+            }
+        );
+    }
+
+    #[test]
+    fn ext_inst_import_cannot_follow_functions() {
+        // Imported instruction sets must precede functions; reject when placed after function
+        // definitions.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            5,          // bound (ids up to 4)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+            op(5, 54), // OpFunction %1 %3 None %2
+            1,
+            3,
+            0,
+            2,
+            op(2, 248), // OpLabel %4
+            4,
+            op(1, 253),                                     // OpReturn
+            op(1, 56),                                      // OpFunctionEnd
+            op(3, rspirv::spirv::Op::ExtInstImport as u16), // OpExtInstImport %5 "G" (after functions -> error)
+            5,
+            0x0000_0047, // "G"
         ];
 
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
