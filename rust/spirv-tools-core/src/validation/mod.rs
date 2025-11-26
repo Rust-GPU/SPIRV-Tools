@@ -1579,6 +1579,10 @@ fn required_spirv_version_for_extension(extension: &ExtensionName) -> Option<Spi
         "spv_khr_ray_tracing" | "spv_khr_ray_query" | "spv_khr_ray_tracing_position_fetch" => {
             Some(SpirvVersion::new(1, 4))
         }
+        "spv_ext_fragment_shader_interlock" => Some(SpirvVersion::new(1, 4)),
+        "spv_khr_fragment_shading_rate" | "spv_ext_fragment_invocation_density" => {
+            Some(SpirvVersion::new(1, 5))
+        }
         "spv_ext_descriptor_indexing" => Some(SpirvVersion::new(1, 5)),
         _ => None,
     }
@@ -3334,6 +3338,38 @@ mod tests {
     }
 
     #[test]
+    fn fragment_shader_interlock_extension_requires_spirv_1_4() {
+        let text = [
+            "OpCapability Shader",
+            "OpExtension \"SPV_EXT_fragment_shader_interlock\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Vulkan1_0)
+            .expect_err("fragment shader interlock should require SPIR-V 1.4");
+        assert_eq!(
+            error,
+            ValidationError::ExtensionRequiresSpirvVersion {
+                extension: ExtensionName::from("SPV_EXT_fragment_shader_interlock"),
+                required_version: SpirvVersion::new(1, 4),
+                target_version: TargetEnv::Vulkan1_0.spirv_version(),
+            }
+        );
+
+        text.as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("extension should be accepted with SPIR-V 1.4+");
+    }
+
+    #[test]
     fn non_opencl_env_rejects_opencl_extension() {
         let text = [
             "OpCapability Shader",
@@ -3709,14 +3745,33 @@ mod tests {
             .as_str()
             .validate(TargetEnv::Universal1_3)
             .expect_err("requires SPIR-V 1.5");
-        assert_eq!(
-            error,
+        match error {
             ValidationError::CapabilityRequiresSpirvVersion {
-                capability: rspirv::spirv::Capability::FragmentShadingRateKHR,
-                required_version: SpirvVersion::new(1, 5),
-                target_version: SpirvVersion::new(1, 3),
+                capability,
+                required_version,
+                target_version,
+            } => {
+                assert_eq!(
+                    capability,
+                    rspirv::spirv::Capability::FragmentShadingRateKHR
+                );
+                assert_eq!(required_version, SpirvVersion::new(1, 5));
+                assert_eq!(target_version, SpirvVersion::new(1, 3));
             }
-        );
+            ValidationError::ExtensionRequiresSpirvVersion {
+                extension,
+                required_version,
+                target_version,
+            } => {
+                assert_eq!(
+                    extension,
+                    ExtensionName::from("SPV_KHR_fragment_shading_rate")
+                );
+                assert_eq!(required_version, SpirvVersion::new(1, 5));
+                assert_eq!(target_version, SpirvVersion::new(1, 3));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
         text.as_str()
             .validate(TargetEnv::Universal1_6)
             .expect("succeeds on newer SPIR-V");
