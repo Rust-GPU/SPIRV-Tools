@@ -1156,12 +1156,13 @@ fn validate_words(words: ModuleWords, env: TargetEnv) -> Result<ValidModule, Val
     }
     let module = loader.module();
     let header = ValidatedHeader::from_module(&module)?;
+    let module_version = header.version();
     let defined_ids = validate_id_bound(&module, header)?;
     let opcodes = collect_result_opcodes(&module);
     let definitions = collect_result_instructions(&module);
     let capabilities = collect_declared_capabilities(&module);
-    let extensions = validate_extensions(&module, env)?;
-    validate_capabilities(&module, env, header.version(), &extensions)?;
+    let extensions = validate_extensions(&module, env, module_version)?;
+    validate_capabilities(&module, env, module_version, &extensions)?;
     validate_sampler_image_addressing_mode(&module, &capabilities)?;
     validate_memory_model(&module)?;
     validate_type_functions(&module, &opcodes)?;
@@ -1916,7 +1917,12 @@ fn validate_capabilities(
         .iter()
         .filter_map(capability_operand)
         .collect();
-    let target_version = env.spirv_version();
+    let env_version = env.spirv_version();
+    let target_version = if env_version.meets_or_exceeds(module_version) {
+        module_version
+    } else {
+        env_version
+    };
     for inst in &module.capabilities {
         if let Some(capability) = capability_operand(inst) {
             let grammar_requirements = capability_info_from_grammar(capability);
@@ -2002,7 +2008,7 @@ fn validate_capabilities(
             }
         }
     }
-    validate_instruction_requirements(module, module_version, &declared, extensions)?;
+    validate_instruction_requirements(module, target_version, &declared, extensions)?;
     Ok(())
 }
 
@@ -2326,9 +2332,18 @@ fn extension_operand(inst: &rspirv::dr::Instruction) -> Option<ExtensionName> {
     })
 }
 
-fn validate_extensions(module: &Module, env: TargetEnv) -> Result<ExtensionSet, ValidationError> {
+fn validate_extensions(
+    module: &Module,
+    env: TargetEnv,
+    module_version: SpirvVersion,
+) -> Result<ExtensionSet, ValidationError> {
     let mut extensions = ExtensionSet::default();
-    let target_version = env.spirv_version();
+    let env_version = env.spirv_version();
+    let target_version = if env_version.meets_or_exceeds(module_version) {
+        module_version
+    } else {
+        env_version
+    };
     for inst in &module.extensions {
         if let Some(extension) = extension_operand(inst) {
             let required_check = extension.clone();
@@ -5591,6 +5606,40 @@ mod tests {
     }
 
     #[test]
+    fn extension_version_check_respects_module_version() {
+        use rspirv::{binary::Assemble, dr::Builder};
+        let mut builder = Builder::new();
+        builder.set_version(1, 0);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.extension("SPV_KHR_vulkan_memory_model");
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+        let void = builder.type_void();
+        let fn_type = builder.type_function(void, std::iter::empty::<u32>());
+        builder
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_type)
+            .unwrap();
+        builder.begin_block(None).unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+        let words = builder.module().assemble();
+        let error = words
+            .as_slice()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect_err("module version 1.0 cannot use Vulkan memory model");
+        assert_eq!(
+            error,
+            ValidationError::ExtensionRequiresSpirvVersion {
+                extension: ExtensionName::from("SPV_KHR_vulkan_memory_model"),
+                required_version: SpirvVersion::new(1, 4),
+                target_version: SpirvVersion::new(1, 0),
+            }
+        );
+    }
+
+    #[test]
     fn fragment_shader_interlock_extension_requires_spirv_1_4() {
         let text = [
             "OpCapability Shader",
@@ -6278,6 +6327,40 @@ mod tests {
     }
 
     #[test]
+    fn capability_version_check_respects_module_version() {
+        use rspirv::{binary::Assemble, dr::Builder};
+        let mut builder = Builder::new();
+        builder.set_version(1, 0);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.capability(rspirv::spirv::Capability::DeviceGroup);
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+        let void = builder.type_void();
+        let fn_type = builder.type_function(void, std::iter::empty::<u32>());
+        builder
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_type)
+            .unwrap();
+        builder.begin_block(None).unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+        let words = builder.module().assemble();
+        let error = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("module version 1.0 should reject DeviceGroup (needs 1.3)");
+        assert_eq!(
+            error,
+            ValidationError::CapabilityRequiresSpirvVersion {
+                capability: rspirv::spirv::Capability::DeviceGroup,
+                required_version: SpirvVersion::new(1, 3),
+                target_version: SpirvVersion::new(1, 0),
+            }
+        );
+    }
+
+    #[test]
     fn shader_clock_capability_requires_extension() {
         let text = [
             "OpCapability Shader",
@@ -6820,14 +6903,27 @@ mod tests {
             .as_slice()
             .validate(TargetEnv::Vulkan1_2)
             .expect_err("Ray query requires SPIR-V 1.4+");
-        assert_eq!(
-            error,
+        match error {
             ValidationError::InstructionRequiresSpirvVersion {
-                opcode: rspirv::spirv::Op::TypeRayQueryKHR,
-                required_version: SpirvVersion::new(1, 4),
-                target_version: SpirvVersion::new(1, 3),
+                opcode,
+                required_version,
+                target_version,
+            } => {
+                assert_eq!(opcode, rspirv::spirv::Op::TypeRayQueryKHR);
+                assert_eq!(required_version, SpirvVersion::new(1, 4));
+                assert_eq!(target_version, SpirvVersion::new(1, 3));
             }
-        );
+            ValidationError::ExtensionRequiresSpirvVersion {
+                extension,
+                required_version,
+                target_version,
+            } => {
+                assert_eq!(extension, ExtensionName::from("SPV_KHR_ray_query"));
+                assert_eq!(required_version, SpirvVersion::new(1, 4));
+                assert_eq!(target_version, SpirvVersion::new(1, 3));
+            }
+            other => panic!("unexpected error {other:?}"),
+        }
     }
 
     #[test]
