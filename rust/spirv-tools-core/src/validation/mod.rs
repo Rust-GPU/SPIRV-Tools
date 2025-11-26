@@ -1079,6 +1079,7 @@ pub struct ValidModule {
     module: Module,
     env: TargetEnv,
     header: ValidatedHeader,
+    effective_version: SpirvVersion,
 }
 
 impl ValidModule {
@@ -1099,7 +1100,7 @@ impl ValidModule {
 
     /// Returns the SPIR-V version actually used during validation (module version clamped to env).
     pub fn effective_version(&self) -> SpirvVersion {
-        effective_spirv_version(self.env, self.header.version())
+        self.effective_version
     }
 
     /// Returns the declared SPIR-V version from the module header.
@@ -1184,6 +1185,7 @@ fn validate_words(words: ModuleWords, env: TargetEnv) -> Result<ValidModule, Val
         module,
         env,
         header,
+        effective_version: target_version,
     })
 }
 
