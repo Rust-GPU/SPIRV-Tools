@@ -2879,6 +2879,30 @@ mod tests {
     }
 
     #[test]
+    fn capability_cannot_follow_memory_model() {
+        // Capabilities must be declared before the memory model section.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            2,
+            0,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 17), // OpCapability Shader (misordered after memory model)
+            rspirv::spirv::Capability::Shader as u32,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Capability
+            }
+        );
+    }
+
+    #[test]
     fn extension_must_precede_types_and_globals() {
         // Keep the extension misordered in binary form; the assembler canonicalizes this section.
         let binary = vec![
@@ -2895,6 +2919,34 @@ mod tests {
             op(2, 19), // OpTypeVoid %1
             1,
             op(6, 10), // OpExtension "SPV_KHR_ray_tracing" (misordered)
+            0x5f56_5053,
+            0x5f52_484b,
+            0x5f79_6172,
+            0x6361_7274,
+            0x0067_6e69,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Extension
+            }
+        );
+    }
+
+    #[test]
+    fn extension_cannot_follow_memory_model() {
+        // Extensions must appear before the memory model section.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            2,
+            0,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(6, 10), // OpExtension "SPV_KHR_ray_tracing" (misordered after memory model)
             0x5f56_5053,
             0x5f52_484b,
             0x5f79_6172,
