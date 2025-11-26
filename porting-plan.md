@@ -75,6 +75,7 @@ Tasks for this milestone:
   - Added layout regressions rejecting capabilities, extensions, or imported instruction sets inside function bodies.
   - Added layout regressions rejecting extensions or imported instruction sets that appear after function definitions.
   - Added layout regressions to keep debug/source instructions (`OpSource`, `OpSourceExtension`, `OpSourceContinued`) out of function bodies and after-function sections.
+  - Extended extension layout handling to cover conditional extensions and reject duplicates.
   - Added layout regression to reject `OpDecorationGroup` that appears after function definitions.
   - Added function entry block validation (functions must start with an `OpLabel`).
   - Added block terminator validation (each block must end with a terminator).

@@ -1874,6 +1874,20 @@ fn run_layout_check(words: &[u32], _env: TargetEnv) -> Result<(), ValidationErro
                         }
                     }
                 }
+                rspirv::spirv::Op::ConditionalExtensionINTEL => {
+                    if section < self.current_section {
+                        return rspirv::binary::ParseAction::Error(Box::new(
+                            ValidationError::LayoutOutOfOrder {
+                                opcode: rspirv::spirv::Op::ConditionalExtensionINTEL,
+                            },
+                        ));
+                    }
+                    if let Some(extension) = extension_operand(&inst) {
+                        if let Err(err) = self.extensions.insert_unchecked(extension) {
+                            return rspirv::binary::ParseAction::Error(Box::new(err));
+                        }
+                    }
+                }
                 rspirv::spirv::Op::Function => {
                     if !self.memory_model_state.is_seen() {
                         return rspirv::binary::ParseAction::Error(Box::new(
@@ -7924,6 +7938,37 @@ mod tests {
             error,
             ValidationError::DuplicateExtension {
                 extension: ExtensionName::from("SPV_KHR_ray_tracing")
+            }
+        );
+    }
+
+    #[test]
+    fn validate_module_rejects_duplicate_conditional_extension() {
+        // Duplicate OpConditionalExtensionINTEL instructions should be rejected.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            3,          // bound (ids up to 2)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 6248), // OpConditionalExtensionINTEL %1 "ext"
+            1,
+            0x0074_7865,
+            op(3, 6248), // OpConditionalExtensionINTEL %2 "ext" (duplicate)
+            2,
+            0x0074_7865,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+        ];
+
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::DuplicateExtension {
+                extension: ExtensionName::from("ext")
             }
         );
     }
