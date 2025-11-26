@@ -93,6 +93,16 @@ Tasks for this milestone:
 - [ ] Expose wider structural rules (capability/extension ordering in layout, per-target decoration constraints) mirroring the C++ validator tables.
 - [ ] Enable the Rust validator over the FFI/CLI by default once structural parity is sufficiently close to C++.
 
+## Active Milestone: Capability/Extension Ordering Parity
+Align capability/extension ordering and dependency enforcement with the C++ tables, including operand-level requirements and per-environment allowlists.
+
+Tasks for this milestone:
+- Import remaining capability/extension ordering tables so capabilities, extensions, and imports must appear before debug/annotations/functions, with text/binary regressions.
+- Enforce per-environment capability/extension allowlists (beyond the Vulkan/OpenCL/WebGPU splits) using grammar metadata and C++ tables.
+- Add operand-level capability/extension requirements from the grammar and test them with paired text/binary fixtures.
+- Thread effective SPIR-V version and env clamping through these ordering checks for precise diagnostics.
+- Keep CLI/FFI caching wired so validated modules reused across calls do not reparse/revalidate after ordering enforcement.
+
 ## Upcoming Milestone: Capability/Extension Parity
 Bring the Rust validator to full capability/extension parity with the C++ tables using the grammar-driven dependency metadata and explicit per-environment rules.
 
