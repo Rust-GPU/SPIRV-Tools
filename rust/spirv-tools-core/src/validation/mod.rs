@@ -3211,6 +3211,35 @@ mod tests {
     }
 
     #[test]
+    fn ext_inst_import_cannot_follow_annotations() {
+        // OpExtInstImport must precede the annotations section.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            3,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 73), // OpDecorationGroup %1 (annotations)
+            1,
+            op(3, 11), // OpExtInstImport %1 "GLSL.std.450" (misordered after annotations)
+            1,
+            0x004c_5347, // "GLS"
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::ExtInstImport
+            }
+        );
+    }
+
+    #[test]
     fn debug_instructions_cannot_follow_annotations() {
         // OpSource (debug) must not appear after the annotations section.
         let binary = vec![
