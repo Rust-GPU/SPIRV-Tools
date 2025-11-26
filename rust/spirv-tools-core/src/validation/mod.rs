@@ -3526,6 +3526,36 @@ mod tests {
     }
 
     #[test]
+    fn effective_version_reflects_env_clamp_on_valid_module() {
+        use rspirv::{binary::Assemble, dr::Builder};
+        let mut builder = Builder::new();
+        builder.set_version(1, 6);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+        let void = builder.type_void();
+        let fn_type = builder.type_function(void, std::iter::empty::<u32>());
+        builder
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_type)
+            .unwrap();
+        builder.begin_block(None).unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+        let words = builder.module().assemble();
+        let module = words
+            .as_slice()
+            .validate(TargetEnv::Vulkan1_0)
+            .expect("module should validate with env clamp");
+        assert_eq!(module.module_version(), SpirvVersion::new(1, 6));
+        assert_eq!(
+            module.effective_version(),
+            TargetEnv::Vulkan1_0.spirv_version()
+        );
+    }
+
+    #[test]
     fn validate_module_checks_operand_ids_against_bound() {
         let text = [
             "OpCapability Shader",
