@@ -6858,6 +6858,56 @@ mod tests {
     }
 
     #[test]
+    fn memory_semantics_output_memory_requires_spirv_1_5() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut builder = Builder::new();
+        builder.set_version(1, 4);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = builder.type_void();
+        let uint = builder.type_int(32, 0);
+        let function_type = builder.type_function(void, std::iter::empty::<u32>());
+        let workgroup_scope = builder.constant_bit32(uint, rspirv::spirv::Scope::Workgroup as u32);
+        let semantics =
+            builder.constant_bit32(uint, rspirv::spirv::MemorySemantics::OUTPUT_MEMORY.bits());
+
+        builder
+            .begin_function(
+                void,
+                None,
+                rspirv::spirv::FunctionControl::NONE,
+                function_type,
+            )
+            .unwrap();
+        builder.begin_block(None).unwrap();
+        builder
+            .control_barrier(workgroup_scope, workgroup_scope, semantics)
+            .unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+
+        let words = builder.module().assemble();
+        let error = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_4)
+            .expect_err("OutputMemory semantics requires SPIR-V 1.5");
+        assert_eq!(
+            error,
+            ValidationError::OperandRequiresSpirvVersion {
+                opcode: rspirv::spirv::Op::ControlBarrier,
+                operand_index: 2,
+                required_version: SpirvVersion::new(1, 5),
+                target_version: SpirvVersion::new(1, 4),
+            }
+        );
+    }
+
+    #[test]
     fn memory_access_make_pointer_visible_requires_spirv_1_5() {
         use rspirv::{binary::Assemble, dr::Builder};
 
@@ -6873,7 +6923,6 @@ mod tests {
         let uint = builder.type_int(32, 0);
         let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::Workgroup, uint);
         let function_type = builder.type_function(void, std::iter::empty::<u32>());
-        let scope = builder.constant_bit32(uint, rspirv::spirv::Scope::Workgroup as u32);
         let value = builder.constant_bit32(uint, 0);
         let var = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
 
@@ -6886,6 +6935,7 @@ mod tests {
             )
             .unwrap();
         builder.begin_block(None).unwrap();
+        let scope = builder.constant_bit32(uint, rspirv::spirv::Scope::Workgroup as u32);
         builder
             .store(
                 var,
@@ -6929,7 +6979,6 @@ mod tests {
         let uint = builder.type_int(32, 0);
         let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::Workgroup, uint);
         let function_type = builder.type_function(void, std::iter::empty::<u32>());
-        let scope = builder.constant_bit32(uint, rspirv::spirv::Scope::Workgroup as u32);
         let value = builder.constant_bit32(uint, 0);
         let var = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
 
@@ -6942,6 +6991,7 @@ mod tests {
             )
             .unwrap();
         builder.begin_block(None).unwrap();
+        let scope = builder.constant_bit32(uint, rspirv::spirv::Scope::Workgroup as u32);
         builder
             .store(
                 var,
@@ -6958,6 +7008,61 @@ mod tests {
             .as_slice()
             .validate(TargetEnv::Universal1_4)
             .expect_err("MakePointerAvailable memory access requires SPIR-V 1.5");
+        assert_eq!(
+            error,
+            ValidationError::OperandRequiresSpirvVersion {
+                opcode: rspirv::spirv::Op::Store,
+                operand_index: 2,
+                required_version: SpirvVersion::new(1, 5),
+                target_version: SpirvVersion::new(1, 4),
+            }
+        );
+    }
+
+    #[test]
+    fn memory_access_non_private_pointer_requires_spirv_1_5() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut builder = Builder::new();
+        builder.set_version(1, 4);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = builder.type_void();
+        let uint = builder.type_int(32, 0);
+        let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::Workgroup, uint);
+        let function_type = builder.type_function(void, std::iter::empty::<u32>());
+        let value = builder.constant_bit32(uint, 0);
+        let var = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
+
+        builder
+            .begin_function(
+                void,
+                None,
+                rspirv::spirv::FunctionControl::NONE,
+                function_type,
+            )
+            .unwrap();
+        builder.begin_block(None).unwrap();
+        builder
+            .store(
+                var,
+                value,
+                Some(rspirv::spirv::MemoryAccess::NON_PRIVATE_POINTER),
+                std::iter::empty::<rspirv::dr::Operand>(),
+            )
+            .unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+
+        let words = builder.module().assemble();
+        let error = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_4)
+            .expect_err("NonPrivatePointer memory access requires SPIR-V 1.5");
         assert_eq!(
             error,
             ValidationError::OperandRequiresSpirvVersion {
