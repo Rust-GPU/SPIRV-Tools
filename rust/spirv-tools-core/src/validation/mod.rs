@@ -2372,6 +2372,19 @@ fn manual_required_spirv_version_for_opcode(opcode: rspirv::spirv::Op) -> Option
     }
 }
 
+fn manual_required_spirv_version_for_operand(
+    operand: &rspirv::dr::Operand,
+) -> Option<SpirvVersion> {
+    match operand {
+        rspirv::dr::Operand::MemoryAccess(mask)
+            if mask.contains(rspirv::spirv::MemoryAccess::NONTEMPORAL) =>
+        {
+            Some(SpirvVersion::new(1, 6))
+        }
+        _ => None,
+    }
+}
+
 fn required_spirv_version_for_opcode(opcode: rspirv::spirv::Op) -> Option<SpirvVersion> {
     merge_versions(
         grammar_required_spirv_version_for_opcode(opcode),
@@ -2380,7 +2393,10 @@ fn required_spirv_version_for_opcode(opcode: rspirv::spirv::Op) -> Option<SpirvV
 }
 
 fn required_spirv_version_for_operand(operand: &rspirv::dr::Operand) -> Option<SpirvVersion> {
-    grammar_required_spirv_version_for_operand(operand)
+    merge_versions(
+        grammar_required_spirv_version_for_operand(operand),
+        manual_required_spirv_version_for_operand(operand),
+    )
 }
 
 fn required_capabilities_for_capability(
@@ -7070,6 +7086,61 @@ mod tests {
                 operand_index: 2,
                 required_version: SpirvVersion::new(1, 5),
                 target_version: SpirvVersion::new(1, 4),
+            }
+        );
+    }
+
+    #[test]
+    fn memory_access_nontemporal_requires_spirv_1_6() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut builder = Builder::new();
+        builder.set_version(1, 5);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = builder.type_void();
+        let uint = builder.type_int(32, 0);
+        let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::Workgroup, uint);
+        let function_type = builder.type_function(void, std::iter::empty::<u32>());
+        let value = builder.constant_bit32(uint, 0);
+        let var = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
+
+        builder
+            .begin_function(
+                void,
+                None,
+                rspirv::spirv::FunctionControl::NONE,
+                function_type,
+            )
+            .unwrap();
+        builder.begin_block(None).unwrap();
+        builder
+            .store(
+                var,
+                value,
+                Some(rspirv::spirv::MemoryAccess::NONTEMPORAL),
+                std::iter::empty::<rspirv::dr::Operand>(),
+            )
+            .unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+
+        let words = builder.module().assemble();
+        let error = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_5)
+            .expect_err("NonTemporal memory access requires SPIR-V 1.6");
+        assert_eq!(
+            error,
+            ValidationError::OperandRequiresSpirvVersion {
+                opcode: rspirv::spirv::Op::Store,
+                operand_index: 2,
+                required_version: SpirvVersion::new(1, 6),
+                target_version: SpirvVersion::new(1, 5),
             }
         );
     }
