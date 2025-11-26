@@ -703,6 +703,14 @@ pub enum ValidationError {
         /// The function missing its entry label.
         function: Id,
     },
+    /// A function block is missing a terminating instruction.
+    #[error("block {block:?} in function {function:?} is missing a terminator")]
+    MissingBlockTerminator {
+        /// The function containing the block.
+        function: Id,
+        /// The block missing a terminator.
+        block: Id,
+    },
 }
 
 /// Categories of ids that must be non-zero.
@@ -1004,17 +1012,48 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
             .and_then(|raw| Id::try_from(raw).ok())
             .unwrap_or(Id::try_from(1).expect("non-zero literal"));
 
-        let missing_entry_label = function.blocks.first().map_or(true, |block| {
-            block
-                .label
-                .as_ref()
-                .map(|label| label.class.opcode != rspirv::spirv::Op::Label)
-                .unwrap_or(true)
-        });
+        let entry_block =
+            function
+                .blocks
+                .first()
+                .ok_or(ValidationError::MissingFunctionEntryBlock {
+                    function: function_id,
+                })?;
+        let entry_label_id = entry_block
+            .label
+            .as_ref()
+            .and_then(|inst| inst.result_id)
+            .and_then(|raw| Id::try_from(raw).ok())
+            .unwrap_or(function_id);
+
+        let missing_entry_label = entry_block
+            .label
+            .as_ref()
+            .map(|label| label.class.opcode != rspirv::spirv::Op::Label)
+            .unwrap_or(true);
         if missing_entry_label {
             return Err(ValidationError::MissingFunctionEntryBlock {
                 function: function_id,
             });
+        }
+
+        for block in &function.blocks {
+            let block_label_id = block
+                .label
+                .as_ref()
+                .and_then(|inst| inst.result_id)
+                .and_then(|raw| Id::try_from(raw).ok())
+                .unwrap_or(entry_label_id);
+            let terminator = block.instructions.last();
+            let has_terminator = terminator
+                .map(|inst| rspirv::grammar::reflect::is_block_terminator(inst.class.opcode))
+                .unwrap_or(false);
+            if !has_terminator {
+                return Err(ValidationError::MissingBlockTerminator {
+                    function: function_id,
+                    block: block_label_id,
+                });
+            }
         }
     }
     Ok(())
@@ -2916,6 +2955,45 @@ mod tests {
                 function: Id::try_from(3).unwrap()
             }
         );
+    }
+
+    #[test]
+    fn block_requires_terminator() {
+        // A block must end with a terminator instruction.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            4,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+            op(5, 54), // OpFunction %3 None %2
+            1,
+            3,
+            0,
+            2,
+            op(2, 248), // OpLabel %4 (no terminator follows)
+            4,
+            op(1, 56), // OpFunctionEnd
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        if let ValidationError::Parse(message) = error {
+            assert!(
+                message.contains("block without terminator"),
+                "unexpected parse error: {message}"
+            );
+        } else {
+            panic!("expected parse error, got {error:?}");
+        }
     }
 
     #[test]
