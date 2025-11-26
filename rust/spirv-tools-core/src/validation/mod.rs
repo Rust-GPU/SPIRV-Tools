@@ -582,6 +582,18 @@ pub enum ValidationError {
         /// Missing extension.
         required_extension: ExtensionName,
     },
+    /// An extension requires a newer SPIR-V version than the target environment provides.
+    #[error(
+        "extension {extension} requires SPIR-V version {required_version}, but target provides {target_version}"
+    )]
+    ExtensionRequiresSpirvVersion {
+        /// The extension name that is too new.
+        extension: ExtensionName,
+        /// The minimum SPIR-V version required by the extension.
+        required_version: SpirvVersion,
+        /// The target environment's SPIR-V version.
+        target_version: SpirvVersion,
+    },
     /// `OpSamplerImageAddressingModeNV` was declared more than once.
     #[error("OpSamplerImageAddressingModeNV should only be provided once")]
     DuplicateSamplerImageAddressingMode,
@@ -1558,6 +1570,16 @@ fn required_spirv_version_for_capability(
     }
 }
 
+fn required_spirv_version_for_extension(extension: &ExtensionName) -> Option<SpirvVersion> {
+    let normalized = extension.as_str().to_ascii_lowercase();
+    match normalized.as_str() {
+        "spv_khr_vulkan_memory_model" | "spv_khr_workgroup_memory_explicit_layout" => {
+            Some(SpirvVersion::new(1, 4))
+        }
+        _ => None,
+    }
+}
+
 fn required_spirv_version_for_opcode(opcode: rspirv::spirv::Op) -> Option<SpirvVersion> {
     match opcode {
         rspirv::spirv::Op::TypeAccelerationStructureKHR | rspirv::spirv::Op::TypeRayQueryKHR => {
@@ -1621,9 +1643,20 @@ fn extension_operand(inst: &rspirv::dr::Instruction) -> Option<ExtensionName> {
 
 fn validate_extensions(module: &Module, env: TargetEnv) -> Result<ExtensionSet, ValidationError> {
     let mut extensions = ExtensionSet::default();
+    let target_version = env.spirv_version();
     for inst in &module.extensions {
         if let Some(extension) = extension_operand(inst) {
+            let required_check = extension.clone();
             extensions.insert(extension, env)?;
+            if let Some(required_version) = required_spirv_version_for_extension(&required_check) {
+                if target_version < required_version {
+                    return Err(ValidationError::ExtensionRequiresSpirvVersion {
+                        extension: required_check,
+                        required_version,
+                        target_version,
+                    });
+                }
+            }
         }
     }
     Ok(extensions)
@@ -3191,6 +3224,39 @@ mod tests {
                 env: TargetEnv::Universal1_6
             }
         );
+    }
+
+    #[test]
+    fn vulkan_memory_model_extension_requires_spirv_1_4() {
+        let text = [
+            "OpCapability Shader",
+            "OpExtension \"SPV_KHR_vulkan_memory_model\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Vulkan1_0)
+            .expect_err("SPIR-V 1.4 is required for Vulkan memory model extension");
+        assert_eq!(
+            error,
+            ValidationError::ExtensionRequiresSpirvVersion {
+                extension: ExtensionName::from("SPV_KHR_vulkan_memory_model"),
+                required_version: SpirvVersion::new(1, 4),
+                target_version: TargetEnv::Vulkan1_0.spirv_version(),
+            }
+        );
+
+        // A newer environment should accept the extension.
+        text.as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("extension should be accepted with SPIR-V 1.4+");
     }
 
     #[test]
