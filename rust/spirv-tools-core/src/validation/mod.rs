@@ -853,6 +853,20 @@ pub enum ValidationError {
         /// The found value type.
         found: TypeId,
     },
+    /// An `OpTypeFunction` declaration is malformed.
+    #[error("function type {type_id:?} is invalid")]
+    InvalidTypeFunction {
+        /// The invalid function type id.
+        type_id: TypeId,
+    },
+    /// An `OpTypeFunction` parameter uses `OpTypeVoid`.
+    #[error("function type {type_id:?} has parameter type {parameter:?} which must not be void")]
+    FunctionTypeParameterVoid {
+        /// The function type id.
+        type_id: TypeId,
+        /// The parameter type that was void.
+        parameter: TypeId,
+    },
 }
 
 /// Categories of ids that must be non-zero.
@@ -1130,6 +1144,7 @@ fn validate_words(words: ModuleWords, env: TargetEnv) -> Result<ValidModule, Val
     validate_capabilities(&module, env, &extensions)?;
     validate_sampler_image_addressing_mode(&module, &capabilities)?;
     validate_memory_model(&module)?;
+    validate_type_functions(&module, &opcodes)?;
     let struct_member_counts = validate_member_decorations(&module, &defined_ids)?;
     validate_decoration_groups(&module, &defined_ids, &opcodes, &struct_member_counts)?;
     validate_decorations(&module, &defined_ids)?;
@@ -2905,6 +2920,103 @@ fn collect_declared_capabilities(module: &Module) -> HashSet<rspirv::spirv::Capa
         .collect()
 }
 
+fn is_type_opcode(opcode: rspirv::spirv::Op) -> bool {
+    matches!(
+        opcode,
+        rspirv::spirv::Op::TypeVoid
+            | rspirv::spirv::Op::TypeBool
+            | rspirv::spirv::Op::TypeInt
+            | rspirv::spirv::Op::TypeFloat
+            | rspirv::spirv::Op::TypeVector
+            | rspirv::spirv::Op::TypeMatrix
+            | rspirv::spirv::Op::TypeImage
+            | rspirv::spirv::Op::TypeSampler
+            | rspirv::spirv::Op::TypeSampledImage
+            | rspirv::spirv::Op::TypeArray
+            | rspirv::spirv::Op::TypeRuntimeArray
+            | rspirv::spirv::Op::TypeStruct
+            | rspirv::spirv::Op::TypeOpaque
+            | rspirv::spirv::Op::TypePointer
+            | rspirv::spirv::Op::TypeFunction
+            | rspirv::spirv::Op::TypeEvent
+            | rspirv::spirv::Op::TypeDeviceEvent
+            | rspirv::spirv::Op::TypeReserveId
+            | rspirv::spirv::Op::TypeQueue
+            | rspirv::spirv::Op::TypePipe
+            | rspirv::spirv::Op::TypeForwardPointer
+            | rspirv::spirv::Op::TypePipeStorage
+            | rspirv::spirv::Op::TypeNamedBarrier
+            | rspirv::spirv::Op::TypeAccelerationStructureKHR
+            | rspirv::spirv::Op::TypeCooperativeMatrixKHR
+            | rspirv::spirv::Op::TypeCooperativeMatrixNV
+            | rspirv::spirv::Op::TypeRayQueryKHR
+            | rspirv::spirv::Op::TypeHitObjectNV
+    )
+}
+
+fn validate_type_functions(
+    module: &Module,
+    opcodes: &HashMap<ResultId, rspirv::spirv::Op>,
+) -> Result<(), ValidationError> {
+    for inst in &module.types_global_values {
+        if inst.class.opcode != rspirv::spirv::Op::TypeFunction {
+            continue;
+        }
+        let type_id = inst
+            .result_id
+            .and_then(|raw| TypeId::try_from(raw).ok())
+            .ok_or(ValidationError::ZeroId {
+                kind: IdKind::Result,
+                opcode: inst.class.opcode,
+            })?;
+
+        let mut operands = inst.operands.iter();
+        let return_type = match operands.next() {
+            Some(rspirv::dr::Operand::IdRef(raw)) => TypeId::try_from(*raw)
+                .map_err(|_| ValidationError::InvalidTypeFunction { type_id })?,
+            _ => {
+                return Err(ValidationError::InvalidTypeFunction { type_id });
+            }
+        };
+
+        let return_id = ResultId::try_from(u32::from(return_type))
+            .map_err(|_| ValidationError::InvalidTypeFunction { type_id })?;
+        let return_opcode = opcodes
+            .get(&return_id)
+            .copied()
+            .ok_or(ValidationError::InvalidTypeFunction { type_id })?;
+        if !is_type_opcode(return_opcode) {
+            return Err(ValidationError::InvalidTypeFunction { type_id });
+        }
+
+        for op in operands {
+            let param_type = match op {
+                rspirv::dr::Operand::IdRef(raw) => TypeId::try_from(*raw)
+                    .map_err(|_| ValidationError::InvalidTypeFunction { type_id })?,
+                _ => {
+                    return Err(ValidationError::InvalidTypeFunction { type_id });
+                }
+            };
+            let param_id = ResultId::try_from(u32::from(param_type))
+                .map_err(|_| ValidationError::InvalidTypeFunction { type_id })?;
+            let param_opcode = opcodes
+                .get(&param_id)
+                .copied()
+                .ok_or(ValidationError::InvalidTypeFunction { type_id })?;
+            if param_opcode == rspirv::spirv::Op::TypeVoid {
+                return Err(ValidationError::FunctionTypeParameterVoid {
+                    type_id,
+                    parameter: param_type,
+                });
+            }
+            if !is_type_opcode(param_opcode) {
+                return Err(ValidationError::InvalidTypeFunction { type_id });
+            }
+        }
+    }
+    Ok(())
+}
+
 fn validate_instruction_ids(
     results: &mut HashSet<ResultId>,
     instruction: &rspirv::dr::Instruction,
@@ -3872,6 +3984,109 @@ mod tests {
                 parameter: Id::try_from(6).unwrap(),
                 expected: TypeId::try_from(2).unwrap(),
                 found: TypeId::try_from(3).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn type_function_requires_type_operands() {
+        // The function type references a non-type operand as its parameter.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            6,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(4, 21), // OpTypeInt %2 32 0
+            2,
+            32,
+            0,
+            op(4, 43), // OpConstant %3 %2 0 (invalid as function parameter type)
+            4,
+            3,
+            0,
+            op(4, 33), // OpTypeFunction %4 %1 %3 (param not a type)
+            4,
+            1,
+            3,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::InvalidTypeFunction {
+                type_id: TypeId::try_from(4).unwrap()
+            }
+        );
+    }
+
+    #[test]
+    fn type_function_parameters_cannot_be_void() {
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            5,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(4, 33), // OpTypeFunction %2 %1 %1 (void parameter)
+            3,
+            1,
+            1,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::FunctionTypeParameterVoid {
+                type_id: TypeId::try_from(3).unwrap(),
+                parameter: TypeId::try_from(1).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn type_function_return_must_be_type() {
+        // Return type id does not reference a type instruction.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            6,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(4, 21), // OpTypeInt %1 32 0
+            4,
+            2,
+            0,
+            op(4, 43), // OpConstant %2 %1 0 (used as return type)
+            2,
+            1,
+            0,
+            op(3, 33), // OpTypeFunction %3 %2 (invalid return type)
+            3,
+            2,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::InvalidTypeFunction {
+                type_id: TypeId::try_from(3).unwrap()
             }
         );
     }
