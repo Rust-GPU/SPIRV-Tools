@@ -3737,6 +3737,108 @@ mod tests {
     }
 
     #[test]
+    fn member_names_cannot_appear_inside_functions() {
+        // OpMemberName belongs to the names section; placing it inside a function should be
+        // rejected by layout validation.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            7,          // bound (ids up to 6)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(4, 21), // OpTypeInt %1 32 0
+            1,
+            32,
+            0,
+            op(3, 30), // OpTypeStruct %2 %1
+            2,
+            1,
+            op(2, 19), // OpTypeVoid %3
+            3,
+            op(3, 33), // OpTypeFunction %4 %3
+            4,
+            3,
+            op(5, 54), // OpFunction %3 %5 None %4
+            3,
+            5,
+            0,
+            4,
+            op(2, 248), // OpLabel %6
+            6,
+            op(4, 6), // OpMemberName %2 0 "f" (inside function -> error)
+            2,
+            0,
+            0x0000_0066, // "f"
+            op(1, 253),  // OpReturn
+            op(1, 56),   // OpFunctionEnd
+        ];
+
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::MemberName
+            }
+        );
+    }
+
+    #[test]
+    fn member_name_cannot_follow_functions() {
+        // OpMemberName must remain in the names section; placing it after functions should be
+        // rejected by layout validation.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            7,          // bound (ids up to 6)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(4, 21), // OpTypeInt %1 32 0
+            1,
+            32,
+            0,
+            op(3, 30), // OpTypeStruct %2 %1
+            2,
+            1,
+            op(2, 19), // OpTypeVoid %3
+            3,
+            op(3, 33), // OpTypeFunction %4 %3
+            4,
+            3,
+            op(5, 54), // OpFunction %3 %5 None %4
+            3,
+            5,
+            0,
+            4,
+            op(2, 248), // OpLabel %6
+            6,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+            op(4, 6),   // OpMemberName %2 0 "f" (after functions -> error)
+            2,
+            0,
+            0x0000_0066, // "f"
+        ];
+
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::MemberName
+            }
+        );
+    }
+
+    #[test]
     fn debug_names_cannot_appear_inside_functions() {
         // Hand-built binary with OpName in the function section to ensure it is rejected.
         let binary = vec![
