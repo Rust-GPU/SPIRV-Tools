@@ -2970,6 +2970,34 @@ mod tests {
     }
 
     #[test]
+    fn conditional_capability_cannot_follow_debug_names() {
+        // OpConditionalCapabilityINTEL (capabilities section) cannot be placed after debug names.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            3,
+            0,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(3, 5), // OpName %1 "x" (names/debug2 section)
+            1,
+            0x0000_0078,
+            op(3, 6250), // OpConditionalCapabilityINTEL %1 Shader (misordered after names)
+            1,
+            rspirv::spirv::Capability::Shader as u32,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::ConditionalCapabilityINTEL
+            }
+        );
+    }
+
+    #[test]
     fn extension_cannot_follow_debug_names() {
         // Extensions must appear before debug/names/annotations sections.
         let binary = vec![
@@ -2998,6 +3026,35 @@ mod tests {
             error,
             ValidationError::LayoutOutOfOrder {
                 opcode: rspirv::spirv::Op::Extension
+            }
+        );
+    }
+
+    #[test]
+    fn conditional_extension_cannot_follow_annotations() {
+        // OpConditionalExtensionINTEL (extensions section) must not appear after annotations.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            3,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 73), // OpDecorationGroup %1 (annotations)
+            1,
+            op(3, 6248), // OpConditionalExtensionINTEL %1 "ext" (misordered)
+            1,
+            0x0074_7865, // "ext"
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::ConditionalExtensionINTEL
             }
         );
     }
