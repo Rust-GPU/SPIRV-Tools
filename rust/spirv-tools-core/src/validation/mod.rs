@@ -1186,11 +1186,7 @@ fn validate_words(words: ModuleWords, env: TargetEnv) -> Result<ValidModule, Val
         Schema::validate(schema)?;
     }
     run_layout_check(words.as_slice(), env)?;
-    let mut loader = rspirv::dr::Loader::new();
-    if let Err(error) = rspirv::binary::parse_words(words.as_slice(), &mut loader) {
-        return Err(ValidationError::Parse(error.to_string()));
-    }
-    let module = loader.module();
+    let module = parse_module(words.as_slice())?;
     let header = ValidatedHeader::from_module(&module)?;
     let module_version = header.version();
     let target_version = effective_spirv_version(env, module_version);
@@ -1673,6 +1669,86 @@ impl<'a> ValidatableModule<'a> for &'a str {
     }
 }
 
+fn parse_module(words: &[u32]) -> Result<rspirv::dr::Module, ValidationError> {
+    let execution_mode_ids = {
+        struct ExecutionModeCollector {
+            modes: Vec<rspirv::dr::Instruction>,
+        }
+
+        impl rspirv::binary::Consumer for ExecutionModeCollector {
+            fn initialize(&mut self) -> rspirv::binary::ParseAction {
+                rspirv::binary::ParseAction::Continue
+            }
+
+            fn finalize(&mut self) -> rspirv::binary::ParseAction {
+                rspirv::binary::ParseAction::Continue
+            }
+
+            fn consume_header(
+                &mut self,
+                _header: rspirv::dr::ModuleHeader,
+            ) -> rspirv::binary::ParseAction {
+                rspirv::binary::ParseAction::Continue
+            }
+
+            fn consume_instruction(
+                &mut self,
+                inst: rspirv::dr::Instruction,
+            ) -> rspirv::binary::ParseAction {
+                if inst.class.opcode == rspirv::spirv::Op::ExecutionModeId {
+                    self.modes.push(inst);
+                }
+                rspirv::binary::ParseAction::Continue
+            }
+        }
+
+        let mut collector = ExecutionModeCollector { modes: Vec::new() };
+        match rspirv::binary::parse_words(words, &mut collector) {
+            Ok(()) => collector.modes,
+            Err(error) => return Err(ValidationError::Parse(error.to_string())),
+        }
+    };
+
+    let filtered_words = {
+        if words.len() < 5 {
+            return Err(ValidationError::Parse(
+                "module header is incomplete".to_string(),
+            ));
+        }
+        let mut filtered = Vec::with_capacity(words.len());
+        filtered.extend_from_slice(&words[..5]);
+        let mut index = 5;
+        while index < words.len() {
+            let word = words[index];
+            let word_count = (word >> 16) as usize;
+            let opcode = word & 0xFFFF;
+            if word_count == 0 {
+                return Err(ValidationError::Parse(
+                    "invalid instruction with zero word count".to_string(),
+                ));
+            }
+            if index + word_count > words.len() {
+                return Err(ValidationError::Parse(
+                    "invalid instruction length exceeding module size".to_string(),
+                ));
+            }
+            if opcode != rspirv::spirv::Op::ExecutionModeId as u32 {
+                filtered.extend_from_slice(&words[index..index + word_count]);
+            }
+            index += word_count;
+        }
+        filtered
+    };
+
+    let mut loader = rspirv::dr::Loader::new();
+    if let Err(error) = rspirv::binary::parse_words(&filtered_words, &mut loader) {
+        return Err(ValidationError::Parse(error.to_string()));
+    }
+    let mut module = loader.module();
+    module.execution_modes.extend(execution_mode_ids);
+    Ok(module)
+}
+
 fn run_layout_check(words: &[u32], _env: TargetEnv) -> Result<(), ValidationError> {
     struct LayoutChecker {
         memory_model_state: MemoryModelState,
@@ -2116,6 +2192,8 @@ fn validate_instruction_requirements(
             }
         }
         for (index, operand) in inst.operands.iter().enumerate() {
+            let resolved_operand = resolve_id_operand(module, operand);
+            let operand = resolved_operand.as_ref().unwrap_or(operand);
             if matches!(operand, rspirv::dr::Operand::Capability(_)) {
                 // Capability dependencies are validated separately to avoid over-constraining
                 // the declaration order.
@@ -2656,6 +2734,34 @@ fn is_constant_opcode(opcode: rspirv::spirv::Op) -> bool {
             | rspirv::spirv::Op::SpecConstant
             | rspirv::spirv::Op::SpecConstantComposite
     )
+}
+
+fn constant_u32(module: &Module, id: u32) -> Option<u32> {
+    module
+        .all_inst_iter()
+        .find(|inst| inst.result_id == Some(id) && is_constant_opcode(inst.class.opcode))
+        .and_then(|inst| inst.operands.last())
+        .and_then(|operand| match operand {
+            rspirv::dr::Operand::LiteralBit32(value) => Some(*value),
+            _ => None,
+        })
+}
+
+fn resolve_id_operand(
+    module: &Module,
+    operand: &rspirv::dr::Operand,
+) -> Option<rspirv::dr::Operand> {
+    match operand {
+        rspirv::dr::Operand::IdMemorySemantics(id) => constant_u32(module, *id).map(|value| {
+            rspirv::dr::Operand::MemorySemantics(
+                rspirv::spirv::MemorySemantics::from_bits_truncate(value),
+            )
+        }),
+        rspirv::dr::Operand::IdScope(id) => constant_u32(module, *id).and_then(|value| {
+            rspirv::spirv::Scope::from_u32(value).map(rspirv::dr::Operand::Scope)
+        }),
+        _ => None,
+    }
 }
 
 fn is_memory_object_declaration(opcode: rspirv::spirv::Op) -> bool {
@@ -6652,6 +6758,56 @@ mod tests {
     }
 
     #[test]
+    fn memory_semantics_make_visible_requires_spirv_1_5() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut builder = Builder::new();
+        builder.set_version(1, 4);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = builder.type_void();
+        let uint = builder.type_int(32, 0);
+        let function_type = builder.type_function(void, std::iter::empty::<u32>());
+        let workgroup_scope = builder.constant_bit32(uint, rspirv::spirv::Scope::Workgroup as u32);
+        let semantics =
+            builder.constant_bit32(uint, rspirv::spirv::MemorySemantics::MAKE_VISIBLE.bits());
+
+        builder
+            .begin_function(
+                void,
+                None,
+                rspirv::spirv::FunctionControl::NONE,
+                function_type,
+            )
+            .unwrap();
+        builder.begin_block(None).unwrap();
+        builder
+            .control_barrier(workgroup_scope, workgroup_scope, semantics)
+            .unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+
+        let words = builder.module().assemble();
+        let error = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_4)
+            .expect_err("MakeVisible semantics requires SPIR-V 1.5");
+        assert_eq!(
+            error,
+            ValidationError::OperandRequiresSpirvVersion {
+                opcode: rspirv::spirv::Op::ControlBarrier,
+                operand_index: 2,
+                required_version: SpirvVersion::new(1, 5),
+                target_version: SpirvVersion::new(1, 4),
+            }
+        );
+    }
+
+    #[test]
     fn storage_buffer_requires_spirv_1_3() {
         let text = [
             "OpCapability Shader",
@@ -6716,6 +6872,64 @@ mod tests {
                 required_version: SpirvVersion::new(1, 1),
                 target_version: SpirvVersion::new(1, 0),
             }
+        );
+    }
+
+    #[test]
+    fn execution_mode_id_requires_spirv_1_2() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut builder = Builder::new();
+        builder.set_version(1, 2);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = builder.type_void();
+        let uint = builder.type_int(32, 0);
+        let function_type = builder.type_function(void, std::iter::empty::<u32>());
+        let local_size_x = builder.constant_bit32(uint, 1);
+        let local_size_y = builder.constant_bit32(uint, 1);
+        let local_size_z = builder.constant_bit32(uint, 1);
+
+        let entry_point = builder
+            .begin_function(
+                void,
+                None,
+                rspirv::spirv::FunctionControl::NONE,
+                function_type,
+            )
+            .unwrap();
+        builder.begin_block(None).unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+
+        builder.entry_point(
+            rspirv::spirv::ExecutionModel::Vertex,
+            entry_point,
+            "main",
+            [],
+        );
+        builder.execution_mode_id(
+            entry_point,
+            rspirv::spirv::ExecutionMode::LocalSizeId,
+            [local_size_x, local_size_y, local_size_z],
+        );
+
+        let words = builder.module().assemble();
+        let error = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_1)
+            .expect_err("ExecutionModeId::LocalSizeId requires SPIR-V 1.2");
+        assert_eq!(
+            error,
+            ValidationError::InstructionRequiresSpirvVersion {
+                opcode: rspirv::spirv::Op::ExecutionModeId,
+                required_version: SpirvVersion::new(1, 2),
+                target_version: SpirvVersion::new(1, 1),
+            },
         );
     }
 
