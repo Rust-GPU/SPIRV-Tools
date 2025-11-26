@@ -49,6 +49,7 @@ Tasks for this milestone:
   - Added layout regressions for late `OpExtInstImport` and misordered `OpSamplerImageAddressingModeNV` to keep parity with the C++ layout tests.
   - Mirrored NV bindless sampler address mode rules (presence, uniqueness, bit-width validation) with binary regressions and layout-time checks.
   - Added Vulkan-only extension gating (e.g., `SPV_KHR_vulkan_memory_model`, ray tracing, descriptor indexing) so non-Vulkan environments reject them with explicit diagnostics.
+  - Ported SPIR-V version gating for key extensions (ray tracing, descriptor indexing, fragment shader interlock/shading rate/density) to match C++ tables.
 - [x] Cache validated modules across CLI/FFI invocations when the same input is reused, avoiding redundant parsing/validation.
 - [ ] Expose wider structural rules (capability/extension ordering in layout, per-target decoration constraints) mirroring the C++ validator tables.
 - [ ] Enable the Rust validator over the FFI/CLI by default once structural parity is sufficiently close to C++.
