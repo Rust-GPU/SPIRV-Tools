@@ -3370,6 +3370,38 @@ mod tests {
     }
 
     #[test]
+    fn fragment_invocation_density_extension_requires_spirv_1_5() {
+        let text = [
+            "OpCapability Shader",
+            "OpExtension \"SPV_EXT_fragment_invocation_density\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Vulkan1_0)
+            .expect_err("fragment invocation density requires SPIR-V 1.5");
+        assert_eq!(
+            error,
+            ValidationError::ExtensionRequiresSpirvVersion {
+                extension: ExtensionName::from("SPV_EXT_fragment_invocation_density"),
+                required_version: SpirvVersion::new(1, 5),
+                target_version: TargetEnv::Vulkan1_0.spirv_version(),
+            }
+        );
+
+        text.as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("extension should be accepted with SPIR-V 1.5+");
+    }
+
+    #[test]
     fn non_opencl_env_rejects_opencl_extension() {
         let text = [
             "OpCapability Shader",
