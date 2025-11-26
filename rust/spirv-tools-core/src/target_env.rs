@@ -473,7 +473,6 @@ fn is_vulkan_specific_extension(name: &str) -> bool {
     const VULKAN_ONLY_EXTENSIONS: &[&str] = &[
         "SPV_KHR_vulkan_memory_model",
         "SPV_KHR_workgroup_memory_explicit_layout",
-        "SPV_KHR_storage_buffer_storage_class",
         "SPV_KHR_physical_storage_buffer",
         "SPV_KHR_untyped_pointers",
         "SPV_EXT_descriptor_indexing",
