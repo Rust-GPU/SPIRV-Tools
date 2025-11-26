@@ -1097,6 +1097,11 @@ impl ValidModule {
         self.env
     }
 
+    /// Returns the SPIR-V version actually used during validation (module version clamped to env).
+    pub fn effective_version(&self) -> SpirvVersion {
+        effective_spirv_version(self.env, self.header.version())
+    }
+
     /// Returns the declared SPIR-V version from the module header.
     pub fn module_version(&self) -> SpirvVersion {
         self.header.version()
@@ -3494,6 +3499,7 @@ mod tests {
 
     #[test]
     fn validated_module_exposes_module_version() {
+        use super::effective_spirv_version;
         let binary = vec![
             0x07230203, // magic number
             SpirvVersion::new(1, 5).to_word(),
@@ -3511,6 +3517,10 @@ mod tests {
             .expect("module should validate");
         assert_eq!(module.module_version(), SpirvVersion::new(1, 5));
         assert_eq!(module.header().version(), SpirvVersion::new(1, 5));
+        assert_eq!(
+            module.effective_version(),
+            effective_spirv_version(TargetEnv::Universal1_6, SpirvVersion::new(1, 5))
+        );
     }
 
     #[test]
