@@ -829,6 +829,30 @@ pub enum ValidationError {
         /// The found type id.
         found: TypeId,
     },
+    /// A non-void function returned without a value.
+    #[error("function {function:?} must return a value of type {expected:?}")]
+    MissingReturnValue {
+        /// The function id.
+        function: Id,
+        /// The expected return type.
+        expected: TypeId,
+    },
+    /// A void function returned a value.
+    #[error("function {function:?} returns a value but has void return type")]
+    ReturnValueInVoidFunction {
+        /// The function id.
+        function: Id,
+    },
+    /// A function returned a value whose type mismatched its signature.
+    #[error("function {function:?} returned value of type {found:?}, expected {expected:?}")]
+    InvalidReturnValueType {
+        /// The function id.
+        function: Id,
+        /// The expected return type.
+        expected: TypeId,
+        /// The found value type.
+        found: TypeId,
+    },
 }
 
 /// Categories of ids that must be non-zero.
@@ -1123,6 +1147,7 @@ fn validate_words(words: ModuleWords, env: TargetEnv) -> Result<ValidModule, Val
 
 fn validate_functions(module: &Module) -> Result<(), ValidationError> {
     let definitions = collect_result_instructions(module);
+    let result_types = collect_result_types(module)?;
     let mut seen_definition = false;
     for function in &module.functions {
         let function_id = function
@@ -1133,17 +1158,18 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
             .unwrap_or(Id::try_from(1).expect("non-zero literal"));
 
         let is_declaration = function.blocks.is_empty() && function.parameters.is_empty();
+        let signature = validate_function_signature(function_id, function, &definitions)?;
         if is_declaration {
             if seen_definition {
                 return Err(ValidationError::FunctionDeclarationAfterDefinition {
                     function: function_id,
                 });
             }
-            validate_function_signature(function_id, function, &definitions)?;
             continue;
         }
         seen_definition = true;
-        validate_function_signature(function_id, function, &definitions)?;
+        let return_type = signature.return_type;
+        let return_is_void = is_void_type(return_type, &definitions);
 
         let entry_block =
             function
@@ -1233,6 +1259,40 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
             };
 
             match terminator_inst.class.opcode {
+                rspirv::spirv::Op::Return => {
+                    if !return_is_void {
+                        return Err(ValidationError::MissingReturnValue {
+                            function: function_id,
+                            expected: return_type,
+                        });
+                    }
+                }
+                rspirv::spirv::Op::ReturnValue => {
+                    if return_is_void {
+                        return Err(ValidationError::ReturnValueInVoidFunction {
+                            function: function_id,
+                        });
+                    }
+                    if let Some(rspirv::dr::Operand::IdRef(raw)) = terminator_inst.operands.first()
+                    {
+                        if let Ok(value_id) = ResultId::try_from(*raw) {
+                            let value_type = result_types.get(&value_id).copied().ok_or(
+                                ValidationError::InvalidReturnValueType {
+                                    function: function_id,
+                                    expected: return_type,
+                                    found: return_type,
+                                },
+                            )?;
+                            if value_type != return_type {
+                                return Err(ValidationError::InvalidReturnValueType {
+                                    function: function_id,
+                                    expected: return_type,
+                                    found: value_type,
+                                });
+                            }
+                        }
+                    }
+                }
                 rspirv::spirv::Op::Branch => {
                     if let Some(op) = terminator_inst.operands.first() {
                         check_target(op)?;
@@ -1347,14 +1407,23 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
     Ok(())
 }
 
+#[derive(Debug)]
+struct FunctionSignature {
+    return_type: TypeId,
+}
+
 fn validate_function_signature(
     function_id: Id,
     function: &rspirv::dr::Function,
     definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
-) -> Result<(), ValidationError> {
+) -> Result<FunctionSignature, ValidationError> {
     let function_def = match &function.def {
         Some(def) => def,
-        None => return Ok(()),
+        None => {
+            return Err(ValidationError::MissingFunctionEntryBlock {
+                function: function_id,
+            })
+        }
     };
 
     let function_type_id = match function_def.operands.get(1) {
@@ -1472,7 +1541,7 @@ fn validate_function_signature(
         }
     }
 
-    Ok(())
+    Ok(FunctionSignature { return_type })
 }
 
 fn hash_words(words: &[u32], env: TargetEnv) -> u64 {
@@ -2799,6 +2868,35 @@ fn collect_result_instructions(module: &Module) -> HashMap<ResultId, rspirv::dr:
     map
 }
 
+fn collect_result_types(module: &Module) -> Result<HashMap<ResultId, TypeId>, ValidationError> {
+    let mut map = HashMap::new();
+    for inst in module.all_inst_iter() {
+        if let (Some(result_id), Some(result_type)) = (inst.result_id, inst.result_type) {
+            let id = ResultId::try_from(result_id).map_err(|_| ValidationError::ZeroId {
+                kind: IdKind::Result,
+                opcode: inst.class.opcode,
+            })?;
+            let ty = TypeId::try_from(result_type).map_err(|_| ValidationError::ZeroId {
+                kind: IdKind::ResultType,
+                opcode: inst.class.opcode,
+            })?;
+            map.insert(id, ty);
+        }
+    }
+    Ok(map)
+}
+
+fn is_void_type(type_id: TypeId, definitions: &HashMap<ResultId, rspirv::dr::Instruction>) -> bool {
+    let raw: u32 = Id::from(type_id).into();
+    let Ok(result_id) = ResultId::try_from(raw) else {
+        return false;
+    };
+    definitions
+        .get(&result_id)
+        .map(|inst| inst.class.opcode == rspirv::spirv::Op::TypeVoid)
+        .unwrap_or(false)
+}
+
 fn collect_declared_capabilities(module: &Module) -> HashSet<rspirv::spirv::Capability> {
     module
         .capabilities
@@ -2864,8 +2962,8 @@ mod tests {
     use super::{
         validate_module, CheckedBound, DeclaredBound, DecorationTargetId, DecorationTargetKind,
         ExtensionName, Id, IdKind, MaybeValidModule, MemberDecorationTargetId, MemberIndex,
-        ModuleWords, OperandId, Schema, SpirvVersion, TypeId, ValidModuleCache,
-        ValidatableModule, ValidationError,
+        ModuleWords, OperandId, Schema, SpirvVersion, TypeId, ValidModuleCache, ValidatableModule,
+        ValidationError,
     };
     use crate::assembly::assemble_text;
     use crate::target_env::TargetEnv;
