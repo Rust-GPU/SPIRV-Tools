@@ -789,6 +789,46 @@ pub enum ValidationError {
         /// The duplicate predecessor id.
         incoming: Id,
     },
+    /// A function references a missing or invalid function type.
+    #[error("function {function:?} has an invalid function type {type_id:?}")]
+    InvalidFunctionType {
+        /// The function id.
+        function: Id,
+        /// The referenced function type id.
+        type_id: TypeId,
+    },
+    /// A function declared a different return type than its function type.
+    #[error("function {function:?} return type {result_type:?} does not match function type {function_type:?}")]
+    FunctionReturnTypeMismatch {
+        /// The function id.
+        function: Id,
+        /// The return type on the function instruction.
+        result_type: TypeId,
+        /// The return type on the function type declaration.
+        function_type: TypeId,
+    },
+    /// A function parameter list does not match the function type parameter list.
+    #[error("function {function:?} expects {expected} parameters but found {found}")]
+    FunctionParameterCountMismatch {
+        /// The function id.
+        function: Id,
+        /// The expected number of parameters per the function type.
+        expected: usize,
+        /// The number of parameters present on the function.
+        found: usize,
+    },
+    /// A function parameter type does not match the function type declaration.
+    #[error("function {function:?} parameter {parameter:?} has type {found:?} but function type expects {expected:?}")]
+    FunctionParameterTypeMismatch {
+        /// The function id.
+        function: Id,
+        /// The parameter id.
+        parameter: Id,
+        /// The expected type id.
+        expected: TypeId,
+        /// The found type id.
+        found: TypeId,
+    },
 }
 
 /// Categories of ids that must be non-zero.
@@ -1082,6 +1122,7 @@ fn validate_words(words: ModuleWords, env: TargetEnv) -> Result<ValidModule, Val
 }
 
 fn validate_functions(module: &Module) -> Result<(), ValidationError> {
+    let definitions = collect_result_instructions(module);
     let mut seen_definition = false;
     for function in &module.functions {
         let function_id = function
@@ -1098,9 +1139,11 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                     function: function_id,
                 });
             }
+            validate_function_signature(function_id, function, &definitions)?;
             continue;
         }
         seen_definition = true;
+        validate_function_signature(function_id, function, &definitions)?;
 
         let entry_block =
             function
@@ -1301,6 +1344,134 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
             }
         }
     }
+    Ok(())
+}
+
+fn validate_function_signature(
+    function_id: Id,
+    function: &rspirv::dr::Function,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+) -> Result<(), ValidationError> {
+    let function_def = match &function.def {
+        Some(def) => def,
+        None => return Ok(()),
+    };
+
+    let function_type_id = match function_def.operands.get(1) {
+        Some(rspirv::dr::Operand::IdRef(raw)) => {
+            TypeId::try_from(*raw).map_err(|_| ValidationError::ZeroId {
+                kind: IdKind::Operand,
+                opcode: function_def.class.opcode,
+            })?
+        }
+        _ => {
+            return Err(ValidationError::InvalidFunctionType {
+                function: function_id,
+                type_id: TypeId::new(function_id),
+            })
+        }
+    };
+
+    let function_type_result =
+        ResultId::try_from(u32::from(function_type_id)).map_err(|_| ValidationError::ZeroId {
+            kind: IdKind::Operand,
+            opcode: function_def.class.opcode,
+        })?;
+    let Some(function_type_inst) = definitions.get(&function_type_result) else {
+        return Err(ValidationError::InvalidFunctionType {
+            function: function_id,
+            type_id: function_type_id,
+        });
+    };
+    if function_type_inst.class.opcode != rspirv::spirv::Op::TypeFunction {
+        return Err(ValidationError::InvalidFunctionType {
+            function: function_id,
+            type_id: function_type_id,
+        });
+    }
+
+    let result_type = function_def
+        .result_type
+        .and_then(|raw| TypeId::try_from(raw).ok())
+        .ok_or(ValidationError::InvalidFunctionType {
+            function: function_id,
+            type_id: function_type_id,
+        })?;
+
+    let return_type = match function_type_inst.operands.first() {
+        Some(rspirv::dr::Operand::IdRef(raw)) => {
+            TypeId::try_from(*raw).map_err(|_| ValidationError::InvalidFunctionType {
+                function: function_id,
+                type_id: function_type_id,
+            })?
+        }
+        _ => {
+            return Err(ValidationError::InvalidFunctionType {
+                function: function_id,
+                type_id: function_type_id,
+            })
+        }
+    };
+
+    if result_type != return_type {
+        return Err(ValidationError::FunctionReturnTypeMismatch {
+            function: function_id,
+            result_type,
+            function_type: return_type,
+        });
+    }
+
+    let mut expected_params: Vec<TypeId> = Vec::new();
+    for op in function_type_inst.operands.iter().skip(1) {
+        match op {
+            rspirv::dr::Operand::IdRef(raw) => {
+                let ty = TypeId::try_from(*raw).map_err(|_| ValidationError::ZeroId {
+                    kind: IdKind::Operand,
+                    opcode: function_type_inst.class.opcode,
+                })?;
+                expected_params.push(ty);
+            }
+            _ => {
+                return Err(ValidationError::InvalidFunctionType {
+                    function: function_id,
+                    type_id: function_type_id,
+                });
+            }
+        }
+    }
+
+    if expected_params.len() != function.parameters.len() {
+        return Err(ValidationError::FunctionParameterCountMismatch {
+            function: function_id,
+            expected: expected_params.len(),
+            found: function.parameters.len(),
+        });
+    }
+
+    for (expected_type, param_inst) in expected_params.iter().zip(&function.parameters) {
+        let parameter = param_inst
+            .result_id
+            .and_then(|raw| Id::try_from(raw).ok())
+            .unwrap_or(function_id);
+        let param_type = param_inst
+            .result_type
+            .and_then(|raw| TypeId::try_from(raw).ok())
+            .ok_or(ValidationError::FunctionParameterTypeMismatch {
+                function: function_id,
+                parameter,
+                expected: *expected_type,
+                found: TypeId::new(parameter),
+            })?;
+        if param_type != *expected_type {
+            return Err(ValidationError::FunctionParameterTypeMismatch {
+                function: function_id,
+                parameter,
+                expected: *expected_type,
+                found: param_type,
+            });
+        }
+    }
+
     Ok(())
 }
 
@@ -2693,8 +2864,8 @@ mod tests {
     use super::{
         validate_module, CheckedBound, DeclaredBound, DecorationTargetId, DecorationTargetKind,
         ExtensionName, Id, IdKind, MaybeValidModule, MemberDecorationTargetId, MemberIndex,
-        ModuleWords, OperandId, Schema, SpirvVersion, ValidModuleCache, ValidatableModule,
-        ValidationError,
+        ModuleWords, OperandId, Schema, SpirvVersion, TypeId, ValidModuleCache,
+        ValidatableModule, ValidationError,
     };
     use crate::assembly::assemble_text;
     use crate::target_env::TargetEnv;
@@ -3426,6 +3597,183 @@ mod tests {
                 function: Id::try_from(5).unwrap(),
                 block: Id::try_from(7).unwrap(),
                 incoming: Id::try_from(6).unwrap()
+            }
+        );
+    }
+
+    #[test]
+    fn function_type_must_be_type_function() {
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            6,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(4, 21), // OpTypeInt %2 32 0 (used incorrectly as function type)
+            2,
+            32,
+            0,
+            op(5, 54), // OpFunction %3 None %2 (invalid function type)
+            1,
+            3,
+            0,
+            2,
+            op(2, 248), // OpLabel %4
+            4,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::InvalidFunctionType {
+                function: Id::try_from(3).unwrap(),
+                type_id: TypeId::try_from(2).unwrap()
+            }
+        );
+    }
+
+    #[test]
+    fn function_return_type_must_match_function_type() {
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            6,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(4, 21), // OpTypeInt %2 32 0
+            2,
+            32,
+            0,
+            op(3, 33), // OpTypeFunction %3 %2 (return type int)
+            3,
+            2,
+            op(5, 54), // OpFunction %4 None %3 (return type void)
+            1,
+            4,
+            0,
+            3,
+            op(2, 248), // OpLabel %5
+            5,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::FunctionReturnTypeMismatch {
+                function: Id::try_from(4).unwrap(),
+                result_type: TypeId::try_from(1).unwrap(),
+                function_type: TypeId::try_from(2).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn function_parameter_count_must_match_function_type() {
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            7,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(4, 21), // OpTypeInt %2 32 0
+            2,
+            32,
+            0,
+            op(4, 33), // OpTypeFunction %3 %1 %2 (expects one parameter)
+            3,
+            1,
+            2,
+            op(5, 54), // OpFunction %4 None %3 (no parameters provided)
+            1,
+            4,
+            0,
+            3,
+            op(2, 248), // OpLabel %5
+            5,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::FunctionParameterCountMismatch {
+                function: Id::try_from(4).unwrap(),
+                expected: 1,
+                found: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn function_parameter_types_must_match_function_type() {
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            9,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(4, 21), // OpTypeInt %2 32 0
+            2,
+            32,
+            0,
+            op(3, 22), // OpTypeFloat %3 32
+            3,
+            32,
+            op(4, 33), // OpTypeFunction %4 %1 %2 (expects int parameter)
+            4,
+            1,
+            2,
+            op(5, 54), // OpFunction %5 None %4
+            1,
+            5,
+            0,
+            4,
+            op(3, 55), // OpFunctionParameter %3 %6 (float instead of int)
+            3,
+            6,
+            op(2, 248), // OpLabel %7
+            7,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::FunctionParameterTypeMismatch {
+                function: Id::try_from(5).unwrap(),
+                parameter: Id::try_from(6).unwrap(),
+                expected: TypeId::try_from(2).unwrap(),
+                found: TypeId::try_from(3).unwrap(),
             }
         );
     }
