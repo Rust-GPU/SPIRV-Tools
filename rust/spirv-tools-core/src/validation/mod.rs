@@ -1860,6 +1860,20 @@ fn run_layout_check(words: &[u32], _env: TargetEnv) -> Result<(), ValidationErro
                         }
                     }
                 }
+                rspirv::spirv::Op::ConditionalCapabilityINTEL => {
+                    if section < self.current_section {
+                        return rspirv::binary::ParseAction::Error(Box::new(
+                            ValidationError::LayoutOutOfOrder {
+                                opcode: rspirv::spirv::Op::ConditionalCapabilityINTEL,
+                            },
+                        ));
+                    }
+                    if let Some(cap) = capability_operand(&inst) {
+                        if let Err(err) = self.capabilities.insert(cap) {
+                            return rspirv::binary::ParseAction::Error(Box::new(err));
+                        }
+                    }
+                }
                 rspirv::spirv::Op::Extension => {
                     if section < self.current_section {
                         return rspirv::binary::ParseAction::Error(Box::new(
@@ -6357,6 +6371,37 @@ mod tests {
             error,
             ValidationError::LayoutOutOfOrder {
                 opcode: rspirv::spirv::Op::ConditionalCapabilityINTEL
+            }
+        );
+    }
+
+    #[test]
+    fn duplicate_conditional_capability_is_rejected() {
+        // Duplicate conditional capabilities should be rejected just like regular capabilities.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            2,          // bound (ids up to 1)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 6250), // OpConditionalCapabilityINTEL %1 Geometry
+            1,
+            rspirv::spirv::Capability::Geometry as u32,
+            op(3, 6250), // duplicate conditional capability
+            1,
+            rspirv::spirv::Capability::Geometry as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+        ];
+
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::DuplicateCapability {
+                capability: rspirv::spirv::Capability::Geometry
             }
         );
     }
