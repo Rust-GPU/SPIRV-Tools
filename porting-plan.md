@@ -70,6 +70,7 @@ Tasks for this milestone:
   - Added layout regressions to ensure member naming (`OpMemberName`) stays in the names section and outside function bodies.
   - Added a layout regression to keep `OpMemberDecorateString` in the annotations section ahead of functions.
   - Added layout regressions to keep `OpDecorateString` in the annotations section and out of function bodies.
+  - Added layout regressions to keep `OpDecorateId` confined to the annotations section (not inside or after functions).
   - Added function entry block validation (functions must start with an `OpLabel`).
   - Added block terminator validation (each block must end with a terminator).
   - Added a regression for stray instructions after a terminator to mirror function/CFG rules.

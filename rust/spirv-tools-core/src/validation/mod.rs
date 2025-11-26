@@ -3900,6 +3900,126 @@ mod tests {
     }
 
     #[test]
+    fn decorate_id_cannot_appear_inside_functions() {
+        // OpDecorateId is an annotation and must not appear in the function section.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            10,         // bound (ids up to 9)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(4, 21), // OpTypeInt %1 32 0
+            1,
+            32,
+            0,
+            op(4, 32), // OpTypePointer %2 Function %1
+            2,
+            rspirv::spirv::StorageClass::Function as u32,
+            1,
+            op(4, 43), // OpConstant %1 4 -> %3
+            1,
+            3,
+            4,
+            op(2, 19), // OpTypeVoid %4
+            4,
+            op(4, 33), // OpTypeFunction %5 %4 %2
+            5,
+            4,
+            2,
+            op(5, 54), // OpFunction %4 %6 None %5
+            4,
+            6,
+            0,
+            5,
+            op(2, 248), // OpLabel %7
+            7,
+            op(4, 59), // OpVariable %2 %8 Function
+            2,
+            8,
+            rspirv::spirv::StorageClass::Function as u32,
+            op(4, rspirv::spirv::Op::DecorateId as u16), // OpDecorateId %8 AlignmentId %3 (inside function -> error)
+            8,
+            rspirv::spirv::Decoration::AlignmentId as u32,
+            3,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::DecorateId
+            }
+        );
+    }
+
+    #[test]
+    fn decorate_id_cannot_follow_functions() {
+        // OpDecorateId must remain in the annotations section ahead of functions.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            10,         // bound (ids up to 9)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(4, 21), // OpTypeInt %1 32 0
+            1,
+            32,
+            0,
+            op(4, 32), // OpTypePointer %2 Function %1
+            2,
+            rspirv::spirv::StorageClass::Function as u32,
+            1,
+            op(4, 43), // OpConstant %1 4 -> %3
+            1,
+            3,
+            4,
+            op(2, 19), // OpTypeVoid %4
+            4,
+            op(4, 33), // OpTypeFunction %5 %4 %2
+            5,
+            4,
+            2,
+            op(5, 54), // OpFunction %4 %6 None %5
+            4,
+            6,
+            0,
+            5,
+            op(2, 248), // OpLabel %7
+            7,
+            op(4, 59), // OpVariable %2 %8 Function
+            2,
+            8,
+            rspirv::spirv::StorageClass::Function as u32,
+            op(1, 253),                                  // OpReturn
+            op(1, 56),                                   // OpFunctionEnd
+            op(4, rspirv::spirv::Op::DecorateId as u16), // OpDecorateId %8 AlignmentId %3 (after functions -> error)
+            8,
+            rspirv::spirv::Decoration::AlignmentId as u32,
+            3,
+        ];
+
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::DecorateId
+            }
+        );
+    }
+
+    #[test]
     fn member_decorate_string_cannot_follow_functions() {
         // OpMemberDecorateString is an annotation and must appear before functions.
         let binary = vec![
