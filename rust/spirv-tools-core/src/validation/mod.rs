@@ -1566,6 +1566,7 @@ fn required_spirv_version_for_capability(
         | AtomicFloat64MinMaxEXT
         | AtomicFloat16VectorNV => Some(SpirvVersion::new(1, 3)),
         TileShadingQCOM => Some(SpirvVersion::new(1, 6)),
+        PhysicalStorageBufferAddresses => Some(SpirvVersion::new(1, 4)),
         _ => None,
     }
 }
@@ -3921,6 +3922,65 @@ mod tests {
         }
         text.as_str()
             .validate(TargetEnv::Universal1_6)
+            .expect("succeeds on newer SPIR-V");
+    }
+
+    #[test]
+    fn physical_storage_buffer_capability_requires_spirv_1_4() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability PhysicalStorageBufferAddresses",
+            "OpExtension \"SPV_KHR_physical_storage_buffer\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Universal1_3)
+            .expect_err("requires SPIR-V 1.4");
+        match error {
+            ValidationError::CapabilityRequiresSpirvVersion {
+                capability,
+                required_version,
+                target_version,
+            } => {
+                assert_eq!(
+                    capability,
+                    rspirv::spirv::Capability::PhysicalStorageBufferAddresses
+                );
+                assert_eq!(required_version, SpirvVersion::new(1, 4));
+                assert_eq!(target_version, SpirvVersion::new(1, 3));
+            }
+            ValidationError::ExtensionRequiresSpirvVersion {
+                extension,
+                required_version,
+                target_version,
+            } => {
+                assert_eq!(
+                    extension,
+                    ExtensionName::from("SPV_KHR_physical_storage_buffer")
+                );
+                assert_eq!(required_version, SpirvVersion::new(1, 4));
+                assert_eq!(target_version, SpirvVersion::new(1, 3));
+            }
+            ValidationError::DisallowedExtension { extension, env } => {
+                assert_eq!(
+                    extension,
+                    ExtensionName::from("SPV_KHR_physical_storage_buffer")
+                );
+                assert_eq!(env, TargetEnv::Universal1_3);
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+
+        text.as_str()
+            .validate(TargetEnv::Vulkan1_2)
             .expect("succeeds on newer SPIR-V");
     }
 
