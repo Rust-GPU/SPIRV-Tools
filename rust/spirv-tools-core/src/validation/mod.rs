@@ -4071,6 +4071,58 @@ mod tests {
     }
 
     #[test]
+    fn member_decorate_string_cannot_appear_inside_functions() {
+        // OpMemberDecorateString must stay in the annotations section; placing it inside a
+        // function body should be rejected.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            8,          // bound (ids up to 7)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(4, 21), // OpTypeInt %1 32 0
+            1,
+            32,
+            0,
+            op(3, 30), // OpTypeStruct %2 %1
+            2,
+            1,
+            op(2, 19), // OpTypeVoid %3
+            3,
+            op(3, 33), // OpTypeFunction %4 %3
+            4,
+            3,
+            op(5, 54), // OpFunction %3 %5 None %4
+            3,
+            5,
+            0,
+            4,
+            op(2, 248), // OpLabel %6
+            6,
+            op(5, rspirv::spirv::Op::MemberDecorateString as u16), // OpMemberDecorateString %2 0 UserSemantic "foo" (inside function -> error)
+            2,
+            0,
+            rspirv::spirv::Decoration::UserSemantic as u32,
+            0x006f_6f66, // "foo"
+            op(1, 253),  // OpReturn
+            op(1, 56),   // OpFunctionEnd
+        ];
+
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::MemberDecorateString
+            }
+        );
+    }
+
+    #[test]
     fn member_name_cannot_follow_functions() {
         // OpMemberName must remain in the names section; placing it after functions should be
         // rejected by layout validation.
