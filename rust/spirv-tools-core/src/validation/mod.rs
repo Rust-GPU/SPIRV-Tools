@@ -1579,6 +1579,7 @@ fn required_spirv_version_for_extension(extension: &ExtensionName) -> Option<Spi
         "spv_khr_ray_tracing" | "spv_khr_ray_query" | "spv_khr_ray_tracing_position_fetch" => {
             Some(SpirvVersion::new(1, 4))
         }
+        "spv_ext_descriptor_indexing" => Some(SpirvVersion::new(1, 5)),
         _ => None,
     }
 }
@@ -3298,6 +3299,38 @@ mod tests {
                 .validate(TargetEnv::Vulkan1_2)
                 .expect("extension should be accepted with SPIR-V 1.4+");
         }
+    }
+
+    #[test]
+    fn descriptor_indexing_extension_requires_spirv_1_5() {
+        let text = [
+            "OpCapability Shader",
+            "OpExtension \"SPV_EXT_descriptor_indexing\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Vulkan1_0)
+            .expect_err("descriptor indexing should require SPIR-V 1.5");
+        assert_eq!(
+            error,
+            ValidationError::ExtensionRequiresSpirvVersion {
+                extension: ExtensionName::from("SPV_EXT_descriptor_indexing"),
+                required_version: SpirvVersion::new(1, 5),
+                target_version: TargetEnv::Vulkan1_0.spirv_version(),
+            }
+        );
+
+        text.as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("extension should be accepted with SPIR-V 1.5+");
     }
 
     #[test]
