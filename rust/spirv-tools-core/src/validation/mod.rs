@@ -52,6 +52,7 @@ pub struct Schema(u32);
 /// A validated module header with a checked bound and schema.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct ValidatedHeader {
+    version: SpirvVersion,
     bound: CheckedBound,
     schema: Schema,
 }
@@ -299,8 +300,12 @@ impl fmt::Display for Schema {
 
 impl ValidatedHeader {
     /// Creates a validated header from its components.
-    pub fn new(bound: CheckedBound, schema: Schema) -> Self {
-        Self { bound, schema }
+    pub fn new(version: SpirvVersion, bound: CheckedBound, schema: Schema) -> Self {
+        Self {
+            version,
+            bound,
+            schema,
+        }
     }
 
     /// Parses and validates a module header, ensuring the bound and schema are valid.
@@ -310,16 +315,26 @@ impl ValidatedHeader {
             .as_ref()
             .ok_or(ValidationError::MissingHeader)?;
         let schema = Schema::validate(header.reserved_word)?;
+        let version = SpirvVersion::from_word(header.version);
         let declared_bound = DeclaredBound(header.bound);
         let bound = CheckedBound::new(declared_bound).ok_or(ValidationError::InvalidIdBound {
             bound: declared_bound,
         })?;
-        Ok(Self { bound, schema })
+        Ok(Self {
+            version,
+            bound,
+            schema,
+        })
     }
 
     /// Returns the validated id bound associated with this header.
     pub fn bound(self) -> CheckedBound {
         self.bound
+    }
+
+    /// Returns the module's declared SPIR-V version.
+    pub fn version(self) -> SpirvVersion {
+        self.version
     }
 
     /// Returns the validated schema value (always zero for valid modules).
