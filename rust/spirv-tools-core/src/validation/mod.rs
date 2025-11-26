@@ -6985,6 +6985,48 @@ mod tests {
     }
 
     #[test]
+    fn instruction_version_clamps_to_env_when_module_is_newer() {
+        use rspirv::{binary::Assemble, dr::Builder};
+        let mut builder = Builder::new();
+        builder.set_version(1, 6);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.capability(rspirv::spirv::Capability::RayQueryKHR);
+        builder.extension("SPV_KHR_ray_query");
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+        builder.type_ray_query_khr();
+        let module = builder.module();
+        let words = module.assemble();
+        let error = words
+            .as_slice()
+            .validate(TargetEnv::Vulkan1_0)
+            .expect_err("Ray query requires SPIR-V 1.4+, env should clamp module version to 1.0");
+        match error {
+            ValidationError::InstructionRequiresSpirvVersion {
+                opcode,
+                required_version,
+                target_version,
+            } => {
+                assert_eq!(opcode, rspirv::spirv::Op::TypeRayQueryKHR);
+                assert_eq!(required_version, SpirvVersion::new(1, 4));
+                assert_eq!(target_version, SpirvVersion::new(1, 0));
+            }
+            ValidationError::ExtensionRequiresSpirvVersion {
+                extension,
+                required_version,
+                target_version,
+            } => {
+                assert_eq!(extension, ExtensionName::from("SPV_KHR_ray_query"));
+                assert_eq!(required_version, SpirvVersion::new(1, 4));
+                assert_eq!(target_version, SpirvVersion::new(1, 0));
+            }
+            other => panic!("unexpected error {other:?}"),
+        }
+    }
+
+    #[test]
     fn validate_module_rejects_zero_result_id() {
         // The assembler never emits id 0; keep this binary hand-crafted to drive the zero-id path.
         let binary = vec![
