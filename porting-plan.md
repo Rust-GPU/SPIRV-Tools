@@ -71,6 +71,7 @@ Tasks for this milestone:
   - Added phi predecessor count validation based on collected predecessors.
   - Added a regression to ensure entry blocks have no predecessors.
   - Enforced function declarations to appear before function definitions and added tests for forward declarations versus missing entry labels.
+  - Tightened phi validation: incoming blocks must exist, must be real predecessors, and must not be duplicated; added binary regressions for each case.
 - [x] Cache validated modules across CLI/FFI invocations when the same input is reused, avoiding redundant parsing/validation.
 - [ ] Expose wider structural rules (capability/extension ordering in layout, per-target decoration constraints) mirroring the C++ validator tables.
 - [ ] Enable the Rust validator over the FFI/CLI by default once structural parity is sufficiently close to C++.

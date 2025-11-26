@@ -755,6 +755,40 @@ pub enum ValidationError {
         /// The declared function id.
         function: Id,
     },
+    /// A phi node references a block that does not exist in the function.
+    #[error(
+        "phi in block {block:?} of function {function:?} references missing block {incoming:?}"
+    )]
+    PhiIncomingBlockMissing {
+        /// The function containing the phi.
+        function: Id,
+        /// The block containing the phi.
+        block: Id,
+        /// The missing incoming block id.
+        incoming: Id,
+    },
+    /// A phi node lists an incoming block that is not a predecessor of the current block.
+    #[error(
+        "phi in block {block:?} of function {function:?} lists non-predecessor block {incoming:?}"
+    )]
+    PhiIncomingNotPredecessor {
+        /// The function containing the phi.
+        function: Id,
+        /// The block containing the phi.
+        block: Id,
+        /// The incoming block that is not a predecessor.
+        incoming: Id,
+    },
+    /// A phi node lists the same predecessor block more than once.
+    #[error("phi in block {block:?} of function {function:?} lists predecessor {incoming:?} more than once")]
+    PhiDuplicatePredecessor {
+        /// The function containing the phi.
+        function: Id,
+        /// The block containing the phi.
+        block: Id,
+        /// The duplicate predecessor id.
+        incoming: Id,
+    },
 }
 
 /// Categories of ids that must be non-zero.
@@ -1224,6 +1258,36 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                 .unwrap_or(0);
             for inst in &block.instructions {
                 if inst.class.opcode == rspirv::spirv::Op::Phi {
+                    let mut seen_incoming: std::collections::HashSet<Id> = Default::default();
+                    for pair in inst.operands.chunks(2) {
+                        if let Some(rspirv::dr::Operand::IdRef(raw_incoming)) = pair.get(1) {
+                            if let Ok(incoming_block) = Id::try_from(*raw_incoming) {
+                                if !block_ids.contains(&incoming_block) {
+                                    return Err(ValidationError::PhiIncomingBlockMissing {
+                                        function: function_id,
+                                        block: block_label_id,
+                                        incoming: incoming_block,
+                                    });
+                                }
+                                if let Some(preds) = predecessors.get(&block_label_id) {
+                                    if !preds.contains(&incoming_block) {
+                                        return Err(ValidationError::PhiIncomingNotPredecessor {
+                                            function: function_id,
+                                            block: block_label_id,
+                                            incoming: incoming_block,
+                                        });
+                                    }
+                                }
+                                if !seen_incoming.insert(incoming_block) {
+                                    return Err(ValidationError::PhiDuplicatePredecessor {
+                                        function: function_id,
+                                        block: block_label_id,
+                                        incoming: incoming_block,
+                                    });
+                                }
+                            }
+                        }
+                    }
                     let pair_count = inst.operands.len() / 2;
                     if pair_count != expected_preds {
                         return Err(ValidationError::PhiPredecessorCountMismatch {
@@ -3187,6 +3251,181 @@ mod tests {
             error,
             ValidationError::FunctionDeclarationAfterDefinition {
                 function: Id::try_from(5).unwrap()
+            }
+        );
+    }
+
+    #[test]
+    fn phi_requires_incoming_block_to_exist() {
+        // Function has a single predecessor for %merge; the phi references a missing block id.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            11,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(4, 21), // OpTypeInt %2 32 0
+            2,
+            32,
+            0,
+            op(3, 33), // OpTypeFunction %3 %1
+            3,
+            1,
+            op(3, 1), // OpUndef %4 %2
+            2,
+            4,
+            op(5, 54), // OpFunction %5 None %3
+            1,
+            5,
+            0,
+            3,
+            op(2, 248), // OpLabel %6
+            6,
+            op(2, 249), // OpBranch %7
+            7,
+            op(2, 248), // OpLabel %7
+            7,
+            op(7, 245), // OpPhi %2 %9 %4 %6 %4 %10 (missing incoming block)
+            2,
+            9,
+            4,
+            6,
+            4,
+            10,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::PhiIncomingBlockMissing {
+                function: Id::try_from(5).unwrap(),
+                block: Id::try_from(7).unwrap(),
+                incoming: Id::try_from(10).unwrap()
+            }
+        );
+    }
+
+    #[test]
+    fn phi_incoming_block_must_be_predecessor() {
+        // %merge only has predecessor %6, but the phi lists %8 which does not branch to it.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            12,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(4, 21), // OpTypeInt %2 32 0
+            2,
+            32,
+            0,
+            op(3, 33), // OpTypeFunction %3 %1
+            3,
+            1,
+            op(3, 1), // OpUndef %4 %2
+            2,
+            4,
+            op(5, 54), // OpFunction %5 None %3
+            1,
+            5,
+            0,
+            3,
+            op(2, 248), // OpLabel %6
+            6,
+            op(2, 249), // OpBranch %7
+            7,
+            op(2, 248), // OpLabel %8
+            8,
+            op(1, 253), // OpReturn
+            op(2, 248), // OpLabel %7
+            7,
+            op(5, 245), // OpPhi %2 %9 %4 %8 (incoming block not a predecessor)
+            2,
+            9,
+            4,
+            8,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::PhiIncomingNotPredecessor {
+                function: Id::try_from(5).unwrap(),
+                block: Id::try_from(7).unwrap(),
+                incoming: Id::try_from(8).unwrap()
+            }
+        );
+    }
+
+    #[test]
+    fn phi_cannot_duplicate_predecessor() {
+        // %merge has only predecessor %6, but the phi lists %6 twice.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            11,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(4, 21), // OpTypeInt %2 32 0
+            2,
+            32,
+            0,
+            op(3, 33), // OpTypeFunction %3 %1
+            3,
+            1,
+            op(3, 1), // OpUndef %4 %2
+            2,
+            4,
+            op(5, 54), // OpFunction %5 None %3
+            1,
+            5,
+            0,
+            3,
+            op(2, 248), // OpLabel %6
+            6,
+            op(2, 249), // OpBranch %7
+            7,
+            op(2, 248), // OpLabel %7
+            7,
+            op(7, 245), // OpPhi %2 %9 %4 %6 %4 %6 (duplicate incoming block)
+            2,
+            9,
+            4,
+            6,
+            4,
+            6,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::PhiDuplicatePredecessor {
+                function: Id::try_from(5).unwrap(),
+                block: Id::try_from(7).unwrap(),
+                incoming: Id::try_from(6).unwrap()
             }
         );
     }
