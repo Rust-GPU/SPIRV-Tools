@@ -1532,6 +1532,7 @@ fn required_extension_for_capability(
         }
         AtomicFloat16VectorNV => Some("SPV_NV_shader_atomic_float"),
         ShaderSMBuiltinsNV => Some("SPV_NV_shader_sm_builtins"),
+        ShaderClockKHR => Some("SPV_KHR_shader_clock"),
         TileShadingQCOM => Some("SPV_QCOM_tile_shading"),
         _ => None,
     }
@@ -1558,6 +1559,8 @@ fn required_spirv_version_for_capability(
         FragmentShaderSampleInterlockEXT
         | FragmentShaderShadingRateInterlockEXT
         | FragmentShaderPixelInterlockEXT => Some(SpirvVersion::new(1, 4)),
+        ShaderClockKHR => Some(SpirvVersion::new(1, 3)),
+        DeviceGroup => Some(SpirvVersion::new(1, 3)),
         AtomicFloat16AddEXT
         | AtomicFloat32AddEXT
         | AtomicFloat64AddEXT
@@ -4021,6 +4024,83 @@ mod tests {
         text.as_str()
             .validate(TargetEnv::Universal1_6)
             .expect("succeeds on newer SPIR-V");
+    }
+
+    #[test]
+    fn shader_clock_capability_requires_extension() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability ShaderClockKHR",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("ShaderClockKHR requires declaring the extension");
+        assert_eq!(
+            error,
+            ValidationError::DisallowedCapabilityMissingExtension {
+                capability: rspirv::spirv::Capability::ShaderClockKHR,
+                required_extension: "SPV_KHR_shader_clock".to_string(),
+            }
+        );
+
+        let with_extension = [
+            "OpCapability Shader",
+            "OpCapability ShaderClockKHR",
+            "OpExtension \"SPV_KHR_shader_clock\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        with_extension
+            .as_str()
+            .validate(TargetEnv::Universal1_6)
+            .expect("extension declared should satisfy capability");
+    }
+
+    #[test]
+    fn device_group_capability_requires_spirv_1_3() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability DeviceGroup",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Universal1_2)
+            .expect_err("DeviceGroup requires SPIR-V 1.3");
+        assert_eq!(
+            error,
+            ValidationError::CapabilityRequiresSpirvVersion {
+                capability: rspirv::spirv::Capability::DeviceGroup,
+                required_version: SpirvVersion::new(1, 3),
+                target_version: SpirvVersion::new(1, 2),
+            }
+        );
+
+        text.as_str()
+            .validate(TargetEnv::Universal1_6)
+            .expect("DeviceGroup accepted on SPIR-V 1.3+");
     }
 
     #[test]
