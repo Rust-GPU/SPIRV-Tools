@@ -58,6 +58,7 @@ Tasks for this milestone:
   - Added layout coverage for `OpString` ordering: rejecting strings after annotations and after the Names section to keep Debug1/Debug2 ordering aligned with the C++ validator.
   - Added a layout regression to ensure `OpModuleProcessed` follows the Names section (Debug3 after Debug2).
   - Added layout regressions for conditional capabilities/extensions (INTEL) to keep them in the capabilities/extensions sections ahead of debug/names/annotations.
+  - Added layout regressions for late extensions and imported instruction sets (extensions/ExtInstImport) to keep them ahead of annotations and debug names.
 - [x] Cache validated modules across CLI/FFI invocations when the same input is reused, avoiding redundant parsing/validation.
 - [ ] Expose wider structural rules (capability/extension ordering in layout, per-target decoration constraints) mirroring the C++ validator tables.
 - [ ] Enable the Rust validator over the FFI/CLI by default once structural parity is sufficiently close to C++.

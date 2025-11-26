@@ -3060,6 +3060,38 @@ mod tests {
     }
 
     #[test]
+    fn extension_cannot_follow_annotations() {
+        // Extensions must appear before annotations.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            3,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 73), // OpDecorationGroup %1 (annotations)
+            1,
+            op(6, 10), // OpExtension "SPV_KHR_ray_tracing" (misordered after annotations)
+            0x5f56_5053,
+            0x5f52_484b,
+            0x5f79_6172,
+            0x6361_7274,
+            0x0067_6e69,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Extension
+            }
+        );
+    }
+
+    #[test]
     fn names_cannot_follow_annotations() {
         // Names/debug instructions must precede annotations.
         let binary = vec![
@@ -3087,6 +3119,36 @@ mod tests {
             error,
             ValidationError::LayoutOutOfOrder {
                 opcode: rspirv::spirv::Op::Decorate
+            }
+        );
+    }
+
+    #[test]
+    fn ext_inst_import_cannot_follow_debug_names() {
+        // OpExtInstImport belongs to the extensions/imports section and cannot follow debug names.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            3,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(3, 5), // OpName %1 "x" (names/debug2 section)
+            1,
+            0x0000_0078,
+            op(3, 11), // OpExtInstImport %1 "GLSL.std.450" (misordered after names)
+            1,
+            0x004c_5347, // "GLS"
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::ExtInstImport
             }
         );
     }
