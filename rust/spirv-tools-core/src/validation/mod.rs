@@ -3216,6 +3216,35 @@ mod tests {
     }
 
     #[test]
+    fn module_processed_must_follow_names() {
+        // OpModuleProcessed (Debug3) must appear after the Names section.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            3,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 330),  // OpModuleProcessed "tag" (appearing before names)
+            0x0067_6174, // "tag"
+            op(3, 5),    // OpName %1 "x" (out of order after ModuleProcessed)
+            1,
+            0x0000_0078,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Name
+            }
+        );
+    }
+
+    #[test]
     fn module_processed_must_precede_types_and_globals() {
         let binary = vec![
             0x07230203,
