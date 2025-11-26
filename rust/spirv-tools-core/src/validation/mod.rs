@@ -3065,6 +3065,38 @@ mod tests {
     }
 
     #[test]
+    fn source_extension_cannot_follow_annotations() {
+        // OpSourceExtension (debug) must not appear after the annotations section.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            3,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 71), // OpDecorate %1 RelaxedPrecision (annotation section)
+            1,
+            rspirv::spirv::Decoration::RelaxedPrecision as u32,
+            op(3, 4), // OpSourceExtension "ext" (misordered after annotations)
+            0x7478_65,
+            0,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Decorate
+            }
+        );
+    }
+
+    #[test]
     fn module_processed_must_precede_annotations() {
         // OpModuleProcessed belongs to the debug section and must precede annotations.
         let binary = vec![
