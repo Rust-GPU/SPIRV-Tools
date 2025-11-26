@@ -1393,7 +1393,14 @@ fn validate_capabilities(
                     });
                 }
             }
-            for required_cap in required_capabilities_for_capability(capability) {
+            for required_cap in grammar_requirements
+                .required_capabilities
+                .iter()
+                .chain(required_capabilities_for_capability(capability).iter())
+            {
+                if is_soft_dependency(capability, *required_cap) {
+                    continue;
+                }
                 if !declared.contains(required_cap) {
                     return Err(ValidationError::MissingRequiredCapability {
                         required_capability: *required_cap,
@@ -1443,6 +1450,19 @@ fn capability_enabled_by_capability(
     matches!(
         capability,
         LiteralSampler | Sampled1D | Image1D | SampledBuffer | ImageBuffer | ImageReadWrite
+    )
+}
+
+fn is_soft_dependency(
+    capability: rspirv::spirv::Capability,
+    required_capability: rspirv::spirv::Capability,
+) -> bool {
+    matches!(
+        (capability, required_capability),
+        (
+            rspirv::spirv::Capability::Shader,
+            rspirv::spirv::Capability::Matrix
+        )
     )
 }
 
@@ -3730,6 +3750,7 @@ mod tests {
         let text = [
             "OpCapability Kernel",
             "OpCapability Addresses",
+            "OpCapability Sampled1D",
             "OpCapability Image1D",
             "OpMemoryModel Physical32 OpenCL",
             "%void = OpTypeVoid",
@@ -3744,18 +3765,28 @@ mod tests {
             .as_str()
             .validate(TargetEnv::OpenCl2_0)
             .expect_err("Image1D requires ImageBasic");
-        assert_eq!(
-            error,
+        match error {
             ValidationError::MissingRequiredCapability {
-                required_capability: rspirv::spirv::Capability::ImageBasic,
-                capability: rspirv::spirv::Capability::Image1D
+                required_capability,
+                capability,
+            } => {
+                assert_eq!(
+                    required_capability,
+                    rspirv::spirv::Capability::ImageBasic
+                );
+                assert!(
+                    capability == rspirv::spirv::Capability::Image1D
+                        || capability == rspirv::spirv::Capability::Sampled1D
+                );
             }
-        );
+            other => panic!("unexpected error: {other:?}"),
+        }
 
         let text_with_basic = [
             "OpCapability Kernel",
             "OpCapability Addresses",
             "OpCapability ImageBasic",
+            "OpCapability Sampled1D",
             "OpCapability Image1D",
             "OpMemoryModel Physical32 OpenCL",
             "%void = OpTypeVoid",
@@ -4207,6 +4238,141 @@ mod tests {
             .as_str()
             .validate(TargetEnv::Universal1_6)
             .expect("dependency declared should satisfy requirement");
+    }
+
+    #[test]
+    fn ray_tracing_requires_shader_capability() {
+        let text = [
+            "OpCapability RayTracingKHR",
+            "OpExtension \"SPV_KHR_ray_tracing\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect_err("RayTracingKHR requires Shader capability");
+        assert_eq!(
+            error,
+            ValidationError::MissingRequiredCapability {
+                required_capability: rspirv::spirv::Capability::Shader,
+                capability: rspirv::spirv::Capability::RayTracingKHR
+            }
+        );
+
+        let with_shader = [
+            "OpCapability Shader",
+            "OpCapability RayTracingKHR",
+            "OpExtension \"SPV_KHR_ray_tracing\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        with_shader
+            .as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("Shader capability declared should satisfy dependency");
+    }
+
+    #[test]
+    fn group_non_uniform_arithmetic_requires_group_non_uniform() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability GroupNonUniformArithmetic",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect_err("GroupNonUniformArithmetic requires GroupNonUniform");
+        assert_eq!(
+            error,
+            ValidationError::MissingRequiredCapability {
+                required_capability: rspirv::spirv::Capability::GroupNonUniform,
+                capability: rspirv::spirv::Capability::GroupNonUniformArithmetic
+            }
+        );
+
+        let with_base = [
+            "OpCapability Shader",
+            "OpCapability GroupNonUniform",
+            "OpCapability GroupNonUniformArithmetic",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        with_base
+            .as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("base capability declared should satisfy dependency");
+    }
+
+    #[test]
+    fn device_enqueue_requires_kernel() {
+        let text = [
+            "OpCapability DeviceEnqueue",
+            "OpCapability Addresses",
+            "OpMemoryModel Physical32 OpenCL",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::OpenCl2_0)
+            .expect_err("DeviceEnqueue requires Kernel capability");
+        assert_eq!(
+            error,
+            ValidationError::MissingRequiredCapability {
+                required_capability: rspirv::spirv::Capability::Kernel,
+                capability: rspirv::spirv::Capability::DeviceEnqueue
+            }
+        );
+
+        let with_kernel = [
+            "OpCapability Kernel",
+            "OpCapability Addresses",
+            "OpCapability DeviceEnqueue",
+            "OpMemoryModel Physical32 OpenCL",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        with_kernel
+            .as_str()
+            .validate(TargetEnv::OpenCl2_0)
+            .expect("kernel capability enables device enqueue");
     }
 
     #[test]
