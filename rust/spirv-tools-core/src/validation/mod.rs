@@ -6652,6 +6652,7 @@ mod tests {
     }
 
     #[test]
+    #[test]
     fn storage_buffer_requires_spirv_1_3() {
         let text = [
             "OpCapability Shader",
