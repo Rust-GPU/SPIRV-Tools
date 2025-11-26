@@ -4301,6 +4301,92 @@ mod tests {
     }
 
     #[test]
+    fn sampled_cube_array_requires_shader_capability() {
+        let text = [
+            "OpCapability SampledCubeArray",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Universal1_2)
+            .expect_err("SampledCubeArray requires Shader capability");
+        assert_eq!(
+            error,
+            ValidationError::MissingRequiredCapability {
+                required_capability: rspirv::spirv::Capability::Shader,
+                capability: rspirv::spirv::Capability::SampledCubeArray
+            }
+        );
+
+        let with_shader = [
+            "OpCapability Shader",
+            "OpCapability SampledCubeArray",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        with_shader
+            .as_str()
+            .validate(TargetEnv::Universal1_2)
+            .expect("Shader capability declared should satisfy dependency");
+    }
+
+    #[test]
+    fn image_ms_array_requires_shader_capability() {
+        let text = [
+            "OpCapability ImageMSArray",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Universal1_2)
+            .expect_err("ImageMSArray requires Shader capability");
+        assert_eq!(
+            error,
+            ValidationError::MissingRequiredCapability {
+                required_capability: rspirv::spirv::Capability::Shader,
+                capability: rspirv::spirv::Capability::ImageMSArray
+            }
+        );
+
+        let with_shader = [
+            "OpCapability Shader",
+            "OpCapability ImageMSArray",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        with_shader
+            .as_str()
+            .validate(TargetEnv::Universal1_2)
+            .expect("Shader capability declared should satisfy dependency");
+    }
+
+    #[test]
     fn ray_tracing_requires_shader_capability() {
         let text = [
             "OpCapability RayTracingKHR",
