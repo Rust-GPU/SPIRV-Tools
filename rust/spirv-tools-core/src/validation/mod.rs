@@ -13,6 +13,10 @@ use crate::{target_env::TargetEnv, version::SpirvVersion};
 
 mod capability_info;
 use capability_info::capability_info_from_grammar;
+mod instruction_versions;
+use instruction_versions::grammar_required_spirv_version_for_opcode;
+mod operand_versions;
+use operand_versions::grammar_required_spirv_version_for_operand;
 
 /// A non-zero SPIR-V id.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -133,6 +137,18 @@ impl ExtensionSet {
             return Err(ValidationError::DisallowedExtension { extension, env });
         }
         Ok(())
+    }
+}
+
+fn merge_versions(
+    grammar: Option<SpirvVersion>,
+    manual: Option<SpirvVersion>,
+) -> Option<SpirvVersion> {
+    match (grammar, manual) {
+        (Some(grammar), Some(manual)) => Some(if grammar > manual { grammar } else { manual }),
+        (Some(grammar), None) => Some(grammar),
+        (None, Some(manual)) => Some(manual),
+        (None, None) => None,
     }
 }
 
@@ -551,6 +567,20 @@ pub enum ValidationError {
     InstructionRequiresSpirvVersion {
         /// The opcode that is too new.
         opcode: rspirv::spirv::Op,
+        /// The minimum SPIR-V version required.
+        required_version: SpirvVersion,
+        /// The target environment's SPIR-V version.
+        target_version: SpirvVersion,
+    },
+    /// An operand requires a newer SPIR-V version than the target environment provides.
+    #[error(
+        "operand {operand_index} of {opcode:?} requires SPIR-V version {required_version}, but target provides {target_version}"
+    )]
+    OperandRequiresSpirvVersion {
+        /// The opcode containing the operand.
+        opcode: rspirv::spirv::Op,
+        /// Index of the operand within the instruction.
+        operand_index: usize,
         /// The minimum SPIR-V version required.
         required_version: SpirvVersion,
         /// The target environment's SPIR-V version.
@@ -1902,24 +1932,6 @@ fn validate_capabilities(
     target_version: SpirvVersion,
     extensions: &ExtensionSet,
 ) -> Result<(), ValidationError> {
-    fn merge_versions(
-        grammar: Option<SpirvVersion>,
-        manual: Option<SpirvVersion>,
-    ) -> Option<SpirvVersion> {
-        match (grammar, manual) {
-            (Some(grammar), Some(manual)) => {
-                if grammar.meets_or_exceeds(manual) {
-                    Some(grammar)
-                } else {
-                    Some(manual)
-                }
-            }
-            (Some(grammar), None) => Some(grammar),
-            (None, Some(manual)) => Some(manual),
-            (None, None) => None,
-        }
-    }
-
     let declared: HashSet<_> = module
         .capabilities
         .iter()
@@ -2109,6 +2121,16 @@ fn validate_instruction_requirements(
                 // the declaration order.
                 continue;
             }
+            if let Some(required_version) = required_spirv_version_for_operand(operand) {
+                if target_version < required_version {
+                    return Err(ValidationError::OperandRequiresSpirvVersion {
+                        opcode: inst.class.opcode,
+                        operand_index: index,
+                        required_version,
+                        target_version,
+                    });
+                }
+            }
             for required_cap in operand.required_capabilities() {
                 if !capabilities.contains(&required_cap) {
                     return Err(ValidationError::MissingOperandCapability {
@@ -2263,13 +2285,24 @@ fn required_spirv_version_for_extension(extension: &ExtensionName) -> Option<Spi
     }
 }
 
-fn required_spirv_version_for_opcode(opcode: rspirv::spirv::Op) -> Option<SpirvVersion> {
+fn manual_required_spirv_version_for_opcode(opcode: rspirv::spirv::Op) -> Option<SpirvVersion> {
     match opcode {
         rspirv::spirv::Op::TypeAccelerationStructureKHR | rspirv::spirv::Op::TypeRayQueryKHR => {
             Some(SpirvVersion::new(1, 4))
         }
         _ => None,
     }
+}
+
+fn required_spirv_version_for_opcode(opcode: rspirv::spirv::Op) -> Option<SpirvVersion> {
+    merge_versions(
+        grammar_required_spirv_version_for_opcode(opcode),
+        manual_required_spirv_version_for_opcode(opcode),
+    )
+}
+
+fn required_spirv_version_for_operand(operand: &rspirv::dr::Operand) -> Option<SpirvVersion> {
+    grammar_required_spirv_version_for_operand(operand)
 }
 
 fn required_capabilities_for_capability(
@@ -3531,6 +3564,7 @@ mod tests {
         let mut builder = Builder::new();
         builder.set_version(1, 6);
         builder.capability(rspirv::spirv::Capability::Shader);
+        builder.extension("SPV_KHR_terminate_invocation");
         builder.memory_model(
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
@@ -6496,6 +6530,164 @@ mod tests {
             }
             other => panic!("unexpected error {other:?}"),
         }
+    }
+
+    #[test]
+    fn capability_version_clamps_for_binary_modules() {
+        // Binary declares SPIR-V 1.6 and RayTracingKHR capability; Vulkan 1.0 should clamp.
+        let binary = vec![
+            0x07230203, // magic
+            SpirvVersion::new(1, 6).to_word(),
+            0,         // generator
+            1,         // bound
+            0,         // schema
+            op(2, 17), // OpCapability
+            rspirv::spirv::Capability::RayTracingKHR as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+        ];
+        let error = validate_module(&binary, TargetEnv::Vulkan1_0)
+            .expect_err("RayTracingKHR requires SPIR-V 1.4+ and should clamp to env");
+        match error {
+            ValidationError::CapabilityRequiresSpirvVersion {
+                capability,
+                required_version,
+                target_version,
+            } => {
+                assert_eq!(capability, rspirv::spirv::Capability::RayTracingKHR);
+                assert_eq!(required_version, SpirvVersion::new(1, 4));
+                assert_eq!(target_version, SpirvVersion::new(1, 0));
+            }
+            ValidationError::DisallowedCapability { capability, env } => {
+                assert_eq!(capability, rspirv::spirv::Capability::RayTracingKHR);
+                assert_eq!(env, TargetEnv::Vulkan1_0);
+            }
+            ValidationError::ExtensionRequiresSpirvVersion {
+                extension,
+                required_version,
+                target_version,
+            } => {
+                assert_eq!(extension, ExtensionName::from("SPV_KHR_ray_tracing"));
+                assert_eq!(required_version, SpirvVersion::new(1, 4));
+                assert_eq!(target_version, SpirvVersion::new(1, 0));
+            }
+            other => panic!("unexpected error {other:?}"),
+        }
+    }
+
+    #[test]
+    fn instruction_requires_spirv_version_from_grammar() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut builder = Builder::new();
+        builder.set_version(1, 6);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.extension("SPV_KHR_terminate_invocation");
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+        let void = builder.type_void();
+        let fn_type = builder.type_function(void, std::iter::empty::<u32>());
+        builder
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_type)
+            .unwrap();
+        builder.begin_block(None).unwrap();
+        builder.terminate_invocation().unwrap();
+        builder.end_function().unwrap();
+
+        let module = builder.module();
+        assert!(
+            module
+                .extensions
+                .iter()
+                .any(|inst| super::extension_operand(inst)
+                    == Some(ExtensionName::from("SPV_KHR_terminate_invocation"))),
+            "extension must be declared for opcode that requires it"
+        );
+
+        let words = module.assemble();
+        let error = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_5)
+            .expect_err("OpTerminateInvocation should require SPIR-V 1.6");
+        assert_eq!(
+            error,
+            ValidationError::InstructionRequiresSpirvVersion {
+                opcode: rspirv::spirv::Op::TerminateInvocation,
+                required_version: SpirvVersion::new(1, 6),
+                target_version: SpirvVersion::new(1, 5),
+            }
+        );
+    }
+
+    #[test]
+    fn storage_buffer_requires_spirv_1_3() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%int = OpTypeInt 32 0",
+            "%ptr = OpTypePointer StorageBuffer %int",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "%var = OpVariable %ptr StorageBuffer",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Universal1_2)
+            .expect_err("StorageBuffer storage class requires SPIR-V 1.3");
+        assert_eq!(
+            error,
+            ValidationError::OperandRequiresSpirvVersion {
+                opcode: rspirv::spirv::Op::TypePointer,
+                operand_index: 0,
+                required_version: SpirvVersion::new(1, 3),
+                target_version: SpirvVersion::new(1, 2),
+            }
+        );
+    }
+
+    #[test]
+    fn loop_control_dependency_length_requires_spirv_1_1() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%bool = OpTypeBool",
+            "%fn = OpTypeFunction %void",
+            "%true = OpConstantTrue %bool",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpBranch %loop",
+            "%loop = OpLabel",
+            "OpLoopMerge %merge %continue DependencyLength 1",
+            "OpBranch %continue",
+            "%continue = OpLabel",
+            "OpBranchConditional %true %loop %merge",
+            "%merge = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Universal1_0)
+            .expect_err("DependencyLength loop control requires SPIR-V 1.1");
+        assert_eq!(
+            error,
+            ValidationError::OperandRequiresSpirvVersion {
+                opcode: rspirv::spirv::Op::LoopMerge,
+                operand_index: 2,
+                required_version: SpirvVersion::new(1, 1),
+                target_version: SpirvVersion::new(1, 0),
+            }
+        );
     }
 
     #[test]
