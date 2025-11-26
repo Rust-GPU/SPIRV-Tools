@@ -2941,6 +2941,68 @@ mod tests {
     }
 
     #[test]
+    fn capability_cannot_follow_debug_names() {
+        // Once debug names begin, capabilities are no longer allowed.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            2,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            0x0003_0005, // OpName %1 "x"
+            1,
+            0x0000_0078,
+            op(2, 17), // OpCapability Float64 (misordered after debug section)
+            rspirv::spirv::Capability::Float64 as u32,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Capability
+            }
+        );
+    }
+
+    #[test]
+    fn extension_cannot_follow_debug_names() {
+        // Extensions must appear before debug/names/annotations sections.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            2,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            0x0003_0005, // OpName %1 "x"
+            1,
+            0x0000_0078,
+            op(6, 10), // OpExtension "SPV_KHR_ray_tracing" (misordered after debug)
+            0x5f56_5053,
+            0x5f52_484b,
+            0x5f79_6172,
+            0x6361_7274,
+            0x0067_6e69,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Extension
+            }
+        );
+    }
+
+    #[test]
     fn ext_inst_import_must_precede_types_and_globals() {
         // Place OpExtInstImport after a type to trigger layout ordering.
         let binary = vec![
