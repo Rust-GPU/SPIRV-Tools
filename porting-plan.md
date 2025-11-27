@@ -130,6 +130,7 @@ Environment-specific extension allowlists now mirror the C++ tables via the gene
 With allowlists and capability/extension precedence aligned, flip the Rust validator on by default behind the FFI/CLI gates.
 
 Planned tasks:
+- Added a runtime toggle (default-on with env/override opt-out) so the FFI validator path prefers the Rust validator and falls back to C++ only when explicitly disabled; added unit coverage to lock the toggle behavior.
 - Audit remaining layout/decoration ordering rules against the C++ tables and add any missing regressions.
 - Re-run the allowlist/capability matrix against the latest SPIR-V headers snapshot to catch drift before the default flip.
 - Wire a feature flag to select the Rust validator by default in the CLI/FFI, keeping an opt-out for known gaps.

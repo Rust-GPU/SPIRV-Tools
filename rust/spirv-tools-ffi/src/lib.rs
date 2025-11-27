@@ -72,6 +72,9 @@ mod ffi {
         fn context_handle_from_raw(handle: usize) -> u64;
         fn set_rust_text_assembler_override(enable: bool);
         fn clear_rust_text_assembler_override();
+        fn rust_validator_enabled() -> bool;
+        fn set_rust_validator_override(enable: bool);
+        fn clear_rust_validator_override();
         fn rebind_context(handle: u64, context_ptr: usize);
         fn try_assemble_text(context_handle: u64, text: &[u8], options: u32) -> AssembleResult;
         fn try_disassemble_binary(
@@ -255,12 +258,26 @@ pub fn rebind_context(handle: u64, context_ptr: usize) {
 
 /// Validates a SPIR-V module for the provided target environment.
 pub fn validate_binary(env: TargetEnv, words: &[u32]) -> ffi::ValidateResult {
+    if rust_validator_enabled() {
+        #[cfg(test)]
+        LAST_VALIDATION_PATH.store(1, Ordering::Relaxed);
+        return validate_binary_rust(env.to_raw(), words);
+    }
+
+    #[cfg(test)]
+    LAST_VALIDATION_PATH.store(2, Ordering::Relaxed);
     ffi::validate_binary(env.to_raw(), words)
 }
 
 static ENABLE_RUST_TEXT_ASSEMBLER: AtomicBool = AtomicBool::new(false);
 static INIT_RUST_TEXT_ASSEMBLER: Once = Once::new();
 static RUST_TEXT_ASSEMBLER_OVERRIDE: AtomicU8 = AtomicU8::new(0);
+static ENABLE_RUST_VALIDATOR: AtomicBool = AtomicBool::new(true);
+static INIT_RUST_VALIDATOR: Once = Once::new();
+static RUST_VALIDATOR_OVERRIDE: AtomicU8 = AtomicU8::new(0);
+
+#[cfg(test)]
+static LAST_VALIDATION_PATH: AtomicU8 = AtomicU8::new(0);
 
 fn rust_text_assembler_enabled() -> bool {
     match RUST_TEXT_ASSEMBLER_OVERRIDE.load(Ordering::Relaxed) {
@@ -288,6 +305,29 @@ pub fn set_rust_text_assembler_override(enable: bool) {
 
 pub fn clear_rust_text_assembler_override() {
     RUST_TEXT_ASSEMBLER_OVERRIDE.store(0, Ordering::Relaxed);
+}
+
+fn rust_validator_enabled() -> bool {
+    match RUST_VALIDATOR_OVERRIDE.load(Ordering::Relaxed) {
+        1 => return true,
+        2 => return false,
+        _ => {}
+    }
+    INIT_RUST_VALIDATOR.call_once(|| {
+        if std::env::var_os("SPIRV_TOOLS_DISABLE_RUST_VALIDATOR").is_some() {
+            ENABLE_RUST_VALIDATOR.store(false, Ordering::Relaxed);
+        }
+    });
+    ENABLE_RUST_VALIDATOR.load(Ordering::Relaxed)
+}
+
+pub fn set_rust_validator_override(enable: bool) {
+    let value = if enable { 1 } else { 2 };
+    RUST_VALIDATOR_OVERRIDE.store(value, Ordering::Relaxed);
+}
+
+pub fn clear_rust_validator_override() {
+    RUST_VALIDATOR_OVERRIDE.store(0, Ordering::Relaxed);
 }
 
 pub fn try_assemble_text(context_handle: u64, text: &[u8], options: u32) -> ffi::AssembleResult {
@@ -555,6 +595,7 @@ OpFunctionEnd\n";
         let text = r#"
 OpCapability Shader
 OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main"
 %void = OpTypeVoid
 %fn = OpTypeFunction %void
 %main = OpFunction %void None %fn
@@ -572,6 +613,43 @@ OpFunctionEnd
         let bad = validate_binary_rust(TargetEnv::Universal1_6.to_raw(), &invalid);
         assert!(!bad.success);
         assert!(!bad.message.is_empty());
+    }
+
+    #[test]
+    fn rust_validator_override_toggles_paths() {
+        clear_rust_validator_override();
+        LAST_VALIDATION_PATH.store(0, Ordering::Relaxed);
+
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let binary =
+            assemble_text_with_options(text, TargetEnv::Universal1_6, TextToBinaryOptions::NONE)
+                .expect("assemble");
+
+        let first = validate_binary(TargetEnv::Universal1_6, &binary);
+        assert!(first.success);
+        assert_eq!(LAST_VALIDATION_PATH.load(Ordering::Relaxed), 1);
+
+        set_rust_validator_override(false);
+        LAST_VALIDATION_PATH.store(0, Ordering::Relaxed);
+        let _cpp = validate_binary(TargetEnv::Universal1_6, &binary);
+        assert_eq!(LAST_VALIDATION_PATH.load(Ordering::Relaxed), 2);
+
+        set_rust_validator_override(true);
+        LAST_VALIDATION_PATH.store(0, Ordering::Relaxed);
+        let rust = validate_binary(TargetEnv::Universal1_6, &binary);
+        assert!(rust.success);
+        assert_eq!(LAST_VALIDATION_PATH.load(Ordering::Relaxed), 1);
+
+        clear_rust_validator_override();
     }
 
     #[test]

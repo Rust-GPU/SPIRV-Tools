@@ -2,8 +2,8 @@
 #include <sstream>
 #include <string>
 
+#include "spirv-tools-ffi/src/lib.rs.h"
 #include "rust/cxxbridge/spirv-tools-ffi/src/context_bridge.h"
-#include "rust/cxxbridge/spirv-tools-ffi.h"
 #include "source/table.h"
 #include "spirv-tools/libspirv.hpp"
 
@@ -54,6 +54,10 @@ void dispatch_context_message(std::uintptr_t context_ptr, std::uint32_t level,
 ValidateResult validate_binary(std::uint32_t env,
                                rust::Slice<const std::uint32_t> words) {
   ValidateResult result{false, ::rust::String()};
+  if (rust_validator_enabled()) {
+    return validate_binary_rust(env, words);
+  }
+
   const spv_target_env target = static_cast<spv_target_env>(env);
   spvtools::SpirvTools tools(target);
   std::string diagnostics;
