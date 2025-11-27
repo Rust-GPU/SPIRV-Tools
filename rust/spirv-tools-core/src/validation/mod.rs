@@ -7740,6 +7740,38 @@ mod tests {
     }
 
     #[test]
+    fn qcom_image_processing_requires_spirv_1_4() {
+        let text = [
+            "OpCapability Shader",
+            "OpExtension \"SPV_QCOM_image_processing\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Vulkan1_0)
+            .expect_err("SPIR-V 1.4 is required for QCOM image processing");
+        assert_eq!(
+            error,
+            ValidationError::ExtensionRequiresSpirvVersion {
+                extension: ExtensionName::from("SPV_QCOM_image_processing"),
+                required_version: SpirvVersion::new(1, 4),
+                target_version: TargetEnv::Vulkan1_0.spirv_version(),
+            }
+        );
+
+        text.as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("extension should be accepted with SPIR-V 1.4+");
+    }
+
+    #[test]
     fn universal_rejects_vulkan_specific_extension() {
         let text = [
             "OpCapability Shader",
