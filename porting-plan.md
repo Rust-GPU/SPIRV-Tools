@@ -192,6 +192,7 @@ Planned tasks:
 - [x] Reject member-only decorations applied via `OpDecorate` (Offset, MatrixStride, RowMajor, ColMajor) so annotation opcodes stay in the correct form.
 - [x] Add decoration target regressions for `ArrayStride` (non-array/pointer targets) and `BuiltIn WorkgroupSize` (must target constants) to mirror the C++ target-kind checks.
 - [x] Add layout regression to ensure decorations recorded before `OpMemoryModel` produce the expected memory-model ordering error.
+- [x] Add layout regression for `OpExtInstImport` before `OpMemoryModel` to lock ordering diagnostics.
 - Add layout regressions for decoration opcodes to ensure they remain in the annotations section and precede functions.
 - Reaudit per-environment decoration/capability allowlists and wire validated-module reuse through FFI/CLI caching where ordering rules apply.
 

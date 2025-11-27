@@ -5350,6 +5350,28 @@ mod tests {
     }
 
     #[test]
+    fn ext_inst_import_requires_memory_model() {
+        // OpExtInstImport before OpMemoryModel should be reported as a memory-model ordering violation.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            3,          // bound (ids up to 2)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            0x0006000b, // OpExtInstImport %1 "GLSL.std.450"
+            1,
+            0x4c53_4c47, // "GLSL"
+            0x6474_732e, // ".std"
+            0x3035_342e, // ".450"
+            0,           // padding/null terminator
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(error, ValidationError::MissingMemoryModel);
+    }
+
+    #[test]
     fn names_section_must_follow_debug_section() {
         // OpName (Names section) precedes OpSource (Debug section), which should trigger an ordering error.
         let binary = vec![
