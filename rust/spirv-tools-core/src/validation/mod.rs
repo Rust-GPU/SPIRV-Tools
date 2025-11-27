@@ -10098,6 +10098,68 @@ mod tests {
     }
 
     #[test]
+    fn switch_branch_limit_enforced() {
+        use crate::validation::{
+            enforce_switch_branch_limit, ValidationOptions, LIMIT_MAX_SWITCH_BRANCHES,
+        };
+        use rspirv::dr::{Instruction, Module, Operand};
+
+        // Build a minimal module with an OpSwitch that exceeds the configured limit.
+        let switch_inst = Instruction::new(
+            rspirv::spirv::Op::Switch,
+            None,
+            None,
+            vec![
+                Operand::IdRef(1),
+                Operand::IdRef(2),
+                Operand::LiteralBit32(0),
+                Operand::IdRef(3),
+                Operand::LiteralBit32(1),
+                Operand::IdRef(4),
+            ],
+        );
+        let block = rspirv::dr::Block {
+            label: None,
+            instructions: vec![switch_inst],
+        };
+        let function = rspirv::dr::Function {
+            def: None,
+            parameters: Vec::new(),
+            blocks: vec![block],
+            end: None,
+        };
+        let module = Module {
+            header: None,
+            capabilities: Vec::new(),
+            extensions: Vec::new(),
+            ext_inst_imports: Vec::new(),
+            memory_model: None,
+            entry_points: Vec::new(),
+            execution_modes: Vec::new(),
+            debug_string_source: Vec::new(),
+            debug_names: Vec::new(),
+            debug_module_processed: Vec::new(),
+            annotations: Vec::new(),
+            types_global_values: Vec::new(),
+            functions: vec![function],
+        };
+
+        let mut options = ValidationOptions::default();
+        options.limits.insert(LIMIT_MAX_SWITCH_BRANCHES, 2);
+
+        let err = enforce_switch_branch_limit(&module, &options)
+            .expect_err("switch branch limit should be enforced");
+        assert_eq!(
+            err,
+            ValidationError::LimitExceeded {
+                limit_kind: LIMIT_MAX_SWITCH_BRANCHES,
+                limit: 2,
+                found: 3
+            }
+        );
+    }
+
+    #[test]
     fn id_bound_limit_is_enforced() {
         use crate::validation::{ValidationOptions, LIMIT_MAX_ID_BOUND};
 
