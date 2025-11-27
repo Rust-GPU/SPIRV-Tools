@@ -6619,6 +6619,39 @@ mod tests {
     }
 
     #[test]
+    fn conditional_extension_cannot_follow_ext_inst_import() {
+        // Conditional extensions must precede imported instruction sets.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            3,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(6, 11), // OpExtInstImport %1 "GLSL.std.450"
+            1,
+            0x4c53_4c47, // "GLSL"
+            0x2e74_7364, // ".std"
+            0x2e30_3534, // ".450"
+            0,
+            op(3, 6248), // OpConditionalExtensionINTEL %2 "ext" (misordered after import)
+            2,
+            0x0074_7865,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::ConditionalExtensionINTEL
+            }
+        );
+    }
+
+    #[test]
     fn extension_cannot_follow_annotations() {
         // Extensions must appear before annotations.
         let binary = vec![
