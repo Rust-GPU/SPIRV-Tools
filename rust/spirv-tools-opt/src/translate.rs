@@ -149,6 +149,24 @@ pub fn translate_arith(instructions: &[Instruction]) -> Result<TranslatedExpr, T
                 )?;
                 expr.add(SpirvLang::Sub([lhs, rhs]))
             }
+            Op::SNegate => {
+                let operand = inst
+                    .operands
+                    .iter()
+                    .find_map(|op| match op {
+                        rspirv::dr::Operand::IdRef(id) => Some(*id),
+                        _ => None,
+                    })
+                    .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
+                let id = ids
+                    .get(&operand)
+                    .copied()
+                    .ok_or(TranslateError::UnknownOperand {
+                        id: operand,
+                        opcode,
+                    })?;
+                expr.add(SpirvLang::Neg(id))
+            }
             other => return Err(TranslateError::UnsupportedOp(other)),
         };
         ids.insert(result_id, node_id);

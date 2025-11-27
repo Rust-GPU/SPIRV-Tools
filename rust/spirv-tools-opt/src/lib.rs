@@ -34,7 +34,7 @@ pub mod fuzzing {
             let node = if idx == 0 {
                 SpirvLang::Const(ConstValue::new(u.arbitrary()?))
             } else {
-                match u.choose(&[0u8, 1, 2, 3])? {
+                match u.choose(&[0u8, 1, 2, 3, 4])? {
                     0 => SpirvLang::Const(ConstValue::new(u.arbitrary()?)),
                     1 => {
                         let a = choose_child(u, idx - 1)?;
@@ -49,7 +49,11 @@ pub mod fuzzing {
                     _ => {
                         let a = choose_child(u, idx - 1)?;
                         let b = choose_child(u, idx - 1)?;
-                        SpirvLang::Sub([Id::from(a), Id::from(b)])
+                        if *u.choose(&[true, false])? {
+                            SpirvLang::Sub([Id::from(a), Id::from(b)])
+                        } else {
+                            SpirvLang::Neg(Id::from(a))
+                        }
                     }
                 }
             };
@@ -122,6 +126,7 @@ define_language! {
         "+" = Add([Id; 2]),
         "*" = Mul([Id; 2]),
         "-" = Sub([Id; 2]),
+        "neg" = Neg(Id),
         "const" = Const(ConstValue),
         Symbol(egg::Symbol),
     }
@@ -175,12 +180,15 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("mul-fold"; "(* ?a ?b)" => { FoldMul }),
         rewrite!("sub-fold"; "(- ?a ?b)" => { FoldSub }),
         rewrite!("sub-zero-right"; "(- ?a ?b)" => "?a" if is_const_zero(var("?b"))),
+        rewrite!("neg-fold"; "(neg ?a)" => { FoldNeg }),
+        rewrite!("double-neg"; "(neg (neg ?a))" => "?a"),
     ]
 }
 
 struct FoldAdd;
 struct FoldMul;
 struct FoldSub;
+struct FoldNeg;
 struct AddZero {
     a: Var,
     b: Var,
@@ -255,6 +263,25 @@ impl Applier<SpirvLang, ()> for FoldSub {
         };
         let diff = ConstValue::new(a.get().wrapping_sub(b.get()));
         let id = egraph.add(SpirvLang::Const(diff));
+        egraph.union(eclass, id);
+        vec![id]
+    }
+}
+
+impl Applier<SpirvLang, ()> for FoldNeg {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(a) = const_value(egraph, subst[var("a")]) else {
+            return Vec::new();
+        };
+        let negated = ConstValue::new(a.get().wrapping_neg());
+        let id = egraph.add(SpirvLang::Const(negated));
         egraph.union(eclass, id);
         vec![id]
     }
