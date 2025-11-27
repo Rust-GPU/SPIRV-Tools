@@ -2112,6 +2112,36 @@ fn validate_capabilities(
             let always_require_extension = manual_required_extension
                 .map(extension_always_required)
                 .unwrap_or(false);
+            let version_allows_core = required_version
+                .map(|required| target_version >= required)
+                .unwrap_or(false);
+            let grammar_requires_extension = !grammar_requirements.required_extensions.is_empty()
+                && (grammar_version.is_none_or(|required| target_version < required)
+                    || always_require_extension);
+            let manual_requires_extension = manual_required_extension.is_some()
+                && (always_require_extension || !version_allows_core);
+
+            if grammar_requires_extension {
+                for &required_ext in grammar_requirements.required_extensions {
+                    if !extension_allowed_in_env(required_ext, env) {
+                        return Err(ValidationError::DisallowedExtension {
+                            extension: ExtensionName::from(required_ext),
+                            env,
+                        });
+                    }
+                }
+            }
+            if manual_requires_extension {
+                if let Some(required_ext) = manual_required_extension {
+                    if !extension_allowed_in_env(required_ext, env) {
+                        return Err(ValidationError::DisallowedExtension {
+                            extension: ExtensionName::from(required_ext),
+                            env,
+                        });
+                    }
+                }
+            }
+
             if let Some(required_version) = required_version {
                 if target_version < required_version {
                     let has_required_extension =
@@ -2128,11 +2158,14 @@ fn validate_capabilities(
                 }
             }
             if !grammar_requirements.required_extensions.is_empty() {
-                let grammar_requires_extension = grammar_version
-                    .is_none_or(|required| target_version < required)
-                    || always_require_extension;
                 if grammar_requires_extension {
                     for &required_ext in grammar_requirements.required_extensions {
+                        if !extension_allowed_in_env(required_ext, env) {
+                            return Err(ValidationError::DisallowedExtension {
+                                extension: ExtensionName::from(required_ext),
+                                env,
+                            });
+                        }
                         if !has_extension(extensions, required_ext) {
                             return Err(ValidationError::DisallowedCapabilityMissingExtension {
                                 capability,
@@ -2143,12 +2176,13 @@ fn validate_capabilities(
                 }
             }
             if let Some(required_ext) = manual_required_extension {
-                let version_allows_core = required_version
-                    .map(|required| target_version >= required)
-                    .unwrap_or(false);
-                if (always_require_extension || !version_allows_core)
-                    && !has_extension(extensions, required_ext)
-                {
+                if manual_requires_extension && !has_extension(extensions, required_ext) {
+                    if !extension_allowed_in_env(required_ext, env) {
+                        return Err(ValidationError::DisallowedExtension {
+                            extension: ExtensionName::from(required_ext),
+                            env,
+                        });
+                    }
                     return Err(ValidationError::DisallowedCapabilityMissingExtension {
                         capability,
                         required_extension: required_ext.to_string(),
@@ -2202,6 +2236,10 @@ fn has_extension(extensions: &ExtensionSet, required_extension: &str) -> bool {
         .values
         .iter()
         .any(|ext| ext.as_str() == required_extension)
+}
+
+fn extension_allowed_in_env(extension: &str, env: TargetEnv) -> bool {
+    env.is_extension_allowed(&ExtensionName::from(extension))
 }
 
 fn capability_enabled_by_capability(
@@ -8047,6 +8085,38 @@ mod tests {
             .as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("Vendor capability should be allowed with its extension declared");
+    }
+
+    #[test]
+    fn vendor_capability_requiring_disallowed_extension_reports_env_error() {
+        let text = [
+            "OpCapability RayTracingNV",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+
+        for env in [
+            TargetEnv::Universal1_6,
+            TargetEnv::OpenCl2_2,
+            TargetEnv::OpenGl4_5,
+        ] {
+            let error = text.as_str().validate(env).expect_err(
+                "Capability should be rejected when its required extension is disallowed",
+            );
+            assert_eq!(
+                error,
+                ValidationError::DisallowedExtension {
+                    extension: ExtensionName::from("SPV_NV_ray_tracing"),
+                    env
+                }
+            );
+        }
     }
 
     #[test]
