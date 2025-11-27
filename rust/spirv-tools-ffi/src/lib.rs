@@ -246,7 +246,7 @@ pub fn validate_binary_rust(
         .lock()
         .expect("validation cache mutex should not be poisoned");
     let opts = to_validation_options(options);
-    match cache.validate_words_with_options(binary, env, opts) {
+    match cache.validate_words_with_options(binary, env, opts.clone()) {
         Ok(_) => ffi::ValidateResult {
             success: true,
             message: String::new(),

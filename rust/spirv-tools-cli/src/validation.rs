@@ -4,7 +4,9 @@ use std::sync::{Mutex, OnceLock};
 
 use crate::assembly::parse_target_env;
 use crate::disassemble::InputSource;
-use spirv_tools_core::validation::{ModuleWords, ValidModuleCache};
+use spirv_tools_core::validation::{
+    format_validation_error_from_words, ModuleWords, ValidModuleCache, ValidationOptions,
+};
 use spirv_tools_core::TargetEnv;
 use thiserror::Error;
 
@@ -48,13 +50,20 @@ pub fn run_validate(config: &ValidateConfig) -> Result<(), ValidateCliError> {
     };
     let words: ModuleWords = bytes_to_words(&bytes)?.into_boxed_slice().into();
     let env = parse_env(config.target_env.as_deref())?;
+    let options = ValidationOptions::default();
     let mut cache = validation_cache()
         .lock()
         .expect("validation cache mutex should not be poisoned");
     cache
-        .validate_words(words.as_slice(), env)
+        .validate_words_with_options(words.as_slice(), env, options.clone())
         .map(|_| ())
-        .map_err(|err| ValidateCliError::Failed(err.to_string()))
+        .map_err(|err| {
+            ValidateCliError::Failed(format_validation_error_from_words(
+                words.as_slice(),
+                &options,
+                &err,
+            ))
+        })
 }
 
 fn read_stdin_bytes() -> io::Result<Vec<u8>> {
@@ -132,10 +141,10 @@ OpFunctionEnd
             target_env: Some("spv1.6".to_string()),
         };
         let error = run_validate(&config).expect_err("expected failure");
-        match error {
-            ValidateCliError::Failed(message) => assert!(!message.is_empty()),
-            other => panic!("unexpected error: {other:?}"),
-        }
+        let ValidateCliError::Failed(message) = error else {
+            panic!("unexpected error: {error:?}");
+        };
+        assert!(!message.is_empty());
     }
 
     #[test]
