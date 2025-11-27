@@ -5550,6 +5550,34 @@ mod tests {
     }
 
     #[test]
+    fn decoration_group_cannot_follow_types_and_globals() {
+        // Annotation section opcodes such as OpDecorationGroup must appear before the types/globals section.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            2,          // bound (ids up to 1)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, rspirv::spirv::Op::TypeStruct as u16), // %1 = OpTypeStruct
+            1,
+            op(2, rspirv::spirv::Op::DecorationGroup as u16), // OpDecorationGroup %1 (misordered)
+            1,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::DecorationGroup
+            }
+        );
+    }
+
+    #[test]
     fn decorations_cannot_appear_inside_functions() {
         // Hand-built binary with a decoration inside the function body to ensure layout checking
         // rejects annotations in the function section.
