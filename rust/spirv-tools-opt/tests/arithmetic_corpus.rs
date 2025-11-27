@@ -178,3 +178,29 @@ fn corpus_folds_rem_by_one() {
     assert_eq!(folded.result_id, Some(9));
     assert_eq!(folded.operands, vec![rspirv::dr::Operand::LiteralBit32(0)]);
 }
+
+#[test]
+fn corpus_preserves_rem_by_zero() {
+    let int = 1;
+    let c5 = inst(
+        Op::Constant,
+        int,
+        1,
+        vec![rspirv::dr::Operand::LiteralBit32(5)],
+    );
+    let c0 = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(0)],
+    );
+    let rem = inst(
+        Op::SRem,
+        int,
+        9,
+        vec![rspirv::dr::Operand::IdRef(1), rspirv::dr::Operand::IdRef(2)],
+    );
+    let block = vec![c5, c0, rem];
+    let optimized = optimize_arith_block(&block).expect("optimize");
+    assert_eq!(optimized, block, "div/rem by zero should be preserved");
+}
