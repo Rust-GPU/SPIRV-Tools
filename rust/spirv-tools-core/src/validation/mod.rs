@@ -7610,6 +7610,30 @@ mod tests {
     }
 
     #[test]
+    fn universal_rejects_nv_shader_invocation_reorder() {
+        let text = [
+            "OpCapability Shader",
+            "OpExtension \"SPV_NV_shader_invocation_reorder\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text.as_str().validate(TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::DisallowedExtension {
+                extension: ExtensionName::from("SPV_NV_shader_invocation_reorder"),
+                env: TargetEnv::Universal1_6
+            }
+        );
+    }
+
+    #[test]
     fn vulkan_accepts_nv_vendor_extension() {
         let ext_words = [
             1599492179, 1834964558, 1600680805, 1684105331, 29285, // "SPV_NV_mesh_shader\0"

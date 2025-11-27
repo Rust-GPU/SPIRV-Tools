@@ -118,6 +118,7 @@ Tasks for this milestone:
 - Enforced `SPV_INTEL_function_variants` as the required extension for `SpecConditionalINTEL`/`FunctionVariantsINTEL` capabilities and added dependency/acceptance regressions.
 - Blocked `SPV_INTEL_function_variants` for Vulkan environments to mirror target allowlists; added regression to ensure Vulkan rejects and Universal/OpenCL accept.
 - Aligned extension version gates with the C++ tables (e.g., `SPV_KHR_vulkan_memory_model` now requires SPIR-V 1.3) and added regressions for NV shader invocation reorder and QCOM cooperative matrix conversion; Vulkan-only vendor extensions now gate NV/AMD/GOOGLE/EXT/QCOM prefixes to Vulkan with QCOM environment rejection covered by tests.
+- Extended Vulkan-only extension gating to cover NV shader invocation reorder/cluster acceleration spheres, QCOM image processing/cooperative matrix conversion, and added regressions for NV shader invocation reorder in Universal targets.
 
 ## Upcoming Milestone: Extension Allowlists Parity
 Align environment-specific extension allowlists with the C++ validator and grammar metadata, including vendor-specific extensions and OpenCL/Vulkan gating.

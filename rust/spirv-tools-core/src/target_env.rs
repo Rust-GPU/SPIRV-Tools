@@ -512,6 +512,9 @@ fn is_vulkan_specific_extension(name: &str) -> bool {
         "SPV_EXT_shader_atomic_float_add",
         "SPV_EXT_shader_atomic_float_min_max",
         "SPV_EXT_fragment_invocation_density",
+        "SPV_NV_shader_invocation_reorder",
+        "SPV_NV_cluster_acceleration_structure",
+        "SPV_NV_linear_swept_spheres",
         "SPV_KHR_ray_tracing",
         "SPV_KHR_ray_query",
         "SPV_KHR_ray_tracing_position_fetch",
@@ -521,6 +524,9 @@ fn is_vulkan_specific_extension(name: &str) -> bool {
         "SPV_NV_cooperative_matrix",
         "SPV_NV_cooperative_matrix2",
         "SPV_NV_mesh_shader",
+        "SPV_QCOM_image_processing",
+        "SPV_QCOM_image_processing2",
+        "SPV_QCOM_cooperative_matrix_conversion",
     ];
     VULKAN_ONLY_EXTENSIONS
         .iter()
