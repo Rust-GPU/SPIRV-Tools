@@ -17524,6 +17524,50 @@ mod tests {
     }
 
     #[test]
+    fn row_major_requires_member_decorate() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%float = OpTypeFloat 32",
+            "%vec2 = OpTypeVector %float 2",
+            "%mat2 = OpTypeMatrix %vec2 2",
+            "OpDecorate %mat2 RowMajor",
+        ]
+        .join("\n");
+        let error = MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Universal1_6)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::MemberOnlyDecorationUsedWithDecorate {
+                decoration: rspirv::spirv::Decoration::RowMajor
+            }
+        );
+    }
+
+    #[test]
+    fn col_major_requires_member_decorate() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%float = OpTypeFloat 32",
+            "%vec2 = OpTypeVector %float 2",
+            "%mat2 = OpTypeMatrix %vec2 2",
+            "OpDecorate %mat2 ColMajor",
+        ]
+        .join("\n");
+        let error = MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Universal1_6)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::MemberOnlyDecorationUsedWithDecorate {
+                decoration: rspirv::spirv::Decoration::ColMajor
+            }
+        );
+    }
+
+    #[test]
     fn group_decorate_requires_declared_group() {
         // The text assembler refuses to emit binaries with invalid decoration groups, so we
         // hand-build the binary to drive the validator directly.
