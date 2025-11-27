@@ -40,6 +40,7 @@ Tasks for this milestone:
 - [x] Expose a basic-block optimizer over FFI that returns reassembled SPIR-V words, preserving non-arithmetic instructions.
 - [x] Add Rust tests mirroring the C++ optimizer expectations for pass-through and simple constant folding.
 - [x] Add `cargo fuzz` coverage for SPIR-V block optimization to catch translation/rewriter panics.
+- [x] Expand e-graph rewrites with algebraic cancellations and emit simplified SPIR-V blocks (while preserving result ids and stability when no cost improvement occurs).
 - [ ] Expand optimizer coverage with e-graph driven rewrites (egg) for algebraic simplifications beyond simple folds.
 - [ ] Add `cargo fuzz` + `arbitrary` harnesses and `criterion`/`hyperfine` benchmarks for optimizer passes, mirroring C++ optimizer test logic.
 - [ ] Wire the Rust optimizer into the CLI/FFI path behind a flag and start porting more C++ optimizer passes using e-graphs where beneficial.
