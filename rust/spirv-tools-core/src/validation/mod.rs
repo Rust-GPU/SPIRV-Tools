@@ -1039,6 +1039,12 @@ pub enum ValidationError {
         /// The number of members in the struct.
         member_count: usize,
     },
+    /// A decoration that must be applied with `OpMemberDecorate` was used with `OpDecorate`.
+    #[error("decoration {decoration:?} must be applied with OpMemberDecorate")]
+    MemberOnlyDecorationUsedWithDecorate {
+        /// The member-only decoration.
+        decoration: rspirv::spirv::Decoration,
+    },
     /// A decoration targeted an id with an incompatible opcode.
     #[error(
         "decoration {decoration:?} requires target kind {expected}, but id {target} has opcode {found:?}"
@@ -2744,6 +2750,24 @@ fn validate_instruction_requirements(
 ) -> Result<(), ValidationError> {
     let target_version = module_version;
     for inst in module.all_inst_iter() {
+        if matches!(
+            inst.class.opcode,
+            rspirv::spirv::Op::Decorate | rspirv::spirv::Op::DecorateId
+        ) {
+            if let Some(rspirv::dr::Operand::Decoration(decoration)) = inst.operands.get(1) {
+                if matches!(
+                    decoration,
+                    rspirv::spirv::Decoration::Offset
+                        | rspirv::spirv::Decoration::MatrixStride
+                        | rspirv::spirv::Decoration::RowMajor
+                        | rspirv::spirv::Decoration::ColMajor
+                ) {
+                    return Err(ValidationError::MemberOnlyDecorationUsedWithDecorate {
+                        decoration: *decoration,
+                    });
+                }
+            }
+        }
         for &required_cap in inst.class.capabilities {
             if !capabilities.contains(&required_cap) {
                 return Err(ValidationError::MissingInstructionCapability {
@@ -4646,6 +4670,19 @@ fn validate_decorations(
     for inst in &module.annotations {
         match inst.class.opcode {
             rspirv::spirv::Op::Decorate | rspirv::spirv::Op::DecorateId => {
+                if let Some(rspirv::dr::Operand::Decoration(decoration)) = inst.operands.get(1) {
+                    if matches!(
+                        decoration,
+                        rspirv::spirv::Decoration::Offset
+                            | rspirv::spirv::Decoration::MatrixStride
+                            | rspirv::spirv::Decoration::RowMajor
+                            | rspirv::spirv::Decoration::ColMajor
+                    ) {
+                        return Err(ValidationError::MemberOnlyDecorationUsedWithDecorate {
+                            decoration: *decoration,
+                        });
+                    }
+                }
                 let mut operands = inst.operands.iter();
                 let target = operands.find_map(|op| {
                     if let rspirv::dr::Operand::IdRef(id) = op {
@@ -17439,6 +17476,49 @@ mod tests {
                 target: DecorationTargetId::try_from(2).unwrap(),
                 member: MemberIndex::new(2),
                 member_count: 2
+            }
+        );
+    }
+
+    #[test]
+    fn offset_requires_member_decorate() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%struct = OpTypeStruct %void",
+            "OpDecorate %struct Offset 0",
+        ]
+        .join("\n");
+        let error = MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Universal1_6)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::MemberOnlyDecorationUsedWithDecorate {
+                decoration: rspirv::spirv::Decoration::Offset
+            }
+        );
+    }
+
+    #[test]
+    fn matrix_stride_requires_member_decorate() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%float = OpTypeFloat 32",
+            "%vec2 = OpTypeVector %float 2",
+            "%mat2 = OpTypeMatrix %vec2 2",
+            "OpDecorate %mat2 MatrixStride 8",
+        ]
+        .join("\n");
+        let error = MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Universal1_6)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::MemberOnlyDecorationUsedWithDecorate {
+                decoration: rspirv::spirv::Decoration::MatrixStride
             }
         );
     }
