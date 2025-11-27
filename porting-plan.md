@@ -146,6 +146,7 @@ Planned tasks:
  - Apply validator options inside the Rust validator (layout relaxations, friendly names, skip/enable layouts, local size id, offset texture operand, 32-bit bitwise) with option-aware tests.
  - Capture friendly names from `OpName`/`OpMemberName` when `use_friendly_names` is set and surface them on `ValidModule` via a typed table, with Rust regressions to keep both id and member names populated.
  - Gate `OpExecutionModeId LocalSizeId` by environment and the `allow_localsizeid` option, with regressions for Vulkan 1.0–1.2 defaults and the opt-in path.
+ - Enforce Vulkan-only restrictions for image operand `Offset` (gather-only without `allow_offset_texture_operand`) and 32-bit-only bitwise operations unless `allow_vulkan_32_bit_bitwise` is set, with Rust regressions covering both the restricted and opt-in paths.
  - Ensure limit overrides (struct members, depth, locals, globals, switches, function args, control-flow depth, access chain indexes, id bound) are enforced with typed diagnostics. (Done for id bound, struct members/depth, locals/globals, function args, control-flow depth, switch branches, access chain indexes.)
  - Plumb option-aware diagnostics through the FFI/CLI and add integration coverage to keep the Rust path active when flags are set.
 

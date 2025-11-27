@@ -825,6 +825,22 @@ pub enum ValidationError {
         /// The target environment in use.
         env: TargetEnv,
     },
+    /// Image operand Offset is restricted to gather instructions unless explicitly allowed.
+    #[error("Image operand Offset for {opcode:?} is only allowed with gather instructions in Vulkan unless the offset texture operand option is enabled")]
+    OffsetTextureOperandDisallowed {
+        /// The opcode using the restricted operand.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Bitwise operations in Vulkan require 32-bit types unless explicitly allowed.
+    #[error(
+        "Bitwise opcode {opcode:?} requires 32-bit integer types in Vulkan unless allow_vulkan_32_bit_bitwise is enabled (found {bit_width}-bit type)"
+    )]
+    VulkanBitwiseRequires32Bit {
+        /// The offending opcode.
+        opcode: rspirv::spirv::Op,
+        /// The observed bit width.
+        bit_width: u32,
+    },
     /// A decoration group reference did not point to a declared group.
     #[error("decoration group {group} is not declared")]
     UnknownDecorationGroup {
@@ -1413,6 +1429,8 @@ fn validate_words(
     enforce_variable_limits(&module, &options)?;
     enforce_switch_branch_limit(&module, &options)?;
     enforce_access_chain_limit(&module, &options)?;
+    enforce_offset_texture_operand_rule(&module, env, &options)?;
+    enforce_vulkan_bitwise_widths(&module, env, &definitions, &options)?;
     let friendly_names = options
         .use_friendly_names
         .then(|| build_friendly_name_table(&module));
@@ -3330,6 +3348,123 @@ fn enforce_access_chain_limit(
     }
 
     Ok(())
+}
+
+fn enforce_offset_texture_operand_rule(
+    module: &Module,
+    env: TargetEnv,
+    options: &ValidationOptions,
+) -> Result<(), ValidationError> {
+    if options.allow_offset_texture_operand || options.before_hlsl_legalization {
+        return Ok(());
+    }
+    if !is_vulkan_env(env) {
+        return Ok(());
+    }
+
+    let gather_opcodes = [
+        rspirv::spirv::Op::ImageGather,
+        rspirv::spirv::Op::ImageDrefGather,
+        rspirv::spirv::Op::ImageSparseGather,
+        rspirv::spirv::Op::ImageSparseDrefGather,
+    ];
+
+    for inst in module.all_inst_iter() {
+        let has_offset = inst.operands.iter().any(|op| {
+            matches!(
+                op,
+                rspirv::dr::Operand::ImageOperands(mask)
+                    if mask.contains(rspirv::spirv::ImageOperands::OFFSET)
+            )
+        });
+        if has_offset && !gather_opcodes.contains(&inst.class.opcode) {
+            return Err(ValidationError::OffsetTextureOperandDisallowed {
+                opcode: inst.class.opcode,
+            });
+        }
+    }
+
+    Ok(())
+}
+
+fn enforce_vulkan_bitwise_widths(
+    module: &Module,
+    env: TargetEnv,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    options: &ValidationOptions,
+) -> Result<(), ValidationError> {
+    if options.allow_vulkan_32_bit_bitwise || !is_vulkan_env(env) {
+        return Ok(());
+    }
+
+    let bitwise_opcodes = [
+        rspirv::spirv::Op::ShiftRightLogical,
+        rspirv::spirv::Op::ShiftRightArithmetic,
+        rspirv::spirv::Op::ShiftLeftLogical,
+        rspirv::spirv::Op::BitwiseOr,
+        rspirv::spirv::Op::BitwiseXor,
+        rspirv::spirv::Op::BitwiseAnd,
+        rspirv::spirv::Op::Not,
+    ];
+
+    for inst in module.all_inst_iter() {
+        if !bitwise_opcodes.contains(&inst.class.opcode) {
+            continue;
+        }
+        let Some(raw_type) = inst.result_type else {
+            continue;
+        };
+        let Ok(type_id) = TypeId::try_from(raw_type) else {
+            continue;
+        };
+        if let Some(bit_width) = int_bit_width(type_id, definitions) {
+            if bit_width != 32 {
+                return Err(ValidationError::VulkanBitwiseRequires32Bit {
+                    opcode: inst.class.opcode,
+                    bit_width,
+                });
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn int_bit_width(
+    type_id: TypeId,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+) -> Option<u32> {
+    let Ok(result_id) = ResultId::try_from(u32::from(type_id)) else {
+        return None;
+    };
+    let inst = definitions.get(&result_id)?;
+    match inst.class.opcode {
+        rspirv::spirv::Op::TypeInt => inst.operands.first().and_then(|op| match op {
+            rspirv::dr::Operand::LiteralBit32(width) => Some(*width),
+            rspirv::dr::Operand::LiteralBit64(width) => Some(*width as u32),
+            _ => None,
+        }),
+        rspirv::spirv::Op::TypeVector => {
+            let component = match inst.operands.first() {
+                Some(rspirv::dr::Operand::IdRef(raw)) => TypeId::try_from(*raw).ok()?,
+                _ => return None,
+            };
+            int_bit_width(component, definitions)
+        }
+        _ => None,
+    }
+}
+
+fn is_vulkan_env(env: TargetEnv) -> bool {
+    matches!(
+        env,
+        TargetEnv::Vulkan1_0
+            | TargetEnv::Vulkan1_1
+            | TargetEnv::Vulkan1_1Spirv1_4
+            | TargetEnv::Vulkan1_2
+            | TargetEnv::Vulkan1_3
+            | TargetEnv::Vulkan1_4
+    )
 }
 
 fn validate_decoration_groups(
@@ -10487,6 +10622,207 @@ mod tests {
             .as_slice()
             .validate_with_options(TargetEnv::Vulkan1_1, options)
             .expect("LocalSizeId should be allowed when option is enabled");
+    }
+
+    #[test]
+    fn offset_texture_operand_disallowed_by_default_in_vulkan() {
+        use crate::validation::ValidationOptions;
+        use rspirv::binary::Assemble;
+        use rspirv::dr::Builder;
+        use rspirv::spirv::{
+            AddressingModel, Capability, Dim, ExecutionModel, FunctionControl, ImageFormat,
+            ImageOperands, MemoryModel,
+        };
+
+        let mut builder = Builder::new();
+        builder.set_version(1, 6);
+        builder.capability(Capability::Shader);
+        builder.capability(Capability::ImageGatherExtended);
+        builder.memory_model(AddressingModel::Logical, MemoryModel::GLSL450);
+
+        let void = builder.type_void();
+        let float = builder.type_float(32, None);
+        let v2float = builder.type_vector(float, 2);
+        let i32 = builder.type_int(32, 1);
+        let v2i = builder.type_vector(i32, 2);
+        let float_zero = builder.constant_bit32(float, 0.0f32.to_bits());
+        let int_zero = builder.constant_bit32(i32, 0);
+        let zero_offset = builder.constant_composite(v2i, [int_zero, int_zero]);
+        let image = builder.type_image(float, Dim::Dim2D, 0, 0, 0, 1, ImageFormat::Unknown, None);
+        let sampled_image = builder.type_sampled_image(image);
+        let fn_ty = builder.type_function(void, [sampled_image, v2float]);
+
+        let entry = builder
+            .begin_function(void, None, FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let image_param = builder.function_parameter(sampled_image).unwrap();
+        let coord_param = builder.function_parameter(v2float).unwrap();
+        builder.begin_block(None).unwrap();
+        builder
+            .image_sample_explicit_lod(
+                v2float,
+                None,
+                image_param,
+                coord_param,
+                ImageOperands::LOD | ImageOperands::OFFSET,
+                [
+                    rspirv::dr::Operand::IdRef(float_zero),
+                    rspirv::dr::Operand::IdRef(zero_offset),
+                ],
+            )
+            .unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+        builder.entry_point(ExecutionModel::Fragment, entry, "main", []);
+
+        let binary = builder.module().assemble();
+        let err = binary
+            .as_slice()
+            .validate_with_options(TargetEnv::Vulkan1_2, ValidationOptions::default())
+            .expect_err("Offset operand should be restricted to gather ops in Vulkan by default");
+        assert_eq!(
+            err,
+            ValidationError::OffsetTextureOperandDisallowed {
+                opcode: rspirv::spirv::Op::ImageSampleExplicitLod
+            }
+        );
+    }
+
+    #[test]
+    fn offset_texture_operand_allowed_with_option() {
+        use crate::validation::ValidationOptions;
+        use rspirv::binary::Assemble;
+        use rspirv::dr::Builder;
+        use rspirv::spirv::{
+            AddressingModel, Capability, Dim, ExecutionModel, FunctionControl, ImageFormat,
+            ImageOperands, MemoryModel,
+        };
+
+        let mut builder = Builder::new();
+        builder.set_version(1, 6);
+        builder.capability(Capability::Shader);
+        builder.capability(Capability::ImageGatherExtended);
+        builder.memory_model(AddressingModel::Logical, MemoryModel::GLSL450);
+
+        let void = builder.type_void();
+        let float = builder.type_float(32, None);
+        let v2float = builder.type_vector(float, 2);
+        let i32 = builder.type_int(32, 1);
+        let v2i = builder.type_vector(i32, 2);
+        let float_zero = builder.constant_bit32(float, 0.0f32.to_bits());
+        let int_zero = builder.constant_bit32(i32, 0);
+        let zero_offset = builder.constant_composite(v2i, [int_zero, int_zero]);
+        let image = builder.type_image(float, Dim::Dim2D, 0, 0, 0, 1, ImageFormat::Unknown, None);
+        let sampled_image = builder.type_sampled_image(image);
+        let fn_ty = builder.type_function(void, [sampled_image, v2float]);
+
+        let entry = builder
+            .begin_function(void, None, FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let image_param = builder.function_parameter(sampled_image).unwrap();
+        let coord_param = builder.function_parameter(v2float).unwrap();
+        builder.begin_block(None).unwrap();
+        builder
+            .image_sample_explicit_lod(
+                v2float,
+                None,
+                image_param,
+                coord_param,
+                ImageOperands::LOD | ImageOperands::OFFSET,
+                [
+                    rspirv::dr::Operand::IdRef(float_zero),
+                    rspirv::dr::Operand::IdRef(zero_offset),
+                ],
+            )
+            .unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+        builder.entry_point(ExecutionModel::Fragment, entry, "main", []);
+
+        let binary = builder.module().assemble();
+        let options = ValidationOptions {
+            allow_offset_texture_operand: true,
+            ..ValidationOptions::default()
+        };
+        binary
+            .as_slice()
+            .validate_with_options(TargetEnv::Vulkan1_2, options)
+            .expect("Offset operand should be allowed when option is enabled");
+    }
+
+    #[test]
+    fn bitwise_ops_require_32bit_in_vulkan_by_default() {
+        use crate::validation::ValidationOptions;
+        use rspirv::binary::Assemble;
+        use rspirv::dr::Builder;
+        use rspirv::spirv::{AddressingModel, Capability, FunctionControl, MemoryModel};
+
+        let mut builder = Builder::new();
+        builder.set_version(1, 6);
+        builder.capability(Capability::Shader);
+        builder.capability(Capability::Int64);
+        builder.memory_model(AddressingModel::Logical, MemoryModel::GLSL450);
+
+        let u64 = builder.type_int(64, 0);
+        let fn_ty = builder.type_function(u64, [u64, u64]);
+        builder
+            .begin_function(u64, None, FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let a = builder.function_parameter(u64).unwrap();
+        let b = builder.function_parameter(u64).unwrap();
+        builder.begin_block(None).unwrap();
+        let or = builder.bitwise_or(u64, None, a, b).unwrap();
+        builder.ret_value(or).unwrap();
+        builder.end_function().unwrap();
+
+        let binary = builder.module().assemble();
+        let err = binary
+            .as_slice()
+            .validate_with_options(TargetEnv::Vulkan1_1, ValidationOptions::default())
+            .expect_err("64-bit bitwise ops should be disallowed by default in Vulkan");
+        assert_eq!(
+            err,
+            ValidationError::VulkanBitwiseRequires32Bit {
+                opcode: rspirv::spirv::Op::BitwiseOr,
+                bit_width: 64
+            }
+        );
+    }
+
+    #[test]
+    fn bitwise_ops_allow_non_32bit_when_option_enabled() {
+        use crate::validation::ValidationOptions;
+        use rspirv::binary::Assemble;
+        use rspirv::dr::Builder;
+        use rspirv::spirv::{AddressingModel, Capability, FunctionControl, MemoryModel};
+
+        let mut builder = Builder::new();
+        builder.set_version(1, 6);
+        builder.capability(Capability::Shader);
+        builder.capability(Capability::Int64);
+        builder.memory_model(AddressingModel::Logical, MemoryModel::GLSL450);
+
+        let u64 = builder.type_int(64, 0);
+        let fn_ty = builder.type_function(u64, [u64, u64]);
+        builder
+            .begin_function(u64, None, FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let a = builder.function_parameter(u64).unwrap();
+        let b = builder.function_parameter(u64).unwrap();
+        builder.begin_block(None).unwrap();
+        let or = builder.bitwise_or(u64, None, a, b).unwrap();
+        builder.ret_value(or).unwrap();
+        builder.end_function().unwrap();
+
+        let binary = builder.module().assemble();
+        let options = ValidationOptions {
+            allow_vulkan_32_bit_bitwise: true,
+            ..ValidationOptions::default()
+        };
+        binary
+            .as_slice()
+            .validate_with_options(TargetEnv::Vulkan1_1, options)
+            .expect("64-bit bitwise ops should be allowed when option is enabled");
     }
 
     #[test]
