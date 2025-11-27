@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{ArgAction, Parser};
 use std::path::PathBuf;
 
 use spirv_tools_cli::disassemble::InputSource;
@@ -13,9 +13,9 @@ struct Args {
     /// Output path for optimized SPIR-V; writes to stdout when omitted.
     #[arg(short, long)]
     output: Option<PathBuf>,
-    /// Use the Rust arithmetic optimizer (basic-block folding). When false, passthrough.
-    #[arg(long, default_value_t = false)]
-    rust_arith: bool,
+    /// Passthrough mode: skip Rust optimizer and emit the input unchanged.
+    #[arg(long, default_value_t = false, action = ArgAction::SetTrue)]
+    passthrough: bool,
 }
 
 fn main() {
@@ -27,7 +27,7 @@ fn main() {
     let config = OptimizeConfig {
         input,
         output: args.output.clone(),
-        rust_arith_pass: args.rust_arith,
+        rust_arith_pass: !args.passthrough,
     };
     if let Err(err) = run_and_write(&config) {
         eprintln!("{err}");
