@@ -64,6 +64,7 @@ Planned tasks:
 - Add golden integration tests (CLI/FFI) that diff Rust-optimized modules against C++ outputs for supported ops.
 - Extend e-graph rewrites to cover distributivity/simplification cases present in the C++ optimizer while keeping cost-based stability.
 - Add a benchmark harness that runs both Rust and C++ optimizers via hyperfine for the arithmetic corpus to track performance deltas.
+- Add a parity runner in CI that exercises `SPIRV_CPP_OPT` when available to keep regressions visible.
 
 
 ## Active Milestone: Structural Validator Rules
