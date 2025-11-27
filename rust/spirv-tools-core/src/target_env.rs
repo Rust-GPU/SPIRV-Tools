@@ -854,6 +854,7 @@ mod tests {
         assert!(TargetEnv::Vulkan1_2.is_extension_allowed(&amd_ext));
         assert!(TargetEnv::Universal1_6.is_extension_allowed(&amd_ext));
         assert!(!TargetEnv::OpenCl1_2.is_extension_allowed(&amd_ext));
+        assert!(!TargetEnv::OpenGl4_5.is_extension_allowed(&amd_ext));
 
         let amdx_ext = ExtensionName::from("SPV_AMDX_shader_enqueue");
         assert!(TargetEnv::Vulkan1_2.is_extension_allowed(&amdx_ext));
