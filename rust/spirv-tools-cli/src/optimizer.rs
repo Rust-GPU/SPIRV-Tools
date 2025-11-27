@@ -93,8 +93,7 @@ fn bytes_to_words(bytes: &[u8]) -> Result<Vec<u32>, OptimizeCliError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rspirv::binary::parse_words;
-    use rspirv::binary::Assemble;
+    use rspirv::binary::{parse_words, Assemble};
     use rspirv::dr::Builder;
     use rspirv::spirv::{AddressingModel, Capability, FunctionControl, MemoryModel, Op};
     use tempfile::NamedTempFile;
@@ -140,5 +139,51 @@ mod tests {
             }
         }
         assert!(found_const_zero, "folded constant zero should reuse sub id");
+    }
+
+    #[test]
+    fn passthrough_when_rust_optimizer_disabled() {
+        let mut b = Builder::new();
+        b.capability(Capability::Shader);
+        b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(void, vec![]);
+        let _ = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .expect("function");
+        let _ = b.begin_block(None).expect("block");
+        let c2 = b.constant_bit32(int, 2);
+        let c3 = b.constant_bit32(int, 3);
+        let _ = b.i_add(int, None, c2, c3);
+        b.ret().expect("ret");
+        b.end_function().expect("end");
+        let module = b.module().assemble();
+
+        let mut temp = NamedTempFile::new().expect("temp file");
+        temp.write_all(&words_to_bytes(&module))
+            .expect("write words");
+        let config = OptimizeConfig {
+            input: InputSource::Path(temp.path().to_path_buf()),
+            output: None,
+            rust_arith_pass: false,
+        };
+        let optimized = run_optimize(&config).expect("optimize passthrough");
+        assert_eq!(optimized, module);
+    }
+
+    #[test]
+    fn rejects_misaligned_input() {
+        let temp = NamedTempFile::new().expect("temp file");
+        std::fs::write(temp.path(), [1u8, 2, 3]).expect("write bytes");
+        let config = OptimizeConfig {
+            input: InputSource::Path(temp.path().to_path_buf()),
+            output: None,
+            rust_arith_pass: true,
+        };
+        match run_optimize(&config) {
+            Err(OptimizeCliError::MisalignedInput) => {}
+            other => panic!("expected misaligned input error, got {other:?}"),
+        }
     }
 }
