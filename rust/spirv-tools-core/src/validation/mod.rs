@@ -7536,6 +7536,40 @@ mod tests {
     }
 
     #[test]
+    fn opencl_rejects_nv_vendor_extension() {
+        // OpenCL should reject NV vendor extensions.
+        let ext_words = [
+            1599492179, 1834964558, 1600680805, 1684105331, 29285, // "SPV_NV_mesh_shader\0"
+        ];
+        let binary = [
+            0x0723_0203, // magic
+            0x0001_0000, // version
+            0,           // generator
+            2,           // bound
+            0,           // schema
+            0x0006_000a, // OpExtension, word count 6
+            ext_words[0],
+            ext_words[1],
+            ext_words[2],
+            ext_words[3],
+            ext_words[4],
+            0x0003_000e, // OpMemoryModel Logical OpenCL
+            0,
+            2,
+        ];
+        let error = MaybeValidModule::Binary(&binary)
+            .validate(TargetEnv::OpenCl2_2)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::DisallowedExtension {
+                extension: ExtensionName::from("SPV_NV_mesh_shader"),
+                env: TargetEnv::OpenCl2_2
+            }
+        );
+    }
+
+    #[test]
     fn universal_rejects_vulkan_specific_extension() {
         let text = [
             "OpCapability Shader",
