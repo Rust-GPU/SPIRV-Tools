@@ -71,6 +71,7 @@ def compute_allowlist(extensions: list[str]) -> list[tuple[str, bool, bool, bool
         "SPV_EXT_descriptor_indexing",
         "SPV_EXT_fragment_shader_interlock",
         "SPV_KHR_fragment_shading_rate",
+        "SPV_KHR_fragment_shader_barycentric",
         "SPV_EXT_fragment_invocation_density",
         "SPV_EXT_shader_invocation_reorder",
         "SPV_EXT_mesh_shader",

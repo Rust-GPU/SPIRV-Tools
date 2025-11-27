@@ -10300,6 +10300,16 @@ mod tests {
     }
 
     #[test]
+    fn fragment_shader_barycentric_extension_is_vulkan_only() {
+        assert_vulkan_only_extension("SPV_KHR_fragment_shader_barycentric");
+    }
+
+    #[test]
+    fn nv_fragment_shader_barycentric_extension_is_vulkan_only() {
+        assert_vulkan_only_extension("SPV_NV_fragment_shader_barycentric");
+    }
+
+    #[test]
     fn workgroup_memory_explicit_layout_extension_is_vulkan_only() {
         assert_vulkan_only_extension("SPV_KHR_workgroup_memory_explicit_layout");
     }
