@@ -130,6 +130,7 @@ Planned tasks:
 - Add Rust regressions for vendor extensions (INTEL/NV/AMD) across Vulkan/OpenCL/WebGPU/Universal environments.
 - Ensure capability checks reuse the stricter extension allowlists so vendor capabilities are rejected when their extensions are disallowed.
 - Keep the FFI/CLI caches wired through these checks to avoid revalidation for repeated inputs.
+- Add data-driven tests for extension-enabled capabilities (ray tracing, cooperative matrices, tile shading) to lock capability↔extension precedence before flipping to generated allowlists.
 
 ## Upcoming Milestone: Capability/Extension Parity
 Bring the Rust validator to full capability/extension parity with the C++ tables using the grammar-driven dependency metadata and explicit per-environment rules.
