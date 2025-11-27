@@ -5807,6 +5807,51 @@ mod tests {
     }
 
     #[test]
+    fn extensions_cannot_follow_entry_points() {
+        // OpExtension must appear before the entry-point section.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            5,          // bound (ids up to 4)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(5, 15), // OpEntryPoint Vertex %1 "main"
+            rspirv::spirv::ExecutionModel::Vertex as u32,
+            1,
+            0x6e69_616d, // "main"
+            0,
+            op(2, rspirv::spirv::Op::Extension as u16), // OpExtension "X" (after entry point -> error)
+            0x0000_0058,                                // "X"
+            op(2, 19),                                  // OpTypeVoid %2
+            2,
+            op(3, 33), // OpTypeFunction %3 %2
+            3,
+            2,
+            op(5, 54), // OpFunction %1 None %3
+            2,
+            1,
+            0,
+            3,
+            op(2, 248), // OpLabel %4
+            4,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Extension
+            }
+        );
+    }
+
+    #[test]
     fn decorations_cannot_appear_inside_functions() {
         // Hand-built binary with a decoration inside the function body to ensure layout checking
         // rejects annotations in the function section.
