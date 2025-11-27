@@ -186,14 +186,19 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("add-assoc"; "(+ ?a (+ ?b ?c))" => "(+ (+ ?a ?b) ?c)"),
         rewrite!("mul-assoc"; "(* ?a (* ?b ?c))" => "(* (* ?a ?b) ?c)"),
         rewrite!("add-zero"; "(+ ?a ?b)" => { AddZero { a: var("?a"), b: var("?b") } }),
+        rewrite!("add-neg-to-sub"; "(+ ?a (neg ?b))" => "(- ?a ?b)"),
+        rewrite!("add-neg-to-sub-swap"; "(+ (neg ?a) ?b)" => "(- ?b ?a)"),
         rewrite!("mul-one"; "(* ?a ?b)" => { MulOne { a: var("?a"), b: var("?b") } }),
         rewrite!("mul-zero"; "(* ?a ?b)" => { MulZero { a: var("?a"), b: var("?b") } }),
+        rewrite!("mul-neg-one"; "(* ?a ?b)" => { MulNegOne { a: var("?a"), b: var("?b") } }),
+        rewrite!("mul-double-neg"; "(* (neg ?a) (neg ?b))" => "(* ?a ?b)"),
         rewrite!("add-fold"; "(+ ?a ?b)" => { FoldAdd }),
         rewrite!("mul-fold"; "(* ?a ?b)" => { FoldMul }),
         rewrite!("sub-fold"; "(- ?a ?b)" => { FoldSub }),
         rewrite!("sub-zero-right"; "(- ?a ?b)" => "?a" if is_const_zero(var("?b"))),
         rewrite!("sub-zero-left"; "(- ?a ?b)" => { SubZeroLeft }),
         rewrite!("sub-self"; "(- ?a ?a)" => { SubSelf }),
+        rewrite!("sub-neg-right-to-add"; "(- ?a (neg ?b))" => "(+ ?a ?b)"),
         rewrite!("neg-fold"; "(neg ?a)" => { FoldNeg }),
         rewrite!("double-neg"; "(neg (neg ?a))" => "?a"),
         rewrite!("div-fold"; "(/ ?a ?b)" => { FoldDiv }),
@@ -230,6 +235,10 @@ struct MulOne {
     b: Var,
 }
 struct MulZero {
+    a: Var,
+    b: Var,
+}
+struct MulNegOne {
     a: Var,
     b: Var,
 }
@@ -514,6 +523,33 @@ impl Applier<SpirvLang, ()> for SubZeroLeft {
     }
 }
 
+impl Applier<SpirvLang, ()> for MulNegOne {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let left_is_neg_one =
+            const_value(egraph, subst[self.a]).is_some_and(|c| c.get() == u32::MAX);
+        let right_is_neg_one =
+            const_value(egraph, subst[self.b]).is_some_and(|c| c.get() == u32::MAX);
+        if left_is_neg_one {
+            let neg = egraph.add(SpirvLang::Neg(subst[self.b]));
+            egraph.union(eclass, neg);
+            return vec![neg];
+        }
+        if right_is_neg_one {
+            let neg = egraph.add(SpirvLang::Neg(subst[self.a]));
+            egraph.union(eclass, neg);
+            return vec![neg];
+        }
+        Vec::new()
+    }
+}
+
 fn const_value(egraph: &EGraph<SpirvLang, ()>, id: Id) -> Option<ConstValue> {
     egraph[id].nodes.iter().find_map(|node| match node {
         SpirvLang::Const(value) => Some(*value),
@@ -695,6 +731,66 @@ mod tests {
         assert_eq!(
             optimized,
             RecExpr::from(vec![SpirvLang::Const(ConstValue::new(0))])
+        );
+    }
+
+    #[test]
+    fn rewrites_add_negated_rhs_to_sub() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Symbol(Symbol::from("y")),       // 1
+            SpirvLang::Neg(Id::from(1)),                // 2 = -y
+            SpirvLang::Add([Id::from(0), Id::from(2)]), // 3 = x + (-y)
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::Sub([a, b])) = nodes.last() else {
+            panic!("expected sub root, got {:?}", nodes.last());
+        };
+        let lhs = &nodes[usize::from(*a)];
+        let rhs = &nodes[usize::from(*b)];
+        assert!(
+            matches!(lhs, SpirvLang::Symbol(_)) && matches!(rhs, SpirvLang::Symbol(_)),
+            "subtraction should reference the two symbols: {lhs:?} {rhs:?}"
+        );
+    }
+
+    #[test]
+    fn rewrites_mul_by_neg_one_into_negate() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new(u32::MAX)), // 0 = -1
+            SpirvLang::Symbol(Symbol::from("x")),        // 1
+            SpirvLang::Mul([Id::from(0), Id::from(1)]),  // 2 = -1 * x
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![
+                SpirvLang::Symbol(Symbol::from("x")),
+                SpirvLang::Neg(Id::from(0))
+            ])
+        );
+    }
+
+    #[test]
+    fn rewrites_mul_double_negation() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Symbol(Symbol::from("y")),       // 1
+            SpirvLang::Neg(Id::from(0)),                // 2 = -x
+            SpirvLang::Neg(Id::from(1)),                // 3 = -y
+            SpirvLang::Mul([Id::from(2), Id::from(3)]), // 4 = (-x) * (-y)
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::Mul([a, b])) = nodes.last() else {
+            panic!("expected mul root, got {:?}", nodes.last());
+        };
+        let lhs = &nodes[usize::from(*a)];
+        let rhs = &nodes[usize::from(*b)];
+        assert!(
+            matches!(lhs, SpirvLang::Symbol(_)) && matches!(rhs, SpirvLang::Symbol(_)),
+            "multiplication should reference the two symbols: {lhs:?} {rhs:?}"
         );
     }
 

@@ -237,4 +237,52 @@ mod optimizer_tests {
         }
         assert!(found_zero, "add with negate should fold to zero");
     }
+
+    #[test]
+    fn optimizer_folds_mul_by_neg_one() {
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let func_ty = b.type_function(void, vec![]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        let c6 = b.constant_bit32(int, 6);
+        let c_neg_one = b.constant_bit32(int, u32::MAX);
+        let mul = b.i_mul(int, None, c6, c_neg_one).expect("mul id");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let optimized_module = loader.module();
+
+        let mut folded = false;
+        for inst in optimized_module.all_inst_iter() {
+            if inst.class.opcode == Op::IMul {
+                panic!("mul by -1 should be rewritten or folded");
+            }
+            if inst.class.opcode == Op::Constant
+                && inst.result_id == Some(mul)
+                && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0u32.wrapping_sub(6))]
+            {
+                folded = true;
+            }
+            if inst.class.opcode == Op::SNegate
+                && inst.result_id == Some(mul)
+                && inst.operands == vec![rspirv::dr::Operand::IdRef(c6)]
+            {
+                folded = true;
+            }
+        }
+        assert!(folded, "mul by -1 should become negate or folded const");
+    }
 }

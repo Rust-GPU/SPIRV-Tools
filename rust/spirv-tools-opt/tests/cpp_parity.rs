@@ -533,6 +533,77 @@ fn rust_and_cpp_fold_mul_by_one() {
     assert!(!cpp_has_mul, "C++ spirv-opt should remove mul instruction");
 }
 
+#[test]
+fn rust_and_cpp_fold_mul_by_neg_one() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+
+    let (module_words, mul_id) = build_mul_neg_one_module();
+    let rust_insts = extract_arith_block(&module_words);
+    let rust_optimized =
+        spirv_tools_opt::translate::optimize_arith_block(&rust_insts).expect("rust optimizer");
+    let rust_const = rust_optimized.iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(mul_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0u32.wrapping_sub(6))]
+    });
+    let rust_negate = rust_optimized
+        .iter()
+        .any(|inst| inst.class.opcode == Op::SNegate && inst.result_id == Some(mul_id));
+    let rust_has_mul = rust_optimized
+        .iter()
+        .any(|inst| inst.class.opcode == Op::IMul);
+    assert!(
+        rust_const || rust_negate,
+        "rust optimizer should turn mul by -1 into negate or folded const"
+    );
+    assert!(
+        !rust_has_mul,
+        "rust optimizer should remove mul instruction"
+    );
+
+    let mut input = NamedTempFile::new().expect("input temp");
+    input
+        .write_all(&words_to_bytes(&module_words))
+        .expect("write input");
+    let output = NamedTempFile::new().expect("output temp");
+    let status = Command::new(&cpp_opt)
+        .arg(input.path())
+        .arg("-o")
+        .arg(output.path())
+        .arg("-O")
+        .status()
+        .expect("run spirv-opt");
+    assert!(status.success(), "C++ spirv-opt failed");
+    let cpp_words = bytes_to_words(&fs::read(output.path()).expect("read output"));
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&cpp_words, &mut loader).expect("parse cpp optimized");
+    let module = loader.module();
+    let mut cpp_const = false;
+    let mut cpp_negate = false;
+    let mut cpp_has_mul = false;
+    for inst in module.all_inst_iter() {
+        if inst.class.opcode == Op::IMul {
+            cpp_has_mul = true;
+        }
+        if inst.class.opcode == Op::Constant
+            && inst.result_id == Some(mul_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0u32.wrapping_sub(6))]
+        {
+            cpp_const = true;
+        }
+        if inst.class.opcode == Op::SNegate && inst.result_id == Some(mul_id) {
+            cpp_negate = true;
+        }
+    }
+    assert!(
+        cpp_const || cpp_negate,
+        "C++ spirv-opt should fold mul by -1"
+    );
+    assert!(!cpp_has_mul, "C++ spirv-opt should remove mul instruction");
+}
+
 fn build_const_add_module() -> (Vec<u32>, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
@@ -540,16 +611,16 @@ fn build_const_add_module() -> (Vec<u32>, u32) {
     let void = b.type_void();
     let int = b.type_int(32, 0);
     let func_ty = b.type_function(void, vec![]);
-    let func = b
+    let _func = b
         .begin_function(void, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let _ = b.begin_block(None).expect("block");
     let c2 = b.constant_bit32(int, 2);
     let c3 = b.constant_bit32(int, 3);
-    let _add = b.i_add(int, None, c2, c3).expect("add");
+    let add = b.i_add(int, None, c2, c3).expect("add");
     b.ret().expect("ret");
     b.end_function().expect("end");
-    (b.module().assemble(), func)
+    (b.module().assemble(), add)
 }
 
 fn extract_arith_block(module_words: &[u32]) -> Vec<rspirv::dr::Instruction> {
@@ -727,6 +798,25 @@ fn build_mul_one_module() -> (Vec<u32>, u32) {
     let c7 = b.constant_bit32(int, 7);
     let c1 = b.constant_bit32(int, 1);
     let mul = b.i_mul(int, None, c7, c1).expect("mul");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), mul)
+}
+
+fn build_mul_neg_one_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let _func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let c6 = b.constant_bit32(int, 6);
+    let c_neg_one = b.constant_bit32(int, u32::MAX);
+    let mul = b.i_mul(int, None, c6, c_neg_one).expect("mul");
     b.ret().expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), mul)

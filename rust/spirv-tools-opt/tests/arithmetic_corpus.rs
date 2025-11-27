@@ -233,3 +233,65 @@ fn corpus_folds_mul_by_one() {
     assert_eq!(folded.result_id, Some(11));
     assert_eq!(folded.operands, vec![rspirv::dr::Operand::LiteralBit32(7)]);
 }
+
+#[test]
+fn corpus_folds_mul_by_neg_one() {
+    let int = 1;
+    let c9 = inst(
+        Op::Constant,
+        int,
+        1,
+        vec![rspirv::dr::Operand::LiteralBit32(9)],
+    );
+    let c_neg_one = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(u32::MAX)],
+    );
+    let mul = inst(
+        Op::IMul,
+        int,
+        12,
+        vec![rspirv::dr::Operand::IdRef(1), rspirv::dr::Operand::IdRef(2)],
+    );
+    let optimized = optimize_arith_block(&[c9, c_neg_one, mul]).expect("optimize");
+    assert_eq!(optimized.len(), 1);
+    let folded = &optimized[0];
+    assert_eq!(folded.class.opcode, Op::Constant);
+    assert_eq!(folded.result_id, Some(12));
+    assert_eq!(
+        folded.operands,
+        vec![rspirv::dr::Operand::LiteralBit32(0u32.wrapping_sub(9))]
+    );
+}
+
+#[test]
+fn corpus_folds_add_with_negated_operand() {
+    let int = 1;
+    let c11 = inst(
+        Op::Constant,
+        int,
+        1,
+        vec![rspirv::dr::Operand::LiteralBit32(11)],
+    );
+    let c4 = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(4)],
+    );
+    let neg_four = inst(Op::SNegate, int, 3, vec![rspirv::dr::Operand::IdRef(2)]);
+    let add = inst(
+        Op::IAdd,
+        int,
+        13,
+        vec![rspirv::dr::Operand::IdRef(1), rspirv::dr::Operand::IdRef(3)],
+    );
+    let optimized = optimize_arith_block(&[c11, c4, neg_four, add]).expect("optimize");
+    assert_eq!(optimized.len(), 1);
+    let folded = &optimized[0];
+    assert_eq!(folded.class.opcode, Op::Constant);
+    assert_eq!(folded.result_id, Some(13));
+    assert_eq!(folded.operands, vec![rspirv::dr::Operand::LiteralBit32(7)]);
+}

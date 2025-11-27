@@ -27,6 +27,12 @@
 #include "tools/util/cli_consumer.h"
 #if defined(SPIRV_RUST_TARGET_ENV)
 #include "rust/cxxbridge/spirv-tools-ffi.h"
+#else
+namespace spvtools {
+namespace ffi {
+struct ValidatorOptions {};
+}  // namespace ffi
+}  // namespace spvtools
 #endif
 
 void print_usage(char* argv0) {
