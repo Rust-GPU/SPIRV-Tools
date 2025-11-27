@@ -3894,15 +3894,6 @@ fn enforce_block_layout_rules(
 
     let block_structs = collect_block_structs(module);
     for (struct_id, storage_classes) in block_structs {
-        // If any layout relaxation flag is enabled, skip strict layout checks.
-        let relax_layout = options.relax_block_layout
-            || options.uniform_buffer_standard_layout
-            || options.scalar_block_layout
-            || options.workgroup_scalar_block_layout;
-        if relax_layout {
-            continue;
-        }
-
         let Some(struct_inst) = definitions.get(&struct_id) else {
             continue;
         };
@@ -12383,14 +12374,24 @@ mod tests {
             other => panic!("unexpected error: {other:?}"),
         }
 
-        let options = ValidationOptions {
+        let relax_options = ValidationOptions {
             relax_block_layout: true,
+            ..ValidationOptions::default()
+        };
+        let err = binary
+            .as_slice()
+            .validate_with_options(TargetEnv::Universal1_6, relax_options)
+            .expect_err("relax_block_layout should still require offsets");
+        assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
+
+        let options = ValidationOptions {
+            skip_block_layout: true,
             ..ValidationOptions::default()
         };
         binary
             .as_slice()
             .validate_with_options(TargetEnv::Universal1_6, options)
-            .expect("relax_block_layout should skip member offset enforcement");
+            .expect("skip_block_layout should skip member offset enforcement");
     }
 
     #[test]
@@ -12494,14 +12495,24 @@ mod tests {
             other => panic!("unexpected error: {other:?}"),
         }
 
-        let options = ValidationOptions {
+        let relax_options = ValidationOptions {
             relax_block_layout: true,
+            ..ValidationOptions::default()
+        };
+        let err = binary
+            .as_slice()
+            .validate_with_options(TargetEnv::Universal1_6, relax_options)
+            .expect_err("relax_block_layout should still enforce overlap constraints");
+        assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
+
+        let options = ValidationOptions {
+            skip_block_layout: true,
             ..ValidationOptions::default()
         };
         binary
             .as_slice()
             .validate_with_options(TargetEnv::Universal1_6, options)
-            .expect("relax_block_layout should skip overlap checks");
+            .expect("skip_block_layout should skip overlap checks");
     }
 
     #[test]
