@@ -2082,6 +2082,10 @@ fn validate_capabilities(
     for inst in &module.capabilities {
         if let Some(capability) = capability_operand(inst) {
             let grammar_requirements = capability_info_from_grammar(capability);
+            let allowed_by_env = env.is_capability_allowed(capability);
+            if !allowed_by_env && capability == rspirv::spirv::Capability::VulkanMemoryModel {
+                return Err(ValidationError::DisallowedCapability { capability, env });
+            }
             if env.is_opencl()
                 && matches!(
                     capability,
@@ -2104,13 +2108,29 @@ fn validate_capabilities(
                 grammar_version,
                 manual_required_spirv_version_for_capability(capability),
             );
-            let version_satisfied = required_version
-                .map(|required| target_version >= required)
-                .unwrap_or(true);
-            if version_satisfied {
-                let grammar_requires_extension =
-                    !grammar_requirements.required_extensions.is_empty()
-                        && grammar_version.is_none_or(|required| target_version < required);
+            let manual_required_extension = required_extension_for_capability(capability);
+            let always_require_extension = manual_required_extension
+                .map(extension_always_required)
+                .unwrap_or(false);
+            if let Some(required_version) = required_version {
+                if target_version < required_version {
+                    let has_required_extension =
+                        !grammar_requirements.required_extensions.is_empty()
+                            || manual_required_extension.is_some();
+                    if !allowed_by_env && !has_required_extension {
+                        return Err(ValidationError::DisallowedCapability { capability, env });
+                    }
+                    return Err(ValidationError::CapabilityRequiresSpirvVersion {
+                        capability,
+                        required_version,
+                        target_version,
+                    });
+                }
+            }
+            if !grammar_requirements.required_extensions.is_empty() {
+                let grammar_requires_extension = grammar_version
+                    .is_none_or(|required| target_version < required)
+                    || always_require_extension;
                 if grammar_requires_extension {
                     for &required_ext in grammar_requirements.required_extensions {
                         if !has_extension(extensions, required_ext) {
@@ -2121,31 +2141,26 @@ fn validate_capabilities(
                         }
                     }
                 }
-                if let Some(required_ext) = required_extension_for_capability(capability) {
-                    if !has_extension(extensions, required_ext) {
-                        return Err(ValidationError::DisallowedCapabilityMissingExtension {
-                            capability,
-                            required_extension: required_ext.to_string(),
-                        });
-                    }
+            }
+            if let Some(required_ext) = manual_required_extension {
+                let version_allows_core = required_version
+                    .map(|required| target_version >= required)
+                    .unwrap_or(false);
+                if (always_require_extension || !version_allows_core)
+                    && !has_extension(extensions, required_ext)
+                {
+                    return Err(ValidationError::DisallowedCapabilityMissingExtension {
+                        capability,
+                        required_extension: required_ext.to_string(),
+                    });
                 }
             }
 
-            let allowed_by_env = env.is_capability_allowed(capability);
             let allowed_by_extension = capability_allowed_by_extension(capability, extensions);
             let allowed_by_capability =
                 capability_enabled_by_capability(env, capability, &declared);
             if !(allowed_by_env || allowed_by_extension || allowed_by_capability) {
                 return Err(ValidationError::DisallowedCapability { capability, env });
-            }
-            if let Some(required_version) = required_version {
-                if target_version < required_version {
-                    return Err(ValidationError::CapabilityRequiresSpirvVersion {
-                        capability,
-                        required_version,
-                        target_version,
-                    });
-                }
             }
             for required_cap in grammar_requirements
                 .required_capabilities
@@ -2377,6 +2392,21 @@ fn required_extension_for_capability(
         SpecConditionalINTEL | FunctionVariantsINTEL => Some("SPV_INTEL_function_variants"),
         _ => None,
     }
+}
+
+fn extension_always_required(extension: &str) -> bool {
+    extension.starts_with("SPV_NV_")
+        || extension.starts_with("SPV_EXT_")
+        || extension.starts_with("SPV_AMD_")
+        || extension.starts_with("SPV_QCOM_")
+        || matches!(
+            extension,
+            "SPV_KHR_ray_tracing"
+                | "SPV_KHR_ray_query"
+                | "SPV_KHR_ray_tracing_position_fetch"
+                | "SPV_KHR_vulkan_memory_model"
+                | "SPV_KHR_shader_clock"
+        )
 }
 
 fn manual_required_spirv_version_for_capability(
@@ -7971,6 +8001,50 @@ mod tests {
                 .validate(TargetEnv::Vulkan1_2)
                 .expect("extension should be accepted with SPIR-V 1.4+");
         }
+    }
+
+    #[test]
+    fn capability_requires_declared_vendor_extension() {
+        let text = [
+            "OpCapability RayTracingNV",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect_err("Vendor capability without required extension should be rejected");
+        assert_eq!(
+            error,
+            ValidationError::DisallowedCapabilityMissingExtension {
+                capability: rspirv::spirv::Capability::RayTracingNV,
+                required_extension: "SPV_NV_ray_tracing".to_string()
+            }
+        );
+
+        let with_extension = [
+            "OpCapability Shader",
+            "OpCapability RayTracingNV",
+            "OpExtension \"SPV_NV_ray_tracing\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        with_extension
+            .as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("Vendor capability should be allowed with its extension declared");
     }
 
     #[test]
