@@ -10305,6 +10305,11 @@ mod tests {
     }
 
     #[test]
+    fn qcom_cooperative_matrix_conversion_extension_is_vulkan_only() {
+        assert_vulkan_only_extension("SPV_QCOM_cooperative_matrix_conversion");
+    }
+
+    #[test]
     fn untyped_pointers_extension_is_vulkan_only() {
         assert_vulkan_only_extension("SPV_KHR_untyped_pointers");
     }
