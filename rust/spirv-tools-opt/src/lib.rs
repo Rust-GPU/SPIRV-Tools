@@ -197,7 +197,9 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("neg-fold"; "(neg ?a)" => { FoldNeg }),
         rewrite!("double-neg"; "(neg (neg ?a))" => "?a"),
         rewrite!("div-fold"; "(/ ?a ?b)" => { FoldDiv }),
+        rewrite!("div-one"; "(/ ?a ?b)" => { DivOne { a: var("?a"), b: var("?b") } }),
         rewrite!("rem-fold"; "(% ?a ?b)" => { FoldRem }),
+        rewrite!("rem-one"; "(% ?a ?b)" => { RemOne { b: var("?b") } }),
         rewrite!("add-neg-cancel"; "(+ ?a (neg ?a))" => { AddNegZero }),
         rewrite!("add-neg-cancel-swap"; "(+ (neg ?a) ?a)" => { AddNegZero }),
     ]
@@ -211,6 +213,13 @@ struct FoldDiv;
 struct FoldRem;
 struct SubSelf;
 struct SubZeroLeft;
+struct DivOne {
+    a: Var,
+    b: Var,
+}
+struct RemOne {
+    b: Var,
+}
 struct AddNegZero;
 struct AddZero {
     a: Var,
@@ -357,6 +366,41 @@ impl Applier<SpirvLang, ()> for FoldRem {
         let id = egraph.add(SpirvLang::Const(rem));
         egraph.union(eclass, id);
         vec![id]
+    }
+}
+
+impl Applier<SpirvLang, ()> for DivOne {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        if const_value(egraph, subst[self.b]).is_some_and(|c| c.get() == 1) {
+            egraph.union(eclass, subst[self.a]);
+            return vec![subst[self.a]];
+        }
+        Vec::new()
+    }
+}
+
+impl Applier<SpirvLang, ()> for RemOne {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        if const_value(egraph, subst[self.b]).is_some_and(|c| c.get() == 1) {
+            let id = egraph.add(SpirvLang::Const(ConstValue::new(0)));
+            egraph.union(eclass, id);
+            return vec![id];
+        }
+        Vec::new()
     }
 }
 
