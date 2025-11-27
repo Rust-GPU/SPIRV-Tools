@@ -8322,6 +8322,90 @@ mod tests {
     }
 
     #[test]
+    fn fragment_shading_rate_capability_rejected_outside_vulkan_even_with_extension() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability FragmentShadingRateKHR",
+            "OpExtension \"SPV_KHR_fragment_shading_rate\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+
+        for env in [
+            TargetEnv::Universal1_6,
+            TargetEnv::OpenCl2_2,
+            TargetEnv::OpenGl4_5,
+        ] {
+            let error = text.as_str().validate(env).expect_err(
+                "FragmentShadingRateKHR should be rejected when its extension is disallowed",
+            );
+            assert_eq!(
+                error,
+                ValidationError::DisallowedExtension {
+                    extension: ExtensionName::from("SPV_KHR_fragment_shading_rate"),
+                    env
+                }
+            );
+        }
+
+        text.as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("FragmentShadingRateKHR should be accepted for Vulkan targets");
+    }
+
+    #[test]
+    fn fragment_invocation_density_capability_rejected_outside_vulkan_even_with_extension() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability FragmentDensityEXT",
+            "OpExtension \"SPV_EXT_fragment_invocation_density\"",
+            "OpExtension \"SPV_NV_shading_rate\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+
+        for env in [
+            TargetEnv::Universal1_6,
+            TargetEnv::OpenCl2_2,
+            TargetEnv::OpenGl4_5,
+        ] {
+            let error = text.as_str().validate(env).expect_err(
+                "FragmentDensityEXT should be rejected when its extension is disallowed",
+            );
+            match error {
+                ValidationError::DisallowedExtension {
+                    extension,
+                    env: actual_env,
+                } => {
+                    assert_eq!(actual_env, env);
+                    assert!(
+                        extension == ExtensionName::from("SPV_EXT_fragment_invocation_density")
+                            || extension == ExtensionName::from("SPV_NV_shading_rate"),
+                        "unexpected extension in disallowance: {extension:?}"
+                    );
+                }
+                other => panic!("unexpected error: {other:?}"),
+            }
+        }
+
+        text.as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("FragmentDensityEXT should be accepted for Vulkan targets");
+    }
+
+    #[test]
     fn descriptor_indexing_extension_requires_spirv_1_5() {
         let text = [
             "OpCapability Shader",
@@ -10135,7 +10219,7 @@ mod tests {
         .join("\n");
         let error = text
             .as_str()
-            .validate(TargetEnv::Universal1_3)
+            .validate(TargetEnv::Vulkan1_0)
             .expect_err("requires SPIR-V 1.5");
         match error {
             ValidationError::CapabilityRequiresSpirvVersion {
@@ -10148,7 +10232,7 @@ mod tests {
                     rspirv::spirv::Capability::FragmentShadingRateKHR
                 );
                 assert_eq!(required_version, SpirvVersion::new(1, 5));
-                assert_eq!(target_version, SpirvVersion::new(1, 3));
+                assert_eq!(target_version, TargetEnv::Vulkan1_0.spirv_version());
             }
             ValidationError::ExtensionRequiresSpirvVersion {
                 extension,
@@ -10160,12 +10244,12 @@ mod tests {
                     ExtensionName::from("SPV_KHR_fragment_shading_rate")
                 );
                 assert_eq!(required_version, SpirvVersion::new(1, 5));
-                assert_eq!(target_version, SpirvVersion::new(1, 3));
+                assert_eq!(target_version, TargetEnv::Vulkan1_0.spirv_version());
             }
             other => panic!("unexpected error: {other:?}"),
         }
         text.as_str()
-            .validate(TargetEnv::Universal1_6)
+            .validate(TargetEnv::Vulkan1_2)
             .expect("succeeds on newer SPIR-V");
     }
 

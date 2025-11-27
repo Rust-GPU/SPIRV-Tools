@@ -291,7 +291,8 @@ Percentages are approximate and will be updated as new checklists are added for 
 3. Fill in remaining SPIR-V version gating and per-instruction requirements from the grammar, then revisit disassembly fixtures once validator parity is solid.
 4. Thread the generated extension allowlist through capability/extension precedence (ray tracing, cooperative matrices, tile shading) with focused regressions, and capture any OpenGL-specific quirks that still rely on heuristics.
    - The allowlist now gates capability-required extensions; vendor capabilities error out early when their extensions are forbidden by the target environment.
-   - Added env-gated regressions for RayTracingKHR, CooperativeMatrixNV, and TileShadingQCOM to ensure capability enablement respects the per-env allowlist even when the extensions are declared.
+   - Added env-gated regressions for RayTracingKHR, CooperativeMatrixNV, TileShadingQCOM, and fragment shading rate/density capabilities to ensure capability enablement respects the per-env allowlist even when the extensions are declared.
+   - The generated allowlist now marks `SPV_KHR_fragment_shading_rate` and `SPV_EXT_fragment_invocation_density` as Vulkan-only to mirror the C++ tables.
 
 ## Upcoming Milestone: Capability/Extension Ordering Parity
 Align the Rust validator’s capability/extension ordering and layout checks with the C++ tables.
