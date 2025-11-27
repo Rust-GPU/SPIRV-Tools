@@ -118,6 +118,15 @@ Tasks for this milestone:
 - Enforced `SPV_INTEL_function_variants` as the required extension for `SpecConditionalINTEL`/`FunctionVariantsINTEL` capabilities and added dependency/acceptance regressions.
 - Blocked `SPV_INTEL_function_variants` for Vulkan environments to mirror target allowlists; added regression to ensure Vulkan rejects and Universal/OpenCL accept.
 
+## Upcoming Milestone: Extension Allowlists Parity
+Align environment-specific extension allowlists with the C++ validator and grammar metadata, including vendor-specific extensions and OpenCL/Vulkan gating.
+
+Planned tasks:
+- Import extension→environment allowlists from the grammar/C++ tables and enforce them in `TargetEnv::is_extension_allowed`.
+- Add Rust regressions for vendor extensions (INTEL/NV/AMD) across Vulkan/OpenCL/WebGPU/Universal environments.
+- Ensure capability checks reuse the stricter extension allowlists so vendor capabilities are rejected when their extensions are disallowed.
+- Keep the FFI/CLI caches wired through these checks to avoid revalidation for repeated inputs.
+
 ## Upcoming Milestone: Capability/Extension Parity
 Bring the Rust validator to full capability/extension parity with the C++ tables using the grammar-driven dependency metadata and explicit per-environment rules.
 
