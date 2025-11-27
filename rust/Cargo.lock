@@ -810,6 +810,7 @@ dependencies = [
  "pretty_assertions",
  "rspirv",
  "spirv-tools-core",
+ "tempfile",
  "thiserror",
 ]
 
