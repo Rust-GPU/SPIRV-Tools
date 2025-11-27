@@ -28,3 +28,7 @@ path = "src/bin/spirv-as.rs"
 [[bin]]
 name = "spirv-val"
 path = "src/bin/spirv-val.rs"
+
+[[bin]]
+name = "spirv-opt"
+path = "src/bin/spirv-opt.rs"
