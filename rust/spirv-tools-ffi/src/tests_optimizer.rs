@@ -72,4 +72,43 @@ mod optimizer_tests {
         assert!(found_const_five, "optimizer should fold to a const 5");
         assert!(!has_add, "addition should be folded away");
     }
+
+    #[test]
+    fn optimizer_folds_sub_self_to_zero() {
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let func_ty = b.type_function(void, vec![]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        let c7 = b.constant_bit32(int, 7);
+        let sub = b.i_sub(int, None, c7, c7).expect("sub id");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let optimized_module = loader.module();
+
+        let mut found_zero = false;
+        for inst in optimized_module.all_inst_iter() {
+            if inst.class.opcode == Op::Constant
+                && inst.result_id == Some(sub)
+                && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0)]
+            {
+                found_zero = true;
+            }
+            assert_ne!(inst.class.opcode, Op::ISub, "sub should fold away");
+        }
+        assert!(found_zero, "sub should fold to constant zero");
+    }
 }
