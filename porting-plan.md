@@ -148,9 +148,9 @@ Planned tasks:
 - [x] Capture friendly names from `OpName`/`OpMemberName` when `use_friendly_names` is set and surface them on `ValidModule` via a typed table, with Rust regressions to keep both id and member names populated.
 - Gate `OpExecutionModeId LocalSizeId` by environment and the `allow_localsizeid` option, with regressions for Vulkan 1.0–1.2 defaults and the opt-in path.
 - Enforce Vulkan-only restrictions for image operand `Offset` (gather-only without `allow_offset_texture_operand`) and 32-bit-only bitwise operations unless `allow_vulkan_32_bit_bitwise` is set, with Rust regressions covering both the restricted and opt-in paths.
-- Provide friendly-name aware formatting helpers for `ValidationError` so diagnostics can render `%id (name)` when names are available.
-- Surface friendly names in FFI validation errors by parsing `OpName`/`OpMemberName` from the input when `use_friendly_names` is enabled.
-- Surface friendly names in the Rust CLI validator output by formatting validation errors with the collected name table.
+- [x] Provide friendly-name aware formatting helpers for `ValidationError` so diagnostics can render `%id (name)` when names are available.
+- [x] Surface friendly names in FFI validation errors by parsing `OpName`/`OpMemberName` from the input when `use_friendly_names` is enabled.
+- [x] Surface friendly names in the Rust CLI validator output by formatting validation errors with the collected name table.
 - Accept layout relaxation flags (`relax_*`, `skip_block_layout`) in the Rust validator with option-aware tests to keep the CLI/FFI paths from falling back when these options are set. (`skip_block_layout` now bypasses layout ordering errors with a dedicated regression.)
 - [x] Enforce `Block`/`BufferBlock` layouts when relaxations are disabled by requiring `OpMemberDecorate Offset` on every member and rejecting overlapping offsets, with Rust coverage guarding the strict path.
 - [x] Honor layout relaxation flags for block layout by permitting scalar alignment for vectors (`relax_block_layout`, `uniform_buffer_standard_layout`, `scalar_block_layout`, `workgroup_scalar_block_layout`) while still validating offsets, alignment, and runtime-array placement.

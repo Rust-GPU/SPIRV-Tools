@@ -714,6 +714,43 @@ OpFunctionEnd
     }
 
     #[test]
+    fn rust_validator_formats_errors_with_friendly_names() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpName %main "ffi_friendly"
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+OpExecutionMode %main LocalSize 1 1 1
+"#;
+        let binary = assemble_text_with_env(text, TargetEnv::Universal1_6).expect("assemble");
+
+        let mut options = default_validator_options();
+        let with_names =
+            validate_binary_rust_with_options(TargetEnv::Universal1_6.to_raw(), &binary, &options);
+        assert!(!with_names.success);
+        assert!(
+            with_names.message.contains("ffi_friendly"),
+            "expected friendly name in message: {}",
+            with_names.message
+        );
+
+        options.use_friendly_names = false;
+        let without_names =
+            validate_binary_rust_with_options(TargetEnv::Universal1_6.to_raw(), &binary, &options);
+        assert!(!without_names.success);
+        assert!(
+            !without_names.message.contains("ffi_friendly"),
+            "friendly names should be omitted when disabled: {}",
+            without_names.message
+        );
+    }
+
+    #[test]
     fn rust_validator_override_toggles_paths() {
         clear_rust_validator_override();
         LAST_VALIDATION_PATH.store(0, Ordering::Relaxed);

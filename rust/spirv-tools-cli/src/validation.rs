@@ -130,6 +130,39 @@ OpFunctionEnd
     }
 
     #[test]
+    fn validation_errors_include_friendly_names() {
+        // ExecutionMode without an entry point should surface the function's friendly name.
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpName %main "friendly_main"
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+OpExecutionMode %main LocalSize 1 1 1
+"#;
+        let binary = assemble_text(text).expect("assemble text");
+        let mut file = NamedTempFile::new().expect("temp file");
+        file.write_all(&words_to_bytes(&binary)).expect("write");
+        let config = ValidateConfig {
+            input: InputSource::Path(file.path().to_path_buf()),
+            target_env: None,
+        };
+
+        let error = run_validate(&config).expect_err("expected validation failure");
+        let ValidateCliError::Failed(message) = error else {
+            panic!("unexpected error: {error:?}");
+        };
+        assert!(
+            message.contains("friendly_main"),
+            "expected friendly name in error message: {message}"
+        );
+    }
+
+    #[test]
     fn validation_reports_failure() {
         // Invalid module: missing OpMemoryModel.
         let text = "%void = OpTypeVoid";
