@@ -59,6 +59,7 @@ Tasks for this milestone:
   - Added layout coverage for `OpString` ordering: rejecting strings after annotations and after the Names section to keep Debug1/Debug2 ordering aligned with the C++ validator.
   - Added a layout regression to ensure `OpModuleProcessed` follows the Names section (Debug3 after Debug2).
   - Added layout regressions for conditional capabilities/extensions (INTEL) to keep them in the capabilities/extensions sections ahead of debug/names/annotations.
+  - Added layout regressions to reject conditional capabilities/extensions that trail the types-and-globals section, matching the C++ ordering expectations.
   - Added layout regressions for late extensions and imported instruction sets (extensions/ExtInstImport) to keep them ahead of annotations and debug names.
   - Added layout regressions for late capabilities (including conditional capabilities) appearing after annotations to keep section ordering tight.
   - Added a layout regression to ensure imported instruction sets (`OpExtInstImport`) do not appear after annotations.

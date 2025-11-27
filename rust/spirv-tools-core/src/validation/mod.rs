@@ -5372,6 +5372,62 @@ mod tests {
     }
 
     #[test]
+    fn conditional_extension_must_precede_types_and_globals() {
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            3,          // bound (ids up to 2)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1 (types/globals)
+            1,
+            op(3, 6248), // OpConditionalExtensionINTEL %2 "X" (after types -> error)
+            2,
+            0x0000_0058, // "X"
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::ConditionalExtensionINTEL
+            }
+        );
+    }
+
+    #[test]
+    fn conditional_capability_must_precede_types_and_globals() {
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            3,          // bound (ids up to 2)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1 (types/globals)
+            1,
+            op(3, 6250), // OpConditionalCapabilityINTEL %2 Linkage (after types -> error)
+            2,
+            rspirv::spirv::Capability::Linkage as u32,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::ConditionalCapabilityINTEL
+            }
+        );
+    }
+
+    #[test]
     fn names_section_must_follow_debug_section() {
         // OpName (Names section) precedes OpSource (Debug section), which should trigger an ordering error.
         let binary = vec![
