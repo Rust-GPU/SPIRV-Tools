@@ -814,6 +814,36 @@ mod tests {
     }
 
     #[test]
+    fn optimize_arith_block_folds_mul_with_zero() {
+        let int = 1;
+        let c5 = Instruction::new(
+            rspirv::spirv::Op::Constant,
+            Some(int),
+            Some(1),
+            vec![rspirv::dr::Operand::LiteralBit32(5)],
+        );
+        let c0 = Instruction::new(
+            rspirv::spirv::Op::Constant,
+            Some(int),
+            Some(2),
+            vec![rspirv::dr::Operand::LiteralBit32(0)],
+        );
+        let mul = Instruction::new(
+            rspirv::spirv::Op::IMul,
+            Some(int),
+            Some(3),
+            vec![rspirv::dr::Operand::IdRef(1), rspirv::dr::Operand::IdRef(2)],
+        );
+        let block = vec![c5, c0, mul];
+        let optimized = optimize_arith_block(&block).expect("optimization should succeed");
+        assert_eq!(optimized.len(), 1);
+        let folded = &optimized[0];
+        assert_eq!(folded.class.opcode, rspirv::spirv::Op::Constant);
+        assert_eq!(folded.result_id, Some(3));
+        assert_eq!(folded.operands, vec![rspirv::dr::Operand::LiteralBit32(0)]);
+    }
+
+    #[test]
     fn optimize_arith_block_rejects_unsupported_op() {
         let insts = vec![Instruction::new(
             rspirv::spirv::Op::TypeVoid,
