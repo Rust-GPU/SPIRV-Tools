@@ -93,6 +93,7 @@ def compute_allowlist(extensions: list[str]) -> list[tuple[str, bool, bool, bool
         "SPV_QCOM_image_processing2",
         "SPV_QCOM_cooperative_matrix_conversion",
         "SPV_QCOM_tile_shading",
+        "SPV_KHR_shader_clock",
     }
     opencl_universal = {"SPV_INTEL_function_variants", "SPV_INTEL_fpga_reg"}
 

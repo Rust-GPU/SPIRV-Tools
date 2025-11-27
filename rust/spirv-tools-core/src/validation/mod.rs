@@ -9242,19 +9242,23 @@ mod tests {
         .join("\n");
         let error = text
             .as_str()
-            .validate(TargetEnv::Universal1_2)
+            .validate(TargetEnv::Vulkan1_0)
             .expect_err("shader clock requires SPIR-V 1.3");
-        assert_eq!(
-            error,
+        match error {
             ValidationError::ExtensionRequiresSpirvVersion {
-                extension: ExtensionName::from("SPV_KHR_shader_clock"),
-                required_version: SpirvVersion::new(1, 3),
-                target_version: SpirvVersion::new(1, 2),
+                extension,
+                required_version,
+                target_version,
+            } => {
+                assert_eq!(extension, ExtensionName::from("SPV_KHR_shader_clock"));
+                assert_eq!(required_version, SpirvVersion::new(1, 3));
+                assert_eq!(target_version, TargetEnv::Vulkan1_0.spirv_version());
             }
-        );
+            other => panic!("unexpected error: {other:?}"),
+        }
 
         text.as_str()
-            .validate(TargetEnv::Universal1_6)
+            .validate(TargetEnv::Vulkan1_2)
             .expect("extension should be accepted with SPIR-V 1.3+");
     }
 
@@ -10288,6 +10292,50 @@ mod tests {
             .as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("capability should be accepted with required extensions");
+    }
+
+    #[test]
+    fn shader_clock_extension_is_vulkan_only() {
+        assert_vulkan_only_extension("SPV_KHR_shader_clock");
+    }
+
+    #[test]
+    fn shader_clock_capability_rejected_outside_vulkan_even_with_extension() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability ShaderClockKHR",
+            "OpExtension \"SPV_KHR_shader_clock\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+
+        for env in [
+            TargetEnv::Universal1_6,
+            TargetEnv::OpenCl2_2,
+            TargetEnv::OpenGl4_5,
+        ] {
+            let error = text
+                .as_str()
+                .validate(env)
+                .expect_err("ShaderClockKHR should be rejected when its extension is disallowed");
+            assert_eq!(
+                error,
+                ValidationError::DisallowedExtension {
+                    extension: ExtensionName::from("SPV_KHR_shader_clock"),
+                    env
+                }
+            );
+        }
+
+        text.as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("ShaderClockKHR should be accepted for Vulkan targets");
     }
 
     #[test]
@@ -12357,7 +12405,7 @@ mod tests {
         .join("\n");
         let error = text
             .as_str()
-            .validate(TargetEnv::Universal1_6)
+            .validate(TargetEnv::Vulkan1_3)
             .expect_err("ShaderClockKHR requires declaring the extension");
         assert_eq!(
             error,
@@ -12382,7 +12430,7 @@ mod tests {
         .join("\n");
         with_extension
             .as_str()
-            .validate(TargetEnv::Universal1_6)
+            .validate(TargetEnv::Vulkan1_3)
             .expect("extension declared should satisfy capability");
     }
 
