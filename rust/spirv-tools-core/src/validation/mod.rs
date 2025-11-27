@@ -3764,22 +3764,40 @@ fn layout_compatible_types(
                 _ => None,
             })
             .and_then(|elem_a| {
-                inst_b
-                    .operands
-                    .first()
-                    .and_then(|op| match op {
-                        rspirv::dr::Operand::IdRef(id_b) => TypeId::try_from(*id_b).ok(),
-                        _ => None,
-                    })
-                    .map(|elem_b| (elem_a, elem_b))
+                let elem_b = inst_b.operands.first().and_then(|op| match op {
+                    rspirv::dr::Operand::IdRef(id_b) => TypeId::try_from(*id_b).ok(),
+                    _ => None,
+                })?;
+                let len_a = array_length(inst_a, definitions);
+                let len_b = array_length(inst_b, definitions);
+                Some((elem_a, elem_b, len_a, len_b))
             })
-            .is_some_and(|(elem_a, elem_b)| {
-                layout_compatible_types(elem_a, elem_b, definitions, visiting)
+            .is_some_and(|(elem_a, elem_b, len_a, len_b)| {
+                len_a == len_b && layout_compatible_types(elem_a, elem_b, definitions, visiting)
             }),
         _ => false,
     };
     visiting.remove(&a);
     compatible
+}
+
+fn array_length(
+    inst: &rspirv::dr::Instruction,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+) -> Option<u32> {
+    let len_id = match inst.operands.get(1) {
+        Some(rspirv::dr::Operand::IdRef(id)) => ResultId::try_from(*id).ok()?,
+        _ => return None,
+    };
+    let len_inst = definitions.get(&len_id)?;
+    if len_inst.class.opcode != rspirv::spirv::Op::Constant {
+        return None;
+    }
+    match len_inst.operands.first() {
+        Some(rspirv::dr::Operand::LiteralBit32(v)) => Some(*v),
+        Some(rspirv::dr::Operand::LiteralBit64(v)) => u32::try_from(*v).ok(),
+        _ => None,
+    }
 }
 
 fn enforce_offset_texture_operand_rule(
@@ -11674,6 +11692,169 @@ mod tests {
             .as_slice()
             .validate_with_options(TargetEnv::Universal1_6, options)
             .expect("relax_struct_store should permit layout-compatible structs");
+    }
+
+    #[test]
+    fn relax_struct_store_rejects_mismatched_array_lengths() {
+        use rspirv::{binary::Assemble, dr::Instruction, dr::Module, dr::ModuleHeader};
+
+        fn inst(
+            opcode: rspirv::spirv::Op,
+            result_type: Option<u32>,
+            result_id: Option<u32>,
+            operands: Vec<rspirv::dr::Operand>,
+        ) -> Instruction {
+            Instruction::new(opcode, result_type, result_id, operands)
+        }
+
+        let mut module = Module::new();
+        module.header = Some(ModuleHeader::new(21));
+        module.capabilities.push(inst(
+            rspirv::spirv::Op::Capability,
+            None,
+            None,
+            vec![rspirv::dr::Operand::Capability(
+                rspirv::spirv::Capability::Shader,
+            )],
+        ));
+        module.memory_model = Some(inst(
+            rspirv::spirv::Op::MemoryModel,
+            None,
+            None,
+            vec![
+                rspirv::dr::Operand::AddressingModel(rspirv::spirv::AddressingModel::Logical),
+                rspirv::dr::Operand::MemoryModel(rspirv::spirv::MemoryModel::GLSL450),
+            ],
+        ));
+        module.types_global_values.extend([
+            inst(rspirv::spirv::Op::TypeVoid, None, Some(1), vec![]),
+            inst(
+                rspirv::spirv::Op::TypeInt,
+                None,
+                Some(2),
+                vec![
+                    rspirv::dr::Operand::LiteralBit32(32),
+                    rspirv::dr::Operand::LiteralBit32(0),
+                ],
+            ),
+            inst(
+                rspirv::spirv::Op::Constant,
+                Some(2),
+                Some(3),
+                vec![rspirv::dr::Operand::LiteralBit32(2)],
+            ),
+            inst(
+                rspirv::spirv::Op::Constant,
+                Some(2),
+                Some(4),
+                vec![rspirv::dr::Operand::LiteralBit32(3)],
+            ),
+            inst(
+                rspirv::spirv::Op::TypeArray,
+                None,
+                Some(5),
+                vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(3)],
+            ),
+            inst(
+                rspirv::spirv::Op::TypeArray,
+                None,
+                Some(6),
+                vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(4)],
+            ),
+            inst(
+                rspirv::spirv::Op::TypeStruct,
+                None,
+                Some(7),
+                vec![rspirv::dr::Operand::IdRef(5)],
+            ),
+            inst(
+                rspirv::spirv::Op::TypeStruct,
+                None,
+                Some(8),
+                vec![rspirv::dr::Operand::IdRef(6)],
+            ),
+            inst(
+                rspirv::spirv::Op::TypePointer,
+                None,
+                Some(9),
+                vec![
+                    rspirv::dr::Operand::StorageClass(rspirv::spirv::StorageClass::Function),
+                    rspirv::dr::Operand::IdRef(7),
+                ],
+            ),
+            inst(
+                rspirv::spirv::Op::TypeFunction,
+                None,
+                Some(10),
+                vec![rspirv::dr::Operand::IdRef(1)],
+            ),
+            inst(rspirv::spirv::Op::TypeVoid, None, Some(20), vec![]),
+        ]);
+
+        module.functions.push(rspirv::dr::Function {
+            def: Some(inst(
+                rspirv::spirv::Op::Function,
+                Some(1),
+                Some(11),
+                vec![
+                    rspirv::dr::Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
+                    rspirv::dr::Operand::IdRef(10),
+                ],
+            )),
+            end: Some(inst(rspirv::spirv::Op::FunctionEnd, None, None, vec![])),
+            parameters: vec![],
+            blocks: vec![rspirv::dr::Block {
+                label: Some(inst(rspirv::spirv::Op::Label, None, Some(12), vec![])),
+                instructions: vec![
+                    inst(
+                        rspirv::spirv::Op::Variable,
+                        Some(9),
+                        Some(13),
+                        vec![rspirv::dr::Operand::StorageClass(
+                            rspirv::spirv::StorageClass::Function,
+                        )],
+                    ),
+                    inst(rspirv::spirv::Op::Undef, Some(8), Some(14), vec![]),
+                    inst(
+                        rspirv::spirv::Op::Store,
+                        None,
+                        None,
+                        vec![
+                            rspirv::dr::Operand::IdRef(13),
+                            rspirv::dr::Operand::IdRef(14),
+                        ],
+                    ),
+                    inst(rspirv::spirv::Op::Return, None, None, vec![]),
+                ],
+            }],
+        });
+
+        module.entry_points.push(inst(
+            rspirv::spirv::Op::EntryPoint,
+            None,
+            None,
+            vec![
+                rspirv::dr::Operand::ExecutionModel(rspirv::spirv::ExecutionModel::Vertex),
+                rspirv::dr::Operand::IdRef(11),
+                rspirv::dr::Operand::LiteralString("main".to_string()),
+            ],
+        ));
+
+        let binary = module.assemble();
+
+        // Relaxation should still reject mismatched array lengths.
+        let options = ValidationOptions {
+            relax_struct_store: true,
+            ..ValidationOptions::default()
+        };
+        let err = binary
+            .as_slice()
+            .validate_with_options(TargetEnv::Universal1_6, options)
+            .expect_err("array length mismatch should not be considered layout-compatible");
+        if let ValidationError::StoreTypeMismatch { .. } = err {
+        } else {
+            panic!("unexpected error: {err:?}");
+        }
     }
 
     #[test]
