@@ -3892,18 +3892,22 @@ fn enforce_block_layout_rules(
         return Ok(());
     }
 
+    let scalar_layout = options.scalar_block_layout || options.workgroup_scalar_block_layout;
+    let relax_layout =
+        options.relax_block_layout || options.uniform_buffer_standard_layout || scalar_layout;
+
     let block_structs = collect_block_structs(module);
     for (struct_id, storage_classes) in block_structs {
         let Some(struct_inst) = definitions.get(&struct_id) else {
             continue;
         };
-        let member_offsets = collect_member_offsets(module, struct_id);
         if struct_inst.class.opcode != rspirv::spirv::Op::TypeStruct {
             continue;
         }
         if struct_inst.operands.is_empty() {
             continue;
         }
+        let member_offsets = collect_member_offsets(module, struct_id);
         let member_count = struct_inst.operands.len();
         for (index, operand) in struct_inst.operands.iter().enumerate() {
             let Some(offset) = member_offsets.get(&MemberIndex(index as u32)) else {
@@ -3942,15 +3946,15 @@ fn enforce_block_layout_rules(
                 member_type_id,
                 definitions,
                 &mut HashSet::new(),
-                options.scalar_block_layout,
+                scalar_layout,
             ) else {
                 continue;
             };
             // Alignment rules: scalar block layout always uses scalar alignment; relaxed block
             // layout allows vectors to align to their scalar element size, otherwise require
             // alignment to the computed base alignment.
-            if options.relax_block_layout
-                && !options.scalar_block_layout
+            if relax_layout
+                && !scalar_layout
                 && member_inst.class.opcode == rspirv::spirv::Op::TypeVector
             {
                 let Some(scalar_align) = vector_scalar_alignment(member_inst, definitions) else {
@@ -12675,6 +12679,50 @@ mod tests {
         text.as_str()
             .validate_with_options(TargetEnv::Universal1_6, scalar)
             .expect("scalar_block_layout should permit scalar alignment for vectors");
+    }
+
+    #[test]
+    fn uniform_buffer_standard_layout_allows_scalar_vector_alignment() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpDecorate %struct Block",
+            "OpMemberDecorate %struct 0 Offset 0",
+            "OpMemberDecorate %struct 1 Offset 4",
+            "%int = OpTypeInt 32 0",
+            "%vec2 = OpTypeVector %int 2",
+            "%struct = OpTypeStruct %int %vec2",
+        ]
+        .join("\n");
+        let relax = ValidationOptions {
+            uniform_buffer_standard_layout: true,
+            ..ValidationOptions::default()
+        };
+        text.as_str()
+            .validate_with_options(TargetEnv::Universal1_6, relax)
+            .expect("uniform_buffer_standard_layout should permit scalar-aligned vectors");
+    }
+
+    #[test]
+    fn workgroup_scalar_block_layout_uses_scalar_alignment() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpDecorate %struct Block",
+            "OpMemberDecorate %struct 0 Offset 0",
+            "OpMemberDecorate %struct 1 Offset 4",
+            "%int = OpTypeInt 32 0",
+            "%vec2 = OpTypeVector %int 2",
+            "%struct = OpTypeStruct %int %vec2",
+        ]
+        .join("\n");
+        let relax = ValidationOptions {
+            workgroup_scalar_block_layout: true,
+            ..ValidationOptions::default()
+        };
+        text.as_str()
+            .validate_with_options(TargetEnv::Universal1_6, relax)
+            .expect("workgroup_scalar_block_layout should permit scalar alignment for vectors");
     }
 
     #[test]
