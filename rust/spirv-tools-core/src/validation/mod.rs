@@ -819,6 +819,12 @@ pub enum ValidationError {
         /// The target environment in use.
         env: TargetEnv,
     },
+    /// `OpExecutionModeId LocalSizeId` is not permitted for the current environment/options.
+    #[error("LocalSizeId execution mode is not allowed for target environment {env:?}")]
+    LocalSizeIdNotAllowed {
+        /// The target environment in use.
+        env: TargetEnv,
+    },
     /// A decoration group reference did not point to a declared group.
     #[error("decoration group {group} is not declared")]
     UnknownDecorationGroup {
@@ -1401,7 +1407,7 @@ fn validate_words(
     validate_decorations(&module, &defined_ids)?;
     validate_decoration_target_categories(&module, &opcodes, &definitions, &capabilities)?;
     let entry_points = validate_entry_points(&module, &defined_ids, &opcodes)?;
-    validate_execution_modes(&module, &entry_points)?;
+    validate_execution_modes(&module, &entry_points, env, &options)?;
     validate_functions(&module)?;
     enforce_function_arg_limit(&module, &options)?;
     enforce_variable_limits(&module, &options)?;
@@ -3757,6 +3763,8 @@ fn validate_entry_points(
 fn validate_execution_modes(
     module: &Module,
     entry_points: &HashSet<ResultId>,
+    env: TargetEnv,
+    options: &ValidationOptions,
 ) -> Result<(), ValidationError> {
     for mode in &module.execution_modes {
         let mut operands = mode.operands.iter();
@@ -3773,8 +3781,38 @@ fn validate_execution_modes(
                 function: function.into_inner(),
             });
         }
+
+        if let Some(execution_mode) = execution_mode_from_operand(mode.operands.get(1)) {
+            if execution_mode == rspirv::spirv::ExecutionMode::LocalSizeId
+                && !local_size_id_allowed(env, options)
+            {
+                return Err(ValidationError::LocalSizeIdNotAllowed { env });
+            }
+        }
     }
     Ok(())
+}
+
+fn execution_mode_from_operand(
+    operand: Option<&rspirv::dr::Operand>,
+) -> Option<rspirv::spirv::ExecutionMode> {
+    match operand {
+        Some(rspirv::dr::Operand::ExecutionMode(mode)) => Some(*mode),
+        Some(rspirv::dr::Operand::LiteralBit32(raw)) => {
+            rspirv::spirv::ExecutionMode::from_u32(*raw)
+        }
+        _ => None,
+    }
+}
+
+fn local_size_id_allowed(env: TargetEnv, options: &ValidationOptions) -> bool {
+    match env {
+        TargetEnv::Vulkan1_0
+        | TargetEnv::Vulkan1_1
+        | TargetEnv::Vulkan1_1Spirv1_4
+        | TargetEnv::Vulkan1_2 => options.allow_localsizeid,
+        _ => true,
+    }
 }
 
 fn collect_result_opcodes(module: &Module) -> HashMap<ResultId, rspirv::spirv::Op> {
@@ -10357,6 +10395,98 @@ mod tests {
             .expect("struct should have a result id");
         assert_eq!(names.id(struct_id), Some("Struct"));
         assert_eq!(names.member(struct_id, MemberIndex(1)), Some("member"));
+    }
+
+    #[test]
+    fn localsizeid_disallowed_without_option_in_older_vulkan() {
+        use crate::validation::ValidationOptions;
+        use rspirv::binary::Assemble;
+        use rspirv::dr::Builder;
+        use rspirv::spirv::{ExecutionMode, ExecutionModel, FunctionControl};
+
+        let mut builder = Builder::new();
+        builder.set_version(1, 6);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = builder.type_void();
+        let fn_ty = builder.type_function(void, []);
+        let uint = builder.type_int(32, 0);
+        let local_size = builder.constant_bit32(uint, 1);
+
+        let entry_point = builder
+            .begin_function(void, None, FunctionControl::NONE, fn_ty)
+            .unwrap();
+        builder.begin_block(None).unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+
+        builder.entry_point(ExecutionModel::GLCompute, entry_point, "main", []);
+        builder.execution_mode_id(
+            entry_point,
+            ExecutionMode::LocalSizeId,
+            [local_size, local_size, local_size],
+        );
+
+        let words = builder.module().assemble();
+        let err = words
+            .as_slice()
+            .validate_with_options(TargetEnv::Vulkan1_2, ValidationOptions::default())
+            .expect_err("LocalSizeId should be disallowed without the option");
+        assert_eq!(
+            err,
+            ValidationError::LocalSizeIdNotAllowed {
+                env: TargetEnv::Vulkan1_2
+            }
+        );
+    }
+
+    #[test]
+    fn localsizeid_allowed_with_option() {
+        use crate::validation::ValidationOptions;
+        use rspirv::binary::Assemble;
+        use rspirv::dr::Builder;
+        use rspirv::spirv::{ExecutionMode, ExecutionModel, FunctionControl};
+
+        let mut builder = Builder::new();
+        builder.set_version(1, 6);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = builder.type_void();
+        let fn_ty = builder.type_function(void, []);
+        let uint = builder.type_int(32, 0);
+        let local_size = builder.constant_bit32(uint, 1);
+
+        let entry_point = builder
+            .begin_function(void, None, FunctionControl::NONE, fn_ty)
+            .unwrap();
+        builder.begin_block(None).unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+
+        builder.entry_point(ExecutionModel::GLCompute, entry_point, "main", []);
+        builder.execution_mode_id(
+            entry_point,
+            ExecutionMode::LocalSizeId,
+            [local_size, local_size, local_size],
+        );
+
+        let words = builder.module().assemble();
+        let options = ValidationOptions {
+            allow_localsizeid: true,
+            ..ValidationOptions::default()
+        };
+        words
+            .as_slice()
+            .validate_with_options(TargetEnv::Vulkan1_1, options)
+            .expect("LocalSizeId should be allowed when option is enabled");
     }
 
     #[test]
