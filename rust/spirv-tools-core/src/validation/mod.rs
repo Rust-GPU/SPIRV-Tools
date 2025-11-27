@@ -9398,6 +9398,35 @@ mod tests {
     }
 
     #[test]
+    fn opencl_rejects_google_and_amd_vendor_extensions() {
+        let google = opencl_module_with_extension("SPV_GOOGLE_decorate_string");
+        let error = google
+            .as_str()
+            .validate(TargetEnv::OpenCl2_1)
+            .expect_err("GOOGLE vendor extensions are not permitted for OpenCL targets");
+        assert_eq!(
+            error,
+            ValidationError::DisallowedExtension {
+                extension: ExtensionName::from("SPV_GOOGLE_decorate_string"),
+                env: TargetEnv::OpenCl2_1
+            }
+        );
+
+        let amd = opencl_module_with_extension("SPV_AMD_shader_ballot");
+        let error = amd
+            .as_str()
+            .validate(TargetEnv::OpenCl2_1)
+            .expect_err("AMD vendor extensions are not permitted for OpenCL targets");
+        assert_eq!(
+            error,
+            ValidationError::DisallowedExtension {
+                extension: ExtensionName::from("SPV_AMD_shader_ballot"),
+                env: TargetEnv::OpenCl2_1
+            }
+        );
+    }
+
+    #[test]
     fn validate_module_rejects_duplicate_extension() {
         // Hand-assemble a module with duplicate OpExtension instructions.
         let extension_word = 0x0006_000a; // word count 6, opcode OpExtension (10)
