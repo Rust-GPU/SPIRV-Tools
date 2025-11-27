@@ -304,8 +304,9 @@ int main(int argc, char** argv) {
   if (force_rust_validator) use_rust_validator = true;
   if (custom_options && use_rust_validator) {
     std::cerr << "warning: validator CLI options are not yet forwarded to the "
-                 "Rust validator; results may differ from the legacy validator."
+                 "Rust validator; falling back to the legacy validator."
               << std::endl;
+    use_rust_validator = false;
   }
 #else
   bool use_rust_validator = false;
