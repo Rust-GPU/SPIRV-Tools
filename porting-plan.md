@@ -46,6 +46,16 @@ Tasks for this milestone:
 - [x] Add hyperfine benchmarks alongside criterion for optimizer passes to mirror C++ tooling.
 - [ ] Wire the Rust optimizer into the CLI/FFI path behind a flag and start porting more C++ optimizer passes using e-graphs where beneficial.
 
+## Upcoming Milestone: Optimizer Integration in CLI/FFI
+Connect the Rust arithmetic optimizer to user-facing entry points with safety toggles and parity tests.
+
+Planned tasks:
+- Add a CLI flag and FFI toggle to route `spirv-opt` through the Rust optimizer for supported passes while falling back to C++ for the rest.
+- Port C++ optimizer regression tests for arithmetic canonicalization to Rust integration tests (CLI + FFI) to lock behavior.
+- Thread error handling through `thiserror` types at the optimizer boundary and surface structured errors to FFI/CLI callers.
+- Add end-to-end benchmarks (criterion + hyperfine) comparing Rust vs. C++ optimizer for supported passes.
+- Expand e-graph coverage to additional algebraic identities and ensure the reconstructed SPIR-V preserves ids and layout invariants.
+
 
 ## Active Milestone: Structural Validator Rules
 Enforce target-environment specific structural rules and reuse validated modules across interfaces.
