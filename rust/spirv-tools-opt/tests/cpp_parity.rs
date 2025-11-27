@@ -56,6 +56,77 @@ fn rust_and_cpp_fold_const_add() {
     );
 }
 
+#[test]
+fn rust_and_cpp_fold_mul_by_zero() {
+    let cpp_opt = match env::var("SPIRV_CPP_OPT") {
+        Ok(path) if !path.is_empty() => path,
+        _ => {
+            eprintln!("SPIRV_CPP_OPT not set; skipping C++ parity check");
+            return;
+        }
+    };
+
+    let module_words = build_mul_zero_module();
+    let rust_insts = extract_mul_zero_block(&module_words);
+    let rust_optimized =
+        spirv_tools_opt::translate::optimize_arith_block(&rust_insts).expect("rust optimizer");
+    let rust_zero_const = rust_optimized.iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(5)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0)]
+    });
+    let rust_has_mul = rust_optimized
+        .iter()
+        .any(|inst| inst.class.opcode == Op::IMul);
+    assert!(
+        rust_zero_const,
+        "rust optimizer should fold mul by zero to const 0"
+    );
+    assert!(
+        !rust_has_mul,
+        "rust optimizer should remove mul instruction"
+    );
+
+    let mut input = NamedTempFile::new().expect("input temp");
+    input
+        .write_all(&words_to_bytes(&module_words))
+        .expect("write input");
+    let output = NamedTempFile::new().expect("output temp");
+    let status = Command::new(&cpp_opt)
+        .arg(input.path())
+        .arg("-o")
+        .arg(output.path())
+        .arg("-O")
+        .status()
+        .expect("run spirv-opt");
+    assert!(status.success(), "C++ spirv-opt failed");
+    let cpp_words = bytes_to_words(&fs::read(output.path()).expect("read output"));
+    let mut cpp_loader = rspirv::dr::Loader::new();
+    parse_words(&cpp_words, &mut cpp_loader).expect("parse cpp optimized");
+    let module = cpp_loader.module();
+    let mut cpp_zero_const = false;
+    let mut cpp_has_mul = false;
+    for inst in module.all_inst_iter() {
+        if inst.class.opcode == Op::IMul {
+            cpp_has_mul = true;
+        }
+        if inst.class.opcode == Op::Constant
+            && inst.result_id == Some(5)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0)]
+        {
+            cpp_zero_const = true;
+        }
+    }
+    assert!(
+        cpp_zero_const,
+        "C++ spirv-opt should fold mul by zero to const 0"
+    );
+    assert!(
+        !cpp_has_mul,
+        "C++ spirv-opt should remove mul instruction after folding"
+    );
+}
+
 fn build_const_add_module() -> (Vec<u32>, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
@@ -85,6 +156,39 @@ fn extract_arith_block(module_words: &[u32]) -> Vec<rspirv::dr::Instruction> {
         .iter()
         .chain(block.instructions.iter())
         .filter(|inst| matches!(inst.class.opcode, Op::Constant | Op::IAdd))
+        .cloned()
+        .collect()
+}
+
+fn build_mul_zero_module() -> Vec<u32> {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let _ = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let c4 = b.constant_bit32(int, 4);
+    let c0 = b.constant_bit32(int, 0);
+    let _ = b.i_mul(int, None, c4, c0).expect("mul");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    b.module().assemble()
+}
+
+fn extract_mul_zero_block(module_words: &[u32]) -> Vec<rspirv::dr::Instruction> {
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(module_words, &mut loader).expect("parse module");
+    let module = loader.module();
+    let block = &module.functions[0].blocks[0];
+    module
+        .types_global_values
+        .iter()
+        .chain(block.instructions.iter())
+        .filter(|inst| matches!(inst.class.opcode, Op::Constant | Op::IMul))
         .cloned()
         .collect()
 }
