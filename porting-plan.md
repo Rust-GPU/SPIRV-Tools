@@ -109,6 +109,7 @@ Tasks for this milestone:
 - Thread effective SPIR-V version and env clamping through these ordering checks for precise diagnostics.
 - Keep CLI/FFI caching wired so validated modules reused across calls do not reparse/revalidate after ordering enforcement.
 - Keep conditional capabilities/extensions/entry points in the parsed module so validation applies allowlists/version gates; conditional extensions now respect env allowlists with regressions for non-Vulkan/WebGPU targets.
+- Treat conditional entry points equivalently to standard entry points when validating targets and execution modes; added binary regressions for invalid targets and execution-mode linkage.
 
 ## Upcoming Milestone: Capability/Extension Parity
 Bring the Rust validator to full capability/extension parity with the C++ tables using the grammar-driven dependency metadata and explicit per-environment rules.

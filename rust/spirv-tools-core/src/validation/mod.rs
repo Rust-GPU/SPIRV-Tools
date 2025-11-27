@@ -3063,14 +3063,19 @@ fn validate_entry_points(
 ) -> Result<HashSet<ResultId>, ValidationError> {
     let mut entry_points = HashSet::new();
     for ep in &module.entry_points {
+        let entry_opcode = ep.class.opcode;
         let mut operands = ep.operands.iter();
-        // First operand is ExecutionModel; skip it.
+        if entry_opcode == rspirv::spirv::Op::ConditionalEntryPointINTEL {
+            // Skip the condition operand.
+            let _ = operands.next();
+        }
+        // Next operand is ExecutionModel; skip it.
         let _ = operands.next();
         let function_id = match operands.next() {
             Some(rspirv::dr::Operand::IdRef(id)) => {
                 ResultId::try_from(*id).map_err(|_| ValidationError::ZeroId {
                     kind: IdKind::Operand,
-                    opcode: rspirv::spirv::Op::EntryPoint,
+                    opcode: entry_opcode,
                 })?
             }
             _ => continue,
@@ -3096,7 +3101,7 @@ fn validate_entry_points(
                 let interface_id =
                     ResultId::try_from(*id).map_err(|_| ValidationError::ZeroId {
                         kind: IdKind::Operand,
-                        opcode: rspirv::spirv::Op::EntryPoint,
+                        opcode: entry_opcode,
                     })?;
                 if !defined_ids.contains(&interface_id) {
                     return Err(ValidationError::MissingEntryPointTarget {
@@ -8090,6 +8095,131 @@ mod tests {
         text.as_str()
             .validate(TargetEnv::Universal1_6)
             .expect("execution mode targets entry point");
+    }
+
+    #[test]
+    fn conditional_entry_point_must_reference_function() {
+        let intel_function_variants_ext = [
+            1599492179, 1163152969, 1969643340, 1769235310, 1985965679, 1634300513, 7566446,
+        ];
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            8,          // bound (ids up to 7)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(2, 17), // OpCapability SpecConditionalINTEL
+            rspirv::spirv::Capability::SpecConditionalINTEL as u32,
+            0x0008_000a, // OpExtension "SPV_INTEL_function_variants"
+            intel_function_variants_ext[0],
+            intel_function_variants_ext[1],
+            intel_function_variants_ext[2],
+            intel_function_variants_ext[3],
+            intel_function_variants_ext[4],
+            intel_function_variants_ext[5],
+            intel_function_variants_ext[6],
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(6, 6249), // OpConditionalEntryPointINTEL %5 Vertex %5 "main"
+            5,
+            rspirv::spirv::ExecutionModel::Vertex as u32,
+            5,
+            0x6e69_616d,
+            0,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+            op(2, 20), // OpTypeBool %3
+            3,
+            op(3, 41), // OpConstantTrue %3 %5
+            3,
+            5,
+            op(5, 54), // OpFunction %1 %6 None %2
+            1,
+            6,
+            0,
+            2,
+            op(2, 248), // OpLabel %7
+            7,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::InvalidEntryPointTarget {
+                target: Id::try_from(5).unwrap(),
+                opcode: rspirv::spirv::Op::ConstantTrue
+            }
+        );
+    }
+
+    #[test]
+    fn conditional_entry_point_accepts_execution_modes() {
+        let intel_function_variants_ext = [
+            1599492179, 1163152969, 1969643340, 1769235310, 1985965679, 1634300513, 7566446,
+        ];
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            9,          // bound (ids up to 8)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(2, 17), // OpCapability SpecConditionalINTEL
+            rspirv::spirv::Capability::SpecConditionalINTEL as u32,
+            0x0008_000a, // OpExtension "SPV_INTEL_function_variants"
+            intel_function_variants_ext[0],
+            intel_function_variants_ext[1],
+            intel_function_variants_ext[2],
+            intel_function_variants_ext[3],
+            intel_function_variants_ext[4],
+            intel_function_variants_ext[5],
+            intel_function_variants_ext[6],
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(6, 6249), // OpConditionalEntryPointINTEL %5 Vertex %7 "main"
+            5,
+            rspirv::spirv::ExecutionModel::Vertex as u32,
+            7,
+            0x6e69_616d,
+            0,
+            op(3, 16), // OpExecutionMode %7 OriginUpperLeft
+            7,
+            rspirv::spirv::ExecutionMode::OriginUpperLeft as u32,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+            op(2, 20), // OpTypeBool %3
+            3,
+            op(3, 41), // OpConstantTrue %3 %5
+            3,
+            5,
+            op(5, 54), // OpFunction %1 %7 None %2
+            1,
+            7,
+            0,
+            2,
+            op(2, 248), // OpLabel %8
+            8,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+
+        binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect("conditional entry points should participate in execution-mode validation");
     }
 
     #[test]
