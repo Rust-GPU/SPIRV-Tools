@@ -127,6 +127,7 @@ Align environment-specific extension allowlists with the C++ validator and gramm
 
 Planned tasks:
 - Import extension→environment allowlists from the grammar/C++ tables and enforce them in `TargetEnv::is_extension_allowed`.
+- Replace prefix heuristics with a generated, data-driven table (pulled from the grammar/tables) so Vulkan/OpenCL/OpenGL/WebGPU all share the same allowlists as C++. Vendor-family classifier scaffolding and tests are in place; next step is to load the table and delete the heuristics.
 - Add Rust regressions for vendor extensions (INTEL/NV/AMD) across Vulkan/OpenCL/WebGPU/Universal environments.
 - Ensure capability checks reuse the stricter extension allowlists so vendor capabilities are rejected when their extensions are disallowed.
 - Keep the FFI/CLI caches wired through these checks to avoid revalidation for repeated inputs.
