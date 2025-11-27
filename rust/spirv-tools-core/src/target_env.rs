@@ -3,16 +3,10 @@ use crate::{
     version::{SpirvVersion, VulkanVersion},
 };
 
-const VULKAN_VENDOR_PREFIXES: &[&str] = &[
-    "spv_nv_",
-    "spv_nvx_",
-    "spv_amd_",
-    "spv_amdx_",
-    "spv_google_",
-    "spv_ext_",
-    "spv_qcom_",
-    "spv_arm_",
-];
+const VULKAN_ONLY_VENDOR_PREFIXES: &[&str] =
+    &["spv_nv_", "spv_nvx_", "spv_amdx_", "spv_qcom_", "spv_arm_"];
+
+const GENERAL_VENDOR_PREFIXES: &[&str] = &["spv_amd_", "spv_ext_", "spv_google_"];
 
 const OPENCL_VENDOR_PREFIXES: &[&str] = &["spv_intel_", "spv_altera_"];
 
@@ -460,8 +454,11 @@ impl TargetEnv {
         if is_vulkan_specific_extension(extension.as_str()) || lower.contains("vulkan") {
             return self.is_vulkan();
         }
-        if has_any_prefix(&lower, VULKAN_VENDOR_PREFIXES) {
+        if has_any_prefix(&lower, VULKAN_ONLY_VENDOR_PREFIXES) {
             return self.is_vulkan();
+        }
+        if has_any_prefix(&lower, GENERAL_VENDOR_PREFIXES) {
+            return !self.is_opencl();
         }
         if has_any_prefix(&lower, OPENCL_VENDOR_PREFIXES) {
             return self.is_opencl() || self.is_universal();
@@ -855,7 +852,7 @@ mod tests {
 
         let amd_ext = ExtensionName::from("SPV_AMD_shader_trinary_minmax");
         assert!(TargetEnv::Vulkan1_2.is_extension_allowed(&amd_ext));
-        assert!(!TargetEnv::Universal1_6.is_extension_allowed(&amd_ext));
+        assert!(TargetEnv::Universal1_6.is_extension_allowed(&amd_ext));
         assert!(!TargetEnv::OpenCl1_2.is_extension_allowed(&amd_ext));
 
         let amdx_ext = ExtensionName::from("SPV_AMDX_shader_enqueue");
@@ -865,7 +862,7 @@ mod tests {
 
         let google_ext = ExtensionName::from("SPV_GOOGLE_decorate_string");
         assert!(TargetEnv::Vulkan1_2.is_extension_allowed(&google_ext));
-        assert!(!TargetEnv::Universal1_6.is_extension_allowed(&google_ext));
+        assert!(TargetEnv::Universal1_6.is_extension_allowed(&google_ext));
         assert!(!TargetEnv::OpenCl1_2.is_extension_allowed(&google_ext));
 
         let qcom_ext = ExtensionName::from("SPV_QCOM_image_processing");

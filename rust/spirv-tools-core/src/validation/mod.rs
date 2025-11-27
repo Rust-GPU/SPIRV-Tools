@@ -9384,6 +9384,20 @@ mod tests {
     }
 
     #[test]
+    fn universal_allows_google_and_amd_extensions() {
+        let google = module_with_extension("SPV_GOOGLE_decorate_string");
+        google
+            .as_str()
+            .validate(TargetEnv::Universal1_6)
+            .expect("GOOGLE extensions should be allowed for universal environments");
+
+        let amd = module_with_extension("SPV_AMD_shader_ballot");
+        amd.as_str()
+            .validate(TargetEnv::Universal1_6)
+            .expect("AMD extensions should be allowed for universal environments");
+    }
+
+    #[test]
     fn validate_module_rejects_duplicate_extension() {
         // Hand-assemble a module with duplicate OpExtension instructions.
         let extension_word = 0x0006_000a; // word count 6, opcode OpExtension (10)
