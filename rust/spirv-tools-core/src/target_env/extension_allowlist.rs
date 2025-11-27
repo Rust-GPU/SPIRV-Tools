@@ -2,1677 +2,200 @@
 use crate::target_env::TargetEnv;
 
 #[derive(Clone, Copy)]
-pub struct ExtensionAllowlist {
-    pub allow_vulkan: bool,
-    pub allow_opencl: bool,
-    pub allow_opengl: bool,
-    pub allow_universal: bool,
-}
+pub struct ExtensionAllowlist { pub allow_vulkan: bool, pub allow_opencl: bool, pub allow_opengl: bool, pub allow_universal: bool }
 
 impl ExtensionAllowlist {
     pub const fn allowed_for(self, env: TargetEnv) -> bool {
-        if env.is_vulkan() {
-            return self.allow_vulkan;
-        }
-        if env.is_opencl() {
-            return self.allow_opencl;
-        }
-        if env.is_opengl() {
-            return self.allow_opengl;
-        }
-        if env.is_universal() {
-            return self.allow_universal;
-        }
+        if env.is_vulkan() { return self.allow_vulkan; }
+        if env.is_opencl() { return self.allow_opencl; }
+        if env.is_opengl() { return self.allow_opengl; }
+        if env.is_universal() { return self.allow_universal; }
         false
     }
 }
 
 pub const EXTENSION_ALLOWLIST: &[(&str, ExtensionAllowlist)] = &[
-    (
-        "SPV_ALTERA_arbitrary_precision_fixed_point",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_ALTERA_arbitrary_precision_floating_point",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_ALTERA_arbitrary_precision_integers",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_ALTERA_blocking_pipes",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_ALTERA_fpga_argument_interfaces",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_ALTERA_fpga_buffer_location",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_ALTERA_fpga_cluster_attributes",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_ALTERA_fpga_dsp_control",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_ALTERA_fpga_invocation_pipelining_attributes",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_ALTERA_fpga_latency_control",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_ALTERA_fpga_loop_controls",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_ALTERA_fpga_memory_accesses",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_ALTERA_fpga_memory_attributes",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_ALTERA_fpga_reg",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_ALTERA_global_variable_fpga_decorations",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_ALTERA_io_pipes",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_ALTERA_loop_fuse",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_ALTERA_runtime_aligned",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_ALTERA_task_sequence",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_ALTERA_usm_storage_classes",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_AMD_gcn_shader",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_AMD_gpu_shader_half_float",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_AMD_gpu_shader_half_float_fetch",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_AMD_gpu_shader_int16",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_AMD_shader_ballot",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_AMD_shader_early_and_late_fragment_tests",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_AMD_shader_explicit_vertex_parameter",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_AMD_shader_fragment_mask",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_AMD_shader_image_load_store_lod",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_AMD_shader_trinary_minmax",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_AMD_texture_gather_bias_lod",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_AMDX_shader_enqueue",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_ARM_cooperative_matrix_layouts",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_ARM_core_builtins",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_ARM_graph",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_ARM_tensors",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_EXT_arithmetic_fence",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_EXT_demote_to_helper_invocation",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_EXT_descriptor_indexing",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_EXT_float8",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_EXT_fragment_fully_covered",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_EXT_fragment_invocation_density",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_EXT_fragment_shader_interlock",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_EXT_mesh_shader",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_EXT_opacity_micromap",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_EXT_optnone",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_EXT_physical_storage_buffer",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_EXT_relaxed_printf_string_address_space",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_EXT_replicated_composites",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_EXT_shader_64bit_indexing",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_EXT_shader_atomic_float16_add",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_EXT_shader_atomic_float_add",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_EXT_shader_atomic_float_min_max",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_EXT_shader_image_int64",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_EXT_shader_invocation_reorder",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_EXT_shader_stencil_export",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_EXT_shader_tile_image",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_EXT_shader_viewport_index_layer",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_GOOGLE_decorate_string",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_GOOGLE_hlsl_functionality1",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_GOOGLE_user_type",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_2d_block_io",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_arbitrary_precision_fixed_point",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_arbitrary_precision_floating_point",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_arbitrary_precision_integers",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_bfloat16_conversion",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_bindless_images",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_blocking_pipes",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_cache_controls",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_debug_module",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_device_side_avc_motion_estimation",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_float_controls2",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_fp_fast_math_mode",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_fp_max_error",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_fpga_argument_interfaces",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_fpga_buffer_location",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_fpga_cluster_attributes",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_fpga_dsp_control",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_fpga_invocation_pipelining_attributes",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_fpga_latency_control",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_fpga_loop_controls",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_fpga_memory_accesses",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_fpga_memory_attributes",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_fpga_reg",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_function_pointers",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_function_variants",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_global_variable_fpga_decorations",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_global_variable_host_access",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_inline_assembly",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_int4",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_io_pipes",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_kernel_attributes",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_long_composites",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_loop_fuse",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_masked_gather_scatter",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_maximum_registers",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_media_block_io",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_memory_access_aliasing",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_optnone",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_runtime_aligned",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_shader_integer_functions2",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_split_barrier",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_subgroup_buffer_prefetch",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_subgroup_matrix_multiply_accumulate",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_subgroups",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_task_sequence",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_tensor_float32_conversion",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_ternary_bitwise_function",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_unstructured_loop_controls",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_usm_storage_classes",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_variable_length_array",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_INTEL_vector_compute",
-        ExtensionAllowlist {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_KHR_16bit_storage",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: true,
-            allow_opengl: true,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_KHR_8bit_storage",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: true,
-            allow_opengl: true,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_KHR_bfloat16",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: true,
-            allow_opengl: true,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_KHR_bit_instructions",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: true,
-            allow_opengl: true,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_KHR_compute_shader_derivatives",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: true,
-            allow_opengl: true,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_KHR_cooperative_matrix",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_KHR_device_group",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_KHR_expect_assume",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: true,
-            allow_opengl: true,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_KHR_float_controls",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: true,
-            allow_opengl: true,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_KHR_float_controls2",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: true,
-            allow_opengl: true,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_KHR_fma",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: true,
-            allow_opengl: true,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_KHR_fragment_shader_barycentric",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_KHR_fragment_shading_rate",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_KHR_integer_dot_product",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: true,
-            allow_opengl: true,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_KHR_linkonce_odr",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: true,
-            allow_opengl: true,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_KHR_maximal_reconvergence",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: true,
-            allow_opengl: true,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_KHR_multiview",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: true,
-            allow_opengl: true,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_KHR_no_integer_wrap_decoration",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: true,
-            allow_opengl: true,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_KHR_non_semantic_info",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: true,
-            allow_opengl: true,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_KHR_physical_storage_buffer",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_KHR_post_depth_coverage",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: true,
-            allow_opengl: true,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_KHR_quad_control",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: true,
-            allow_opengl: true,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_KHR_ray_cull_mask",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: true,
-            allow_opengl: true,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_KHR_ray_query",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_KHR_ray_tracing",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_KHR_ray_tracing_position_fetch",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_KHR_relaxed_extended_instruction",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: true,
-            allow_opengl: true,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_KHR_shader_atomic_counter_ops",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: true,
-            allow_opengl: true,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_KHR_shader_ballot",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: true,
-            allow_opengl: true,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_KHR_shader_clock",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_KHR_shader_draw_parameters",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: true,
-            allow_opengl: true,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_KHR_storage_buffer_storage_class",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: true,
-            allow_opengl: true,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_KHR_subgroup_rotate",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: true,
-            allow_opengl: true,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_KHR_subgroup_uniform_control_flow",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_KHR_subgroup_vote",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: true,
-            allow_opengl: true,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_KHR_terminate_invocation",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: true,
-            allow_opengl: true,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_KHR_uniform_group_instructions",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: true,
-            allow_opengl: true,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_KHR_untyped_pointers",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_KHR_variable_pointers",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: true,
-            allow_opengl: true,
-            allow_universal: true,
-        },
-    ),
-    (
-        "SPV_KHR_vulkan_memory_model",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_KHR_workgroup_memory_explicit_layout",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_NV_bindless_texture",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_NV_cluster_acceleration_structure",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_NV_compute_shader_derivatives",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_NV_cooperative_matrix",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_NV_cooperative_matrix2",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_NV_cooperative_vector",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_NV_displacement_micromap",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_NV_fragment_shader_barycentric",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_NV_geometry_shader_passthrough",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_NV_linear_swept_spheres",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_NV_mesh_shader",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_NV_raw_access_chains",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_NV_ray_tracing",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_NV_ray_tracing_motion_blur",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_NV_sample_mask_override_coverage",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_NV_shader_atomic_fp16_vector",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_NV_shader_image_footprint",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_NV_shader_invocation_reorder",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_NV_shader_sm_builtins",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_NV_shader_subgroup_partitioned",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_NV_shading_rate",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_NV_stereo_view_rendering",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_NV_tensor_addressing",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_NV_viewport_array2",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_NVX_multiview_per_view_attributes",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_QCOM_cooperative_matrix_conversion",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_QCOM_image_processing",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_QCOM_image_processing2",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_QCOM_tile_shading",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        },
-    ),
-    (
-        "SPV_VALIDATOR_ignore_type_decl_unique",
-        ExtensionAllowlist {
-            allow_vulkan: true,
-            allow_opencl: true,
-            allow_opengl: true,
-            allow_universal: true,
-        },
-    ),
+    ("SPV_ALTERA_arbitrary_precision_fixed_point", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_ALTERA_arbitrary_precision_floating_point", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_ALTERA_arbitrary_precision_integers", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_ALTERA_blocking_pipes", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_ALTERA_fpga_argument_interfaces", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_ALTERA_fpga_buffer_location", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_ALTERA_fpga_cluster_attributes", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_ALTERA_fpga_dsp_control", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_ALTERA_fpga_invocation_pipelining_attributes", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_ALTERA_fpga_latency_control", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_ALTERA_fpga_loop_controls", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_ALTERA_fpga_memory_accesses", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_ALTERA_fpga_memory_attributes", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_ALTERA_fpga_reg", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_ALTERA_global_variable_fpga_decorations", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_ALTERA_io_pipes", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_ALTERA_loop_fuse", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_ALTERA_runtime_aligned", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_ALTERA_task_sequence", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_ALTERA_usm_storage_classes", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_AMD_gcn_shader", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: true }),
+    ("SPV_AMD_gpu_shader_half_float", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: true }),
+    ("SPV_AMD_gpu_shader_half_float_fetch", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: true }),
+    ("SPV_AMD_gpu_shader_int16", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: true }),
+    ("SPV_AMD_shader_ballot", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: true }),
+    ("SPV_AMD_shader_early_and_late_fragment_tests", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: true }),
+    ("SPV_AMD_shader_explicit_vertex_parameter", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: true }),
+    ("SPV_AMD_shader_fragment_mask", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: true }),
+    ("SPV_AMD_shader_image_load_store_lod", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: true }),
+    ("SPV_AMD_shader_trinary_minmax", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: true }),
+    ("SPV_AMD_texture_gather_bias_lod", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: true }),
+    ("SPV_AMDX_shader_enqueue", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_ARM_cooperative_matrix_layouts", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_ARM_core_builtins", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_ARM_graph", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_ARM_tensors", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_EXT_arithmetic_fence", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: true }),
+    ("SPV_EXT_demote_to_helper_invocation", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: true }),
+    ("SPV_EXT_descriptor_indexing", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_EXT_float8", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: true }),
+    ("SPV_EXT_fragment_fully_covered", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: true }),
+    ("SPV_EXT_fragment_invocation_density", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_EXT_fragment_shader_interlock", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_EXT_mesh_shader", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_EXT_opacity_micromap", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: true }),
+    ("SPV_EXT_optnone", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: true }),
+    ("SPV_EXT_physical_storage_buffer", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: true }),
+    ("SPV_EXT_relaxed_printf_string_address_space", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: true }),
+    ("SPV_EXT_replicated_composites", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: true }),
+    ("SPV_EXT_shader_64bit_indexing", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: true }),
+    ("SPV_EXT_shader_atomic_float16_add", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: true }),
+    ("SPV_EXT_shader_atomic_float_add", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_EXT_shader_atomic_float_min_max", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_EXT_shader_image_int64", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: true }),
+    ("SPV_EXT_shader_invocation_reorder", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_EXT_shader_stencil_export", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: true }),
+    ("SPV_EXT_shader_tile_image", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: true }),
+    ("SPV_EXT_shader_viewport_index_layer", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: true }),
+    ("SPV_GOOGLE_decorate_string", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: true }),
+    ("SPV_GOOGLE_hlsl_functionality1", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: true }),
+    ("SPV_GOOGLE_user_type", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_2d_block_io", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_arbitrary_precision_fixed_point", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_arbitrary_precision_floating_point", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_arbitrary_precision_integers", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_bfloat16_conversion", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_bindless_images", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_blocking_pipes", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_cache_controls", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_debug_module", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_device_side_avc_motion_estimation", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_float_controls2", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_fp_fast_math_mode", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_fp_max_error", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_fpga_argument_interfaces", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_fpga_buffer_location", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_fpga_cluster_attributes", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_fpga_dsp_control", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_fpga_invocation_pipelining_attributes", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_fpga_latency_control", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_fpga_loop_controls", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_fpga_memory_accesses", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_fpga_memory_attributes", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_fpga_reg", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_function_pointers", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_function_variants", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_global_variable_fpga_decorations", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_global_variable_host_access", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_inline_assembly", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_int4", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_io_pipes", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_kernel_attributes", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_long_composites", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_loop_fuse", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_masked_gather_scatter", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_maximum_registers", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_media_block_io", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_memory_access_aliasing", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_optnone", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_runtime_aligned", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_shader_integer_functions2", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_split_barrier", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_subgroup_buffer_prefetch", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_subgroup_matrix_multiply_accumulate", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_subgroups", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_task_sequence", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_tensor_float32_conversion", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_ternary_bitwise_function", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_unstructured_loop_controls", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_usm_storage_classes", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_variable_length_array", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_INTEL_vector_compute", ExtensionAllowlist { allow_vulkan: false, allow_opencl: true, allow_opengl: false, allow_universal: true }),
+    ("SPV_KHR_16bit_storage", ExtensionAllowlist { allow_vulkan: true, allow_opencl: true, allow_opengl: true, allow_universal: true }),
+    ("SPV_KHR_8bit_storage", ExtensionAllowlist { allow_vulkan: true, allow_opencl: true, allow_opengl: true, allow_universal: true }),
+    ("SPV_KHR_bfloat16", ExtensionAllowlist { allow_vulkan: true, allow_opencl: true, allow_opengl: true, allow_universal: true }),
+    ("SPV_KHR_bit_instructions", ExtensionAllowlist { allow_vulkan: true, allow_opencl: true, allow_opengl: true, allow_universal: true }),
+    ("SPV_KHR_compute_shader_derivatives", ExtensionAllowlist { allow_vulkan: true, allow_opencl: true, allow_opengl: true, allow_universal: true }),
+    ("SPV_KHR_cooperative_matrix", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_KHR_device_group", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_KHR_expect_assume", ExtensionAllowlist { allow_vulkan: true, allow_opencl: true, allow_opengl: true, allow_universal: true }),
+    ("SPV_KHR_float_controls", ExtensionAllowlist { allow_vulkan: true, allow_opencl: true, allow_opengl: true, allow_universal: true }),
+    ("SPV_KHR_float_controls2", ExtensionAllowlist { allow_vulkan: true, allow_opencl: true, allow_opengl: true, allow_universal: true }),
+    ("SPV_KHR_fma", ExtensionAllowlist { allow_vulkan: true, allow_opencl: true, allow_opengl: true, allow_universal: true }),
+    ("SPV_KHR_fragment_shader_barycentric", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_KHR_fragment_shading_rate", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_KHR_integer_dot_product", ExtensionAllowlist { allow_vulkan: true, allow_opencl: true, allow_opengl: true, allow_universal: true }),
+    ("SPV_KHR_linkonce_odr", ExtensionAllowlist { allow_vulkan: true, allow_opencl: true, allow_opengl: true, allow_universal: true }),
+    ("SPV_KHR_maximal_reconvergence", ExtensionAllowlist { allow_vulkan: true, allow_opencl: true, allow_opengl: true, allow_universal: true }),
+    ("SPV_KHR_multiview", ExtensionAllowlist { allow_vulkan: true, allow_opencl: true, allow_opengl: true, allow_universal: true }),
+    ("SPV_KHR_no_integer_wrap_decoration", ExtensionAllowlist { allow_vulkan: true, allow_opencl: true, allow_opengl: true, allow_universal: true }),
+    ("SPV_KHR_non_semantic_info", ExtensionAllowlist { allow_vulkan: true, allow_opencl: true, allow_opengl: true, allow_universal: true }),
+    ("SPV_KHR_physical_storage_buffer", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_KHR_post_depth_coverage", ExtensionAllowlist { allow_vulkan: true, allow_opencl: true, allow_opengl: true, allow_universal: true }),
+    ("SPV_KHR_quad_control", ExtensionAllowlist { allow_vulkan: true, allow_opencl: true, allow_opengl: true, allow_universal: true }),
+    ("SPV_KHR_ray_cull_mask", ExtensionAllowlist { allow_vulkan: true, allow_opencl: true, allow_opengl: true, allow_universal: true }),
+    ("SPV_KHR_ray_query", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_KHR_ray_tracing", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_KHR_ray_tracing_position_fetch", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_KHR_relaxed_extended_instruction", ExtensionAllowlist { allow_vulkan: true, allow_opencl: true, allow_opengl: true, allow_universal: true }),
+    ("SPV_KHR_shader_atomic_counter_ops", ExtensionAllowlist { allow_vulkan: true, allow_opencl: true, allow_opengl: true, allow_universal: true }),
+    ("SPV_KHR_shader_ballot", ExtensionAllowlist { allow_vulkan: true, allow_opencl: true, allow_opengl: true, allow_universal: true }),
+    ("SPV_KHR_shader_clock", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_KHR_shader_draw_parameters", ExtensionAllowlist { allow_vulkan: true, allow_opencl: true, allow_opengl: true, allow_universal: true }),
+    ("SPV_KHR_storage_buffer_storage_class", ExtensionAllowlist { allow_vulkan: true, allow_opencl: true, allow_opengl: true, allow_universal: true }),
+    ("SPV_KHR_subgroup_rotate", ExtensionAllowlist { allow_vulkan: true, allow_opencl: true, allow_opengl: true, allow_universal: true }),
+    ("SPV_KHR_subgroup_uniform_control_flow", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_KHR_subgroup_vote", ExtensionAllowlist { allow_vulkan: true, allow_opencl: true, allow_opengl: true, allow_universal: true }),
+    ("SPV_KHR_terminate_invocation", ExtensionAllowlist { allow_vulkan: true, allow_opencl: true, allow_opengl: true, allow_universal: true }),
+    ("SPV_KHR_uniform_group_instructions", ExtensionAllowlist { allow_vulkan: true, allow_opencl: true, allow_opengl: true, allow_universal: true }),
+    ("SPV_KHR_untyped_pointers", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_KHR_variable_pointers", ExtensionAllowlist { allow_vulkan: true, allow_opencl: true, allow_opengl: true, allow_universal: true }),
+    ("SPV_KHR_vulkan_memory_model", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_KHR_workgroup_memory_explicit_layout", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_NV_bindless_texture", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_NV_cluster_acceleration_structure", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_NV_compute_shader_derivatives", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_NV_cooperative_matrix", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_NV_cooperative_matrix2", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_NV_cooperative_vector", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_NV_displacement_micromap", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_NV_fragment_shader_barycentric", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_NV_geometry_shader_passthrough", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_NV_linear_swept_spheres", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_NV_mesh_shader", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_NV_raw_access_chains", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_NV_ray_tracing", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_NV_ray_tracing_motion_blur", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_NV_sample_mask_override_coverage", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_NV_shader_atomic_fp16_vector", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_NV_shader_image_footprint", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_NV_shader_invocation_reorder", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_NV_shader_sm_builtins", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_NV_shader_subgroup_partitioned", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_NV_shading_rate", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_NV_stereo_view_rendering", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_NV_tensor_addressing", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_NV_viewport_array2", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_NVX_multiview_per_view_attributes", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_QCOM_cooperative_matrix_conversion", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_QCOM_image_processing", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_QCOM_image_processing2", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_QCOM_tile_shading", ExtensionAllowlist { allow_vulkan: true, allow_opencl: false, allow_opengl: false, allow_universal: false }),
+    ("SPV_VALIDATOR_ignore_type_decl_unique", ExtensionAllowlist { allow_vulkan: true, allow_opencl: true, allow_opengl: true, allow_universal: true }),
 ];
