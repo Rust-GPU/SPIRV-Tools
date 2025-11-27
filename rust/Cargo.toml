@@ -3,6 +3,7 @@ members = [
     "spirv-tools-core",
     "spirv-tools-cli",
     "spirv-tools-ffi",
+    "spirv-tools-opt",
 ]
 resolver = "2"
 

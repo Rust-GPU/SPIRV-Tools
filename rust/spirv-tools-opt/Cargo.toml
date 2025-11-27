@@ -1,0 +1,12 @@
+[package]
+name = "spirv-tools-opt"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+egg = "0.9"
+spirv-tools-core = { path = "../spirv-tools-core" }
+
+[dev-dependencies]
+pretty_assertions = "1.4"
