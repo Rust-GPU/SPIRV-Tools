@@ -8284,6 +8284,45 @@ mod tests {
     }
 
     #[test]
+    fn mesh_shading_ext_capability_rejected_outside_vulkan_even_with_extension() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability MeshShadingEXT",
+            "OpExtension \"SPV_EXT_mesh_shader\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+
+        for env in [
+            TargetEnv::Universal1_6,
+            TargetEnv::OpenCl2_2,
+            TargetEnv::OpenGl4_5,
+        ] {
+            let error = text
+                .as_str()
+                .validate(env)
+                .expect_err("MeshShadingEXT should be rejected when its extension is disallowed");
+            assert_eq!(
+                error,
+                ValidationError::DisallowedExtension {
+                    extension: ExtensionName::from("SPV_EXT_mesh_shader"),
+                    env
+                }
+            );
+        }
+
+        text.as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("MeshShadingEXT should be accepted for Vulkan targets");
+    }
+
+    #[test]
     fn shader_sm_builtins_capability_rejected_outside_vulkan_even_with_extension() {
         let text = [
             "OpCapability Shader",
@@ -8319,6 +8358,121 @@ mod tests {
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("ShaderSMBuiltinsNV should be accepted for Vulkan targets");
+    }
+
+    #[test]
+    fn fragment_shader_interlock_capability_rejected_outside_vulkan_even_with_extension() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability FragmentShaderPixelInterlockEXT",
+            "OpExtension \"SPV_EXT_fragment_shader_interlock\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+
+        for env in [
+            TargetEnv::Universal1_6,
+            TargetEnv::OpenCl2_2,
+            TargetEnv::OpenGl4_5,
+        ] {
+            let error = text.as_str().validate(env).expect_err(
+                "FragmentShaderPixelInterlockEXT should be rejected when its extension is disallowed",
+            );
+            assert_eq!(
+                error,
+                ValidationError::DisallowedExtension {
+                    extension: ExtensionName::from("SPV_EXT_fragment_shader_interlock"),
+                    env
+                }
+            );
+        }
+
+        text.as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("FragmentShaderPixelInterlockEXT should be accepted for Vulkan targets");
+    }
+
+    #[test]
+    fn image_footprint_capability_rejected_outside_vulkan_even_with_extension() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability ImageFootprintNV",
+            "OpExtension \"SPV_NV_shader_image_footprint\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+
+        for env in [
+            TargetEnv::Universal1_6,
+            TargetEnv::OpenCl2_2,
+            TargetEnv::OpenGl4_5,
+        ] {
+            let error = text
+                .as_str()
+                .validate(env)
+                .expect_err("ImageFootprintNV should be rejected when its extension is disallowed");
+            assert_eq!(
+                error,
+                ValidationError::DisallowedExtension {
+                    extension: ExtensionName::from("SPV_NV_shader_image_footprint"),
+                    env
+                }
+            );
+        }
+
+        text.as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("ImageFootprintNV should be accepted for Vulkan targets");
+    }
+
+    #[test]
+    fn shader_atomic_float_add_capability_rejected_outside_vulkan_even_with_extension() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability AtomicFloat32AddEXT",
+            "OpExtension \"SPV_EXT_shader_atomic_float_add\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+
+        for env in [
+            TargetEnv::Universal1_6,
+            TargetEnv::OpenCl2_2,
+            TargetEnv::OpenGl4_5,
+        ] {
+            let error = text.as_str().validate(env).expect_err(
+                "AtomicFloat32AddEXT should be rejected when its extension is disallowed",
+            );
+            assert_eq!(
+                error,
+                ValidationError::DisallowedExtension {
+                    extension: ExtensionName::from("SPV_EXT_shader_atomic_float_add"),
+                    env
+                }
+            );
+        }
+
+        text.as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("AtomicFloat32AddEXT should be accepted for Vulkan targets");
     }
 
     #[test]
