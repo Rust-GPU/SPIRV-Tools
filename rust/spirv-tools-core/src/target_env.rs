@@ -2,156 +2,8 @@ use crate::{
     validation::ExtensionName,
     version::{SpirvVersion, VulkanVersion},
 };
-
-const VULKAN_ONLY_VENDOR_PREFIXES: &[&str] =
-    &["spv_nv_", "spv_nvx_", "spv_amdx_", "spv_qcom_", "spv_arm_"];
-
-const GENERAL_VENDOR_PREFIXES: &[&str] = &["spv_amd_", "spv_ext_", "spv_google_"];
-
-const OPENCL_VENDOR_PREFIXES: &[&str] = &["spv_intel_", "spv_altera_"];
-
-fn has_any_prefix(value: &str, prefixes: &[&str]) -> bool {
-    prefixes.iter().any(|prefix| value.starts_with(prefix))
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-enum VendorFamily {
-    VulkanOnly,
-    General,
-    OpenCl,
-}
-
-fn classify_vendor_extension(name_lower: &str) -> Option<VendorFamily> {
-    if has_any_prefix(name_lower, VULKAN_ONLY_VENDOR_PREFIXES) {
-        return Some(VendorFamily::VulkanOnly);
-    }
-    if has_any_prefix(name_lower, GENERAL_VENDOR_PREFIXES) {
-        return Some(VendorFamily::General);
-    }
-    if has_any_prefix(name_lower, OPENCL_VENDOR_PREFIXES) {
-        return Some(VendorFamily::OpenCl);
-    }
-    None
-}
-
-#[derive(Debug, Copy, Clone)]
-struct ExtensionRule {
-    allow_vulkan: bool,
-    allow_opencl: bool,
-    allow_opengl: bool,
-    allow_universal: bool,
-}
-
-impl ExtensionRule {
-    const fn vulkan_only() -> Self {
-        Self {
-            allow_vulkan: true,
-            allow_opencl: false,
-            allow_opengl: false,
-            allow_universal: false,
-        }
-    }
-
-    const fn opencl_and_universal() -> Self {
-        Self {
-            allow_vulkan: false,
-            allow_opencl: true,
-            allow_opengl: false,
-            allow_universal: true,
-        }
-    }
-
-    fn allowed_for_env(self, env: TargetEnv) -> bool {
-        if env.is_vulkan() {
-            return self.allow_vulkan;
-        }
-        if env.is_opencl() {
-            return self.allow_opencl;
-        }
-        if env.is_opengl() {
-            return self.allow_opengl;
-        }
-        if env.is_universal() {
-            return self.allow_universal;
-        }
-        false
-    }
-}
-
-fn extension_rules() -> &'static [(&'static str, ExtensionRule)] {
-    // This table is intentionally small and focused; it is a staging point
-    // before switching to the generated grammar-backed allowlists. Entries
-    // should mirror the C++ target-env rules.
-    const RULES: &[(&str, ExtensionRule)] = &[
-        // Vulkan-only extensions (from existing Vulkan-specific list).
-        ("SPV_KHR_vulkan_memory_model", ExtensionRule::vulkan_only()),
-        (
-            "SPV_KHR_workgroup_memory_explicit_layout",
-            ExtensionRule::vulkan_only(),
-        ),
-        (
-            "SPV_KHR_physical_storage_buffer",
-            ExtensionRule::vulkan_only(),
-        ),
-        ("SPV_KHR_untyped_pointers", ExtensionRule::vulkan_only()),
-        ("SPV_EXT_descriptor_indexing", ExtensionRule::vulkan_only()),
-        (
-            "SPV_EXT_fragment_shader_interlock",
-            ExtensionRule::vulkan_only(),
-        ),
-        ("SPV_EXT_mesh_shader", ExtensionRule::vulkan_only()),
-        (
-            "SPV_EXT_shader_atomic_float_add",
-            ExtensionRule::vulkan_only(),
-        ),
-        (
-            "SPV_EXT_shader_atomic_float_min_max",
-            ExtensionRule::vulkan_only(),
-        ),
-        (
-            "SPV_EXT_fragment_invocation_density",
-            ExtensionRule::vulkan_only(),
-        ),
-        (
-            "SPV_NV_shader_invocation_reorder",
-            ExtensionRule::vulkan_only(),
-        ),
-        (
-            "SPV_NV_cluster_acceleration_structure",
-            ExtensionRule::vulkan_only(),
-        ),
-        ("SPV_NV_linear_swept_spheres", ExtensionRule::vulkan_only()),
-        ("SPV_KHR_ray_tracing", ExtensionRule::vulkan_only()),
-        ("SPV_KHR_ray_query", ExtensionRule::vulkan_only()),
-        (
-            "SPV_KHR_ray_tracing_position_fetch",
-            ExtensionRule::vulkan_only(),
-        ),
-        ("SPV_NV_ray_tracing", ExtensionRule::vulkan_only()),
-        (
-            "SPV_NV_ray_tracing_motion_blur",
-            ExtensionRule::vulkan_only(),
-        ),
-        ("SPV_NV_bindless_texture", ExtensionRule::vulkan_only()),
-        ("SPV_NV_cooperative_matrix", ExtensionRule::vulkan_only()),
-        ("SPV_NV_cooperative_matrix2", ExtensionRule::vulkan_only()),
-        ("SPV_NV_mesh_shader", ExtensionRule::vulkan_only()),
-        ("SPV_QCOM_image_processing", ExtensionRule::vulkan_only()),
-        ("SPV_QCOM_image_processing2", ExtensionRule::vulkan_only()),
-        (
-            "SPV_QCOM_cooperative_matrix_conversion",
-            ExtensionRule::vulkan_only(),
-        ),
-        ("SPV_QCOM_tile_shading", ExtensionRule::vulkan_only()),
-        // OpenCL-only vendor families stay allowed for OpenCL + Universal.
-        (
-            "SPV_INTEL_function_variants",
-            ExtensionRule::opencl_and_universal(),
-        ),
-        ("SPV_INTEL_fpga_reg", ExtensionRule::opencl_and_universal()),
-    ];
-    RULES
-}
+mod extension_allowlist;
+use extension_allowlist::{ExtensionAllowlist, EXTENSION_ALLOWLIST};
 
 /// Rust representation of `spv_target_env`.
 #[repr(u32)]
@@ -574,39 +426,31 @@ pub fn read_env_from_text(text: &[u8]) -> Option<TargetEnv> {
 impl TargetEnv {
     /// Returns whether an extension is permitted for this target environment.
     ///
-    /// The WebGPU environment forbids all extensions. OpenCL extensions (by name) are
-    /// allowed only for OpenCL environments. Vulkan-named or Vulkan-only extensions are
-    /// gated to Vulkan targets. Vendor prefixes are conservatively scoped: NV/NVX/AMD/AMDX/
-    /// GOOGLE/EXT/QCOM/ARM families are Vulkan-only, while INTEL/ALTERA FPGA extensions are
-    /// accepted for OpenCL and universal environments but rejected for Vulkan/WebGPU.
+    /// The WebGPU environment forbids all extensions. Other environments consult the
+    /// generated allowlist derived from the extension registry (vendor prefixes and
+    /// known Vulkan-only/OpenCL-only exceptions) to decide whether a declaration is
+    /// legal for the target.
     pub fn is_extension_allowed(self, extension: &ExtensionName) -> bool {
-        let lower = extension.as_str().to_ascii_lowercase();
         if matches!(self, TargetEnv::WebGpu0) {
             return false;
         }
-        if let Some((_, rule)) = extension_rules()
+        let name = extension.as_str();
+        let normalized = name.to_ascii_lowercase();
+        if normalized.contains("opencl") {
+            return self.is_opencl();
+        }
+        let allowlist = EXTENSION_ALLOWLIST
             .iter()
-            .find(|(name, _)| name.eq_ignore_ascii_case(extension.as_str()))
-        {
-            return rule.allowed_for_env(self);
-        }
-        if lower.contains("opencl") && !self.is_opencl() {
-            return false;
-        }
-        if lower.contains("intel_function_variants") && self.is_vulkan() {
-            return false;
-        }
-        if lower.contains("vulkan") {
-            return self.is_vulkan();
-        }
-        if let Some(family) = classify_vendor_extension(&lower) {
-            return match family {
-                VendorFamily::VulkanOnly => self.is_vulkan(),
-                VendorFamily::General => self.is_vulkan() || self.is_universal(),
-                VendorFamily::OpenCl => self.is_opencl() || self.is_universal(),
-            };
-        }
-        true
+            .find(|(known, _)| known.eq_ignore_ascii_case(name))
+            .map(|(_, rule)| rule)
+            .copied()
+            .unwrap_or(ExtensionAllowlist {
+                allow_vulkan: true,
+                allow_opencl: true,
+                allow_opengl: true,
+                allow_universal: true,
+            });
+        allowlist.allowed_for(self)
     }
 
     /// Returns whether a capability is permitted for this target environment.

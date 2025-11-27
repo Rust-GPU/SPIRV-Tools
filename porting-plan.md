@@ -134,6 +134,7 @@ Planned tasks:
 - Add data-driven tests for extension-enabled capabilities (ray tracing, cooperative matrices, tile shading) to lock capability↔extension precedence before flipping to generated allowlists.
     - Regression coverage added to ensure OpenCL environments reject GOOGLE/AMD vendor extensions while universal/Vulkan accept them; OpenGL now rejects GOOGLE/AMD vendor extensions as well.
 - Extended vendor extension allowlists: NVX/AMDX/ARM families are Vulkan-only, while INTEL/ALTERA FPGA extensions are permitted for OpenCL/Universal targets; added regression tests to lock the split.
+- Generated a data-driven extension allowlist from the table outputs (`tools/generate_extension_allowlist.py`), wired it into `TargetEnv::is_extension_allowed`, and removed the staging heuristics/vendor-prefix fallbacks.
 
 ## Upcoming Milestone: Capability/Extension Parity
 Bring the Rust validator to full capability/extension parity with the C++ tables using the grammar-driven dependency metadata and explicit per-environment rules.
@@ -287,6 +288,7 @@ Percentages are approximate and will be updated as new checklists are added for 
    - Added layout-order regression tests for section ordering (ExtInstImport, debug/names/annotations) and BuiltIn target categories to lock in current behavior.
 2. Push validated-module caching deeper through FFI/CLI entry points to avoid reparsing/validating identical inputs.
 3. Fill in remaining SPIR-V version gating and per-instruction requirements from the grammar, then revisit disassembly fixtures once validator parity is solid.
+4. Thread the generated extension allowlist through capability/extension precedence (ray tracing, cooperative matrices, tile shading) with focused regressions, and capture any OpenGL-specific quirks that still rely on heuristics.
 
 ## Upcoming Milestone: Capability/Extension Ordering Parity
 Align the Rust validator’s capability/extension ordering and layout checks with the C++ tables.

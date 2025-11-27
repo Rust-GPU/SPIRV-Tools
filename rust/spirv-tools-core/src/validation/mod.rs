@@ -9579,6 +9579,16 @@ mod tests {
     }
 
     #[test]
+    fn shader_atomic_float_add_is_vulkan_only() {
+        assert_vulkan_only_extension("SPV_EXT_shader_atomic_float_add");
+    }
+
+    #[test]
+    fn qcom_image_processing_is_vulkan_only() {
+        assert_vulkan_only_extension("SPV_QCOM_image_processing");
+    }
+
+    #[test]
     fn validate_module_rejects_duplicate_extension() {
         // Hand-assemble a module with duplicate OpExtension instructions.
         let extension_word = 0x0006_000a; // word count 6, opcode OpExtension (10)
