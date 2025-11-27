@@ -52,6 +52,40 @@ fn rust_and_cpp_fold_rem_by_one() {
     );
 }
 
+#[test]
+fn rust_and_cpp_fold_div_by_one() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+
+    let module_words = build_div_one_module();
+    let rust_insts = extract_sdiv_block(&module_words);
+    let rust_optimized =
+        spirv_tools_opt::translate::optimize_arith_block(&rust_insts).expect("rust optimizer");
+    assert!(
+        rust_optimized.iter().any(|inst| {
+            inst.class.opcode == Op::Constant
+                && inst.result_id == Some(9)
+                && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(8)]
+        }),
+        "rust optimizer should fold div by one to original value"
+    );
+
+    let output_words = run_cpp_opt(&cpp_opt, &module_words);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&output_words, &mut loader).expect("parse cpp optimized");
+    let module = loader.module();
+    let cpp_const = module.all_inst_iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(9)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(8)]
+    });
+    assert!(
+        cpp_const,
+        "C++ spirv-opt should fold div by one to original value"
+    );
+}
+
 fn build_rem_one_module() -> Vec<u32> {
     let mut module = Module::default();
     module.capabilities.push(Instruction::new(
@@ -107,6 +141,67 @@ fn build_rem_one_module() -> Vec<u32> {
         6,
         7,
         9,
+        Op::SRem,
+        &[rspirv::dr::Operand::IdRef(4), rspirv::dr::Operand::IdRef(5)],
+    );
+    module.functions.push(func);
+    module.assemble()
+}
+
+fn build_div_one_module() -> Vec<u32> {
+    let mut module = Module::default();
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![rspirv::dr::Operand::Capability(Capability::Shader)],
+    ));
+    module.memory_model = Some(Instruction::new(
+        Op::MemoryModel,
+        None,
+        None,
+        vec![
+            rspirv::dr::Operand::AddressingModel(AddressingModel::Logical),
+            rspirv::dr::Operand::MemoryModel(MemoryModel::Simple),
+        ],
+    ));
+    let type_void = Instruction::new(Op::TypeVoid, None, Some(1), vec![]);
+    let type_int = Instruction::new(
+        Op::TypeInt,
+        None,
+        Some(2),
+        vec![
+            rspirv::dr::Operand::LiteralBit32(32),
+            rspirv::dr::Operand::LiteralBit32(0),
+        ],
+    );
+    let type_func = Instruction::new(
+        Op::TypeFunction,
+        None,
+        Some(3),
+        vec![rspirv::dr::Operand::IdRef(1)],
+    );
+    let const_eight = Instruction::new(
+        Op::Constant,
+        Some(2),
+        Some(4),
+        vec![rspirv::dr::Operand::LiteralBit32(8)],
+    );
+    let const_one = Instruction::new(
+        Op::Constant,
+        Some(2),
+        Some(5),
+        vec![rspirv::dr::Operand::LiteralBit32(1)],
+    );
+    module.types_global_values = vec![type_void, type_int, type_func, const_eight, const_one];
+    let func = build_function(
+        1,
+        3,
+        2,
+        6,
+        7,
+        9,
+        Op::SDiv,
         &[rspirv::dr::Operand::IdRef(4), rspirv::dr::Operand::IdRef(5)],
     );
     module.functions.push(func);
@@ -120,6 +215,7 @@ fn build_function(
     func_id: Word,
     label_id: Word,
     rem_id: Word,
+    opcode: Op,
     rem_operands: &[rspirv::dr::Operand],
 ) -> Function {
     let def = Instruction::new(
@@ -132,17 +228,12 @@ fn build_function(
         ],
     );
     let label = Instruction::new(Op::Label, None, Some(label_id), vec![]);
-    let srem = Instruction::new(
-        Op::SRem,
-        Some(int_type),
-        Some(rem_id),
-        rem_operands.to_vec(),
-    );
+    let arith = Instruction::new(opcode, Some(int_type), Some(rem_id), rem_operands.to_vec());
     let ret = Instruction::new(Op::Return, None, None, vec![]);
     let end = Instruction::new(Op::FunctionEnd, None, None, vec![]);
     let block = Block {
         label: Some(label),
-        instructions: vec![srem, ret],
+        instructions: vec![arith, ret],
     };
     Function {
         def: Some(def),
@@ -162,6 +253,20 @@ fn extract_srem_block(module_words: &[u32]) -> Vec<rspirv::dr::Instruction> {
         .iter()
         .chain(block.instructions.iter())
         .filter(|inst| matches!(inst.class.opcode, Op::Constant | Op::SRem))
+        .cloned()
+        .collect()
+}
+
+fn extract_sdiv_block(module_words: &[u32]) -> Vec<rspirv::dr::Instruction> {
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(module_words, &mut loader).expect("parse module");
+    let module = loader.module();
+    let block = &module.functions[0].blocks[0];
+    module
+        .types_global_values
+        .iter()
+        .chain(block.instructions.iter())
+        .filter(|inst| matches!(inst.class.opcode, Op::Constant | Op::SDiv))
         .cloned()
         .collect()
 }
