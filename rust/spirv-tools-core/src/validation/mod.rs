@@ -11043,6 +11043,39 @@ mod tests {
     }
 
     #[test]
+    fn layout_relaxation_flags_are_accepted() {
+        use crate::validation::ValidationOptions;
+
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+        let options = ValidationOptions {
+            relax_struct_store: true,
+            relax_logical_pointer: true,
+            relax_block_layout: true,
+            uniform_buffer_standard_layout: true,
+            scalar_block_layout: true,
+            workgroup_scalar_block_layout: true,
+            skip_block_layout: true,
+            ..ValidationOptions::default()
+        };
+
+        binary
+            .as_slice()
+            .validate_with_options(TargetEnv::Universal1_6, options)
+            .expect("layout relaxation flags should be accepted");
+    }
+
+    #[test]
     fn switch_branch_limit_enforced() {
         use crate::validation::{
             enforce_switch_branch_limit, ValidationOptions, LIMIT_MAX_SWITCH_BRANCHES,
