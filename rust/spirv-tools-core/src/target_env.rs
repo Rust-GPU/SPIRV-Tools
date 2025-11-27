@@ -788,4 +788,14 @@ mod tests {
         assert!(list.contains("vulkan1.0"));
         assert!(list.contains("|"));
     }
+
+    #[test]
+    fn intel_function_variants_extension_allowlist() {
+        use super::ExtensionName;
+        let ext = ExtensionName::from("SPV_INTEL_function_variants");
+        assert!(!TargetEnv::Vulkan1_2.is_extension_allowed(&ext));
+        assert!(TargetEnv::OpenCl2_2.is_extension_allowed(&ext));
+        assert!(TargetEnv::Universal1_6.is_extension_allowed(&ext));
+        assert!(!TargetEnv::WebGpu0.is_extension_allowed(&ext));
+    }
 }
