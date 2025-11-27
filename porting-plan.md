@@ -131,7 +131,7 @@ Planned tasks:
 - Ensure capability checks reuse the stricter extension allowlists so vendor capabilities are rejected when their extensions are disallowed.
 - Keep the FFI/CLI caches wired through these checks to avoid revalidation for repeated inputs.
 - Add data-driven tests for extension-enabled capabilities (ray tracing, cooperative matrices, tile shading) to lock capability↔extension precedence before flipping to generated allowlists.
-- Regression coverage added to ensure OpenCL environments reject GOOGLE/AMD vendor extensions while universal/Vulkan accept them.
+    - Regression coverage added to ensure OpenCL environments reject GOOGLE/AMD vendor extensions while universal/Vulkan accept them; OpenGL now rejects GOOGLE/AMD vendor extensions as well.
 - Extended vendor extension allowlists: NVX/AMDX/ARM families are Vulkan-only, while INTEL/ALTERA FPGA extensions are permitted for OpenCL/Universal targets; added regression tests to lock the split.
 
 ## Upcoming Milestone: Capability/Extension Parity
