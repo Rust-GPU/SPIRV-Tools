@@ -153,9 +153,10 @@ Planned tasks:
 - Accept layout relaxation flags (`relax_*`, `skip_block_layout`) in the Rust validator with option-aware tests to keep the CLI/FFI paths from falling back when these options are set. (`skip_block_layout` now bypasses layout ordering errors with a dedicated regression.)
 - [x] Enforce `Block`/`BufferBlock` layouts when relaxations are disabled by requiring `OpMemberDecorate Offset` on every member and rejecting overlapping offsets, with Rust coverage guarding the strict path.
 - [x] Honor layout relaxation flags for block layout by permitting scalar alignment for vectors (`relax_block_layout`, `uniform_buffer_standard_layout`, `scalar_block_layout`, `workgroup_scalar_block_layout`) while still validating offsets, alignment, and runtime-array placement.
+- [x] Align relaxed block layout with array stride checks and vector straddle rules so misaligned strides and 16-byte straddles are rejected even under relaxed layouts, with Rust tests mirroring C++ expectations.
 - Enforce logical pointer rules for logical addressing (pointer-to-pointer allocations gated on VariablePointers* caps and Function/Private storage), with a `relax_logical_pointer` opt-out and Rust regressions.
 - Enforce `OpStore` pointer/object type compatibility with a `relax_struct_store` escape hatch for layout-compatible structs (struct/array recursion) and typed errors; added regressions covering both relaxed acceptance, array-length mismatches, and layout-relaxed acceptance (block layout relax flags).
-- TODO: implement remaining block-layout/struct-store relaxation semantics (vector straddle checks, matrix/array stride nuances) to mirror C++ validation.
+- TODO: implement remaining block-layout/struct-store relaxation semantics (matrix stride/row-major straddle nuances) to mirror C++ validation.
 
 ## Upcoming Milestone: Block/Layout Relaxations Parity
 Implement the semantics of layout-related validator options so they match the C++ validator while keeping the Rust path active.
