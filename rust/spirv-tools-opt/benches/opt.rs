@@ -47,32 +47,31 @@ fn bench_optimize(c: &mut Criterion) {
 }
 
 fn spirv_block_add_zero() -> Vec<rspirv::dr::Instruction> {
-    let mut b = rspirv::dr::Builder::new();
-    let int = b.type_int(32, 0);
-    let two = b.constant_bit32(int, 2);
-    let zero = b.constant_bit32(int, 0);
-    let add = b.i_add(int, None, two, zero).unwrap();
+    let int = 1;
+    let two_id = 2;
+    let zero_id = 3;
+    let add_id = 4;
 
     vec![
         rspirv::dr::Instruction::new(
             rspirv::spirv::Op::Constant,
             Some(int),
-            Some(two),
+            Some(two_id),
             vec![rspirv::dr::Operand::LiteralBit32(2)],
         ),
         rspirv::dr::Instruction::new(
             rspirv::spirv::Op::Constant,
             Some(int),
-            Some(zero),
+            Some(zero_id),
             vec![rspirv::dr::Operand::LiteralBit32(0)],
         ),
         rspirv::dr::Instruction::new(
             rspirv::spirv::Op::IAdd,
             Some(int),
-            Some(add),
+            Some(add_id),
             vec![
-                rspirv::dr::Operand::IdRef(two),
-                rspirv::dr::Operand::IdRef(zero),
+                rspirv::dr::Operand::IdRef(two_id),
+                rspirv::dr::Operand::IdRef(zero_id),
             ],
         ),
     ]

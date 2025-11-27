@@ -214,6 +214,30 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("sub-add-cancel-right"; "(- (+ ?a ?b) ?b)" => "?a"),
         rewrite!("sub-add-cancel-left"; "(- (+ ?a ?b) ?a)" => "?b"),
         rewrite!("sub-sub-cancel-left"; "(- ?a (- ?a ?b))" => "?b"),
+        rewrite!("add-merge-consts-right"; "(+ (+ ?x ?c1) ?c2)" => {
+            AddMergeConst { base: var("?x"), c1: var("?c1"), c2: var("?c2") }
+        }),
+        rewrite!("add-merge-consts-left"; "(+ (+ ?c1 ?x) ?c2)" => {
+            AddMergeConst { base: var("?x"), c1: var("?c1"), c2: var("?c2") }
+        }),
+        rewrite!("add-merge-consts-root-left"; "(+ ?c2 (+ ?x ?c1))" => {
+            AddMergeConst { base: var("?x"), c1: var("?c1"), c2: var("?c2") }
+        }),
+        rewrite!("add-merge-consts-root-right"; "(+ ?c2 (+ ?c1 ?x))" => {
+            AddMergeConst { base: var("?x"), c1: var("?c1"), c2: var("?c2") }
+        }),
+        rewrite!("add-sub-merge-consts"; "(+ (- ?x ?c1) ?c2)" => {
+            AddSubMerge { base: var("?x"), sub_const: var("?c1"), add_const: var("?c2") }
+        }),
+        rewrite!("add-sub-merge-consts-comm"; "(+ ?c2 (- ?x ?c1))" => {
+            AddSubMerge { base: var("?x"), sub_const: var("?c1"), add_const: var("?c2") }
+        }),
+        rewrite!("add-sub-merge-const-lhs"; "(+ (- ?c1 ?x) ?c2)" => {
+            AddSubConstLhs { base_const: var("?c1"), rhs: var("?x"), add_const: var("?c2") }
+        }),
+        rewrite!("add-sub-merge-const-lhs-comm"; "(+ ?c2 (- ?c1 ?x))" => {
+            AddSubConstLhs { base_const: var("?c1"), rhs: var("?x"), add_const: var("?c2") }
+        }),
         rewrite!("neg-sub-swap"; "(neg (- ?a ?b))" => "(- ?b ?a)"),
         rewrite!("neg-fold"; "(neg ?a)" => { FoldNeg }),
         rewrite!("double-neg"; "(neg (neg ?a))" => "?a"),
@@ -265,6 +289,21 @@ struct MulZero {
 struct MulNegOne {
     a: Var,
     b: Var,
+}
+struct AddMergeConst {
+    base: Var,
+    c1: Var,
+    c2: Var,
+}
+struct AddSubMerge {
+    base: Var,
+    sub_const: Var,
+    add_const: Var,
+}
+struct AddSubConstLhs {
+    base_const: Var,
+    rhs: Var,
+    add_const: Var,
 }
 
 impl Applier<SpirvLang, ()> for FoldAdd {
@@ -586,6 +625,75 @@ impl Applier<SpirvLang, ()> for MulNegOne {
     }
 }
 
+impl Applier<SpirvLang, ()> for AddMergeConst {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(lhs) = const_value(egraph, subst[self.c1]) else {
+            return Vec::new();
+        };
+        let Some(rhs) = const_value(egraph, subst[self.c2]) else {
+            return Vec::new();
+        };
+        let merged = ConstValue::new(lhs.get().wrapping_add(rhs.get()));
+        let const_id = egraph.add(SpirvLang::Const(merged));
+        let add = egraph.add(SpirvLang::Add([subst[self.base], const_id]));
+        egraph.union(eclass, add);
+        vec![add]
+    }
+}
+
+impl Applier<SpirvLang, ()> for AddSubMerge {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(sub_const) = const_value(egraph, subst[self.sub_const]) else {
+            return Vec::new();
+        };
+        let Some(add_const) = const_value(egraph, subst[self.add_const]) else {
+            return Vec::new();
+        };
+        let merged = ConstValue::new(add_const.get().wrapping_sub(sub_const.get()));
+        let const_id = egraph.add(SpirvLang::Const(merged));
+        let add = egraph.add(SpirvLang::Add([subst[self.base], const_id]));
+        egraph.union(eclass, add);
+        vec![add]
+    }
+}
+
+impl Applier<SpirvLang, ()> for AddSubConstLhs {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(lhs_const) = const_value(egraph, subst[self.base_const]) else {
+            return Vec::new();
+        };
+        let Some(rhs_const) = const_value(egraph, subst[self.add_const]) else {
+            return Vec::new();
+        };
+        let merged = ConstValue::new(lhs_const.get().wrapping_add(rhs_const.get()));
+        let const_id = egraph.add(SpirvLang::Const(merged));
+        let sub = egraph.add(SpirvLang::Sub([const_id, subst[self.rhs]]));
+        egraph.union(eclass, sub);
+        vec![sub]
+    }
+}
+
 fn const_value(egraph: &EGraph<SpirvLang, ()>, id: Id) -> Option<ConstValue> {
     egraph[id].nodes.iter().find_map(|node| match node {
         SpirvLang::Const(value) => Some(*value),
@@ -881,6 +989,78 @@ mod tests {
             matches!(lhs_node, SpirvLang::Symbol(sym) if *sym == Symbol::from("b"))
                 && matches!(rhs_node, SpirvLang::Symbol(sym) if *sym == Symbol::from("a")),
             "expected b - a but got lhs={lhs_node:?} rhs={rhs_node:?}"
+        );
+    }
+
+    #[test]
+    fn merges_nested_add_constants_into_single_offset() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Const(ConstValue::new(2)),       // 1
+            SpirvLang::Add([Id::from(0), Id::from(1)]), // 2 = x + 2
+            SpirvLang::Const(ConstValue::new(3)),       // 3
+            SpirvLang::Add([Id::from(2), Id::from(3)]), // 4 = (x + 2) + 3
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::Add([lhs, rhs])) = nodes.last() else {
+            panic!("expected add root, got {:?}", nodes.last());
+        };
+        let (symbol, constant) = match (&nodes[usize::from(*lhs)], &nodes[usize::from(*rhs)]) {
+            (SpirvLang::Symbol(sym), SpirvLang::Const(val)) => (sym, val),
+            (SpirvLang::Const(val), SpirvLang::Symbol(sym)) => (sym, val),
+            other => panic!("unexpected operands for merged add: {other:?}"),
+        };
+        assert_eq!(symbol, &Symbol::from("x"));
+        assert_eq!(constant.get(), 5, "constants should merge to 5");
+    }
+
+    #[test]
+    fn merges_add_and_sub_constant_offsets() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Const(ConstValue::new(2)),       // 1
+            SpirvLang::Sub([Id::from(0), Id::from(1)]), // 2 = x - 2
+            SpirvLang::Const(ConstValue::new(5)),       // 3
+            SpirvLang::Add([Id::from(2), Id::from(3)]), // 4 = (x - 2) + 5
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::Add([lhs, rhs])) = nodes.last() else {
+            panic!("expected add root, got {:?}", nodes.last());
+        };
+        let (symbol, constant) = match (&nodes[usize::from(*lhs)], &nodes[usize::from(*rhs)]) {
+            (SpirvLang::Symbol(sym), SpirvLang::Const(val)) => (sym, val),
+            (SpirvLang::Const(val), SpirvLang::Symbol(sym)) => (sym, val),
+            other => panic!("unexpected operands for merged add/sub: {other:?}"),
+        };
+        assert_eq!(symbol, &Symbol::from("x"));
+        assert_eq!(constant.get(), 3, "offset should reduce to +3");
+    }
+
+    #[test]
+    fn folds_const_minus_symbol_plus_const_into_single_sub() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new(7)),       // 0
+            SpirvLang::Symbol(Symbol::from("x")),       // 1
+            SpirvLang::Sub([Id::from(0), Id::from(1)]), // 2 = 7 - x
+            SpirvLang::Const(ConstValue::new(4)),       // 3
+            SpirvLang::Add([Id::from(2), Id::from(3)]), // 4 = (7 - x) + 4
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::Sub([lhs, rhs])) = nodes.last() else {
+            panic!("expected sub root, got {:?}", nodes.last());
+        };
+        let lhs_node = &nodes[usize::from(*lhs)];
+        let rhs_node = &nodes[usize::from(*rhs)];
+        assert!(
+            matches!(lhs_node, SpirvLang::Const(val) if val.get() == 11),
+            "expected merged constant 11 on lhs, got {lhs_node:?}"
+        );
+        assert!(
+            matches!(rhs_node, SpirvLang::Symbol(sym) if *sym == Symbol::from("x")),
+            "expected symbol on rhs, got {rhs_node:?}"
         );
     }
 

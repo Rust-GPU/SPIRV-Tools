@@ -330,3 +330,87 @@ fn corpus_cancels_add_sub() {
     assert_eq!(folded.result_id, Some(4));
     assert_eq!(folded.operands, vec![rspirv::dr::Operand::LiteralBit32(42)]);
 }
+
+#[test]
+fn corpus_folds_udiv_by_one() {
+    let int = 1;
+    let c12 = inst(
+        Op::Constant,
+        int,
+        1,
+        vec![rspirv::dr::Operand::LiteralBit32(12)],
+    );
+    let c1 = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(1)],
+    );
+    let div = inst(
+        Op::UDiv,
+        int,
+        20,
+        vec![rspirv::dr::Operand::IdRef(1), rspirv::dr::Operand::IdRef(2)],
+    );
+    let optimized = optimize_arith_block(&[c12, c1, div]).expect("optimize");
+    assert_eq!(optimized.len(), 1);
+    let folded = &optimized[0];
+    assert_eq!(folded.class.opcode, Op::Constant);
+    assert_eq!(folded.result_id, Some(20));
+    assert_eq!(folded.operands, vec![rspirv::dr::Operand::LiteralBit32(12)]);
+}
+
+#[test]
+fn corpus_folds_umod_by_one() {
+    let int = 1;
+    let c13 = inst(
+        Op::Constant,
+        int,
+        1,
+        vec![rspirv::dr::Operand::LiteralBit32(13)],
+    );
+    let c1 = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(1)],
+    );
+    let rem = inst(
+        Op::UMod,
+        int,
+        21,
+        vec![rspirv::dr::Operand::IdRef(1), rspirv::dr::Operand::IdRef(2)],
+    );
+    let optimized = optimize_arith_block(&[c13, c1, rem]).expect("optimize");
+    assert_eq!(optimized.len(), 1);
+    let folded = &optimized[0];
+    assert_eq!(folded.class.opcode, Op::Constant);
+    assert_eq!(folded.result_id, Some(21));
+    assert_eq!(folded.operands, vec![rspirv::dr::Operand::LiteralBit32(0)]);
+}
+
+#[test]
+fn corpus_preserves_umod_by_zero() {
+    let int = 1;
+    let c7 = inst(
+        Op::Constant,
+        int,
+        1,
+        vec![rspirv::dr::Operand::LiteralBit32(7)],
+    );
+    let c0 = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(0)],
+    );
+    let rem = inst(
+        Op::UMod,
+        int,
+        22,
+        vec![rspirv::dr::Operand::IdRef(1), rspirv::dr::Operand::IdRef(2)],
+    );
+    let block = vec![c7, c0, rem];
+    let optimized = optimize_arith_block(&block).expect("optimize");
+    assert_eq!(optimized, block, "umod by zero should be preserved");
+}

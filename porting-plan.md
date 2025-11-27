@@ -42,7 +42,7 @@ Tasks for this milestone:
 - [x] Add `cargo fuzz` coverage for SPIR-V block optimization to catch translation/rewriter panics.
 - [x] Expand e-graph rewrites with algebraic cancellations and emit simplified SPIR-V blocks (while preserving result ids and stability when no cost improvement occurs).
 - [x] Add criterion coverage for block-level arithmetic optimization.
-- [ ] Expand optimizer coverage with e-graph driven rewrites (egg) for algebraic simplifications beyond simple folds.
+- [ ] Expand optimizer coverage with e-graph driven rewrites (egg) for algebraic simplifications beyond simple folds. (constant-offset hoisting for add/add and add/sub landed; extend to distributivity/strength-reduction cases)
 - [x] Add hyperfine benchmarks alongside criterion for optimizer passes to mirror C++ tooling.
 - [ ] Wire the Rust optimizer into the CLI/FFI path behind a flag and start porting more C++ optimizer passes using e-graphs where beneficial.
 
@@ -62,7 +62,7 @@ Align the Rust arithmetic optimizer with the legacy C++ arithmetic canonicalizat
 Planned tasks:
 - Collect a corpus of small arithmetic shaders and compare Rust vs. C++ optimizer outputs to detect mismatches.
 - Add golden integration tests (CLI/FFI) that diff Rust-optimized modules against C++ outputs for supported ops.
-  - Initial parity harnesses cover const add, add+negate, add zero, mul by zero/one, mul by -1, sub self/zero-left, double negation, div/rem by one, commutative add, and preserve div/rem-by-zero cases.
+  - Initial parity harnesses cover const add, add+negate, add zero, mul by zero/one, mul by -1, sub self/zero-left, double negation, div/rem by one (signed+unsigned), commutative add, and preserve div/rem-by-zero cases.
 - Extend e-graph rewrites to cover distributivity/simplification cases present in the C++ optimizer while keeping cost-based stability.
 - Add a benchmark harness that runs both Rust and C++ optimizers via hyperfine for the arithmetic corpus to track performance deltas.
 - Add a parity runner in CI that exercises `SPIRV_CPP_OPT` when available to keep regressions visible.
