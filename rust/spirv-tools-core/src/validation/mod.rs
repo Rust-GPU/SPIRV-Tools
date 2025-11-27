@@ -8245,6 +8245,83 @@ mod tests {
     }
 
     #[test]
+    fn mesh_shading_nv_capability_rejected_outside_vulkan_even_with_extension() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability MeshShadingNV",
+            "OpExtension \"SPV_NV_mesh_shader\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+
+        for env in [
+            TargetEnv::Universal1_6,
+            TargetEnv::OpenCl2_2,
+            TargetEnv::OpenGl4_5,
+        ] {
+            let error = text
+                .as_str()
+                .validate(env)
+                .expect_err("MeshShadingNV should be rejected when its extension is disallowed");
+            assert_eq!(
+                error,
+                ValidationError::DisallowedExtension {
+                    extension: ExtensionName::from("SPV_NV_mesh_shader"),
+                    env
+                }
+            );
+        }
+
+        text.as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("MeshShadingNV should be accepted for Vulkan targets");
+    }
+
+    #[test]
+    fn shader_sm_builtins_capability_rejected_outside_vulkan_even_with_extension() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability ShaderSMBuiltinsNV",
+            "OpExtension \"SPV_NV_shader_sm_builtins\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+
+        for env in [
+            TargetEnv::Universal1_6,
+            TargetEnv::OpenCl2_2,
+            TargetEnv::OpenGl4_5,
+        ] {
+            let error = text.as_str().validate(env).expect_err(
+                "ShaderSMBuiltinsNV should be rejected when its extension is disallowed",
+            );
+            assert_eq!(
+                error,
+                ValidationError::DisallowedExtension {
+                    extension: ExtensionName::from("SPV_NV_shader_sm_builtins"),
+                    env
+                }
+            );
+        }
+
+        text.as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("ShaderSMBuiltinsNV should be accepted for Vulkan targets");
+    }
+
+    #[test]
     fn descriptor_indexing_extension_requires_spirv_1_5() {
         let text = [
             "OpCapability Shader",
