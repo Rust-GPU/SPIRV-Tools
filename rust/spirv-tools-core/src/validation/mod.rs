@@ -963,6 +963,14 @@ pub enum ValidationError {
         /// The stored object's type.
         object_type: TypeId,
     },
+    /// A struct decorated for block layout violates layout rules.
+    #[error("Struct {struct_type:?} has an invalid block layout: {reason}")]
+    InvalidBlockLayout {
+        /// The struct type id.
+        struct_type: ResultId,
+        /// Human-friendly reason for the failure.
+        reason: String,
+    },
     /// Image operand Offset is restricted to gather instructions unless explicitly allowed.
     #[error("Image operand Offset for {opcode:?} is only allowed with gather instructions in Vulkan unless the offset texture operand option is enabled")]
     OffsetTextureOperandDisallowed {
@@ -1573,6 +1581,7 @@ fn validate_words(
     enforce_access_chain_limit(&module, &options)?;
     enforce_offset_texture_operand_rule(&module, env, &options)?;
     enforce_vulkan_bitwise_widths(&module, env, &definitions, &options)?;
+    enforce_block_layout_rules(&module, &definitions, &options)?;
     let friendly_names = options
         .use_friendly_names
         .then(|| build_friendly_name_table(&module));
@@ -3872,6 +3881,219 @@ fn matrix_info(inst: &rspirv::dr::Instruction) -> (Option<TypeId>, Option<u32>) 
         _ => None,
     });
     (column, count)
+}
+
+fn enforce_block_layout_rules(
+    module: &Module,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    options: &ValidationOptions,
+) -> Result<(), ValidationError> {
+    if options.skip_block_layout {
+        return Ok(());
+    }
+
+    let block_structs = collect_block_structs(module);
+    for (struct_id, storage_classes) in block_structs {
+        // If any layout relaxation flag is enabled, skip strict layout checks.
+        let relax_layout = options.relax_block_layout
+            || options.uniform_buffer_standard_layout
+            || options.scalar_block_layout
+            || options.workgroup_scalar_block_layout;
+        if relax_layout {
+            continue;
+        }
+
+        let Some(struct_inst) = definitions.get(&struct_id) else {
+            continue;
+        };
+        let member_offsets = collect_member_offsets(module, struct_id);
+        if struct_inst.class.opcode != rspirv::spirv::Op::TypeStruct {
+            continue;
+        }
+        if struct_inst.operands.is_empty() {
+            continue;
+        }
+        for (index, operand) in struct_inst.operands.iter().enumerate() {
+            let Some(offset) = member_offsets.get(&MemberIndex(index as u32)) else {
+                return Err(ValidationError::InvalidBlockLayout {
+                    struct_type: struct_id,
+                    reason: "missing OpMemberDecorate Offset".to_string(),
+                });
+            };
+            let rspirv::dr::Operand::IdRef(member_type_id_raw) = operand else {
+                continue;
+            };
+            let Ok(member_type_id) = TypeId::try_from(*member_type_id_raw) else {
+                continue;
+            };
+            let Some(size) = type_layout_size(member_type_id, definitions, &mut HashSet::new())
+            else {
+                continue;
+            };
+            let next_offset = offset.saturating_add(size);
+            // Ensure no overlap with the next member offset (if any).
+            if let Some(next) = member_offsets
+                .get(&MemberIndex((index as u32) + 1))
+                .copied()
+            {
+                if next < next_offset {
+                    return Err(ValidationError::InvalidBlockLayout {
+                        struct_type: struct_id,
+                        reason: "member offsets overlap".to_string(),
+                    });
+                }
+            }
+        }
+
+        // Basic storage-class specific hint: Workgroup layout relaxations may be requested.
+        if storage_classes.contains(&rspirv::spirv::StorageClass::Workgroup)
+            && !options.workgroup_scalar_block_layout
+        {
+            // No additional action; reserved for future stricter checks.
+        }
+    }
+
+    Ok(())
+}
+
+fn collect_block_structs(
+    module: &Module,
+) -> HashMap<ResultId, HashSet<rspirv::spirv::StorageClass>> {
+    let mut structs: HashMap<ResultId, HashSet<rspirv::spirv::StorageClass>> = HashMap::new();
+    for inst in &module.annotations {
+        if inst.class.opcode == rspirv::spirv::Op::Decorate {
+            if let (
+                Some(rspirv::dr::Operand::IdRef(target)),
+                Some(rspirv::dr::Operand::Decoration(decoration)),
+            ) = (inst.operands.first(), inst.operands.get(1))
+            {
+                if *decoration == rspirv::spirv::Decoration::Block
+                    || *decoration == rspirv::spirv::Decoration::BufferBlock
+                {
+                    if let Ok(struct_id) = ResultId::try_from(*target) {
+                        structs.entry(struct_id).or_default();
+                    }
+                }
+            }
+        }
+    }
+
+    // Map struct ids to storage classes where they are used.
+    for var in &module.types_global_values {
+        if var.class.opcode != rspirv::spirv::Op::Variable {
+            continue;
+        }
+        let Some(rspirv::dr::Operand::StorageClass(sc)) = var.operands.first() else {
+            continue;
+        };
+        let Some(result_type) = var.result_type else {
+            continue;
+        };
+        let Ok(ptr_type_id) = TypeId::try_from(result_type) else {
+            continue;
+        };
+        let Some(ptr_inst) = module
+            .types_global_values
+            .iter()
+            .find(|inst| inst.result_id == Some(u32::from(ptr_type_id)))
+        else {
+            continue;
+        };
+        if ptr_inst.class.opcode != rspirv::spirv::Op::TypePointer {
+            continue;
+        }
+        let Some(rspirv::dr::Operand::IdRef(pointee)) = ptr_inst.operands.get(1) else {
+            continue;
+        };
+        if let Ok(struct_id) = ResultId::try_from(*pointee) {
+            structs.entry(struct_id).or_default().insert(*sc);
+        }
+    }
+
+    structs
+}
+
+fn collect_member_offsets(module: &Module, struct_id: ResultId) -> HashMap<MemberIndex, u32> {
+    let mut offsets = HashMap::new();
+    for inst in &module.annotations {
+        if inst.class.opcode == rspirv::spirv::Op::MemberDecorate {
+            let mut operands = inst.operands.iter();
+            if let (
+                Some(rspirv::dr::Operand::IdRef(target)),
+                Some(rspirv::dr::Operand::LiteralBit32(member)),
+                Some(rspirv::dr::Operand::Decoration(decoration)),
+            ) = (operands.next(), operands.next(), operands.next())
+            {
+                if *decoration == rspirv::spirv::Decoration::Offset {
+                    if let Ok(target_id) = ResultId::try_from(*target) {
+                        if target_id == struct_id {
+                            if let Some(rspirv::dr::Operand::LiteralBit32(offset)) = operands.next()
+                            {
+                                offsets.insert(MemberIndex(*member), *offset);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    offsets
+}
+
+fn type_layout_size(
+    ty: TypeId,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    visiting: &mut HashSet<TypeId>,
+) -> Option<u32> {
+    if !visiting.insert(ty) {
+        return None;
+    }
+    let inst = definitions.get(&ResultId::try_from(u32::from(ty)).ok()?)?;
+    let size = match inst.class.opcode {
+        rspirv::spirv::Op::TypeInt | rspirv::spirv::Op::TypeFloat => {
+            inst.operands.first().and_then(|op| match op {
+                rspirv::dr::Operand::LiteralBit32(bits) => Some(*bits / 8),
+                _ => None,
+            })
+        }
+        rspirv::spirv::Op::TypeVector => {
+            let (elem, count) = vector_info(inst);
+            let (elem, count) = (elem?, count?);
+            let elem_size = type_layout_size(elem, definitions, visiting)?;
+            Some(elem_size.saturating_mul(count))
+        }
+        rspirv::spirv::Op::TypeMatrix => {
+            let (column, count) = matrix_info(inst);
+            let (column, count) = (column?, count?);
+            let col_size = type_layout_size(column, definitions, visiting)?;
+            Some(col_size.saturating_mul(count))
+        }
+        rspirv::spirv::Op::TypeArray => {
+            let elem = inst.operands.first().and_then(|op| match op {
+                rspirv::dr::Operand::IdRef(id) => TypeId::try_from(*id).ok(),
+                _ => None,
+            })?;
+            let elem_size = type_layout_size(elem, definitions, visiting)?;
+            let len = array_length(inst, definitions)?;
+            Some(elem_size.saturating_mul(len))
+        }
+        rspirv::spirv::Op::TypeRuntimeArray => None, // unsized
+        rspirv::spirv::Op::TypeStruct => {
+            let mut offset: u32 = 0;
+            for op in &inst.operands {
+                let ty = match op {
+                    rspirv::dr::Operand::IdRef(id) => TypeId::try_from(*id).ok()?,
+                    _ => return None,
+                };
+                let size = type_layout_size(ty, definitions, visiting)?;
+                offset = offset.saturating_add(size);
+            }
+            Some(offset)
+        }
+        _ => None,
+    };
+    visiting.remove(&ty);
+    size
 }
 
 fn enforce_offset_texture_operand_rule(
