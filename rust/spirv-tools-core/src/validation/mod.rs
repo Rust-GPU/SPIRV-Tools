@@ -1670,12 +1670,15 @@ impl<'a> ValidatableModule<'a> for &'a str {
 }
 
 fn parse_module(words: &[u32]) -> Result<rspirv::dr::Module, ValidationError> {
-    let execution_mode_ids = {
-        struct ExecutionModeCollector {
-            modes: Vec<rspirv::dr::Instruction>,
+    let collected = {
+        struct ModuleSideInstructionCollector {
+            execution_modes: Vec<rspirv::dr::Instruction>,
+            conditional_extensions: Vec<rspirv::dr::Instruction>,
+            conditional_capabilities: Vec<rspirv::dr::Instruction>,
+            conditional_entry_points: Vec<rspirv::dr::Instruction>,
         }
 
-        impl rspirv::binary::Consumer for ExecutionModeCollector {
+        impl rspirv::binary::Consumer for ModuleSideInstructionCollector {
             fn initialize(&mut self) -> rspirv::binary::ParseAction {
                 rspirv::binary::ParseAction::Continue
             }
@@ -1695,16 +1698,31 @@ fn parse_module(words: &[u32]) -> Result<rspirv::dr::Module, ValidationError> {
                 &mut self,
                 inst: rspirv::dr::Instruction,
             ) -> rspirv::binary::ParseAction {
-                if inst.class.opcode == rspirv::spirv::Op::ExecutionModeId {
-                    self.modes.push(inst);
+                match inst.class.opcode {
+                    rspirv::spirv::Op::ExecutionModeId => self.execution_modes.push(inst),
+                    rspirv::spirv::Op::ConditionalExtensionINTEL => {
+                        self.conditional_extensions.push(inst)
+                    }
+                    rspirv::spirv::Op::ConditionalCapabilityINTEL => {
+                        self.conditional_capabilities.push(inst)
+                    }
+                    rspirv::spirv::Op::ConditionalEntryPointINTEL => {
+                        self.conditional_entry_points.push(inst)
+                    }
+                    _ => {}
                 }
                 rspirv::binary::ParseAction::Continue
             }
         }
 
-        let mut collector = ExecutionModeCollector { modes: Vec::new() };
+        let mut collector = ModuleSideInstructionCollector {
+            execution_modes: Vec::new(),
+            conditional_extensions: Vec::new(),
+            conditional_capabilities: Vec::new(),
+            conditional_entry_points: Vec::new(),
+        };
         match rspirv::binary::parse_words(words, &mut collector) {
-            Ok(()) => collector.modes,
+            Ok(()) => collector,
             Err(error) => return Err(ValidationError::Parse(error.to_string())),
         }
     };
@@ -1732,7 +1750,13 @@ fn parse_module(words: &[u32]) -> Result<rspirv::dr::Module, ValidationError> {
                     "invalid instruction length exceeding module size".to_string(),
                 ));
             }
-            if opcode != rspirv::spirv::Op::ExecutionModeId as u32 {
+            if !matches!(
+                opcode,
+                x if x == rspirv::spirv::Op::ExecutionModeId as u32
+                    || x == rspirv::spirv::Op::ConditionalExtensionINTEL as u32
+                    || x == rspirv::spirv::Op::ConditionalCapabilityINTEL as u32
+                    || x == rspirv::spirv::Op::ConditionalEntryPointINTEL as u32
+            ) {
                 filtered.extend_from_slice(&words[index..index + word_count]);
             }
             index += word_count;
@@ -1745,7 +1769,14 @@ fn parse_module(words: &[u32]) -> Result<rspirv::dr::Module, ValidationError> {
         return Err(ValidationError::Parse(error.to_string()));
     }
     let mut module = loader.module();
-    module.execution_modes.extend(execution_mode_ids);
+    module.execution_modes.extend(collected.execution_modes);
+    module.extensions.extend(collected.conditional_extensions);
+    module
+        .capabilities
+        .extend(collected.conditional_capabilities);
+    module
+        .entry_points
+        .extend(collected.conditional_entry_points);
     Ok(module)
 }
 
@@ -8182,6 +8213,103 @@ mod tests {
             error,
             ValidationError::DuplicateExtension {
                 extension: ExtensionName::from("ext")
+            }
+        );
+    }
+
+    #[test]
+    fn conditional_extension_rejected_in_non_vulkan_env() {
+        // Vulkan-only conditional extensions must be rejected for non-Vulkan targets.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            6,          // bound (ids up to 5)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            0x0009_1868, // OpConditionalExtensionINTEL %1 "SPV_KHR_vulkan_memory_model"
+            1,           // condition id (non-zero to satisfy parsing)
+            0x5f56_5053, // "SPV_"
+            0x5f52_484b, // "KHR_"
+            0x6b6c_7576, // "vulk"
+            0x6d5f_6e61, // "an_m"
+            0x726f_6d65, // "emor"
+            0x6f6d_5f79, // "y_mo"
+            0x006c_6564, // "del\0"
+            op(3, 14),   // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %2
+            2,
+            op(3, 33), // OpTypeFunction %3 %2
+            3,
+            2,
+            op(5, 54), // OpFunction %2 %4 None %3
+            2,
+            4,
+            0,
+            3,
+            op(2, 248), // OpLabel %5
+            5,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::DisallowedExtension {
+                extension: ExtensionName::from("SPV_KHR_vulkan_memory_model"),
+                env: TargetEnv::Universal1_6
+            }
+        );
+    }
+
+    #[test]
+    fn conditional_extension_rejected_in_webgpu() {
+        // WebGPU forbids all extensions, including conditional ones.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            6,          // bound (ids up to 5)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            0x0008_1868, // OpConditionalExtensionINTEL %1 "SPV_KHR_shader_clock"
+            1,           // condition id
+            0x5f56_5053, // "SPV_"
+            0x5f52_484b, // "KHR_"
+            0x6461_6873, // "shad"
+            0x635f_7265, // "er_c"
+            0x6b63_6f6c, // "lock"
+            0x0000_0000, // null terminator padding
+            op(3, 14),   // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %2
+            2,
+            op(3, 33), // OpTypeFunction %3 %2
+            3,
+            2,
+            op(5, 54), // OpFunction %2 %4 None %3
+            2,
+            4,
+            0,
+            3,
+            op(2, 248), // OpLabel %5
+            5,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+
+        let error = validate_module(&binary, TargetEnv::WebGpu0).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::DisallowedExtension {
+                extension: ExtensionName::from("SPV_KHR_shader_clock"),
+                env: TargetEnv::WebGpu0
             }
         );
     }
