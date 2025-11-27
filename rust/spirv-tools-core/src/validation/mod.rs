@@ -4008,6 +4008,18 @@ fn enforce_block_layout_rules(
                                 ),
                             });
                         }
+                        if relax_layout
+                            && !scalar_layout
+                            && member_is_row_major(module, struct_id, MemberIndex(index as u32))
+                            && col_size > 16
+                        {
+                            if (offset % 16).saturating_add(col_size) > 16 {
+                                return Err(ValidationError::InvalidBlockLayout {
+                                    struct_type: struct_id,
+                                    reason: "row-major matrix straddles 16-byte boundary under relaxed layout".to_string(),
+                                });
+                            }
+                        }
                     }
                 }
             }
@@ -4339,6 +4351,37 @@ fn array_stride(module: &Module, array_type: ResultId) -> Option<u32> {
         }
     }
     None
+}
+
+fn member_is_row_major(module: &Module, struct_id: ResultId, member: MemberIndex) -> bool {
+    for inst in &module.annotations {
+        if inst.class.opcode != rspirv::spirv::Op::MemberDecorate {
+            continue;
+        }
+        let mut ops = inst.operands.iter();
+        let Some(rspirv::dr::Operand::IdRef(target)) = ops.next() else {
+            continue;
+        };
+        let Ok(target_id) = ResultId::try_from(*target) else {
+            continue;
+        };
+        if target_id != struct_id {
+            continue;
+        }
+        let Some(rspirv::dr::Operand::LiteralBit32(member_idx)) = ops.next() else {
+            continue;
+        };
+        if *member_idx != member.0 {
+            continue;
+        }
+        let Some(rspirv::dr::Operand::Decoration(decoration)) = ops.next() else {
+            continue;
+        };
+        if *decoration == rspirv::spirv::Decoration::RowMajor {
+            return true;
+        }
+    }
+    false
 }
 
 fn member_matrix_stride(module: &Module, struct_id: ResultId, member: MemberIndex) -> Option<u32> {
