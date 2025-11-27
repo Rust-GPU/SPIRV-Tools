@@ -3783,6 +3783,46 @@ fn layout_compatible_types(
             .is_some_and(|(elem_a, elem_b, len_a, len_b)| {
                 len_a == len_b && layout_compatible_types(elem_a, elem_b, definitions, visiting)
             }),
+        (rspirv::spirv::Op::TypeRuntimeArray, rspirv::spirv::Op::TypeRuntimeArray) => inst_a
+            .operands
+            .first()
+            .and_then(|op| match op {
+                rspirv::dr::Operand::IdRef(id_a) => TypeId::try_from(*id_a).ok(),
+                _ => None,
+            })
+            .and_then(|elem_a| {
+                inst_b
+                    .operands
+                    .first()
+                    .and_then(|op| match op {
+                        rspirv::dr::Operand::IdRef(id_b) => TypeId::try_from(*id_b).ok(),
+                        _ => None,
+                    })
+                    .map(|elem_b| (elem_a, elem_b))
+            })
+            .is_some_and(|(elem_a, elem_b)| {
+                layout_compatible_types(elem_a, elem_b, definitions, visiting)
+            }),
+        (rspirv::spirv::Op::TypeVector, rspirv::spirv::Op::TypeVector) => {
+            let (elem_a, count_a) = vector_info(inst_a);
+            let (elem_b, count_b) = vector_info(inst_b);
+            elem_a
+                .zip(elem_b)
+                .zip(count_a.zip(count_b))
+                .is_some_and(|((a, b), (ca, cb))| {
+                    ca == cb && layout_compatible_types(a, b, definitions, visiting)
+                })
+        }
+        (rspirv::spirv::Op::TypeMatrix, rspirv::spirv::Op::TypeMatrix) => {
+            let (col_a, count_a) = matrix_info(inst_a);
+            let (col_b, count_b) = matrix_info(inst_b);
+            col_a
+                .zip(col_b)
+                .zip(count_a.zip(count_b))
+                .is_some_and(|((a, b), (ca, cb))| {
+                    ca == cb && layout_compatible_types(a, b, definitions, visiting)
+                })
+        }
         _ => false,
     };
     visiting.remove(&a);
@@ -3806,6 +3846,32 @@ fn array_length(
         Some(rspirv::dr::Operand::LiteralBit64(v)) => u32::try_from(*v).ok(),
         _ => None,
     }
+}
+
+fn vector_info(inst: &rspirv::dr::Instruction) -> (Option<TypeId>, Option<u32>) {
+    let elem = inst.operands.first().and_then(|op| match op {
+        rspirv::dr::Operand::IdRef(id) => TypeId::try_from(*id).ok(),
+        _ => None,
+    });
+    let count = inst.operands.get(1).and_then(|op| match op {
+        rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+        rspirv::dr::Operand::LiteralBit64(v) => u32::try_from(*v).ok(),
+        _ => None,
+    });
+    (elem, count)
+}
+
+fn matrix_info(inst: &rspirv::dr::Instruction) -> (Option<TypeId>, Option<u32>) {
+    let column = inst.operands.first().and_then(|op| match op {
+        rspirv::dr::Operand::IdRef(id) => TypeId::try_from(*id).ok(),
+        _ => None,
+    });
+    let count = inst.operands.get(1).and_then(|op| match op {
+        rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+        rspirv::dr::Operand::LiteralBit64(v) => u32::try_from(*v).ok(),
+        _ => None,
+    });
+    (column, count)
 }
 
 fn enforce_offset_texture_operand_rule(
