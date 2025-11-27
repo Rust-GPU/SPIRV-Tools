@@ -5761,6 +5761,52 @@ mod tests {
     }
 
     #[test]
+    fn decorations_must_follow_entry_points() {
+        // Annotations must not precede the entry-point section.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            5,          // bound (ids up to 4)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(3, rspirv::spirv::Op::Decorate as u16), // OpDecorate %1 RelaxedPrecision (before entry point -> error)
+            1,
+            rspirv::spirv::Decoration::RelaxedPrecision as u32,
+            op(2, rspirv::spirv::Op::TypeVoid as u16), // %1 = OpTypeVoid
+            1,
+            op(3, rspirv::spirv::Op::TypeFunction as u16), // %2 = OpTypeFunction %1
+            2,
+            1,
+            op(5, rspirv::spirv::Op::Function as u16), // %3 = OpFunction %1 None %2
+            1,
+            3,
+            0,
+            2,
+            op(2, 248), // OpLabel %4
+            4,
+            op(1, 253),                                  // OpReturn
+            op(1, 56),                                   // OpFunctionEnd
+            op(5, rspirv::spirv::Op::EntryPoint as u16), // OpEntryPoint Vertex %3 "main"
+            rspirv::spirv::ExecutionModel::Vertex as u32,
+            3,
+            0x6e69_616d, // "main"
+            0,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::EntryPoint
+            }
+        );
+    }
+
+    #[test]
     fn decorations_cannot_appear_inside_functions() {
         // Hand-built binary with a decoration inside the function body to ensure layout checking
         // rejects annotations in the function section.
