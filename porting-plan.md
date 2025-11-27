@@ -43,7 +43,7 @@ Tasks for this milestone:
 - [x] Expand e-graph rewrites with algebraic cancellations and emit simplified SPIR-V blocks (while preserving result ids and stability when no cost improvement occurs).
 - [x] Add criterion coverage for block-level arithmetic optimization.
 - [ ] Expand optimizer coverage with e-graph driven rewrites (egg) for algebraic simplifications beyond simple folds.
-- [ ] Add hyperfine benchmarks alongside criterion for optimizer passes to mirror C++ tooling.
+- [x] Add hyperfine benchmarks alongside criterion for optimizer passes to mirror C++ tooling.
 - [ ] Wire the Rust optimizer into the CLI/FFI path behind a flag and start porting more C++ optimizer passes using e-graphs where beneficial.
 
 
