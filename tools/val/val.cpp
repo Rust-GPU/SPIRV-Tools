@@ -14,6 +14,7 @@
 
 #include <cassert>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <iostream>
@@ -24,6 +25,9 @@
 #include "spirv-tools/libspirv.hpp"
 #include "tools/io.h"
 #include "tools/util/cli_consumer.h"
+#if defined(SPIRV_RUST_TARGET_ENV)
+#include "rust/cxxbridge/spirv-tools-ffi.h"
+#endif
 
 void print_usage(char* argv0) {
   std::string target_env_list = spvTargetEnvList(36, 105);
@@ -76,18 +80,36 @@ Options:
                                    not be allowed by the target environment.
   --before-hlsl-legalization       Allows code patterns that are intended to be
                                    fixed by spirv-opt's legalization passes.
+#if defined(SPIRV_RUST_TARGET_ENV)
+  --force-rust-validator           Prefer the Rust validator even when both are available.
+  --force-cpp-validator            Force the legacy C++ validator (disables the Rust path).
+#endif
   --version                        Display validator version information.
   --target-env                     {%s}
-                                   Use validation rules from the specified environment.
+                                    Use validation rules from the specified environment.
 )",
       argv0, argv0, target_env_list.c_str());
 }
 
 bool process_single_file(const char* filename, spv_target_env& target_env,
                          spvtools::ValidatorOptions& options,
-                         bool use_default_msg_consumer) {
+                         bool use_default_msg_consumer,
+                         bool use_rust_validator) {
   std::vector<uint32_t> contents;
   if (!ReadBinaryFile(filename, &contents)) return false;
+
+#if defined(SPIRV_RUST_TARGET_ENV)
+  if (use_rust_validator) {
+    const auto result = spvtools::ffi::validate_binary(
+        static_cast<uint32_t>(target_env), contents);
+    if (result.success) return true;
+
+    const char* pretty_filename = filename ? filename : "stdin";
+    std::cerr << "error: " << pretty_filename << ": " << result.message
+              << std::endl;
+    return false;
+  }
+#endif
 
   spvtools::SpirvTools tools(target_env);
 
@@ -136,6 +158,14 @@ int main(int argc, char** argv) {
   spvtools::ValidatorOptions options;
   bool continue_processing = true;
   int return_code = 0;
+  bool custom_options = false;
+#if defined(SPIRV_RUST_TARGET_ENV)
+  const bool env_disables_rust =
+      std::getenv("SPIRV_TOOLS_DISABLE_RUST_VALIDATOR") != nullptr;
+  bool prefer_rust_validator = !env_disables_rust;
+  bool force_rust_validator = false;
+  bool force_cpp_validator = false;
+#endif
 
   for (int argi = 1; continue_processing && argi < argc; ++argi) {
     const char* cur_arg = argv[argi];
@@ -202,26 +232,42 @@ int main(int argc, char** argv) {
         }
       } else if (0 == strcmp(cur_arg, "--before-hlsl-legalization")) {
         options.SetBeforeHlslLegalization(true);
+        custom_options = true;
       } else if (0 == strcmp(cur_arg, "--relax-logical-pointer")) {
         options.SetRelaxLogicalPointer(true);
+        custom_options = true;
       } else if (0 == strcmp(cur_arg, "--relax-block-layout")) {
         options.SetRelaxBlockLayout(true);
+        custom_options = true;
       } else if (0 == strcmp(cur_arg, "--uniform-buffer-standard-layout")) {
         options.SetUniformBufferStandardLayout(true);
+        custom_options = true;
       } else if (0 == strcmp(cur_arg, "--scalar-block-layout")) {
         options.SetScalarBlockLayout(true);
+        custom_options = true;
       } else if (0 == strcmp(cur_arg, "--workgroup-scalar-block-layout")) {
         options.SetWorkgroupScalarBlockLayout(true);
+        custom_options = true;
       } else if (0 == strcmp(cur_arg, "--skip-block-layout")) {
         options.SetSkipBlockLayout(true);
+        custom_options = true;
       } else if (0 == strcmp(cur_arg, "--allow-localsizeid")) {
         options.SetAllowLocalSizeId(true);
+        custom_options = true;
       } else if (0 == strcmp(cur_arg, "--allow-offset-texture-operand")) {
         options.SetAllowOffsetTextureOperand(true);
+        custom_options = true;
       } else if (0 == strcmp(cur_arg, "--allow-vulkan-32-bit-bitwise")) {
         options.SetAllowVulkan32BitBitwise(true);
+        custom_options = true;
       } else if (0 == strcmp(cur_arg, "--relax-struct-store")) {
         options.SetRelaxStructStore(true);
+#if defined(SPIRV_RUST_TARGET_ENV)
+      } else if (0 == strcmp(cur_arg, "--force-rust-validator")) {
+        force_rust_validator = true;
+      } else if (0 == strcmp(cur_arg, "--force-cpp-validator")) {
+        force_cpp_validator = true;
+#endif
       } else if (0 == cur_arg[1]) {
         // Setting a filename of "-" to indicate stdin.
         if (!inFile) {
@@ -252,6 +298,20 @@ int main(int argc, char** argv) {
     return return_code;
   }
 
+#if defined(SPIRV_RUST_TARGET_ENV)
+  bool use_rust_validator = prefer_rust_validator;
+  if (force_cpp_validator) use_rust_validator = false;
+  if (force_rust_validator) use_rust_validator = true;
+  if (custom_options && use_rust_validator) {
+    std::cerr << "warning: validator CLI options are not yet forwarded to the "
+                 "Rust validator; falling back to the C++ validator."
+              << std::endl;
+    use_rust_validator = false;
+  }
+#else
+  bool use_rust_validator = false;
+#endif
+
   if (inFile &&
       std::filesystem::is_directory(std::filesystem::status(inFile))) {
     const std::filesystem::path dir(inFile);
@@ -274,7 +334,7 @@ int main(int argc, char** argv) {
       const std::string filepath_str(filepath_u8str.begin(),
                                      filepath_u8str.end());
       if (!process_single_file(filepath_str.c_str(), target_env, options,
-                               false)) {
+                               false, use_rust_validator)) {
         succeed = false;
       }
     }
@@ -282,5 +342,6 @@ int main(int argc, char** argv) {
     return !succeed;
   }
 
-  return !process_single_file(inFile, target_env, options, true);
+  return !process_single_file(inFile, target_env, options, true,
+                              use_rust_validator);
 }
