@@ -2426,6 +2426,9 @@ fn required_extension_for_capability(
         | FragmentShaderShadingRateInterlockEXT
         | FragmentShaderPixelInterlockEXT => Some("SPV_EXT_fragment_shader_interlock"),
         ImageFootprintNV => Some("SPV_NV_shader_image_footprint"),
+        RayTracingLinearSweptSpheresGeometryNV => Some("SPV_NV_linear_swept_spheres"),
+        RayTracingDisplacementMicromapNV => Some("SPV_NV_displacement_micromap"),
+        RayTracingOpacityMicromapEXT => Some("SPV_EXT_opacity_micromap"),
         AtomicFloat32MinMaxEXT | AtomicFloat64MinMaxEXT | AtomicFloat16MinMaxEXT => {
             Some("SPV_EXT_shader_atomic_float_min_max")
         }
@@ -8362,6 +8365,100 @@ mod tests {
     }
 
     #[test]
+    fn ray_tracing_linear_swept_spheres_capability_rejected_outside_vulkan_even_with_extension() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability RayTracingKHR",
+            "OpCapability RayTracingLinearSweptSpheresGeometryNV",
+            "OpExtension \"SPV_KHR_ray_tracing\"",
+            "OpExtension \"SPV_NV_linear_swept_spheres\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+
+        for env in [
+            TargetEnv::Universal1_6,
+            TargetEnv::OpenCl2_2,
+            TargetEnv::OpenGl4_5,
+        ] {
+            let error = text.as_str().validate(env).expect_err(
+                "RayTracingLinearSweptSpheresGeometryNV should be rejected when its extension is disallowed",
+            );
+            match error {
+                ValidationError::DisallowedExtension {
+                    extension,
+                    env: actual_env,
+                } => {
+                    assert_eq!(actual_env, env);
+                    assert!(
+                        extension == ExtensionName::from("SPV_NV_linear_swept_spheres")
+                            || extension == ExtensionName::from("SPV_KHR_ray_tracing"),
+                        "unexpected extension blocked: {extension:?}"
+                    );
+                }
+                other => panic!("unexpected error: {other:?}"),
+            }
+        }
+
+        text.as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("RayTracingLinearSweptSpheresGeometryNV should be accepted for Vulkan targets");
+    }
+
+    #[test]
+    fn ray_tracing_opacity_micromap_capability_rejected_outside_vulkan_even_with_extension() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability RayTracingKHR",
+            "OpCapability RayTracingOpacityMicromapEXT",
+            "OpExtension \"SPV_KHR_ray_tracing\"",
+            "OpExtension \"SPV_EXT_opacity_micromap\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+
+        for env in [
+            TargetEnv::Universal1_6,
+            TargetEnv::OpenCl2_2,
+            TargetEnv::OpenGl4_5,
+        ] {
+            let error = text.as_str().validate(env).expect_err(
+                "RayTracingOpacityMicromapEXT should be rejected when its extension is disallowed",
+            );
+            match error {
+                ValidationError::DisallowedExtension {
+                    extension,
+                    env: actual_env,
+                } => {
+                    assert_eq!(actual_env, env);
+                    assert!(
+                        extension == ExtensionName::from("SPV_EXT_opacity_micromap")
+                            || extension == ExtensionName::from("SPV_KHR_ray_tracing"),
+                        "unexpected extension blocked: {extension:?}"
+                    );
+                }
+                other => panic!("unexpected error: {other:?}"),
+            }
+        }
+
+        text.as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("RayTracingOpacityMicromapEXT should be accepted for Vulkan targets");
+    }
+
+    #[test]
     fn shader_invocation_reorder_capability_rejected_outside_vulkan_even_with_extension() {
         let text = [
             "OpCapability Shader",
@@ -9893,6 +9990,104 @@ mod tests {
             .validate(TargetEnv::Vulkan1_2)
             .expect("capability should be accepted with required extension");
         assert_eq!(validated.header().schema(), Schema::ZERO);
+    }
+
+    #[test]
+    fn ray_tracing_linear_swept_spheres_capability_requires_extension() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability RayTracingLinearSweptSpheresGeometryNV",
+            "OpCapability RayTracingKHR",
+            "OpExtension \"SPV_KHR_ray_tracing\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect_err("RayTracingLinearSweptSpheresGeometryNV requires its enabling extension");
+        assert_eq!(
+            error,
+            ValidationError::DisallowedCapabilityMissingExtension {
+                capability: rspirv::spirv::Capability::RayTracingLinearSweptSpheresGeometryNV,
+                required_extension: "SPV_NV_linear_swept_spheres".to_string()
+            }
+        );
+
+        let with_extension = [
+            "OpCapability Shader",
+            "OpCapability RayTracingLinearSweptSpheresGeometryNV",
+            "OpCapability RayTracingKHR",
+            "OpExtension \"SPV_KHR_ray_tracing\"",
+            "OpExtension \"SPV_NV_linear_swept_spheres\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        with_extension
+            .as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("capability should be accepted with required extensions");
+    }
+
+    #[test]
+    fn ray_tracing_opacity_micromap_capability_requires_extension() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability RayTracingKHR",
+            "OpCapability RayTracingOpacityMicromapEXT",
+            "OpExtension \"SPV_KHR_ray_tracing\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect_err("RayTracingOpacityMicromapEXT requires its enabling extension");
+        assert_eq!(
+            error,
+            ValidationError::DisallowedCapabilityMissingExtension {
+                capability: rspirv::spirv::Capability::RayTracingOpacityMicromapEXT,
+                required_extension: "SPV_EXT_opacity_micromap".to_string()
+            }
+        );
+
+        let with_extension = [
+            "OpCapability Shader",
+            "OpCapability RayTracingKHR",
+            "OpCapability RayTracingOpacityMicromapEXT",
+            "OpExtension \"SPV_KHR_ray_tracing\"",
+            "OpExtension \"SPV_EXT_opacity_micromap\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        with_extension
+            .as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("capability should be accepted with required extensions");
     }
 
     #[test]
