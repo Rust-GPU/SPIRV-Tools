@@ -139,6 +139,14 @@ Planned tasks:
 - Wire a feature flag to select the Rust validator by default in the CLI/FFI, keeping an opt-out for known gaps.
 - Run full test/CI cycles (Rust + C++) to confirm parity and update docs describing the default path.
 
+## Upcoming Milestone: Validator Options Parity
+Align Rust validator option semantics with the legacy C++ validator so CLI flags behave identically.
+
+Planned tasks:
+- Apply validator options inside the Rust validator (layout relaxations, friendly names, skip/enable layouts, local size id, offset texture operand, 32-bit bitwise) with option-aware tests.
+- Ensure limit overrides (struct members, depth, locals, globals, switches, function args, control-flow depth, access chain indexes) are enforced with typed diagnostics.
+- Plumb option-aware diagnostics through the FFI/CLI and add integration coverage to keep the Rust path active when flags are set.
+
 ## Upcoming Milestone: Capability/Extension Parity
 Bring the Rust validator to full capability/extension parity with the C++ tables using the grammar-driven dependency metadata and explicit per-environment rules.
 
