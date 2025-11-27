@@ -49,6 +49,7 @@ Tasks for this milestone:
   - Added layout regressions for late `OpExtInstImport` and misordered `OpSamplerImageAddressingModeNV` to keep parity with the C++ layout tests.
   - Mirrored NV bindless sampler address mode rules (presence, uniqueness, bit-width validation) with binary regressions and layout-time checks.
   - Added Vulkan-only extension gating (e.g., `SPV_KHR_vulkan_memory_model`, ray tracing, descriptor indexing) so non-Vulkan environments reject them with explicit diagnostics.
+  - Added Vulkan-only regressions for `SPV_KHR_workgroup_memory_explicit_layout` and `SPV_KHR_physical_storage_buffer` to mirror the C++ allowlist.
   - Ported SPIR-V version gating for key extensions (ray tracing, descriptor indexing, fragment shader interlock/shading rate/density) to match C++ tables.
   - Added capability/extension version gates for physical storage buffers, storage-buffer/variable-pointer extensions, shader clock (capability + extension at SPIR-V 1.3), and DeviceGroup (SPIR-V 1.3). Continue importing remaining extension/capability version and ordering tables (e.g., maximal reconvergence, untyped pointers).
   - Pulled capability metadata from the SPIR-V grammar to drive version/extension lookups and layered in manual overrides where the grammar leaves extension-only features (e.g., shader clock). Added a regression for VariablePointers requiring VariablePointersStorageBuffer to align with the dependency tables.

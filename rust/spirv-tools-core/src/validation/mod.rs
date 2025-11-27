@@ -10300,6 +10300,16 @@ mod tests {
     }
 
     #[test]
+    fn workgroup_memory_explicit_layout_extension_is_vulkan_only() {
+        assert_vulkan_only_extension("SPV_KHR_workgroup_memory_explicit_layout");
+    }
+
+    #[test]
+    fn physical_storage_buffer_extension_is_vulkan_only() {
+        assert_vulkan_only_extension("SPV_KHR_physical_storage_buffer");
+    }
+
+    #[test]
     fn shader_clock_capability_rejected_outside_vulkan_even_with_extension() {
         let text = [
             "OpCapability Shader",
