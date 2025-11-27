@@ -12288,6 +12288,76 @@ mod tests {
     }
 
     #[test]
+    fn friendly_names_populated_on_valid_module() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpName %struct \"MyStruct\"",
+            "OpMemberName %struct 0 \"field0\"",
+            "%void = OpTypeVoid",
+            "%struct = OpTypeStruct %void",
+        ]
+        .join("\n");
+
+        let binary = assemble_text(&text).expect("assemble");
+        let valid = binary
+            .as_slice()
+            .validate_with_options(
+                TargetEnv::Universal1_6,
+                ValidationOptions {
+                    use_friendly_names: true,
+                    ..ValidationOptions::default()
+                },
+            )
+            .expect("validation should succeed");
+
+        let names = valid
+            .friendly_names()
+            .expect("friendly names should be populated when enabled");
+        let struct_id = valid
+            .module()
+            .types_global_values
+            .iter()
+            .find(|inst| inst.class.opcode == rspirv::spirv::Op::TypeStruct)
+            .and_then(|inst| inst.result_id)
+            .expect("struct should have a result id");
+        assert_eq!(names.id(struct_id), Some("MyStruct"));
+        assert_eq!(
+            names.member(struct_id, MemberIndex(0)),
+            Some("field0"),
+            "member names should be recorded"
+        );
+    }
+
+    #[test]
+    fn friendly_names_disabled_when_option_off() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpName %struct \"MyStruct\"",
+            "%void = OpTypeVoid",
+            "%struct = OpTypeStruct %void",
+        ]
+        .join("\n");
+
+        let binary = assemble_text(&text).expect("assemble");
+        let valid = binary
+            .as_slice()
+            .validate_with_options(
+                TargetEnv::Universal1_6,
+                ValidationOptions {
+                    use_friendly_names: false,
+                    ..ValidationOptions::default()
+                },
+            )
+            .expect("validation should succeed");
+        assert!(
+            valid.friendly_names().is_none(),
+            "friendly names should be omitted when disabled"
+        );
+    }
+
+    #[test]
     fn relax_struct_store_allows_layout_compatible_structs() {
         use rspirv::{binary::Assemble, dr::Instruction, dr::Module, dr::ModuleHeader};
 
