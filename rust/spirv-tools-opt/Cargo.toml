@@ -10,3 +10,8 @@ spirv-tools-core = { path = "../spirv-tools-core" }
 
 [dev-dependencies]
 pretty_assertions = "1.4"
+criterion = { version = "0.5", default-features = false, features = ["html_reports"] }
+
+[[bench]]
+name = "opt"
+harness = false
