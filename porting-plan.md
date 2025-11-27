@@ -132,6 +132,7 @@ With allowlists and capability/extension precedence aligned, flip the Rust valid
 Planned tasks:
 - Added a runtime toggle (default-on with env/override opt-out) so the FFI validator path prefers the Rust validator and falls back to C++ only when explicitly disabled; added unit coverage to lock the toggle behavior.
 - Added CLI flags to force the Rust or C++ validator when the Rust target is built, defaulting to the Rust path unless an override or validator options (currently unsupported in Rust) are requested.
+- Forward validator CLI options into the Rust validator so custom flags (layout relaxations, limits) no longer force a fallback to the C++ path.
 - Audit remaining layout/decoration ordering rules against the C++ tables and add any missing regressions.
 - Re-run the allowlist/capability matrix against the latest SPIR-V headers snapshot to catch drift before the default flip.
 - Wire a feature flag to select the Rust validator by default in the CLI/FFI, keeping an opt-out for known gaps.
