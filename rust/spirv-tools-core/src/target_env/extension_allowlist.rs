@@ -520,7 +520,7 @@ pub const EXTENSION_ALLOWLIST: &[(&str, ExtensionAllowlist)] = &[
             allow_vulkan: true,
             allow_opencl: false,
             allow_opengl: false,
-            allow_universal: true,
+            allow_universal: false,
         },
     ),
     (

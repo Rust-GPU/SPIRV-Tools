@@ -9579,6 +9579,11 @@ mod tests {
     }
 
     #[test]
+    fn shader_invocation_reorder_ext_is_vulkan_only() {
+        assert_vulkan_only_extension("SPV_EXT_shader_invocation_reorder");
+    }
+
+    #[test]
     fn shader_atomic_float_add_is_vulkan_only() {
         assert_vulkan_only_extension("SPV_EXT_shader_atomic_float_add");
     }
@@ -9586,6 +9591,13 @@ mod tests {
     #[test]
     fn qcom_image_processing_is_vulkan_only() {
         assert_vulkan_only_extension("SPV_QCOM_image_processing");
+    }
+
+    #[test]
+    fn opencl_environment_accepts_opencl_extension() {
+        let text = opencl_module_with_extension("SPV_KHR_opencl_enqueue");
+        text.validate(TargetEnv::OpenCl2_2)
+            .expect("OpenCL targets should accept OpenCL-specific extensions");
     }
 
     #[test]

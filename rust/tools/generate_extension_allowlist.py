@@ -69,6 +69,7 @@ def compute_allowlist(extensions: list[str]) -> list[tuple[str, bool, bool, bool
         "SPV_KHR_untyped_pointers",
         "SPV_EXT_descriptor_indexing",
         "SPV_EXT_fragment_shader_interlock",
+        "SPV_EXT_shader_invocation_reorder",
         "SPV_EXT_mesh_shader",
         "SPV_EXT_shader_atomic_float_add",
         "SPV_EXT_shader_atomic_float_min_max",
