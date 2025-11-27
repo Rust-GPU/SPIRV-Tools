@@ -6328,6 +6328,33 @@ mod tests {
     }
 
     #[test]
+    fn conditional_capability_cannot_follow_extensions() {
+        // Conditional capabilities must appear before the extensions/imports sections.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            2,
+            0,
+            op(2, 10), // OpExtension "e"
+            0x0000_0065,
+            op(3, 6250), // OpConditionalCapabilityINTEL %1 Geometry (misordered after extensions)
+            1,
+            rspirv::spirv::Capability::Geometry as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::ConditionalCapabilityINTEL
+            }
+        );
+    }
+
+    #[test]
     fn conditional_capability_cannot_follow_ext_inst_import() {
         // Conditional capabilities must precede extension imports.
         let binary = vec![
@@ -6694,6 +6721,33 @@ mod tests {
             op(3, 14), // OpMemoryModel Logical GLSL450
             0,
             1,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::ConditionalExtensionINTEL
+            }
+        );
+    }
+
+    #[test]
+    fn conditional_extension_cannot_follow_memory_model() {
+        // Conditional extensions must appear before the memory model.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            2,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(3, 6248), // OpConditionalExtensionINTEL %1 "ext" (misordered after memory model)
+            1,
+            0x0074_7865,
         ];
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
