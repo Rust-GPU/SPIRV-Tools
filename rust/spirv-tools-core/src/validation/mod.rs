@@ -9646,6 +9646,43 @@ mod tests {
     }
 
     #[test]
+    fn valid_module_cache_accounts_for_options() {
+        use crate::validation::ValidationOptions;
+
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+        let mut cache = ValidModuleCache::default();
+
+        let first = cache
+            .validate_words_with_options(&binary, TargetEnv::Universal1_6, ValidationOptions::default())
+            .expect("first validation");
+
+        let mut relaxed = ValidationOptions::default();
+        relaxed.relax_struct_store = true;
+        relaxed.limits.insert(7, 42);
+
+        let second = cache
+            .validate_words_with_options(&binary, TargetEnv::Universal1_6, relaxed)
+            .expect("validation with options");
+
+        assert_ne!(
+            Arc::as_ptr(&first),
+            Arc::as_ptr(&second),
+            "options should participate in the cache key"
+        );
+    }
+
+    #[test]
     fn execution_mode_requires_entry_point() {
         let text = [
             "OpCapability Shader",
