@@ -7304,6 +7304,143 @@ mod tests {
     }
 
     #[test]
+    fn capability_cannot_follow_entry_points() {
+        // Capabilities must be declared before entry points.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            5,          // bound (ids up to 4)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(5, 15), // OpEntryPoint Vertex %3 "main"
+            rspirv::spirv::ExecutionModel::Vertex as u32,
+            3,
+            0x6e69_616d, // "main"
+            0,
+            op(2, 17), // OpCapability Geometry (misordered after entry point)
+            rspirv::spirv::Capability::Geometry as u32,
+            op(2, 19), // %1 = OpTypeVoid
+            1,
+            op(3, 33), // %2 = OpTypeFunction %1
+            2,
+            1,
+            op(5, 54), // %3 = OpFunction %1 None %2
+            1,
+            3,
+            0,
+            2,
+            op(2, 248), // OpLabel %4
+            4,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Capability
+            }
+        );
+    }
+
+    #[test]
+    fn ext_inst_import_cannot_follow_entry_points() {
+        // Imported instruction sets must appear before entry points.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            6,          // bound (ids up to 5)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(5, 15), // OpEntryPoint Vertex %3 "main"
+            rspirv::spirv::ExecutionModel::Vertex as u32,
+            3,
+            0x6e69_616d, // "main"
+            0,
+            0x0006000b, // OpExtInstImport %5 "GLSL.std.450" (misordered after entry point)
+            5,
+            0x4c53_4c47, // "GLSL"
+            0x6474_732e, // ".std"
+            0x3035_342e, // ".450"
+            0,           // null terminator
+            op(2, 19),   // %1 = OpTypeVoid
+            1,
+            op(3, 33), // %2 = OpTypeFunction %1
+            2,
+            1,
+            op(5, 54), // %3 = OpFunction %1 None %2
+            1,
+            3,
+            0,
+            2,
+            op(2, 248), // OpLabel %4
+            4,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::ExtInstImport
+            }
+        );
+    }
+
+    #[test]
+    fn memory_model_cannot_follow_entry_points() {
+        // OpMemoryModel must be declared before the entry-point section.
+        let binary = vec![
+            0x0723_0203, // magic
+            0x0001_0000, // version
+            0,           // generator
+            5,           // bound (ids up to 4)
+            0,           // schema
+            op(2, 17),   // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(5, 15), // OpEntryPoint Vertex %3 "main" (before memory model -> error)
+            rspirv::spirv::ExecutionModel::Vertex as u32,
+            3,
+            0x6e69_616d, // "main"
+            0,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // %1 = OpTypeVoid
+            1,
+            op(3, 33), // %2 = OpTypeFunction %1
+            2,
+            1,
+            op(5, 54), // %3 = OpFunction %1 None %2
+            1,
+            3,
+            0,
+            2,
+            op(2, 248), // OpLabel %4
+            4,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::MemoryModel
+            }
+        );
+    }
+
+    #[test]
     fn sampler_image_address_mode_must_precede_entry_points() {
         // The text assembler rejects this ordering, so keep a hand-crafted binary with
         // OpSamplerImageAddressingModeNV placed after OpEntryPoint to exercise the validator.
