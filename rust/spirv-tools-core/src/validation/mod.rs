@@ -11836,6 +11836,68 @@ mod tests {
     }
 
     #[test]
+    fn offset_texture_operand_allowed_before_hlsl_legalization() {
+        use crate::validation::ValidationOptions;
+        use rspirv::binary::Assemble;
+        use rspirv::dr::Builder;
+        use rspirv::spirv::{
+            AddressingModel, Capability, Dim, ExecutionModel, FunctionControl, ImageFormat,
+            ImageOperands, MemoryModel,
+        };
+
+        let mut builder = Builder::new();
+        builder.set_version(1, 6);
+        builder.capability(Capability::Shader);
+        builder.capability(Capability::ImageGatherExtended);
+        builder.memory_model(AddressingModel::Logical, MemoryModel::GLSL450);
+
+        let void = builder.type_void();
+        let float = builder.type_float(32, None);
+        let v2float = builder.type_vector(float, 2);
+        let i32 = builder.type_int(32, 1);
+        let v2i = builder.type_vector(i32, 2);
+        let float_zero = builder.constant_bit32(float, 0.0f32.to_bits());
+        let int_zero = builder.constant_bit32(i32, 0);
+        let zero_offset = builder.constant_composite(v2i, [int_zero, int_zero]);
+        let image = builder.type_image(float, Dim::Dim2D, 0, 0, 0, 1, ImageFormat::Unknown, None);
+        let sampled_image = builder.type_sampled_image(image);
+        let fn_ty = builder.type_function(void, [sampled_image, v2float]);
+
+        let entry = builder
+            .begin_function(void, None, FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let image_param = builder.function_parameter(sampled_image).unwrap();
+        let coord_param = builder.function_parameter(v2float).unwrap();
+        builder.begin_block(None).unwrap();
+        builder
+            .image_sample_explicit_lod(
+                v2float,
+                None,
+                image_param,
+                coord_param,
+                ImageOperands::LOD | ImageOperands::OFFSET,
+                [
+                    rspirv::dr::Operand::IdRef(float_zero),
+                    rspirv::dr::Operand::IdRef(zero_offset),
+                ],
+            )
+            .unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+        builder.entry_point(ExecutionModel::Fragment, entry, "main", []);
+
+        let binary = builder.module().assemble();
+        let options = ValidationOptions {
+            before_hlsl_legalization: true,
+            ..ValidationOptions::default()
+        };
+        binary
+            .as_slice()
+            .validate_with_options(TargetEnv::Vulkan1_2, options)
+            .expect("Offset operand should be allowed when using the pre-HLSL legalization option");
+    }
+
+    #[test]
     fn bitwise_ops_require_32bit_in_vulkan_by_default() {
         use crate::validation::ValidationOptions;
         use rspirv::binary::Assemble;
