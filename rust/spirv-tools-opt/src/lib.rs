@@ -214,6 +214,12 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("sub-add-cancel-right"; "(- (+ ?a ?b) ?b)" => "?a"),
         rewrite!("sub-add-cancel-left"; "(- (+ ?a ?b) ?a)" => "?b"),
         rewrite!("sub-sub-cancel-left"; "(- ?a (- ?a ?b))" => "?b"),
+        rewrite!("sdiv-merge-consts"; "(sdiv (sdiv ?x ?c1) ?c2)" => {
+            DivMergeConst { base: var("?x"), c1: var("?c1"), c2: var("?c2"), signed: true }
+        }),
+        rewrite!("udiv-merge-consts"; "(udiv (udiv ?x ?c1) ?c2)" => {
+            DivMergeConst { base: var("?x"), c1: var("?c1"), c2: var("?c2"), signed: false }
+        }),
         rewrite!("mul-merge-consts-right"; "(* (* ?x ?c1) ?c2)" => {
             MulMergeConst { base: var("?x"), c1: var("?c1"), c2: var("?c2") }
         }),
@@ -316,6 +322,12 @@ struct AddSubConstLhs {
     base_const: Var,
     rhs: Var,
     add_const: Var,
+}
+struct DivMergeConst {
+    base: Var,
+    c1: Var,
+    c2: Var,
+    signed: bool,
 }
 struct MulMergeConst {
     base: Var,
@@ -711,6 +723,42 @@ impl Applier<SpirvLang, ()> for AddSubConstLhs {
     }
 }
 
+impl Applier<SpirvLang, ()> for DivMergeConst {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(c1) = const_value(egraph, subst[self.c1]) else {
+            return Vec::new();
+        };
+        let Some(c2) = const_value(egraph, subst[self.c2]) else {
+            return Vec::new();
+        };
+        if c1.get() == 0 || c2.get() == 0 {
+            return Vec::new();
+        }
+        let merged = if self.signed {
+            let lhs = c1.get() as i32;
+            let rhs = c2.get() as i32;
+            ConstValue::new(lhs.wrapping_mul(rhs) as u32)
+        } else {
+            ConstValue::new(c1.get().wrapping_mul(c2.get()))
+        };
+        let const_id = egraph.add(SpirvLang::Const(merged));
+        let div = if self.signed {
+            egraph.add(SpirvLang::SDiv([subst[self.base], const_id]))
+        } else {
+            egraph.add(SpirvLang::UDiv([subst[self.base], const_id]))
+        };
+        egraph.union(eclass, div);
+        vec![div]
+    }
+}
+
 impl Applier<SpirvLang, ()> for MulMergeConst {
     fn apply_one(
         &self,
@@ -1099,6 +1147,74 @@ mod tests {
         };
         assert_eq!(symbol, &Symbol::from("y"));
         assert_eq!(constant.get(), 20, "factors should merge to 20");
+    }
+
+    #[test]
+    fn merges_nested_divisors_for_signed_division() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),        // 0
+            SpirvLang::Const(ConstValue::new(2)),        // 1
+            SpirvLang::SDiv([Id::from(0), Id::from(1)]), // 2 = x / 2
+            SpirvLang::Const(ConstValue::new(3)),        // 3
+            SpirvLang::SDiv([Id::from(2), Id::from(3)]), // 4 = (x / 2) / 3
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::SDiv([lhs, rhs])) = nodes.last() else {
+            panic!("expected sdiv root, got {:?}", nodes.last());
+        };
+        let (symbol, constant) = match (&nodes[usize::from(*lhs)], &nodes[usize::from(*rhs)]) {
+            (SpirvLang::Symbol(sym), SpirvLang::Const(val)) => (sym, val),
+            (SpirvLang::Const(val), SpirvLang::Symbol(sym)) => (sym, val),
+            other => panic!("unexpected operands for merged sdiv: {other:?}"),
+        };
+        assert_eq!(symbol, &Symbol::from("x"));
+        assert_eq!(constant.get(), 6, "divisors should merge to 6");
+    }
+
+    #[test]
+    fn merges_nested_divisors_for_unsigned_division() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),        // 0
+            SpirvLang::Const(ConstValue::new(4)),        // 1
+            SpirvLang::UDiv([Id::from(0), Id::from(1)]), // 2 = x / 4
+            SpirvLang::Const(ConstValue::new(2)),        // 3
+            SpirvLang::UDiv([Id::from(2), Id::from(3)]), // 4 = (x / 4) / 2
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::UDiv([lhs, rhs])) = nodes.last() else {
+            panic!("expected udiv root, got {:?}", nodes.last());
+        };
+        let (symbol, constant) = match (&nodes[usize::from(*lhs)], &nodes[usize::from(*rhs)]) {
+            (SpirvLang::Symbol(sym), SpirvLang::Const(val)) => (sym, val),
+            (SpirvLang::Const(val), SpirvLang::Symbol(sym)) => (sym, val),
+            other => panic!("unexpected operands for merged udiv: {other:?}"),
+        };
+        assert_eq!(symbol, &Symbol::from("x"));
+        assert_eq!(constant.get(), 8, "divisors should merge to 8");
+    }
+
+    #[test]
+    fn division_merge_skips_zero_divisors() {
+        // Ensure we do not create new divide-by-zero cases.
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),        // 0
+            SpirvLang::Const(ConstValue::new(0)),        // 1
+            SpirvLang::UDiv([Id::from(0), Id::from(1)]), // 2 = x / 0
+            SpirvLang::Const(ConstValue::new(2)),        // 3
+            SpirvLang::UDiv([Id::from(2), Id::from(3)]), // 4 = (x / 0) / 2
+        ]);
+        let optimized = optimize_expr(&expr);
+        let udiv_count = optimized
+            .as_ref()
+            .iter()
+            .filter(|node| matches!(node, SpirvLang::UDiv(_)))
+            .count();
+        assert!(
+            udiv_count >= 2,
+            "should not collapse nested divisions when zeros are present: {optimized:?}"
+        );
     }
 
     #[test]
