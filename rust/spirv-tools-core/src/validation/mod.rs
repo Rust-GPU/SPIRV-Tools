@@ -8323,6 +8323,100 @@ mod tests {
     }
 
     #[test]
+    fn shader_invocation_reorder_capability_rejected_outside_vulkan_even_with_extension() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability RayTracingKHR",
+            "OpCapability ShaderInvocationReorderNV",
+            "OpExtension \"SPV_KHR_ray_tracing\"",
+            "OpExtension \"SPV_NV_shader_invocation_reorder\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+
+        for env in [
+            TargetEnv::Universal1_6,
+            TargetEnv::OpenCl2_2,
+            TargetEnv::OpenGl4_5,
+        ] {
+            let error = text.as_str().validate(env).expect_err(
+                "ShaderInvocationReorderNV should be rejected when its extension is disallowed",
+            );
+            match error {
+                ValidationError::DisallowedExtension {
+                    extension,
+                    env: actual_env,
+                } => {
+                    assert_eq!(actual_env, env);
+                    assert!(
+                        extension == ExtensionName::from("SPV_NV_shader_invocation_reorder")
+                            || extension == ExtensionName::from("SPV_KHR_ray_tracing"),
+                        "unexpected extension blocked: {extension:?}"
+                    );
+                }
+                other => panic!("unexpected error: {other:?}"),
+            }
+        }
+
+        text.as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("ShaderInvocationReorderNV should be accepted for Vulkan targets");
+    }
+
+    #[test]
+    fn cluster_acceleration_capability_rejected_outside_vulkan_even_with_extension() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability RayTracingKHR",
+            "OpCapability RayTracingClusterAccelerationStructureNV",
+            "OpExtension \"SPV_KHR_ray_tracing\"",
+            "OpExtension \"SPV_NV_cluster_acceleration_structure\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+
+        for env in [
+            TargetEnv::Universal1_6,
+            TargetEnv::OpenCl2_2,
+            TargetEnv::OpenGl4_5,
+        ] {
+            let error = text.as_str().validate(env).expect_err(
+                "RayTracingClusterAccelerationStructureNV should be rejected when its extension is disallowed",
+            );
+            match error {
+                ValidationError::DisallowedExtension {
+                    extension,
+                    env: actual_env,
+                } => {
+                    assert_eq!(actual_env, env);
+                    assert!(
+                        extension == ExtensionName::from("SPV_NV_cluster_acceleration_structure")
+                            || extension == ExtensionName::from("SPV_KHR_ray_tracing"),
+                        "unexpected extension blocked: {extension:?}"
+                    );
+                }
+                other => panic!("unexpected error: {other:?}"),
+            }
+        }
+
+        text.as_str().validate(TargetEnv::Vulkan1_2).expect(
+            "RayTracingClusterAccelerationStructureNV should be accepted for Vulkan targets",
+        );
+    }
+
+    #[test]
     fn shader_sm_builtins_capability_rejected_outside_vulkan_even_with_extension() {
         let text = [
             "OpCapability Shader",
