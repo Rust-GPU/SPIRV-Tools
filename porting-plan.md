@@ -56,6 +56,15 @@ Planned tasks:
 - Add end-to-end benchmarks (criterion + hyperfine) comparing Rust vs. C++ optimizer for supported passes.
 - Expand e-graph coverage to additional algebraic identities and ensure the reconstructed SPIR-V preserves ids and layout invariants.
 
+## Upcoming Milestone: Optimizer Parity vs C++ Arithmetic Pass
+Align the Rust arithmetic optimizer with the legacy C++ arithmetic canonicalization passes.
+
+Planned tasks:
+- Collect a corpus of small arithmetic shaders and compare Rust vs. C++ optimizer outputs to detect mismatches.
+- Add golden integration tests (CLI/FFI) that diff Rust-optimized modules against C++ outputs for supported ops.
+- Extend e-graph rewrites to cover distributivity/simplification cases present in the C++ optimizer while keeping cost-based stability.
+- Add a benchmark harness that runs both Rust and C++ optimizers via hyperfine for the arithmetic corpus to track performance deltas.
+
 
 ## Active Milestone: Structural Validator Rules
 Enforce target-environment specific structural rules and reuse validated modules across interfaces.
