@@ -8098,6 +8098,124 @@ mod tests {
     }
 
     #[test]
+    fn conditional_entry_point_must_precede_debug_names() {
+        let intel_function_variants_ext = [
+            1599492179, 1163152969, 1969643340, 1769235310, 1985965679, 1634300513, 7566446,
+        ];
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            9,          // bound (ids up to 8)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(2, 17), // OpCapability SpecConditionalINTEL
+            rspirv::spirv::Capability::SpecConditionalINTEL as u32,
+            0x0008_000a, // OpExtension "SPV_INTEL_function_variants"
+            intel_function_variants_ext[0],
+            intel_function_variants_ext[1],
+            intel_function_variants_ext[2],
+            intel_function_variants_ext[3],
+            intel_function_variants_ext[4],
+            intel_function_variants_ext[5],
+            intel_function_variants_ext[6],
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(4, 5), // OpName %4 "main"
+            4,
+            0x6e69_616d,
+            0,
+            op(6, 6249), // OpConditionalEntryPointINTEL %5 Vertex %4 "main"
+            5,
+            rspirv::spirv::ExecutionModel::Vertex as u32,
+            4,
+            0x6e69_616d,
+            0,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+            op(5, 54), // OpFunction %1 %4 None %2
+            1,
+            4,
+            0,
+            2,
+            op(2, 248), // OpLabel %6
+            6,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::ConditionalEntryPointINTEL
+            }
+        );
+    }
+
+    #[test]
+    fn conditional_entry_point_cannot_follow_functions() {
+        let intel_function_variants_ext = [
+            1599492179, 1163152969, 1969643340, 1769235310, 1985965679, 1634300513, 7566446,
+        ];
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            7,          // bound (ids up to 6)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(2, 17), // OpCapability SpecConditionalINTEL
+            rspirv::spirv::Capability::SpecConditionalINTEL as u32,
+            0x0008_000a, // OpExtension "SPV_INTEL_function_variants"
+            intel_function_variants_ext[0],
+            intel_function_variants_ext[1],
+            intel_function_variants_ext[2],
+            intel_function_variants_ext[3],
+            intel_function_variants_ext[4],
+            intel_function_variants_ext[5],
+            intel_function_variants_ext[6],
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+            op(5, 54), // OpFunction %1 %3 None %2
+            1,
+            3,
+            0,
+            2,
+            op(2, 248), // OpLabel %4
+            4,
+            op(1, 253),  // OpReturn
+            op(1, 56),   // OpFunctionEnd
+            op(6, 6249), // OpConditionalEntryPointINTEL %5 Vertex %3 "main"
+            5,
+            rspirv::spirv::ExecutionModel::Vertex as u32,
+            3,
+            0x6e69_616d,
+            0,
+        ];
+
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::ConditionalEntryPointINTEL
+            }
+        );
+    }
+
+    #[test]
     fn conditional_entry_point_must_reference_function() {
         let intel_function_variants_ext = [
             1599492179, 1163152969, 1969643340, 1769235310, 1985965679, 1634300513, 7566446,
