@@ -1359,6 +1359,7 @@ fn validate_words(
     validate_type_functions(&module, &opcodes)?;
     let struct_member_counts = validate_member_decorations(&module, &defined_ids)?;
     enforce_struct_member_limit(&struct_member_counts, &options)?;
+    enforce_struct_depth_limit(&module, &definitions, &options)?;
     validate_decoration_groups(&module, &defined_ids, &opcodes, &struct_member_counts)?;
     validate_decorations(&module, &defined_ids)?;
     validate_decoration_target_categories(&module, &opcodes, &definitions, &capabilities)?;
@@ -3014,6 +3015,72 @@ fn enforce_function_arg_limit(
             }
         }
     }
+    Ok(())
+}
+
+fn enforce_struct_depth_limit(
+    module: &Module,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    options: &ValidationOptions,
+) -> Result<(), ValidationError> {
+    let Some(&limit) = options.limits.get(&LIMIT_MAX_STRUCT_DEPTH) else {
+        return Ok(());
+    };
+
+    fn depth_for(
+        ty: ResultId,
+        defs: &HashMap<ResultId, rspirv::dr::Instruction>,
+        memo: &mut HashMap<ResultId, u32>,
+        visiting: &mut HashSet<ResultId>,
+    ) -> u32 {
+        if let Some(&cached) = memo.get(&ty) {
+            return cached;
+        }
+        if visiting.contains(&ty) {
+            return 1;
+        }
+        let Some(inst) = defs.get(&ty) else {
+            return 0;
+        };
+        if inst.class.opcode != rspirv::spirv::Op::TypeStruct {
+            memo.insert(ty, 0);
+            return 0;
+        }
+        visiting.insert(ty);
+        let mut max_child = 0u32;
+        for operand in &inst.operands {
+            if let rspirv::dr::Operand::IdRef(raw) = operand {
+                if let Ok(child) = ResultId::try_from(*raw) {
+                    let child_depth = depth_for(child, defs, memo, visiting);
+                    max_child = max_child.max(child_depth);
+                }
+            }
+        }
+        visiting.remove(&ty);
+        let depth = 1 + max_child;
+        memo.insert(ty, depth);
+        depth
+    }
+
+    let mut memo = HashMap::new();
+    let mut visiting = HashSet::new();
+    for inst in &module.types_global_values {
+        if let Some(result_id) = inst.result_id {
+            if inst.class.opcode == rspirv::spirv::Op::TypeStruct {
+                if let Ok(id) = ResultId::try_from(result_id) {
+                    let depth = depth_for(id, definitions, &mut memo, &mut visiting);
+                    if depth > limit {
+                        return Err(ValidationError::LimitExceeded {
+                            limit_kind: LIMIT_MAX_STRUCT_DEPTH,
+                            limit,
+                            found: depth,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -10091,6 +10158,42 @@ mod tests {
             err,
             ValidationError::LimitExceeded {
                 limit_kind: LIMIT_MAX_ACCESS_CHAIN_INDEXES,
+                limit: 1,
+                found: 2
+            }
+        );
+    }
+
+    #[test]
+    fn struct_depth_limit_enforced() {
+        use crate::validation::{ValidationOptions, LIMIT_MAX_STRUCT_DEPTH};
+
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%i32 = OpTypeInt 32 0",
+            "%inner = OpTypeStruct %i32",
+            "%outer = OpTypeStruct %inner",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+        let mut options = ValidationOptions::default();
+        options.limits.insert(LIMIT_MAX_STRUCT_DEPTH, 1);
+
+        let err = binary
+            .as_slice()
+            .validate_with_options(TargetEnv::Universal1_6, options)
+            .expect_err("struct depth limit should be enforced");
+        assert_eq!(
+            err,
+            ValidationError::LimitExceeded {
+                limit_kind: LIMIT_MAX_STRUCT_DEPTH,
                 limit: 1,
                 found: 2
             }
