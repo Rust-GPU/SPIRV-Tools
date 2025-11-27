@@ -310,9 +310,10 @@ fn var(name: &str) -> Var {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::translate::optimize_arith_block;
     use arbitrary::Unstructured;
     use pretty_assertions::assert_eq;
-    use rspirv::dr::Builder;
+    use rspirv::dr::{Builder, Instruction};
 
     #[test]
     fn folds_addition() {
@@ -438,6 +439,57 @@ mod tests {
         assert_eq!(
             translated.root,
             Id::from(translated.expr.as_ref().len() - 1)
+        );
+    }
+
+    #[test]
+    fn optimize_arith_block_collapses_to_constant() {
+        let mut b = Builder::new();
+        let int = b.type_int(32, 0);
+        let c2 = Instruction::new(
+            rspirv::spirv::Op::Constant,
+            Some(int),
+            Some(1),
+            vec![rspirv::dr::Operand::LiteralBit32(2)],
+        );
+        let c3 = Instruction::new(
+            rspirv::spirv::Op::Constant,
+            Some(int),
+            Some(2),
+            vec![rspirv::dr::Operand::LiteralBit32(3)],
+        );
+        let add = Instruction::new(
+            rspirv::spirv::Op::IAdd,
+            Some(int),
+            Some(3),
+            vec![rspirv::dr::Operand::IdRef(1), rspirv::dr::Operand::IdRef(2)],
+        );
+        let block = vec![c2.clone(), c3.clone(), add];
+        let optimized = optimize_arith_block(&block).expect("folds block");
+        assert_eq!(optimized.len(), 1);
+        let folded = &optimized[0];
+        assert_eq!(folded.class.opcode, rspirv::spirv::Op::Constant);
+        assert_eq!(folded.result_id, Some(3));
+        assert_eq!(folded.result_type, Some(int));
+        assert_eq!(folded.operands, vec![rspirv::dr::Operand::LiteralBit32(5)]);
+    }
+
+    #[test]
+    fn optimize_arith_block_rejects_unsupported_op() {
+        let insts = vec![Instruction::new(
+            rspirv::spirv::Op::TypeVoid,
+            None,
+            None,
+            vec![],
+        )];
+        let err = optimize_arith_block(&insts).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                crate::translate::TranslateError::UnsupportedOp(_)
+                    | crate::translate::TranslateError::MissingResultId(_)
+            ),
+            "unexpected error {err:?}"
         );
     }
 }
