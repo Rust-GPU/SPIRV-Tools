@@ -8129,6 +8129,83 @@ mod tests {
     }
 
     #[test]
+    fn cooperative_matrix_nv_capability_rejected_outside_vulkan() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability CooperativeMatrixNV",
+            "OpExtension \"SPV_NV_cooperative_matrix\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+
+        for env in [
+            TargetEnv::Universal1_6,
+            TargetEnv::OpenCl2_2,
+            TargetEnv::OpenGl4_5,
+        ] {
+            let error = text.as_str().validate(env).expect_err(
+                "CooperativeMatrixNV should be rejected when its extension is disallowed",
+            );
+            assert_eq!(
+                error,
+                ValidationError::DisallowedExtension {
+                    extension: ExtensionName::from("SPV_NV_cooperative_matrix"),
+                    env
+                }
+            );
+        }
+
+        text.as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("CooperativeMatrixNV should be accepted for Vulkan targets");
+    }
+
+    #[test]
+    fn tile_shading_capability_rejected_outside_vulkan() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability TileShadingQCOM",
+            "OpExtension \"SPV_QCOM_tile_shading\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+
+        for env in [
+            TargetEnv::Universal1_6,
+            TargetEnv::OpenCl2_2,
+            TargetEnv::OpenGl4_5,
+        ] {
+            let error = text
+                .as_str()
+                .validate(env)
+                .expect_err("TileShadingQCOM should be rejected when its extension is disallowed");
+            assert_eq!(
+                error,
+                ValidationError::DisallowedExtension {
+                    extension: ExtensionName::from("SPV_QCOM_tile_shading"),
+                    env
+                }
+            );
+        }
+
+        text.as_str()
+            .validate(TargetEnv::Vulkan1_4)
+            .expect("TileShadingQCOM should be accepted for Vulkan targets");
+    }
+
+    #[test]
     fn descriptor_indexing_extension_requires_spirv_1_5() {
         let text = [
             "OpCapability Shader",
