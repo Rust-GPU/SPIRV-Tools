@@ -134,6 +134,7 @@ Planned tasks:
 - Add data-driven tests for extension-enabled capabilities (ray tracing, cooperative matrices, tile shading) to lock capability↔extension precedence before flipping to generated allowlists.
     - Regression coverage added to ensure OpenCL environments reject GOOGLE/AMD vendor extensions while universal/Vulkan accept them; OpenGL now rejects GOOGLE/AMD vendor extensions as well.
 - Extended vendor extension allowlists: NVX/AMDX/ARM families are Vulkan-only, while INTEL/ALTERA FPGA extensions are permitted for OpenCL/Universal targets; added regression tests to lock the split.
+- Imported and generated a data-driven extension→environment allowlist (from the SPIR-V tables) and wired it into `TargetEnv::is_extension_allowed`, replacing the staging heuristics. Added coverage for Vulkan-only EXT shader invocation reorder and OpenCL-specific extensions.
 - Generated a data-driven extension allowlist from the table outputs (`tools/generate_extension_allowlist.py`), wired it into `TargetEnv::is_extension_allowed`, and removed the staging heuristics/vendor-prefix fallbacks.
 
 ## Upcoming Milestone: Capability/Extension Parity
