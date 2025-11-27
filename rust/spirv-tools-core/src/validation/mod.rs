@@ -9295,7 +9295,7 @@ mod tests {
     }
 
     #[test]
-    fn maximal_reconvergence_extension_requires_spirv_1_6() {
+    fn maximal_reconvergence_extension_rejected_outside_vulkan() {
         let text = [
             "OpCapability Shader",
             "OpExtension \"SPV_KHR_maximal_reconvergence\"",
@@ -9310,20 +9310,15 @@ mod tests {
         .join("\n");
         let error = text
             .as_str()
-            .validate(TargetEnv::Universal1_5)
-            .expect_err("maximal reconvergence requires SPIR-V 1.6");
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("maximal reconvergence is Vulkan-only");
         assert_eq!(
             error,
-            ValidationError::ExtensionRequiresSpirvVersion {
+            ValidationError::DisallowedExtension {
                 extension: ExtensionName::from("SPV_KHR_maximal_reconvergence"),
-                required_version: SpirvVersion::new(1, 6),
-                target_version: SpirvVersion::new(1, 5),
+                env: TargetEnv::Universal1_6
             }
         );
-
-        text.as_str()
-            .validate(TargetEnv::Universal1_6)
-            .expect("extension should be accepted with SPIR-V 1.6+");
     }
 
     #[test]
