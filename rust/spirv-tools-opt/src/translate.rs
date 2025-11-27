@@ -29,6 +29,10 @@ pub struct TranslatedExpr {
     pub expr: RecExpr<SpirvLang>,
     /// The root e-class id corresponding to the last instruction's result.
     pub root: Id,
+    /// The result type id corresponding to the root (if any).
+    pub result_type: Option<u32>,
+    /// The SPIR-V result id associated with the root.
+    pub result_id: Option<u32>,
 }
 
 /// Translate a sequence of arithmetic instructions into an e-graph expression.
@@ -44,6 +48,8 @@ pub fn translate_arith(instructions: &[Instruction]) -> Result<TranslatedExpr, T
     let mut expr = RecExpr::default();
     let mut ids: HashMap<u32, Id> = HashMap::new();
     let mut root = None;
+    let mut root_type = None;
+    let mut root_id = None;
 
     for inst in instructions {
         let opcode = inst.class.opcode;
@@ -120,8 +126,42 @@ pub fn translate_arith(instructions: &[Instruction]) -> Result<TranslatedExpr, T
         };
         ids.insert(result_id, node_id);
         root = Some(node_id);
+        root_type = inst.result_type;
+        root_id = Some(result_id);
     }
 
     let root = root.unwrap_or_else(|| Id::from(0));
-    Ok(TranslatedExpr { expr, root })
+    Ok(TranslatedExpr {
+        expr,
+        root,
+        result_type: root_type,
+        result_id: root_id,
+    })
+}
+
+/// Optimize a straight-line arithmetic block; if it reduces to a constant,
+/// return a single `OpConstant` instruction with the original root id/type.
+pub fn optimize_arith_block(
+    instructions: &[Instruction],
+) -> Result<Vec<Instruction>, TranslateError> {
+    let translated = translate_arith(instructions)?;
+    let optimized = crate::optimize_translated(&translated);
+    if optimized.as_ref().len() == 1 {
+        if let SpirvLang::Const(ConstValue(value)) = &optimized.as_ref()[0] {
+            let result_id = translated
+                .result_id
+                .ok_or(TranslateError::MissingResultId(Op::Constant))?;
+            let result_type = translated
+                .result_type
+                .ok_or(TranslateError::UnsupportedOp(Op::Constant))?;
+            let inst = Instruction::new(
+                Op::Constant,
+                Some(result_type),
+                Some(result_id),
+                vec![rspirv::dr::Operand::LiteralBit32(*value)],
+            );
+            return Ok(vec![inst]);
+        }
+    }
+    Ok(instructions.to_vec())
 }
