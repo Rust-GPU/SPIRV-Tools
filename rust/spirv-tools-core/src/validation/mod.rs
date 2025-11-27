@@ -2462,6 +2462,7 @@ fn required_spirv_version_for_extension(extension: &ExtensionName) -> Option<Spi
         | "spv_nv_linear_swept_spheres"
         | "spv_qcom_image_processing"
         | "spv_qcom_image_processing2" => Some(SpirvVersion::new(1, 4)),
+        "spv_qcom_tile_shading" => Some(SpirvVersion::new(1, 6)),
         "spv_ext_fragment_shader_interlock" => Some(SpirvVersion::new(1, 4)),
         "spv_khr_fragment_shading_rate" | "spv_ext_fragment_invocation_density" => {
             Some(SpirvVersion::new(1, 5))
@@ -9216,6 +9217,170 @@ mod tests {
             .validate(TargetEnv::Vulkan1_3)
             .expect("capability should be accepted with required extension");
         assert_eq!(validated.header().schema(), Schema::ZERO);
+    }
+
+    #[test]
+    fn universal_rejects_tile_shading_extension() {
+        let text = [
+            "OpCapability Shader",
+            "OpExtension \"SPV_QCOM_tile_shading\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("Tile shading extension should be Vulkan-only");
+        assert_eq!(
+            error,
+            ValidationError::DisallowedExtension {
+                extension: ExtensionName::from("SPV_QCOM_tile_shading"),
+                env: TargetEnv::Universal1_6
+            }
+        );
+    }
+
+    #[test]
+    fn tile_shading_extension_requires_spirv_1_6() {
+        let text = [
+            "OpCapability Shader",
+            "OpExtension \"SPV_QCOM_tile_shading\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text.as_str().validate(TargetEnv::Universal1_6).expect_err(
+            "tile shading extension should require SPIR-V 1.6 or be disallowed in Universal",
+        );
+        match error {
+            ValidationError::ExtensionRequiresSpirvVersion {
+                extension,
+                required_version,
+                target_version,
+            } => {
+                assert_eq!(extension, ExtensionName::from("SPV_QCOM_tile_shading"));
+                assert_eq!(required_version, SpirvVersion::new(1, 6));
+                assert_eq!(target_version, TargetEnv::Universal1_6.spirv_version());
+            }
+            ValidationError::DisallowedExtension { extension, env } => {
+                assert_eq!(extension, ExtensionName::from("SPV_QCOM_tile_shading"));
+                assert_eq!(env, TargetEnv::Universal1_6);
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+
+        text.as_str()
+            .validate(TargetEnv::Vulkan1_4)
+            .expect("extension should be accepted with SPIR-V 1.6+");
+    }
+
+    fn module_with_extension(extension: &str) -> String {
+        module_with_extension_custom(
+            extension,
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+        )
+    }
+
+    fn opencl_module_with_extension(extension: &str) -> String {
+        module_with_extension_custom(
+            extension,
+            "OpCapability Kernel",
+            "OpMemoryModel Logical OpenCL",
+        )
+    }
+
+    fn module_with_extension_custom(
+        extension: &str,
+        capability: &str,
+        memory_model: &str,
+    ) -> String {
+        [
+            capability,
+            &format!("OpExtension \"{extension}\""),
+            memory_model,
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n")
+    }
+
+    #[test]
+    fn nvx_extensions_are_vulkan_only() {
+        let text = module_with_extension("SPV_NVX_multiview_per_view_attributes");
+        text.as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("NVX extensions should be accepted for Vulkan targets");
+
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("NVX extensions are Vulkan-only");
+        assert_eq!(
+            error,
+            ValidationError::DisallowedExtension {
+                extension: ExtensionName::from("SPV_NVX_multiview_per_view_attributes"),
+                env: TargetEnv::Universal1_6
+            }
+        );
+    }
+
+    #[test]
+    fn amdx_extensions_are_vulkan_only() {
+        let text = module_with_extension("SPV_AMDX_shader_enqueue");
+        text.as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("AMDX extensions should be accepted for Vulkan targets");
+
+        let error = text
+            .as_str()
+            .validate(TargetEnv::OpenCl2_2)
+            .expect_err("AMDX extensions are Vulkan-only");
+        assert_eq!(
+            error,
+            ValidationError::DisallowedExtension {
+                extension: ExtensionName::from("SPV_AMDX_shader_enqueue"),
+                env: TargetEnv::OpenCl2_2
+            }
+        );
+    }
+
+    #[test]
+    fn altera_extensions_reject_vulkan() {
+        let text = opencl_module_with_extension("SPV_ALTERA_fpga_memory_attributes");
+        text.as_str()
+            .validate(TargetEnv::OpenCl2_2)
+            .expect("ALTERA extensions are permitted for OpenCL targets");
+        text.as_str()
+            .validate(TargetEnv::Universal1_5)
+            .expect("ALTERA extensions are permitted for universal targets");
+
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect_err("ALTERA extensions should be rejected for Vulkan");
+        assert_eq!(
+            error,
+            ValidationError::DisallowedExtension {
+                extension: ExtensionName::from("SPV_ALTERA_fpga_memory_attributes"),
+                env: TargetEnv::Vulkan1_2
+            }
+        );
     }
 
     #[test]

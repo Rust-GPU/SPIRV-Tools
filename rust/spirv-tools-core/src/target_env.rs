@@ -3,6 +3,23 @@ use crate::{
     version::{SpirvVersion, VulkanVersion},
 };
 
+const VULKAN_VENDOR_PREFIXES: &[&str] = &[
+    "spv_nv_",
+    "spv_nvx_",
+    "spv_amd_",
+    "spv_amdx_",
+    "spv_google_",
+    "spv_ext_",
+    "spv_qcom_",
+    "spv_arm_",
+];
+
+const OPENCL_VENDOR_PREFIXES: &[&str] = &["spv_intel_", "spv_altera_"];
+
+fn has_any_prefix(value: &str, prefixes: &[&str]) -> bool {
+    prefixes.iter().any(|prefix| value.starts_with(prefix))
+}
+
 /// Rust representation of `spv_target_env`.
 #[repr(u32)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -424,14 +441,11 @@ pub fn read_env_from_text(text: &[u8]) -> Option<TargetEnv> {
 impl TargetEnv {
     /// Returns whether an extension is permitted for this target environment.
     ///
-    /// The WebGPU environment forbids all extensions; other environments currently allow
-    /// all extensions until a full allowlist is ported. Vulkan-only extensions are
-    /// rejected for non-Vulkan environments. OpenCL-specific extensions are rejected
-    /// outside OpenCL environments, and Vulkan-only extensions are disallowed for
-    /// OpenCL/Universal targets to mirror the C++ tables. Vendor extensions are
-    /// conservatively scoped: NV/AMD/Google/EXT/QCOM extensions are allowed only for Vulkan,
-    /// while INTEL extensions are allowed for OpenCL and Universal but rejected for
-    /// Vulkan/WebGPU.
+    /// The WebGPU environment forbids all extensions. OpenCL extensions (by name) are
+    /// allowed only for OpenCL environments. Vulkan-named or Vulkan-only extensions are
+    /// gated to Vulkan targets. Vendor prefixes are conservatively scoped: NV/NVX/AMD/AMDX/
+    /// GOOGLE/EXT/QCOM/ARM families are Vulkan-only, while INTEL/ALTERA FPGA extensions are
+    /// accepted for OpenCL and universal environments but rejected for Vulkan/WebGPU.
     pub fn is_extension_allowed(self, extension: &ExtensionName) -> bool {
         let lower = extension.as_str().to_ascii_lowercase();
         if matches!(self, TargetEnv::WebGpu0) {
@@ -443,21 +457,13 @@ impl TargetEnv {
         if lower.contains("intel_function_variants") && self.is_vulkan() {
             return false;
         }
-        if is_vulkan_specific_extension(extension.as_str()) && !self.is_vulkan() {
-            return false;
-        }
-        if lower.contains("vulkan") && !self.is_vulkan() {
-            return false;
-        }
-        if lower.starts_with("spv_nv_")
-            || lower.starts_with("spv_amd_")
-            || lower.starts_with("spv_google_")
-            || lower.starts_with("spv_ext_")
-            || lower.starts_with("spv_qcom_")
-        {
+        if is_vulkan_specific_extension(extension.as_str()) || lower.contains("vulkan") {
             return self.is_vulkan();
         }
-        if lower.starts_with("spv_intel_") {
+        if has_any_prefix(&lower, VULKAN_VENDOR_PREFIXES) {
+            return self.is_vulkan();
+        }
+        if has_any_prefix(&lower, OPENCL_VENDOR_PREFIXES) {
             return self.is_opencl() || self.is_universal();
         }
         true
@@ -527,6 +533,7 @@ fn is_vulkan_specific_extension(name: &str) -> bool {
         "SPV_QCOM_image_processing",
         "SPV_QCOM_image_processing2",
         "SPV_QCOM_cooperative_matrix_conversion",
+        "SPV_QCOM_tile_shading",
     ];
     VULKAN_ONLY_EXTENSIONS
         .iter()
@@ -841,10 +848,20 @@ mod tests {
         assert!(!TargetEnv::Universal1_6.is_extension_allowed(&nv_ext));
         assert!(!TargetEnv::OpenCl2_2.is_extension_allowed(&nv_ext));
 
+        let nvx_ext = ExtensionName::from("SPV_NVX_multiview_per_view_attributes");
+        assert!(TargetEnv::Vulkan1_2.is_extension_allowed(&nvx_ext));
+        assert!(!TargetEnv::Universal1_6.is_extension_allowed(&nvx_ext));
+        assert!(!TargetEnv::OpenCl2_2.is_extension_allowed(&nvx_ext));
+
         let amd_ext = ExtensionName::from("SPV_AMD_shader_trinary_minmax");
         assert!(TargetEnv::Vulkan1_2.is_extension_allowed(&amd_ext));
         assert!(!TargetEnv::Universal1_6.is_extension_allowed(&amd_ext));
         assert!(!TargetEnv::OpenCl1_2.is_extension_allowed(&amd_ext));
+
+        let amdx_ext = ExtensionName::from("SPV_AMDX_shader_enqueue");
+        assert!(TargetEnv::Vulkan1_2.is_extension_allowed(&amdx_ext));
+        assert!(!TargetEnv::Universal1_6.is_extension_allowed(&amdx_ext));
+        assert!(!TargetEnv::OpenCl1_2.is_extension_allowed(&amdx_ext));
 
         let google_ext = ExtensionName::from("SPV_GOOGLE_decorate_string");
         assert!(TargetEnv::Vulkan1_2.is_extension_allowed(&google_ext));
@@ -855,5 +872,24 @@ mod tests {
         assert!(TargetEnv::Vulkan1_2.is_extension_allowed(&qcom_ext));
         assert!(!TargetEnv::Universal1_6.is_extension_allowed(&qcom_ext));
         assert!(!TargetEnv::OpenCl1_2.is_extension_allowed(&qcom_ext));
+
+        let arm_ext = ExtensionName::from("SPV_ARM_core_builtins");
+        assert!(TargetEnv::Vulkan1_2.is_extension_allowed(&arm_ext));
+        assert!(!TargetEnv::Universal1_6.is_extension_allowed(&arm_ext));
+        assert!(!TargetEnv::OpenCl2_2.is_extension_allowed(&arm_ext));
+    }
+
+    #[test]
+    fn opencl_vendor_extensions_are_blocked_for_vulkan() {
+        use super::ExtensionName;
+        let altera_ext = ExtensionName::from("SPV_ALTERA_fpga_memory_attributes");
+        assert!(TargetEnv::OpenCl2_2.is_extension_allowed(&altera_ext));
+        assert!(TargetEnv::Universal1_6.is_extension_allowed(&altera_ext));
+        assert!(!TargetEnv::Vulkan1_2.is_extension_allowed(&altera_ext));
+
+        let intel_ext = ExtensionName::from("SPV_INTEL_fpga_reg");
+        assert!(TargetEnv::OpenCl2_1.is_extension_allowed(&intel_ext));
+        assert!(TargetEnv::Universal1_5.is_extension_allowed(&intel_ext));
+        assert!(!TargetEnv::Vulkan1_1.is_extension_allowed(&intel_ext));
     }
 }
