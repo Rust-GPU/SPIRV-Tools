@@ -2411,6 +2411,7 @@ fn required_extension_for_capability(
 ) -> Option<&'static str> {
     use rspirv::spirv::Capability::*;
     match capability {
+        CooperativeMatrixKHR => Some("SPV_KHR_cooperative_matrix"),
         BindlessTextureNV => Some("SPV_NV_bindless_texture"),
         RayTracingNV => Some("SPV_NV_ray_tracing"),
         RayTracingKHR => Some("SPV_KHR_ray_tracing"),
@@ -8323,6 +8324,44 @@ mod tests {
     }
 
     #[test]
+    fn cooperative_matrix_khr_capability_rejected_outside_vulkan_even_with_extension() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability CooperativeMatrixKHR",
+            "OpExtension \"SPV_KHR_cooperative_matrix\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+
+        for env in [
+            TargetEnv::Universal1_6,
+            TargetEnv::OpenCl2_2,
+            TargetEnv::OpenGl4_5,
+        ] {
+            let error = text.as_str().validate(env).expect_err(
+                "CooperativeMatrixKHR should be rejected when its extension is disallowed",
+            );
+            assert_eq!(
+                error,
+                ValidationError::DisallowedExtension {
+                    extension: ExtensionName::from("SPV_KHR_cooperative_matrix"),
+                    env
+                }
+            );
+        }
+
+        text.as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("CooperativeMatrixKHR should be accepted for Vulkan targets");
+    }
+
+    #[test]
     fn shader_invocation_reorder_capability_rejected_outside_vulkan_even_with_extension() {
         let text = [
             "OpCapability Shader",
@@ -9794,6 +9833,52 @@ mod tests {
             "OpCapability Shader",
             "OpCapability CooperativeMatrixNV",
             "OpExtension \"SPV_NV_cooperative_matrix\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let validated = with_extension
+            .as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("capability should be accepted with required extension");
+        assert_eq!(validated.header().schema(), Schema::ZERO);
+    }
+
+    #[test]
+    fn cooperative_matrix_khr_capability_requires_extension() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability CooperativeMatrixKHR",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect_err("CooperativeMatrixKHR requires its enabling extension");
+        assert_eq!(
+            error,
+            ValidationError::DisallowedCapabilityMissingExtension {
+                capability: rspirv::spirv::Capability::CooperativeMatrixKHR,
+                required_extension: "SPV_KHR_cooperative_matrix".to_string()
+            }
+        );
+
+        let with_extension = [
+            "OpCapability Shader",
+            "OpCapability CooperativeMatrixKHR",
+            "OpExtension \"SPV_KHR_cooperative_matrix\"",
             "OpMemoryModel Logical GLSL450",
             "%void = OpTypeVoid",
             "%fn = OpTypeFunction %void",
