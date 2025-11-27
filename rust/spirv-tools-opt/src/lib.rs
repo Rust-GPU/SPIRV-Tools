@@ -620,4 +620,59 @@ mod tests {
             "unexpected error {err:?}"
         );
     }
+
+    #[test]
+    fn div_by_zero_does_not_fold() {
+        let int = 1;
+        let c2 = Instruction::new(
+            rspirv::spirv::Op::Constant,
+            Some(int),
+            Some(1),
+            vec![rspirv::dr::Operand::LiteralBit32(2)],
+        );
+        let c0 = Instruction::new(
+            rspirv::spirv::Op::Constant,
+            Some(int),
+            Some(2),
+            vec![rspirv::dr::Operand::LiteralBit32(0)],
+        );
+        let div = Instruction::new(
+            rspirv::spirv::Op::SDiv,
+            Some(int),
+            Some(3),
+            vec![rspirv::dr::Operand::IdRef(1), rspirv::dr::Operand::IdRef(2)],
+        );
+        let block = vec![c2.clone(), c0.clone(), div.clone()];
+        let optimized = optimize_arith_block(&block).expect("optimization should succeed");
+        assert_eq!(optimized, block);
+    }
+
+    #[test]
+    fn snegate_translates_and_folds() {
+        let int = 1;
+        let c5 = Instruction::new(
+            rspirv::spirv::Op::Constant,
+            Some(int),
+            Some(1),
+            vec![rspirv::dr::Operand::LiteralBit32(5)],
+        );
+        let neg = Instruction::new(
+            rspirv::spirv::Op::SNegate,
+            Some(int),
+            Some(2),
+            vec![rspirv::dr::Operand::IdRef(1)],
+        );
+        let block = vec![c5.clone(), neg];
+        let optimized = optimize_arith_block(&block).expect("folds negation");
+        assert_eq!(optimized.len(), 1);
+        assert_eq!(
+            optimized[0],
+            Instruction::new(
+                rspirv::spirv::Op::Constant,
+                Some(int),
+                Some(2),
+                vec![rspirv::dr::Operand::LiteralBit32(0u32.wrapping_sub(5))]
+            )
+        );
+    }
 }
