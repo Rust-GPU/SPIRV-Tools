@@ -1231,6 +1231,7 @@ pub struct ValidModule {
     header: ValidatedHeader,
     effective_version: SpirvVersion,
     options: ValidationOptions,
+    friendly_names: Option<HashMap<String, String>>,
 }
 
 impl ValidModule {
@@ -1272,6 +1273,11 @@ impl ValidModule {
     /// Returns the validator options applied during validation.
     pub fn options(&self) -> &ValidationOptions {
         &self.options
+    }
+
+    /// Returns friendly names applied during validation (if enabled).
+    pub fn friendly_names(&self) -> Option<&HashMap<String, String>> {
+        self.friendly_names.as_ref()
     }
 }
 
@@ -1377,6 +1383,7 @@ fn validate_words(
         header,
         effective_version: target_version,
         options,
+        friendly_names: None,
     })
 }
 
