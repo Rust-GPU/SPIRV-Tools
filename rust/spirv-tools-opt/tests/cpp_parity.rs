@@ -238,6 +238,70 @@ fn rust_and_cpp_fold_sub_self_to_zero() {
     assert!(!cpp_has_sub, "C++ spirv-opt should remove subtraction");
 }
 
+#[test]
+fn rust_and_cpp_fold_mul_by_one() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+
+    let (module_words, mul_id) = build_mul_one_module();
+    let rust_insts = extract_arith_block(&module_words);
+    let rust_optimized =
+        spirv_tools_opt::translate::optimize_arith_block(&rust_insts).expect("rust optimizer");
+    let rust_const = rust_optimized.iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(mul_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(7)]
+    });
+    let rust_has_mul = rust_optimized
+        .iter()
+        .any(|inst| inst.class.opcode == Op::IMul);
+    assert!(
+        rust_const,
+        "rust optimizer should fold mul by one to original value"
+    );
+    assert!(
+        !rust_has_mul,
+        "rust optimizer should remove mul instruction"
+    );
+
+    let mut input = NamedTempFile::new().expect("input temp");
+    input
+        .write_all(&words_to_bytes(&module_words))
+        .expect("write input");
+    let output = NamedTempFile::new().expect("output temp");
+    let status = Command::new(&cpp_opt)
+        .arg(input.path())
+        .arg("-o")
+        .arg(output.path())
+        .arg("-O")
+        .status()
+        .expect("run spirv-opt");
+    assert!(status.success(), "C++ spirv-opt failed");
+    let cpp_words = bytes_to_words(&fs::read(output.path()).expect("read output"));
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&cpp_words, &mut loader).expect("parse cpp optimized");
+    let module = loader.module();
+    let mut cpp_const = false;
+    let mut cpp_has_mul = false;
+    for inst in module.all_inst_iter() {
+        if inst.class.opcode == Op::IMul {
+            cpp_has_mul = true;
+        }
+        if inst.class.opcode == Op::Constant
+            && inst.result_id == Some(mul_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(7)]
+        {
+            cpp_const = true;
+        }
+    }
+    assert!(
+        cpp_const,
+        "C++ spirv-opt should fold mul by one to original value with same id"
+    );
+    assert!(!cpp_has_mul, "C++ spirv-opt should remove mul instruction");
+}
+
 fn build_const_add_module() -> (Vec<u32>, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
@@ -339,6 +403,25 @@ fn build_sub_self_module() -> (Vec<u32>, u32) {
     b.ret().expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), sub)
+}
+
+fn build_mul_one_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let _ = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let c7 = b.constant_bit32(int, 7);
+    let c1 = b.constant_bit32(int, 1);
+    let mul = b.i_mul(int, None, c7, c1).expect("mul");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), mul)
 }
 
 fn cpp_opt_bin() -> Option<String> {
