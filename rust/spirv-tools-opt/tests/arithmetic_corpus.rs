@@ -295,3 +295,38 @@ fn corpus_folds_add_with_negated_operand() {
     assert_eq!(folded.result_id, Some(13));
     assert_eq!(folded.operands, vec![rspirv::dr::Operand::LiteralBit32(7)]);
 }
+
+#[test]
+fn corpus_cancels_add_sub() {
+    let int = 1;
+    let ca = inst(
+        Op::Constant,
+        int,
+        1,
+        vec![rspirv::dr::Operand::LiteralBit32(42)],
+    );
+    let cb = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(5)],
+    );
+    let sub = inst(
+        Op::ISub,
+        int,
+        3,
+        vec![rspirv::dr::Operand::IdRef(1), rspirv::dr::Operand::IdRef(2)],
+    );
+    let add = inst(
+        Op::IAdd,
+        int,
+        4,
+        vec![rspirv::dr::Operand::IdRef(3), rspirv::dr::Operand::IdRef(2)],
+    );
+    let optimized = optimize_arith_block(&[ca, cb, sub, add]).expect("optimize");
+    assert_eq!(optimized.len(), 1);
+    let folded = &optimized[0];
+    assert_eq!(folded.class.opcode, Op::Constant);
+    assert_eq!(folded.result_id, Some(4));
+    assert_eq!(folded.operands, vec![rspirv::dr::Operand::LiteralBit32(42)]);
+}

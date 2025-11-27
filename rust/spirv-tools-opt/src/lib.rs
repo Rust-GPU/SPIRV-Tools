@@ -199,6 +199,11 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("sub-zero-left"; "(- ?a ?b)" => { SubZeroLeft }),
         rewrite!("sub-self"; "(- ?a ?a)" => { SubSelf }),
         rewrite!("sub-neg-right-to-add"; "(- ?a (neg ?b))" => "(+ ?a ?b)"),
+        rewrite!("add-sub-cancel-right"; "(+ (- ?a ?b) ?b)" => "?a"),
+        rewrite!("add-sub-cancel-left"; "(+ ?b (- ?a ?b))" => "?a"),
+        rewrite!("sub-add-cancel-right"; "(- (+ ?a ?b) ?b)" => "?a"),
+        rewrite!("sub-add-cancel-left"; "(- (+ ?a ?b) ?a)" => "?b"),
+        rewrite!("sub-sub-cancel-left"; "(- ?a (- ?a ?b))" => "?b"),
         rewrite!("neg-fold"; "(neg ?a)" => { FoldNeg }),
         rewrite!("double-neg"; "(neg (neg ?a))" => "?a"),
         rewrite!("div-fold"; "(/ ?a ?b)" => { FoldDiv }),
@@ -792,6 +797,38 @@ mod tests {
             matches!(lhs, SpirvLang::Symbol(_)) && matches!(rhs, SpirvLang::Symbol(_)),
             "multiplication should reference the two symbols: {lhs:?} {rhs:?}"
         );
+    }
+
+    #[test]
+    fn rewrites_add_sub_cancel() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("a")),       // 0
+            SpirvLang::Symbol(Symbol::from("b")),       // 1
+            SpirvLang::Sub([Id::from(0), Id::from(1)]), // 2 = a - b
+            SpirvLang::Add([Id::from(2), Id::from(1)]), // 3 = (a - b) + b
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::Symbol(sym)) = nodes.last() else {
+            panic!("expected symbol root, got {:?}", nodes.last());
+        };
+        assert_eq!(sym, &Symbol::from("a"));
+    }
+
+    #[test]
+    fn rewrites_sub_add_cancel() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("a")),       // 0
+            SpirvLang::Symbol(Symbol::from("b")),       // 1
+            SpirvLang::Add([Id::from(0), Id::from(1)]), // 2 = a + b
+            SpirvLang::Sub([Id::from(2), Id::from(1)]), // 3 = (a + b) - b
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::Symbol(sym)) = nodes.last() else {
+            panic!("expected symbol root, got {:?}", nodes.last());
+        };
+        assert_eq!(sym, &Symbol::from("a"));
     }
 
     #[test]
