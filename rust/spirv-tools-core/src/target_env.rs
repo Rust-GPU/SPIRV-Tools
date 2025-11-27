@@ -454,7 +454,7 @@ impl TargetEnv {
             || lower.starts_with("spv_google_")
             || lower.starts_with("spv_ext_")
         {
-            return self.is_vulkan() || self.is_universal();
+            return self.is_vulkan();
         }
         if lower.starts_with("spv_intel_") {
             return self.is_opencl() || self.is_universal();
@@ -836,7 +836,7 @@ mod tests {
 
         let amd_ext = ExtensionName::from("SPV_AMD_shader_trinary_minmax");
         assert!(TargetEnv::Vulkan1_2.is_extension_allowed(&amd_ext));
-        assert!(TargetEnv::Universal1_6.is_extension_allowed(&amd_ext));
+        assert!(!TargetEnv::Universal1_6.is_extension_allowed(&amd_ext));
         assert!(!TargetEnv::OpenCl1_2.is_extension_allowed(&amd_ext));
     }
 }
