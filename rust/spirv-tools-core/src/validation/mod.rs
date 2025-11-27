@@ -3928,6 +3928,14 @@ fn enforce_block_layout_rules(
             let Some(member_inst) = definitions.get(&member_result_id) else {
                 continue;
             };
+            let Some(alignment) = type_alignment(
+                member_type_id,
+                definitions,
+                &mut HashSet::new(),
+                scalar_layout,
+            ) else {
+                continue;
+            };
             if member_inst.class.opcode == rspirv::spirv::Op::TypeRuntimeArray {
                 if index + 1 != member_count {
                     return Err(ValidationError::InvalidBlockLayout {
@@ -3935,19 +3943,49 @@ fn enforce_block_layout_rules(
                         reason: "runtime array member must be the final struct member".to_string(),
                     });
                 }
+                if let Some(stride) = array_stride(module, member_result_id) {
+                    if stride % alignment != 0 {
+                        return Err(ValidationError::InvalidBlockLayout {
+                            struct_type: struct_id,
+                            reason: format!(
+                                "runtime array stride {stride} is not aligned to {alignment}"
+                            ),
+                        });
+                    }
+                }
                 // Runtime array must be last; remaining checks do not apply.
                 continue;
             }
+            if member_inst.class.opcode == rspirv::spirv::Op::TypeArray {
+                if let Some(stride) = array_stride(module, member_result_id) {
+                    if stride % alignment != 0 {
+                        return Err(ValidationError::InvalidBlockLayout {
+                            struct_type: struct_id,
+                            reason: format!("array stride {stride} is not aligned to {alignment}"),
+                        });
+                    }
+                    if let Some(elem_type_id_raw) = member_inst.operands.first() {
+                        if let rspirv::dr::Operand::IdRef(elem_raw) = elem_type_id_raw {
+                            if let Ok(elem_type) = TypeId::try_from(*elem_raw) {
+                                if let Some(elem_size) =
+                                    type_layout_size(elem_type, definitions, &mut HashSet::new())
+                                {
+                                    if elem_size > stride {
+                                        return Err(ValidationError::InvalidBlockLayout {
+                                            struct_type: struct_id,
+                                            reason: format!(
+                                                "array stride {stride} is smaller than element size {elem_size}"
+                                            ),
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             let Some(size) = type_layout_size(member_type_id, definitions, &mut HashSet::new())
             else {
-                continue;
-            };
-            let Some(alignment) = type_alignment(
-                member_type_id,
-                definitions,
-                &mut HashSet::new(),
-                scalar_layout,
-            ) else {
                 continue;
             };
             // Alignment rules: scalar block layout always uses scalar alignment; relaxed block
@@ -3967,6 +4005,18 @@ fn enforce_block_layout_rules(
                             "member offset {offset} is not aligned to vector scalar element size {}",
                             scalar_align
                         ),
+                    });
+                }
+                let Some(vector_size) =
+                    type_layout_size(member_type_id, definitions, &mut HashSet::new())
+                else {
+                    continue;
+                };
+                if vector_size > 16 && (offset % 16).saturating_add(vector_size) > 16 {
+                    return Err(ValidationError::InvalidBlockLayout {
+                        struct_type: struct_id,
+                        reason: "vector member straddles 16-byte boundary under relaxed layout"
+                            .to_string(),
                     });
                 }
             } else if offset % alignment != 0 {
@@ -4211,6 +4261,31 @@ fn vector_scalar_alignment(
         _ => None,
     })?;
     type_alignment(elem, definitions, &mut HashSet::new(), true)
+}
+
+fn array_stride(module: &Module, array_type: ResultId) -> Option<u32> {
+    for inst in &module.annotations {
+        if inst.class.opcode == rspirv::spirv::Op::Decorate {
+            if let (
+                Some(rspirv::dr::Operand::IdRef(target)),
+                Some(rspirv::dr::Operand::Decoration(decoration)),
+                Some(rspirv::dr::Operand::LiteralBit32(stride)),
+            ) = (
+                inst.operands.first(),
+                inst.operands.get(1),
+                inst.operands.get(2),
+            ) {
+                if *decoration == rspirv::spirv::Decoration::ArrayStride {
+                    if let Ok(target_id) = ResultId::try_from(*target) {
+                        if target_id == array_type {
+                            return Some(*stride);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 fn enforce_offset_texture_operand_rule(
@@ -12723,6 +12798,59 @@ mod tests {
         text.as_str()
             .validate_with_options(TargetEnv::Universal1_6, relax)
             .expect("workgroup_scalar_block_layout should permit scalar alignment for vectors");
+    }
+
+    #[test]
+    fn array_stride_must_align_to_element() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpDecorate %struct Block",
+            "OpMemberDecorate %struct 0 Offset 0",
+            "OpMemberDecorate %struct 1 Offset 16",
+            "OpDecorate %arr ArrayStride 6",
+            "%int = OpTypeInt 32 0",
+            "%arr = OpTypeArray %int %len",
+            "%len = OpConstant %int 2",
+            "%struct = OpTypeStruct %arr %int",
+        ]
+        .join("\n");
+        let err = text
+            .as_str()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("array stride not aligned to element size should fail");
+        assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
+    }
+
+    #[test]
+    fn vector_straddle_rejected_under_relax() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Float64",
+            "OpMemoryModel Logical GLSL450",
+            "OpDecorate %struct Block",
+            "OpMemberDecorate %struct 0 Offset 0",
+            "OpMemberDecorate %struct 1 Offset 8",
+            "%f64 = OpTypeFloat 64",
+            "%v3 = OpTypeVector %f64 3",
+            "%struct = OpTypeStruct %f64 %v3",
+        ]
+        .join("\n");
+        let err = text
+            .as_str()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("misaligned vector should fail");
+        assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
+
+        let relax = ValidationOptions {
+            relax_block_layout: true,
+            ..ValidationOptions::default()
+        };
+        let err = text
+            .as_str()
+            .validate_with_options(TargetEnv::Universal1_6, relax)
+            .expect_err("relaxed layout still rejects improper vector straddle");
+        assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
     }
 
     #[test]
