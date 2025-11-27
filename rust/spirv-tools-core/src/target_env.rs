@@ -257,6 +257,20 @@ impl TargetEnv {
         )
     }
 
+    /// Returns true if the environment belongs to the Universal profile family.
+    pub const fn is_universal(self) -> bool {
+        matches!(
+            self,
+            Self::Universal1_0
+                | Self::Universal1_1
+                | Self::Universal1_2
+                | Self::Universal1_3
+                | Self::Universal1_4
+                | Self::Universal1_5
+                | Self::Universal1_6
+        )
+    }
+
     /// Returns true if the environment belongs to the OpenCL profile family.
     pub const fn is_opencl(self) -> bool {
         matches!(
@@ -414,7 +428,10 @@ impl TargetEnv {
     /// all extensions until a full allowlist is ported. Vulkan-only extensions are
     /// rejected for non-Vulkan environments. OpenCL-specific extensions are rejected
     /// outside OpenCL environments, and Vulkan-only extensions are disallowed for
-    /// OpenCL/Universal targets to mirror the C++ tables.
+    /// OpenCL/Universal targets to mirror the C++ tables. Vendor extensions are
+    /// conservatively scoped: NV/AMD/Google/EXT extensions are allowed for Vulkan
+    /// and Universal environments, while INTEL extensions are allowed for OpenCL
+    /// and Universal but rejected for Vulkan/WebGPU.
     pub fn is_extension_allowed(self, extension: &ExtensionName) -> bool {
         let lower = extension.as_str().to_ascii_lowercase();
         if matches!(self, TargetEnv::WebGpu0) {
@@ -431,6 +448,16 @@ impl TargetEnv {
         }
         if lower.contains("vulkan") && !self.is_vulkan() {
             return false;
+        }
+        if lower.starts_with("spv_nv_")
+            || lower.starts_with("spv_amd_")
+            || lower.starts_with("spv_google_")
+            || lower.starts_with("spv_ext_")
+        {
+            return self.is_vulkan() || self.is_universal();
+        }
+        if lower.starts_with("spv_intel_") {
+            return self.is_opencl() || self.is_universal();
         }
         true
     }
@@ -797,5 +824,19 @@ mod tests {
         assert!(TargetEnv::OpenCl2_2.is_extension_allowed(&ext));
         assert!(TargetEnv::Universal1_6.is_extension_allowed(&ext));
         assert!(!TargetEnv::WebGpu0.is_extension_allowed(&ext));
+    }
+
+    #[test]
+    fn vendor_extensions_gate_by_environment() {
+        use super::ExtensionName;
+        let nv_ext = ExtensionName::from("SPV_NV_mesh_shader");
+        assert!(TargetEnv::Vulkan1_2.is_extension_allowed(&nv_ext));
+        assert!(!TargetEnv::Universal1_6.is_extension_allowed(&nv_ext));
+        assert!(!TargetEnv::OpenCl2_2.is_extension_allowed(&nv_ext));
+
+        let amd_ext = ExtensionName::from("SPV_AMD_shader_trinary_minmax");
+        assert!(TargetEnv::Vulkan1_2.is_extension_allowed(&amd_ext));
+        assert!(TargetEnv::Universal1_6.is_extension_allowed(&amd_ext));
+        assert!(!TargetEnv::OpenCl1_2.is_extension_allowed(&amd_ext));
     }
 }
