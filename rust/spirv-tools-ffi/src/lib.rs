@@ -253,7 +253,9 @@ pub fn validate_binary_rust(
         },
         Err(err) => ffi::ValidateResult {
             success: false,
-            message: err.to_string(),
+            message: spirv_tools_core::validation::format_validation_error_from_words(
+                binary, &opts, &err,
+            ),
         },
     }
 }

@@ -209,6 +209,19 @@ pub fn format_validation_error(error: &ValidationError, names: Option<&FriendlyN
     }
 }
 
+/// Attempts to render a validation error with friendly names derived from the provided module words.
+pub fn format_validation_error_from_words(
+    words: &[u32],
+    options: &ValidationOptions,
+    error: &ValidationError,
+) -> String {
+    if !options.use_friendly_names {
+        return error.to_string();
+    }
+    let names = collect_friendly_names(words);
+    format_validation_error(error, names.as_ref())
+}
+
 impl Default for ValidationOptions {
     fn default() -> Self {
         Self {
@@ -1560,6 +1573,15 @@ fn build_friendly_name_table(module: &Module) -> FriendlyNames {
         id_names,
         member_names,
     }
+}
+
+fn collect_friendly_names(words: &[u32]) -> Option<FriendlyNames> {
+    let mut loader = rspirv::dr::Loader::new();
+    if rspirv::binary::parse_words(words, &mut loader).is_err() {
+        return None;
+    }
+    let module = loader.module();
+    Some(build_friendly_name_table(&module))
 }
 
 fn validate_functions(module: &Module) -> Result<(), ValidationError> {
@@ -4251,7 +4273,9 @@ mod tests {
     };
     use crate::assembly::assemble_text;
     use crate::target_env::TargetEnv;
-    use crate::validation::{format_validation_error, FriendlyNames};
+    use crate::validation::{
+        format_validation_error, format_validation_error_from_words, FriendlyNames,
+    };
     use std::collections::HashMap;
     use std::num::NonZeroU32;
     use std::sync::Arc;
@@ -10984,6 +11008,37 @@ mod tests {
         assert!(
             !fallback.contains("named_func"),
             "fallback should omit friendly name"
+        );
+    }
+
+    #[test]
+    fn format_validation_error_from_words_parses_names() {
+        use crate::validation::ValidationOptions;
+
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpExecutionMode %main LocalSize 1 1 1",
+            "OpName %main \"friendly\"",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+
+        let binary = assemble_text(&text).expect("assemble");
+        let options = ValidationOptions::default();
+        let error = binary
+            .as_slice()
+            .validate_with_options(TargetEnv::Universal1_6, options.clone())
+            .expect_err("missing entry point should fail");
+        let rendered = format_validation_error_from_words(binary.as_slice(), &options, &error);
+        assert!(
+            rendered.contains("friendly"),
+            "expected rendered error to include friendly name, got {rendered}"
         );
     }
 

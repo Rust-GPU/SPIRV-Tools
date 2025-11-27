@@ -148,6 +148,7 @@ Planned tasks:
  - Gate `OpExecutionModeId LocalSizeId` by environment and the `allow_localsizeid` option, with regressions for Vulkan 1.0–1.2 defaults and the opt-in path.
  - Enforce Vulkan-only restrictions for image operand `Offset` (gather-only without `allow_offset_texture_operand`) and 32-bit-only bitwise operations unless `allow_vulkan_32_bit_bitwise` is set, with Rust regressions covering both the restricted and opt-in paths.
  - Provide friendly-name aware formatting helpers for `ValidationError` so diagnostics can render `%id (name)` when names are available.
+ - Surface friendly names in FFI validation errors by parsing `OpName`/`OpMemberName` from the input when `use_friendly_names` is enabled.
  - Ensure limit overrides (struct members, depth, locals, globals, switches, function args, control-flow depth, access chain indexes, id bound) are enforced with typed diagnostics. (Done for id bound, struct members/depth, locals/globals, function args, control-flow depth, switch branches, access chain indexes.)
  - Plumb option-aware diagnostics through the FFI/CLI and add integration coverage to keep the Rust path active when flags are set.
 
