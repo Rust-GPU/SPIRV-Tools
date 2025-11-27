@@ -290,6 +290,7 @@ Percentages are approximate and will be updated as new checklists are added for 
 2. Push validated-module caching deeper through FFI/CLI entry points to avoid reparsing/validating identical inputs.
 3. Fill in remaining SPIR-V version gating and per-instruction requirements from the grammar, then revisit disassembly fixtures once validator parity is solid.
 4. Thread the generated extension allowlist through capability/extension precedence (ray tracing, cooperative matrices, tile shading) with focused regressions, and capture any OpenGL-specific quirks that still rely on heuristics.
+   - The allowlist now gates capability-required extensions; vendor capabilities error out early when their extensions are forbidden by the target environment.
 
 ## Upcoming Milestone: Capability/Extension Ordering Parity
 Align the Rust validator’s capability/extension ordering and layout checks with the C++ tables.

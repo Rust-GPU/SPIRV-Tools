@@ -2176,21 +2176,23 @@ fn validate_capabilities(
                 }
             }
             if let Some(required_ext) = manual_required_extension {
-                if manual_requires_extension && !has_extension(extensions, required_ext) {
+                if manual_requires_extension {
                     if !extension_allowed_in_env(required_ext, env) {
                         return Err(ValidationError::DisallowedExtension {
                             extension: ExtensionName::from(required_ext),
                             env,
                         });
                     }
-                    return Err(ValidationError::DisallowedCapabilityMissingExtension {
-                        capability,
-                        required_extension: required_ext.to_string(),
-                    });
+                    if !has_extension(extensions, required_ext) {
+                        return Err(ValidationError::DisallowedCapabilityMissingExtension {
+                            capability,
+                            required_extension: required_ext.to_string(),
+                        });
+                    }
                 }
             }
 
-            let allowed_by_extension = capability_allowed_by_extension(capability, extensions);
+            let allowed_by_extension = capability_allowed_by_extension(env, capability, extensions);
             let allowed_by_capability =
                 capability_enabled_by_capability(env, capability, &declared);
             if !(allowed_by_env || allowed_by_extension || allowed_by_capability) {
@@ -2218,6 +2220,7 @@ fn validate_capabilities(
 }
 
 fn capability_allowed_by_extension(
+    env: TargetEnv,
     capability: rspirv::spirv::Capability,
     extensions: &ExtensionSet,
 ) -> bool {
@@ -2225,9 +2228,14 @@ fn capability_allowed_by_extension(
     grammar_requirements
         .required_extensions
         .iter()
-        .any(|required_ext| has_extension(extensions, required_ext))
+        .any(|required_ext| {
+            extension_allowed_in_env(required_ext, env) && has_extension(extensions, required_ext)
+        })
         || required_extension_for_capability(capability)
-            .map(|required_ext| has_extension(extensions, required_ext))
+            .map(|required_ext| {
+                extension_allowed_in_env(required_ext, env)
+                    && has_extension(extensions, required_ext)
+            })
             .unwrap_or(false)
 }
 
@@ -8091,6 +8099,7 @@ mod tests {
     fn vendor_capability_requiring_disallowed_extension_reports_env_error() {
         let text = [
             "OpCapability RayTracingNV",
+            "OpExtension \"SPV_NV_ray_tracing\"",
             "OpMemoryModel Logical GLSL450",
             "%void = OpTypeVoid",
             "%fn = OpTypeFunction %void",
