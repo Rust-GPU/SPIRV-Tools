@@ -157,6 +157,7 @@ set(TEST_SOURCES
   text_to_binary.type_declaration_test.cpp
   text_to_binary.subgroup_dispatch_test.cpp
   text_to_binary.reserved_sampling_test.cpp
+  rust_validator_override_test.cpp
   text_word_get_test.cpp
   to_string_test.cpp
 
