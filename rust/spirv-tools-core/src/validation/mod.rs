@@ -9534,6 +9534,32 @@ mod tests {
     }
 
     #[test]
+    fn descriptor_indexing_extension_is_vulkan_only() {
+        let text = module_with_extension("SPV_EXT_descriptor_indexing");
+        text.as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("Descriptor indexing extension should be accepted for Vulkan targets");
+
+        for env in [
+            TargetEnv::OpenCl2_2,
+            TargetEnv::Universal1_6,
+            TargetEnv::OpenGl4_5,
+        ] {
+            let error = text
+                .as_str()
+                .validate(env)
+                .expect_err("Descriptor indexing extension should be rejected outside Vulkan");
+            assert_eq!(
+                error,
+                ValidationError::DisallowedExtension {
+                    extension: ExtensionName::from("SPV_EXT_descriptor_indexing"),
+                    env
+                }
+            );
+        }
+    }
+
+    #[test]
     fn validate_module_rejects_duplicate_extension() {
         // Hand-assemble a module with duplicate OpExtension instructions.
         let extension_word = 0x0006_000a; // word count 6, opcode OpExtension (10)
