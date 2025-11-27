@@ -6328,6 +6328,59 @@ mod tests {
     }
 
     #[test]
+    fn conditional_capability_cannot_follow_ext_inst_import() {
+        // Conditional capabilities must precede extension imports.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            2,
+            0,
+            op(3, 11), // OpExtInstImport %1 "G" (imports section)
+            1,
+            0x0000_0047, // "G"
+            op(3, 6250), // OpConditionalCapabilityINTEL %1 Geometry (misordered after imports)
+            1,
+            rspirv::spirv::Capability::Geometry as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::ConditionalCapabilityINTEL
+            }
+        );
+    }
+
+    #[test]
+    fn conditional_capability_cannot_follow_memory_model() {
+        // Conditional capabilities must be declared before the memory model.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            2,
+            0,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(3, 6250), // OpConditionalCapabilityINTEL %1 Geometry (misordered after memory model)
+            1,
+            rspirv::spirv::Capability::Geometry as u32,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::ConditionalCapabilityINTEL
+            }
+        );
+    }
+
+    #[test]
     fn conditional_capability_cannot_appear_inside_functions() {
         // Conditional capabilities belong to the capabilities section, not inside functions.
         let binary = vec![

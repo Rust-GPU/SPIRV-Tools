@@ -112,6 +112,7 @@ Tasks for this milestone:
 - Treat conditional entry points equivalently to standard entry points when validating targets and execution modes; added binary regressions for invalid targets and execution-mode linkage.
 - Added layout regressions to keep conditional entry points before debug/names and outside/after function bodies to mirror section ordering rules.
 - Added layout coverage to ensure conditional extensions cannot follow imported instruction sets, keeping extension/import ordering aligned with the C++ validator.
+- Added layout coverage to ensure conditional capabilities cannot follow imported instruction sets or the memory model, matching capability ordering rules.
 
 ## Upcoming Milestone: Capability/Extension Parity
 Bring the Rust validator to full capability/extension parity with the C++ tables using the grammar-driven dependency metadata and explicit per-environment rules.
