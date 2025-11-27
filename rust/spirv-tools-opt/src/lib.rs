@@ -192,10 +192,13 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("mul-fold"; "(* ?a ?b)" => { FoldMul }),
         rewrite!("sub-fold"; "(- ?a ?b)" => { FoldSub }),
         rewrite!("sub-zero-right"; "(- ?a ?b)" => "?a" if is_const_zero(var("?b"))),
+        rewrite!("sub-self"; "(- ?a ?a)" => { SubSelf }),
         rewrite!("neg-fold"; "(neg ?a)" => { FoldNeg }),
         rewrite!("double-neg"; "(neg (neg ?a))" => "?a"),
         rewrite!("div-fold"; "(/ ?a ?b)" => { FoldDiv }),
         rewrite!("rem-fold"; "(% ?a ?b)" => { FoldRem }),
+        rewrite!("add-neg-cancel"; "(+ ?a (neg ?a))" => { AddNegZero }),
+        rewrite!("add-neg-cancel-swap"; "(+ (neg ?a) ?a)" => { AddNegZero }),
     ]
 }
 
@@ -205,6 +208,8 @@ struct FoldSub;
 struct FoldNeg;
 struct FoldDiv;
 struct FoldRem;
+struct SubSelf;
+struct AddNegZero;
 struct AddZero {
     a: Var,
     b: Var,
@@ -350,6 +355,36 @@ impl Applier<SpirvLang, ()> for FoldRem {
         let id = egraph.add(SpirvLang::Const(rem));
         egraph.union(eclass, id);
         vec![id]
+    }
+}
+
+impl Applier<SpirvLang, ()> for SubSelf {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        _subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let const_zero = egraph.add(SpirvLang::Const(ConstValue::new(0)));
+        egraph.union(eclass, const_zero);
+        vec![const_zero]
+    }
+}
+
+impl Applier<SpirvLang, ()> for AddNegZero {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        _subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let const_zero = egraph.add(SpirvLang::Const(ConstValue::new(0)));
+        egraph.union(eclass, const_zero);
+        vec![const_zero]
     }
 }
 
@@ -556,6 +591,33 @@ mod tests {
     }
 
     #[test]
+    fn folds_subtract_self_to_zero() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Sub([Id::from(0), Id::from(0)]), // 1 => x - x
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Const(ConstValue::new(0))])
+        );
+    }
+
+    #[test]
+    fn folds_add_negation_to_zero() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("y")), // 0
+            SpirvLang::Neg(Id::from(0)),          // 1 => -y
+            SpirvLang::Add([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Const(ConstValue::new(0))])
+        );
+    }
+
+    #[test]
     fn translate_and_optimize_spirv_block() {
         // Build a trivial SPIR-V function body: %c2 = 2, %c0 = 0, %sum = OpIAdd %c2 %c0
         let mut b = Builder::new();
@@ -630,6 +692,31 @@ mod tests {
         assert_eq!(folded.result_id, Some(3));
         assert_eq!(folded.result_type, Some(int));
         assert_eq!(folded.operands, vec![rspirv::dr::Operand::LiteralBit32(5)]);
+    }
+
+    #[test]
+    fn optimize_arith_block_folds_sub_self_to_zero() {
+        let mut b = Builder::new();
+        let int = b.type_int(32, 0);
+        let c7 = Instruction::new(
+            rspirv::spirv::Op::Constant,
+            Some(int),
+            Some(1),
+            vec![rspirv::dr::Operand::LiteralBit32(7)],
+        );
+        let sub = Instruction::new(
+            rspirv::spirv::Op::ISub,
+            Some(int),
+            Some(3),
+            vec![rspirv::dr::Operand::IdRef(1), rspirv::dr::Operand::IdRef(1)],
+        );
+        let block = vec![c7, sub];
+        let optimized = optimize_arith_block(&block).expect("optimized");
+        assert_eq!(optimized.len(), 1);
+        let inst = &optimized[0];
+        assert_eq!(inst.class.opcode, rspirv::spirv::Op::Constant);
+        assert_eq!(inst.result_id, Some(3));
+        assert_eq!(inst.operands, vec![rspirv::dr::Operand::LiteralBit32(0)]);
     }
 
     #[test]
