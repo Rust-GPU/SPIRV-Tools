@@ -117,6 +117,24 @@ impl FriendlyNames {
             .map(String::as_str)
     }
 
+    /// Formats an id with a friendly suffix when available (e.g., `%5 (foo)`).
+    pub fn format_id(&self, id: u32) -> String {
+        if let Some(name) = self.id(id) {
+            format!("%{id} ({name})")
+        } else {
+            format!("%{id}")
+        }
+    }
+
+    /// Formats a struct member with a friendly suffix when available.
+    pub fn format_member(&self, struct_id: u32, member: MemberIndex) -> String {
+        if let Some(name) = self.member(struct_id, member) {
+            format!("%{struct_id}.{member} ({name})")
+        } else {
+            format!("%{struct_id}.{member}")
+        }
+    }
+
     /// Accesses the raw id→name table.
     pub fn id_names(&self) -> &HashMap<u32, String> {
         &self.id_names
@@ -10823,6 +10841,60 @@ mod tests {
             .as_slice()
             .validate_with_options(TargetEnv::Vulkan1_1, options)
             .expect("64-bit bitwise ops should be allowed when option is enabled");
+    }
+
+    #[test]
+    fn friendly_name_helpers_format_ids_and_members() {
+        use crate::validation::ValidationOptions;
+
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpName %func \"friendly\"",
+            "OpName %S \"Struct\"",
+            "OpMemberName %S 0 \"field\"",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%uint = OpTypeInt 32 0",
+            "%S = OpTypeStruct %uint",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+        let options = ValidationOptions {
+            use_friendly_names: true,
+            ..ValidationOptions::default()
+        };
+        let module = binary
+            .as_slice()
+            .validate_with_options(TargetEnv::Universal1_6, options)
+            .expect("validation should succeed");
+        let names = module.friendly_names().expect("friendly names present");
+
+        let (&named_func_id, _) = names
+            .id_names()
+            .iter()
+            .find(|(_, name)| name.as_str() == "friendly")
+            .expect("function name should be present");
+        let formatted_func = names.format_id(named_func_id);
+        assert!(
+            formatted_func.contains("(friendly)"),
+            "expected friendly suffix, got {formatted_func}"
+        );
+
+        let (&struct_id, _) = names
+            .id_names()
+            .iter()
+            .find(|(_, name)| name.as_str() == "Struct")
+            .expect("struct name should be present");
+        let formatted_member = names.format_member(struct_id, MemberIndex(0));
+        assert!(
+            formatted_member.contains("(field)"),
+            "expected member friendly suffix, got {formatted_member}"
+        );
     }
 
     #[test]
