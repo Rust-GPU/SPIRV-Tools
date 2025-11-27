@@ -214,6 +214,18 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("sub-add-cancel-right"; "(- (+ ?a ?b) ?b)" => "?a"),
         rewrite!("sub-add-cancel-left"; "(- (+ ?a ?b) ?a)" => "?b"),
         rewrite!("sub-sub-cancel-left"; "(- ?a (- ?a ?b))" => "?b"),
+        rewrite!("mul-merge-consts-right"; "(* (* ?x ?c1) ?c2)" => {
+            MulMergeConst { base: var("?x"), c1: var("?c1"), c2: var("?c2") }
+        }),
+        rewrite!("mul-merge-consts-left"; "(* (* ?c1 ?x) ?c2)" => {
+            MulMergeConst { base: var("?x"), c1: var("?c1"), c2: var("?c2") }
+        }),
+        rewrite!("mul-merge-consts-root-left"; "(* ?c2 (* ?x ?c1))" => {
+            MulMergeConst { base: var("?x"), c1: var("?c1"), c2: var("?c2") }
+        }),
+        rewrite!("mul-merge-consts-root-right"; "(* ?c2 (* ?c1 ?x))" => {
+            MulMergeConst { base: var("?x"), c1: var("?c1"), c2: var("?c2") }
+        }),
         rewrite!("add-merge-consts-right"; "(+ (+ ?x ?c1) ?c2)" => {
             AddMergeConst { base: var("?x"), c1: var("?c1"), c2: var("?c2") }
         }),
@@ -304,6 +316,11 @@ struct AddSubConstLhs {
     base_const: Var,
     rhs: Var,
     add_const: Var,
+}
+struct MulMergeConst {
+    base: Var,
+    c1: Var,
+    c2: Var,
 }
 
 impl Applier<SpirvLang, ()> for FoldAdd {
@@ -694,6 +711,29 @@ impl Applier<SpirvLang, ()> for AddSubConstLhs {
     }
 }
 
+impl Applier<SpirvLang, ()> for MulMergeConst {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(c1) = const_value(egraph, subst[self.c1]) else {
+            return Vec::new();
+        };
+        let Some(c2) = const_value(egraph, subst[self.c2]) else {
+            return Vec::new();
+        };
+        let merged = ConstValue::new(c1.get().wrapping_mul(c2.get()));
+        let const_id = egraph.add(SpirvLang::Const(merged));
+        let mul = egraph.add(SpirvLang::Mul([subst[self.base], const_id]));
+        egraph.union(eclass, mul);
+        vec![mul]
+    }
+}
+
 fn const_value(egraph: &EGraph<SpirvLang, ()>, id: Id) -> Option<ConstValue> {
     egraph[id].nodes.iter().find_map(|node| match node {
         SpirvLang::Const(value) => Some(*value),
@@ -1013,6 +1053,52 @@ mod tests {
         };
         assert_eq!(symbol, &Symbol::from("x"));
         assert_eq!(constant.get(), 5, "constants should merge to 5");
+    }
+
+    #[test]
+    fn merges_nested_mul_constants_into_single_factor() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Const(ConstValue::new(2)),       // 1
+            SpirvLang::Mul([Id::from(0), Id::from(1)]), // 2 = x * 2
+            SpirvLang::Const(ConstValue::new(3)),       // 3
+            SpirvLang::Mul([Id::from(2), Id::from(3)]), // 4 = (x * 2) * 3
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::Mul([lhs, rhs])) = nodes.last() else {
+            panic!("expected mul root, got {:?}", nodes.last());
+        };
+        let (symbol, constant) = match (&nodes[usize::from(*lhs)], &nodes[usize::from(*rhs)]) {
+            (SpirvLang::Symbol(sym), SpirvLang::Const(val)) => (sym, val),
+            (SpirvLang::Const(val), SpirvLang::Symbol(sym)) => (sym, val),
+            other => panic!("unexpected operands for merged mul: {other:?}"),
+        };
+        assert_eq!(symbol, &Symbol::from("x"));
+        assert_eq!(constant.get(), 6, "factors should merge to 6");
+    }
+
+    #[test]
+    fn merges_mul_constants_with_commutativity() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new(5)),       // 0
+            SpirvLang::Symbol(Symbol::from("y")),       // 1
+            SpirvLang::Mul([Id::from(0), Id::from(1)]), // 2 = 5 * y
+            SpirvLang::Const(ConstValue::new(4)),       // 3
+            SpirvLang::Mul([Id::from(3), Id::from(2)]), // 4 = 4 * (5 * y)
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::Mul([lhs, rhs])) = nodes.last() else {
+            panic!("expected mul root, got {:?}", nodes.last());
+        };
+        let (symbol, constant) = match (&nodes[usize::from(*lhs)], &nodes[usize::from(*rhs)]) {
+            (SpirvLang::Symbol(sym), SpirvLang::Const(val)) => (sym, val),
+            (SpirvLang::Const(val), SpirvLang::Symbol(sym)) => (sym, val),
+            other => panic!("unexpected operands for merged mul commutative: {other:?}"),
+        };
+        assert_eq!(symbol, &Symbol::from("y"));
+        assert_eq!(constant.get(), 20, "factors should merge to 20");
     }
 
     #[test]
