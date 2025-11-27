@@ -909,4 +909,32 @@ mod tests {
         assert!(TargetEnv::Universal1_5.is_extension_allowed(&intel_ext));
         assert!(!TargetEnv::Vulkan1_1.is_extension_allowed(&intel_ext));
     }
+
+    #[test]
+    fn webgpu_rejects_all_extensions() {
+        use super::ExtensionName;
+        let nv_ext = ExtensionName::from("SPV_NV_mesh_shader");
+        let amd_ext = ExtensionName::from("SPV_AMD_shader_trinary_minmax");
+        assert!(!TargetEnv::WebGpu0.is_extension_allowed(&nv_ext));
+        assert!(!TargetEnv::WebGpu0.is_extension_allowed(&amd_ext));
+    }
+
+    #[test]
+    fn opencl_accepts_intel_vendor_extensions() {
+        use super::ExtensionName;
+        let intel_ext = ExtensionName::from("SPV_INTEL_shader_integer_functions2");
+        assert!(TargetEnv::OpenCl2_2.is_extension_allowed(&intel_ext));
+        assert!(TargetEnv::Universal1_6.is_extension_allowed(&intel_ext));
+        assert!(!TargetEnv::Vulkan1_2.is_extension_allowed(&intel_ext));
+        assert!(!TargetEnv::OpenGl4_5.is_extension_allowed(&intel_ext));
+    }
+
+    #[test]
+    fn opencl_rejects_general_vendor_extensions() {
+        use super::ExtensionName;
+        let google_ext = ExtensionName::from("SPV_GOOGLE_hlsl_functionality1");
+        assert!(!TargetEnv::OpenCl2_2.is_extension_allowed(&google_ext));
+        assert!(TargetEnv::Universal1_6.is_extension_allowed(&google_ext));
+        assert!(!TargetEnv::OpenGl4_5.is_extension_allowed(&google_ext));
+    }
 }
