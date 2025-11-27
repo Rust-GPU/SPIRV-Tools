@@ -158,7 +158,9 @@ Planned tasks:
 - [x] Enforce matrix stride alignment/size and row-major straddle rules under relaxed layouts, rejecting missing MatrixStride and strides smaller than column size.
 - [x] Keep `relax_struct_store` parity for arrays by rejecting mismatched strides even under relaxed struct-store handling, with binary/regression coverage for the validation and compatibility helpers.
 - [x] Enforce logical pointer rules for logical addressing (pointer-to-pointer allocations gated on VariablePointers* caps and Function/Private storage), with a `relax_logical_pointer` opt-out and Rust regressions.
-- Enforce `OpStore` pointer/object type compatibility with a `relax_struct_store` escape hatch for layout-compatible structs (struct/array recursion) and typed errors; added regressions covering both relaxed acceptance, array-length mismatches, and layout-relaxed acceptance (block layout relax flags).
+- [x] Enforce `OpStore` pointer/object type compatibility with a `relax_struct_store` escape hatch for layout-compatible structs (struct/array recursion) and typed errors; added regressions covering both relaxed acceptance, array-length mismatches, and layout-relaxed acceptance (block layout relax flags).
+
+With validator options parity achieved, proceed to capability/extension ordering and decoration/layout parity to close the remaining structural gaps.
 
 ## Upcoming Milestone: Block/Layout Relaxations Parity
 Implement the semantics of layout-related validator options so they match the C++ validator while keeping the Rust path active.
