@@ -385,3 +385,13 @@ Planned tasks:
 - Add fuzzing harnesses using `cargo fuzz` + `arbitrary` to stress rewrites and round-trip assembly/disassembly.
 - Establish benchmarks with `criterion` (and `hyperfine` for CLI) to track regressions against the C++ optimizer.
 - Port representative optimizer passes and their C++ tests into Rust unit/integration tests to validate e-graph results.
+
+## Upcoming Milestone: Optimizer FFI/CLI Integration
+Expose the Rust optimizer through the existing C/C++ surfaces and provide CLI benchmarking.
+
+Planned tasks:
+- Add FFI hooks in `spirv-tools-ffi` to invoke the Rust optimizer on arithmetic/basic-block inputs, preserving the C API shape.
+- Wire the Rust optimizer into the CLI with a feature flag and add a hyperfine benchmark script comparing Rust vs C++ optimizer paths.
+- Extend translation to cover common arithmetic/basic-block patterns (including div/rem/neg) and ensure non-arithmetic ops pass through untouched.
+- Add fuzz targets for translated basic blocks to stress end-to-end translation + optimization.
+- Port representative optimizer tests from the C++ suite to the Rust path to validate parity over FFI/CLI.
