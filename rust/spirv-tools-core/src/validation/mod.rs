@@ -9427,6 +9427,22 @@ mod tests {
     }
 
     #[test]
+    fn opengl_rejects_google_vendor_extension() {
+        let text = module_with_extension("SPV_GOOGLE_decorate_string");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::OpenGl4_5)
+            .expect_err("OpenGL should reject GOOGLE vendor extensions");
+        assert_eq!(
+            error,
+            ValidationError::DisallowedExtension {
+                extension: ExtensionName::from("SPV_GOOGLE_decorate_string"),
+                env: TargetEnv::OpenGl4_5
+            }
+        );
+    }
+
+    #[test]
     fn validate_module_rejects_duplicate_extension() {
         // Hand-assemble a module with duplicate OpExtension instructions.
         let extension_word = 0x0006_000a; // word count 6, opcode OpExtension (10)

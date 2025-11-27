@@ -458,7 +458,7 @@ impl TargetEnv {
             return self.is_vulkan();
         }
         if has_any_prefix(&lower, GENERAL_VENDOR_PREFIXES) {
-            return !self.is_opencl();
+            return self.is_vulkan() || self.is_universal();
         }
         if has_any_prefix(&lower, OPENCL_VENDOR_PREFIXES) {
             return self.is_opencl() || self.is_universal();
@@ -864,6 +864,7 @@ mod tests {
         assert!(TargetEnv::Vulkan1_2.is_extension_allowed(&google_ext));
         assert!(TargetEnv::Universal1_6.is_extension_allowed(&google_ext));
         assert!(!TargetEnv::OpenCl1_2.is_extension_allowed(&google_ext));
+        assert!(!TargetEnv::OpenGl4_5.is_extension_allowed(&google_ext));
 
         let qcom_ext = ExtensionName::from("SPV_QCOM_image_processing");
         assert!(TargetEnv::Vulkan1_2.is_extension_allowed(&qcom_ext));
