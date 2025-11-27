@@ -111,4 +111,46 @@ mod optimizer_tests {
         }
         assert!(found_zero, "sub should fold to constant zero");
     }
+
+    #[test]
+    fn optimizer_folds_mul_by_zero() {
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let func_ty = b.type_function(void, vec![]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        let c5 = b.constant_bit32(int, 5);
+        let c0 = b.constant_bit32(int, 0);
+        let mul = b.i_mul(int, None, c5, c0).expect("mul id");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let optimized_module = loader.module();
+
+        let mut found_zero = false;
+        for inst in optimized_module.all_inst_iter() {
+            if inst.class.opcode == Op::IMul {
+                panic!("mul should be folded away");
+            }
+            if inst.class.opcode == Op::Constant
+                && inst.result_id == Some(mul)
+                && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0)]
+            {
+                found_zero = true;
+            }
+        }
+        assert!(found_zero, "mul by zero should fold to constant zero");
+    }
 }
