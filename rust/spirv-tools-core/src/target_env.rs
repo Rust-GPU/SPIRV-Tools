@@ -14,6 +14,26 @@ fn has_any_prefix(value: &str, prefixes: &[&str]) -> bool {
     prefixes.iter().any(|prefix| value.starts_with(prefix))
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum VendorFamily {
+    VulkanOnly,
+    General,
+    OpenCl,
+}
+
+fn classify_vendor_extension(name_lower: &str) -> Option<VendorFamily> {
+    if has_any_prefix(name_lower, VULKAN_ONLY_VENDOR_PREFIXES) {
+        return Some(VendorFamily::VulkanOnly);
+    }
+    if has_any_prefix(name_lower, GENERAL_VENDOR_PREFIXES) {
+        return Some(VendorFamily::General);
+    }
+    if has_any_prefix(name_lower, OPENCL_VENDOR_PREFIXES) {
+        return Some(VendorFamily::OpenCl);
+    }
+    None
+}
+
 /// Rust representation of `spv_target_env`.
 #[repr(u32)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -454,14 +474,12 @@ impl TargetEnv {
         if is_vulkan_specific_extension(extension.as_str()) || lower.contains("vulkan") {
             return self.is_vulkan();
         }
-        if has_any_prefix(&lower, VULKAN_ONLY_VENDOR_PREFIXES) {
-            return self.is_vulkan();
-        }
-        if has_any_prefix(&lower, GENERAL_VENDOR_PREFIXES) {
-            return self.is_vulkan() || self.is_universal();
-        }
-        if has_any_prefix(&lower, OPENCL_VENDOR_PREFIXES) {
-            return self.is_opencl() || self.is_universal();
+        if let Some(family) = classify_vendor_extension(&lower) {
+            return match family {
+                VendorFamily::VulkanOnly => self.is_vulkan(),
+                VendorFamily::General => self.is_vulkan() || self.is_universal(),
+                VendorFamily::OpenCl => self.is_opencl() || self.is_universal(),
+            };
         }
         true
     }
