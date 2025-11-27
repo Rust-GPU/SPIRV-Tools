@@ -9278,19 +9278,19 @@ mod tests {
         .join("\n");
         let error = text
             .as_str()
-            .validate(TargetEnv::Universal1_2)
+            .validate(TargetEnv::Vulkan1_0)
             .expect_err("device group requires SPIR-V 1.3");
         assert_eq!(
             error,
             ValidationError::ExtensionRequiresSpirvVersion {
                 extension: ExtensionName::from("SPV_KHR_device_group"),
                 required_version: SpirvVersion::new(1, 3),
-                target_version: SpirvVersion::new(1, 2),
+                target_version: TargetEnv::Vulkan1_0.spirv_version(),
             }
         );
 
         text.as_str()
-            .validate(TargetEnv::Universal1_6)
+            .validate(TargetEnv::Vulkan1_2)
             .expect("extension should be accepted with SPIR-V 1.3+");
     }
 
@@ -11049,6 +11049,7 @@ mod tests {
         builder.set_version(1, 0);
         builder.capability(rspirv::spirv::Capability::Shader);
         builder.capability(rspirv::spirv::Capability::DeviceGroup);
+        builder.extension("SPV_KHR_device_group");
         builder.memory_model(
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
@@ -11064,16 +11065,29 @@ mod tests {
         let words = builder.module().assemble();
         let error = words
             .as_slice()
-            .validate(TargetEnv::Universal1_6)
+            .validate(TargetEnv::Vulkan1_0)
             .expect_err("module version 1.0 should reject DeviceGroup (needs 1.3)");
-        assert_eq!(
-            error,
-            ValidationError::CapabilityRequiresSpirvVersion {
-                capability: rspirv::spirv::Capability::DeviceGroup,
-                required_version: SpirvVersion::new(1, 3),
-                target_version: SpirvVersion::new(1, 0),
+        match error {
+            ValidationError::ExtensionRequiresSpirvVersion {
+                extension,
+                required_version,
+                target_version,
+            } => {
+                assert_eq!(extension, ExtensionName::from("SPV_KHR_device_group"));
+                assert_eq!(required_version, SpirvVersion::new(1, 3));
+                assert_eq!(target_version, TargetEnv::Vulkan1_0.spirv_version());
             }
-        );
+            ValidationError::CapabilityRequiresSpirvVersion {
+                capability,
+                required_version,
+                target_version,
+            } => {
+                assert_eq!(capability, rspirv::spirv::Capability::DeviceGroup);
+                assert_eq!(required_version, SpirvVersion::new(1, 3));
+                assert_eq!(target_version, TargetEnv::Vulkan1_0.spirv_version());
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
     }
 
     #[test]
@@ -12439,6 +12453,7 @@ mod tests {
         let text = [
             "OpCapability Shader",
             "OpCapability DeviceGroup",
+            "OpExtension \"SPV_KHR_device_group\"",
             "OpMemoryModel Logical GLSL450",
             "%void = OpTypeVoid",
             "%fn = OpTypeFunction %void",
@@ -12450,20 +12465,77 @@ mod tests {
         .join("\n");
         let error = text
             .as_str()
-            .validate(TargetEnv::Universal1_2)
+            .validate(TargetEnv::Vulkan1_0)
             .expect_err("DeviceGroup requires SPIR-V 1.3");
-        assert_eq!(
-            error,
-            ValidationError::CapabilityRequiresSpirvVersion {
-                capability: rspirv::spirv::Capability::DeviceGroup,
-                required_version: SpirvVersion::new(1, 3),
-                target_version: SpirvVersion::new(1, 2),
+        match error {
+            ValidationError::ExtensionRequiresSpirvVersion {
+                extension,
+                required_version,
+                target_version,
+            } => {
+                assert_eq!(extension, ExtensionName::from("SPV_KHR_device_group"));
+                assert_eq!(required_version, SpirvVersion::new(1, 3));
+                assert_eq!(target_version, TargetEnv::Vulkan1_0.spirv_version());
             }
-        );
+            ValidationError::CapabilityRequiresSpirvVersion {
+                capability,
+                required_version,
+                target_version,
+            } => {
+                assert_eq!(capability, rspirv::spirv::Capability::DeviceGroup);
+                assert_eq!(required_version, SpirvVersion::new(1, 3));
+                assert_eq!(target_version, TargetEnv::Vulkan1_0.spirv_version());
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
 
         text.as_str()
-            .validate(TargetEnv::Universal1_6)
+            .validate(TargetEnv::Vulkan1_2)
             .expect("DeviceGroup accepted on SPIR-V 1.3+");
+    }
+
+    #[test]
+    fn device_group_extension_is_vulkan_only() {
+        assert_vulkan_only_extension("SPV_KHR_device_group");
+    }
+
+    #[test]
+    fn device_group_capability_rejected_outside_vulkan_even_with_extension() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability DeviceGroup",
+            "OpExtension \"SPV_KHR_device_group\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+
+        for env in [
+            TargetEnv::Universal1_5,
+            TargetEnv::OpenCl2_2,
+            TargetEnv::OpenGl4_5,
+        ] {
+            let error = text
+                .as_str()
+                .validate(env)
+                .expect_err("DeviceGroup should be rejected when its extension is disallowed");
+            assert_eq!(
+                error,
+                ValidationError::DisallowedExtension {
+                    extension: ExtensionName::from("SPV_KHR_device_group"),
+                    env
+                }
+            );
+        }
+
+        text.as_str()
+            .validate(TargetEnv::Vulkan1_1)
+            .expect("DeviceGroup should be accepted for Vulkan targets");
     }
 
     #[test]

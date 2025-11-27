@@ -293,6 +293,7 @@ Percentages are approximate and will be updated as new checklists are added for 
    - Added capability/extension precedence coverage for ray-tracing adjunct capabilities (`RayTracingLinearSweptSpheresGeometryNV`, `RayTracingOpacityMicromapEXT`) to ensure their extensions are required and rejected outside Vulkan even when declared.
    - Added coverage for NV ray-tracing motion blur: capability now requires `SPV_NV_ray_tracing_motion_blur`, and non-Vulkan environments reject it even when the extensions are declared.
    - Added coverage for NV ray-tracing displacement micromaps: capability now requires `SPV_NV_displacement_micromap` and is rejected in non-Vulkan environments even when declared.
+   - Marked `SPV_KHR_device_group` as Vulkan-only and added env/version-gated regressions for the extension and capability.
    - Marked `SPV_KHR_shader_clock` as Vulkan-only in the generated allowlist and added env-gated tests for the extension and capability.
    - The generated allowlist now marks `SPV_KHR_fragment_shading_rate` and `SPV_EXT_fragment_invocation_density` as Vulkan-only to mirror the C++ tables.
 
