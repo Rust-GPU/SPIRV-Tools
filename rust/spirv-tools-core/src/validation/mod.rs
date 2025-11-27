@@ -2374,6 +2374,7 @@ fn required_extension_for_capability(
         ShaderSMBuiltinsNV => Some("SPV_NV_shader_sm_builtins"),
         ShaderClockKHR => Some("SPV_KHR_shader_clock"),
         TileShadingQCOM => Some("SPV_QCOM_tile_shading"),
+        SpecConditionalINTEL | FunctionVariantsINTEL => Some("SPV_INTEL_function_variants"),
         _ => None,
     }
 }
@@ -8474,6 +8475,67 @@ mod tests {
             ValidationError::LayoutOutOfOrder {
                 opcode: rspirv::spirv::Op::ConditionalEntryPointINTEL
             }
+        );
+    }
+
+    #[test]
+    fn spec_conditional_capability_requires_extension() {
+        let text = [
+            "OpCapability Kernel",
+            "OpCapability Linkage",
+            "OpCapability SpecConditionalINTEL",
+            "OpMemoryModel Logical OpenCL",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("SpecConditionalINTEL requires SPV_INTEL_function_variants");
+        assert_eq!(
+            error,
+            ValidationError::DisallowedCapabilityMissingExtension {
+                capability: rspirv::spirv::Capability::SpecConditionalINTEL,
+                required_extension: "SPV_INTEL_function_variants".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn function_variants_capability_requires_spec_conditional() {
+        let text = [
+            "OpCapability Kernel",
+            "OpCapability Linkage",
+            "OpCapability FunctionVariantsINTEL",
+            "OpExtension \"SPV_INTEL_function_variants\"",
+            "OpMemoryModel Logical OpenCL",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("FunctionVariantsINTEL requires SpecConditionalINTEL capability");
+        assert_eq!(
+            error,
+            ValidationError::MissingRequiredCapability {
+                required_capability: rspirv::spirv::Capability::SpecConditionalINTEL,
+                capability: rspirv::spirv::Capability::FunctionVariantsINTEL
+            }
+        );
+    }
+
+    #[test]
+    fn function_variants_capability_accepts_extension_and_dependency() {
+        let text = [
+            "OpCapability Kernel",
+            "OpCapability Linkage",
+            "OpCapability SpecConditionalINTEL",
+            "OpCapability FunctionVariantsINTEL",
+            "OpExtension \"SPV_INTEL_function_variants\"",
+            "OpMemoryModel Logical OpenCL",
+        ]
+        .join("\n");
+        text.as_str().validate(TargetEnv::Universal1_6).expect(
+            "FunctionVariantsINTEL should be accepted with required extension and capability",
         );
     }
 
