@@ -105,6 +105,17 @@ pub struct FriendlyNames {
 }
 
 impl FriendlyNames {
+    /// Constructs a friendly-name table from raw id/member maps.
+    pub fn from_parts(
+        id_names: HashMap<u32, String>,
+        member_names: HashMap<(u32, MemberIndex), String>,
+    ) -> Self {
+        FriendlyNames {
+            id_names,
+            member_names,
+        }
+    }
+
     /// Returns any `OpName`-provided name for the given result id.
     pub fn id(&self, id: u32) -> Option<&str> {
         self.id_names.get(&id).map(String::as_str)
@@ -143,6 +154,58 @@ impl FriendlyNames {
     /// Accesses the raw (struct id, member)→name table.
     pub fn member_names(&self) -> &HashMap<(u32, MemberIndex), String> {
         &self.member_names
+    }
+}
+
+/// Formats a validation error, appending friendly names when provided.
+pub fn format_validation_error(error: &ValidationError, names: Option<&FriendlyNames>) -> String {
+    match (error, names) {
+        (ValidationError::ExecutionModeWithoutEntryPoint { function }, Some(names)) => {
+            names.format_id((*function).into())
+        }
+        (ValidationError::InvalidEntryPointTarget { target, .. }, Some(names)) => {
+            names.format_id((*target).into())
+        }
+        (ValidationError::FunctionDeclarationAfterDefinition { function }, Some(names)) => {
+            names.format_id((*function).into())
+        }
+        (ValidationError::MissingFunctionEntryBlock { function }, Some(names)) => {
+            names.format_id((*function).into())
+        }
+        (ValidationError::MissingBlockTerminator { function, block }, Some(names)) => format!(
+            "{} in block {}",
+            names.format_id((*function).into()),
+            names.format_id((*block).into())
+        ),
+        (ValidationError::InstructionsAfterTerminator { function, block }, Some(names)) => format!(
+            "{} in block {}",
+            names.format_id((*function).into()),
+            names.format_id((*block).into())
+        ),
+        (ValidationError::MissingBlockTarget { function, target }, Some(names)) => format!(
+            "{} missing block {}",
+            names.format_id((*function).into()),
+            names.format_id((*target).into())
+        ),
+        (ValidationError::MissingReturnValue { function, .. }, Some(names)) => {
+            names.format_id((*function).into())
+        }
+        (ValidationError::ReturnValueInVoidFunction { function }, Some(names)) => {
+            names.format_id((*function).into())
+        }
+        (ValidationError::FunctionTypeParameterVoid { type_id, parameter }, Some(names)) => {
+            format!(
+                "{} parameter {}",
+                names.format_id((*type_id).into()),
+                names.format_id((*parameter).into())
+            )
+        }
+        (ValidationError::FunctionReturnTypeMismatch { function, .. }, Some(names))
+        | (ValidationError::FunctionParameterCountMismatch { function, .. }, Some(names))
+        | (ValidationError::FunctionParameterTypeMismatch { function, .. }, Some(names)) => {
+            names.format_id((*function).into())
+        }
+        _ => error.to_string(),
     }
 }
 
@@ -4188,6 +4251,8 @@ mod tests {
     };
     use crate::assembly::assemble_text;
     use crate::target_env::TargetEnv;
+    use crate::validation::{format_validation_error, FriendlyNames};
+    use std::collections::HashMap;
     use std::num::NonZeroU32;
     use std::sync::Arc;
 
@@ -10894,6 +10959,31 @@ mod tests {
         assert!(
             formatted_member.contains("(field)"),
             "expected member friendly suffix, got {formatted_member}"
+        );
+    }
+
+    #[test]
+    fn format_validation_error_uses_friendly_names_when_available() {
+        use std::iter::FromIterator;
+
+        let id = 42;
+        let names = FriendlyNames::from_parts(
+            HashMap::from_iter([(id, "named_func".to_string())]),
+            HashMap::new(),
+        );
+        let error = ValidationError::ExecutionModeWithoutEntryPoint {
+            function: Id::try_from(id).unwrap(),
+        };
+        let rendered = format_validation_error(&error, Some(&names));
+        assert!(
+            rendered.contains("named_func"),
+            "expected friendly name in rendered error, got {rendered}"
+        );
+
+        let fallback = format_validation_error(&error, None);
+        assert!(
+            !fallback.contains("named_func"),
+            "fallback should omit friendly name"
         );
     }
 
