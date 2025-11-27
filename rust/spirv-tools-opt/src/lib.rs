@@ -155,6 +155,9 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("mul-comm"; "(* ?a ?b)" => "(* ?b ?a)"),
         rewrite!("add-assoc"; "(+ ?a (+ ?b ?c))" => "(+ (+ ?a ?b) ?c)"),
         rewrite!("mul-assoc"; "(* ?a (* ?b ?c))" => "(* (* ?a ?b) ?c)"),
+        rewrite!("add-zero"; "(+ ?a ?b)" => { AddZero { a: var("?a"), b: var("?b") } }),
+        rewrite!("mul-one"; "(* ?a ?b)" => { MulOne { a: var("?a"), b: var("?b") } }),
+        rewrite!("mul-zero"; "(* ?a ?b)" => { MulZero { a: var("?a"), b: var("?b") } }),
         rewrite!("add-fold"; "(+ ?a ?b)" => { FoldAdd }),
         rewrite!("mul-fold"; "(* ?a ?b)" => { FoldMul }),
     ]
@@ -162,6 +165,18 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
 
 struct FoldAdd;
 struct FoldMul;
+struct AddZero {
+    a: Var,
+    b: Var,
+}
+struct MulOne {
+    a: Var,
+    b: Var,
+}
+struct MulZero {
+    a: Var,
+    b: Var,
+}
 
 impl Applier<SpirvLang, ()> for FoldAdd {
     fn apply_one(
@@ -204,6 +219,68 @@ impl Applier<SpirvLang, ()> for FoldMul {
         let id = egraph.add(SpirvLang::Const(product));
         egraph.union(eclass, id);
         vec![id]
+    }
+}
+
+impl Applier<SpirvLang, ()> for AddZero {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        if const_value(egraph, subst[self.a]).is_some_and(|c| c.get() == 0) {
+            egraph.union(eclass, subst[self.b]);
+            return vec![subst[self.b]];
+        }
+        if const_value(egraph, subst[self.b]).is_some_and(|c| c.get() == 0) {
+            egraph.union(eclass, subst[self.a]);
+            return vec![subst[self.a]];
+        }
+        Vec::new()
+    }
+}
+
+impl Applier<SpirvLang, ()> for MulOne {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        if const_value(egraph, subst[self.a]).is_some_and(|c| c.get() == 1) {
+            egraph.union(eclass, subst[self.b]);
+            return vec![subst[self.b]];
+        }
+        if const_value(egraph, subst[self.b]).is_some_and(|c| c.get() == 1) {
+            egraph.union(eclass, subst[self.a]);
+            return vec![subst[self.a]];
+        }
+        Vec::new()
+    }
+}
+
+impl Applier<SpirvLang, ()> for MulZero {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let zero_left = const_value(egraph, subst[self.a]).is_some_and(|c| c.get() == 0);
+        let zero_right = const_value(egraph, subst[self.b]).is_some_and(|c| c.get() == 0);
+        if zero_left || zero_right {
+            let id = egraph.add(SpirvLang::Const(ConstValue::new(0)));
+            egraph.union(eclass, id);
+            return vec![id];
+        }
+        Vec::new()
     }
 }
 
@@ -257,6 +334,22 @@ mod tests {
         assert_eq!(
             optimized,
             RecExpr::from(vec![SpirvLang::Const(ConstValue::new(18))])
+        );
+    }
+
+    #[test]
+    fn simplifies_add_zero_and_mul_identity() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Const(ConstValue::new(0)),       // 1
+            SpirvLang::Add([Id::from(0), Id::from(1)]), // 2 => x + 0
+            SpirvLang::Const(ConstValue::new(1)),       // 3
+            SpirvLang::Mul([Id::from(2), Id::from(3)]), // 4 => (x + 0) * 1
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("x"))])
         );
     }
 
