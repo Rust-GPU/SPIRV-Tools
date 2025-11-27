@@ -3964,22 +3964,49 @@ fn enforce_block_layout_rules(
                             reason: format!("array stride {stride} is not aligned to {alignment}"),
                         });
                     }
-                    if let Some(elem_type_id_raw) = member_inst.operands.first() {
-                        if let rspirv::dr::Operand::IdRef(elem_raw) = elem_type_id_raw {
-                            if let Ok(elem_type) = TypeId::try_from(*elem_raw) {
-                                if let Some(elem_size) =
-                                    type_layout_size(elem_type, definitions, &mut HashSet::new())
-                                {
-                                    if elem_size > stride {
-                                        return Err(ValidationError::InvalidBlockLayout {
-                                            struct_type: struct_id,
-                                            reason: format!(
-                                                "array stride {stride} is smaller than element size {elem_size}"
-                                            ),
-                                        });
-                                    }
+                    if let Some(rspirv::dr::Operand::IdRef(elem_raw)) = member_inst.operands.first()
+                    {
+                        if let Ok(elem_type) = TypeId::try_from(*elem_raw) {
+                            if let Some(elem_size) =
+                                type_layout_size(elem_type, definitions, &mut HashSet::new())
+                            {
+                                if elem_size > stride {
+                                    return Err(ValidationError::InvalidBlockLayout {
+                                        struct_type: struct_id,
+                                        reason: format!(
+                                            "array stride {stride} is smaller than element size {elem_size}"
+                                        ),
+                                    });
                                 }
                             }
+                        }
+                    }
+                }
+            }
+            if member_inst.class.opcode == rspirv::spirv::Op::TypeMatrix {
+                let stride = member_matrix_stride(module, struct_id, MemberIndex(index as u32))
+                    .ok_or_else(|| ValidationError::InvalidBlockLayout {
+                        struct_type: struct_id,
+                        reason: "matrix member is missing MatrixStride".to_string(),
+                    })?;
+                if stride % alignment != 0 {
+                    return Err(ValidationError::InvalidBlockLayout {
+                        struct_type: struct_id,
+                        reason: format!("matrix stride {stride} is not aligned to {alignment}"),
+                    });
+                }
+                let (column_type, _) = matrix_info(member_inst);
+                if let Some(col_ty) = column_type {
+                    if let Some(col_size) =
+                        type_layout_size(col_ty, definitions, &mut HashSet::new())
+                    {
+                        if col_size > stride {
+                            return Err(ValidationError::InvalidBlockLayout {
+                                struct_type: struct_id,
+                                reason: format!(
+                                    "matrix stride {stride} is smaller than column size {col_size}"
+                                ),
+                            });
                         }
                     }
                 }
@@ -4018,6 +4045,32 @@ fn enforce_block_layout_rules(
                         reason: "vector member straddles 16-byte boundary under relaxed layout"
                             .to_string(),
                     });
+                }
+            } else if member_inst.class.opcode == rspirv::spirv::Op::TypeMatrix {
+                if let Some(stride) =
+                    member_matrix_stride(module, struct_id, MemberIndex(index as u32))
+                {
+                    if stride % alignment != 0 {
+                        return Err(ValidationError::InvalidBlockLayout {
+                            struct_type: struct_id,
+                            reason: format!("matrix stride {stride} is not aligned to {alignment}"),
+                        });
+                    }
+                    let (column_type, _) = matrix_info(member_inst);
+                    if let Some(col_ty) = column_type {
+                        if let Some(col_size) =
+                            type_layout_size(col_ty, definitions, &mut HashSet::new())
+                        {
+                            if col_size > stride {
+                                return Err(ValidationError::InvalidBlockLayout {
+                                    struct_type: struct_id,
+                                    reason: format!(
+                                        "matrix stride {stride} is smaller than column size {col_size}"
+                                    ),
+                                });
+                            }
+                        }
+                    }
                 }
             } else if offset % alignment != 0 {
                 return Err(ValidationError::InvalidBlockLayout {
@@ -4283,6 +4336,41 @@ fn array_stride(module: &Module, array_type: ResultId) -> Option<u32> {
                     }
                 }
             }
+        }
+    }
+    None
+}
+
+fn member_matrix_stride(module: &Module, struct_id: ResultId, member: MemberIndex) -> Option<u32> {
+    for inst in &module.annotations {
+        if inst.class.opcode != rspirv::spirv::Op::MemberDecorate {
+            continue;
+        }
+        let mut ops = inst.operands.iter();
+        let Some(rspirv::dr::Operand::IdRef(target)) = ops.next() else {
+            continue;
+        };
+        let Ok(target_id) = ResultId::try_from(*target) else {
+            continue;
+        };
+        if target_id != struct_id {
+            continue;
+        }
+        let Some(rspirv::dr::Operand::LiteralBit32(member_idx)) = ops.next() else {
+            continue;
+        };
+        if *member_idx != member.0 {
+            // Continue scanning; some producers may reorder decorations.
+            continue;
+        }
+        let Some(rspirv::dr::Operand::Decoration(decoration)) = ops.next() else {
+            continue;
+        };
+        if *decoration != rspirv::spirv::Decoration::MatrixStride {
+            continue;
+        }
+        if let Some(rspirv::dr::Operand::LiteralBit32(stride)) = ops.next() {
+            return Some(*stride);
         }
     }
     None
@@ -12851,6 +12939,55 @@ mod tests {
             .validate_with_options(TargetEnv::Universal1_6, relax)
             .expect_err("relaxed layout still rejects improper vector straddle");
         assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
+    }
+
+    #[test]
+    fn matrix_stride_alignment_and_size() {
+        use crate::validation::{
+            collect_result_instructions, enforce_block_layout_rules, parse_module,
+        };
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Float64",
+            "OpMemoryModel Logical GLSL450",
+            "%f64 = OpTypeFloat 64",
+            "%v2 = OpTypeVector %f64 2",
+            "%mat2 = OpTypeMatrix %v2 2",
+            "%struct = OpTypeStruct %v2 %mat2",
+            "OpDecorate %struct Block",
+            "OpMemberDecorate %struct 0 Offset 0",
+            "OpMemberDecorate %struct 1 Offset 32",
+            "OpMemberDecorate %struct 1 RowMajor",
+            "OpMemberDecorate %struct 1 MatrixStride 8",
+        ]
+        .join("\n");
+        let words = assemble_text(&text).expect("assemble");
+        let module = parse_module(&words).expect("parse");
+        let definitions = collect_result_instructions(&module);
+        let err = enforce_block_layout_rules(&module, &definitions, &ValidationOptions::default())
+            .expect_err("matrix stride smaller than column size should fail");
+        assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
+
+        let aligned = [
+            "OpCapability Shader",
+            "OpCapability Float64",
+            "OpMemoryModel Logical GLSL450",
+            "%f64 = OpTypeFloat 64",
+            "%v2 = OpTypeVector %f64 2",
+            "%mat2 = OpTypeMatrix %v2 2",
+            "%struct = OpTypeStruct %v2 %mat2",
+            "OpDecorate %struct Block",
+            "OpMemberDecorate %struct 0 Offset 0",
+            "OpMemberDecorate %struct 1 Offset 32",
+            "OpMemberDecorate %struct 1 RowMajor",
+            "OpMemberDecorate %struct 1 MatrixStride 16",
+        ]
+        .join("\n");
+        let aligned_words = assemble_text(&aligned).expect("assemble");
+        let aligned_module = parse_module(&aligned_words).expect("parse");
+        let definitions = collect_result_instructions(&aligned_module);
+        enforce_block_layout_rules(&aligned_module, &definitions, &ValidationOptions::default())
+            .expect("aligned matrix stride should pass");
     }
 
     #[test]
