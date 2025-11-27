@@ -3904,6 +3904,7 @@ fn enforce_block_layout_rules(
         if struct_inst.operands.is_empty() {
             continue;
         }
+        let member_count = struct_inst.operands.len();
         for (index, operand) in struct_inst.operands.iter().enumerate() {
             let Some(offset) = member_offsets.get(&MemberIndex(index as u32)) else {
                 return Err(ValidationError::InvalidBlockLayout {
@@ -3917,10 +3918,62 @@ fn enforce_block_layout_rules(
             let Ok(member_type_id) = TypeId::try_from(*member_type_id_raw) else {
                 continue;
             };
+            let Ok(member_result_id) = ResultId::try_from(u32::from(member_type_id)) else {
+                continue;
+            };
+            let Some(member_inst) = definitions.get(&member_result_id) else {
+                continue;
+            };
+            if member_inst.class.opcode == rspirv::spirv::Op::TypeRuntimeArray {
+                if index + 1 != member_count {
+                    return Err(ValidationError::InvalidBlockLayout {
+                        struct_type: struct_id,
+                        reason: "runtime array member must be the final struct member".to_string(),
+                    });
+                }
+                // Runtime array must be last; remaining checks do not apply.
+                continue;
+            }
             let Some(size) = type_layout_size(member_type_id, definitions, &mut HashSet::new())
             else {
                 continue;
             };
+            let Some(alignment) = type_alignment(
+                member_type_id,
+                definitions,
+                &mut HashSet::new(),
+                options.scalar_block_layout,
+            ) else {
+                continue;
+            };
+            // Alignment rules: scalar block layout always uses scalar alignment; relaxed block
+            // layout allows vectors to align to their scalar element size, otherwise require
+            // alignment to the computed base alignment.
+            if options.relax_block_layout
+                && !options.scalar_block_layout
+                && member_inst.class.opcode == rspirv::spirv::Op::TypeVector
+            {
+                let Some(scalar_align) = vector_scalar_alignment(member_inst, definitions) else {
+                    continue;
+                };
+                if offset % scalar_align != 0 {
+                    return Err(ValidationError::InvalidBlockLayout {
+                        struct_type: struct_id,
+                        reason: format!(
+                            "member offset {offset} is not aligned to vector scalar element size {}",
+                            scalar_align
+                        ),
+                    });
+                }
+            } else if offset % alignment != 0 {
+                return Err(ValidationError::InvalidBlockLayout {
+                    struct_type: struct_id,
+                    reason: format!(
+                        "member offset {offset} is not aligned to required alignment {alignment}"
+                    ),
+                });
+            }
+
             let next_offset = offset.saturating_add(size);
             // Ensure no overlap with the next member offset (if any).
             if let Some(next) = member_offsets
@@ -4085,6 +4138,75 @@ fn type_layout_size(
     };
     visiting.remove(&ty);
     size
+}
+
+fn type_alignment(
+    ty: TypeId,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    visiting: &mut HashSet<TypeId>,
+    scalar_layout: bool,
+) -> Option<u32> {
+    if !visiting.insert(ty) {
+        return None;
+    }
+    let inst = definitions.get(&ResultId::try_from(u32::from(ty)).ok()?)?;
+    let alignment = match inst.class.opcode {
+        rspirv::spirv::Op::TypeInt | rspirv::spirv::Op::TypeFloat => {
+            inst.operands.first().and_then(|op| match op {
+                rspirv::dr::Operand::LiteralBit32(bits) => Some(*bits / 8),
+                _ => None,
+            })
+        }
+        rspirv::spirv::Op::TypeVector => {
+            let (elem, count) = vector_info(inst);
+            let (elem, count) = (elem?, count?);
+            let elem_align = type_alignment(elem, definitions, visiting, scalar_layout)?;
+            if scalar_layout {
+                Some(elem_align)
+            } else {
+                elem_align.checked_mul(count)
+            }
+        }
+        rspirv::spirv::Op::TypeMatrix => {
+            // Matrix alignment follows its column vector alignment.
+            let (column, _) = matrix_info(inst);
+            let column = column?;
+            type_alignment(column, definitions, visiting, scalar_layout)
+        }
+        rspirv::spirv::Op::TypeArray | rspirv::spirv::Op::TypeRuntimeArray => {
+            let elem = inst.operands.first().and_then(|op| match op {
+                rspirv::dr::Operand::IdRef(id) => TypeId::try_from(*id).ok(),
+                _ => None,
+            })?;
+            type_alignment(elem, definitions, visiting, scalar_layout)
+        }
+        rspirv::spirv::Op::TypeStruct => {
+            let mut max_align = 1;
+            for op in &inst.operands {
+                let ty = match op {
+                    rspirv::dr::Operand::IdRef(id) => TypeId::try_from(*id).ok()?,
+                    _ => return None,
+                };
+                let align = type_alignment(ty, definitions, visiting, scalar_layout)?;
+                max_align = max_align.max(align);
+            }
+            Some(max_align)
+        }
+        _ => None,
+    };
+    visiting.remove(&ty);
+    alignment
+}
+
+fn vector_scalar_alignment(
+    vector_inst: &rspirv::dr::Instruction,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+) -> Option<u32> {
+    let elem = vector_inst.operands.first().and_then(|op| match op {
+        rspirv::dr::Operand::IdRef(id) => TypeId::try_from(*id).ok(),
+        _ => None,
+    })?;
+    type_alignment(elem, definitions, &mut HashSet::new(), true)
 }
 
 fn enforce_offset_texture_operand_rule(
@@ -12513,6 +12635,177 @@ mod tests {
             .as_slice()
             .validate_with_options(TargetEnv::Universal1_6, options)
             .expect("skip_block_layout should skip overlap checks");
+    }
+
+    #[test]
+    fn relax_block_layout_allows_scalar_vector_alignment() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpDecorate %struct Block",
+            "OpMemberDecorate %struct 0 Offset 0",
+            "OpMemberDecorate %struct 1 Offset 4",
+            "%int = OpTypeInt 32 0",
+            "%vec2 = OpTypeVector %int 2",
+            "%struct = OpTypeStruct %int %vec2",
+        ]
+        .join("\n");
+        let err = text
+            .as_str()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("vector offset should require base alignment in strict layout");
+        if let ValidationError::InvalidBlockLayout { reason, .. } = err {
+            assert!(reason.contains("aligned"), "unexpected reason: {reason:?}");
+        } else {
+            panic!("unexpected error: {err:?}");
+        }
+
+        let relax = ValidationOptions {
+            relax_block_layout: true,
+            ..ValidationOptions::default()
+        };
+        text.as_str()
+            .validate_with_options(TargetEnv::Universal1_6, relax)
+            .expect("relax_block_layout should permit scalar-aligned vectors");
+
+        let scalar = ValidationOptions {
+            scalar_block_layout: true,
+            ..ValidationOptions::default()
+        };
+        text.as_str()
+            .validate_with_options(TargetEnv::Universal1_6, scalar)
+            .expect("scalar_block_layout should permit scalar alignment for vectors");
+    }
+
+    #[test]
+    fn runtime_array_must_be_last_member() {
+        use rspirv::{binary::Assemble, dr::Instruction, dr::Module, dr::ModuleHeader};
+
+        fn inst(
+            opcode: rspirv::spirv::Op,
+            result_type: Option<u32>,
+            result_id: Option<u32>,
+            operands: Vec<rspirv::dr::Operand>,
+        ) -> Instruction {
+            Instruction::new(opcode, result_type, result_id, operands)
+        }
+
+        let mut module = Module::new();
+        module.header = Some(ModuleHeader::new(8));
+        module.capabilities.push(inst(
+            rspirv::spirv::Op::Capability,
+            None,
+            None,
+            vec![rspirv::dr::Operand::Capability(
+                rspirv::spirv::Capability::Shader,
+            )],
+        ));
+        module.memory_model = Some(inst(
+            rspirv::spirv::Op::MemoryModel,
+            None,
+            None,
+            vec![
+                rspirv::dr::Operand::AddressingModel(rspirv::spirv::AddressingModel::Logical),
+                rspirv::dr::Operand::MemoryModel(rspirv::spirv::MemoryModel::GLSL450),
+            ],
+        ));
+        module.types_global_values.extend([
+            inst(
+                rspirv::spirv::Op::TypeInt,
+                None,
+                Some(1),
+                vec![
+                    rspirv::dr::Operand::LiteralBit32(32),
+                    rspirv::dr::Operand::LiteralBit32(0),
+                ],
+            ),
+            inst(
+                rspirv::spirv::Op::TypeRuntimeArray,
+                None,
+                Some(2),
+                vec![rspirv::dr::Operand::IdRef(1)],
+            ),
+            inst(
+                rspirv::spirv::Op::TypeStruct,
+                None,
+                Some(3),
+                vec![
+                    rspirv::dr::Operand::IdRef(2),
+                    rspirv::dr::Operand::IdRef(1),
+                    rspirv::dr::Operand::IdRef(1),
+                ],
+            ),
+        ]);
+        module.annotations.extend([
+            inst(
+                rspirv::spirv::Op::Decorate,
+                None,
+                None,
+                vec![
+                    rspirv::dr::Operand::IdRef(2),
+                    rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::ArrayStride),
+                    rspirv::dr::Operand::LiteralBit32(4),
+                ],
+            ),
+            inst(
+                rspirv::spirv::Op::Decorate,
+                None,
+                None,
+                vec![
+                    rspirv::dr::Operand::IdRef(3),
+                    rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::Block),
+                ],
+            ),
+            inst(
+                rspirv::spirv::Op::MemberDecorate,
+                None,
+                None,
+                vec![
+                    rspirv::dr::Operand::IdRef(3),
+                    rspirv::dr::Operand::LiteralBit32(0),
+                    rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::Offset),
+                    rspirv::dr::Operand::LiteralBit32(0),
+                ],
+            ),
+            inst(
+                rspirv::spirv::Op::MemberDecorate,
+                None,
+                None,
+                vec![
+                    rspirv::dr::Operand::IdRef(3),
+                    rspirv::dr::Operand::LiteralBit32(1),
+                    rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::Offset),
+                    rspirv::dr::Operand::LiteralBit32(16),
+                ],
+            ),
+            inst(
+                rspirv::spirv::Op::MemberDecorate,
+                None,
+                None,
+                vec![
+                    rspirv::dr::Operand::IdRef(3),
+                    rspirv::dr::Operand::LiteralBit32(2),
+                    rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::Offset),
+                    rspirv::dr::Operand::LiteralBit32(32),
+                ],
+            ),
+        ]);
+
+        let binary = module.assemble();
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("runtime array must be the final member");
+        assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
+
+        let skip = ValidationOptions {
+            skip_block_layout: true,
+            ..ValidationOptions::default()
+        };
+        binary
+            .as_slice()
+            .validate_with_options(TargetEnv::Universal1_6, skip)
+            .expect("skip_block_layout should bypass runtime array placement rule");
     }
 
     #[test]
