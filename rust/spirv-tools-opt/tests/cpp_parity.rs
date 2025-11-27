@@ -119,6 +119,67 @@ fn rust_and_cpp_fold_mul_by_zero() {
     );
 }
 
+#[test]
+fn rust_and_cpp_fold_add_zero() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+
+    let (module_words, add_id) = build_add_zero_module();
+    let rust_insts = extract_arith_block(&module_words);
+    let rust_optimized =
+        spirv_tools_opt::translate::optimize_arith_block(&rust_insts).expect("rust optimizer");
+    let rust_const = rust_optimized.iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(add_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(4)]
+    });
+    let rust_has_add = rust_optimized
+        .iter()
+        .any(|inst| inst.class.opcode == Op::IAdd);
+    assert!(rust_const, "rust optimizer should fold add zero to const 4");
+    assert!(
+        !rust_has_add,
+        "rust optimizer should remove add instruction"
+    );
+
+    let mut input = NamedTempFile::new().expect("input temp");
+    input
+        .write_all(&words_to_bytes(&module_words))
+        .expect("write input");
+    let output = NamedTempFile::new().expect("output temp");
+    let status = Command::new(&cpp_opt)
+        .arg(input.path())
+        .arg("-o")
+        .arg(output.path())
+        .arg("-O")
+        .status()
+        .expect("run spirv-opt");
+    assert!(status.success(), "C++ spirv-opt failed");
+    let cpp_words = bytes_to_words(&fs::read(output.path()).expect("read output"));
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&cpp_words, &mut loader).expect("parse cpp optimized");
+    let module = loader.module();
+    let mut cpp_const = false;
+    let mut cpp_has_add = false;
+    for inst in module.all_inst_iter() {
+        if inst.class.opcode == Op::IAdd {
+            cpp_has_add = true;
+        }
+        if inst.class.opcode == Op::Constant
+            && inst.result_id == Some(add_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(4)]
+        {
+            cpp_const = true;
+        }
+    }
+    assert!(
+        cpp_const,
+        "C++ spirv-opt should fold add zero to const 4 with same id"
+    );
+    assert!(!cpp_has_add, "C++ spirv-opt should remove add instruction");
+}
+
 fn build_const_add_module() -> (Vec<u32>, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
@@ -183,6 +244,25 @@ fn extract_mul_zero_block(module_words: &[u32]) -> Vec<rspirv::dr::Instruction> 
         .filter(|inst| matches!(inst.class.opcode, Op::Constant | Op::IMul))
         .cloned()
         .collect()
+}
+
+fn build_add_zero_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let _ = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let c4 = b.constant_bit32(int, 4);
+    let c0 = b.constant_bit32(int, 0);
+    let add = b.i_add(int, None, c4, c0).expect("add");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), add)
 }
 
 fn cpp_opt_bin() -> Option<String> {
