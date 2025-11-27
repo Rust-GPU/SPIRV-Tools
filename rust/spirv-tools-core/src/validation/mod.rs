@@ -97,6 +97,37 @@ pub struct ValidationOptions {
     pub limits: BTreeMap<u32, u32>,
 }
 
+/// User-facing names collected from debug instructions.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FriendlyNames {
+    id_names: HashMap<u32, String>,
+    member_names: HashMap<(u32, MemberIndex), String>,
+}
+
+impl FriendlyNames {
+    /// Returns any `OpName`-provided name for the given result id.
+    pub fn id(&self, id: u32) -> Option<&str> {
+        self.id_names.get(&id).map(String::as_str)
+    }
+
+    /// Returns any `OpMemberName`-provided name for the given struct/member pair.
+    pub fn member(&self, struct_id: u32, member: MemberIndex) -> Option<&str> {
+        self.member_names
+            .get(&(struct_id, member))
+            .map(String::as_str)
+    }
+
+    /// Accesses the raw id→name table.
+    pub fn id_names(&self) -> &HashMap<u32, String> {
+        &self.id_names
+    }
+
+    /// Accesses the raw (struct id, member)→name table.
+    pub fn member_names(&self) -> &HashMap<(u32, MemberIndex), String> {
+        &self.member_names
+    }
+}
+
 impl Default for ValidationOptions {
     fn default() -> Self {
         Self {
@@ -1231,7 +1262,7 @@ pub struct ValidModule {
     header: ValidatedHeader,
     effective_version: SpirvVersion,
     options: ValidationOptions,
-    friendly_names: Option<HashMap<u32, String>>,
+    friendly_names: Option<FriendlyNames>,
 }
 
 impl ValidModule {
@@ -1276,7 +1307,7 @@ impl ValidModule {
     }
 
     /// Returns friendly names applied during validation (if enabled).
-    pub fn friendly_names(&self) -> Option<&HashMap<u32, String>> {
+    pub fn friendly_names(&self) -> Option<&FriendlyNames> {
         self.friendly_names.as_ref()
     }
 }
@@ -1376,11 +1407,9 @@ fn validate_words(
     enforce_variable_limits(&module, &options)?;
     enforce_switch_branch_limit(&module, &options)?;
     enforce_access_chain_limit(&module, &options)?;
-    let friendly_names = if options.use_friendly_names {
-        Some(build_friendly_name_table(&module))
-    } else {
-        None
-    };
+    let friendly_names = options
+        .use_friendly_names
+        .then(|| build_friendly_name_table(&module));
     Ok(ValidModule {
         words,
         module,
@@ -1392,20 +1421,40 @@ fn validate_words(
     })
 }
 
-fn build_friendly_name_table(module: &Module) -> HashMap<u32, String> {
-    let mut names = HashMap::new();
+fn build_friendly_name_table(module: &Module) -> FriendlyNames {
+    let mut id_names = HashMap::new();
+    let mut member_names = HashMap::new();
     for inst in &module.debug_names {
-        if inst.class.opcode == rspirv::spirv::Op::Name {
-            if let (
-                Some(rspirv::dr::Operand::IdRef(id)),
-                Some(rspirv::dr::Operand::LiteralString(name)),
-            ) = (inst.operands.first(), inst.operands.get(1))
-            {
-                names.insert(*id, name.clone());
+        match inst.class.opcode {
+            rspirv::spirv::Op::Name => {
+                if let (
+                    Some(rspirv::dr::Operand::IdRef(id)),
+                    Some(rspirv::dr::Operand::LiteralString(name)),
+                ) = (inst.operands.first(), inst.operands.get(1))
+                {
+                    id_names.insert(*id, name.clone());
+                }
             }
+            rspirv::spirv::Op::MemberName => {
+                if let (
+                    Some(rspirv::dr::Operand::IdRef(struct_id)),
+                    Some(rspirv::dr::Operand::LiteralBit32(member)),
+                    Some(rspirv::dr::Operand::LiteralString(name)),
+                ) = (
+                    inst.operands.first(),
+                    inst.operands.get(1),
+                    inst.operands.get(2),
+                ) {
+                    member_names.insert((*struct_id, MemberIndex(*member)), name.clone());
+                }
+            }
+            _ => {}
         }
     }
-    names
+    FriendlyNames {
+        id_names,
+        member_names,
+    }
 }
 
 fn validate_functions(module: &Module) -> Result<(), ValidationError> {
@@ -10264,7 +10313,50 @@ mod tests {
             .and_then(|f| f.def.as_ref())
             .and_then(|inst| inst.result_id)
             .expect("function should have a result id");
-        assert_eq!(names.get(&function_id), Some(&"friendly".to_string()));
+        assert_eq!(names.id(function_id), Some("friendly"));
+    }
+
+    #[test]
+    fn friendly_names_table_captures_member_name() {
+        use crate::validation::ValidationOptions;
+
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpName %S \"Struct\"",
+            "OpMemberName %S 1 \"member\"",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%uint = OpTypeInt 32 0",
+            "%S = OpTypeStruct %uint %uint",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+        let options = ValidationOptions {
+            use_friendly_names: true,
+            ..ValidationOptions::default()
+        };
+
+        let module = binary
+            .as_slice()
+            .validate_with_options(TargetEnv::Universal1_6, options)
+            .expect("validation should succeed");
+        let names = module
+            .friendly_names()
+            .expect("friendly names should be present");
+        let struct_id = module
+            .module()
+            .types_global_values
+            .iter()
+            .find(|inst| inst.class.opcode == rspirv::spirv::Op::TypeStruct)
+            .and_then(|inst| inst.result_id)
+            .expect("struct should have a result id");
+        assert_eq!(names.id(struct_id), Some("Struct"));
+        assert_eq!(names.member(struct_id, MemberIndex(1)), Some("member"));
     }
 
     #[test]
