@@ -423,6 +423,9 @@ impl TargetEnv {
         if lower.contains("opencl") && !self.is_opencl() {
             return false;
         }
+        if lower.contains("intel_function_variants") && self.is_vulkan() {
+            return false;
+        }
         if is_vulkan_specific_extension(extension.as_str()) && !self.is_vulkan() {
             return false;
         }

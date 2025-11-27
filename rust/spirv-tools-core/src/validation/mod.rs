@@ -8540,6 +8540,39 @@ mod tests {
     }
 
     #[test]
+    fn function_variants_extension_rejected_for_vulkan() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability SpecConditionalINTEL",
+            "OpCapability FunctionVariantsINTEL",
+            "OpExtension \"SPV_INTEL_function_variants\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect_err("Intel function variants extension should be rejected for Vulkan");
+        assert_eq!(
+            error,
+            ValidationError::DisallowedExtension {
+                extension: ExtensionName::from("SPV_INTEL_function_variants"),
+                env: TargetEnv::Vulkan1_2
+            }
+        );
+
+        text.as_str()
+            .validate(TargetEnv::Universal1_6)
+            .expect("Universal environment should accept vendor extensions");
+    }
+
+    #[test]
     fn conditional_entry_point_accepts_execution_modes() {
         let intel_function_variants_ext = [
             1599492179, 1163152969, 1969643340, 1769235310, 1985965679, 1634300513, 7566446,
