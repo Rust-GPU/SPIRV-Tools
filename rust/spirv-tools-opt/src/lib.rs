@@ -34,7 +34,7 @@ pub mod fuzzing {
             let node = if idx == 0 {
                 SpirvLang::Const(ConstValue::new(u.arbitrary()?))
             } else {
-                match u.choose(&[0u8, 1, 2, 3, 4])? {
+                match u.choose(&[0u8, 1, 2, 3, 4, 5, 6])? {
                     0 => SpirvLang::Const(ConstValue::new(u.arbitrary()?)),
                     1 => {
                         let a = choose_child(u, idx - 1)?;
@@ -46,7 +46,7 @@ pub mod fuzzing {
                         let b = choose_child(u, idx - 1)?;
                         SpirvLang::Mul([Id::from(a), Id::from(b)])
                     }
-                    _ => {
+                    3 => {
                         let a = choose_child(u, idx - 1)?;
                         let b = choose_child(u, idx - 1)?;
                         if *u.choose(&[true, false])? {
@@ -54,6 +54,16 @@ pub mod fuzzing {
                         } else {
                             SpirvLang::Neg(Id::from(a))
                         }
+                    }
+                    4 => {
+                        let a = choose_child(u, idx - 1)?;
+                        let b = choose_child(u, idx - 1)?;
+                        SpirvLang::Div([Id::from(a), Id::from(b)])
+                    }
+                    _ => {
+                        let a = choose_child(u, idx - 1)?;
+                        let b = choose_child(u, idx - 1)?;
+                        SpirvLang::Rem([Id::from(a), Id::from(b)])
                     }
                 }
             };
@@ -126,6 +136,8 @@ define_language! {
         "+" = Add([Id; 2]),
         "*" = Mul([Id; 2]),
         "-" = Sub([Id; 2]),
+        "/" = Div([Id; 2]),
+        "%" = Rem([Id; 2]),
         "neg" = Neg(Id),
         "const" = Const(ConstValue),
         Symbol(egg::Symbol),
@@ -182,6 +194,8 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("sub-zero-right"; "(- ?a ?b)" => "?a" if is_const_zero(var("?b"))),
         rewrite!("neg-fold"; "(neg ?a)" => { FoldNeg }),
         rewrite!("double-neg"; "(neg (neg ?a))" => "?a"),
+        rewrite!("div-fold"; "(/ ?a ?b)" => { FoldDiv }),
+        rewrite!("rem-fold"; "(% ?a ?b)" => { FoldRem }),
     ]
 }
 
@@ -189,6 +203,8 @@ struct FoldAdd;
 struct FoldMul;
 struct FoldSub;
 struct FoldNeg;
+struct FoldDiv;
+struct FoldRem;
 struct AddZero {
     a: Var,
     b: Var,
@@ -282,6 +298,56 @@ impl Applier<SpirvLang, ()> for FoldNeg {
         };
         let negated = ConstValue::new(a.get().wrapping_neg());
         let id = egraph.add(SpirvLang::Const(negated));
+        egraph.union(eclass, id);
+        vec![id]
+    }
+}
+
+impl Applier<SpirvLang, ()> for FoldDiv {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(a) = const_value(egraph, subst[var("a")]) else {
+            return Vec::new();
+        };
+        let Some(b) = const_value(egraph, subst[var("b")]) else {
+            return Vec::new();
+        };
+        if b.get() == 0 {
+            return Vec::new();
+        }
+        let quotient = ConstValue::new(a.get().wrapping_div(b.get()));
+        let id = egraph.add(SpirvLang::Const(quotient));
+        egraph.union(eclass, id);
+        vec![id]
+    }
+}
+
+impl Applier<SpirvLang, ()> for FoldRem {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(a) = const_value(egraph, subst[var("a")]) else {
+            return Vec::new();
+        };
+        let Some(b) = const_value(egraph, subst[var("b")]) else {
+            return Vec::new();
+        };
+        if b.get() == 0 {
+            return Vec::new();
+        }
+        let rem = ConstValue::new(a.get().wrapping_rem(b.get()));
+        let id = egraph.add(SpirvLang::Const(rem));
         egraph.union(eclass, id);
         vec![id]
     }
