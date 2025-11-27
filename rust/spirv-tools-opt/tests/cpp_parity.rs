@@ -180,6 +180,64 @@ fn rust_and_cpp_fold_add_zero() {
     assert!(!cpp_has_add, "C++ spirv-opt should remove add instruction");
 }
 
+#[test]
+fn rust_and_cpp_fold_sub_self_to_zero() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+
+    let (module_words, sub_id) = build_sub_self_module();
+    let rust_insts = extract_arith_block(&module_words);
+    let rust_optimized =
+        spirv_tools_opt::translate::optimize_arith_block(&rust_insts).expect("rust optimizer");
+    let rust_const = rust_optimized.iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(sub_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0)]
+    });
+    let rust_has_sub = rust_optimized
+        .iter()
+        .any(|inst| inst.class.opcode == Op::ISub);
+    assert!(rust_const, "rust optimizer should fold sub self to const 0");
+    assert!(!rust_has_sub, "rust optimizer should remove subtraction");
+
+    let mut input = NamedTempFile::new().expect("input temp");
+    input
+        .write_all(&words_to_bytes(&module_words))
+        .expect("write input");
+    let output = NamedTempFile::new().expect("output temp");
+    let status = Command::new(&cpp_opt)
+        .arg(input.path())
+        .arg("-o")
+        .arg(output.path())
+        .arg("-O")
+        .status()
+        .expect("run spirv-opt");
+    assert!(status.success(), "C++ spirv-opt failed");
+    let cpp_words = bytes_to_words(&fs::read(output.path()).expect("read output"));
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&cpp_words, &mut loader).expect("parse cpp optimized");
+    let module = loader.module();
+    let mut cpp_const = false;
+    let mut cpp_has_sub = false;
+    for inst in module.all_inst_iter() {
+        if inst.class.opcode == Op::ISub {
+            cpp_has_sub = true;
+        }
+        if inst.class.opcode == Op::Constant
+            && inst.result_id == Some(sub_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0)]
+        {
+            cpp_const = true;
+        }
+    }
+    assert!(
+        cpp_const,
+        "C++ spirv-opt should fold sub self to const 0 with same id"
+    );
+    assert!(!cpp_has_sub, "C++ spirv-opt should remove subtraction");
+}
+
 fn build_const_add_module() -> (Vec<u32>, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
@@ -263,6 +321,24 @@ fn build_add_zero_module() -> (Vec<u32>, u32) {
     b.ret().expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), add)
+}
+
+fn build_sub_self_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let _ = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let c7 = b.constant_bit32(int, 7);
+    let sub = b.i_sub(int, None, c7, c7).expect("sub");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), sub)
 }
 
 fn cpp_opt_bin() -> Option<String> {

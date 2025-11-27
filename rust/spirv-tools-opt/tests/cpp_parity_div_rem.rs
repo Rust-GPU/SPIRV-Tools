@@ -135,12 +135,14 @@ fn build_rem_one_module() -> Vec<u32> {
     module.types_global_values = vec![type_void, type_int, type_func, const_five, const_one];
 
     let func = build_function(
-        1,
-        3,
-        2,
-        6,
-        7,
-        9,
+        FunctionIds {
+            result_type: 1,
+            func_type: 3,
+            int_type: 2,
+            func_id: 6,
+            label_id: 7,
+            result_id: 9,
+        },
         Op::SRem,
         &[rspirv::dr::Operand::IdRef(4), rspirv::dr::Operand::IdRef(5)],
     );
@@ -195,12 +197,14 @@ fn build_div_one_module() -> Vec<u32> {
     );
     module.types_global_values = vec![type_void, type_int, type_func, const_eight, const_one];
     let func = build_function(
-        1,
-        3,
-        2,
-        6,
-        7,
-        9,
+        FunctionIds {
+            result_type: 1,
+            func_type: 3,
+            int_type: 2,
+            func_id: 6,
+            label_id: 7,
+            result_id: 9,
+        },
         Op::SDiv,
         &[rspirv::dr::Operand::IdRef(4), rspirv::dr::Operand::IdRef(5)],
     );
@@ -208,27 +212,23 @@ fn build_div_one_module() -> Vec<u32> {
     module.assemble()
 }
 
-fn build_function(
-    result_type: Word,
-    func_type: Word,
-    int_type: Word,
-    func_id: Word,
-    label_id: Word,
-    rem_id: Word,
-    opcode: Op,
-    rem_operands: &[rspirv::dr::Operand],
-) -> Function {
+fn build_function(ids: FunctionIds, opcode: Op, rem_operands: &[rspirv::dr::Operand]) -> Function {
     let def = Instruction::new(
         Op::Function,
-        Some(result_type),
-        Some(func_id),
+        Some(ids.result_type),
+        Some(ids.func_id),
         vec![
             rspirv::dr::Operand::FunctionControl(FunctionControl::NONE),
-            rspirv::dr::Operand::IdRef(func_type),
+            rspirv::dr::Operand::IdRef(ids.func_type),
         ],
     );
-    let label = Instruction::new(Op::Label, None, Some(label_id), vec![]);
-    let arith = Instruction::new(opcode, Some(int_type), Some(rem_id), rem_operands.to_vec());
+    let label = Instruction::new(Op::Label, None, Some(ids.label_id), vec![]);
+    let arith = Instruction::new(
+        opcode,
+        Some(ids.int_type),
+        Some(ids.result_id),
+        rem_operands.to_vec(),
+    );
     let ret = Instruction::new(Op::Return, None, None, vec![]);
     let end = Instruction::new(Op::FunctionEnd, None, None, vec![]);
     let block = Block {
@@ -241,6 +241,16 @@ fn build_function(
         blocks: vec![block],
         end: Some(end),
     }
+}
+
+#[derive(Copy, Clone)]
+struct FunctionIds {
+    result_type: Word,
+    func_type: Word,
+    int_type: Word,
+    func_id: Word,
+    label_id: Word,
+    result_id: Word,
 }
 
 fn extract_srem_block(module_words: &[u32]) -> Vec<rspirv::dr::Instruction> {
