@@ -34,6 +34,125 @@ fn classify_vendor_extension(name_lower: &str) -> Option<VendorFamily> {
     None
 }
 
+#[derive(Debug, Copy, Clone)]
+struct ExtensionRule {
+    allow_vulkan: bool,
+    allow_opencl: bool,
+    allow_opengl: bool,
+    allow_universal: bool,
+}
+
+impl ExtensionRule {
+    const fn vulkan_only() -> Self {
+        Self {
+            allow_vulkan: true,
+            allow_opencl: false,
+            allow_opengl: false,
+            allow_universal: false,
+        }
+    }
+
+    const fn opencl_and_universal() -> Self {
+        Self {
+            allow_vulkan: false,
+            allow_opencl: true,
+            allow_opengl: false,
+            allow_universal: true,
+        }
+    }
+
+    fn allowed_for_env(self, env: TargetEnv) -> bool {
+        if env.is_vulkan() {
+            return self.allow_vulkan;
+        }
+        if env.is_opencl() {
+            return self.allow_opencl;
+        }
+        if env.is_opengl() {
+            return self.allow_opengl;
+        }
+        if env.is_universal() {
+            return self.allow_universal;
+        }
+        false
+    }
+}
+
+fn extension_rules() -> &'static [(&'static str, ExtensionRule)] {
+    // This table is intentionally small and focused; it is a staging point
+    // before switching to the generated grammar-backed allowlists. Entries
+    // should mirror the C++ target-env rules.
+    const RULES: &[(&str, ExtensionRule)] = &[
+        // Vulkan-only extensions (from existing Vulkan-specific list).
+        ("SPV_KHR_vulkan_memory_model", ExtensionRule::vulkan_only()),
+        (
+            "SPV_KHR_workgroup_memory_explicit_layout",
+            ExtensionRule::vulkan_only(),
+        ),
+        (
+            "SPV_KHR_physical_storage_buffer",
+            ExtensionRule::vulkan_only(),
+        ),
+        ("SPV_KHR_untyped_pointers", ExtensionRule::vulkan_only()),
+        ("SPV_EXT_descriptor_indexing", ExtensionRule::vulkan_only()),
+        (
+            "SPV_EXT_fragment_shader_interlock",
+            ExtensionRule::vulkan_only(),
+        ),
+        ("SPV_EXT_mesh_shader", ExtensionRule::vulkan_only()),
+        (
+            "SPV_EXT_shader_atomic_float_add",
+            ExtensionRule::vulkan_only(),
+        ),
+        (
+            "SPV_EXT_shader_atomic_float_min_max",
+            ExtensionRule::vulkan_only(),
+        ),
+        (
+            "SPV_EXT_fragment_invocation_density",
+            ExtensionRule::vulkan_only(),
+        ),
+        (
+            "SPV_NV_shader_invocation_reorder",
+            ExtensionRule::vulkan_only(),
+        ),
+        (
+            "SPV_NV_cluster_acceleration_structure",
+            ExtensionRule::vulkan_only(),
+        ),
+        ("SPV_NV_linear_swept_spheres", ExtensionRule::vulkan_only()),
+        ("SPV_KHR_ray_tracing", ExtensionRule::vulkan_only()),
+        ("SPV_KHR_ray_query", ExtensionRule::vulkan_only()),
+        (
+            "SPV_KHR_ray_tracing_position_fetch",
+            ExtensionRule::vulkan_only(),
+        ),
+        ("SPV_NV_ray_tracing", ExtensionRule::vulkan_only()),
+        (
+            "SPV_NV_ray_tracing_motion_blur",
+            ExtensionRule::vulkan_only(),
+        ),
+        ("SPV_NV_bindless_texture", ExtensionRule::vulkan_only()),
+        ("SPV_NV_cooperative_matrix", ExtensionRule::vulkan_only()),
+        ("SPV_NV_cooperative_matrix2", ExtensionRule::vulkan_only()),
+        ("SPV_NV_mesh_shader", ExtensionRule::vulkan_only()),
+        ("SPV_QCOM_image_processing", ExtensionRule::vulkan_only()),
+        ("SPV_QCOM_image_processing2", ExtensionRule::vulkan_only()),
+        (
+            "SPV_QCOM_cooperative_matrix_conversion",
+            ExtensionRule::vulkan_only(),
+        ),
+        ("SPV_QCOM_tile_shading", ExtensionRule::vulkan_only()),
+        // OpenCL-only vendor families stay allowed for OpenCL + Universal.
+        (
+            "SPV_INTEL_function_variants",
+            ExtensionRule::opencl_and_universal(),
+        ),
+        ("SPV_INTEL_fpga_reg", ExtensionRule::opencl_and_universal()),
+    ];
+    RULES
+}
+
 /// Rust representation of `spv_target_env`.
 #[repr(u32)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -464,6 +583,12 @@ impl TargetEnv {
         let lower = extension.as_str().to_ascii_lowercase();
         if matches!(self, TargetEnv::WebGpu0) {
             return false;
+        }
+        if let Some((_, rule)) = extension_rules()
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case(extension.as_str()))
+        {
+            return rule.allowed_for_env(self);
         }
         if lower.contains("opencl") && !self.is_opencl() {
             return false;
