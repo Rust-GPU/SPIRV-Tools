@@ -526,6 +526,36 @@ mod tests {
     }
 
     #[test]
+    fn folds_division_and_remainder() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new(9)),       // 0
+            SpirvLang::Const(ConstValue::new(4)),       // 1
+            SpirvLang::Div([Id::from(0), Id::from(1)]), // 2 => 9 / 4 => 2
+            SpirvLang::Rem([Id::from(0), Id::from(1)]), // 3 => 9 % 4 => 1
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(optimized.as_ref().len(), 1);
+        match &optimized.as_ref()[0] {
+            SpirvLang::Const(_) => {}
+            other => panic!("expected folded constant, found {other:?}"),
+        }
+    }
+
+    #[test]
+    fn folds_double_negation() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new(7)), // 0
+            SpirvLang::Neg(Id::from(0)),          // 1 => -7
+            SpirvLang::Neg(Id::from(1)),          // 2 => --7
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Const(ConstValue::new(7))])
+        );
+    }
+
+    #[test]
     fn translate_and_optimize_spirv_block() {
         // Build a trivial SPIR-V function body: %c2 = 2, %c0 = 0, %sum = OpIAdd %c2 %c0
         let mut b = Builder::new();
