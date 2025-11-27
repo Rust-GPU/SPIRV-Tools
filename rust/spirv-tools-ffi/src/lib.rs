@@ -7,6 +7,7 @@ use spirv_tools_core::diagnostic::{DiagnosticMessage, MessagePosition};
 use spirv_tools_core::disassembly::{self, disassemble_binary, DisassemblyError};
 use spirv_tools_core::validation::ValidModuleCache;
 use spirv_tools_core::{MessageLevel, TargetEnv};
+mod optimizer;
 use std::panic::{self, AssertUnwindSafe};
 use std::str;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
@@ -42,6 +43,13 @@ mod ffi {
     struct ValidateResult {
         success: bool,
         message: String,
+    }
+
+    #[derive(Debug)]
+    struct OptimizeResult {
+        success: bool,
+        message: String,
+        words: Vec<u32>,
     }
 
     #[derive(Debug)]
@@ -111,6 +119,7 @@ mod ffi {
             binary: &[u32],
             options: &ValidatorOptions,
         ) -> ValidateResult;
+        fn optimize_basic_block(words: &[u32]) -> OptimizeResult;
     }
 
     unsafe extern "C++" {
@@ -256,6 +265,21 @@ pub fn validate_binary_rust(
             message: spirv_tools_core::validation::format_validation_error_from_words(
                 binary, &opts, &err,
             ),
+        },
+    }
+}
+
+pub fn optimize_basic_block(words: &[u32]) -> ffi::OptimizeResult {
+    match optimizer::optimize_basic_block(words) {
+        Ok(words) => ffi::OptimizeResult {
+            success: true,
+            message: String::new(),
+            words,
+        },
+        Err(err) => ffi::OptimizeResult {
+            success: false,
+            message: err.to_string(),
+            words: Vec::new(),
         },
     }
 }
