@@ -199,6 +199,7 @@ Planned tasks:
 - [x] Add layout regression to reject extensions (`OpExtension`) that appear after entry points.
 - [x] Add layout regression to reject `OpMemoryModel` that appear after entry points to lock early-section ordering.
 - [x] Add layout regressions to reject debug/source instructions before entry points or execution modes so debug sections remain ordered.
+- [x] Add layout regressions to reject capabilities/extensions/imports that trail execution modes to keep early sections ordered.
 - Reaudit per-environment decoration/capability allowlists and wire validated-module reuse through FFI/CLI caching where ordering rules apply.
 
 ## Completed Milestone: Disassembler Parity & CLI Integration
