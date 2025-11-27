@@ -146,6 +146,8 @@ impl ValidationOptions {
     }
 }
 
+const LIMIT_MAX_ID_BOUND: u32 = 8;
+
 /// A simple snapshot of validator limits keyed by the limit enum value.
 pub type ValidationLimits = BTreeMap<u32, u32>;
 
@@ -589,6 +591,14 @@ pub enum ValidationError {
     InvalidIdBound {
         /// The declared id bound from the module header.
         bound: DeclaredBound,
+    },
+    /// The declared id bound exceeds a configured validator limit.
+    #[error("declared id bound {declared} exceeds validator limit {limit}")]
+    IdBoundExceedsLimit {
+        /// The declared id bound from the module header.
+        declared: DeclaredBound,
+        /// The configured limit for the bound.
+        limit: u32,
     },
     /// The module header declared a non-zero reserved word (must be zero).
     #[error("module reserved word must be zero (found {reserved})")]
@@ -1302,6 +1312,14 @@ fn validate_words(
     run_layout_check(words.as_slice(), env)?;
     let module = parse_module(words.as_slice())?;
     let header = ValidatedHeader::from_module(&module)?;
+    if let Some(&limit) = options.limits.get(&LIMIT_MAX_ID_BOUND) {
+        if header.bound.declared().0 > limit {
+            return Err(ValidationError::IdBoundExceedsLimit {
+                declared: header.bound.declared(),
+                limit,
+            });
+        }
+    }
     let module_version = header.version();
     let target_version = effective_spirv_version(env, module_version);
     let defined_ids = validate_id_bound(&module, header)?;
@@ -9690,6 +9708,38 @@ mod tests {
             Arc::as_ptr(&first),
             Arc::as_ptr(&second),
             "options should participate in the cache key"
+        );
+    }
+
+    #[test]
+    fn id_bound_limit_is_enforced() {
+        use crate::validation::{ValidationOptions, LIMIT_MAX_ID_BOUND};
+
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+        let mut options = ValidationOptions::default();
+        options.limits.insert(LIMIT_MAX_ID_BOUND, 3);
+
+        let err = binary
+            .as_slice()
+            .validate_with_options(TargetEnv::Universal1_6, options)
+            .expect_err("id bound should exceed configured limit");
+        assert_eq!(
+            err,
+            ValidationError::IdBoundExceedsLimit {
+                declared: DeclaredBound(5),
+                limit: 3
+            }
         );
     }
 
