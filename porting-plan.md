@@ -294,6 +294,7 @@ Percentages are approximate and will be updated as new checklists are added for 
    - Added env-gated regressions for RayTracingKHR, CooperativeMatrixNV, TileShadingQCOM, fragment shading rate/density, MeshShadingEXT, fragment shader interlock, NV shader image footprint, atomic float add, shader invocation reorder, and NV cluster acceleration capabilities to ensure capability enablement respects the per-env allowlist even when the extensions are declared.
    - Marked `SPV_KHR_cooperative_matrix` as Vulkan-only in the generated allowlist and added coverage for CooperativeMatrixKHR capabilities requiring the extension and being rejected outside Vulkan even when declared.
    - Added capability/extension precedence coverage for ray-tracing adjunct capabilities (`RayTracingLinearSweptSpheresGeometryNV`, `RayTracingOpacityMicromapEXT`) to ensure their extensions are required and rejected outside Vulkan even when declared.
+   - Added coverage for NV ray-tracing motion blur: capability now requires `SPV_NV_ray_tracing_motion_blur`, and non-Vulkan environments reject it even when the extensions are declared.
    - The generated allowlist now marks `SPV_KHR_fragment_shading_rate` and `SPV_EXT_fragment_invocation_density` as Vulkan-only to mirror the C++ tables.
 
 ## Upcoming Milestone: Capability/Extension Ordering Parity
