@@ -951,6 +951,18 @@ pub enum ValidationError {
         /// The variable's storage class.
         storage_class: rspirv::spirv::StorageClass,
     },
+    /// The pointer and object types for an OpStore do not match.
+    #[error(
+        "OpStore pointer type {pointer_type:?} does not match object type {object_type:?} for pointer {pointer:?}"
+    )]
+    StoreTypeMismatch {
+        /// The pointer being stored through.
+        pointer: ResultId,
+        /// The pointer's pointee type.
+        pointer_type: TypeId,
+        /// The stored object's type.
+        object_type: TypeId,
+    },
     /// Image operand Offset is restricted to gather instructions unless explicitly allowed.
     #[error("Image operand Offset for {opcode:?} is only allowed with gather instructions in Vulkan unless the offset texture operand option is enabled")]
     OffsetTextureOperandDisallowed {
@@ -1551,6 +1563,7 @@ fn validate_words(
     validate_decoration_groups(&module, &defined_ids, &opcodes, &struct_member_counts)?;
     validate_decorations(&module, &defined_ids)?;
     validate_decoration_target_categories(&module, &opcodes, &definitions, &capabilities)?;
+    enforce_store_type_compatibility(&module, &definitions, &options)?;
     let entry_points = validate_entry_points(&module, &defined_ids, &opcodes)?;
     validate_execution_modes(&module, &entry_points, env, &options)?;
     validate_functions(&module)?;
@@ -3615,6 +3628,158 @@ fn enforce_logical_pointer_rules(
     }
 
     Ok(())
+}
+
+fn enforce_store_type_compatibility(
+    module: &Module,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    options: &ValidationOptions,
+) -> Result<(), ValidationError> {
+    for inst in module.all_inst_iter() {
+        if inst.class.opcode != rspirv::spirv::Op::Store {
+            continue;
+        }
+        let Some(rspirv::dr::Operand::IdRef(ptr_id_raw)) = inst.operands.first() else {
+            continue;
+        };
+        let Some(rspirv::dr::Operand::IdRef(obj_id_raw)) = inst.operands.get(1) else {
+            continue;
+        };
+        let Ok(ptr_id) = ResultId::try_from(*ptr_id_raw) else {
+            continue;
+        };
+        let Some(ptr_inst) = definitions.get(&ptr_id) else {
+            continue;
+        };
+        let Some(ptr_type_raw) = ptr_inst.result_type else {
+            continue;
+        };
+        let Ok(ptr_type_id) = TypeId::try_from(ptr_type_raw) else {
+            continue;
+        };
+        let Some(ptr_type_result) = ResultId::try_from(u32::from(ptr_type_id)).ok() else {
+            continue;
+        };
+        let Some(ptr_type_inst) = definitions.get(&ptr_type_result) else {
+            continue;
+        };
+        if ptr_type_inst.class.opcode != rspirv::spirv::Op::TypePointer {
+            continue;
+        }
+        let Some(rspirv::dr::Operand::IdRef(pointee_raw)) = ptr_type_inst.operands.get(1) else {
+            continue;
+        };
+        let Ok(pointee_id) = TypeId::try_from(*pointee_raw) else {
+            continue;
+        };
+
+        let Ok(obj_id) = ResultId::try_from(*obj_id_raw) else {
+            continue;
+        };
+        let Some(obj_inst) = definitions.get(&obj_id) else {
+            continue;
+        };
+        let Some(obj_type_raw) = obj_inst.result_type else {
+            continue;
+        };
+        let Ok(obj_type_id) = TypeId::try_from(obj_type_raw) else {
+            continue;
+        };
+
+        if pointee_id == obj_type_id {
+            continue;
+        }
+
+        let types_layout_compatible = options.relax_struct_store
+            && layout_compatible_types(pointee_id, obj_type_id, definitions, &mut HashSet::new());
+
+        if !types_layout_compatible {
+            return Err(ValidationError::StoreTypeMismatch {
+                pointer: ptr_id,
+                pointer_type: pointee_id,
+                object_type: obj_type_id,
+            });
+        }
+    }
+
+    Ok(())
+}
+
+fn layout_compatible_types(
+    a: TypeId,
+    b: TypeId,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    visiting: &mut HashSet<TypeId>,
+) -> bool {
+    if a == b {
+        return true;
+    }
+    if !visiting.insert(a) {
+        return false;
+    }
+    let Some(result_a) = ResultId::try_from(u32::from(a)).ok() else {
+        visiting.remove(&a);
+        return false;
+    };
+    let Some(result_b) = ResultId::try_from(u32::from(b)).ok() else {
+        visiting.remove(&a);
+        return false;
+    };
+    let Some(inst_a) = definitions.get(&result_a) else {
+        visiting.remove(&a);
+        return false;
+    };
+    let Some(inst_b) = definitions.get(&result_b) else {
+        visiting.remove(&a);
+        return false;
+    };
+    let compatible = match (inst_a.class.opcode, inst_b.class.opcode) {
+        (rspirv::spirv::Op::TypeStruct, rspirv::spirv::Op::TypeStruct) => {
+            if inst_a.operands.len() != inst_b.operands.len() {
+                false
+            } else {
+                inst_a
+                    .operands
+                    .iter()
+                    .zip(&inst_b.operands)
+                    .all(|(op_a, op_b)| match (op_a, op_b) {
+                        (rspirv::dr::Operand::IdRef(id_a), rspirv::dr::Operand::IdRef(id_b)) => {
+                            let Ok(type_a) = TypeId::try_from(*id_a) else {
+                                return false;
+                            };
+                            let Ok(type_b) = TypeId::try_from(*id_b) else {
+                                return false;
+                            };
+                            layout_compatible_types(type_a, type_b, definitions, visiting)
+                        }
+                        _ => false,
+                    })
+            }
+        }
+        (rspirv::spirv::Op::TypeArray, rspirv::spirv::Op::TypeArray) => inst_a
+            .operands
+            .first()
+            .and_then(|op| match op {
+                rspirv::dr::Operand::IdRef(id_a) => TypeId::try_from(*id_a).ok(),
+                _ => None,
+            })
+            .and_then(|elem_a| {
+                inst_b
+                    .operands
+                    .first()
+                    .and_then(|op| match op {
+                        rspirv::dr::Operand::IdRef(id_b) => TypeId::try_from(*id_b).ok(),
+                        _ => None,
+                    })
+                    .map(|elem_b| (elem_a, elem_b))
+            })
+            .is_some_and(|(elem_a, elem_b)| {
+                layout_compatible_types(elem_a, elem_b, definitions, visiting)
+            }),
+        _ => false,
+    };
+    visiting.remove(&a);
+    compatible
 }
 
 fn enforce_offset_texture_operand_rule(
@@ -11371,6 +11536,144 @@ mod tests {
             .as_slice()
             .validate(TargetEnv::Universal1_6)
             .expect("declaring capability should permit pointer-to-pointer");
+    }
+
+    #[test]
+    fn relax_struct_store_allows_layout_compatible_structs() {
+        use rspirv::{binary::Assemble, dr::Instruction, dr::Module, dr::ModuleHeader};
+
+        fn inst(
+            opcode: rspirv::spirv::Op,
+            result_type: Option<u32>,
+            result_id: Option<u32>,
+            operands: Vec<rspirv::dr::Operand>,
+        ) -> Instruction {
+            Instruction::new(opcode, result_type, result_id, operands)
+        }
+
+        let mut module = Module::new();
+        module.header = Some(ModuleHeader::new(11));
+        module.capabilities.push(inst(
+            rspirv::spirv::Op::Capability,
+            None,
+            None,
+            vec![rspirv::dr::Operand::Capability(
+                rspirv::spirv::Capability::Shader,
+            )],
+        ));
+        module.memory_model = Some(inst(
+            rspirv::spirv::Op::MemoryModel,
+            None,
+            None,
+            vec![
+                rspirv::dr::Operand::AddressingModel(rspirv::spirv::AddressingModel::Logical),
+                rspirv::dr::Operand::MemoryModel(rspirv::spirv::MemoryModel::GLSL450),
+            ],
+        ));
+        module.types_global_values.extend([
+            inst(rspirv::spirv::Op::TypeVoid, None, Some(1), vec![]),
+            inst(
+                rspirv::spirv::Op::TypeInt,
+                None,
+                Some(2),
+                vec![
+                    rspirv::dr::Operand::LiteralBit32(32),
+                    rspirv::dr::Operand::LiteralBit32(0),
+                ],
+            ),
+            inst(
+                rspirv::spirv::Op::TypeStruct,
+                None,
+                Some(3),
+                vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(2)],
+            ),
+            inst(
+                rspirv::spirv::Op::TypeStruct,
+                None,
+                Some(4),
+                vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(2)],
+            ),
+            inst(
+                rspirv::spirv::Op::TypePointer,
+                None,
+                Some(5),
+                vec![
+                    rspirv::dr::Operand::StorageClass(rspirv::spirv::StorageClass::Function),
+                    rspirv::dr::Operand::IdRef(3),
+                ],
+            ),
+            inst(
+                rspirv::spirv::Op::TypeFunction,
+                None,
+                Some(6),
+                vec![rspirv::dr::Operand::IdRef(1)],
+            ),
+        ]);
+
+        module.functions.push(rspirv::dr::Function {
+            def: Some(inst(
+                rspirv::spirv::Op::Function,
+                Some(1),
+                Some(7),
+                vec![
+                    rspirv::dr::Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
+                    rspirv::dr::Operand::IdRef(6),
+                ],
+            )),
+            end: Some(inst(rspirv::spirv::Op::FunctionEnd, None, None, vec![])),
+            parameters: vec![],
+            blocks: vec![rspirv::dr::Block {
+                label: Some(inst(rspirv::spirv::Op::Label, None, Some(8), vec![])),
+                instructions: vec![
+                    inst(
+                        rspirv::spirv::Op::Variable,
+                        Some(5),
+                        Some(9),
+                        vec![rspirv::dr::Operand::StorageClass(
+                            rspirv::spirv::StorageClass::Function,
+                        )],
+                    ),
+                    inst(rspirv::spirv::Op::Undef, Some(4), Some(10), vec![]),
+                    inst(
+                        rspirv::spirv::Op::Store,
+                        None,
+                        None,
+                        vec![
+                            rspirv::dr::Operand::IdRef(9),
+                            rspirv::dr::Operand::IdRef(10),
+                        ],
+                    ),
+                    inst(rspirv::spirv::Op::Return, None, None, vec![]),
+                ],
+            }],
+        });
+
+        module.entry_points.push(inst(
+            rspirv::spirv::Op::EntryPoint,
+            None,
+            None,
+            vec![
+                rspirv::dr::Operand::ExecutionModel(rspirv::spirv::ExecutionModel::Vertex),
+                rspirv::dr::Operand::IdRef(7),
+                rspirv::dr::Operand::LiteralString("main".to_string()),
+            ],
+        ));
+
+        let binary = module.assemble();
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("struct store types should mismatch by default");
+        assert!(matches!(err, ValidationError::StoreTypeMismatch { .. }));
+
+        let options = ValidationOptions {
+            relax_struct_store: true,
+            ..ValidationOptions::default()
+        };
+        binary
+            .as_slice()
+            .validate_with_options(TargetEnv::Universal1_6, options)
+            .expect("relax_struct_store should permit layout-compatible structs");
     }
 
     #[test]
