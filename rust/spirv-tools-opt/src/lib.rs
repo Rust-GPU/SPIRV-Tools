@@ -204,6 +204,7 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("sub-add-cancel-right"; "(- (+ ?a ?b) ?b)" => "?a"),
         rewrite!("sub-add-cancel-left"; "(- (+ ?a ?b) ?a)" => "?b"),
         rewrite!("sub-sub-cancel-left"; "(- ?a (- ?a ?b))" => "?b"),
+        rewrite!("neg-sub-swap"; "(neg (- ?a ?b))" => "(- ?b ?a)"),
         rewrite!("neg-fold"; "(neg ?a)" => { FoldNeg }),
         rewrite!("double-neg"; "(neg (neg ?a))" => "?a"),
         rewrite!("div-fold"; "(/ ?a ?b)" => { FoldDiv }),
@@ -829,6 +830,31 @@ mod tests {
             panic!("expected symbol root, got {:?}", nodes.last());
         };
         assert_eq!(sym, &Symbol::from("a"));
+    }
+
+    #[test]
+    fn rewrites_neg_sub_swap() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("a")),       // 0
+            SpirvLang::Symbol(Symbol::from("b")),       // 1
+            SpirvLang::Sub([Id::from(0), Id::from(1)]), // 2 = a - b
+            SpirvLang::Neg(Id::from(2)),                // 3 = -(a - b)
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::Sub([lhs, rhs])) = nodes.last() else {
+            panic!("expected sub root, got {:?}", nodes.last());
+        };
+        let lhs_node = &nodes[usize::from(*lhs)];
+        let rhs_node = &nodes[usize::from(*rhs)];
+        assert!(
+            matches!(lhs_node, SpirvLang::Symbol(sym) if *sym == Symbol::from("b")),
+            "lhs should be b, got {lhs_node:?}"
+        );
+        assert!(
+            matches!(rhs_node, SpirvLang::Symbol(sym) if *sym == Symbol::from("a")),
+            "rhs should be a, got {rhs_node:?}"
+        );
     }
 
     #[test]
