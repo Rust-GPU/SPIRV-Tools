@@ -58,12 +58,20 @@ pub mod fuzzing {
                     4 => {
                         let a = choose_child(u, idx - 1)?;
                         let b = choose_child(u, idx - 1)?;
-                        SpirvLang::Div([Id::from(a), Id::from(b)])
+                        if *u.choose(&[true, false])? {
+                            SpirvLang::SDiv([Id::from(a), Id::from(b)])
+                        } else {
+                            SpirvLang::UDiv([Id::from(a), Id::from(b)])
+                        }
                     }
                     _ => {
                         let a = choose_child(u, idx - 1)?;
                         let b = choose_child(u, idx - 1)?;
-                        SpirvLang::Rem([Id::from(a), Id::from(b)])
+                        if *u.choose(&[true, false])? {
+                            SpirvLang::SRem([Id::from(a), Id::from(b)])
+                        } else {
+                            SpirvLang::UMod([Id::from(a), Id::from(b)])
+                        }
                     }
                 }
             };
@@ -136,8 +144,10 @@ define_language! {
         "+" = Add([Id; 2]),
         "*" = Mul([Id; 2]),
         "-" = Sub([Id; 2]),
-        "/" = Div([Id; 2]),
-        "%" = Rem([Id; 2]),
+        "sdiv" = SDiv([Id; 2]),
+        "udiv" = UDiv([Id; 2]),
+        "srem" = SRem([Id; 2]),
+        "umod" = UMod([Id; 2]),
         "neg" = Neg(Id),
         "const" = Const(ConstValue),
         Symbol(egg::Symbol),
@@ -207,10 +217,14 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("neg-sub-swap"; "(neg (- ?a ?b))" => "(- ?b ?a)"),
         rewrite!("neg-fold"; "(neg ?a)" => { FoldNeg }),
         rewrite!("double-neg"; "(neg (neg ?a))" => "?a"),
-        rewrite!("div-fold"; "(/ ?a ?b)" => { FoldDiv }),
-        rewrite!("div-one"; "(/ ?a ?b)" => { DivOne { a: var("?a"), b: var("?b") } }),
-        rewrite!("rem-fold"; "(% ?a ?b)" => { FoldRem }),
-        rewrite!("rem-one"; "(% ?a ?b)" => { RemOne { b: var("?b") } }),
+        rewrite!("sdiv-fold"; "(sdiv ?a ?b)" => { FoldDiv { signed: true } }),
+        rewrite!("udiv-fold"; "(udiv ?a ?b)" => { FoldDiv { signed: false } }),
+        rewrite!("sdiv-one"; "(sdiv ?a ?b)" => { DivOne { a: var("?a"), b: var("?b") } }),
+        rewrite!("udiv-one"; "(udiv ?a ?b)" => { DivOne { a: var("?a"), b: var("?b") } }),
+        rewrite!("srem-fold"; "(srem ?a ?b)" => { FoldRem { signed: true } }),
+        rewrite!("umod-fold"; "(umod ?a ?b)" => { FoldRem { signed: false } }),
+        rewrite!("srem-one"; "(srem ?a ?b)" => { RemOne { b: var("?b") } }),
+        rewrite!("umod-one"; "(umod ?a ?b)" => { RemOne { b: var("?b") } }),
         rewrite!("add-neg-cancel"; "(+ ?a (neg ?a))" => { AddNegZero }),
         rewrite!("add-neg-cancel-swap"; "(+ (neg ?a) ?a)" => { AddNegZero }),
     ]
@@ -220,8 +234,12 @@ struct FoldAdd;
 struct FoldMul;
 struct FoldSub;
 struct FoldNeg;
-struct FoldDiv;
-struct FoldRem;
+struct FoldDiv {
+    signed: bool,
+}
+struct FoldRem {
+    signed: bool,
+}
 struct SubSelf;
 struct SubZeroLeft;
 struct DivOne {
@@ -352,7 +370,13 @@ impl Applier<SpirvLang, ()> for FoldDiv {
         if b.get() == 0 {
             return Vec::new();
         }
-        let quotient = ConstValue::new(a.get().wrapping_div(b.get()));
+        let quotient = if self.signed {
+            let lhs = a.get() as i32;
+            let rhs = b.get() as i32;
+            ConstValue::new(lhs.wrapping_div(rhs) as u32)
+        } else {
+            ConstValue::new(a.get().wrapping_div(b.get()))
+        };
         let id = egraph.add(SpirvLang::Const(quotient));
         egraph.union(eclass, id);
         vec![id]
@@ -377,7 +401,13 @@ impl Applier<SpirvLang, ()> for FoldRem {
         if b.get() == 0 {
             return Vec::new();
         }
-        let rem = ConstValue::new(a.get().wrapping_rem(b.get()));
+        let rem = if self.signed {
+            let lhs = a.get() as i32;
+            let rhs = b.get() as i32;
+            ConstValue::new(lhs.wrapping_rem(rhs) as u32)
+        } else {
+            ConstValue::new(a.get().wrapping_rem(b.get()))
+        };
         let id = egraph.add(SpirvLang::Const(rem));
         egraph.union(eclass, id);
         vec![id]
@@ -669,10 +699,10 @@ mod tests {
     #[test]
     fn folds_division_and_remainder() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Const(ConstValue::new(9)),       // 0
-            SpirvLang::Const(ConstValue::new(4)),       // 1
-            SpirvLang::Div([Id::from(0), Id::from(1)]), // 2 => 9 / 4 => 2
-            SpirvLang::Rem([Id::from(0), Id::from(1)]), // 3 => 9 % 4 => 1
+            SpirvLang::Const(ConstValue::new(9)),        // 0
+            SpirvLang::Const(ConstValue::new(4)),        // 1
+            SpirvLang::SDiv([Id::from(0), Id::from(1)]), // 2 => 9 / 4 => 2
+            SpirvLang::SRem([Id::from(0), Id::from(1)]), // 3 => 9 % 4 => 1
         ]);
         let optimized = optimize_expr(&expr);
         assert_eq!(optimized.as_ref().len(), 1);
@@ -848,12 +878,9 @@ mod tests {
         let lhs_node = &nodes[usize::from(*lhs)];
         let rhs_node = &nodes[usize::from(*rhs)];
         assert!(
-            matches!(lhs_node, SpirvLang::Symbol(sym) if *sym == Symbol::from("b")),
-            "lhs should be b, got {lhs_node:?}"
-        );
-        assert!(
-            matches!(rhs_node, SpirvLang::Symbol(sym) if *sym == Symbol::from("a")),
-            "rhs should be a, got {rhs_node:?}"
+            matches!(lhs_node, SpirvLang::Symbol(sym) if *sym == Symbol::from("b"))
+                && matches!(rhs_node, SpirvLang::Symbol(sym) if *sym == Symbol::from("a")),
+            "expected b - a but got lhs={lhs_node:?} rhs={rhs_node:?}"
         );
     }
 

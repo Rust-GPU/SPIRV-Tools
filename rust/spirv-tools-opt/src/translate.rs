@@ -196,7 +196,12 @@ pub fn translate_arith(instructions: &[Instruction]) -> Result<TranslatedExpr, T
                         opcode,
                     },
                 )?;
-                expr.add(SpirvLang::Div([lhs, rhs]))
+                let node = if opcode == Op::SDiv {
+                    SpirvLang::SDiv([lhs, rhs])
+                } else {
+                    SpirvLang::UDiv([lhs, rhs])
+                };
+                expr.add(node)
             }
             Op::SRem | Op::UMod => {
                 let mut ops = inst.operands.iter().filter_map(|op| match op {
@@ -223,7 +228,12 @@ pub fn translate_arith(instructions: &[Instruction]) -> Result<TranslatedExpr, T
                         opcode,
                     },
                 )?;
-                expr.add(SpirvLang::Rem([lhs, rhs]))
+                let node = if opcode == Op::SRem {
+                    SpirvLang::SRem([lhs, rhs])
+                } else {
+                    SpirvLang::UMod([lhs, rhs])
+                };
+                expr.add(node)
             }
             other => return Err(TranslateError::UnsupportedOp(other)),
         };
@@ -333,7 +343,7 @@ pub fn optimize_arith_block(
                     rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
                 ],
             ),
-            SpirvLang::Div([a, b]) => Instruction::new(
+            SpirvLang::SDiv([a, b]) => Instruction::new(
                 Op::SDiv,
                 Some(result_type),
                 Some(result_id),
@@ -342,8 +352,26 @@ pub fn optimize_arith_block(
                     rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
                 ],
             ),
-            SpirvLang::Rem([a, b]) => Instruction::new(
+            SpirvLang::UDiv([a, b]) => Instruction::new(
+                Op::UDiv,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::SRem([a, b]) => Instruction::new(
                 Op::SRem,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::UMod([a, b]) => Instruction::new(
+                Op::UMod,
                 Some(result_type),
                 Some(result_id),
                 vec![
@@ -374,8 +402,10 @@ fn expr_cost(expr: &RecExpr<SpirvLang>) -> usize {
             SpirvLang::Add([a, b])
             | SpirvLang::Mul([a, b])
             | SpirvLang::Sub([a, b])
-            | SpirvLang::Div([a, b])
-            | SpirvLang::Rem([a, b]) => 1 + costs[usize::from(*a)] + costs[usize::from(*b)],
+            | SpirvLang::SDiv([a, b])
+            | SpirvLang::UDiv([a, b])
+            | SpirvLang::SRem([a, b])
+            | SpirvLang::UMod([a, b]) => 1 + costs[usize::from(*a)] + costs[usize::from(*b)],
         };
         costs.push(cost);
     }
