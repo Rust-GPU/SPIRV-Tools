@@ -1231,7 +1231,7 @@ pub struct ValidModule {
     header: ValidatedHeader,
     effective_version: SpirvVersion,
     options: ValidationOptions,
-    friendly_names: Option<HashMap<String, String>>,
+    friendly_names: Option<HashMap<u32, String>>,
 }
 
 impl ValidModule {
@@ -1276,7 +1276,7 @@ impl ValidModule {
     }
 
     /// Returns friendly names applied during validation (if enabled).
-    pub fn friendly_names(&self) -> Option<&HashMap<String, String>> {
+    pub fn friendly_names(&self) -> Option<&HashMap<u32, String>> {
         self.friendly_names.as_ref()
     }
 }
@@ -1376,6 +1376,11 @@ fn validate_words(
     enforce_variable_limits(&module, &options)?;
     enforce_switch_branch_limit(&module, &options)?;
     enforce_access_chain_limit(&module, &options)?;
+    let friendly_names = if options.use_friendly_names {
+        Some(build_friendly_name_table(&module))
+    } else {
+        None
+    };
     Ok(ValidModule {
         words,
         module,
@@ -1383,8 +1388,24 @@ fn validate_words(
         header,
         effective_version: target_version,
         options,
-        friendly_names: None,
+        friendly_names,
     })
+}
+
+fn build_friendly_name_table(module: &Module) -> HashMap<u32, String> {
+    let mut names = HashMap::new();
+    for inst in &module.debug_names {
+        if inst.class.opcode == rspirv::spirv::Op::Name {
+            if let (
+                Some(rspirv::dr::Operand::IdRef(id)),
+                Some(rspirv::dr::Operand::LiteralString(name)),
+            ) = (inst.operands.first(), inst.operands.get(1))
+            {
+                names.insert(*id, name.clone());
+            }
+        }
+    }
+    names
 }
 
 fn validate_functions(module: &Module) -> Result<(), ValidationError> {
@@ -2360,21 +2381,19 @@ fn validate_capabilities(
                     });
                 }
             }
-            if !grammar_requirements.required_extensions.is_empty() {
-                if grammar_requires_extension {
-                    for &required_ext in grammar_requirements.required_extensions {
-                        if !extension_allowed_in_env(required_ext, env) {
-                            return Err(ValidationError::DisallowedExtension {
-                                extension: ExtensionName::from(required_ext),
-                                env,
-                            });
-                        }
-                        if !has_extension(extensions, required_ext) {
-                            return Err(ValidationError::DisallowedCapabilityMissingExtension {
-                                capability,
-                                required_extension: required_ext.to_string(),
-                            });
-                        }
+            if !grammar_requirements.required_extensions.is_empty() && grammar_requires_extension {
+                for &required_ext in grammar_requirements.required_extensions {
+                    if !extension_allowed_in_env(required_ext, env) {
+                        return Err(ValidationError::DisallowedExtension {
+                            extension: ExtensionName::from(required_ext),
+                            env,
+                        });
+                    }
+                    if !has_extension(extensions, required_ext) {
+                        return Err(ValidationError::DisallowedCapabilityMissingExtension {
+                            capability,
+                            required_extension: required_ext.to_string(),
+                        });
                     }
                 }
             }
@@ -2993,12 +3012,12 @@ fn enforce_struct_member_limit(
     options: &ValidationOptions,
 ) -> Result<(), ValidationError> {
     if let Some(&limit) = options.limits.get(&LIMIT_MAX_STRUCT_MEMBERS) {
-        for (_id, member_count) in struct_member_counts {
-            if *member_count as u32 > limit {
+        for &member_count in struct_member_counts.values() {
+            if member_count as u32 > limit {
                 return Err(ValidationError::LimitExceeded {
                     limit_kind: LIMIT_MAX_STRUCT_MEMBERS,
                     limit,
-                    found: *member_count as u32,
+                    found: member_count as u32,
                 });
             }
         }
@@ -10005,8 +10024,10 @@ mod tests {
             )
             .expect("first validation");
 
-        let mut relaxed = ValidationOptions::default();
-        relaxed.relax_struct_store = true;
+        let mut relaxed = ValidationOptions {
+            relax_struct_store: true,
+            ..ValidationOptions::default()
+        };
         relaxed.limits.insert(7, 42);
 
         let second = cache
@@ -10205,6 +10226,45 @@ mod tests {
                 found: 2
             }
         );
+    }
+
+    #[test]
+    fn friendly_names_table_captures_op_name() {
+        use crate::validation::ValidationOptions;
+
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpName %main \"friendly\"",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+        let options = ValidationOptions {
+            use_friendly_names: true,
+            ..ValidationOptions::default()
+        };
+
+        let module = binary
+            .as_slice()
+            .validate_with_options(TargetEnv::Universal1_6, options)
+            .expect("validation should succeed");
+        let names = module
+            .friendly_names()
+            .expect("friendly names should be present");
+        let function_id = module
+            .module()
+            .functions
+            .first()
+            .and_then(|f| f.def.as_ref())
+            .and_then(|inst| inst.result_id)
+            .expect("function should have a result id");
+        assert_eq!(names.get(&function_id), Some(&"friendly".to_string()));
     }
 
     #[test]
