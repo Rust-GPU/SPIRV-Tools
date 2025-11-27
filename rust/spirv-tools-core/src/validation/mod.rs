@@ -4023,13 +4023,12 @@ fn enforce_block_layout_rules(
                             && !scalar_layout
                             && member_is_row_major(module, struct_id, MemberIndex(index as u32))
                             && col_size > 16
+                            && (offset % 16).saturating_add(col_size) > 16
                         {
-                            if (offset % 16).saturating_add(col_size) > 16 {
-                                return Err(ValidationError::InvalidBlockLayout {
-                                    struct_type: struct_id,
-                                    reason: "row-major matrix straddles 16-byte boundary under relaxed layout".to_string(),
-                                });
-                            }
+                            return Err(ValidationError::InvalidBlockLayout {
+                                struct_type: struct_id,
+                                reason: "row-major matrix straddles 16-byte boundary under relaxed layout".to_string(),
+                            });
                         }
                     }
                 }
