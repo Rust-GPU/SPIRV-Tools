@@ -10305,6 +10305,11 @@ mod tests {
     }
 
     #[test]
+    fn untyped_pointers_extension_is_vulkan_only() {
+        assert_vulkan_only_extension("SPV_KHR_untyped_pointers");
+    }
+
+    #[test]
     fn subgroup_uniform_control_flow_extension_is_vulkan_only() {
         assert_vulkan_only_extension("SPV_KHR_subgroup_uniform_control_flow");
     }
