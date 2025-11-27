@@ -1,3 +1,75 @@
+#[cfg(test)]
 mod optimizer_tests {
-    include!("optimizer.rs");
+    use crate::optimizer::optimize_basic_block;
+    use rspirv::binary::Assemble;
+    use rspirv::dr::{Builder, Loader};
+    use rspirv::spirv::{FunctionControl, Op};
+
+    #[test]
+    fn optimizer_basic_block_pass_through_non_arith() {
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let func_ty = b.type_function(void, vec![]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        b.begin_block(None).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let result = optimize_basic_block(&words).expect("optimization should succeed");
+        assert_eq!(result, words);
+    }
+
+    #[test]
+    fn optimizer_folds_constant_add_block() {
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let func_ty = b.type_function(void, vec![]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        let c2 = b.constant_bit32(int, 2);
+        let c3 = b.constant_bit32(int, 3);
+        let sum = b.i_add(int, None, c2, c3).expect("add id");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let optimized_module = loader.module();
+
+        let mut found_const_five = false;
+        let mut has_add = false;
+        for inst in optimized_module.all_inst_iter() {
+            match inst.class.opcode {
+                Op::Constant => {
+                    if inst.operands == vec![rspirv::dr::Operand::LiteralBit32(5u32)]
+                        && inst.result_id == Some(sum)
+                    {
+                        found_const_five = true;
+                    }
+                }
+                Op::IAdd => has_add = true,
+                _ => {}
+            }
+        }
+        assert!(found_const_five, "optimizer should fold to a const 5");
+        assert!(!has_add, "addition should be folded away");
+    }
 }
