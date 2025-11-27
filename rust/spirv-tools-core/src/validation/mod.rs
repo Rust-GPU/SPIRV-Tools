@@ -1366,6 +1366,8 @@ fn validate_words(
     validate_execution_modes(&module, &entry_points)?;
     validate_functions(&module)?;
     enforce_function_arg_limit(&module, &options)?;
+    enforce_variable_limits(&module, &options)?;
+    enforce_switch_branch_limit(&module, &options)?;
     Ok(ValidModule {
         words,
         module,
@@ -3011,6 +3013,87 @@ fn enforce_function_arg_limit(
             }
         }
     }
+    Ok(())
+}
+
+fn enforce_variable_limits(
+    module: &Module,
+    options: &ValidationOptions,
+) -> Result<(), ValidationError> {
+    if let Some(&limit) = options.limits.get(&LIMIT_MAX_GLOBAL_VARIABLES) {
+        let globals = module
+            .types_global_values
+            .iter()
+            .filter(|inst| inst.class.opcode == rspirv::spirv::Op::Variable)
+            .count() as u32;
+        if globals > limit {
+            return Err(ValidationError::LimitExceeded {
+                limit_kind: LIMIT_MAX_GLOBAL_VARIABLES,
+                limit,
+                found: globals,
+            });
+        }
+    }
+
+    if let Some(&limit) = options.limits.get(&LIMIT_MAX_LOCAL_VARIABLES) {
+        let mut locals: u32 = 0;
+        for function in &module.functions {
+            for block in &function.blocks {
+                for inst in &block.instructions {
+                    if inst.class.opcode == rspirv::spirv::Op::Variable {
+                        if let Some(rspirv::dr::Operand::StorageClass(
+                            rspirv::spirv::StorageClass::Function,
+                        )) = inst.operands.first()
+                        {
+                            locals = locals.saturating_add(1);
+                        }
+                    }
+                }
+            }
+        }
+        if locals > limit {
+            return Err(ValidationError::LimitExceeded {
+                limit_kind: LIMIT_MAX_LOCAL_VARIABLES,
+                limit,
+                found: locals,
+            });
+        }
+    }
+
+    Ok(())
+}
+
+fn enforce_switch_branch_limit(
+    module: &Module,
+    options: &ValidationOptions,
+) -> Result<(), ValidationError> {
+    let Some(&limit) = options.limits.get(&LIMIT_MAX_SWITCH_BRANCHES) else {
+        return Ok(());
+    };
+
+    for function in &module.functions {
+        for block in &function.blocks {
+            for inst in &block.instructions {
+                if inst.class.opcode == rspirv::spirv::Op::Switch {
+                    // Operand order: selector id, default target id, then literal/target pairs.
+                    let operands = &inst.operands;
+                    if operands.len() < 2 {
+                        continue;
+                    }
+                    let pair_count = (operands.len().saturating_sub(2)) / 2;
+                    let branches = 1 + pair_count as u32; // include default target
+                    if branches > limit {
+                        return Err(ValidationError::LimitExceeded {
+                            limit_kind: LIMIT_MAX_SWITCH_BRANCHES,
+                            limit,
+                            found: branches,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -9773,6 +9856,78 @@ mod tests {
             Arc::as_ptr(&first),
             Arc::as_ptr(&second),
             "options should participate in the cache key"
+        );
+    }
+
+    #[test]
+    fn global_variable_limit_enforced() {
+        use crate::validation::{ValidationOptions, LIMIT_MAX_GLOBAL_VARIABLES};
+
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%ptr = OpTypePointer Uniform %void",
+            "%g0 = OpVariable %ptr Uniform",
+            "%g1 = OpVariable %ptr Uniform",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+        let mut options = ValidationOptions::default();
+        options.limits.insert(LIMIT_MAX_GLOBAL_VARIABLES, 1);
+
+        let err = binary
+            .as_slice()
+            .validate_with_options(TargetEnv::Universal1_6, options)
+            .expect_err("global variable limit should be enforced");
+        assert_eq!(
+            err,
+            ValidationError::LimitExceeded {
+                limit_kind: LIMIT_MAX_GLOBAL_VARIABLES,
+                limit: 1,
+                found: 2
+            }
+        );
+    }
+
+    #[test]
+    fn local_variable_limit_enforced() {
+        use crate::validation::{ValidationOptions, LIMIT_MAX_LOCAL_VARIABLES};
+
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%ptr = OpTypePointer Function %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "%l0 = OpVariable %ptr Function",
+            "%l1 = OpVariable %ptr Function",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+        let mut options = ValidationOptions::default();
+        options.limits.insert(LIMIT_MAX_LOCAL_VARIABLES, 1);
+
+        let err = binary
+            .as_slice()
+            .validate_with_options(TargetEnv::Universal1_6, options)
+            .expect_err("local variable limit should be enforced");
+        assert_eq!(
+            err,
+            ValidationError::LimitExceeded {
+                limit_kind: LIMIT_MAX_LOCAL_VARIABLES,
+                limit: 1,
+                found: 2
+            }
         );
     }
 
