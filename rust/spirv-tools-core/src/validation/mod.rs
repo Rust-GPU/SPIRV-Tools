@@ -9322,6 +9322,33 @@ mod tests {
     }
 
     #[test]
+    fn ray_cull_mask_extension_rejected_outside_vulkan() {
+        let text = [
+            "OpCapability Shader",
+            "OpExtension \"SPV_KHR_ray_cull_mask\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("ray cull mask is Vulkan-only");
+        assert_eq!(
+            error,
+            ValidationError::DisallowedExtension {
+                extension: ExtensionName::from("SPV_KHR_ray_cull_mask"),
+                env: TargetEnv::Universal1_6
+            }
+        );
+    }
+
+    #[test]
     fn non_opencl_env_rejects_opencl_extension() {
         let text = [
             "OpCapability Shader",
