@@ -596,7 +596,7 @@ impl TargetEnv {
         if lower.contains("intel_function_variants") && self.is_vulkan() {
             return false;
         }
-        if is_vulkan_specific_extension(extension.as_str()) || lower.contains("vulkan") {
+        if lower.contains("vulkan") {
             return self.is_vulkan();
         }
         if let Some(family) = classify_vendor_extension(&lower) {
@@ -643,41 +643,6 @@ impl TargetEnv {
             _ => true,
         }
     }
-}
-
-/// Vulkan-only extensions that should be rejected in non-Vulkan environments.
-fn is_vulkan_specific_extension(name: &str) -> bool {
-    const VULKAN_ONLY_EXTENSIONS: &[&str] = &[
-        "SPV_KHR_vulkan_memory_model",
-        "SPV_KHR_workgroup_memory_explicit_layout",
-        "SPV_KHR_physical_storage_buffer",
-        "SPV_KHR_untyped_pointers",
-        "SPV_EXT_descriptor_indexing",
-        "SPV_EXT_fragment_shader_interlock",
-        "SPV_EXT_mesh_shader",
-        "SPV_EXT_shader_atomic_float_add",
-        "SPV_EXT_shader_atomic_float_min_max",
-        "SPV_EXT_fragment_invocation_density",
-        "SPV_NV_shader_invocation_reorder",
-        "SPV_NV_cluster_acceleration_structure",
-        "SPV_NV_linear_swept_spheres",
-        "SPV_KHR_ray_tracing",
-        "SPV_KHR_ray_query",
-        "SPV_KHR_ray_tracing_position_fetch",
-        "SPV_NV_ray_tracing",
-        "SPV_NV_ray_tracing_motion_blur",
-        "SPV_NV_bindless_texture",
-        "SPV_NV_cooperative_matrix",
-        "SPV_NV_cooperative_matrix2",
-        "SPV_NV_mesh_shader",
-        "SPV_QCOM_image_processing",
-        "SPV_QCOM_image_processing2",
-        "SPV_QCOM_cooperative_matrix_conversion",
-        "SPV_QCOM_tile_shading",
-    ];
-    VULKAN_ONLY_EXTENSIONS
-        .iter()
-        .any(|ext| ext.eq_ignore_ascii_case(name))
 }
 
 fn is_support_guaranteed_vulkan_1_0(capability: rspirv::spirv::Capability) -> bool {
