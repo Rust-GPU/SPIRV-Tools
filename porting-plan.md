@@ -196,6 +196,7 @@ Planned tasks:
 - [x] Add layout regression for `OpExtInstImport` before `OpMemoryModel` to lock ordering diagnostics.
 - [x] Add layout regressions for decoration opcodes to ensure they remain in the annotations section and precede functions.
 - [x] Add layout regressions for `OpDecorateId`/`OpDecorateString`/`OpMemberDecorateString` and group decorations to reject placement after the types-and-globals section.
+- [x] Add layout regression to reject extensions (`OpExtension`) that appear after entry points.
 - Reaudit per-environment decoration/capability allowlists and wire validated-module reuse through FFI/CLI caching where ordering rules apply.
 
 ## Completed Milestone: Disassembler Parity & CLI Integration
