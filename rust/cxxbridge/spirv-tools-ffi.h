@@ -1,16 +1,3 @@
-// Copyright (c) 2015-2024 The Khronos Group Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
 #pragma once
 #include "spirv-tools-ffi/src/context_bridge.h"
 #include <algorithm>
@@ -920,11 +907,19 @@ void set_rust_text_assembler_override(bool enable) noexcept;
 
 void clear_rust_text_assembler_override() noexcept;
 
+bool rust_validator_enabled() noexcept;
+
+void set_rust_validator_override(bool enable) noexcept;
+
+void clear_rust_validator_override() noexcept;
+
 void rebind_context(::std::uint64_t handle, ::std::size_t context_ptr) noexcept;
 
 ::spvtools::ffi::AssembleResult try_assemble_text(::std::uint64_t context_handle, ::rust::Slice<::std::uint8_t const> text, ::std::uint32_t options) noexcept;
 
 ::spvtools::ffi::DisassembleResult try_disassemble_binary(::std::uint64_t context_handle, ::rust::Slice<::std::uint32_t const> binary, ::std::uint32_t options) noexcept;
+
+::spvtools::ffi::ValidateResult validate_binary_rust(::std::uint32_t env, ::rust::Slice<::std::uint32_t const> binary) noexcept;
 } // namespace ffi
 } // namespace spvtools
 

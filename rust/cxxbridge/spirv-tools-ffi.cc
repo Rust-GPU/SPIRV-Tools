@@ -931,11 +931,19 @@ void spvtools$ffi$cxxbridge1$set_rust_text_assembler_override(bool enable) noexc
 
 void spvtools$ffi$cxxbridge1$clear_rust_text_assembler_override() noexcept;
 
+bool spvtools$ffi$cxxbridge1$rust_validator_enabled() noexcept;
+
+void spvtools$ffi$cxxbridge1$set_rust_validator_override(bool enable) noexcept;
+
+void spvtools$ffi$cxxbridge1$clear_rust_validator_override() noexcept;
+
 void spvtools$ffi$cxxbridge1$rebind_context(::std::uint64_t handle, ::std::size_t context_ptr) noexcept;
 
 void spvtools$ffi$cxxbridge1$try_assemble_text(::std::uint64_t context_handle, ::rust::Slice<::std::uint8_t const> text, ::std::uint32_t options, ::spvtools::ffi::AssembleResult *return$) noexcept;
 
 void spvtools$ffi$cxxbridge1$try_disassemble_binary(::std::uint64_t context_handle, ::rust::Slice<::std::uint32_t const> binary, ::std::uint32_t options, ::spvtools::ffi::DisassembleResult *return$) noexcept;
+
+void spvtools$ffi$cxxbridge1$validate_binary_rust(::std::uint32_t env, ::rust::Slice<::std::uint32_t const> binary, ::spvtools::ffi::ValidateResult *return$) noexcept;
 
 void spvtools$ffi$cxxbridge1$dispatch_context_message(::std::size_t context_ptr, ::std::uint32_t level, bool has_source, ::rust::Str source, ::spvtools::ffi::MessagePosition *position, ::rust::Str message) noexcept {
   void (*dispatch_context_message$)(::std::size_t, ::std::uint32_t, bool, ::rust::Str, ::spvtools::ffi::MessagePosition, ::rust::Str) = ::spvtools::ffi::dispatch_context_message;
@@ -1053,6 +1061,18 @@ void clear_rust_text_assembler_override() noexcept {
   spvtools$ffi$cxxbridge1$clear_rust_text_assembler_override();
 }
 
+bool rust_validator_enabled() noexcept {
+  return spvtools$ffi$cxxbridge1$rust_validator_enabled();
+}
+
+void set_rust_validator_override(bool enable) noexcept {
+  spvtools$ffi$cxxbridge1$set_rust_validator_override(enable);
+}
+
+void clear_rust_validator_override() noexcept {
+  spvtools$ffi$cxxbridge1$clear_rust_validator_override();
+}
+
 void rebind_context(::std::uint64_t handle, ::std::size_t context_ptr) noexcept {
   spvtools$ffi$cxxbridge1$rebind_context(handle, context_ptr);
 }
@@ -1066,6 +1086,12 @@ void rebind_context(::std::uint64_t handle, ::std::size_t context_ptr) noexcept 
 ::spvtools::ffi::DisassembleResult try_disassemble_binary(::std::uint64_t context_handle, ::rust::Slice<::std::uint32_t const> binary, ::std::uint32_t options) noexcept {
   ::rust::MaybeUninit<::spvtools::ffi::DisassembleResult> return$;
   spvtools$ffi$cxxbridge1$try_disassemble_binary(context_handle, binary, options, &return$.value);
+  return ::std::move(return$.value);
+}
+
+::spvtools::ffi::ValidateResult validate_binary_rust(::std::uint32_t env, ::rust::Slice<::std::uint32_t const> binary) noexcept {
+  ::rust::MaybeUninit<::spvtools::ffi::ValidateResult> return$;
+  spvtools$ffi$cxxbridge1$validate_binary_rust(env, binary, &return$.value);
   return ::std::move(return$.value);
 }
 } // namespace ffi
