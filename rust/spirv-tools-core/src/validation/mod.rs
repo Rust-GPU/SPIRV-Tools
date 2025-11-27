@@ -146,6 +146,22 @@ impl ValidationOptions {
     }
 }
 
+/// Limit kind for the maximum number of struct members.
+pub const LIMIT_MAX_STRUCT_MEMBERS: u32 = 0;
+/// Limit kind for maximum struct nesting depth.
+pub const LIMIT_MAX_STRUCT_DEPTH: u32 = 1;
+/// Limit kind for maximum local variables.
+pub const LIMIT_MAX_LOCAL_VARIABLES: u32 = 2;
+/// Limit kind for maximum global variables.
+pub const LIMIT_MAX_GLOBAL_VARIABLES: u32 = 3;
+/// Limit kind for maximum switch branches.
+pub const LIMIT_MAX_SWITCH_BRANCHES: u32 = 4;
+/// Limit kind for maximum function arguments.
+pub const LIMIT_MAX_FUNCTION_ARGS: u32 = 5;
+/// Limit kind for maximum control-flow nesting depth.
+pub const LIMIT_MAX_CONTROL_FLOW_NESTING_DEPTH: u32 = 6;
+/// Limit kind for maximum access-chain indexes.
+pub const LIMIT_MAX_ACCESS_CHAIN_INDEXES: u32 = 7;
 const LIMIT_MAX_ID_BOUND: u32 = 8;
 
 /// A simple snapshot of validator limits keyed by the limit enum value.
@@ -579,6 +595,16 @@ pub enum ValidationError {
     InstructionBeforeMemoryModel {
         /// The opcode that violated the ordering.
         opcode: rspirv::spirv::Op,
+    },
+    /// A validation limit was exceeded.
+    #[error("validator limit {limit_kind} exceeded: found {found}, limit {limit}")]
+    LimitExceeded {
+        /// The limit kind (matches `spv_validator_limit`).
+        limit_kind: u32,
+        /// The configured limit value.
+        limit: u32,
+        /// The observed value.
+        found: u32,
     },
     /// Global instructions are out of the required logical layout order.
     #[error("instruction {opcode:?} appears out of order in the logical layout")]
@@ -1332,12 +1358,14 @@ fn validate_words(
     validate_memory_model(&module)?;
     validate_type_functions(&module, &opcodes)?;
     let struct_member_counts = validate_member_decorations(&module, &defined_ids)?;
+    enforce_struct_member_limit(&struct_member_counts, &options)?;
     validate_decoration_groups(&module, &defined_ids, &opcodes, &struct_member_counts)?;
     validate_decorations(&module, &defined_ids)?;
     validate_decoration_target_categories(&module, &opcodes, &definitions, &capabilities)?;
     let entry_points = validate_entry_points(&module, &defined_ids, &opcodes)?;
     validate_execution_modes(&module, &entry_points)?;
     validate_functions(&module)?;
+    enforce_function_arg_limit(&module, &options)?;
     Ok(ValidModule {
         words,
         module,
@@ -2947,6 +2975,43 @@ fn validate_member_decorations(
     }
 
     Ok(struct_member_counts)
+}
+
+fn enforce_struct_member_limit(
+    struct_member_counts: &HashMap<ResultId, usize>,
+    options: &ValidationOptions,
+) -> Result<(), ValidationError> {
+    if let Some(&limit) = options.limits.get(&LIMIT_MAX_STRUCT_MEMBERS) {
+        for (_id, member_count) in struct_member_counts {
+            if *member_count as u32 > limit {
+                return Err(ValidationError::LimitExceeded {
+                    limit_kind: LIMIT_MAX_STRUCT_MEMBERS,
+                    limit,
+                    found: *member_count as u32,
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+fn enforce_function_arg_limit(
+    module: &Module,
+    options: &ValidationOptions,
+) -> Result<(), ValidationError> {
+    if let Some(&limit) = options.limits.get(&LIMIT_MAX_FUNCTION_ARGS) {
+        for function in &module.functions {
+            let arg_count = function.parameters.len() as u32;
+            if arg_count > limit {
+                return Err(ValidationError::LimitExceeded {
+                    limit_kind: LIMIT_MAX_FUNCTION_ARGS,
+                    limit,
+                    found: arg_count,
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 fn validate_decoration_groups(
