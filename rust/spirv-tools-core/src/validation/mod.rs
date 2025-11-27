@@ -5578,6 +5578,69 @@ mod tests {
     }
 
     #[test]
+    fn group_decorate_cannot_follow_types_and_globals() {
+        // OpGroupDecorate must remain in the annotations section; it is invalid after types/globals.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            3,          // bound (ids up to 2)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 73), // OpDecorationGroup %1 (annotations section)
+            1,
+            op(2, rspirv::spirv::Op::TypeStruct as u16), // %2 = OpTypeStruct
+            2,
+            op(3, rspirv::spirv::Op::GroupDecorate as u16), // OpGroupDecorate %1 %2 (after types -> error)
+            1,
+            2,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::GroupDecorate
+            }
+        );
+    }
+
+    #[test]
+    fn group_member_decorate_cannot_follow_types_and_globals() {
+        // OpGroupMemberDecorate must also stay in the annotations section before types/globals.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            3,          // bound (ids up to 2)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 73), // OpDecorationGroup %1 (annotations)
+            1,
+            op(2, rspirv::spirv::Op::TypeStruct as u16), // %2 = OpTypeStruct
+            2,
+            op(4, rspirv::spirv::Op::GroupMemberDecorate as u16), // OpGroupMemberDecorate %1 %2 0 (after types -> error)
+            1,
+            2,
+            0,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::GroupMemberDecorate
+            }
+        );
+    }
+
+    #[test]
     fn decorations_cannot_appear_inside_functions() {
         // Hand-built binary with a decoration inside the function body to ensure layout checking
         // rejects annotations in the function section.
