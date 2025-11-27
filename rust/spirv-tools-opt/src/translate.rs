@@ -122,6 +122,33 @@ pub fn translate_arith(instructions: &[Instruction]) -> Result<TranslatedExpr, T
                 )?;
                 expr.add(SpirvLang::Mul([lhs, rhs]))
             }
+            Op::ISub => {
+                let mut ops = inst.operands.iter().filter_map(|op| match op {
+                    rspirv::dr::Operand::IdRef(id) => Some(*id),
+                    _ => None,
+                });
+                let lhs = ops.next().and_then(|id| ids.get(&id).copied()).ok_or(
+                    TranslateError::UnknownOperand {
+                        id: inst
+                            .operands
+                            .first()
+                            .and_then(|op| op.id_ref_any())
+                            .unwrap_or(0),
+                        opcode,
+                    },
+                )?;
+                let rhs = ops.next().and_then(|id| ids.get(&id).copied()).ok_or(
+                    TranslateError::UnknownOperand {
+                        id: inst
+                            .operands
+                            .get(1)
+                            .and_then(|op| op.id_ref_any())
+                            .unwrap_or(0),
+                        opcode,
+                    },
+                )?;
+                expr.add(SpirvLang::Sub([lhs, rhs]))
+            }
             other => return Err(TranslateError::UnsupportedOp(other)),
         };
         ids.insert(result_id, node_id);

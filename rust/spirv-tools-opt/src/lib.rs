@@ -34,17 +34,22 @@ pub mod fuzzing {
             let node = if idx == 0 {
                 SpirvLang::Const(ConstValue::new(u.arbitrary()?))
             } else {
-                match u.choose(&[0u8, 1, 2])? {
+                match u.choose(&[0u8, 1, 2, 3])? {
                     0 => SpirvLang::Const(ConstValue::new(u.arbitrary()?)),
                     1 => {
                         let a = choose_child(u, idx - 1)?;
                         let b = choose_child(u, idx - 1)?;
                         SpirvLang::Add([Id::from(a), Id::from(b)])
                     }
-                    _ => {
+                    2 => {
                         let a = choose_child(u, idx - 1)?;
                         let b = choose_child(u, idx - 1)?;
                         SpirvLang::Mul([Id::from(a), Id::from(b)])
+                    }
+                    _ => {
+                        let a = choose_child(u, idx - 1)?;
+                        let b = choose_child(u, idx - 1)?;
+                        SpirvLang::Sub([Id::from(a), Id::from(b)])
                     }
                 }
             };
@@ -116,6 +121,7 @@ define_language! {
     pub enum SpirvLang {
         "+" = Add([Id; 2]),
         "*" = Mul([Id; 2]),
+        "-" = Sub([Id; 2]),
         "const" = Const(ConstValue),
         Symbol(egg::Symbol),
     }
@@ -167,11 +173,14 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("mul-zero"; "(* ?a ?b)" => { MulZero { a: var("?a"), b: var("?b") } }),
         rewrite!("add-fold"; "(+ ?a ?b)" => { FoldAdd }),
         rewrite!("mul-fold"; "(* ?a ?b)" => { FoldMul }),
+        rewrite!("sub-fold"; "(- ?a ?b)" => { FoldSub }),
+        rewrite!("sub-zero-right"; "(- ?a ?b)" => "?a" if is_const_zero(var("?b"))),
     ]
 }
 
 struct FoldAdd;
 struct FoldMul;
+struct FoldSub;
 struct AddZero {
     a: Var,
     b: Var,
@@ -224,6 +233,28 @@ impl Applier<SpirvLang, ()> for FoldMul {
         };
         let product = ConstValue::new(a.get().wrapping_mul(b.get()));
         let id = egraph.add(SpirvLang::Const(product));
+        egraph.union(eclass, id);
+        vec![id]
+    }
+}
+
+impl Applier<SpirvLang, ()> for FoldSub {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(a) = const_value(egraph, subst[var("a")]) else {
+            return Vec::new();
+        };
+        let Some(b) = const_value(egraph, subst[var("b")]) else {
+            return Vec::new();
+        };
+        let diff = ConstValue::new(a.get().wrapping_sub(b.get()));
+        let id = egraph.add(SpirvLang::Const(diff));
         egraph.union(eclass, id);
         vec![id]
     }
@@ -305,6 +336,10 @@ fn var(name: &str) -> Var {
         format!("?{name}")
     };
     Var::from_str(&formatted).expect("valid e-graph variable name")
+}
+
+fn is_const_zero(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
+    move |egraph, _, subst| const_value(egraph, subst[var]).is_some_and(|c| c.get() == 0)
 }
 
 #[cfg(test)]
