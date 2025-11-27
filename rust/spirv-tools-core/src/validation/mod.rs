@@ -3060,6 +3060,34 @@ fn enforce_variable_limits(
         }
     }
 
+    if let Some(&limit) = options.limits.get(&LIMIT_MAX_CONTROL_FLOW_NESTING_DEPTH) {
+        let mut max_depth = 0u32;
+        for function in &module.functions {
+            let mut depth = 0i32;
+            for block in &function.blocks {
+                for inst in &block.instructions {
+                    match inst.class.opcode {
+                        rspirv::spirv::Op::SelectionMerge | rspirv::spirv::Op::LoopMerge => {
+                            depth = depth.saturating_add(1);
+                            max_depth = max_depth.max(depth as u32);
+                        }
+                        rspirv::spirv::Op::Branch | rspirv::spirv::Op::BranchConditional => {
+                            depth = (depth - 1).max(0);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        if max_depth > limit {
+            return Err(ValidationError::LimitExceeded {
+                limit_kind: LIMIT_MAX_CONTROL_FLOW_NESTING_DEPTH,
+                limit,
+                found: max_depth,
+            });
+        }
+    }
+
     Ok(())
 }
 
@@ -9927,6 +9955,47 @@ mod tests {
                 limit_kind: LIMIT_MAX_LOCAL_VARIABLES,
                 limit: 1,
                 found: 2
+            }
+        );
+    }
+
+    #[test]
+    fn control_flow_depth_limit_enforced() {
+        use crate::validation::{ValidationOptions, LIMIT_MAX_CONTROL_FLOW_NESTING_DEPTH};
+
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%bool = OpTypeBool",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpSelectionMerge %merge None",
+            "OpBranchConditional %bool %then %merge",
+            "%then = OpLabel",
+            "OpReturn",
+            "%merge = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+        let mut options = ValidationOptions::default();
+        options
+            .limits
+            .insert(LIMIT_MAX_CONTROL_FLOW_NESTING_DEPTH, 0);
+
+        let err = binary
+            .as_slice()
+            .validate_with_options(TargetEnv::Universal1_6, options)
+            .expect_err("control flow nesting limit should be enforced");
+        assert_eq!(
+            err,
+            ValidationError::LimitExceeded {
+                limit_kind: LIMIT_MAX_CONTROL_FLOW_NESTING_DEPTH,
+                limit: 0,
+                found: 1
             }
         );
     }
