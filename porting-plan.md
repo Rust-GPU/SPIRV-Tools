@@ -369,3 +369,13 @@ Tasks for this milestone:
 - Enforce SSA/phi correctness (dominance of defs, matching predecessor counts/types) and type checking for instructions beyond the current structural pass.
 - Validate interface linkage for variables and descriptor sets/bindings where applicable per environment.
 - Wire the Rust validator through FFI/CLI as the default path (behind a feature flag) once the above checks and layout parity are in place, backed by mirrored gtest/integration coverage.
+
+## Upcoming Milestone: Optimizer E-Graph Port
+Drive the optimizer rewrite in Rust using `egg`/e-graphs with fuzzing and performance guardrails.
+
+Planned tasks:
+- Model optimizer IR and rewrites in Rust with `egg`, keeping transformations zero-cost and type-safe.
+- Expose optimizer controls through FFI/CLI compatible with the existing C API and binaries.
+- Add fuzzing harnesses using `cargo fuzz` + `arbitrary` to stress rewrites and round-trip assembly/disassembly.
+- Establish benchmarks with `criterion` (and `hyperfine` for CLI) to track regressions against the C++ optimizer.
+- Port representative optimizer passes and their C++ tests into Rust unit/integration tests to validate e-graph results.
