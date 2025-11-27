@@ -1488,7 +1488,9 @@ fn validate_words(
     if let Some(&schema) = words.as_slice().get(4) {
         Schema::validate(schema)?;
     }
-    run_layout_check(words.as_slice(), env)?;
+    if !options.skip_block_layout {
+        run_layout_check(words.as_slice(), env)?;
+    }
     let module = parse_module(words.as_slice())?;
     let header = ValidatedHeader::from_module(&module)?;
     if let Some(&limit) = options.limits.get(&LIMIT_MAX_ID_BOUND) {
@@ -4266,10 +4268,10 @@ fn validate_instruction_ids(
 #[cfg(test)]
 mod tests {
     use super::{
-        validate_module, CheckedBound, DeclaredBound, DecorationTargetId, DecorationTargetKind,
-        ExtensionName, Id, IdKind, MaybeValidModule, MemberDecorationTargetId, MemberIndex,
-        ModuleWords, OperandId, Schema, SpirvVersion, TypeId, ValidModuleCache, ValidatableModule,
-        ValidationError,
+        validate_module, validate_module_with_options, CheckedBound, DeclaredBound,
+        DecorationTargetId, DecorationTargetKind, ExtensionName, Id, IdKind, MaybeValidModule,
+        MemberDecorationTargetId, MemberIndex, ModuleWords, OperandId, Schema, SpirvVersion,
+        TypeId, ValidModuleCache, ValidatableModule, ValidationError,
     };
     use crate::assembly::assemble_text;
     use crate::target_env::TargetEnv;
@@ -11073,6 +11075,48 @@ mod tests {
             .as_slice()
             .validate_with_options(TargetEnv::Universal1_6, options)
             .expect("layout relaxation flags should be accepted");
+    }
+
+    #[test]
+    fn skip_block_layout_allows_misordered_globals() {
+        // OpExtension after type declarations should trigger a layout error unless skipped.
+        let binary = vec![
+            0x0723_0203, // magic
+            0x0001_0000, // version
+            0,           // generator
+            6,           // bound
+            0,           // schema
+            op(2, 17),   // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+            op(3, 11), // OpExtInstImport %3 "GLSL.std.450" (misordered after types)
+            3,
+            0x4c5347,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+        ];
+
+        use crate::validation::ValidationOptions;
+
+        let err = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert!(matches!(
+            err,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::ExtInstImport
+            }
+        ));
+
+        let options = ValidationOptions {
+            skip_block_layout: true,
+            ..ValidationOptions::default()
+        };
+        validate_module_with_options(&binary, TargetEnv::Universal1_6, options)
+            .expect("skip_block_layout should bypass layout ordering errors");
     }
 
     #[test]
