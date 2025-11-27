@@ -5486,6 +5486,34 @@ mod tests {
     }
 
     #[test]
+    fn decorations_cannot_precede_memory_model() {
+        // Missing OpMemoryModel with a decoration recorded before any other violation should
+        // surface an InstructionBeforeMemoryModel error referencing the decoration opcode.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            2,          // bound (ids up to 1)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 71), // OpDecorate %1 RelaxedPrecision
+            1,
+            rspirv::spirv::Decoration::RelaxedPrecision as u32,
+            op(2, 19), // OpTypeVoid %1 (appears after the decoration but still before memory model)
+            1,
+        ];
+
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::InstructionBeforeMemoryModel {
+                opcode: rspirv::spirv::Op::Decorate
+            }
+        );
+    }
+
+    #[test]
     fn member_decorations_cannot_appear_inside_functions() {
         // MemberDecorate belongs to the annotations section; placing it inside a function should
         // be rejected by layout validation.
