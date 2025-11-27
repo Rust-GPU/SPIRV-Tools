@@ -51,11 +51,12 @@ void dispatch_context_message(std::uintptr_t context_ptr, std::uint32_t level,
                     ToSpvPosition(position), message_storage.c_str());
 }
 
-ValidateResult validate_binary(std::uint32_t env,
-                               rust::Slice<const std::uint32_t> words) {
+ValidateResult validate_binary_with_options(
+    std::uint32_t env, rust::Slice<const std::uint32_t> words,
+    const ValidatorOptions& options) {
   ValidateResult result{false, ::rust::String()};
   if (rust_validator_enabled()) {
-    return validate_binary_rust(env, words);
+    return validate_binary_rust(env, words, options);
   }
 
   const spv_target_env target = static_cast<spv_target_env>(env);
@@ -73,6 +74,12 @@ ValidateResult validate_binary(std::uint32_t env,
     result.message = ::rust::String(diagnostics);
   }
   return result;
+}
+
+ValidateResult validate_binary(std::uint32_t env,
+                               rust::Slice<const std::uint32_t> words) {
+  auto options = default_validator_options();
+  return validate_binary_with_options(env, words, options);
 }
 
 }  // namespace spvtools::ffi

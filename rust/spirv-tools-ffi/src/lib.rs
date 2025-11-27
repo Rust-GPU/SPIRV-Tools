@@ -44,6 +44,29 @@ mod ffi {
         message: String,
     }
 
+    #[derive(Debug)]
+    struct ValidatorLimit {
+        kind: u32,
+        value: u32,
+    }
+
+    #[derive(Debug)]
+    struct ValidatorOptions {
+        relax_struct_store: bool,
+        relax_logical_pointer: bool,
+        relax_block_layout: bool,
+        uniform_buffer_standard_layout: bool,
+        scalar_block_layout: bool,
+        workgroup_scalar_block_layout: bool,
+        skip_block_layout: bool,
+        allow_localsizeid: bool,
+        allow_offset_texture_operand: bool,
+        allow_vulkan_32_bit_bitwise: bool,
+        before_hlsl_legalization: bool,
+        use_friendly_names: bool,
+        limits: Vec<ValidatorLimit>,
+    }
+
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     struct MessagePosition {
         line: u32,
@@ -75,6 +98,7 @@ mod ffi {
         fn rust_validator_enabled() -> bool;
         fn set_rust_validator_override(enable: bool);
         fn clear_rust_validator_override();
+        fn default_validator_options() -> ValidatorOptions;
         fn rebind_context(handle: u64, context_ptr: usize);
         fn try_assemble_text(context_handle: u64, text: &[u8], options: u32) -> AssembleResult;
         fn try_disassemble_binary(
@@ -82,7 +106,8 @@ mod ffi {
             binary: &[u32],
             options: u32,
         ) -> DisassembleResult;
-        fn validate_binary_rust(env: u32, binary: &[u32]) -> ValidateResult;
+        fn validate_binary_rust(env: u32, binary: &[u32], options: &ValidatorOptions)
+            -> ValidateResult;
     }
 
     unsafe extern "C++" {
@@ -200,7 +225,11 @@ pub fn disassembler_supports_options(options: u32) -> bool {
     disassembly::supports_options(requested)
 }
 
-pub fn validate_binary_rust(env: u32, binary: &[u32]) -> ffi::ValidateResult {
+pub fn validate_binary_rust(
+    env: u32,
+    binary: &[u32],
+    options: &ffi::ValidatorOptions,
+) -> ffi::ValidateResult {
     let env = match TargetEnv::from_raw(env) {
         Some(env) => env,
         None => {
@@ -213,7 +242,8 @@ pub fn validate_binary_rust(env: u32, binary: &[u32]) -> ffi::ValidateResult {
     let mut cache = validation_cache()
         .lock()
         .expect("validation cache mutex should not be poisoned");
-    match cache.validate_words(binary, env) {
+    let opts = to_validation_options(options);
+    match cache.validate_words_with_options(binary, env, opts) {
         Ok(_) => ffi::ValidateResult {
             success: true,
             message: String::new(),
@@ -223,6 +253,57 @@ pub fn validate_binary_rust(env: u32, binary: &[u32]) -> ffi::ValidateResult {
             message: err.to_string(),
         },
     }
+}
+
+fn to_validation_options(
+    options: &ffi::ValidatorOptions,
+) -> spirv_tools_core::validation::ValidationOptions {
+    let limits = options
+        .limits
+        .iter()
+        .map(|limit| (limit.kind, limit.value))
+        .collect();
+    spirv_tools_core::validation::ValidationOptions {
+        relax_struct_store: options.relax_struct_store,
+        relax_logical_pointer: options.relax_logical_pointer,
+        relax_block_layout: options.relax_block_layout,
+        uniform_buffer_standard_layout: options.uniform_buffer_standard_layout,
+        scalar_block_layout: options.scalar_block_layout,
+        workgroup_scalar_block_layout: options.workgroup_scalar_block_layout,
+        skip_block_layout: options.skip_block_layout,
+        allow_localsizeid: options.allow_localsizeid,
+        allow_offset_texture_operand: options.allow_offset_texture_operand,
+        allow_vulkan_32_bit_bitwise: options.allow_vulkan_32_bit_bitwise,
+        before_hlsl_legalization: options.before_hlsl_legalization,
+        use_friendly_names: options.use_friendly_names,
+        limits,
+    }
+}
+
+pub fn default_validator_options() -> ffi::ValidatorOptions {
+    ffi::ValidatorOptions {
+        relax_struct_store: false,
+        relax_logical_pointer: false,
+        relax_block_layout: false,
+        uniform_buffer_standard_layout: false,
+        scalar_block_layout: false,
+        workgroup_scalar_block_layout: false,
+        skip_block_layout: false,
+        allow_localsizeid: false,
+        allow_offset_texture_operand: false,
+        allow_vulkan_32_bit_bitwise: false,
+        before_hlsl_legalization: false,
+        use_friendly_names: true,
+        limits: Vec::new(),
+    }
+}
+
+pub fn validate_binary_rust_with_options(
+    env: u32,
+    binary: &[u32],
+    options: &ffi::ValidatorOptions,
+) -> ffi::ValidateResult {
+    validate_binary_rust(env, binary, options)
 }
 
 pub fn has_rust_context(handle: usize) -> bool {
@@ -258,10 +339,19 @@ pub fn rebind_context(handle: u64, context_ptr: usize) {
 
 /// Validates a SPIR-V module for the provided target environment.
 pub fn validate_binary(env: TargetEnv, words: &[u32]) -> ffi::ValidateResult {
+    validate_binary_with_options(env, words, &default_validator_options())
+}
+
+/// Validates with explicit validator options, preferring the Rust validator when enabled.
+pub fn validate_binary_with_options(
+    env: TargetEnv,
+    words: &[u32],
+    options: &ffi::ValidatorOptions,
+) -> ffi::ValidateResult {
     if rust_validator_enabled() {
         #[cfg(test)]
         LAST_VALIDATION_PATH.store(1, Ordering::Relaxed);
-        return validate_binary_rust(env.to_raw(), words);
+        return validate_binary_rust_with_options(env.to_raw(), words, options);
     }
 
     #[cfg(test)]
@@ -604,13 +694,16 @@ OpReturn
 OpFunctionEnd
 "#;
         let binary = assemble_text_with_env(text, TargetEnv::Universal1_6).unwrap();
-        let ok = validate_binary_rust(TargetEnv::Universal1_6.to_raw(), &binary);
+        let options = default_validator_options();
+        let ok =
+            validate_binary_rust_with_options(TargetEnv::Universal1_6.to_raw(), &binary, &options);
         assert!(ok.success);
         assert!(ok.message.is_empty());
 
         let mut invalid = binary.clone();
         invalid[4] = 1; // reserved word must be zero
-        let bad = validate_binary_rust(TargetEnv::Universal1_6.to_raw(), &invalid);
+        let bad =
+            validate_binary_rust_with_options(TargetEnv::Universal1_6.to_raw(), &invalid, &options);
         assert!(!bad.success);
         assert!(!bad.message.is_empty());
     }

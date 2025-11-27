@@ -94,14 +94,15 @@ Options:
 bool process_single_file(const char* filename, spv_target_env& target_env,
                          spvtools::ValidatorOptions& options,
                          bool use_default_msg_consumer,
-                         bool use_rust_validator) {
+                         bool use_rust_validator,
+                         const spvtools::ffi::ValidatorOptions& rust_options) {
   std::vector<uint32_t> contents;
   if (!ReadBinaryFile(filename, &contents)) return false;
 
 #if defined(SPIRV_RUST_TARGET_ENV)
   if (use_rust_validator) {
-    const auto result = spvtools::ffi::validate_binary(
-        static_cast<uint32_t>(target_env), contents);
+    const auto result = spvtools::ffi::validate_binary_with_options(
+        static_cast<uint32_t>(target_env), contents, rust_options);
     if (result.success) return true;
 
     const char* pretty_filename = filename ? filename : "stdin";
@@ -158,7 +159,10 @@ int main(int argc, char** argv) {
   spvtools::ValidatorOptions options;
   bool continue_processing = true;
   int return_code = 0;
-  bool custom_options = false;
+  spvtools::ffi::ValidatorOptions rust_options = {};
+#if defined(SPIRV_RUST_TARGET_ENV)
+  rust_options.use_friendly_names = true;
+#endif
 #if defined(SPIRV_RUST_TARGET_ENV)
   const bool env_disables_rust =
       std::getenv("SPIRV_TOOLS_DISABLE_RUST_VALIDATOR") != nullptr;
@@ -177,6 +181,10 @@ int main(int argc, char** argv) {
             uint32_t limit = 0;
             if (sscanf(argv[++argi], "%u", &limit)) {
               options.SetUniversalLimit(limit_type, limit);
+#if defined(SPIRV_RUST_TARGET_ENV)
+              rust_options.limits.push_back(
+                  spvtools::ffi::ValidatorLimit{static_cast<uint32_t>(limit_type), limit});
+#endif
             } else {
               fprintf(stderr, "error: missing argument to %s\n", cur_arg);
               continue_processing = false;
@@ -232,36 +240,60 @@ int main(int argc, char** argv) {
         }
       } else if (0 == strcmp(cur_arg, "--before-hlsl-legalization")) {
         options.SetBeforeHlslLegalization(true);
-        custom_options = true;
+#if defined(SPIRV_RUST_TARGET_ENV)
+        rust_options.before_hlsl_legalization = true;
+        rust_options.relax_logical_pointer = true;
+#endif
       } else if (0 == strcmp(cur_arg, "--relax-logical-pointer")) {
         options.SetRelaxLogicalPointer(true);
-        custom_options = true;
+#if defined(SPIRV_RUST_TARGET_ENV)
+        rust_options.relax_logical_pointer = true;
+#endif
       } else if (0 == strcmp(cur_arg, "--relax-block-layout")) {
         options.SetRelaxBlockLayout(true);
-        custom_options = true;
+#if defined(SPIRV_RUST_TARGET_ENV)
+        rust_options.relax_block_layout = true;
+#endif
       } else if (0 == strcmp(cur_arg, "--uniform-buffer-standard-layout")) {
         options.SetUniformBufferStandardLayout(true);
-        custom_options = true;
+#if defined(SPIRV_RUST_TARGET_ENV)
+        rust_options.uniform_buffer_standard_layout = true;
+#endif
       } else if (0 == strcmp(cur_arg, "--scalar-block-layout")) {
         options.SetScalarBlockLayout(true);
-        custom_options = true;
+#if defined(SPIRV_RUST_TARGET_ENV)
+        rust_options.scalar_block_layout = true;
+#endif
       } else if (0 == strcmp(cur_arg, "--workgroup-scalar-block-layout")) {
         options.SetWorkgroupScalarBlockLayout(true);
-        custom_options = true;
+#if defined(SPIRV_RUST_TARGET_ENV)
+        rust_options.workgroup_scalar_block_layout = true;
+#endif
       } else if (0 == strcmp(cur_arg, "--skip-block-layout")) {
         options.SetSkipBlockLayout(true);
-        custom_options = true;
+#if defined(SPIRV_RUST_TARGET_ENV)
+        rust_options.skip_block_layout = true;
+#endif
       } else if (0 == strcmp(cur_arg, "--allow-localsizeid")) {
         options.SetAllowLocalSizeId(true);
-        custom_options = true;
+#if defined(SPIRV_RUST_TARGET_ENV)
+        rust_options.allow_localsizeid = true;
+#endif
       } else if (0 == strcmp(cur_arg, "--allow-offset-texture-operand")) {
         options.SetAllowOffsetTextureOperand(true);
-        custom_options = true;
+#if defined(SPIRV_RUST_TARGET_ENV)
+        rust_options.allow_offset_texture_operand = true;
+#endif
       } else if (0 == strcmp(cur_arg, "--allow-vulkan-32-bit-bitwise")) {
         options.SetAllowVulkan32BitBitwise(true);
-        custom_options = true;
+#if defined(SPIRV_RUST_TARGET_ENV)
+        rust_options.allow_vulkan_32_bit_bitwise = true;
+#endif
       } else if (0 == strcmp(cur_arg, "--relax-struct-store")) {
         options.SetRelaxStructStore(true);
+#if defined(SPIRV_RUST_TARGET_ENV)
+        rust_options.relax_struct_store = true;
+#endif
 #if defined(SPIRV_RUST_TARGET_ENV)
       } else if (0 == strcmp(cur_arg, "--force-rust-validator")) {
         force_rust_validator = true;
@@ -302,12 +334,6 @@ int main(int argc, char** argv) {
   bool use_rust_validator = prefer_rust_validator;
   if (force_cpp_validator) use_rust_validator = false;
   if (force_rust_validator) use_rust_validator = true;
-  if (custom_options && use_rust_validator) {
-    std::cerr << "warning: validator CLI options are not yet forwarded to the "
-                 "Rust validator; falling back to the legacy validator."
-              << std::endl;
-    use_rust_validator = false;
-  }
 #else
   bool use_rust_validator = false;
 #endif
@@ -334,7 +360,7 @@ int main(int argc, char** argv) {
       const std::string filepath_str(filepath_u8str.begin(),
                                      filepath_u8str.end());
       if (!process_single_file(filepath_str.c_str(), target_env, options,
-                               false, use_rust_validator)) {
+                               false, use_rust_validator, rust_options)) {
         succeed = false;
       }
     }
@@ -343,5 +369,5 @@ int main(int argc, char** argv) {
   }
 
   return !process_single_file(inFile, target_env, options, true,
-                              use_rust_validator);
+                              use_rust_validator, rust_options);
 }

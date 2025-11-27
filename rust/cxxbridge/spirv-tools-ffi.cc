@@ -829,6 +829,8 @@ namespace spvtools {
     struct AssembleResult;
     struct DisassembleResult;
     struct ValidateResult;
+    struct ValidatorLimit;
+    struct ValidatorOptions;
     struct MessagePosition;
   }
 }
@@ -874,6 +876,37 @@ struct ValidateResult final {
   using IsRelocatable = ::std::true_type;
 };
 #endif // CXXBRIDGE1_STRUCT_spvtools$ffi$ValidateResult
+
+#ifndef CXXBRIDGE1_STRUCT_spvtools$ffi$ValidatorLimit
+#define CXXBRIDGE1_STRUCT_spvtools$ffi$ValidatorLimit
+struct ValidatorLimit final {
+  ::std::uint32_t kind CXX_DEFAULT_VALUE(0);
+  ::std::uint32_t value CXX_DEFAULT_VALUE(0);
+
+  using IsRelocatable = ::std::true_type;
+};
+#endif // CXXBRIDGE1_STRUCT_spvtools$ffi$ValidatorLimit
+
+#ifndef CXXBRIDGE1_STRUCT_spvtools$ffi$ValidatorOptions
+#define CXXBRIDGE1_STRUCT_spvtools$ffi$ValidatorOptions
+struct ValidatorOptions final {
+  bool relax_struct_store CXX_DEFAULT_VALUE(false);
+  bool relax_logical_pointer CXX_DEFAULT_VALUE(false);
+  bool relax_block_layout CXX_DEFAULT_VALUE(false);
+  bool uniform_buffer_standard_layout CXX_DEFAULT_VALUE(false);
+  bool scalar_block_layout CXX_DEFAULT_VALUE(false);
+  bool workgroup_scalar_block_layout CXX_DEFAULT_VALUE(false);
+  bool skip_block_layout CXX_DEFAULT_VALUE(false);
+  bool allow_localsizeid CXX_DEFAULT_VALUE(false);
+  bool allow_offset_texture_operand CXX_DEFAULT_VALUE(false);
+  bool allow_vulkan_32_bit_bitwise CXX_DEFAULT_VALUE(false);
+  bool before_hlsl_legalization CXX_DEFAULT_VALUE(false);
+  bool use_friendly_names CXX_DEFAULT_VALUE(false);
+  ::rust::Vec<::spvtools::ffi::ValidatorLimit> limits;
+
+  using IsRelocatable = ::std::true_type;
+};
+#endif // CXXBRIDGE1_STRUCT_spvtools$ffi$ValidatorOptions
 
 #ifndef CXXBRIDGE1_STRUCT_spvtools$ffi$MessagePosition
 #define CXXBRIDGE1_STRUCT_spvtools$ffi$MessagePosition
@@ -937,13 +970,15 @@ void spvtools$ffi$cxxbridge1$set_rust_validator_override(bool enable) noexcept;
 
 void spvtools$ffi$cxxbridge1$clear_rust_validator_override() noexcept;
 
+void spvtools$ffi$cxxbridge1$default_validator_options(::spvtools::ffi::ValidatorOptions *return$) noexcept;
+
 void spvtools$ffi$cxxbridge1$rebind_context(::std::uint64_t handle, ::std::size_t context_ptr) noexcept;
 
 void spvtools$ffi$cxxbridge1$try_assemble_text(::std::uint64_t context_handle, ::rust::Slice<::std::uint8_t const> text, ::std::uint32_t options, ::spvtools::ffi::AssembleResult *return$) noexcept;
 
 void spvtools$ffi$cxxbridge1$try_disassemble_binary(::std::uint64_t context_handle, ::rust::Slice<::std::uint32_t const> binary, ::std::uint32_t options, ::spvtools::ffi::DisassembleResult *return$) noexcept;
 
-void spvtools$ffi$cxxbridge1$validate_binary_rust(::std::uint32_t env, ::rust::Slice<::std::uint32_t const> binary, ::spvtools::ffi::ValidateResult *return$) noexcept;
+void spvtools$ffi$cxxbridge1$validate_binary_rust(::std::uint32_t env, ::rust::Slice<::std::uint32_t const> binary, ::spvtools::ffi::ValidatorOptions const &options, ::spvtools::ffi::ValidateResult *return$) noexcept;
 
 void spvtools$ffi$cxxbridge1$dispatch_context_message(::std::size_t context_ptr, ::std::uint32_t level, bool has_source, ::rust::Str source, ::spvtools::ffi::MessagePosition *position, ::rust::Str message) noexcept {
   void (*dispatch_context_message$)(::std::size_t, ::std::uint32_t, bool, ::rust::Str, ::spvtools::ffi::MessagePosition, ::rust::Str) = ::spvtools::ffi::dispatch_context_message;
@@ -1073,6 +1108,12 @@ void clear_rust_validator_override() noexcept {
   spvtools$ffi$cxxbridge1$clear_rust_validator_override();
 }
 
+::spvtools::ffi::ValidatorOptions default_validator_options() noexcept {
+  ::rust::MaybeUninit<::spvtools::ffi::ValidatorOptions> return$;
+  spvtools$ffi$cxxbridge1$default_validator_options(&return$.value);
+  return ::std::move(return$.value);
+}
+
 void rebind_context(::std::uint64_t handle, ::std::size_t context_ptr) noexcept {
   spvtools$ffi$cxxbridge1$rebind_context(handle, context_ptr);
 }
@@ -1089,10 +1130,58 @@ void rebind_context(::std::uint64_t handle, ::std::size_t context_ptr) noexcept 
   return ::std::move(return$.value);
 }
 
-::spvtools::ffi::ValidateResult validate_binary_rust(::std::uint32_t env, ::rust::Slice<::std::uint32_t const> binary) noexcept {
+::spvtools::ffi::ValidateResult validate_binary_rust(::std::uint32_t env, ::rust::Slice<::std::uint32_t const> binary, ::spvtools::ffi::ValidatorOptions const &options) noexcept {
   ::rust::MaybeUninit<::spvtools::ffi::ValidateResult> return$;
-  spvtools$ffi$cxxbridge1$validate_binary_rust(env, binary, &return$.value);
+  spvtools$ffi$cxxbridge1$validate_binary_rust(env, binary, options, &return$.value);
   return ::std::move(return$.value);
 }
 } // namespace ffi
 } // namespace spvtools
+
+extern "C" {
+void cxxbridge1$rust_vec$spvtools$ffi$ValidatorLimit$new(::rust::Vec<::spvtools::ffi::ValidatorLimit> const *ptr) noexcept;
+void cxxbridge1$rust_vec$spvtools$ffi$ValidatorLimit$drop(::rust::Vec<::spvtools::ffi::ValidatorLimit> *ptr) noexcept;
+::std::size_t cxxbridge1$rust_vec$spvtools$ffi$ValidatorLimit$len(::rust::Vec<::spvtools::ffi::ValidatorLimit> const *ptr) noexcept;
+::std::size_t cxxbridge1$rust_vec$spvtools$ffi$ValidatorLimit$capacity(::rust::Vec<::spvtools::ffi::ValidatorLimit> const *ptr) noexcept;
+::spvtools::ffi::ValidatorLimit const *cxxbridge1$rust_vec$spvtools$ffi$ValidatorLimit$data(::rust::Vec<::spvtools::ffi::ValidatorLimit> const *ptr) noexcept;
+void cxxbridge1$rust_vec$spvtools$ffi$ValidatorLimit$reserve_total(::rust::Vec<::spvtools::ffi::ValidatorLimit> *ptr, ::std::size_t new_cap) noexcept;
+void cxxbridge1$rust_vec$spvtools$ffi$ValidatorLimit$set_len(::rust::Vec<::spvtools::ffi::ValidatorLimit> *ptr, ::std::size_t len) noexcept;
+void cxxbridge1$rust_vec$spvtools$ffi$ValidatorLimit$truncate(::rust::Vec<::spvtools::ffi::ValidatorLimit> *ptr, ::std::size_t len) noexcept;
+} // extern "C"
+
+namespace rust {
+inline namespace cxxbridge1 {
+template <>
+Vec<::spvtools::ffi::ValidatorLimit>::Vec() noexcept {
+  cxxbridge1$rust_vec$spvtools$ffi$ValidatorLimit$new(this);
+}
+template <>
+void Vec<::spvtools::ffi::ValidatorLimit>::drop() noexcept {
+  return cxxbridge1$rust_vec$spvtools$ffi$ValidatorLimit$drop(this);
+}
+template <>
+::std::size_t Vec<::spvtools::ffi::ValidatorLimit>::size() const noexcept {
+  return cxxbridge1$rust_vec$spvtools$ffi$ValidatorLimit$len(this);
+}
+template <>
+::std::size_t Vec<::spvtools::ffi::ValidatorLimit>::capacity() const noexcept {
+  return cxxbridge1$rust_vec$spvtools$ffi$ValidatorLimit$capacity(this);
+}
+template <>
+::spvtools::ffi::ValidatorLimit const *Vec<::spvtools::ffi::ValidatorLimit>::data() const noexcept {
+  return cxxbridge1$rust_vec$spvtools$ffi$ValidatorLimit$data(this);
+}
+template <>
+void Vec<::spvtools::ffi::ValidatorLimit>::reserve_total(::std::size_t new_cap) noexcept {
+  return cxxbridge1$rust_vec$spvtools$ffi$ValidatorLimit$reserve_total(this, new_cap);
+}
+template <>
+void Vec<::spvtools::ffi::ValidatorLimit>::set_len(::std::size_t len) noexcept {
+  return cxxbridge1$rust_vec$spvtools$ffi$ValidatorLimit$set_len(this, len);
+}
+template <>
+void Vec<::spvtools::ffi::ValidatorLimit>::truncate(::std::size_t len) {
+  return cxxbridge1$rust_vec$spvtools$ffi$ValidatorLimit$truncate(this, len);
+}
+} // namespace cxxbridge1
+} // namespace rust

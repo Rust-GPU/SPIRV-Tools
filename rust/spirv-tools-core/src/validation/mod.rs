@@ -17,6 +17,7 @@ mod instruction_versions;
 use instruction_versions::grammar_required_spirv_version_for_opcode;
 mod operand_versions;
 use operand_versions::grammar_required_spirv_version_for_operand;
+use std::collections::BTreeMap;
 
 /// A non-zero SPIR-V id.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -64,6 +65,89 @@ pub struct ValidatedHeader {
 /// Shared, validated words backing a module.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ModuleWords(Arc<[u32]>);
+
+/// Validator options mirrored from the C++ validator settings.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ValidationOptions {
+    /// Permit relaxed struct store handling.
+    pub relax_struct_store: bool,
+    /// Permit logical pointer relaxations.
+    pub relax_logical_pointer: bool,
+    /// Permit relaxed block layout.
+    pub relax_block_layout: bool,
+    /// Enable uniform buffer standard layout.
+    pub uniform_buffer_standard_layout: bool,
+    /// Enable scalar block layout.
+    pub scalar_block_layout: bool,
+    /// Enable workgroup scalar block layout.
+    pub workgroup_scalar_block_layout: bool,
+    /// Skip block layout validation entirely.
+    pub skip_block_layout: bool,
+    /// Allow LocalSizeId decoration.
+    pub allow_localsizeid: bool,
+    /// Allow offset texture operand usage.
+    pub allow_offset_texture_operand: bool,
+    /// Allow Vulkan 32-bit bitwise operations.
+    pub allow_vulkan_32_bit_bitwise: bool,
+    /// Enable pre-HLSL legalization relaxations.
+    pub before_hlsl_legalization: bool,
+    /// Use friendly names for diagnostics.
+    pub use_friendly_names: bool,
+    /// Validator limit overrides keyed by the limit enum value.
+    pub limits: BTreeMap<u32, u32>,
+}
+
+impl Default for ValidationOptions {
+    fn default() -> Self {
+        Self {
+            relax_struct_store: false,
+            relax_logical_pointer: false,
+            relax_block_layout: false,
+            uniform_buffer_standard_layout: false,
+            scalar_block_layout: false,
+            workgroup_scalar_block_layout: false,
+            skip_block_layout: false,
+            allow_localsizeid: false,
+            allow_offset_texture_operand: false,
+            allow_vulkan_32_bit_bitwise: false,
+            before_hlsl_legalization: false,
+            use_friendly_names: true,
+            limits: BTreeMap::new(),
+        }
+    }
+}
+
+impl Hash for ValidationOptions {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.relax_struct_store.hash(state);
+        self.relax_logical_pointer.hash(state);
+        self.relax_block_layout.hash(state);
+        self.uniform_buffer_standard_layout.hash(state);
+        self.scalar_block_layout.hash(state);
+        self.workgroup_scalar_block_layout.hash(state);
+        self.skip_block_layout.hash(state);
+        self.allow_localsizeid.hash(state);
+        self.allow_offset_texture_operand.hash(state);
+        self.allow_vulkan_32_bit_bitwise.hash(state);
+        self.before_hlsl_legalization.hash(state);
+        self.use_friendly_names.hash(state);
+        for (k, v) in &self.limits {
+            k.hash(state);
+            v.hash(state);
+        }
+    }
+}
+
+impl ValidationOptions {
+    /// Returns a copy of the options with the given limit override applied.
+    pub fn with_limit(mut self, kind: u32, value: u32) -> Self {
+        self.limits.insert(kind, value);
+        self
+    }
+}
+
+/// A simple snapshot of validator limits keyed by the limit enum value.
+pub type ValidationLimits = BTreeMap<u32, u32>;
 
 /// A set of declared capabilities for a module.
 #[derive(Debug, Default)]
@@ -1152,13 +1236,22 @@ impl ValidModule {
 /// Validates a SPIR-V module against invariants that can be checked without target-specific
 /// knowledge.
 pub fn validate_module(words: &[u32], env: TargetEnv) -> Result<(), ValidationError> {
-    validate_words(ModuleWords::from(Arc::from(words)), env).map(|_| ())
+    validate_module_with_options(words, env, ValidationOptions::default())
+}
+
+/// Validates a SPIR-V module with explicit validator options.
+pub fn validate_module_with_options(
+    words: &[u32],
+    env: TargetEnv,
+    options: ValidationOptions,
+) -> Result<(), ValidationError> {
+    validate_words(ModuleWords::from(Arc::from(words)), env, options).map(|_| ())
 }
 
 /// A cache of validated modules keyed by target environment and module contents.
 #[derive(Default)]
 pub struct ValidModuleCache {
-    entries: std::collections::HashMap<(TargetEnv, u64), Arc<ValidModule>>,
+    entries: std::collections::HashMap<(TargetEnv, u64, ValidationOptions), Arc<ValidModule>>,
 }
 
 impl ValidModuleCache {
@@ -1168,20 +1261,35 @@ impl ValidModuleCache {
         words: &[u32],
         env: TargetEnv,
     ) -> Result<Arc<ValidModule>, ValidationError> {
+        self.validate_words_with_options(words, env, ValidationOptions::default())
+    }
+
+    /// Validate with explicit options.
+    pub fn validate_words_with_options(
+        &mut self,
+        words: &[u32],
+        env: TargetEnv,
+        options: ValidationOptions,
+    ) -> Result<Arc<ValidModule>, ValidationError> {
         let hash = hash_words(words, env);
-        if let Some(cached) = self.entries.get(&(env, hash)) {
+        if let Some(cached) = self.entries.get(&(env, hash, options.clone())) {
             if cached.words_handle().as_slice() == words {
                 return Ok(Arc::clone(cached));
             }
         }
-        let validated = validate_words(ModuleWords::from(Arc::from(words)), env)?;
+        let validated = validate_words(ModuleWords::from(Arc::from(words)), env, options.clone())?;
         let validated = Arc::new(validated);
-        self.entries.insert((env, hash), Arc::clone(&validated));
+        self.entries
+            .insert((env, hash, options), Arc::clone(&validated));
         Ok(validated)
     }
 }
 
-fn validate_words(words: ModuleWords, env: TargetEnv) -> Result<ValidModule, ValidationError> {
+fn validate_words(
+    words: ModuleWords,
+    env: TargetEnv,
+    _options: ValidationOptions,
+) -> Result<ValidModule, ValidationError> {
     if let Some(&schema) = words.as_slice().get(4) {
         Schema::validate(schema)?;
     }
@@ -1635,9 +1743,18 @@ pub enum MaybeValidModule<'a> {
 impl<'a> MaybeValidModule<'a> {
     /// Validate the provided input, assembling text when necessary.
     pub fn validate(self, env: TargetEnv) -> Result<ValidModule, ValidationError> {
+        self.validate_with_options(env, ValidationOptions::default())
+    }
+
+    /// Validate the provided input with explicit options, assembling text when necessary.
+    pub fn validate_with_options(
+        self,
+        env: TargetEnv,
+        options: ValidationOptions,
+    ) -> Result<ValidModule, ValidationError> {
         match self {
             MaybeValidModule::Binary(words) => {
-                validate_words(ModuleWords::from(Arc::from(words)), env)
+                validate_words(ModuleWords::from(Arc::from(words)), env, options)
             }
             MaybeValidModule::Text(text) => {
                 let binary = ModuleWords::from(Arc::<[u32]>::from(
@@ -1645,7 +1762,7 @@ impl<'a> MaybeValidModule<'a> {
                         .map_err(|err| ValidationError::Parse(err.to_string()))?
                         .into_boxed_slice(),
                 ));
-                validate_words(binary, env)
+                validate_words(binary, env, options)
             }
         }
     }
@@ -1654,18 +1771,40 @@ impl<'a> MaybeValidModule<'a> {
 /// Convenience trait for validating either binary words or assembly text.
 pub trait ValidatableModule<'a> {
     /// Validates the module input for the requested target environment.
-    fn validate(self, env: TargetEnv) -> Result<ValidModule, ValidationError>;
+    fn validate(self, env: TargetEnv) -> Result<ValidModule, ValidationError>
+    where
+        Self: Sized,
+    {
+        self.validate_with_options(env, ValidationOptions::default())
+    }
+
+    /// Validates the module input for the requested target environment with explicit options.
+    fn validate_with_options(
+        self,
+        env: TargetEnv,
+        options: ValidationOptions,
+    ) -> Result<ValidModule, ValidationError>
+    where
+        Self: Sized;
 }
 
 impl<'a> ValidatableModule<'a> for &'a [u32] {
-    fn validate(self, env: TargetEnv) -> Result<ValidModule, ValidationError> {
-        MaybeValidModule::Binary(self).validate(env)
+    fn validate_with_options(
+        self,
+        env: TargetEnv,
+        options: ValidationOptions,
+    ) -> Result<ValidModule, ValidationError> {
+        MaybeValidModule::Binary(self).validate_with_options(env, options)
     }
 }
 
 impl<'a> ValidatableModule<'a> for &'a str {
-    fn validate(self, env: TargetEnv) -> Result<ValidModule, ValidationError> {
-        MaybeValidModule::Text(self).validate(env)
+    fn validate_with_options(
+        self,
+        env: TargetEnv,
+        options: ValidationOptions,
+    ) -> Result<ValidModule, ValidationError> {
+        MaybeValidModule::Text(self).validate_with_options(env, options)
     }
 }
 
