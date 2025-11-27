@@ -149,3 +149,32 @@ fn corpus_folds_div_by_one() {
     assert_eq!(folded.result_id, Some(7));
     assert_eq!(folded.operands, vec![rspirv::dr::Operand::LiteralBit32(8)]);
 }
+
+#[test]
+fn corpus_folds_rem_by_one() {
+    let int = 1;
+    let c5 = inst(
+        Op::Constant,
+        int,
+        1,
+        vec![rspirv::dr::Operand::LiteralBit32(5)],
+    );
+    let c1 = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(1)],
+    );
+    let rem = inst(
+        Op::SRem,
+        int,
+        9,
+        vec![rspirv::dr::Operand::IdRef(1), rspirv::dr::Operand::IdRef(2)],
+    );
+    let optimized = optimize_arith_block(&[c5, c1, rem]).expect("optimize");
+    assert_eq!(optimized.len(), 1);
+    let folded = &optimized[0];
+    assert_eq!(folded.class.opcode, Op::Constant);
+    assert_eq!(folded.result_id, Some(9));
+    assert_eq!(folded.operands, vec![rspirv::dr::Operand::LiteralBit32(0)]);
+}
