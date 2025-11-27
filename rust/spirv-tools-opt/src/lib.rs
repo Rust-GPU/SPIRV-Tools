@@ -757,6 +757,63 @@ mod tests {
     }
 
     #[test]
+    fn optimize_arith_block_turns_zero_minus_value_into_negate() {
+        let int = 1;
+        let c0 = Instruction::new(
+            rspirv::spirv::Op::Constant,
+            Some(int),
+            Some(1),
+            vec![rspirv::dr::Operand::LiteralBit32(0)],
+        );
+        let c9 = Instruction::new(
+            rspirv::spirv::Op::Constant,
+            Some(int),
+            Some(2),
+            vec![rspirv::dr::Operand::LiteralBit32(9)],
+        );
+        let sub = Instruction::new(
+            rspirv::spirv::Op::ISub,
+            Some(int),
+            Some(3),
+            vec![rspirv::dr::Operand::IdRef(1), rspirv::dr::Operand::IdRef(2)],
+        );
+        let block = vec![c0, c9, sub];
+        let optimized = optimize_arith_block(&block).expect("optimization should succeed");
+        let mut consts = std::collections::HashMap::new();
+        let mut saw_negate = false;
+        let mut negate_operand = None;
+        for inst in &optimized {
+            if inst.class.opcode == rspirv::spirv::Op::Constant {
+                if let (Some(id), Some(rspirv::dr::Operand::LiteralBit32(val))) =
+                    (inst.result_id, inst.operands.first())
+                {
+                    consts.insert(id, *val);
+                }
+            }
+            if inst.class.opcode == rspirv::spirv::Op::SNegate {
+                saw_negate = true;
+                assert_eq!(inst.result_id, Some(3));
+                if let Some(rspirv::dr::Operand::IdRef(id)) = inst.operands.first() {
+                    negate_operand = Some(*id);
+                }
+            }
+        }
+        if let Some(val) = consts.get(&3) {
+            assert_eq!(
+                *val,
+                0u32.wrapping_sub(9),
+                "expected folded constant -9 with sub result id"
+            );
+            return;
+        }
+
+        let operand_id = negate_operand.expect("negate should have an operand");
+        let const_val = consts.get(&operand_id).copied();
+        assert_eq!(const_val, Some(9), "negate should target literal 9");
+        assert!(saw_negate, "zero minus value should become negate");
+    }
+
+    #[test]
     fn optimize_arith_block_rejects_unsupported_op() {
         let insts = vec![Instruction::new(
             rspirv::spirv::Op::TypeVoid,
