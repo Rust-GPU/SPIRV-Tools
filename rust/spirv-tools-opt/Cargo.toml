@@ -7,6 +7,7 @@ publish = false
 [dependencies]
 egg = "0.9"
 spirv-tools-core = { path = "../spirv-tools-core" }
+arbitrary = { version = "1.3", features = ["derive"] }
 
 [dev-dependencies]
 pretty_assertions = "1.4"

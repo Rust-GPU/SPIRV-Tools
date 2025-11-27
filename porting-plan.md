@@ -376,6 +376,7 @@ Drive the optimizer rewrite in Rust using `egg`/e-graphs with fuzzing and perfor
 Planned tasks:
 - [x] Scaffold an `egg`-powered optimizer crate (`spirv-tools-opt`) with algebraic rewrites and constant folding as the initial backbone.
 - [x] Add a Criterion benchmark harness to track optimizer performance as rewrites expand.
+- [x] Seed a fuzzing harness (`cargo fuzz` + `arbitrary`) for optimizer expressions, reusing the shared generator in `spirv-tools-opt`.
 - Model optimizer IR and rewrites in Rust with `egg`, keeping transformations zero-cost and type-safe.
 - Expose optimizer controls through FFI/CLI compatible with the existing C API and binaries.
 - Add fuzzing harnesses using `cargo fuzz` + `arbitrary` to stress rewrites and round-trip assembly/disassembly.

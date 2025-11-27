@@ -11,6 +11,47 @@ use egg::{
 };
 use std::{fmt, str::FromStr};
 
+/// Helpers for fuzzing and property-based generation.
+pub mod fuzzing {
+    use super::{ConstValue, SpirvLang};
+    use arbitrary::Unstructured;
+    use egg::{Id, RecExpr};
+
+    /// Generate a random, well-formed expression from fuzzer input bytes.
+    ///
+    /// Nodes are created in order so child references always point to earlier
+    /// nodes, preserving `RecExpr` invariants even when the input is adversarial.
+    pub fn arbitrary_expr(u: &mut Unstructured<'_>) -> arbitrary::Result<RecExpr<SpirvLang>> {
+        // Cap size to keep fuzzing bounded.
+        let len = u.int_in_range::<usize>(1..=64)?;
+        let mut nodes = Vec::with_capacity(len);
+        for idx in 0..len {
+            // Ensure we always have at least one child to point at.
+            let choose_child =
+                |u: &mut Unstructured<'_>, max: usize| u.int_in_range::<usize>(0..=max);
+            let node = if idx == 0 {
+                SpirvLang::Const(ConstValue::new(u.arbitrary()?))
+            } else {
+                match u.choose(&[0u8, 1, 2])? {
+                    0 => SpirvLang::Const(ConstValue::new(u.arbitrary()?)),
+                    1 => {
+                        let a = choose_child(u, idx - 1)?;
+                        let b = choose_child(u, idx - 1)?;
+                        SpirvLang::Add([Id::from(a), Id::from(b)])
+                    }
+                    _ => {
+                        let a = choose_child(u, idx - 1)?;
+                        let b = choose_child(u, idx - 1)?;
+                        SpirvLang::Mul([Id::from(a), Id::from(b)])
+                    }
+                }
+            };
+            nodes.push(node);
+        }
+        Ok(RecExpr::from(nodes))
+    }
+}
+
 /// Domain-specific constant value used in the e-graph.
 ///
 /// Keeping this strongly typed lets us define deterministic folding semantics
@@ -185,6 +226,7 @@ fn var(name: &str) -> Var {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arbitrary::Unstructured;
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -242,5 +284,14 @@ mod tests {
             "unexpected optimization result: {:?}",
             optimized
         );
+    }
+
+    #[test]
+    fn random_expr_round_trips_with_reopt() {
+        let mut u = Unstructured::new(&[1, 2, 3, 4, 5, 6, 7, 8, 9]);
+        let expr = fuzzing::arbitrary_expr(&mut u).expect("expression generation");
+        let optimized = optimize_expr(&expr);
+        let second = optimize_expr(&optimized);
+        assert_eq!(optimized, second);
     }
 }

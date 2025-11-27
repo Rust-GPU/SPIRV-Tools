@@ -1,0 +1,6 @@
+target
+corpus
+artifacts
+crashes
+coverage
+*.profraw
