@@ -114,6 +114,7 @@ Tasks for this milestone:
 - Added layout coverage to ensure conditional extensions cannot follow imported instruction sets, keeping extension/import ordering aligned with the C++ validator.
 - Added layout coverage to ensure conditional capabilities cannot follow imported instruction sets or the memory model, matching capability ordering rules.
 - Added layout coverage to ensure conditional capabilities cannot trail the extensions section, keeping capability ordering strict.
+- Added layout coverage to ensure conditional extensions cannot trail the memory model and conditional entry points cannot follow annotations, keeping section boundaries tight.
 
 ## Upcoming Milestone: Capability/Extension Parity
 Bring the Rust validator to full capability/extension parity with the C++ tables using the grammar-driven dependency metadata and explicit per-environment rules.
