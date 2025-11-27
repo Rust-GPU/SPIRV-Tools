@@ -156,7 +156,7 @@ Planned tasks:
 - [x] Align relaxed block layout with array stride checks and vector straddle rules so misaligned strides and 16-byte straddles are rejected even under relaxed layouts, with Rust tests mirroring C++ expectations.
 - Enforce logical pointer rules for logical addressing (pointer-to-pointer allocations gated on VariablePointers* caps and Function/Private storage), with a `relax_logical_pointer` opt-out and Rust regressions.
 - Enforce `OpStore` pointer/object type compatibility with a `relax_struct_store` escape hatch for layout-compatible structs (struct/array recursion) and typed errors; added regressions covering both relaxed acceptance, array-length mismatches, and layout-relaxed acceptance (block layout relax flags).
-- TODO: implement remaining block-layout/struct-store relaxation semantics (matrix stride/row-major straddle nuances) to mirror C++ validation.
+- TODO: implement remaining block-layout/struct-store relaxation semantics (row-major straddle nuances for matrices) to mirror C++ validation.
 
 ## Upcoming Milestone: Block/Layout Relaxations Parity
 Implement the semantics of layout-related validator options so they match the C++ validator while keeping the Rust path active.
