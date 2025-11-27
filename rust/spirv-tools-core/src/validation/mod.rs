@@ -12187,6 +12187,45 @@ mod tests {
     }
 
     #[test]
+    fn logical_pointer_rejects_non_function_or_private_storage_class() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability VariablePointersStorageBuffer",
+            "OpExtension \"SPV_KHR_storage_buffer_storage_class\"",
+            "OpExtension \"SPV_KHR_variable_pointers\"",
+            "OpMemoryModel Logical GLSL450",
+            "%float = OpTypeFloat 32",
+            "%ptr_sb_float = OpTypePointer StorageBuffer %float",
+            "%ptr_sb_ptr = OpTypePointer StorageBuffer %ptr_sb_float",
+            "%var = OpVariable %ptr_sb_ptr StorageBuffer",
+        ]
+        .join("\n");
+
+        let binary = assemble_text(&text).expect("assemble");
+        let err = binary
+            .as_slice()
+            .validate_with_options(
+                TargetEnv::Universal1_6,
+                ValidationOptions {
+                    // Skip block layout so we exercise logical-pointer rules directly.
+                    skip_block_layout: true,
+                    ..ValidationOptions::default()
+                },
+            )
+            .expect_err("logical pointer should reject non-Function/Private storage class");
+        assert!(
+            matches!(
+                err,
+                ValidationError::LogicalPointerInvalidStorageClass {
+                    storage_class: rspirv::spirv::StorageClass::StorageBuffer,
+                    ..
+                }
+            ),
+            "expected storage-class diagnostic, got {err:?}"
+        );
+    }
+
+    #[test]
     fn relax_struct_store_allows_layout_compatible_structs() {
         use rspirv::{binary::Assemble, dr::Instruction, dr::Module, dr::ModuleHeader};
 
