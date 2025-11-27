@@ -50,9 +50,9 @@ Tasks for this milestone:
 Connect the Rust arithmetic optimizer to user-facing entry points with safety toggles and parity tests.
 
 Planned tasks:
-- Add a CLI flag and FFI toggle to route `spirv-opt` through the Rust optimizer for supported passes while falling back to C++ for the rest.
-- Port C++ optimizer regression tests for arithmetic canonicalization to Rust integration tests (CLI + FFI) to lock behavior.
-- Thread error handling through `thiserror` types at the optimizer boundary and surface structured errors to FFI/CLI callers.
+- [x] Add a CLI flag and FFI toggle to route `spirv-opt` through the Rust optimizer for supported passes while falling back to C++ for the rest.
+- [x] Port optimizer regressions for arithmetic canonicalization to Rust integration tests (CLI + FFI) to lock behavior.
+- [x] Thread error handling through `thiserror` types at the optimizer boundary and surface structured errors to FFI/CLI callers.
 - Add end-to-end benchmarks (criterion + hyperfine) comparing Rust vs. C++ optimizer for supported passes.
 - Expand e-graph coverage to additional algebraic identities and ensure the reconstructed SPIR-V preserves ids and layout invariants.
 
