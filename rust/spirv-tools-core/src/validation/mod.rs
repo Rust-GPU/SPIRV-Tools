@@ -1368,6 +1368,7 @@ fn validate_words(
     enforce_function_arg_limit(&module, &options)?;
     enforce_variable_limits(&module, &options)?;
     enforce_switch_branch_limit(&module, &options)?;
+    enforce_access_chain_limit(&module, &options)?;
     Ok(ValidModule {
         words,
         module,
@@ -3118,6 +3119,64 @@ fn enforce_switch_branch_limit(
                         });
                     }
                 }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn enforce_access_chain_limit(
+    module: &Module,
+    options: &ValidationOptions,
+) -> Result<(), ValidationError> {
+    let Some(&limit) = options.limits.get(&LIMIT_MAX_ACCESS_CHAIN_INDEXES) else {
+        return Ok(());
+    };
+
+    let access_chain_opcodes = [
+        rspirv::spirv::Op::AccessChain,
+        rspirv::spirv::Op::InBoundsAccessChain,
+        rspirv::spirv::Op::PtrAccessChain,
+        rspirv::spirv::Op::InBoundsPtrAccessChain,
+        rspirv::spirv::Op::UntypedPtrAccessChainKHR,
+        rspirv::spirv::Op::UntypedInBoundsPtrAccessChainKHR,
+    ];
+
+    let check_inst = |inst: &rspirv::dr::Instruction| -> Result<(), ValidationError> {
+        if !access_chain_opcodes.contains(&inst.class.opcode) {
+            return Ok(());
+        }
+        let num_operands = inst.operands.len();
+        let indexes = match inst.class.opcode {
+            rspirv::spirv::Op::AccessChain | rspirv::spirv::Op::InBoundsAccessChain => {
+                num_operands.saturating_sub(1)
+            }
+            rspirv::spirv::Op::PtrAccessChain
+            | rspirv::spirv::Op::InBoundsPtrAccessChain
+            | rspirv::spirv::Op::UntypedPtrAccessChainKHR
+            | rspirv::spirv::Op::UntypedInBoundsPtrAccessChainKHR => num_operands.saturating_sub(2),
+            _ => 0,
+        } as u32;
+
+        if indexes > limit {
+            return Err(ValidationError::LimitExceeded {
+                limit_kind: LIMIT_MAX_ACCESS_CHAIN_INDEXES,
+                limit,
+                found: indexes,
+            });
+        }
+        Ok(())
+    };
+
+    for inst in &module.types_global_values {
+        check_inst(inst)?;
+    }
+
+    for function in &module.functions {
+        for block in &function.blocks {
+            for inst in &block.instructions {
+                check_inst(inst)?;
             }
         }
     }
@@ -9996,6 +10055,44 @@ mod tests {
                 limit_kind: LIMIT_MAX_CONTROL_FLOW_NESTING_DEPTH,
                 limit: 0,
                 found: 1
+            }
+        );
+    }
+
+    #[test]
+    fn access_chain_index_limit_enforced() {
+        use crate::validation::{ValidationOptions, LIMIT_MAX_ACCESS_CHAIN_INDEXES};
+
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u32 = OpTypeInt 32 0",
+            "%ptr = OpTypePointer Function %u32",
+            "%zero = OpConstant %u32 0",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "%var = OpVariable %ptr Function",
+            "%ac = OpAccessChain %ptr %var %zero %zero",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+        let mut options = ValidationOptions::default();
+        options.limits.insert(LIMIT_MAX_ACCESS_CHAIN_INDEXES, 1);
+
+        let err = binary
+            .as_slice()
+            .validate_with_options(TargetEnv::Universal1_6, options)
+            .expect_err("access chain index limit should be enforced");
+        assert_eq!(
+            err,
+            ValidationError::LimitExceeded {
+                limit_kind: LIMIT_MAX_ACCESS_CHAIN_INDEXES,
+                limit: 1,
+                found: 2
             }
         );
     }
