@@ -9459,6 +9459,55 @@ mod tests {
     }
 
     #[test]
+    fn vulkan_memory_model_extension_is_vulkan_only() {
+        let text = module_with_extension("SPV_KHR_vulkan_memory_model");
+        text.as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("Vulkan memory model should be accepted for Vulkan targets");
+
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("Vulkan memory model should be rejected for non-Vulkan targets");
+        assert_eq!(
+            error,
+            ValidationError::DisallowedExtension {
+                extension: ExtensionName::from("SPV_KHR_vulkan_memory_model"),
+                env: TargetEnv::Universal1_6
+            }
+        );
+    }
+
+    #[test]
+    fn intel_function_variants_allowed_for_opencl_and_universal_only() {
+        let opencl_text = opencl_module_with_extension("SPV_INTEL_function_variants");
+        opencl_text
+            .as_str()
+            .validate(TargetEnv::OpenCl2_2)
+            .expect("INTEL function variants should be accepted for OpenCL targets");
+
+        let universal_text = module_with_extension("SPV_INTEL_function_variants");
+        universal_text
+            .as_str()
+            .validate(TargetEnv::Universal1_6)
+            .expect("INTEL function variants should be accepted for universal targets");
+
+        for env in [TargetEnv::Vulkan1_2, TargetEnv::OpenGl4_5] {
+            let error = universal_text
+                .as_str()
+                .validate(env)
+                .expect_err("INTEL function variants should be rejected outside OpenCL/Universal");
+            assert_eq!(
+                error,
+                ValidationError::DisallowedExtension {
+                    extension: ExtensionName::from("SPV_INTEL_function_variants"),
+                    env
+                }
+            );
+        }
+    }
+
+    #[test]
     fn validate_module_rejects_duplicate_extension() {
         // Hand-assemble a module with duplicate OpExtension instructions.
         let extension_word = 0x0006_000a; // word count 6, opcode OpExtension (10)
