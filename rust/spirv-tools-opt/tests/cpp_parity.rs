@@ -10,12 +10,8 @@ use tempfile::NamedTempFile;
 /// Compare the Rust arithmetic optimizer output against the C++ spirv-opt (when available).
 #[test]
 fn rust_and_cpp_fold_const_add() {
-    let cpp_opt = match env::var("SPIRV_CPP_OPT") {
-        Ok(path) if !path.is_empty() => path,
-        _ => {
-            eprintln!("SPIRV_CPP_OPT not set; skipping C++ parity check");
-            return;
-        }
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
     };
 
     let (module_words, _) = build_const_add_module();
@@ -58,12 +54,8 @@ fn rust_and_cpp_fold_const_add() {
 
 #[test]
 fn rust_and_cpp_fold_mul_by_zero() {
-    let cpp_opt = match env::var("SPIRV_CPP_OPT") {
-        Ok(path) if !path.is_empty() => path,
-        _ => {
-            eprintln!("SPIRV_CPP_OPT not set; skipping C++ parity check");
-            return;
-        }
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
     };
 
     let module_words = build_mul_zero_module();
@@ -191,6 +183,16 @@ fn extract_mul_zero_block(module_words: &[u32]) -> Vec<rspirv::dr::Instruction> 
         .filter(|inst| matches!(inst.class.opcode, Op::Constant | Op::IMul))
         .cloned()
         .collect()
+}
+
+fn cpp_opt_bin() -> Option<String> {
+    match env::var("SPIRV_CPP_OPT") {
+        Ok(path) if !path.is_empty() => Some(path),
+        _ => {
+            eprintln!("SPIRV_CPP_OPT not set; skipping C++ parity check");
+            None
+        }
+    }
 }
 
 fn is_const_five(inst: &rspirv::dr::Instruction) -> bool {
