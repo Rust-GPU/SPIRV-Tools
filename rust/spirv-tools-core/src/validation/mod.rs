@@ -9560,6 +9560,32 @@ mod tests {
     }
 
     #[test]
+    fn fragment_shader_interlock_is_vulkan_only() {
+        let text = module_with_extension("SPV_EXT_fragment_shader_interlock");
+        text.as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("Fragment shader interlock should be accepted for Vulkan targets");
+
+        for env in [
+            TargetEnv::OpenCl2_2,
+            TargetEnv::Universal1_6,
+            TargetEnv::OpenGl4_5,
+        ] {
+            let error = text
+                .as_str()
+                .validate(env)
+                .expect_err("Fragment shader interlock should be rejected outside Vulkan");
+            assert_eq!(
+                error,
+                ValidationError::DisallowedExtension {
+                    extension: ExtensionName::from("SPV_EXT_fragment_shader_interlock"),
+                    env
+                }
+            );
+        }
+    }
+
+    #[test]
     fn validate_module_rejects_duplicate_extension() {
         // Hand-assemble a module with duplicate OpExtension instructions.
         let extension_word = 0x0006_000a; // word count 6, opcode OpExtension (10)
