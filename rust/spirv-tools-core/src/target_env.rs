@@ -838,5 +838,10 @@ mod tests {
         assert!(TargetEnv::Vulkan1_2.is_extension_allowed(&amd_ext));
         assert!(!TargetEnv::Universal1_6.is_extension_allowed(&amd_ext));
         assert!(!TargetEnv::OpenCl1_2.is_extension_allowed(&amd_ext));
+
+        let google_ext = ExtensionName::from("SPV_GOOGLE_decorate_string");
+        assert!(TargetEnv::Vulkan1_2.is_extension_allowed(&google_ext));
+        assert!(!TargetEnv::Universal1_6.is_extension_allowed(&google_ext));
+        assert!(!TargetEnv::OpenCl1_2.is_extension_allowed(&google_ext));
     }
 }

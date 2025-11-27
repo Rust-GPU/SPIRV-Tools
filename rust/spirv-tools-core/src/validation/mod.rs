@@ -7632,6 +7632,37 @@ mod tests {
     }
 
     #[test]
+    fn vulkan_accepts_google_vendor_extension() {
+        let ext_words = [
+            1599492179, 1196379975, 1683965260, 1919902565, 1600484449, 1769108595, 26478,
+        ]; // "SPV_GOOGLE_decorate_string\0"
+        let binary = [
+            0x0723_0203, // magic
+            0x0001_0000, // version
+            0,           // generator
+            2,           // bound
+            0,           // schema
+            0x0002_0011, // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            0x0008_000a, // OpExtension, word count 8
+            ext_words[0],
+            ext_words[1],
+            ext_words[2],
+            ext_words[3],
+            ext_words[4],
+            ext_words[5],
+            ext_words[6],
+            0x0003_000e, // OpMemoryModel Logical GLSL450
+            0,
+            1,
+        ];
+        let validated = MaybeValidModule::Binary(&binary)
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("Google vendor extension should be allowed for Vulkan");
+        assert_eq!(validated.env(), TargetEnv::Vulkan1_2);
+    }
+
+    #[test]
     fn vulkan_rejects_intel_vendor_extension() {
         let intel_function_variants_ext = [
             1599492179, 1163152969, 1969643340, 1769235310, 1985965679, 1634300513, 7566446,
