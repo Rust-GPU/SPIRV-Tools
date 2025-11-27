@@ -5641,6 +5641,126 @@ mod tests {
     }
 
     #[test]
+    fn decorate_id_cannot_follow_types_and_globals() {
+        // OpDecorateId belongs to the annotations section; placing it after globals is invalid.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            6,          // bound (ids up to 5)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(4, rspirv::spirv::Op::TypeInt as u16), // %1 = OpTypeInt 32 0
+            1,
+            32,
+            0,
+            op(4, rspirv::spirv::Op::TypePointer as u16), // %2 = OpTypePointer Function %1
+            2,
+            rspirv::spirv::StorageClass::Function as u32,
+            1,
+            op(4, rspirv::spirv::Op::Constant as u16), // %3 = OpConstant %1 4
+            1,
+            3,
+            4,
+            op(4, rspirv::spirv::Op::Variable as u16), // %4 = OpVariable %2 Function
+            2,
+            4,
+            rspirv::spirv::StorageClass::Function as u32,
+            op(4, rspirv::spirv::Op::DecorateId as u16), // OpDecorateId %4 AlignmentId %3 (after types/globals -> error)
+            4,
+            rspirv::spirv::Decoration::AlignmentId as u32,
+            3,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::DecorateId
+            }
+        );
+    }
+
+    #[test]
+    fn decorate_string_cannot_follow_types_and_globals() {
+        // OpDecorateString must appear in the annotations section before types/globals.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            5,          // bound (ids up to 4)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(4, rspirv::spirv::Op::TypeInt as u16), // %1 = OpTypeInt 32 0
+            1,
+            32,
+            0,
+            op(4, rspirv::spirv::Op::TypePointer as u16), // %2 = OpTypePointer Function %1
+            2,
+            rspirv::spirv::StorageClass::Function as u32,
+            1,
+            op(4, rspirv::spirv::Op::Variable as u16), // %3 = OpVariable %2 Function
+            2,
+            3,
+            rspirv::spirv::StorageClass::Function as u32,
+            op(4, rspirv::spirv::Op::DecorateString as u16), // OpDecorateString %3 UserSemantic "foo" (after globals -> error)
+            3,
+            rspirv::spirv::Decoration::UserSemantic as u32,
+            0x006f_6f66, // "foo"
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::DecorateString
+            }
+        );
+    }
+
+    #[test]
+    fn member_decorate_string_cannot_follow_types_and_globals() {
+        // OpMemberDecorateString also belongs to the annotations section and must not follow types/globals.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            4,          // bound (ids up to 3)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(4, rspirv::spirv::Op::TypeInt as u16), // %1 = OpTypeInt 32 0
+            1,
+            32,
+            0,
+            op(3, rspirv::spirv::Op::TypeStruct as u16), // %2 = OpTypeStruct %1
+            2,
+            1,
+            op(5, rspirv::spirv::Op::MemberDecorateString as u16), // OpMemberDecorateString %2 0 UserSemantic "foo" (after type -> error)
+            2,
+            0,
+            rspirv::spirv::Decoration::UserSemantic as u32,
+            0x006f_6f66, // "foo"
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::MemberDecorateString
+            }
+        );
+    }
+
+    #[test]
     fn decorations_cannot_appear_inside_functions() {
         // Hand-built binary with a decoration inside the function body to ensure layout checking
         // rejects annotations in the function section.
