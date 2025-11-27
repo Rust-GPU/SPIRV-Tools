@@ -919,6 +919,38 @@ pub enum ValidationError {
         /// The target environment in use.
         env: TargetEnv,
     },
+    /// Logical addressing forbids pointers to pointers for the given storage class.
+    #[error(
+        "In Logical addressing, variables cannot allocate a pointer to storage class {pointee_storage_class:?}"
+    )]
+    LogicalPointerPointeeStorageClassInvalid {
+        /// The offending variable.
+        variable: Id,
+        /// The disallowed pointee storage class.
+        pointee_storage_class: rspirv::spirv::StorageClass,
+    },
+    /// Logical addressing requires a capability for pointer-to-pointer allocations.
+    #[error(
+        "In Logical addressing, variables allocating pointers to {pointee_storage_class:?} require capability {required_capability:?}"
+    )]
+    LogicalPointerMissingCapability {
+        /// The offending variable.
+        variable: Id,
+        /// The pointee storage class in question.
+        pointee_storage_class: rspirv::spirv::StorageClass,
+        /// The required capability.
+        required_capability: rspirv::spirv::Capability,
+    },
+    /// Logical addressing requires function or private storage for pointer allocations.
+    #[error(
+        "In Logical addressing with variable pointers, variables allocating pointers must be in Function or Private storage classes (found {storage_class:?})"
+    )]
+    LogicalPointerInvalidStorageClass {
+        /// The offending variable.
+        variable: Id,
+        /// The variable's storage class.
+        storage_class: rspirv::spirv::StorageClass,
+    },
     /// Image operand Offset is restricted to gather instructions unless explicitly allowed.
     #[error("Image operand Offset for {opcode:?} is only allowed with gather instructions in Vulkan unless the offset texture operand option is enabled")]
     OffsetTextureOperandDisallowed {
@@ -1513,6 +1545,7 @@ fn validate_words(
     validate_memory_model(&module)?;
     validate_type_functions(&module, &opcodes)?;
     let struct_member_counts = validate_member_decorations(&module, &defined_ids)?;
+    enforce_logical_pointer_rules(&module, &definitions, &capabilities, &options)?;
     enforce_struct_member_limit(&struct_member_counts, &options)?;
     enforce_struct_depth_limit(&module, &definitions, &options)?;
     validate_decoration_groups(&module, &defined_ids, &opcodes, &struct_member_counts)?;
@@ -3455,6 +3488,135 @@ fn enforce_access_chain_limit(
     Ok(())
 }
 
+fn enforce_logical_pointer_rules(
+    module: &Module,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    capabilities: &HashSet<rspirv::spirv::Capability>,
+    options: &ValidationOptions,
+) -> Result<(), ValidationError> {
+    if options.relax_logical_pointer {
+        return Ok(());
+    }
+
+    let addressing_model = module
+        .memory_model
+        .as_ref()
+        .and_then(|inst| inst.operands.first())
+        .and_then(|op| match op {
+            rspirv::dr::Operand::AddressingModel(model) => Some(*model),
+            _ => None,
+        });
+    let is_logical = matches!(
+        addressing_model,
+        Some(
+            rspirv::spirv::AddressingModel::Logical
+                | rspirv::spirv::AddressingModel::PhysicalStorageBuffer64
+        )
+    );
+    if !is_logical {
+        return Ok(());
+    }
+
+    for inst in module
+        .types_global_values
+        .iter()
+        .chain(module.functions.iter().flat_map(|f| f.all_inst_iter()))
+    {
+        if inst.class.opcode != rspirv::spirv::Op::Variable {
+            continue;
+        }
+        let Some(result_type) = inst.result_type else {
+            continue;
+        };
+        let Ok(type_id) = TypeId::try_from(result_type) else {
+            continue;
+        };
+        let Some(type_result_id) = ResultId::try_from(u32::from(type_id)).ok() else {
+            continue;
+        };
+        let Some(type_inst) = definitions.get(&type_result_id) else {
+            continue;
+        };
+        if type_inst.class.opcode != rspirv::spirv::Op::TypePointer
+            && type_inst.class.opcode != rspirv::spirv::Op::TypeUntypedPointerKHR
+        {
+            continue;
+        }
+        let pointee_type_id = match type_inst.operands.get(1) {
+            Some(rspirv::dr::Operand::IdRef(raw)) => ResultId::try_from(*raw).ok(),
+            _ => None,
+        };
+        let Some(pointee_inst) = pointee_type_id.and_then(|id| definitions.get(&id)) else {
+            continue;
+        };
+        if pointee_inst.class.opcode != rspirv::spirv::Op::TypePointer
+            && pointee_inst.class.opcode != rspirv::spirv::Op::TypeUntypedPointerKHR
+        {
+            continue;
+        }
+        let pointee_storage_class = match pointee_inst.operands.first() {
+            Some(rspirv::dr::Operand::StorageClass(sc)) => *sc,
+            _ => continue,
+        };
+        if pointee_storage_class == rspirv::spirv::StorageClass::PhysicalStorageBuffer {
+            continue;
+        }
+
+        let variable = inst
+            .result_id
+            .and_then(|id| Id::try_from(id).ok())
+            .unwrap_or_else(|| Id::try_from(1).unwrap());
+
+        match pointee_storage_class {
+            rspirv::spirv::StorageClass::StorageBuffer => {
+                if !capabilities.contains(&rspirv::spirv::Capability::VariablePointersStorageBuffer)
+                {
+                    return Err(ValidationError::LogicalPointerMissingCapability {
+                        variable,
+                        pointee_storage_class,
+                        required_capability:
+                            rspirv::spirv::Capability::VariablePointersStorageBuffer,
+                    });
+                }
+            }
+            rspirv::spirv::StorageClass::Workgroup => {
+                if !capabilities.contains(&rspirv::spirv::Capability::VariablePointers) {
+                    return Err(ValidationError::LogicalPointerMissingCapability {
+                        variable,
+                        pointee_storage_class,
+                        required_capability: rspirv::spirv::Capability::VariablePointers,
+                    });
+                }
+            }
+            _ => {
+                return Err(ValidationError::LogicalPointerPointeeStorageClassInvalid {
+                    variable,
+                    pointee_storage_class,
+                });
+            }
+        }
+
+        let var_storage_class = inst
+            .operands
+            .first()
+            .and_then(|op| match op {
+                rspirv::dr::Operand::StorageClass(sc) => Some(*sc),
+                _ => None,
+            })
+            .unwrap_or(rspirv::spirv::StorageClass::Function);
+        if var_storage_class != rspirv::spirv::StorageClass::Function
+            && var_storage_class != rspirv::spirv::StorageClass::Private
+        {
+            return Err(ValidationError::LogicalPointerInvalidStorageClass {
+                variable,
+                storage_class: var_storage_class,
+            });
+        }
+    }
+
+    Ok(())
+}
+
 fn enforce_offset_texture_operand_rule(
     module: &Module,
     env: TargetEnv,
@@ -4277,6 +4439,7 @@ mod tests {
     use crate::target_env::TargetEnv;
     use crate::validation::{
         format_validation_error, format_validation_error_from_words, FriendlyNames,
+        ValidationOptions,
     };
     use std::collections::HashMap;
     use std::num::NonZeroU32;
@@ -11117,6 +11280,97 @@ mod tests {
         };
         validate_module_with_options(&binary, TargetEnv::Universal1_6, options)
             .expect("skip_block_layout should bypass layout ordering errors");
+    }
+
+    #[test]
+    fn logical_pointer_disallows_pointee_storage_class_without_relaxation() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability VectorComputeINTEL",
+            "OpCapability VectorAnyINTEL",
+            "OpExtension \"SPV_INTEL_vector_compute\"",
+            "OpMemoryModel Logical GLSL450",
+            "%float = OpTypeFloat 32",
+            "%ptr_uniform_float = OpTypePointer Uniform %float",
+            "%ptr_private_ptr_uniform = OpTypePointer Private %ptr_uniform_float",
+            "%var = OpVariable %ptr_private_ptr_uniform Private",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("logical pointer rules should reject pointers to Input");
+        if let ValidationError::LogicalPointerPointeeStorageClassInvalid {
+            pointee_storage_class: rspirv::spirv::StorageClass::Uniform,
+            ..
+        } = err
+        {
+        } else {
+            panic!("unexpected error: {err:?}");
+        }
+
+        let options = ValidationOptions {
+            relax_logical_pointer: true,
+            ..ValidationOptions::default()
+        };
+        binary
+            .as_slice()
+            .validate_with_options(TargetEnv::Universal1_6, options)
+            .expect("relax_logical_pointer should permit pointer-to-pointer");
+    }
+
+    #[test]
+    fn logical_pointer_requires_variable_pointer_capabilities() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability VectorComputeINTEL",
+            "OpCapability VectorAnyINTEL",
+            "OpExtension \"SPV_INTEL_vector_compute\"",
+            "OpExtension \"SPV_KHR_storage_buffer_storage_class\"",
+            "OpExtension \"SPV_KHR_variable_pointers\"",
+            "OpMemoryModel Logical GLSL450",
+            "%int = OpTypeInt 32 0",
+            "%ptr_sb_int = OpTypePointer StorageBuffer %int",
+            "%ptr_private_ptr_sb = OpTypePointer Private %ptr_sb_int",
+            "%var = OpVariable %ptr_private_ptr_sb Private",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("missing VariablePointersStorageBuffer capability should error");
+        if let ValidationError::LogicalPointerMissingCapability {
+            required_capability: rspirv::spirv::Capability::VariablePointersStorageBuffer,
+            ..
+        } = err
+        {
+        } else {
+            panic!("unexpected error: {err:?}");
+        }
+
+        let with_capability = [
+            "OpCapability Shader",
+            "OpCapability VectorComputeINTEL",
+            "OpCapability VectorAnyINTEL",
+            "OpCapability VariablePointersStorageBuffer",
+            "OpExtension \"SPV_INTEL_vector_compute\"",
+            "OpExtension \"SPV_KHR_storage_buffer_storage_class\"",
+            "OpExtension \"SPV_KHR_variable_pointers\"",
+            "OpMemoryModel Logical GLSL450",
+            "%int = OpTypeInt 32 0",
+            "%ptr_sb_int = OpTypePointer StorageBuffer %int",
+            "%ptr_private_ptr_sb = OpTypePointer Private %ptr_sb_int",
+            "%var = OpVariable %ptr_private_ptr_sb Private",
+        ]
+        .join("\n");
+        assemble_text(&with_capability)
+            .expect("assemble")
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect("declaring capability should permit pointer-to-pointer");
     }
 
     #[test]
