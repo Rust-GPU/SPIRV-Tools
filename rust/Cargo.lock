@@ -806,7 +806,9 @@ dependencies = [
  "criterion",
  "egg",
  "pretty_assertions",
+ "rspirv",
  "spirv-tools-core",
+ "thiserror",
 ]
 
 [[package]]

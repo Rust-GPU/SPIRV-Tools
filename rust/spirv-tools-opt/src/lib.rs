@@ -11,6 +11,8 @@ use egg::{
 };
 use std::{fmt, str::FromStr};
 
+pub mod translate;
+
 /// Helpers for fuzzing and property-based generation.
 pub mod fuzzing {
     use super::{ConstValue, SpirvLang};
@@ -147,6 +149,11 @@ pub fn optimize_expr(expr: &RecExpr<SpirvLang>) -> RecExpr<SpirvLang> {
     let extractor = egg::Extractor::new(&runner.egraph, ExprCost);
     let (_cost, best) = extractor.find_best(root);
     best
+}
+
+/// Optimize the root of a translated SPIR-V arithmetic expression.
+pub fn optimize_translated(expr: &crate::translate::TranslatedExpr) -> RecExpr<SpirvLang> {
+    optimize_expr(&expr.expr)
 }
 
 fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
@@ -305,6 +312,7 @@ mod tests {
     use super::*;
     use arbitrary::Unstructured;
     use pretty_assertions::assert_eq;
+    use rspirv::dr::Builder;
 
     #[test]
     fn folds_addition() {
@@ -386,5 +394,50 @@ mod tests {
         let optimized = optimize_expr(&expr);
         let second = optimize_expr(&optimized);
         assert_eq!(optimized, second);
+    }
+
+    #[test]
+    fn translate_and_optimize_spirv_block() {
+        // Build a trivial SPIR-V function body: %c2 = 2, %c0 = 0, %sum = OpIAdd %c2 %c0
+        let mut b = Builder::new();
+        b.capability(rspirv::spirv::Capability::Shader);
+        let int = b.type_int(32, 0);
+        let void = b.type_void();
+        let func_ty = b.type_function(void, vec![]);
+        let _func = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        let c2 = b.constant_bit32(int, 2);
+        let c0 = b.constant_bit32(int, 0);
+        let _sum = b.i_add(int, None, c2, c0);
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let module = b.module();
+        let block = &module.functions[0].blocks[0];
+        let insts: Vec<_> = module
+            .types_global_values
+            .iter()
+            .chain(block.instructions.iter())
+            .filter(|inst| {
+                matches!(
+                    inst.class.opcode,
+                    rspirv::spirv::Op::Constant | rspirv::spirv::Op::IAdd | rspirv::spirv::Op::IMul
+                )
+            })
+            .cloned()
+            .collect();
+        let translated = crate::translate::translate_arith(&insts).unwrap();
+        // The root should correspond to the add, which simplifies to const 2.
+        let optimized = optimize_translated(&translated);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Const(ConstValue::new(2))])
+        );
+        // Ensure the translation kept the root at the last instruction.
+        assert_eq!(
+            translated.root,
+            Id::from(translated.expr.as_ref().len() - 1)
+        );
     }
 }
