@@ -12289,6 +12289,222 @@ mod tests {
     }
 
     #[test]
+    fn block_layout_requires_member_offsets() {
+        use rspirv::{binary::Assemble, dr::Instruction, dr::Module, dr::ModuleHeader};
+
+        fn inst(
+            opcode: rspirv::spirv::Op,
+            result_type: Option<u32>,
+            result_id: Option<u32>,
+            operands: Vec<rspirv::dr::Operand>,
+        ) -> Instruction {
+            Instruction::new(opcode, result_type, result_id, operands)
+        }
+
+        fn make_block_struct(member_offsets: Option<Vec<u32>>) -> Vec<u32> {
+            let mut module = Module::new();
+            module.header = Some(ModuleHeader::new(8));
+            module.capabilities.push(inst(
+                rspirv::spirv::Op::Capability,
+                None,
+                None,
+                vec![rspirv::dr::Operand::Capability(
+                    rspirv::spirv::Capability::Shader,
+                )],
+            ));
+            module.memory_model = Some(inst(
+                rspirv::spirv::Op::MemoryModel,
+                None,
+                None,
+                vec![
+                    rspirv::dr::Operand::AddressingModel(rspirv::spirv::AddressingModel::Logical),
+                    rspirv::dr::Operand::MemoryModel(rspirv::spirv::MemoryModel::GLSL450),
+                ],
+            ));
+            module.types_global_values.extend([
+                inst(rspirv::spirv::Op::TypeVoid, None, Some(1), vec![]),
+                inst(
+                    rspirv::spirv::Op::TypeInt,
+                    None,
+                    Some(2),
+                    vec![
+                        rspirv::dr::Operand::LiteralBit32(32),
+                        rspirv::dr::Operand::LiteralBit32(0),
+                    ],
+                ),
+                inst(
+                    rspirv::spirv::Op::TypeStruct,
+                    None,
+                    Some(3),
+                    vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(2)],
+                ),
+            ]);
+            module.annotations.push(inst(
+                rspirv::spirv::Op::Decorate,
+                None,
+                None,
+                vec![
+                    rspirv::dr::Operand::IdRef(3),
+                    rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::Block),
+                ],
+            ));
+            if let Some(offsets) = member_offsets {
+                for (index, offset) in offsets.into_iter().enumerate() {
+                    module.annotations.push(inst(
+                        rspirv::spirv::Op::MemberDecorate,
+                        None,
+                        None,
+                        vec![
+                            rspirv::dr::Operand::IdRef(3),
+                            rspirv::dr::Operand::LiteralBit32(index as u32),
+                            rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::Offset),
+                            rspirv::dr::Operand::LiteralBit32(offset),
+                        ],
+                    ));
+                }
+            }
+            module.assemble()
+        }
+
+        let binary = make_block_struct(None);
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("missing member offsets should fail block layout");
+        match err {
+            ValidationError::InvalidBlockLayout {
+                struct_type,
+                reason,
+                ..
+            } => {
+                assert_eq!(u32::from(struct_type), 3);
+                assert!(reason.contains("Offset"), "unexpected reason: {reason:?}");
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+
+        let options = ValidationOptions {
+            relax_block_layout: true,
+            ..ValidationOptions::default()
+        };
+        binary
+            .as_slice()
+            .validate_with_options(TargetEnv::Universal1_6, options)
+            .expect("relax_block_layout should skip member offset enforcement");
+    }
+
+    #[test]
+    fn block_layout_rejects_overlapping_offsets() {
+        use rspirv::{binary::Assemble, dr::Instruction, dr::Module, dr::ModuleHeader};
+
+        fn inst(
+            opcode: rspirv::spirv::Op,
+            result_type: Option<u32>,
+            result_id: Option<u32>,
+            operands: Vec<rspirv::dr::Operand>,
+        ) -> Instruction {
+            Instruction::new(opcode, result_type, result_id, operands)
+        }
+
+        let mut module = Module::new();
+        module.header = Some(ModuleHeader::new(8));
+        module.capabilities.push(inst(
+            rspirv::spirv::Op::Capability,
+            None,
+            None,
+            vec![rspirv::dr::Operand::Capability(
+                rspirv::spirv::Capability::Shader,
+            )],
+        ));
+        module.memory_model = Some(inst(
+            rspirv::spirv::Op::MemoryModel,
+            None,
+            None,
+            vec![
+                rspirv::dr::Operand::AddressingModel(rspirv::spirv::AddressingModel::Logical),
+                rspirv::dr::Operand::MemoryModel(rspirv::spirv::MemoryModel::GLSL450),
+            ],
+        ));
+        module.types_global_values.extend([
+            inst(rspirv::spirv::Op::TypeVoid, None, Some(1), vec![]),
+            inst(
+                rspirv::spirv::Op::TypeInt,
+                None,
+                Some(2),
+                vec![
+                    rspirv::dr::Operand::LiteralBit32(32),
+                    rspirv::dr::Operand::LiteralBit32(0),
+                ],
+            ),
+            inst(
+                rspirv::spirv::Op::TypeStruct,
+                None,
+                Some(3),
+                vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(2)],
+            ),
+        ]);
+        module.annotations.extend([
+            inst(
+                rspirv::spirv::Op::Decorate,
+                None,
+                None,
+                vec![
+                    rspirv::dr::Operand::IdRef(3),
+                    rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::Block),
+                ],
+            ),
+            inst(
+                rspirv::spirv::Op::MemberDecorate,
+                None,
+                None,
+                vec![
+                    rspirv::dr::Operand::IdRef(3),
+                    rspirv::dr::Operand::LiteralBit32(0),
+                    rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::Offset),
+                    rspirv::dr::Operand::LiteralBit32(0),
+                ],
+            ),
+            inst(
+                rspirv::spirv::Op::MemberDecorate,
+                None,
+                None,
+                vec![
+                    rspirv::dr::Operand::IdRef(3),
+                    rspirv::dr::Operand::LiteralBit32(1),
+                    rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::Offset),
+                    rspirv::dr::Operand::LiteralBit32(2),
+                ],
+            ),
+        ]);
+
+        let binary = module.assemble();
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("overlapping member offsets should fail block layout");
+        match err {
+            ValidationError::InvalidBlockLayout {
+                struct_type,
+                reason,
+                ..
+            } => {
+                assert_eq!(u32::from(struct_type), 3);
+                assert!(reason.contains("overlap"), "unexpected reason: {reason:?}");
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+
+        let options = ValidationOptions {
+            relax_block_layout: true,
+            ..ValidationOptions::default()
+        };
+        binary
+            .as_slice()
+            .validate_with_options(TargetEnv::Universal1_6, options)
+            .expect("relax_block_layout should skip overlap checks");
+    }
+
+    #[test]
     fn switch_branch_limit_enforced() {
         use crate::validation::{
             enforce_switch_branch_limit, ValidationOptions, LIMIT_MAX_SWITCH_BRANCHES,
