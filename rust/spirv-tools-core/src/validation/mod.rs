@@ -9533,12 +9533,11 @@ mod tests {
         }
     }
 
-    #[test]
-    fn descriptor_indexing_extension_is_vulkan_only() {
-        let text = module_with_extension("SPV_EXT_descriptor_indexing");
+    fn assert_vulkan_only_extension(name: &str) {
+        let text = module_with_extension(name);
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
-            .expect("Descriptor indexing extension should be accepted for Vulkan targets");
+            .unwrap_or_else(|_| panic!("{name} should be accepted for Vulkan targets"));
 
         for env in [
             TargetEnv::OpenCl2_2,
@@ -9548,11 +9547,11 @@ mod tests {
             let error = text
                 .as_str()
                 .validate(env)
-                .expect_err("Descriptor indexing extension should be rejected outside Vulkan");
+                .expect_err("{name} should be rejected outside Vulkan");
             assert_eq!(
                 error,
                 ValidationError::DisallowedExtension {
-                    extension: ExtensionName::from("SPV_EXT_descriptor_indexing"),
+                    extension: ExtensionName::from(name),
                     env
                 }
             );
@@ -9560,29 +9559,23 @@ mod tests {
     }
 
     #[test]
-    fn fragment_shader_interlock_is_vulkan_only() {
-        let text = module_with_extension("SPV_EXT_fragment_shader_interlock");
-        text.as_str()
-            .validate(TargetEnv::Vulkan1_2)
-            .expect("Fragment shader interlock should be accepted for Vulkan targets");
+    fn descriptor_indexing_extension_is_vulkan_only() {
+        assert_vulkan_only_extension("SPV_EXT_descriptor_indexing");
+    }
 
-        for env in [
-            TargetEnv::OpenCl2_2,
-            TargetEnv::Universal1_6,
-            TargetEnv::OpenGl4_5,
-        ] {
-            let error = text
-                .as_str()
-                .validate(env)
-                .expect_err("Fragment shader interlock should be rejected outside Vulkan");
-            assert_eq!(
-                error,
-                ValidationError::DisallowedExtension {
-                    extension: ExtensionName::from("SPV_EXT_fragment_shader_interlock"),
-                    env
-                }
-            );
-        }
+    #[test]
+    fn fragment_shader_interlock_is_vulkan_only() {
+        assert_vulkan_only_extension("SPV_EXT_fragment_shader_interlock");
+    }
+
+    #[test]
+    fn fragment_invocation_density_is_vulkan_only() {
+        assert_vulkan_only_extension("SPV_EXT_fragment_invocation_density");
+    }
+
+    #[test]
+    fn shader_atomic_float_min_max_is_vulkan_only() {
+        assert_vulkan_only_extension("SPV_EXT_shader_atomic_float_min_max");
     }
 
     #[test]
