@@ -106,8 +106,11 @@ mod ffi {
             binary: &[u32],
             options: u32,
         ) -> DisassembleResult;
-        fn validate_binary_rust(env: u32, binary: &[u32], options: &ValidatorOptions)
-            -> ValidateResult;
+        fn validate_binary_rust(
+            env: u32,
+            binary: &[u32],
+            options: &ValidatorOptions,
+        ) -> ValidateResult;
     }
 
     unsafe extern "C++" {

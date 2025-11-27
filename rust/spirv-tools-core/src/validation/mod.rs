@@ -1194,6 +1194,7 @@ pub struct ValidModule {
     env: TargetEnv,
     header: ValidatedHeader,
     effective_version: SpirvVersion,
+    options: ValidationOptions,
 }
 
 impl ValidModule {
@@ -1230,6 +1231,11 @@ impl ValidModule {
     /// Returns a shared handle to the validated words.
     pub fn words_handle(&self) -> ModuleWords {
         self.words.clone()
+    }
+
+    /// Returns the validator options applied during validation.
+    pub fn options(&self) -> &ValidationOptions {
+        &self.options
     }
 }
 
@@ -1288,7 +1294,7 @@ impl ValidModuleCache {
 fn validate_words(
     words: ModuleWords,
     env: TargetEnv,
-    _options: ValidationOptions,
+    options: ValidationOptions,
 ) -> Result<ValidModule, ValidationError> {
     if let Some(&schema) = words.as_slice().get(4) {
         Schema::validate(schema)?;
@@ -1320,6 +1326,7 @@ fn validate_words(
         env,
         header,
         effective_version: target_version,
+        options,
     })
 }
 
@@ -9664,7 +9671,11 @@ mod tests {
         let mut cache = ValidModuleCache::default();
 
         let first = cache
-            .validate_words_with_options(&binary, TargetEnv::Universal1_6, ValidationOptions::default())
+            .validate_words_with_options(
+                &binary,
+                TargetEnv::Universal1_6,
+                ValidationOptions::default(),
+            )
             .expect("first validation");
 
         let mut relaxed = ValidationOptions::default();
