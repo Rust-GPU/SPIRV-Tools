@@ -86,6 +86,34 @@ fn rust_and_cpp_fold_div_by_one() {
     );
 }
 
+#[test]
+fn rust_and_cpp_preserve_div_by_zero() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+
+    let (module_words, div_id) = build_div_zero_module();
+    let rust_insts = extract_sdiv_block(&module_words);
+    let rust_optimized =
+        spirv_tools_opt::translate::optimize_arith_block(&rust_insts).expect("rust optimizer");
+    let rust_kept_div = rust_optimized
+        .iter()
+        .any(|inst| inst.class.opcode == Op::SDiv && inst.result_id == Some(div_id));
+    assert!(rust_kept_div, "rust optimizer should not fold div by zero");
+
+    let output_words = run_cpp_opt(&cpp_opt, &module_words);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&output_words, &mut loader).expect("parse cpp optimized");
+    let module = loader.module();
+    let cpp_kept_div = module
+        .all_inst_iter()
+        .any(|inst| inst.class.opcode == Op::SDiv && inst.result_id == Some(div_id));
+    assert!(
+        cpp_kept_div,
+        "C++ spirv-opt should not fold div by zero and keep the instruction"
+    );
+}
+
 fn build_rem_one_module() -> Vec<u32> {
     let mut module = Module::default();
     module.capabilities.push(Instruction::new(
@@ -210,6 +238,68 @@ fn build_div_one_module() -> Vec<u32> {
     );
     module.functions.push(func);
     module.assemble()
+}
+
+fn build_div_zero_module() -> (Vec<u32>, Word) {
+    let mut module = Module::default();
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![rspirv::dr::Operand::Capability(Capability::Shader)],
+    ));
+    module.memory_model = Some(Instruction::new(
+        Op::MemoryModel,
+        None,
+        None,
+        vec![
+            rspirv::dr::Operand::AddressingModel(AddressingModel::Logical),
+            rspirv::dr::Operand::MemoryModel(MemoryModel::Simple),
+        ],
+    ));
+    let type_void = Instruction::new(Op::TypeVoid, None, Some(1), vec![]);
+    let type_int = Instruction::new(
+        Op::TypeInt,
+        None,
+        Some(2),
+        vec![
+            rspirv::dr::Operand::LiteralBit32(32),
+            rspirv::dr::Operand::LiteralBit32(0),
+        ],
+    );
+    let type_func = Instruction::new(
+        Op::TypeFunction,
+        None,
+        Some(3),
+        vec![rspirv::dr::Operand::IdRef(1)],
+    );
+    let const_two = Instruction::new(
+        Op::Constant,
+        Some(2),
+        Some(4),
+        vec![rspirv::dr::Operand::LiteralBit32(2)],
+    );
+    let const_zero = Instruction::new(
+        Op::Constant,
+        Some(2),
+        Some(5),
+        vec![rspirv::dr::Operand::LiteralBit32(0)],
+    );
+    module.types_global_values = vec![type_void, type_int, type_func, const_two, const_zero];
+    let func = build_function(
+        FunctionIds {
+            result_type: 1,
+            func_type: 3,
+            int_type: 2,
+            func_id: 6,
+            label_id: 7,
+            result_id: 9,
+        },
+        Op::SDiv,
+        &[rspirv::dr::Operand::IdRef(4), rspirv::dr::Operand::IdRef(5)],
+    );
+    module.functions.push(func);
+    (module.assemble(), 9)
 }
 
 fn build_function(ids: FunctionIds, opcode: Op, rem_operands: &[rspirv::dr::Operand]) -> Function {
