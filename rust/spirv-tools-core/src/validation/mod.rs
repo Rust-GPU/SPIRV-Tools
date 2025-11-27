@@ -2418,13 +2418,20 @@ fn manual_required_spirv_version_for_capability(
 fn required_spirv_version_for_extension(extension: &ExtensionName) -> Option<SpirvVersion> {
     let normalized = extension.as_str().to_ascii_lowercase();
     match normalized.as_str() {
-        "spv_khr_vulkan_memory_model" | "spv_khr_workgroup_memory_explicit_layout" => {
-            Some(SpirvVersion::new(1, 4))
+        "spv_khr_vulkan_memory_model" | "spv_qcom_cooperative_matrix_conversion" => {
+            Some(SpirvVersion::new(1, 3))
         }
+        "spv_khr_workgroup_memory_explicit_layout" => Some(SpirvVersion::new(1, 4)),
         "spv_khr_physical_storage_buffer" => Some(SpirvVersion::new(1, 4)),
         "spv_khr_ray_tracing" | "spv_khr_ray_query" | "spv_khr_ray_tracing_position_fetch" => {
             Some(SpirvVersion::new(1, 4))
         }
+        "spv_ext_mesh_shader"
+        | "spv_nv_shader_invocation_reorder"
+        | "spv_nv_cluster_acceleration_structure"
+        | "spv_nv_linear_swept_spheres"
+        | "spv_qcom_image_processing"
+        | "spv_qcom_image_processing2" => Some(SpirvVersion::new(1, 4)),
         "spv_ext_fragment_shader_interlock" => Some(SpirvVersion::new(1, 4)),
         "spv_khr_fragment_shading_rate" | "spv_ext_fragment_invocation_density" => {
             Some(SpirvVersion::new(1, 5))
@@ -7700,6 +7707,39 @@ mod tests {
     }
 
     #[test]
+    fn qcom_extension_requires_vulkan_environment() {
+        let text = [
+            "OpCapability Shader",
+            "OpExtension \"SPV_QCOM_image_processing\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("QCOM extension should be disallowed outside Vulkan");
+        assert_eq!(
+            error,
+            ValidationError::DisallowedExtension {
+                extension: ExtensionName::from("SPV_QCOM_image_processing"),
+                env: TargetEnv::Universal1_6
+            }
+        );
+
+        let validated = text
+            .as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("QCOM extension should be accepted for Vulkan");
+        assert_eq!(validated.env(), TargetEnv::Vulkan1_2);
+    }
+
+    #[test]
     fn universal_rejects_vulkan_specific_extension() {
         let text = [
             "OpCapability Shader",
@@ -7727,7 +7767,7 @@ mod tests {
     }
 
     #[test]
-    fn vulkan_memory_model_extension_requires_spirv_1_4() {
+    fn vulkan_memory_model_extension_requires_spirv_1_3() {
         let text = [
             "OpCapability Shader",
             "OpExtension \"SPV_KHR_vulkan_memory_model\"",
@@ -7743,12 +7783,12 @@ mod tests {
         let error = text
             .as_str()
             .validate(TargetEnv::Vulkan1_0)
-            .expect_err("SPIR-V 1.4 is required for Vulkan memory model extension");
+            .expect_err("SPIR-V 1.3 is required for Vulkan memory model extension");
         assert_eq!(
             error,
             ValidationError::ExtensionRequiresSpirvVersion {
                 extension: ExtensionName::from("SPV_KHR_vulkan_memory_model"),
-                required_version: SpirvVersion::new(1, 4),
+                required_version: SpirvVersion::new(1, 3),
                 target_version: TargetEnv::Vulkan1_0.spirv_version(),
             }
         );
@@ -7757,6 +7797,38 @@ mod tests {
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("extension should be accepted with SPIR-V 1.4+");
+    }
+
+    #[test]
+    fn qcom_cooperative_matrix_conversion_requires_spirv_1_3() {
+        let text = [
+            "OpCapability Shader",
+            "OpExtension \"SPV_QCOM_cooperative_matrix_conversion\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Vulkan1_0)
+            .expect_err("SPIR-V 1.3 is required for QCOM cooperative matrix conversion");
+        assert_eq!(
+            error,
+            ValidationError::ExtensionRequiresSpirvVersion {
+                extension: ExtensionName::from("SPV_QCOM_cooperative_matrix_conversion"),
+                required_version: SpirvVersion::new(1, 3),
+                target_version: TargetEnv::Vulkan1_0.spirv_version(),
+            }
+        );
+
+        text.as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("extension should be accepted with SPIR-V 1.3+");
     }
 
     #[test]
@@ -7830,6 +7902,38 @@ mod tests {
     }
 
     #[test]
+    fn nv_shader_invocation_reorder_requires_spirv_1_4() {
+        let text = [
+            "OpCapability Shader",
+            "OpExtension \"SPV_NV_shader_invocation_reorder\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Vulkan1_1)
+            .expect_err("SPIR-V 1.4 is required for NV shader invocation reorder");
+        assert_eq!(
+            error,
+            ValidationError::ExtensionRequiresSpirvVersion {
+                extension: ExtensionName::from("SPV_NV_shader_invocation_reorder"),
+                required_version: SpirvVersion::new(1, 4),
+                target_version: TargetEnv::Vulkan1_1.spirv_version(),
+            }
+        );
+
+        text.as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("extension should be accepted with SPIR-V 1.3+");
+    }
+
+    #[test]
     fn extension_version_check_respects_module_version() {
         use rspirv::{binary::Assemble, dr::Builder};
         let mut builder = Builder::new();
@@ -7857,7 +7961,7 @@ mod tests {
             error,
             ValidationError::ExtensionRequiresSpirvVersion {
                 extension: ExtensionName::from("SPV_KHR_vulkan_memory_model"),
-                required_version: SpirvVersion::new(1, 4),
+                required_version: SpirvVersion::new(1, 3),
                 target_version: SpirvVersion::new(1, 0),
             }
         );

@@ -429,9 +429,9 @@ impl TargetEnv {
     /// rejected for non-Vulkan environments. OpenCL-specific extensions are rejected
     /// outside OpenCL environments, and Vulkan-only extensions are disallowed for
     /// OpenCL/Universal targets to mirror the C++ tables. Vendor extensions are
-    /// conservatively scoped: NV/AMD/Google/EXT extensions are allowed for Vulkan
-    /// and Universal environments, while INTEL extensions are allowed for OpenCL
-    /// and Universal but rejected for Vulkan/WebGPU.
+    /// conservatively scoped: NV/AMD/Google/EXT/QCOM extensions are allowed only for Vulkan,
+    /// while INTEL extensions are allowed for OpenCL and Universal but rejected for
+    /// Vulkan/WebGPU.
     pub fn is_extension_allowed(self, extension: &ExtensionName) -> bool {
         let lower = extension.as_str().to_ascii_lowercase();
         if matches!(self, TargetEnv::WebGpu0) {
@@ -453,6 +453,7 @@ impl TargetEnv {
             || lower.starts_with("spv_amd_")
             || lower.starts_with("spv_google_")
             || lower.starts_with("spv_ext_")
+            || lower.starts_with("spv_qcom_")
         {
             return self.is_vulkan();
         }
