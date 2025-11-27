@@ -192,6 +192,7 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("mul-fold"; "(* ?a ?b)" => { FoldMul }),
         rewrite!("sub-fold"; "(- ?a ?b)" => { FoldSub }),
         rewrite!("sub-zero-right"; "(- ?a ?b)" => "?a" if is_const_zero(var("?b"))),
+        rewrite!("sub-zero-left"; "(- ?a ?b)" => { SubZeroLeft }),
         rewrite!("sub-self"; "(- ?a ?a)" => { SubSelf }),
         rewrite!("neg-fold"; "(neg ?a)" => { FoldNeg }),
         rewrite!("double-neg"; "(neg (neg ?a))" => "?a"),
@@ -209,6 +210,7 @@ struct FoldNeg;
 struct FoldDiv;
 struct FoldRem;
 struct SubSelf;
+struct SubZeroLeft;
 struct AddNegZero;
 struct AddZero {
     a: Var,
@@ -450,6 +452,24 @@ impl Applier<SpirvLang, ()> for MulZero {
     }
 }
 
+impl Applier<SpirvLang, ()> for SubZeroLeft {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        if const_value(egraph, subst[var("a")]).is_some_and(|c| c.get() == 0) {
+            let neg = egraph.add(SpirvLang::Neg(subst[var("b")]));
+            egraph.union(eclass, neg);
+            return vec![neg];
+        }
+        Vec::new()
+    }
+}
+
 fn const_value(egraph: &EGraph<SpirvLang, ()>, id: Id) -> Option<ConstValue> {
     egraph[id].nodes.iter().find_map(|node| match node {
         SpirvLang::Const(value) => Some(*value),
@@ -600,6 +620,23 @@ mod tests {
         assert_eq!(
             optimized,
             RecExpr::from(vec![SpirvLang::Const(ConstValue::new(0))])
+        );
+    }
+
+    #[test]
+    fn folds_subtract_from_zero_into_negation() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new(0)), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::Sub([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![
+                SpirvLang::Symbol(Symbol::from("y")),
+                SpirvLang::Neg(Id::from(0))
+            ])
         );
     }
 
