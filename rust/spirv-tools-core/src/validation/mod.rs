@@ -9127,6 +9127,98 @@ mod tests {
     }
 
     #[test]
+    fn cooperative_matrix_capability_requires_extension() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability CooperativeMatrixNV",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect_err("CooperativeMatrixNV requires its enabling extension");
+        assert_eq!(
+            error,
+            ValidationError::DisallowedCapabilityMissingExtension {
+                capability: rspirv::spirv::Capability::CooperativeMatrixNV,
+                required_extension: "SPV_NV_cooperative_matrix".to_string()
+            }
+        );
+
+        let with_extension = [
+            "OpCapability Shader",
+            "OpCapability CooperativeMatrixNV",
+            "OpExtension \"SPV_NV_cooperative_matrix\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let validated = with_extension
+            .as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("capability should be accepted with required extension");
+        assert_eq!(validated.header().schema(), Schema::ZERO);
+    }
+
+    #[test]
+    fn tile_shading_capability_requires_extension() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability TileShadingQCOM",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Vulkan1_3)
+            .expect_err("TileShadingQCOM requires its enabling extension");
+        assert_eq!(
+            error,
+            ValidationError::DisallowedCapabilityMissingExtension {
+                capability: rspirv::spirv::Capability::TileShadingQCOM,
+                required_extension: "SPV_QCOM_tile_shading".to_string()
+            }
+        );
+
+        let with_extension = [
+            "OpCapability Shader",
+            "OpCapability TileShadingQCOM",
+            "OpExtension \"SPV_QCOM_tile_shading\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let validated = with_extension
+            .as_str()
+            .validate(TargetEnv::Vulkan1_3)
+            .expect("capability should be accepted with required extension");
+        assert_eq!(validated.header().schema(), Schema::ZERO);
+    }
+
+    #[test]
     fn validate_module_rejects_duplicate_extension() {
         // Hand-assemble a module with duplicate OpExtension instructions.
         let extension_word = 0x0006_000a; // word count 6, opcode OpExtension (10)
