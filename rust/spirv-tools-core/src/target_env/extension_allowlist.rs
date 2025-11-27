@@ -1337,9 +1337,9 @@ pub const EXTENSION_ALLOWLIST: &[(&str, ExtensionAllowlist)] = &[
         "SPV_KHR_subgroup_uniform_control_flow",
         ExtensionAllowlist {
             allow_vulkan: true,
-            allow_opencl: true,
-            allow_opengl: true,
-            allow_universal: true,
+            allow_opencl: false,
+            allow_opengl: false,
+            allow_universal: false,
         },
     ),
     (
