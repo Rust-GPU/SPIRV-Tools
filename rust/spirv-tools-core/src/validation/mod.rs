@@ -8505,7 +8505,7 @@ mod tests {
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
-        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
         assert_eq!(
             error,
             ValidationError::LayoutOutOfOrder {
@@ -8535,13 +8535,13 @@ mod tests {
 
         let text_error = text
             .as_str()
-            .validate(TargetEnv::Universal1_6)
+            .validate(TargetEnv::Vulkan1_2)
             .expect_err("sampler image address mode is required for bindless capability");
         assert_eq!(text_error, expected);
 
         let binary = assemble_text(&text).expect("assemble");
         let binary_error = MaybeValidModule::Binary(&binary)
-            .validate(TargetEnv::Universal1_6)
+            .validate(TargetEnv::Vulkan1_2)
             .expect_err("binary should also require sampler image address mode");
         assert_eq!(binary_error, expected);
     }
@@ -8592,7 +8592,7 @@ mod tests {
             op(1, 56),  // OpFunctionEnd
         ];
         let expected = ValidationError::InvalidSamplerImageAddressingModeBitWidth { bit_width: 16 };
-        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
         assert_eq!(error, expected);
     }
 
@@ -8643,7 +8643,7 @@ mod tests {
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
-        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
         assert_eq!(error, ValidationError::DuplicateSamplerImageAddressingMode);
     }
 
@@ -9712,12 +9712,14 @@ mod tests {
             0,
             5,
             0,
-            op(6, 10), // OpExtension "SPV_KHR_ray_tracing"
+            op(8, 10), // OpExtension "SPV_GOOGLE_decorate_string"
             0x5f56_5053,
-            0x5f52_484b,
-            0x5f79_6172,
-            0x6361_7274,
-            0x0067_6e69,
+            0x474f_4f47,
+            0x645f_454c,
+            0x726f_6365,
+            0x5f65_7461,
+            0x6972_7473,
+            0x0000_676e,
             op(2, 17), // OpCapability Shader (out of order after extension)
             rspirv::spirv::Capability::Shader as u32,
             op(3, 14), // OpMemoryModel Logical GLSL450
@@ -16654,13 +16656,15 @@ mod tests {
     #[test]
     fn validate_module_rejects_duplicate_extension() {
         // Hand-assemble a module with duplicate OpExtension instructions.
-        let extension_word = 0x0006_000a; // word count 6, opcode OpExtension (10)
+        let extension_word = 0x0008_000a; // word count 8, opcode OpExtension (10)
         let extension_words = [
             0x5f56_5053, // "SPV_"
-            0x5f52_484b, // "KHR_"
-            0x5f79_6172, // "ray_"
-            0x6361_7274, // "trac"
-            0x0067_6e69, // "ing\0"
+            0x474f_4f47, // "GOOG"
+            0x645f_454c, // "LE_d"
+            0x726f_6365, // "ecor"
+            0x5f65_7461, // "ate_"
+            0x6972_7473, // "stri"
+            0x0000_676e, // "ng\0"
         ];
         let binary = [
             0x0723_0203, // magic
@@ -16676,12 +16680,16 @@ mod tests {
             extension_words[2],
             extension_words[3],
             extension_words[4],
+            extension_words[5],
+            extension_words[6],
             extension_word, // duplicate extension
             extension_words[0],
             extension_words[1],
             extension_words[2],
             extension_words[3],
             extension_words[4],
+            extension_words[5],
+            extension_words[6],
             0x0003_000e, // OpMemoryModel Logical GLSL450
             0,
             1,
@@ -16694,7 +16702,7 @@ mod tests {
         assert_eq!(
             error,
             ValidationError::DuplicateExtension {
-                extension: ExtensionName::from("SPV_KHR_ray_tracing")
+                extension: ExtensionName::from("SPV_GOOGLE_decorate_string")
             }
         );
     }

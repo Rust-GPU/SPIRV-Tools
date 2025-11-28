@@ -120,6 +120,7 @@ Tasks for this milestone:
   - Extended extension layout handling to cover conditional extensions and reject duplicates.
   - Added layout regressions to keep conditional extensions (`OpConditionalExtensionINTEL`) out of function bodies and after functions.
   - Added a binary regression with a well-formed module that ends in `OpConditionalExtensionINTEL` after a function to ensure ordering reports the conditional extension (not earlier layout violations).
+  - Adjusted extension ordering/duplication regressions to use env-allowed extensions (and Vulkan env where necessary) so ordering/uniqueness failures trigger before allowlist gating, including NV bindless sampler address mode coverage.
   - Added layout regressions to keep conditional capabilities (`OpConditionalCapabilityINTEL`) out of function bodies and after functions.
   - Generated operand requirement tables now avoid unused value bindings so validator builds stay warning-free under cargo test/clippy.
   - Reject duplicate conditional capabilities during layout to mirror capability deduplication.
