@@ -143,6 +143,9 @@ define_language! {
     pub enum SpirvLang {
         "+" = Add([Id; 2]),
         "*" = Mul([Id; 2]),
+        "shl" = Shl([Id; 2]),
+        "shr_s" = ShrS([Id; 2]),
+        "shr_u" = ShrU([Id; 2]),
         "-" = Sub([Id; 2]),
         "sdiv" = SDiv([Id; 2]),
         "udiv" = UDiv([Id; 2]),
@@ -166,6 +169,12 @@ impl egg::CostFunction<SpirvLang> for ExprCost {
     {
         match enode {
             SpirvLang::Const(_) => 1,
+            SpirvLang::Mul(_) | SpirvLang::SDiv(_) | SpirvLang::UDiv(_) => {
+                enode.children().iter().map(|id| costs(*id)).sum::<usize>() + 2
+            }
+            SpirvLang::Shl(_) | SpirvLang::ShrS(_) | SpirvLang::ShrU(_) => {
+                enode.children().iter().map(|id| costs(*id)).sum::<usize>() + 1
+            }
             _ => enode.children().iter().map(|id| costs(*id)).sum::<usize>() + 1,
         }
     }
@@ -284,6 +293,15 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         }),
         rewrite!("udiv-pull-const-right"; "(udiv (* ?x ?c1) ?c2)" => {
             DivPullConst { x: var("?x"), c1: var("?c1"), c2: var("?c2"), signed: false }
+        }),
+        rewrite!("mul-power-of-two-left"; "(* ?c ?x)" => {
+            MulPowerOfTwo { x: var("?x"), c: var("?c") }
+        }),
+        rewrite!("mul-power-of-two-right"; "(* ?x ?c)" => {
+            MulPowerOfTwo { x: var("?x"), c: var("?c") }
+        }),
+        rewrite!("udiv-power-of-two"; "(udiv ?x ?c)" => {
+            DivPowerOfTwo { x: var("?x"), c: var("?c"), signed: false }
         }),
         rewrite!("mul-dist-const-over-add"; "(* ?c (+ ?x ?k))" => {
             DistConstMulAdd { c: var("?c"), x: var("?x"), k: var("?k") }
@@ -556,6 +574,15 @@ struct AddDuplicateToMul {
 }
 struct AddTripleToMul {
     x: Var,
+}
+struct MulPowerOfTwo {
+    x: Var,
+    c: Var,
+}
+struct DivPowerOfTwo {
+    x: Var,
+    c: Var,
+    signed: bool,
 }
 struct CancelMulDiv {
     x: Var,
@@ -1347,6 +1374,74 @@ impl Applier<SpirvLang, ()> for AddTripleToMul {
     }
 }
 
+impl Applier<SpirvLang, ()> for MulPowerOfTwo {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(constant) = const_value(egraph, subst[self.c]) else {
+            return Vec::new();
+        };
+        let Some(shift) = is_power_of_two(constant.get()) else {
+            return Vec::new();
+        };
+        if shift == 0 {
+            return Vec::new();
+        }
+        let shift_const = egraph.add(SpirvLang::Const(ConstValue::new(shift)));
+        let shl = egraph.add(SpirvLang::Shl([subst[self.x], shift_const]));
+        egraph.union(eclass, shl);
+        vec![shl]
+    }
+}
+
+impl Applier<SpirvLang, ()> for DivPowerOfTwo {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(constant) = const_value(egraph, subst[self.c]) else {
+            return Vec::new();
+        };
+        let Some(shift) = is_power_of_two(constant.get()) else {
+            return Vec::new();
+        };
+        if shift == 0 {
+            return Vec::new();
+        }
+        if !has_symbol(egraph, subst[self.x]) {
+            return Vec::new();
+        }
+        if egraph[egraph.find(subst[self.x])]
+            .nodes
+            .iter()
+            .any(|n| matches!(n, SpirvLang::UDiv(_) | SpirvLang::SDiv(_)))
+        {
+            return Vec::new();
+        }
+        if self.signed {
+            // Unsigned-only for now; signed division by powers of two needs biasing.
+            return Vec::new();
+        }
+        let shift_const = egraph.add(SpirvLang::Const(ConstValue::new(shift)));
+        let shr = if self.signed {
+            egraph.add(SpirvLang::ShrS([subst[self.x], shift_const]))
+        } else {
+            egraph.add(SpirvLang::ShrU([subst[self.x], shift_const]))
+        };
+        egraph.union(eclass, shr);
+        vec![shr]
+    }
+}
+
 impl Applier<SpirvLang, ()> for MulMergeConst {
     fn apply_one(
         &self,
@@ -1384,6 +1479,21 @@ fn gcd_u32(mut a: u32, mut b: u32) -> u32 {
         a = tmp;
     }
     a
+}
+
+fn is_power_of_two(value: u32) -> Option<u32> {
+    if value == 0 || value.count_ones() != 1 {
+        return None;
+    }
+    Some(value.trailing_zeros())
+}
+
+fn has_symbol(egraph: &EGraph<SpirvLang, ()>, id: Id) -> bool {
+    let class = egraph.find(id);
+    egraph[class]
+        .nodes
+        .iter()
+        .any(|n| matches!(n, SpirvLang::Symbol(_)))
 }
 
 fn var(name: &str) -> Var {
@@ -1666,6 +1776,56 @@ mod tests {
     }
 
     #[test]
+    fn rewrites_mul_power_of_two_into_shift() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Const(ConstValue::new(8)),       // 1
+            SpirvLang::Mul([Id::from(0), Id::from(1)]), // 2 = x * 8
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let class = runner.egraph.find(runner.roots[0]);
+        let nodes = &runner.egraph[class].nodes;
+        let found_shl = nodes.iter().any(|n| {
+            if let SpirvLang::Shl([lhs, rhs]) = n {
+                let lhs_sym = matches!(
+                    runner.egraph[runner.egraph.find(*lhs)].nodes.as_slice(),
+                    [SpirvLang::Symbol(sym)] if *sym == Symbol::from("x")
+                );
+                let rhs_const = const_value(&runner.egraph, *rhs).is_some_and(|c| c.get() == 3);
+                lhs_sym && rhs_const
+            } else {
+                false
+            }
+        });
+        assert!(found_shl, "expected x * 8 to admit x << 3");
+    }
+
+    #[test]
+    fn rewrites_udiv_power_of_two_into_shift() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),        // 0
+            SpirvLang::Const(ConstValue::new(4)),        // 1
+            SpirvLang::UDiv([Id::from(0), Id::from(1)]), // 2 = x / 4
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let class = runner.egraph.find(runner.roots[0]);
+        let nodes = &runner.egraph[class].nodes;
+        let found_shr = nodes.iter().any(|n| {
+            if let SpirvLang::ShrU([lhs, rhs]) = n {
+                let lhs_sym = matches!(
+                    runner.egraph[runner.egraph.find(*lhs)].nodes.as_slice(),
+                    [SpirvLang::Symbol(sym)] if *sym == Symbol::from("x")
+                );
+                let rhs_const = const_value(&runner.egraph, *rhs).is_some_and(|c| c.get() == 2);
+                lhs_sym && rhs_const
+            } else {
+                false
+            }
+        });
+        assert!(found_shr, "expected x / 4 to admit x >> 2");
+    }
+
+    #[test]
     fn rewrites_mul_double_negation() {
         let expr = RecExpr::from(vec![
             SpirvLang::Symbol(Symbol::from("x")),       // 0
@@ -1795,16 +1955,22 @@ mod tests {
         ]);
         let optimized = optimize_expr(&expr);
         let nodes = optimized.as_ref();
-        let Some(SpirvLang::Mul([lhs, rhs])) = nodes.last() else {
-            panic!("expected mul root, got {:?}", nodes.last());
-        };
-        let (symbol, constant) = match (&nodes[usize::from(*lhs)], &nodes[usize::from(*rhs)]) {
-            (SpirvLang::Symbol(sym), SpirvLang::Const(val)) => (sym, val),
-            (SpirvLang::Const(val), SpirvLang::Symbol(sym)) => (sym, val),
-            other => panic!("unexpected operands for simplified div: {other:?}"),
+        let (symbol, constant) = match nodes.last() {
+            Some(SpirvLang::Mul([lhs, rhs])) | Some(SpirvLang::Shl([lhs, rhs])) => {
+                match (&nodes[usize::from(*lhs)], &nodes[usize::from(*rhs)]) {
+                    (SpirvLang::Symbol(sym), SpirvLang::Const(val)) => (sym, val),
+                    (SpirvLang::Const(val), SpirvLang::Symbol(sym)) => (sym, val),
+                    other => panic!("unexpected operands for simplified div: {other:?}"),
+                }
+            }
+            other => panic!("expected mul or shl root, got {:?}", other),
         };
         assert_eq!(symbol, &Symbol::from("x"));
-        assert_eq!(constant.get(), 2);
+        let expected = match nodes.last() {
+            Some(SpirvLang::Mul(_)) => 2,
+            _ => 1, // shift amount for multiply by two
+        };
+        assert_eq!(constant.get(), expected);
     }
 
     #[test]
@@ -2384,16 +2550,22 @@ mod tests {
         ]);
         let optimized = optimize_expr(&expr);
         let nodes = optimized.as_ref();
-        let Some(SpirvLang::UDiv([lhs, rhs])) = nodes.last() else {
-            panic!("expected udiv root, got {:?}", nodes.last());
-        };
-        let (symbol, constant) = match (&nodes[usize::from(*lhs)], &nodes[usize::from(*rhs)]) {
-            (SpirvLang::Symbol(sym), SpirvLang::Const(val)) => (sym, val),
-            (SpirvLang::Const(val), SpirvLang::Symbol(sym)) => (sym, val),
-            other => panic!("unexpected operands for merged udiv: {other:?}"),
+        let (symbol, constant) = match nodes.last() {
+            Some(SpirvLang::UDiv([lhs, rhs])) | Some(SpirvLang::ShrU([lhs, rhs])) => {
+                match (&nodes[usize::from(*lhs)], &nodes[usize::from(*rhs)]) {
+                    (SpirvLang::Symbol(sym), SpirvLang::Const(val)) => (sym, val),
+                    (SpirvLang::Const(val), SpirvLang::Symbol(sym)) => (sym, val),
+                    other => panic!("unexpected operands for merged udiv: {other:?}"),
+                }
+            }
+            other => panic!("expected udiv or shr root, got {other:?}"),
         };
         assert_eq!(symbol, &Symbol::from("x"));
-        assert_eq!(constant.get(), 8, "divisors should merge to 8");
+        let expected = match nodes.last() {
+            Some(SpirvLang::UDiv(_)) => 8,
+            _ => 3, // shift amount for 8
+        };
+        assert_eq!(constant.get(), expected, "divisors should merge to 8");
     }
 
     #[test]
@@ -2729,6 +2901,43 @@ mod tests {
         let block = vec![c2.clone(), c0.clone(), div.clone()];
         let optimized = optimize_arith_block(&block).expect("optimization should succeed");
         assert_eq!(optimized, block);
+    }
+
+    #[test]
+    fn optimize_arith_block_rewrites_mul_pow2_to_shift() {
+        let int = 1;
+        let c8 = Instruction::new(
+            rspirv::spirv::Op::Constant,
+            Some(int),
+            Some(1),
+            vec![rspirv::dr::Operand::LiteralBit32(8)],
+        );
+        let c_id = Instruction::new(
+            rspirv::spirv::Op::Constant,
+            Some(int),
+            Some(2),
+            vec![rspirv::dr::Operand::LiteralBit32(5)],
+        );
+        let mul = Instruction::new(
+            rspirv::spirv::Op::IMul,
+            Some(int),
+            Some(3),
+            vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(1)],
+        );
+        let block = vec![c8, c_id, mul];
+        let optimized = optimize_arith_block(&block).expect("optimization should succeed");
+        let found_shift = optimized.iter().any(|inst| {
+            inst.class.opcode == rspirv::spirv::Op::ShiftLeftLogical && inst.result_id == Some(3)
+        });
+        let found_constant = optimized.iter().any(|inst| {
+            inst.class.opcode == rspirv::spirv::Op::Constant
+                && inst.result_id == Some(3)
+                && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(40)]
+        });
+        assert!(
+            found_shift || found_constant,
+            "expected shift or folded constant for mul by power of two"
+        );
     }
 
     #[test]

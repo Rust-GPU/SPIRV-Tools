@@ -24,6 +24,9 @@ pub fn optimize_basic_block(insts: &[u32]) -> Result<Vec<u32>, String> {
                 | Op::UDiv
                 | Op::SRem
                 | Op::UMod
+                | Op::ShiftLeftLogical
+                | Op::ShiftRightLogical
+                | Op::ShiftRightArithmetic
         )
     };
 
