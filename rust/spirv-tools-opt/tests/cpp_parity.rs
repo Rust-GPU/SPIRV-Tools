@@ -1449,6 +1449,54 @@ fn rust_and_cpp_fold_affine_gcd_add() {
 }
 
 #[test]
+fn rust_and_cpp_fold_affine_gcd_sub() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+
+    let (module_words, sub_id) = build_affine_gcd_sub_module();
+    let rust_insts = extract_simple_block(&module_words);
+    let rust_optimized =
+        spirv_tools_opt::translate::optimize_arith_block(&rust_insts).expect("rust optimizer");
+    let rust_const = rust_optimized.iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(sub_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(8)]
+    });
+    assert!(
+        rust_const,
+        "rust optimizer should fold affine gcd sub with const operand to const 8"
+    );
+    assert!(
+        !rust_optimized
+            .iter()
+            .any(|inst| matches!(inst.class.opcode, Op::IMul | Op::ISub)),
+        "rust optimizer should remove mul/sub after folding"
+    );
+
+    let cpp_words = run_cpp_opt(&cpp_opt, &module_words);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&cpp_words, &mut loader).expect("parse cpp optimized");
+    let module = loader.module();
+    let cpp_const = module.all_inst_iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(sub_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(8)]
+    });
+    let cpp_has_ops = module.all_inst_iter().any(|inst| {
+        matches!(inst.class.opcode, Op::IMul | Op::ISub) && inst.result_id == Some(sub_id)
+    });
+    assert!(
+        cpp_const,
+        "C++ spirv-opt should fold affine gcd sub with const operand to const 8"
+    );
+    assert!(
+        !cpp_has_ops,
+        "C++ spirv-opt should remove mul/sub after folding"
+    );
+}
+
+#[test]
 fn rust_and_cpp_distribute_const_mul_over_sub() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
@@ -2394,6 +2442,27 @@ fn build_affine_gcd_add_module() -> (Vec<u32>, u32) {
     b.ret().expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), add)
+}
+
+fn build_affine_gcd_sub_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let _func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let c14 = b.constant_bit32(int, 14);
+    let c21 = b.constant_bit32(int, 21);
+    let x = b.constant_bit32(int, 2);
+    let mul = b.i_mul(int, None, c14, x).expect("mul");
+    let sub = b.i_sub(int, None, mul, c21).expect("sub");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), sub)
 }
 
 fn build_commuted_shared_addends_module() -> (Vec<u32>, u32) {
