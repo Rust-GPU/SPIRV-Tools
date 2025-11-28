@@ -203,6 +203,33 @@ pub fn translate_arith(instructions: &[Instruction]) -> Result<TranslatedExpr, T
                 };
                 expr.add(node)
             }
+            Op::BitwiseAnd => {
+                let mut ops = inst.operands.iter().filter_map(|op| match op {
+                    rspirv::dr::Operand::IdRef(id) => Some(*id),
+                    _ => None,
+                });
+                let lhs = ops.next().and_then(|id| ids.get(&id).copied()).ok_or(
+                    TranslateError::UnknownOperand {
+                        id: inst
+                            .operands
+                            .first()
+                            .and_then(|op| op.id_ref_any())
+                            .unwrap_or(0),
+                        opcode,
+                    },
+                )?;
+                let rhs = ops.next().and_then(|id| ids.get(&id).copied()).ok_or(
+                    TranslateError::UnknownOperand {
+                        id: inst
+                            .operands
+                            .get(1)
+                            .and_then(|op| op.id_ref_any())
+                            .unwrap_or(0),
+                        opcode,
+                    },
+                )?;
+                expr.add(SpirvLang::BitAnd([lhs, rhs]))
+            }
             Op::SRem | Op::UMod => {
                 let mut ops = inst.operands.iter().filter_map(|op| match op {
                     rspirv::dr::Operand::IdRef(id) => Some(*id),
@@ -411,6 +438,15 @@ pub fn optimize_arith_block(
                     rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
                 ],
             ),
+            SpirvLang::BitAnd([a, b]) => Instruction::new(
+                Op::BitwiseAnd,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
             SpirvLang::Shl([a, b]) => Instruction::new(
                 Op::ShiftLeftLogical,
                 Some(result_type),
@@ -458,8 +494,9 @@ fn expr_cost(expr: &RecExpr<SpirvLang>) -> usize {
         let cost = match node {
             SpirvLang::Const(_) | SpirvLang::Symbol(_) => 1,
             SpirvLang::Neg(a) => 1 + costs[usize::from(*a)],
-            SpirvLang::Mul([a, b]) | SpirvLang::SDiv([a, b]) | SpirvLang::UDiv([a, b]) => {
-                2 + costs[usize::from(*a)] + costs[usize::from(*b)]
+            SpirvLang::Mul([a, b]) => 2 + costs[usize::from(*a)] + costs[usize::from(*b)],
+            SpirvLang::SDiv([a, b]) | SpirvLang::UDiv([a, b]) => {
+                8 + costs[usize::from(*a)] + costs[usize::from(*b)]
             }
             SpirvLang::Add([a, b])
             | SpirvLang::Sub([a, b])
@@ -467,7 +504,8 @@ fn expr_cost(expr: &RecExpr<SpirvLang>) -> usize {
             | SpirvLang::UMod([a, b])
             | SpirvLang::Shl([a, b])
             | SpirvLang::ShrS([a, b])
-            | SpirvLang::ShrU([a, b]) => 1 + costs[usize::from(*a)] + costs[usize::from(*b)],
+            | SpirvLang::ShrU([a, b])
+            | SpirvLang::BitAnd([a, b]) => 1 + costs[usize::from(*a)] + costs[usize::from(*b)],
         };
         costs.push(cost);
     }

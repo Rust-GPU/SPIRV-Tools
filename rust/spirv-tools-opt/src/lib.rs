@@ -34,7 +34,7 @@ pub mod fuzzing {
             let node = if idx == 0 {
                 SpirvLang::Const(ConstValue::new(u.arbitrary()?))
             } else {
-                match u.choose(&[0u8, 1, 2, 3, 4, 5, 6])? {
+                match u.choose(&[0u8, 1, 2, 3, 4, 5, 6, 7, 8, 9])? {
                     0 => SpirvLang::Const(ConstValue::new(u.arbitrary()?)),
                     1 => {
                         let a = choose_child(u, idx - 1)?;
@@ -64,7 +64,7 @@ pub mod fuzzing {
                             SpirvLang::UDiv([Id::from(a), Id::from(b)])
                         }
                     }
-                    _ => {
+                    5 => {
                         let a = choose_child(u, idx - 1)?;
                         let b = choose_child(u, idx - 1)?;
                         if *u.choose(&[true, false])? {
@@ -72,6 +72,30 @@ pub mod fuzzing {
                         } else {
                             SpirvLang::UMod([Id::from(a), Id::from(b)])
                         }
+                    }
+                    6 => {
+                        let a = choose_child(u, idx - 1)?;
+                        let b = choose_child(u, idx - 1)?;
+                        SpirvLang::Shl([Id::from(a), Id::from(b)])
+                    }
+                    7 => {
+                        let a = choose_child(u, idx - 1)?;
+                        let b = choose_child(u, idx - 1)?;
+                        if *u.choose(&[true, false])? {
+                            SpirvLang::ShrS([Id::from(a), Id::from(b)])
+                        } else {
+                            SpirvLang::ShrU([Id::from(a), Id::from(b)])
+                        }
+                    }
+                    8 => {
+                        let a = choose_child(u, idx - 1)?;
+                        let b = choose_child(u, idx - 1)?;
+                        SpirvLang::BitAnd([Id::from(a), Id::from(b)])
+                    }
+                    _ => {
+                        let a = choose_child(u, idx - 1)?;
+                        let b = choose_child(u, idx - 1)?;
+                        SpirvLang::Sub([Id::from(a), Id::from(b)])
                     }
                 }
             };
@@ -146,6 +170,7 @@ define_language! {
         "shl" = Shl([Id; 2]),
         "shr_s" = ShrS([Id; 2]),
         "shr_u" = ShrU([Id; 2]),
+        "band" = BitAnd([Id; 2]),
         "-" = Sub([Id; 2]),
         "sdiv" = SDiv([Id; 2]),
         "udiv" = UDiv([Id; 2]),
@@ -314,6 +339,9 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         }),
         rewrite!("mul-power-of-two-right"; "(* ?x ?c)" => {
             MulPowerOfTwo { x: var("?x"), c: var("?c") }
+        }),
+        rewrite!("sdiv-power-of-two"; "(sdiv ?x ?c)" => {
+            DivPowerOfTwo { x: var("?x"), c: var("?c"), signed: true }
         }),
         rewrite!("udiv-power-of-two"; "(udiv ?x ?c)" => {
             DivPowerOfTwo { x: var("?x"), c: var("?c"), signed: false }
@@ -1479,18 +1507,22 @@ impl Applier<SpirvLang, ()> for DivPowerOfTwo {
         {
             return Vec::new();
         }
-        if self.signed {
-            // Unsigned-only for now; signed division by powers of two needs biasing.
-            return Vec::new();
-        }
         let shift_const = egraph.add(SpirvLang::Const(ConstValue::new(shift)));
-        let shr = if self.signed {
-            egraph.add(SpirvLang::ShrS([subst[self.x], shift_const]))
+        if self.signed {
+            let sign_shift = egraph.add(SpirvLang::Const(ConstValue::new(31)));
+            let sign = egraph.add(SpirvLang::ShrS([subst[self.x], sign_shift]));
+            let mask_value = (1u32 << shift).wrapping_sub(1);
+            let mask = egraph.add(SpirvLang::Const(ConstValue::new(mask_value)));
+            let bias = egraph.add(SpirvLang::BitAnd([sign, mask]));
+            let biased = egraph.add(SpirvLang::Add([subst[self.x], bias]));
+            let shr = egraph.add(SpirvLang::ShrS([biased, shift_const]));
+            egraph.union(eclass, shr);
+            vec![shr]
         } else {
-            egraph.add(SpirvLang::ShrU([subst[self.x], shift_const]))
-        };
-        egraph.union(eclass, shr);
-        vec![shr]
+            let shr = egraph.add(SpirvLang::ShrU([subst[self.x], shift_const]));
+            egraph.union(eclass, shr);
+            vec![shr]
+        }
     }
 }
 
@@ -2110,6 +2142,50 @@ mod tests {
             }
         });
         assert!(found_shr, "expected x / 4 to admit x >> 2");
+    }
+
+    #[test]
+    fn rewrites_sdiv_power_of_two_into_shift_with_bias() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),        // 0
+            SpirvLang::Const(ConstValue::new(4)),        // 1
+            SpirvLang::SDiv([Id::from(0), Id::from(1)]), // 2 = x / 4
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let class = runner.egraph.find(runner.roots[0]);
+        let nodes = &runner.egraph[class].nodes;
+        let found_shr = nodes.iter().any(|node| {
+            if let SpirvLang::ShrS([lhs, rhs]) = node {
+                let rhs_is_two =
+                    const_value(&runner.egraph, *rhs).is_some_and(|val| val.get() == 2);
+                if !rhs_is_two {
+                    return false;
+                }
+                let add_eclass = runner.egraph.find(*lhs);
+                let add_nodes = &runner.egraph[add_eclass].nodes;
+                let has_mask = add_nodes.iter().any(|candidate| {
+                    if let SpirvLang::Add([_, band]) = candidate {
+                        let band_eclass = runner.egraph.find(*band);
+                        runner.egraph[band_eclass].nodes.iter().any(|band_node| {
+                            if let SpirvLang::BitAnd([_, mask]) = band_node {
+                                const_value(&runner.egraph, *mask).is_some_and(|val| val.get() == 3)
+                            } else {
+                                false
+                            }
+                        })
+                    } else {
+                        false
+                    }
+                });
+                rhs_is_two && has_mask
+            } else {
+                false
+            }
+        });
+        assert!(
+            found_shr,
+            "expected signed div by power of two to rewrite into biased shift"
+        );
     }
 
     #[test]
