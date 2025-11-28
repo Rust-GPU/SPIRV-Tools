@@ -229,6 +229,70 @@ fn rust_and_cpp_cancel_add_sub_chain() {
 }
 
 #[test]
+fn rust_and_cpp_fold_sub_add_const_chain() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+
+    let (module_words, result_id) = build_sub_add_const_chain();
+    let rust_insts = extract_simple_block(&module_words);
+    let rust_optimized =
+        spirv_tools_opt::translate::optimize_arith_block(&rust_insts).expect("rust optimizer");
+    let rust_const = rust_optimized.iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(result_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(10)]
+    });
+    assert!(rust_const, "rust optimizer should fold (10-3)+3 to 10");
+
+    let cpp_words = run_cpp_opt(&cpp_opt, &module_words);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&cpp_words, &mut loader).expect("parse cpp optimized");
+    let module = loader.module();
+    let cpp_const = module.all_inst_iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(result_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(10)]
+    });
+    assert!(cpp_const, "C++ spirv-opt should fold (10-3)+3 to 10");
+}
+
+#[test]
+fn rust_and_cpp_fold_shared_addend_sub_const_chain() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+
+    let (module_words, result_id) = build_shared_addend_sub_chain();
+    let rust_insts = extract_simple_block(&module_words);
+    let rust_optimized =
+        spirv_tools_opt::translate::optimize_arith_block(&rust_insts).expect("rust optimizer");
+    let rust_const = rust_optimized.iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(result_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(3)]
+    });
+    assert!(
+        rust_const,
+        "rust optimizer should fold (4+5)-(4+2) to constant 3"
+    );
+
+    let cpp_words = run_cpp_opt(&cpp_opt, &module_words);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&cpp_words, &mut loader).expect("parse cpp optimized");
+    let module = loader.module();
+    let cpp_const = module.all_inst_iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(result_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(3)]
+    });
+    assert!(
+        cpp_const,
+        "C++ spirv-opt should fold (4+5)-(4+2) to constant 3"
+    );
+}
+
+#[test]
 fn rust_and_cpp_fold_sub_self_to_zero() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
@@ -685,6 +749,37 @@ fn extract_arith_block(module_words: &[u32]) -> Vec<rspirv::dr::Instruction> {
         .collect()
 }
 
+fn extract_simple_block(module_words: &[u32]) -> Vec<rspirv::dr::Instruction> {
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(module_words, &mut loader).expect("parse module");
+    let module = loader.module();
+    let block = &module.functions[0].blocks[0];
+    module
+        .types_global_values
+        .iter()
+        .chain(block.instructions.iter())
+        .filter(|inst| matches!(inst.class.opcode, Op::Constant | Op::IAdd | Op::ISub))
+        .cloned()
+        .collect()
+}
+
+fn run_cpp_opt(cpp_opt: &str, module_words: &[u32]) -> Vec<u32> {
+    let mut input = NamedTempFile::new().expect("input temp");
+    input
+        .write_all(&words_to_bytes(module_words))
+        .expect("write input");
+    let output = NamedTempFile::new().expect("output temp");
+    let status = Command::new(cpp_opt)
+        .arg(input.path())
+        .arg("-o")
+        .arg(output.path())
+        .arg("-O")
+        .status()
+        .expect("run spirv-opt");
+    assert!(status.success(), "C++ spirv-opt failed");
+    bytes_to_words(&fs::read(output.path()).expect("read output"))
+}
+
 fn build_mul_zero_module() -> Vec<u32> {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
@@ -769,6 +864,48 @@ fn build_zero_minus_module() -> (Vec<u32>, u32) {
     let c0 = b.constant_bit32(int, 0);
     let c9 = b.constant_bit32(int, 9);
     let sub = b.i_sub(int, None, c0, c9).expect("sub");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), sub)
+}
+
+fn build_sub_add_const_chain() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let _ = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let c10 = b.constant_bit32(int, 10);
+    let c3 = b.constant_bit32(int, 3);
+    let sub = b.i_sub(int, None, c10, c3).expect("sub");
+    let add = b.i_add(int, None, sub, c3).expect("add");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), add)
+}
+
+fn build_shared_addend_sub_chain() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let _ = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let c4 = b.constant_bit32(int, 4);
+    let c5 = b.constant_bit32(int, 5);
+    let c2 = b.constant_bit32(int, 2);
+    let add_lhs = b.i_add(int, None, c4, c5).expect("add lhs");
+    let add_rhs = b.i_add(int, None, c4, c2).expect("add rhs");
+    let sub = b.i_sub(int, None, add_lhs, add_rhs).expect("sub");
     b.ret().expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), sub)
@@ -892,13 +1029,13 @@ fn build_mul_neg_one_module() -> (Vec<u32>, u32) {
 }
 
 fn cpp_opt_bin() -> Option<String> {
-    match env::var("SPIRV_CPP_OPT") {
-        Ok(path) if !path.is_empty() => Some(path),
-        _ => {
+    env::var("SPIRV_CPP_OPT")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
             eprintln!("SPIRV_CPP_OPT not set; skipping C++ parity check");
             None
-        }
-    }
+        })
 }
 
 fn is_const_five(inst: &rspirv::dr::Instruction) -> bool {
