@@ -15,6 +15,8 @@ use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Mutex, Once, OnceLock};
 
 static VALIDATION_CACHE: OnceLock<Mutex<ValidModuleCache>> = OnceLock::new();
+// 0 = default/env-controlled, 1 = force enable rust optimizer, 2 = force disable rust optimizer
+static RUST_OPT_OVERRIDE: AtomicU8 = AtomicU8::new(0);
 
 fn validation_cache() -> &'static Mutex<ValidModuleCache> {
     VALIDATION_CACHE.get_or_init(Default::default)
@@ -107,6 +109,8 @@ mod ffi {
         fn rust_validator_enabled() -> bool;
         fn set_rust_validator_override(enable: bool);
         fn clear_rust_validator_override();
+        fn set_rust_optimizer_override(enable: bool);
+        fn clear_rust_optimizer_override();
         fn default_validator_options() -> ValidatorOptions;
         fn rebind_context(handle: u64, context_ptr: usize);
         fn try_assemble_text(context_handle: u64, text: &[u8], options: u32) -> AssembleResult;
@@ -271,6 +275,14 @@ pub fn validate_binary_rust(
 }
 
 pub fn optimize_basic_block(words: &[u32]) -> ffi::OptimizeResult {
+    if !rust_optimizer_enabled() {
+        return ffi::OptimizeResult {
+            success: true,
+            message: String::new(),
+            words: words.to_vec(),
+        };
+    }
+
     match optimizer::optimize_basic_block(words) {
         Ok(words) => ffi::OptimizeResult {
             success: true,
@@ -448,6 +460,23 @@ pub fn set_rust_validator_override(enable: bool) {
 
 pub fn clear_rust_validator_override() {
     RUST_VALIDATOR_OVERRIDE.store(0, Ordering::Relaxed);
+}
+
+fn rust_optimizer_enabled() -> bool {
+    match RUST_OPT_OVERRIDE.load(Ordering::Relaxed) {
+        1 => return true,
+        2 => return false,
+        _ => {}
+    }
+    !matches!(std::env::var("SPIRV_TOOLS_DISABLE_RUST_OPT"), Ok(v) if v == "1")
+}
+
+pub fn set_rust_optimizer_override(enable: bool) {
+    RUST_OPT_OVERRIDE.store(if enable { 1 } else { 2 }, Ordering::Relaxed);
+}
+
+pub fn clear_rust_optimizer_override() {
+    RUST_OPT_OVERRIDE.store(0, Ordering::Relaxed);
 }
 
 pub fn try_assemble_text(context_handle: u64, text: &[u8], options: u32) -> ffi::AssembleResult {

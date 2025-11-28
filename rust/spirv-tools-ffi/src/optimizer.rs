@@ -3,16 +3,12 @@ use rspirv::dr::Instruction;
 use rspirv::spirv::Op;
 use spirv_tools_opt::translate;
 use std::collections::BTreeMap;
-use std::env;
 
 /// Optimize a sequence of SPIR-V instructions representing an arithmetic basic block.
 ///
 /// The input is expected to be a contiguous list of instructions in module order
 /// (types/globals + block). Non-arithmetic instructions are preserved.
 pub fn optimize_basic_block(insts: &[u32]) -> Result<Vec<u32>, String> {
-    if matches!(env::var("SPIRV_TOOLS_DISABLE_RUST_OPT"), Ok(v) if v == "1") {
-        return Ok(insts.to_vec());
-    }
     let mut loader = rspirv::dr::Loader::new();
     rspirv::binary::parse_words(insts, &mut loader).map_err(|e| e.to_string())?;
     let mut module = loader.module();

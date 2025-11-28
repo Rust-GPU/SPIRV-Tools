@@ -1,12 +1,27 @@
 #[cfg(test)]
 mod optimizer_tests {
     use crate::optimizer::optimize_basic_block;
+    use crate::optimize_basic_block as optimize_wrapped_block;
     use rspirv::binary::Assemble;
     use rspirv::dr::{Builder, Loader};
     use rspirv::spirv::{FunctionControl, Op};
-    use std::sync::Mutex;
 
-    static ENV_GUARD: Mutex<()> = Mutex::new(());
+    struct OptimizerEnvGuard;
+
+    impl OptimizerEnvGuard {
+        fn new() -> Self {
+            crate::clear_rust_optimizer_override();
+            std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+            Self
+        }
+    }
+
+    impl Drop for OptimizerEnvGuard {
+        fn drop(&mut self) {
+            crate::clear_rust_optimizer_override();
+            std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+        }
+    }
 
     #[test]
     fn optimizer_basic_block_pass_through_non_arith() {
@@ -295,10 +310,14 @@ mod optimizer_tests {
             "mul by pow2 should strength-reduce or fold"
         );
         // Disable optimizer and ensure passthrough works.
+        let _env = OptimizerEnvGuard::new();
         std::env::set_var("SPIRV_TOOLS_DISABLE_RUST_OPT", "1");
-        let passthrough = optimize_basic_block(&words).expect("optimizer runs");
+        let passthrough = optimize_wrapped_block(&words);
         std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
-        assert_eq!(passthrough, words, "disable flag should skip optimization");
+        assert_eq!(
+            passthrough.words, words,
+            "disable flag should skip optimization"
+        );
     }
 
     #[test]
@@ -524,7 +543,6 @@ mod optimizer_tests {
 
     #[test]
     fn optimizer_respects_disable_env() {
-        let _guard = ENV_GUARD.lock().unwrap();
         let mut b = Builder::new();
         let void = b.type_void();
         let int = b.type_int(32, 0);
@@ -545,14 +563,17 @@ mod optimizer_tests {
         b.end_function().unwrap();
         let words = b.module().assemble();
 
+        let _env = OptimizerEnvGuard::new();
+        crate::clear_rust_optimizer_override();
         std::env::set_var("SPIRV_TOOLS_DISABLE_RUST_OPT", "1");
-        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let optimized = optimize_wrapped_block(&words);
         std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
 
-        assert_eq!(optimized, words, "disable env should passthrough");
+        assert!(optimized.success, "wrapper should not error");
+        assert_eq!(optimized.words, words, "disable env should passthrough");
 
         let mut loader = Loader::new();
-        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        rspirv::binary::parse_words(&optimized.words, &mut loader).expect("parse optimized");
         let module = loader.module();
         let mut saw_add = false;
         for inst in module.all_inst_iter() {
@@ -561,6 +582,95 @@ mod optimizer_tests {
             }
         }
         assert!(saw_add, "add should remain when optimizer is disabled");
+    }
+
+    #[test]
+    fn optimizer_override_can_disable_even_without_env() {
+        let _env = OptimizerEnvGuard::new();
+        crate::set_rust_optimizer_override(false);
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(void, vec![]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        let c2 = b.constant_bit32(int, 2);
+        let c3 = b.constant_bit32(int, 3);
+        let add = b.i_add(int, None, c2, c3).expect("add");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_wrapped_block(&words);
+        crate::clear_rust_optimizer_override();
+
+        assert!(optimized.success, "wrapper should not error");
+        assert_eq!(optimized.words, words, "override disable should passthrough");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized.words, &mut loader).expect("parse optimized");
+        let module = loader.module();
+        let mut saw_add = false;
+        for inst in module.all_inst_iter() {
+            if inst.class.opcode == rspirv::spirv::Op::IAdd && inst.result_id == Some(add) {
+                saw_add = true;
+            }
+        }
+        assert!(saw_add, "add should remain when override disables optimizer");
+    }
+
+    #[test]
+    fn optimizer_override_can_enable_even_with_env_disable() {
+        let _env = OptimizerEnvGuard::new();
+        std::env::set_var("SPIRV_TOOLS_DISABLE_RUST_OPT", "1");
+        crate::set_rust_optimizer_override(true);
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(void, vec![]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        let c2 = b.constant_bit32(int, 2);
+        let c3 = b.constant_bit32(int, 3);
+        let add = b.i_add(int, None, c2, c3).expect("add");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_wrapped_block(&words);
+        crate::clear_rust_optimizer_override();
+        std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+
+        assert!(optimized.success, "override should still succeed");
+
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized.words, &mut loader).expect("parse optimized");
+        let module = loader.module();
+
+        let mut saw_const = false;
+        for inst in module.all_inst_iter() {
+            if inst.class.opcode == rspirv::spirv::Op::Constant
+                && inst.result_id == Some(add)
+                && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(5)]
+            {
+                saw_const = true;
+            }
+            assert_ne!(inst.class.opcode, rspirv::spirv::Op::IAdd, "add should fold");
+        }
+        assert!(saw_const, "override enable should run optimizer even when env disables it");
     }
 
     #[test]
