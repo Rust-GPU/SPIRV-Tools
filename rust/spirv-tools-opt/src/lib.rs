@@ -520,6 +520,12 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("umod-one"; "(umod ?a ?b)" => { RemOne { b: var("?b") } }),
         rewrite!("add-neg-cancel"; "(+ ?a (neg ?a))" => { AddNegZero }),
         rewrite!("add-neg-cancel-swap"; "(+ (neg ?a) ?a)" => { AddNegZero }),
+        rewrite!("add-sub-cancel-right"; "(+ (- ?x ?y) ?y)" => "?x"),
+        rewrite!("add-sub-cancel-left"; "(+ ?y (- ?x ?y))" => "?x"),
+        rewrite!("sub-add-cancel-right"; "(- (+ ?x ?y) ?y)" => "?x"),
+        rewrite!("sub-add-cancel-left"; "(- (+ ?y ?x) ?y)" => "?x"),
+        rewrite!("sub-add-cancel-right-symmetric"; "(- (+ ?x ?y) ?x)" => "?y"),
+        rewrite!("sub-add-cancel-left-symmetric"; "(- (+ ?y ?x) ?x)" => "?y"),
     ]
 }
 
@@ -2034,6 +2040,36 @@ mod tests {
         assert!(
             matches!(lhs, SpirvLang::Symbol(_)) && matches!(rhs, SpirvLang::Symbol(_)),
             "subtraction should reference the two symbols: {lhs:?} {rhs:?}"
+        );
+    }
+
+    #[test]
+    fn cancels_sub_then_add_same_rhs() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Symbol(Symbol::from("y")),       // 1
+            SpirvLang::Sub([Id::from(0), Id::from(1)]), // 2 = x - y
+            SpirvLang::Add([Id::from(2), Id::from(1)]), // 3 = (x - y) + y
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("x"))])
+        );
+    }
+
+    #[test]
+    fn cancels_add_then_sub_same_operand() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Symbol(Symbol::from("y")),       // 1
+            SpirvLang::Add([Id::from(0), Id::from(1)]), // 2 = x + y
+            SpirvLang::Sub([Id::from(2), Id::from(0)]), // 3 = (x + y) - x
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("y"))])
         );
     }
 
