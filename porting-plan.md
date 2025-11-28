@@ -178,6 +178,7 @@ Tasks for this milestone:
 - Added a regression to ensure execution modes cannot precede the memory model, exercising the generated stage ordering.
 - Generated grammar-driven helpers for capability/extension opcodes to back upcoming ordering enforcement without manual opcode lists.
 - Routed layout capability/extension handling through the generated opcode helpers and added coverage to keep the grammar-driven classification in sync.
+- Trimmed unused mode-setting kind generation so the emitted layout tables now focus on the stage map and opcode classifiers in use.
 
 ## Completed Milestone: Extension Allowlists Parity
 Environment-specific extension allowlists now mirror the C++ tables via the generated data set in `TargetEnv::is_extension_allowed`, with vendor gating (NV/AMDX/ARM Vulkan-only; INTEL/ALTERA OpenCL/Universal), version gates, and capability precedence covered by regressions (ray tracing adjuncts, cooperative matrices, tile shading, shader clock, fragment shading rate/density, motion blur, displacement micromaps).
