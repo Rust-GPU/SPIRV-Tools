@@ -226,6 +226,18 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("add-factor-consts-both"; "(+ (* ?c1 ?x) (* ?c2 ?x))" => {
             AddCommonFactor { x: var("?x"), c1: var("?c1"), c2: var("?c2") }
         }),
+        rewrite!("sub-factor-consts"; "(- (* ?x ?c1) (* ?x ?c2))" => {
+            SubCommonFactor { x: var("?x"), c1: var("?c1"), c2: var("?c2") }
+        }),
+        rewrite!("sub-factor-consts-mixed"; "(- (* ?c1 ?x) (* ?x ?c2))" => {
+            SubCommonFactor { x: var("?x"), c1: var("?c1"), c2: var("?c2") }
+        }),
+        rewrite!("sub-factor-consts-right"; "(- (* ?x ?c1) (* ?c2 ?x))" => {
+            SubCommonFactor { x: var("?x"), c1: var("?c1"), c2: var("?c2") }
+        }),
+        rewrite!("sub-factor-consts-both"; "(- (* ?c1 ?x) (* ?c2 ?x))" => {
+            SubCommonFactor { x: var("?x"), c1: var("?c1"), c2: var("?c2") }
+        }),
         rewrite!("sdiv-merge-consts"; "(sdiv (sdiv ?x ?c1) ?c2)" => {
             DivMergeConst { base: var("?x"), c1: var("?c1"), c2: var("?c2"), signed: true }
         }),
@@ -366,6 +378,11 @@ struct DivMergeConst {
     signed: bool,
 }
 struct AddCommonFactor {
+    x: Var,
+    c1: Var,
+    c2: Var,
+}
+struct SubCommonFactor {
     x: Var,
     c1: Var,
     c2: Var,
@@ -823,6 +840,29 @@ impl Applier<SpirvLang, ()> for AddCommonFactor {
             return Vec::new();
         };
         let merged = ConstValue::new(c1.get().wrapping_add(c2.get()));
+        let const_id = egraph.add(SpirvLang::Const(merged));
+        let mul = egraph.add(SpirvLang::Mul([subst[self.x], const_id]));
+        egraph.union(eclass, mul);
+        vec![mul]
+    }
+}
+
+impl Applier<SpirvLang, ()> for SubCommonFactor {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(c1) = const_value(egraph, subst[self.c1]) else {
+            return Vec::new();
+        };
+        let Some(c2) = const_value(egraph, subst[self.c2]) else {
+            return Vec::new();
+        };
+        let merged = ConstValue::new(c1.get().wrapping_sub(c2.get()));
         let const_id = egraph.add(SpirvLang::Const(merged));
         let mul = egraph.add(SpirvLang::Mul([subst[self.x], const_id]));
         egraph.union(eclass, mul);
@@ -1307,6 +1347,30 @@ mod tests {
         };
         assert_eq!(symbol, &Symbol::from("z"));
         assert_eq!(constant.get(), 10, "factor should sum constants to 10");
+    }
+
+    #[test]
+    fn factors_common_multiplier_from_subtraction() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Const(ConstValue::new(9)),       // 1
+            SpirvLang::Const(ConstValue::new(4)),       // 2
+            SpirvLang::Mul([Id::from(0), Id::from(1)]), // 3 = x * 9
+            SpirvLang::Mul([Id::from(0), Id::from(2)]), // 4 = x * 4
+            SpirvLang::Sub([Id::from(3), Id::from(4)]), // 5 = x*9 - x*4
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::Mul([lhs, rhs])) = nodes.last() else {
+            panic!("expected mul root after factoring, got {:?}", nodes.last());
+        };
+        let (symbol, constant) = match (&nodes[usize::from(*lhs)], &nodes[usize::from(*rhs)]) {
+            (SpirvLang::Symbol(sym), SpirvLang::Const(val)) => (sym, val),
+            (SpirvLang::Const(val), SpirvLang::Symbol(sym)) => (sym, val),
+            other => panic!("unexpected operands after factoring sub: {other:?}"),
+        };
+        assert_eq!(symbol, &Symbol::from("x"));
+        assert_eq!(constant.get(), 5, "factor should compute 9 - 4 = 5");
     }
 
     #[test]
