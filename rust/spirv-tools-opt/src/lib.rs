@@ -277,6 +277,8 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         }),
         rewrite!("add-sub-shared-term"; "(+ (- ?x ?y) (- ?y ?z))" => "(- ?x ?z)"),
         rewrite!("add-sub-shared-term-comm"; "(+ (- ?y ?x) (- ?x ?z))" => "(- ?y ?z)"),
+        rewrite!("add-sub-mirror-cancel"; "(+ ?x (- ?y ?x))" => "?y"),
+        rewrite!("add-sub-mirror-cancel-swap"; "(+ (- ?y ?x) ?x)" => "?y"),
         rewrite!("merge-shl-const"; "(shl (shl ?x ?a) ?b)" => {
             MergeShift { x: var("?x"), a: var("?a"), b: var("?b"), kind: ShiftKind::Left }
         }),
@@ -2393,6 +2395,21 @@ mod tests {
             matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("x"))
                 && matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("z")),
             "expected x - z, got {nodes:?}"
+        );
+    }
+
+    #[test]
+    fn cancels_mirrored_sub_in_addition() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Symbol(Symbol::from("y")),       // 1
+            SpirvLang::Sub([Id::from(1), Id::from(0)]), // 2 = y - x
+            SpirvLang::Add([Id::from(0), Id::from(2)]), // 3 = x + (y - x)
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("y"))])
         );
     }
 
