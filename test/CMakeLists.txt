@@ -103,6 +103,7 @@ set(TEST_SOURCES
   diagnostic_test.cpp
   enum_string_mapping_test.cpp
   enum_set_test.cpp
+  disassemble_rust_fallback_test.cpp
   rust_disassembler_diagnostics_test.cpp
   ext_inst.arm_motion_engine_test.cpp
   ext_inst.cldebug100_test.cpp
