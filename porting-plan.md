@@ -334,6 +334,15 @@ Tasks for this milestone:
 - [x] Mirror the improvements in the disassembler path (options filtering, message routing) so both directions benefit from the Rust context. (Rust disassembler now defers diagnostics to the caller so C++ fallback can consume them without double-reporting; unsupported-option errors are surfaced alongside the fallback diagnostics.)
 - [x] Add FFI/CLI-facing tests to ensure Rust disassembler diagnostics are surfaced when the Rust path fails and the C++ fallback runs, keeping message routing consistent across both implementations.
 
+## Upcoming Milestone: Operand Requirements Parity
+Tighten operand-level capability/extension/version enforcement to mirror the C++ validator tables.
+
+Tasks for this milestone:
+- Import operand-level capability/extension/version requirement data from the SPIR-V grammar and enforce it during validation (including conditional operands).
+- Add binary/text regression tests covering operand requirements for representative instructions (e.g., memory semantics masks, subgroup scopes, and newer operand enums gated by extensions).
+- Thread operand requirement failures through typed `ValidationError` variants so FFI/CLI callers receive structured diagnostics.
+- Keep validated-module caching active to avoid re-validation when operand checks are enabled.
+
 ## CLI Development
 - [x] Introduce a `spirv-tools-cli` crate that wraps the core disassembly logic with `clap`, providing an initial `spirv-dis` binary capable of mirroring the `--no-header`/`--offsets` flags while reading from stdin or files.
 - [x] Add `spirv-as` and `spirv-val` binaries so the Rust workspace mirrors the C++ tool surface, sharing reusable helpers for option parsing and file/stdin plumbing. The validator CLI currently delegates to the existing C++ validator over the FFI bridge and is covered by unit + integration tests to guard success/failure paths.
