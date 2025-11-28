@@ -134,7 +134,6 @@ mod tests {
     use rspirv::dr::Builder;
     use rspirv::spirv::{AddressingModel, Capability, FunctionControl, MemoryModel, Op};
     use tempfile::NamedTempFile;
-
     #[test]
     fn folds_sub_self_via_cli() {
         let mut b = Builder::new();
@@ -209,6 +208,62 @@ mod tests {
         };
         let optimized = run_optimize(&config).expect("optimize passthrough");
         assert_eq!(optimized, module);
+    }
+
+    #[test]
+    fn cpp_fallback_uses_cli_when_requested() {
+        let mut b = Builder::new();
+        b.capability(Capability::Shader);
+        b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(void, vec![]);
+        let _ = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .expect("function");
+        let _ = b.begin_block(None).expect("block");
+        let c2 = b.constant_bit32(int, 2);
+        let c3 = b.constant_bit32(int, 3);
+        let add = b.i_add(int, None, c2, c3).expect("add");
+        b.ret().expect("ret");
+        b.end_function().expect("end");
+        let module = b.module().assemble();
+
+        let mut temp = NamedTempFile::new().expect("temp file");
+        temp.write_all(&words_to_bytes(&module))
+            .expect("write words");
+
+        let Some(cpp_path) = std::env::var_os("CARGO_BIN_EXE_spirv-opt") else {
+            // Binary not built in this test configuration; skip.
+            return;
+        };
+        let config = OptimizeConfig {
+            input: InputSource::Path(temp.path().to_path_buf()),
+            output: None,
+            rust_arith_pass: false,
+            cpp_opt_path: Some(cpp_path),
+        };
+        let optimized = run_optimize(&config).expect("optimize via cpp fallback");
+        let mut loader = rspirv::dr::Loader::new();
+        parse_words(&optimized, &mut loader).expect("parse optimized");
+        let module = loader.module();
+
+        let mut found_const_five = false;
+        for inst in module.all_inst_iter() {
+            match inst.class.opcode {
+                Op::IAdd => panic!("addition should be folded by CLI fallback"),
+                Op::Constant => {
+                    if inst.result_id == Some(add)
+                        && inst.operands
+                            == vec![rspirv::dr::Operand::LiteralBit32(5u32)]
+                    {
+                        found_const_five = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        assert!(found_const_five, "cpp fallback should fold to const 5");
     }
 
     #[test]
