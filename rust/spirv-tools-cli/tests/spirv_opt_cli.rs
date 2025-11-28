@@ -271,7 +271,8 @@ fn spirv_opt_cli_rewrites_umod_pow2_to_mask() {
 
 #[test]
 fn spirv_opt_cli_folds_div_rem_and_negate_and_shifts() {
-    let (words, div_id, rem_id, neg_id, shl_id, shr_id) = build_div_rem_neg_shift_module();
+    let (words, _div_id_unused, _rem_id_unused, _neg_id_unused, _shl_id_unused, _shr_id_unused) =
+        build_div_rem_neg_shift_module();
     let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_spirv-opt"));
     cmd.arg("--")
         .stdin(std::process::Stdio::piped())
