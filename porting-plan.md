@@ -55,7 +55,7 @@ Planned tasks:
 - [x] Port optimizer regressions for arithmetic canonicalization to Rust integration tests (CLI + FFI) to lock behavior.
 - [x] Thread error handling through `thiserror` types at the optimizer boundary and surface structured errors to FFI/CLI callers.
 - Add end-to-end benchmarks (criterion + hyperfine) comparing Rust vs. C++ optimizer for supported passes. (hyperfine scripts now compare Rust, passthrough, and optional C++ spirv-opt)
-- Add more affine/distributivity rewrites to expose constant folding (mixed add/sub chains, constant factorization) and port matching C++ arithmetic tests to Rust/FFI/CLI harnesses. (added add/sub operand cancellation, constant-chain merges, and shared-addend cancellation `(x+y)-(x+z)=>y-z` with unit coverage; broader factorization still pending)
+- Add more affine/distributivity rewrites to expose constant folding (mixed add/sub chains, constant factorization) and port matching C++ arithmetic tests to Rust/FFI/CLI harnesses. (added add/sub operand cancellation, constant-chain merges, and shared-addend cancellation including constant addends `(x+c)-(y+c)=>x-y` with unit coverage; broader factorization still pending)
 - Expand e-graph coverage to additional algebraic identities and ensure the reconstructed SPIR-V preserves ids and layout invariants.
 
 ## Upcoming Milestone: Optimizer Parity vs C++ Arithmetic Pass

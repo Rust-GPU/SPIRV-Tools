@@ -266,6 +266,9 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         }),
         rewrite!("sub-shared-addends"; "(- (+ ?x ?y) (+ ?x ?z))" => "(- ?y ?z)"),
         rewrite!("sub-shared-addends-swap"; "(- (+ ?y ?x) (+ ?x ?z))" => "(- ?y ?z)"),
+        rewrite!("sub-shared-const-addends"; "(- (+ ?x ?c1) (+ ?y ?c2))" => {
+            SubSharedConstAddend { x: var("?x"), y: var("?y"), c1: var("?c1"), c2: var("?c2") }
+        }),
         rewrite!("merge-shl-const"; "(shl (shl ?x ?a) ?b)" => {
             MergeShift { x: var("?x"), a: var("?a"), b: var("?b"), kind: ShiftKind::Left }
         }),
@@ -592,6 +595,12 @@ struct SubAddConstMerge {
 }
 struct SubChainConstMerge {
     x: Var,
+    c1: Var,
+    c2: Var,
+}
+struct SubSharedConstAddend {
+    x: Var,
+    y: Var,
     c1: Var,
     c2: Var,
 }
@@ -1146,6 +1155,30 @@ impl Applier<SpirvLang, ()> for SubChainConstMerge {
         let merged = ConstValue::new(c1.get().wrapping_add(c2.get()));
         let const_id = egraph.add(SpirvLang::Const(merged));
         let sub = egraph.add(SpirvLang::Sub([subst[self.x], const_id]));
+        egraph.union(eclass, sub);
+        vec![sub]
+    }
+}
+
+impl Applier<SpirvLang, ()> for SubSharedConstAddend {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(c1) = const_value(egraph, subst[self.c1]) else {
+            return Vec::new();
+        };
+        let Some(c2) = const_value(egraph, subst[self.c2]) else {
+            return Vec::new();
+        };
+        if c1.get() != c2.get() {
+            return Vec::new();
+        }
+        let sub = egraph.add(SpirvLang::Sub([subst[self.x], subst[self.y]]));
         egraph.union(eclass, sub);
         vec![sub]
     }
@@ -2261,6 +2294,28 @@ mod tests {
             matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("y"))
                 && matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("z")),
             "expected y - z, got {nodes:?}"
+        );
+    }
+
+    #[test]
+    fn cancels_shared_const_addends_in_subtraction() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Symbol(Symbol::from("y")),       // 1
+            SpirvLang::Const(ConstValue::new(5)),       // 2
+            SpirvLang::Add([Id::from(0), Id::from(2)]), // 3 = x + 5
+            SpirvLang::Add([Id::from(1), Id::from(2)]), // 4 = y + 5
+            SpirvLang::Sub([Id::from(3), Id::from(4)]), // 5 = (x + 5) - (y + 5)
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let SpirvLang::Sub([lhs, rhs]) = nodes.last().expect("optimized root") else {
+            panic!("expected sub root, got {:?}", nodes.last());
+        };
+        assert!(
+            matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("x"))
+                && matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("y")),
+            "expected x - y, got {nodes:?}"
         );
     }
 
