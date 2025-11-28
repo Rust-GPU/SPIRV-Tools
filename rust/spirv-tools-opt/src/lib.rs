@@ -299,6 +299,27 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("mul-dist-const-over-sub-flipped-comm"; "(* (- ?k ?x) ?c)" => {
             DistConstMulSub { c: var("?c"), x: var("?x"), k: var("?k"), flipped: true }
         }),
+        rewrite!("add-fold-affine-const-right"; "(+ (* ?x ?c) ?k)" => {
+            FoldAffineConst { x: var("?x"), c: var("?c"), k: var("?k"), flipped: false, op: AffineOp::Add }
+        }),
+        rewrite!("add-fold-affine-const-left"; "(+ ?k (* ?x ?c))" => {
+            FoldAffineConst { x: var("?x"), c: var("?c"), k: var("?k"), flipped: false, op: AffineOp::Add }
+        }),
+        rewrite!("add-fold-affine-const-comm-left"; "(+ (* ?c ?x) ?k)" => {
+            FoldAffineConst { x: var("?x"), c: var("?c"), k: var("?k"), flipped: false, op: AffineOp::Add }
+        }),
+        rewrite!("add-fold-affine-const-comm-right"; "(+ ?k (* ?c ?x))" => {
+            FoldAffineConst { x: var("?x"), c: var("?c"), k: var("?k"), flipped: false, op: AffineOp::Add }
+        }),
+        rewrite!("sub-fold-affine-const-right"; "(- (* ?x ?c) ?k)" => {
+            FoldAffineConst { x: var("?x"), c: var("?c"), k: var("?k"), flipped: false, op: AffineOp::Sub }
+        }),
+        rewrite!("sub-fold-affine-const-left"; "(- ?k (* ?x ?c))" => {
+            FoldAffineConst { x: var("?x"), c: var("?c"), k: var("?k"), flipped: true, op: AffineOp::Sub }
+        }),
+        rewrite!("sub-fold-affine-const-comm"; "(- (* ?c ?x) ?k)" => {
+            FoldAffineConst { x: var("?x"), c: var("?c"), k: var("?k"), flipped: false, op: AffineOp::Sub }
+        }),
         rewrite!("sdiv-merge-consts"; "(sdiv (sdiv ?x ?c1) ?c2)" => {
             DivMergeConst { base: var("?x"), c1: var("?c1"), c2: var("?c2"), signed: true }
         }),
@@ -470,6 +491,10 @@ struct DivPullConst {
     c2: Var,
     signed: bool,
 }
+enum AffineOp {
+    Add,
+    Sub,
+}
 struct DistConstMulAdd {
     c: Var,
     x: Var,
@@ -480,6 +505,13 @@ struct DistConstMulSub {
     x: Var,
     k: Var,
     flipped: bool,
+}
+struct FoldAffineConst {
+    x: Var,
+    c: Var,
+    k: Var,
+    flipped: bool,
+    op: AffineOp,
 }
 struct CancelMulDiv {
     x: Var,
@@ -1152,6 +1184,45 @@ impl Applier<SpirvLang, ()> for DistConstMulSub {
     }
 }
 
+impl Applier<SpirvLang, ()> for FoldAffineConst {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(const_factor) = const_value(egraph, subst[self.c]) else {
+            return Vec::new();
+        };
+        let Some(const_term) = const_value(egraph, subst[self.k]) else {
+            return Vec::new();
+        };
+        if const_factor.get() == 0 {
+            return Vec::new();
+        }
+        if const_term.get() % const_factor.get() != 0 {
+            return Vec::new();
+        }
+        let scaled = ConstValue::new(const_term.get().wrapping_div(const_factor.get()));
+        let const_scaled_id = egraph.add(SpirvLang::Const(scaled));
+        let inner = match self.op {
+            AffineOp::Add => egraph.add(SpirvLang::Add([subst[self.x], const_scaled_id])),
+            AffineOp::Sub => {
+                if self.flipped {
+                    egraph.add(SpirvLang::Sub([const_scaled_id, subst[self.x]]))
+                } else {
+                    egraph.add(SpirvLang::Sub([subst[self.x], const_scaled_id]))
+                }
+            }
+        };
+        let mul = egraph.add(SpirvLang::Mul([subst[self.c], inner]));
+        egraph.union(eclass, mul);
+        vec![mul]
+    }
+}
+
 impl Applier<SpirvLang, ()> for MulMergeConst {
     fn apply_one(
         &self,
@@ -1649,6 +1720,97 @@ mod tests {
         assert!(
             distributed,
             "expected distributed subexpression with scaled constant and mul term"
+        );
+    }
+
+    #[test]
+    fn factors_const_from_affine_add_when_divisible() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new(8)),       // 0
+            SpirvLang::Symbol(Symbol::from("x")),       // 1
+            SpirvLang::Mul([Id::from(0), Id::from(1)]), // 2 = 8x
+            SpirvLang::Const(ConstValue::new(16)),      // 3
+            SpirvLang::Add([Id::from(2), Id::from(3)]), // 4 = 8x + 16
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let class = runner.egraph.find(runner.roots[0]);
+        let candidates = &runner.egraph[class].nodes;
+
+        let distributed = candidates.iter().any(|n| {
+            if let SpirvLang::Mul([lhs, rhs]) = n {
+                let (const_id, add_id) = match (
+                    const_value(&runner.egraph, *lhs),
+                    const_value(&runner.egraph, *rhs),
+                ) {
+                    (Some(c), None) => (Some(c), Some(*rhs)),
+                    (None, Some(c)) => (Some(c), Some(*lhs)),
+                    _ => (None, None),
+                };
+                if let (Some(c), Some(add_id)) = (const_id, add_id) {
+                    if c.get() != 8 {
+                        return false;
+                    }
+                    let add_class = runner.egraph.find(add_id);
+                    return runner.egraph[add_class].nodes.iter().any(|node| {
+                        if let SpirvLang::Add([a, b]) = node {
+                            let a_val = const_value(&runner.egraph, *a);
+                            let b_val = const_value(&runner.egraph, *b);
+                            let a_sym = matches!(
+                                runner.egraph[runner.egraph.find(*a)].nodes.as_slice(),
+                                [SpirvLang::Symbol(sym)] if *sym == Symbol::from("x")
+                            );
+                            let b_sym = matches!(
+                                runner.egraph[runner.egraph.find(*b)].nodes.as_slice(),
+                                [SpirvLang::Symbol(sym)] if *sym == Symbol::from("x")
+                            );
+                            (a_sym && b_val.map(|v| v.get()) == Some(16 / 8))
+                                || (b_sym && a_val.map(|v| v.get()) == Some(16 / 8))
+                        } else {
+                            false
+                        }
+                    });
+                }
+            }
+            false
+        });
+
+        assert!(
+            distributed,
+            "expected factored form 8 * (x + 12/8) in e-graph"
+        );
+    }
+
+    #[test]
+    fn factors_const_from_affine_sub_when_divisible() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new(6)),       // 0
+            SpirvLang::Symbol(Symbol::from("x")),       // 1
+            SpirvLang::Mul([Id::from(0), Id::from(1)]), // 2 = 6x
+            SpirvLang::Const(ConstValue::new(18)),      // 3
+            SpirvLang::Sub([Id::from(2), Id::from(3)]), // 4 = 6x - 18
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::Mul([lhs, rhs])) = nodes.last() else {
+            panic!("expected mul root, got {:?}", nodes.last());
+        };
+        let (const_node, sub_node) = match (&nodes[usize::from(*lhs)], &nodes[usize::from(*rhs)]) {
+            (SpirvLang::Const(c), SpirvLang::Sub(_)) => (c, &nodes[usize::from(*rhs)]),
+            (SpirvLang::Sub(_), SpirvLang::Const(c)) => (c, &nodes[usize::from(*lhs)]),
+            other => panic!("unexpected operands after factoring const: {other:?}"),
+        };
+        assert_eq!(const_node.get(), 6);
+        let SpirvLang::Sub([a, b]) = sub_node else {
+            panic!("expected inner sub, got {sub_node:?}");
+        };
+        let lhs_node = &nodes[usize::from(*a)];
+        let rhs_node = &nodes[usize::from(*b)];
+        assert!(
+            matches!(lhs_node, SpirvLang::Symbol(sym) if *sym == Symbol::from("x"))
+                && matches!(rhs_node, SpirvLang::Const(c) if c.get() == 18 / 6)
+                || matches!(rhs_node, SpirvLang::Symbol(sym) if *sym == Symbol::from("x"))
+                    && matches!(lhs_node, SpirvLang::Const(c) if c.get() == 18 / 6),
+            "inner sub should be x - (18/6), got lhs={lhs_node:?} rhs={rhs_node:?}"
         );
     }
 
