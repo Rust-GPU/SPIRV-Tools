@@ -1,0 +1,22 @@
+[package]
+name = "spirv-tools-opt-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+spirv-tools-opt = { path = ".." }
+arbitrary = { version = "1", features = ["derive"] }
+
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "expr_opt"
+path = "fuzz_targets/expr_opt.rs"
+test = false
+doc = false

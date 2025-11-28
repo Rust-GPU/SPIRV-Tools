@@ -412,7 +412,7 @@ Drive the optimizer rewrite in Rust using `egg`/e-graphs with fuzzing and perfor
 Planned tasks:
 - [x] Scaffold an `egg`-powered optimizer crate (`spirv-tools-opt`) with algebraic rewrites and constant folding as the initial backbone.
 - [x] Add a Criterion benchmark harness to track optimizer performance as rewrites expand.
-- [x] Seed a fuzzing harness (`cargo fuzz` + `arbitrary`) for optimizer expressions, reusing the shared generator in `spirv-tools-opt`.
+- [x] Seed a fuzzing harness (`cargo fuzz` + `arbitrary`) for optimizer expressions, reusing the shared generator in `spirv-tools-opt` (see `rust/spirv-tools-opt/fuzz/fuzz_targets/expr_opt.rs`).
 - [x] Extend optimizer rewrites to simplify algebraic identities (add zero, multiply by one/zero) with regression tests.
 - [x] Translate a subset of SPIR-V arithmetic (OpConstant/OpIAdd/OpIMul/OpISub/OpSNegate/OpSDiv/OpUDiv/OpSRem/OpUMod) into e-graph expressions and collapse reducible blocks back to constants with round-trip tests.
 - [x] Add divide/remainder/negation language support with folding guards (division-by-zero preserved) and block-level regressions.
