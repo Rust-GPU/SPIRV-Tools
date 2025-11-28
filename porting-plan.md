@@ -430,6 +430,7 @@ Planned tasks:
    - Added C++ parity coverage for shared-addend cancellation that simplifies to zero: `(x+7)-(x+7)` -> `0` in both Rust and C++ optimizers.
    - Added C++ parity coverage for factoring a symbolic multiplier across subtracted constants: `(x*5)-(x*2)` => `3*x`, confirming the e-graph factoring rewrites match spirv-opt.
    - Added C++ parity coverage for factoring commuted symbolic multiplicands in both addition and subtraction: `(y*x)+(x*z)` => `x*(y+z)` and `(y*x)-(z*x)` => `x*(y-z)`, exercising commuted-operand factoring in Rust and C++.
+   - Added C++ parity coverage for factoring constant multipliers out of commuted add/sub expressions: `(4*x)+(4*y)` => `4*(x+y)` and `(6*x)-(6*y)` => `6*(x-y)`, ensuring const factoring aligns between Rust and C++.
 
 ## Upcoming Milestone: Optimizer FFI/CLI Integration
 Expose the Rust optimizer through the existing C/C++ surfaces and provide CLI benchmarking.

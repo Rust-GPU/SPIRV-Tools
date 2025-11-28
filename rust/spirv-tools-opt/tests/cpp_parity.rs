@@ -709,6 +709,216 @@ fn rust_and_cpp_factor_symbolic_commuted_subtraction() {
 }
 
 #[test]
+fn rust_and_cpp_factor_constant_commuted_add() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+
+    let (module_words, result_id, add_id) = build_const_factor_commuted_add_module();
+    let rust_insts = extract_simple_block(&module_words);
+    let rust_optimized =
+        spirv_tools_opt::translate::optimize_arith_block(&rust_insts).expect("rust optimizer");
+    let rust_adds: std::collections::HashSet<u32> = rust_optimized
+        .iter()
+        .filter(|inst| inst.class.opcode == Op::IAdd)
+        .filter_map(|inst| {
+            if let [rspirv::dr::Operand::IdRef(a), rspirv::dr::Operand::IdRef(b)] =
+                inst.operands.as_slice()
+            {
+                if (a == &add_id || b == &add_id) && inst.result_id.is_some() {
+                    return inst.result_id;
+                }
+            }
+            None
+        })
+        .collect();
+    let rust_mul_matches = rust_optimized.iter().any(|inst| {
+        inst.class.opcode == Op::IMul
+            && inst.result_id == Some(result_id)
+            && matches!(
+                inst.operands.as_slice(),
+                [rspirv::dr::Operand::IdRef(a), rspirv::dr::Operand::IdRef(b)]
+                    if rust_adds.contains(a)
+                        && matches!(b, id if {
+                            rust_optimized.iter().any(|c| {
+                                c.class.opcode == Op::Constant
+                                    && c.result_id == Some(*id)
+                                    && c.operands
+                                        == vec![rspirv::dr::Operand::LiteralBit32(4)]
+                            })
+                        })
+                        || rust_adds.contains(b)
+                            && matches!(a, id if {
+                                rust_optimized.iter().any(|c| {
+                                    c.class.opcode == Op::Constant
+                                        && c.result_id == Some(*id)
+                                        && c.operands
+                                            == vec![rspirv::dr::Operand::LiteralBit32(4)]
+                                })
+                            })
+            )
+    });
+    assert!(
+        rust_mul_matches,
+        "rust optimizer should factor (4*x)+(4*y) into 4*(x+y)"
+    );
+
+    let cpp_words = run_cpp_opt(&cpp_opt, &module_words);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&cpp_words, &mut loader).expect("parse cpp optimized");
+    let module = loader.module();
+    let cpp_adds: std::collections::HashSet<u32> = module
+        .all_inst_iter()
+        .filter(|inst| inst.class.opcode == Op::IAdd)
+        .filter_map(|inst| {
+            if let [rspirv::dr::Operand::IdRef(a), rspirv::dr::Operand::IdRef(b)] =
+                inst.operands.as_slice()
+            {
+                if (a == &add_id || b == &add_id) && inst.result_id.is_some() {
+                    return inst.result_id;
+                }
+            }
+            None
+        })
+        .collect();
+    let cpp_mul_matches = module.all_inst_iter().any(|inst| {
+        inst.class.opcode == Op::IMul
+            && inst.result_id == Some(result_id)
+            && matches!(
+                inst.operands.as_slice(),
+                [rspirv::dr::Operand::IdRef(a), rspirv::dr::Operand::IdRef(b)]
+                    if cpp_adds.contains(a)
+                        && matches!(b, id if {
+                            module.all_inst_iter().any(|c| {
+                                c.class.opcode == Op::Constant
+                                    && c.result_id == Some(*id)
+                                    && c.operands
+                                        == vec![rspirv::dr::Operand::LiteralBit32(4)]
+                            })
+                        })
+                        || cpp_adds.contains(b)
+                            && matches!(a, id if {
+                                module.all_inst_iter().any(|c| {
+                                    c.class.opcode == Op::Constant
+                                        && c.result_id == Some(*id)
+                                        && c.operands
+                                            == vec![rspirv::dr::Operand::LiteralBit32(4)]
+                                })
+                            })
+            )
+    });
+    assert!(
+        cpp_mul_matches,
+        "C++ spirv-opt should factor (4*x)+(4*y) into 4*(x+y)"
+    );
+}
+
+#[test]
+fn rust_and_cpp_factor_constant_commuted_sub() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+
+    let (module_words, result_id, sub_id) = build_const_factor_commuted_sub_module();
+    let rust_insts = extract_simple_block(&module_words);
+    let rust_optimized =
+        spirv_tools_opt::translate::optimize_arith_block(&rust_insts).expect("rust optimizer");
+    let rust_subs: std::collections::HashSet<u32> = rust_optimized
+        .iter()
+        .filter(|inst| inst.class.opcode == Op::ISub)
+        .filter_map(|inst| {
+            if let [rspirv::dr::Operand::IdRef(a), rspirv::dr::Operand::IdRef(b)] =
+                inst.operands.as_slice()
+            {
+                if a == &sub_id && b == &sub_id {
+                    return inst.result_id;
+                }
+            }
+            None
+        })
+        .collect();
+    let rust_mul_matches = rust_optimized.iter().any(|inst| {
+        inst.class.opcode == Op::IMul
+            && inst.result_id == Some(result_id)
+            && matches!(
+                inst.operands.as_slice(),
+                [rspirv::dr::Operand::IdRef(a), rspirv::dr::Operand::IdRef(b)]
+                    if rust_subs.contains(a)
+                        && matches!(b, id if {
+                            rust_optimized.iter().any(|c| {
+                                c.class.opcode == Op::Constant
+                                    && c.result_id == Some(*id)
+                                    && c.operands
+                                        == vec![rspirv::dr::Operand::LiteralBit32(6)]
+                            })
+                        })
+                        || rust_subs.contains(b)
+                            && matches!(a, id if {
+                                rust_optimized.iter().any(|c| {
+                                    c.class.opcode == Op::Constant
+                                        && c.result_id == Some(*id)
+                                        && c.operands
+                                            == vec![rspirv::dr::Operand::LiteralBit32(6)]
+                                })
+                            })
+            )
+    });
+    assert!(
+        rust_mul_matches,
+        "rust optimizer should factor (6*x)-(6*y) into 6*(x-y)"
+    );
+
+    let cpp_words = run_cpp_opt(&cpp_opt, &module_words);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&cpp_words, &mut loader).expect("parse cpp optimized");
+    let module = loader.module();
+    let cpp_subs: std::collections::HashSet<u32> = module
+        .all_inst_iter()
+        .filter(|inst| inst.class.opcode == Op::ISub)
+        .filter_map(|inst| {
+            if let [rspirv::dr::Operand::IdRef(a), rspirv::dr::Operand::IdRef(b)] =
+                inst.operands.as_slice()
+            {
+                if a == &sub_id && b == &sub_id {
+                    return inst.result_id;
+                }
+            }
+            None
+        })
+        .collect();
+    let cpp_mul_matches = module.all_inst_iter().any(|inst| {
+        inst.class.opcode == Op::IMul
+            && inst.result_id == Some(result_id)
+            && matches!(
+                inst.operands.as_slice(),
+                [rspirv::dr::Operand::IdRef(a), rspirv::dr::Operand::IdRef(b)]
+                    if cpp_subs.contains(a)
+                        && matches!(b, id if {
+                            module.all_inst_iter().any(|c| {
+                                c.class.opcode == Op::Constant
+                                    && c.result_id == Some(*id)
+                                    && c.operands
+                                        == vec![rspirv::dr::Operand::LiteralBit32(6)]
+                            })
+                        })
+                        || cpp_subs.contains(b)
+                            && matches!(a, id if {
+                                module.all_inst_iter().any(|c| {
+                                    c.class.opcode == Op::Constant
+                                        && c.result_id == Some(*id)
+                                        && c.operands
+                                            == vec![rspirv::dr::Operand::LiteralBit32(6)]
+                                })
+                            })
+            )
+    });
+    assert!(
+        cpp_mul_matches,
+        "C++ spirv-opt should factor (6*x)-(6*y) into 6*(x-y)"
+    );
+}
+
+#[test]
 fn rust_and_cpp_fold_const_factor_sub_chain() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
@@ -1752,6 +1962,53 @@ fn build_symbolic_factor_commuted_sub_module() -> (Vec<u32>, u32, u32, u32, u32)
     b.ret().expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), sub, x, y, z)
+}
+
+fn build_const_factor_commuted_add_module() -> (Vec<u32>, u32, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![int, int]);
+    let _ = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let x = b.function_parameter(int).expect("param x");
+    let y = b.function_parameter(int).expect("param y");
+    let c4 = b.constant_bit32(int, 4);
+    let mul1 = b.i_mul(int, None, c4, x).expect("mul1");
+    let mul2 = b.i_mul(int, None, y, c4).expect("mul2");
+    let add_inner = b.i_add(int, None, x, y).expect("add_inner");
+    let add = b.i_add(int, None, mul1, mul2).expect("add");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    // We expect factoring to leave an add of x+y and a mul by constant.
+    (b.module().assemble(), add, add_inner)
+}
+
+fn build_const_factor_commuted_sub_module() -> (Vec<u32>, u32, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![int, int]);
+    let _ = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let x = b.function_parameter(int).expect("param x");
+    let y = b.function_parameter(int).expect("param y");
+    let c6 = b.constant_bit32(int, 6);
+    let mul1 = b.i_mul(int, None, c6, x).expect("mul1");
+    let mul2 = b.i_mul(int, None, c6, y).expect("mul2");
+    let sub_inner = b.i_sub(int, None, x, y).expect("sub_inner");
+    let sub = b.i_sub(int, None, mul1, mul2).expect("sub");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), sub, sub_inner)
 }
 
 
