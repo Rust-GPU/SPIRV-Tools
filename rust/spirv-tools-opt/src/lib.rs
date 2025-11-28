@@ -247,10 +247,6 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("sub-zero-left"; "(- ?a ?b)" => { SubZeroLeft }),
         rewrite!("sub-self"; "(- ?a ?a)" => { SubSelf }),
         rewrite!("sub-neg-right-to-add"; "(- ?a (neg ?b))" => "(+ ?a ?b)"),
-        rewrite!("add-sub-cancel-right"; "(+ (- ?a ?b) ?b)" => "?a"),
-        rewrite!("add-sub-cancel-left"; "(+ ?b (- ?a ?b))" => "?a"),
-        rewrite!("sub-add-cancel-right"; "(- (+ ?a ?b) ?b)" => "?a"),
-        rewrite!("sub-add-cancel-left"; "(- (+ ?a ?b) ?a)" => "?b"),
         rewrite!("sub-sub-cancel-left"; "(- ?a (- ?a ?b))" => "?b"),
         rewrite!("add-dup-to-mul"; "(+ ?x ?x)" => { AddDuplicateToMul { x: var("?x") } }),
         rewrite!("add-triple-left"; "(+ (+ ?x ?x) ?x)" => {
