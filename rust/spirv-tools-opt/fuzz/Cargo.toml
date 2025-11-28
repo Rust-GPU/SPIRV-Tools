@@ -11,6 +11,7 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 spirv-tools-opt = { path = ".." }
 arbitrary = { version = "1", features = ["derive"] }
+rspirv = { git = "https://github.com/gfx-rs/rspirv", branch = "sdk-update" }
 
 [workspace]
 members = ["."]
@@ -18,5 +19,11 @@ members = ["."]
 [[bin]]
 name = "expr_opt"
 path = "fuzz_targets/expr_opt.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "arith_block"
+path = "fuzz_targets/arith_block.rs"
 test = false
 doc = false
