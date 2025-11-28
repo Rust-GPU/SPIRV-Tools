@@ -15,6 +15,8 @@ mod capability_info;
 use capability_info::capability_info_from_grammar;
 mod instruction_classes;
 use instruction_classes::{instruction_class, InstructionClass};
+mod instruction_layout;
+use instruction_layout::{mode_setting_kind, ModeSettingKind};
 mod instruction_versions;
 use instruction_versions::grammar_required_spirv_version_for_opcode;
 mod operand_versions;
@@ -2336,104 +2338,83 @@ fn run_layout_check(words: &[u32], env: TargetEnv) -> Result<(), ValidationError
             let opcode = inst.class.opcode;
             let section = instruction_section(self.current_section, &inst);
 
-            match opcode {
-                rspirv::spirv::Op::MemoryModel => {
-                    if self.current_section > Section::MemoryModel {
-                        return rspirv::binary::ParseAction::Error(Box::new(
-                            ValidationError::LayoutOutOfOrder {
-                                opcode: rspirv::spirv::Op::MemoryModel,
-                            },
-                        ));
-                    }
-                    if let Err(err) = self.memory_model_state.mark_seen() {
+            if matches!(
+                opcode,
+                rspirv::spirv::Op::Extension | rspirv::spirv::Op::ConditionalExtensionINTEL
+            ) {
+                if section < self.current_section {
+                    return rspirv::binary::ParseAction::Error(Box::new(
+                        ValidationError::LayoutOutOfOrder { opcode },
+                    ));
+                }
+                if let Some(extension) = extension_operand(&inst) {
+                    if let Err(err) = self.extensions.insert(extension, self.env) {
                         return rspirv::binary::ParseAction::Error(Box::new(err));
                     }
                 }
-                rspirv::spirv::Op::Capability => {
-                    if section < self.current_section {
-                        return rspirv::binary::ParseAction::Error(Box::new(
-                            ValidationError::LayoutOutOfOrder {
-                                opcode: rspirv::spirv::Op::Capability,
-                            },
-                        ));
-                    }
-                    if let Some(cap) = capability_operand(&inst) {
-                        if let Err(err) = self.capabilities.insert(cap) {
+            } else if let Some(mode_setting) = mode_setting_kind(opcode) {
+                match mode_setting {
+                    ModeSettingKind::MemoryModel => {
+                        if self.current_section > Section::MemoryModel {
+                            return rspirv::binary::ParseAction::Error(Box::new(
+                                ValidationError::LayoutOutOfOrder {
+                                    opcode: rspirv::spirv::Op::MemoryModel,
+                                },
+                            ));
+                        }
+                        if let Err(err) = self.memory_model_state.mark_seen() {
                             return rspirv::binary::ParseAction::Error(Box::new(err));
                         }
                     }
-                }
-                rspirv::spirv::Op::ConditionalCapabilityINTEL => {
-                    if section < self.current_section {
-                        return rspirv::binary::ParseAction::Error(Box::new(
-                            ValidationError::LayoutOutOfOrder {
-                                opcode: rspirv::spirv::Op::ConditionalCapabilityINTEL,
-                            },
-                        ));
-                    }
-                    if let Some(cap) = capability_operand(&inst) {
-                        if let Err(err) = self.capabilities.insert(cap) {
-                            return rspirv::binary::ParseAction::Error(Box::new(err));
+                    ModeSettingKind::Capability | ModeSettingKind::ConditionalCapability => {
+                        if section < self.current_section {
+                            return rspirv::binary::ParseAction::Error(Box::new(
+                                ValidationError::LayoutOutOfOrder { opcode },
+                            ));
+                        }
+                        if let Some(cap) = capability_operand(&inst) {
+                            if let Err(err) = self.capabilities.insert(cap) {
+                                return rspirv::binary::ParseAction::Error(Box::new(err));
+                            }
                         }
                     }
-                }
-                rspirv::spirv::Op::Extension => {
-                    if section < self.current_section {
-                        return rspirv::binary::ParseAction::Error(Box::new(
-                            ValidationError::LayoutOutOfOrder {
-                                opcode: rspirv::spirv::Op::Extension,
-                            },
-                        ));
+                    ModeSettingKind::Extension | ModeSettingKind::ConditionalExtension => {
+                        // Handled above for extension-class instructions.
                     }
-                    if let Some(extension) = extension_operand(&inst) {
-                        if let Err(err) = self.extensions.insert(extension, self.env) {
-                            return rspirv::binary::ParseAction::Error(Box::new(err));
+                    _ => {}
+                }
+            } else {
+                match opcode {
+                    rspirv::spirv::Op::Function => {
+                        if !self.memory_model_state.is_seen() {
+                            return rspirv::binary::ParseAction::Error(Box::new(
+                                ValidationError::FunctionBeforeMemoryModel,
+                            ));
                         }
+                        self.function_state = FunctionState::Inside;
                     }
-                }
-                rspirv::spirv::Op::ConditionalExtensionINTEL => {
-                    if section < self.current_section {
-                        return rspirv::binary::ParseAction::Error(Box::new(
-                            ValidationError::LayoutOutOfOrder {
-                                opcode: rspirv::spirv::Op::ConditionalExtensionINTEL,
-                            },
-                        ));
-                    }
-                    if let Some(extension) = extension_operand(&inst) {
-                        if let Err(err) = self.extensions.insert(extension, self.env) {
-                            return rspirv::binary::ParseAction::Error(Box::new(err));
+                    rspirv::spirv::Op::SamplerImageAddressingModeNV => {
+                        if self.sampler_image_address_mode.is_some() {
+                            return rspirv::binary::ParseAction::Error(Box::new(
+                                ValidationError::DuplicateSamplerImageAddressingMode,
+                            ));
                         }
+                        let bit_width = match inst.operands.first() {
+                            Some(rspirv::dr::Operand::LiteralBit32(value)) => *value,
+                            Some(rspirv::dr::Operand::LiteralBit64(value)) => *value as u32,
+                            _ => 0,
+                        };
+                        if bit_width != 32 && bit_width != 64 {
+                            return rspirv::binary::ParseAction::Error(Box::new(
+                                ValidationError::InvalidSamplerImageAddressingModeBitWidth {
+                                    bit_width,
+                                },
+                            ));
+                        }
+                        self.sampler_image_address_mode = Some(bit_width);
                     }
+                    _ => {}
                 }
-                rspirv::spirv::Op::Function => {
-                    if !self.memory_model_state.is_seen() {
-                        return rspirv::binary::ParseAction::Error(Box::new(
-                            ValidationError::FunctionBeforeMemoryModel,
-                        ));
-                    }
-                    self.function_state = FunctionState::Inside;
-                }
-                rspirv::spirv::Op::SamplerImageAddressingModeNV => {
-                    if self.sampler_image_address_mode.is_some() {
-                        return rspirv::binary::ParseAction::Error(Box::new(
-                            ValidationError::DuplicateSamplerImageAddressingMode,
-                        ));
-                    }
-                    let bit_width = match inst.operands.first() {
-                        Some(rspirv::dr::Operand::LiteralBit32(value)) => *value,
-                        Some(rspirv::dr::Operand::LiteralBit64(value)) => *value as u32,
-                        _ => 0,
-                    };
-                    if bit_width != 32 && bit_width != 64 {
-                        return rspirv::binary::ParseAction::Error(Box::new(
-                            ValidationError::InvalidSamplerImageAddressingModeBitWidth {
-                                bit_width,
-                            },
-                        ));
-                    }
-                    self.sampler_image_address_mode = Some(bit_width);
-                }
-                _ => {}
             }
 
             if section < self.current_section {
@@ -2477,13 +2458,27 @@ fn instruction_section(current: Section, inst: &rspirv::dr::Instruction) -> Sect
                 ExtInstImport => return Section::ExtInstImport,
                 _ => {}
             },
-            InstructionClass::ModeSetting => match opcode {
-                Capability | ConditionalCapabilityINTEL => return Section::Capabilities,
-                MemoryModel => return Section::MemoryModel,
-                EntryPoint | ConditionalEntryPointINTEL => return Section::EntryPoint,
-                ExecutionMode | ExecutionModeId => return Section::ExecutionMode,
-                _ => {}
-            },
+            InstructionClass::ModeSetting => {
+                if let Some(kind) = mode_setting_kind(opcode) {
+                    return match kind {
+                        ModeSettingKind::Capability | ModeSettingKind::ConditionalCapability => {
+                            Section::Capabilities
+                        }
+                        ModeSettingKind::Extension | ModeSettingKind::ConditionalExtension => {
+                            Section::Extensions
+                        }
+                        ModeSettingKind::ExtInstImport => Section::ExtInstImport,
+                        ModeSettingKind::MemoryModel => Section::MemoryModel,
+                        ModeSettingKind::EntryPoint | ModeSettingKind::ConditionalEntryPoint => {
+                            Section::EntryPoint
+                        }
+                        ModeSettingKind::ExecutionMode | ModeSettingKind::ExecutionModeId => {
+                            Section::ExecutionMode
+                        }
+                        ModeSettingKind::Other => Section::Capabilities,
+                    };
+                }
+            }
             InstructionClass::Debug => match opcode {
                 SourceContinued | Source | SourceExtension | String => return Section::Debug1,
                 Name | MemberName => return Section::Debug2,
