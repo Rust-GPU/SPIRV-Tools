@@ -9,17 +9,33 @@ use std::io::Write;
 use std::path::PathBuf;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut args = std::env::args().skip(1);
-    let input = args
-        .next()
-        .map(PathBuf::from)
-        .ok_or("usage: opt_block <input.spv> [output.spv]")?;
-    let output = args.next().map(PathBuf::from);
+    let mut force_rust = false;
+    let mut passthrough = false;
+    let mut paths = Vec::<PathBuf>::new();
+    for arg in std::env::args().skip(1) {
+        match arg.as_str() {
+            "--force-rust" => force_rust = true,
+            "--passthrough" => passthrough = true,
+            _ if arg.starts_with('-') => {
+                return Err(
+                    "usage: opt_block [--force-rust] [--passthrough] <input.spv> [output.spv]"
+                        .into(),
+                )
+            }
+            _ => paths.push(PathBuf::from(arg)),
+        }
+    }
+
+    let input = paths
+        .get(0)
+        .cloned()
+        .ok_or("usage: opt_block [--force-rust] [--passthrough] <input.spv> [output.spv]")?;
+    let output = paths.get(1).cloned();
 
     let input_bytes = fs::read(&input)?;
     let words = bytes_to_words(&input_bytes)?;
 
-    let optimized = optimize_module(&words)?;
+    let optimized = optimize_module(&words, force_rust, passthrough)?;
     let output_bytes = words_to_bytes(&optimized);
 
     if let Some(path) = output {
@@ -70,8 +86,15 @@ fn is_arith(opcode: Op) -> bool {
     )
 }
 
-fn optimize_module(words: &[u32]) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
-    if matches!(env::var("SPIRV_TOOLS_DISABLE_RUST_OPT"), Ok(v) if v == "1") {
+fn optimize_module(
+    words: &[u32],
+    force_rust: bool,
+    passthrough: bool,
+) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
+    if passthrough {
+        return Ok(words.to_vec());
+    }
+    if !force_rust && matches!(env::var("SPIRV_TOOLS_DISABLE_RUST_OPT"), Ok(v) if v == "1") {
         return Ok(words.to_vec());
     }
 
