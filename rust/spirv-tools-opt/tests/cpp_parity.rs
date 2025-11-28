@@ -293,6 +293,41 @@ fn rust_and_cpp_fold_shared_addend_sub_const_chain() {
 }
 
 #[test]
+fn rust_and_cpp_factor_commuted_multiplicands() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+
+    let (module_words, result_id) = build_commuted_factor_module();
+    let rust_insts = extract_simple_block(&module_words);
+    let rust_optimized =
+        spirv_tools_opt::translate::optimize_arith_block(&rust_insts).expect("rust optimizer");
+    let rust_const = rust_optimized.iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(result_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(25)]
+    });
+    assert!(
+        rust_const,
+        "rust optimizer should fold (x*2)+(x*3) with x=5 to 25"
+    );
+
+    let cpp_words = run_cpp_opt(&cpp_opt, &module_words);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&cpp_words, &mut loader).expect("parse cpp optimized");
+    let module = loader.module();
+    let cpp_const = module.all_inst_iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(result_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(25)]
+    });
+    assert!(
+        cpp_const,
+        "C++ spirv-opt should fold (x*2)+(x*3) with x=5 to 25"
+    );
+}
+
+#[test]
 fn rust_and_cpp_fold_sub_add_chain_with_shared_mid() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
@@ -793,7 +828,12 @@ fn extract_simple_block(module_words: &[u32]) -> Vec<rspirv::dr::Instruction> {
         .types_global_values
         .iter()
         .chain(block.instructions.iter())
-        .filter(|inst| matches!(inst.class.opcode, Op::Constant | Op::IAdd | Op::ISub))
+        .filter(|inst| {
+            matches!(
+                inst.class.opcode,
+                Op::Constant | Op::IAdd | Op::ISub | Op::IMul
+            )
+        })
         .cloned()
         .collect()
 }
@@ -963,6 +1003,28 @@ fn build_sub_add_chain() -> (Vec<u32>, u32) {
     let sub1 = b.i_sub(int, None, c10, c3).expect("sub1");
     let sub2 = b.i_sub(int, None, c3, c1).expect("sub2");
     let add = b.i_add(int, None, sub1, sub2).expect("add");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), add)
+}
+
+fn build_commuted_factor_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let _ = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let c2 = b.constant_bit32(int, 2);
+    let c3 = b.constant_bit32(int, 3);
+    let x = b.i_add(int, None, c2, c3).expect("x");
+    let mul1 = b.i_mul(int, None, c2, x).expect("mul1");
+    let mul2 = b.i_mul(int, None, x, c3).expect("mul2");
+    let add = b.i_add(int, None, mul1, mul2).expect("add");
     b.ret().expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), add)
