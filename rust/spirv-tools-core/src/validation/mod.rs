@@ -16,7 +16,7 @@ use capability_info::capability_info_from_grammar;
 mod instruction_classes;
 use instruction_classes::{instruction_class, InstructionClass};
 mod instruction_layout;
-use instruction_layout::{mode_setting_kind, ModeSettingKind};
+use instruction_layout::{mode_setting_kind, mode_stage, ModeSettingKind, ModeStage};
 mod instruction_versions;
 use instruction_versions::grammar_required_spirv_version_for_opcode;
 mod operand_versions;
@@ -1336,17 +1336,6 @@ enum FunctionState {
     Inside,
 }
 
-/// Mode-setting layout stages enforced for capabilities/extensions/imports/memory model/entry points/execution modes.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-enum ModeStage {
-    Capabilities,
-    Extensions,
-    ExtInstImport,
-    MemoryModel,
-    EntryPoint,
-    ExecutionMode,
-}
-
 /// A declared (possibly zero) id bound from a module header.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct DeclaredBound(pub u32);
@@ -2351,6 +2340,15 @@ fn run_layout_check(words: &[u32], env: TargetEnv) -> Result<(), ValidationError
             let opcode = inst.class.opcode;
             let section = instruction_section(self.current_section, &inst);
 
+            if let Some(stage) = mode_stage(opcode) {
+                if stage < self.mode_stage {
+                    return rspirv::binary::ParseAction::Error(Box::new(
+                        ValidationError::LayoutOutOfOrder { opcode },
+                    ));
+                }
+                self.mode_stage = self.mode_stage.max(stage);
+            }
+
             if matches!(
                 opcode,
                 rspirv::spirv::Op::Extension | rspirv::spirv::Op::ConditionalExtensionINTEL
@@ -2366,14 +2364,6 @@ fn run_layout_check(words: &[u32], env: TargetEnv) -> Result<(), ValidationError
                     }
                 }
             } else if let Some(mode_setting) = mode_setting_kind(opcode) {
-                if let Some(stage) = mode_stage_for_kind(mode_setting) {
-                    if stage < self.mode_stage {
-                        return rspirv::binary::ParseAction::Error(Box::new(
-                            ValidationError::LayoutOutOfOrder { opcode },
-                        ));
-                    }
-                    self.mode_stage = self.mode_stage.max(stage);
-                }
                 match mode_setting {
                     ModeSettingKind::MemoryModel => {
                         if self.current_section > Section::MemoryModel {
@@ -2480,23 +2470,14 @@ fn instruction_section(current: Section, inst: &rspirv::dr::Instruction) -> Sect
                 _ => {}
             },
             InstructionClass::ModeSetting => {
-                if let Some(kind) = mode_setting_kind(opcode) {
-                    return match kind {
-                        ModeSettingKind::Capability | ModeSettingKind::ConditionalCapability => {
-                            Section::Capabilities
-                        }
-                        ModeSettingKind::Extension | ModeSettingKind::ConditionalExtension => {
-                            Section::Extensions
-                        }
-                        ModeSettingKind::ExtInstImport => Section::ExtInstImport,
-                        ModeSettingKind::MemoryModel => Section::MemoryModel,
-                        ModeSettingKind::EntryPoint | ModeSettingKind::ConditionalEntryPoint => {
-                            Section::EntryPoint
-                        }
-                        ModeSettingKind::ExecutionMode | ModeSettingKind::ExecutionModeId => {
-                            Section::ExecutionMode
-                        }
-                        ModeSettingKind::Other => Section::Capabilities,
+                if let Some(stage) = mode_stage(opcode) {
+                    return match stage {
+                        ModeStage::Capabilities => Section::Capabilities,
+                        ModeStage::Extensions => Section::Extensions,
+                        ModeStage::ExtInstImport => Section::ExtInstImport,
+                        ModeStage::MemoryModel => Section::MemoryModel,
+                        ModeStage::EntryPoint => Section::EntryPoint,
+                        ModeStage::ExecutionMode => Section::ExecutionMode,
                     };
                 }
             }
@@ -2560,26 +2541,6 @@ fn instruction_section(current: Section, inst: &rspirv::dr::Instruction) -> Sect
             }
         }
         _ => Section::Functions,
-    }
-}
-
-fn mode_stage_for_kind(kind: ModeSettingKind) -> Option<ModeStage> {
-    match kind {
-        ModeSettingKind::Capability | ModeSettingKind::ConditionalCapability => {
-            Some(ModeStage::Capabilities)
-        }
-        ModeSettingKind::Extension | ModeSettingKind::ConditionalExtension => {
-            Some(ModeStage::Extensions)
-        }
-        ModeSettingKind::ExtInstImport => Some(ModeStage::ExtInstImport),
-        ModeSettingKind::MemoryModel => Some(ModeStage::MemoryModel),
-        ModeSettingKind::EntryPoint | ModeSettingKind::ConditionalEntryPoint => {
-            Some(ModeStage::EntryPoint)
-        }
-        ModeSettingKind::ExecutionMode | ModeSettingKind::ExecutionModeId => {
-            Some(ModeStage::ExecutionMode)
-        }
-        ModeSettingKind::Other => Some(ModeStage::Capabilities),
     }
 }
 

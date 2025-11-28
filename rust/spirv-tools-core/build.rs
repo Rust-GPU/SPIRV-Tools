@@ -670,10 +670,14 @@ fn main() {
         if spirv::Op::from_u32(inst.opcode).is_none() {
             continue;
         }
-        let variant = inst
+        let mut variant = inst
             .opname
             .strip_prefix("Op")
-            .unwrap_or(inst.opname.as_str());
+            .unwrap_or(inst.opname.as_str())
+            .to_string();
+        if variant.contains("ALTERA") {
+            variant = variant.replace("ALTERA", "INTEL");
+        }
         class_match_arms.push_str(&format!(
             "        spirv::Op::{variant} => Some(InstructionClass::{class}),\n"
         ));
@@ -702,33 +706,43 @@ fn main() {
 
     // Generate mode-setting ordering mapping so layout checks track grammar additions.
     let mut mode_setting_match_arms = String::new();
+    let mut mode_stage_match_arms = String::new();
     for inst in &grammar.instructions {
-        if inst.class.as_deref() != Some("Mode-Setting") {
-            continue;
-        }
+        let (kind, stage) = match inst.opname.as_str() {
+            "OpCapability" => ("Capability", Some("Capabilities")),
+            "OpConditionalCapabilityINTEL" => ("ConditionalCapability", Some("Capabilities")),
+            "OpExtension" => ("Extension", Some("Extensions")),
+            "OpConditionalExtensionINTEL" => ("ConditionalExtension", Some("Extensions")),
+            "OpExtInstImport" => ("ExtInstImport", Some("ExtInstImport")),
+            "OpMemoryModel" => ("MemoryModel", Some("MemoryModel")),
+            "OpEntryPoint" => ("EntryPoint", Some("EntryPoint")),
+            "OpConditionalEntryPointINTEL" => ("ConditionalEntryPoint", Some("EntryPoint")),
+            "OpExecutionMode" => ("ExecutionMode", Some("ExecutionMode")),
+            "OpExecutionModeId" => ("ExecutionModeId", Some("ExecutionMode")),
+            _ => ("Other", None),
+        };
         if spirv::Op::from_u32(inst.opcode).is_none() {
             continue;
         }
-        let variant = inst
+        if kind == "Other" && stage.is_none() {
+            continue;
+        }
+        let mut variant = inst
             .opname
             .strip_prefix("Op")
-            .unwrap_or(inst.opname.as_str());
-        let kind = match inst.opname.as_str() {
-            "OpCapability" => "Capability",
-            "OpConditionalCapabilityINTEL" => "ConditionalCapability",
-            "OpExtension" => "Extension",
-            "OpConditionalExtensionINTEL" => "ConditionalExtension",
-            "OpExtInstImport" => "ExtInstImport",
-            "OpMemoryModel" => "MemoryModel",
-            "OpEntryPoint" => "EntryPoint",
-            "OpConditionalEntryPointINTEL" => "ConditionalEntryPoint",
-            "OpExecutionMode" => "ExecutionMode",
-            "OpExecutionModeId" => "ExecutionModeId",
-            _ => "Other",
-        };
+            .unwrap_or(inst.opname.as_str())
+            .to_string();
+        if variant.contains("ALTERA") {
+            variant = variant.replace("ALTERA", "INTEL");
+        }
         mode_setting_match_arms.push_str(&format!(
             "        spirv::Op::{variant} => Some(ModeSettingKind::{kind}),\n"
         ));
+        if let Some(stage) = stage {
+            mode_stage_match_arms.push_str(&format!(
+                "        spirv::Op::{variant} => Some(ModeStage::{stage}),\n"
+            ));
+        }
     }
 
     let mut mode_setting_output = String::new();
@@ -753,6 +767,22 @@ fn main() {
         .push_str("pub fn mode_setting_kind(opcode: spirv::Op) -> Option<ModeSettingKind> {\n");
     mode_setting_output.push_str("    match opcode {\n");
     mode_setting_output.push_str(&mode_setting_match_arms);
+    mode_setting_output.push_str("        _ => None,\n    }\n}\n\n");
+
+    mode_setting_output.push_str("#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]\n");
+    mode_setting_output.push_str("#[allow(dead_code)]\n");
+    mode_setting_output.push_str("pub enum ModeStage {\n");
+    mode_setting_output.push_str("    Capabilities,\n");
+    mode_setting_output.push_str("    Extensions,\n");
+    mode_setting_output.push_str("    ExtInstImport,\n");
+    mode_setting_output.push_str("    MemoryModel,\n");
+    mode_setting_output.push_str("    EntryPoint,\n");
+    mode_setting_output.push_str("    ExecutionMode,\n");
+    mode_setting_output.push_str("}\n\n");
+    mode_setting_output.push_str("#[allow(dead_code)]\n");
+    mode_setting_output.push_str("pub fn mode_stage(opcode: spirv::Op) -> Option<ModeStage> {\n");
+    mode_setting_output.push_str("    match opcode {\n");
+    mode_setting_output.push_str(&mode_stage_match_arms);
     mode_setting_output.push_str("        _ => None,\n    }\n}\n");
 
     let mode_setting_dest_path = out_dir.join("instruction_layout.rs");
