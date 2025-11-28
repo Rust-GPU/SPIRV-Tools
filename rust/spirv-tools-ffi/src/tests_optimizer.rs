@@ -471,4 +471,63 @@ mod optimizer_tests {
         }
         assert!(folded, "mul by -1 should become negate or folded const");
     }
+
+    #[test]
+    fn optimizer_rewrites_umod_pow2_to_bitmask() {
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(void, vec![]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        let c5 = b.constant_bit32(int, 5);
+        let c1 = b.constant_bit32(int, 1);
+        let c8 = b.constant_bit32(int, 8);
+        let x = b.i_add(int, None, c5, c1).expect("iadd");
+        let umod = b.u_mod(int, None, x, c8).expect("umod");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let optimized_module = loader.module();
+
+        let mut saw_band = false;
+        let mut saw_const = false;
+        for inst in optimized_module.all_inst_iter() {
+            assert_ne!(inst.class.opcode, Op::UMod, "umod should be rewritten");
+            if inst.class.opcode == Op::BitwiseAnd {
+                saw_band = true;
+                let mask_is_7 = inst
+                    .operands
+                    .iter()
+                    .any(|op| matches!(op, rspirv::dr::Operand::LiteralBit32(7)));
+                assert!(mask_is_7, "expected mask 7 for modulo by 8");
+                assert_eq!(
+                    inst.result_id,
+                    Some(umod),
+                    "should reuse original result id for bitmask"
+                );
+            }
+            if inst.class.opcode == Op::Constant
+                && inst.result_id == Some(umod)
+                && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(6)]
+            {
+                saw_const = true;
+            }
+        }
+        assert!(
+            saw_band || saw_const,
+            "expected bitwise mask or folded constant to replace umod"
+        );
+    }
 }
