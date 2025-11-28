@@ -65,6 +65,8 @@ Planned tasks:
 - Collect a corpus of small arithmetic shaders and compare Rust vs. C++ optimizer outputs to detect mismatches.
 - Add golden integration tests (CLI/FFI) that diff Rust-optimized modules against C++ outputs for supported ops.
   - Initial parity harnesses cover const add, add+negate, add zero, mul by zero/one, mul by -1, sub self/zero-left, double negation, div/rem by one (signed+unsigned), commutative add, and preserve div/rem-by-zero cases.
+  - Added parity for distributing constant multiplication over addition and subtraction.
+  - Added parity for affine GCD folding on constant add/sub cases.
 - Extend e-graph rewrites to cover distributivity/simplification cases present in the C++ optimizer while keeping cost-based stability.
 - Add a benchmark harness that runs both Rust and C++ optimizers via hyperfine for the arithmetic corpus to track performance deltas.
 - Add a parity runner in CI that exercises `SPIRV_CPP_OPT` when available to keep regressions visible.
