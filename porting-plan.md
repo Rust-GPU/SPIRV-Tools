@@ -54,7 +54,7 @@ Planned tasks:
 - [x] Add a CLI flag and FFI toggle to route `spirv-opt` through the Rust optimizer for supported passes while falling back to C++ for the rest.
 - [x] Port optimizer regressions for arithmetic canonicalization to Rust integration tests (CLI + FFI) to lock behavior.
 - [x] Thread error handling through `thiserror` types at the optimizer boundary and surface structured errors to FFI/CLI callers.
-- Add end-to-end benchmarks (criterion + hyperfine) comparing Rust vs. C++ optimizer for supported passes.
+- Add end-to-end benchmarks (criterion + hyperfine) comparing Rust vs. C++ optimizer for supported passes. (hyperfine scripts now compare Rust, passthrough, and optional C++ spirv-opt)
 - Expand e-graph coverage to additional algebraic identities and ensure the reconstructed SPIR-V preserves ids and layout invariants.
 
 ## Upcoming Milestone: Optimizer Parity vs C++ Arithmetic Pass
