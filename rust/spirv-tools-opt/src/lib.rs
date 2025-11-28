@@ -303,6 +303,9 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("udiv-power-of-two"; "(udiv ?x ?c)" => {
             DivPowerOfTwo { x: var("?x"), c: var("?c"), signed: false }
         }),
+        rewrite!("umod-power-of-two"; "(umod ?x ?c)" => {
+            UModPowerOfTwo { x: var("?x"), c: var("?c") }
+        }),
         rewrite!("mul-dist-const-over-add"; "(* ?c (+ ?x ?k))" => {
             DistConstMulAdd { c: var("?c"), x: var("?x"), k: var("?k") }
         }),
@@ -583,6 +586,10 @@ struct DivPowerOfTwo {
     x: Var,
     c: Var,
     signed: bool,
+}
+struct UModPowerOfTwo {
+    x: Var,
+    c: Var,
 }
 struct CancelMulDiv {
     x: Var,
@@ -1442,6 +1449,33 @@ impl Applier<SpirvLang, ()> for DivPowerOfTwo {
     }
 }
 
+impl Applier<SpirvLang, ()> for UModPowerOfTwo {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(constant) = const_value(egraph, subst[self.c]) else {
+            return Vec::new();
+        };
+        let Some(shift) = is_power_of_two(constant.get()) else {
+            return Vec::new();
+        };
+        if shift == 0 {
+            return Vec::new();
+        }
+        let shift_const = egraph.add(SpirvLang::Const(ConstValue::new(shift)));
+        let shr = egraph.add(SpirvLang::ShrU([subst[self.x], shift_const]));
+        let shl = egraph.add(SpirvLang::Shl([shr, shift_const]));
+        let sub = egraph.add(SpirvLang::Sub([subst[self.x], shl]));
+        egraph.union(eclass, sub);
+        vec![sub]
+    }
+}
+
 impl Applier<SpirvLang, ()> for MulMergeConst {
     fn apply_one(
         &self,
@@ -1823,6 +1857,28 @@ mod tests {
             }
         });
         assert!(found_shr, "expected x / 4 to admit x >> 2");
+    }
+
+    #[test]
+    fn rewrites_umod_power_of_two_into_subtract_mask() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),        // 0
+            SpirvLang::Const(ConstValue::new(8)),        // 1
+            SpirvLang::UMod([Id::from(0), Id::from(1)]), // 2 = x % 8
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let found_sub = runner
+            .egraph
+            .classes()
+            .any(|c| c.nodes.iter().any(|n| matches!(n, SpirvLang::Sub(_))));
+        let found_shift = runner
+            .egraph
+            .classes()
+            .any(|c| c.nodes.iter().any(|n| matches!(n, SpirvLang::ShrU(_))));
+        assert!(
+            found_sub && found_shift,
+            "umod pow2 should rewrite into subtract mask via shifts"
+        );
     }
 
     #[test]
