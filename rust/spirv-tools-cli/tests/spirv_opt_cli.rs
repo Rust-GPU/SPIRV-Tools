@@ -2,6 +2,7 @@ use rspirv::binary::{parse_words, Assemble};
 use rspirv::dr::Builder;
 use rspirv::spirv::{AddressingModel, Capability, FunctionControl, MemoryModel, Op};
 use std::io::Write;
+use std::sync::Mutex;
 
 fn build_const_add_module() -> (Vec<u32>, u32) {
     let mut b = Builder::new();
@@ -148,6 +149,27 @@ fn spirv_opt_cli_folds_add_negation() {
     assert!(found_zero, "add+negate should fold to zero with same id");
 }
 
+fn build_umod_pow2_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let _ = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let c5 = b.constant_bit32(int, 5);
+    let c1 = b.constant_bit32(int, 1);
+    let c8 = b.constant_bit32(int, 8);
+    let x = b.i_add(int, None, c5, c1).expect("iadd");
+    let umod = b.u_mod(int, None, x, c8).expect("umod");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), umod)
+}
+
 #[test]
 fn spirv_opt_cli_folds_mul_by_one() {
     let (words, mul_id) = build_mul_one_module();
@@ -190,6 +212,102 @@ fn spirv_opt_cli_folds_mul_by_one() {
         found_const,
         "mul by one should fold to original value with same id"
     );
+}
+
+#[test]
+fn spirv_opt_cli_rewrites_umod_pow2_to_mask() {
+    let (words, umod_id) = build_umod_pow2_module();
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_spirv-opt"));
+    cmd.arg("--")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+    let mut child = cmd.spawn().expect("spawn spirv-opt");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin")
+        .write_all(&words_to_bytes(&words))
+        .expect("write module");
+    let output = child.wait_with_output().expect("run spirv-opt");
+    assert!(
+        output.status.success(),
+        "spirv-opt failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let optimized_words = bytes_to_words(&output.stdout);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+    let mut saw_band = false;
+    let mut saw_const = false;
+    for inst in module.all_inst_iter() {
+        assert_ne!(inst.class.opcode, Op::UMod, "umod should be rewritten");
+        if inst.class.opcode == Op::BitwiseAnd {
+            saw_band = true;
+            let mask_is_7 = inst
+                .operands
+                .iter()
+                .any(|op| matches!(op, rspirv::dr::Operand::LiteralBit32(7)));
+            assert!(mask_is_7, "expected mask 7 for modulo by 8");
+            assert_eq!(
+                inst.result_id,
+                Some(umod_id),
+                "should reuse original result id for bitmask"
+            );
+        }
+        if inst.class.opcode == Op::Constant
+            && inst.result_id == Some(umod_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(6)]
+        {
+            saw_const = true;
+        }
+    }
+    assert!(
+        saw_band || saw_const,
+        "expected bitwise and (or folded constant) to replace umod with power-of-two divisor"
+    );
+}
+
+static ENV_GUARD: Mutex<()> = Mutex::new(());
+
+#[test]
+fn spirv_opt_cli_respects_disable_env() {
+    let _guard = ENV_GUARD.lock().unwrap();
+    let (words, add_id) = build_const_add_module();
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_spirv-opt"));
+    cmd.env("SPIRV_TOOLS_DISABLE_RUST_OPT", "1");
+    cmd.arg("--")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+    let mut child = cmd.spawn().expect("spawn spirv-opt");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin")
+        .write_all(&words_to_bytes(&words))
+        .expect("write module");
+    let output = child.wait_with_output().expect("run spirv-opt");
+    assert!(
+        output.status.success(),
+        "spirv-opt failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let optimized_words = bytes_to_words(&output.stdout);
+    assert_eq!(optimized_words, words, "env disable should passthrough");
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+    let mut saw_add = false;
+    for inst in module.all_inst_iter() {
+        if inst.class.opcode == Op::IAdd && inst.result_id == Some(add_id) {
+            saw_add = true;
+        }
+    }
+    assert!(saw_add, "env disable should preserve add");
 }
 
 #[test]
