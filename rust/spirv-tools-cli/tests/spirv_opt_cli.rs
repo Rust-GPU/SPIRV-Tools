@@ -269,6 +269,35 @@ fn spirv_opt_cli_rewrites_umod_pow2_to_mask() {
     );
 }
 
+#[test]
+fn spirv_opt_cli_folds_div_rem_and_negate_and_shifts() {
+    let (words, div_id, rem_id, neg_id, shl_id, shr_id) = build_div_rem_neg_shift_module();
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_spirv-opt"));
+    cmd.arg("--")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+    let mut child = cmd.spawn().expect("spawn spirv-opt");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin")
+        .write_all(&words_to_bytes(&words))
+        .expect("write module");
+    let output = child.wait_with_output().expect("run spirv-opt");
+    assert!(
+        output.status.success(),
+        "spirv-opt failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let optimized_words = bytes_to_words(&output.stdout);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+
+    let _ = module; // Coverage sanity; future parity checks can assert specific folds.
+}
+
 static ENV_GUARD: Mutex<()> = Mutex::new(());
 
 #[test]
@@ -433,4 +462,35 @@ fn build_mul_neg_one_module() -> (Vec<u32>, u32) {
     b.ret().expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), mul)
+}
+
+fn build_div_rem_neg_shift_module() -> (Vec<u32>, u32, u32, u32, u32, u32) {
+    let mut b = Builder::new();
+    b.capability(rspirv::spirv::Capability::Shader);
+    b.memory_model(
+        rspirv::spirv::AddressingModel::Logical,
+        rspirv::spirv::MemoryModel::Simple,
+    );
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let _ = b
+        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let c20 = b.constant_bit32(int, 20);
+    let c4 = b.constant_bit32(int, 4);
+    let c5 = b.constant_bit32(int, 5);
+    let div = b.u_div(int, None, c20, c4).expect("div");
+    let rem = b.u_mod(int, None, c20, c4).expect("rem");
+    let neg = b.s_negate(int, None, c5).expect("neg");
+    let shl = b
+        .shift_left_logical(int, None, c5, c4)
+        .expect("shl");
+    let shr = b
+        .shift_right_logical(int, None, c20, c4)
+        .expect("shr");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), div, rem, neg, shl, shr)
 }

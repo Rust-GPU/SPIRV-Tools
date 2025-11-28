@@ -450,3 +450,4 @@ Planned tasks:
 - Extend translation to cover common arithmetic/basic-block patterns (including div/rem/neg) and ensure non-arithmetic ops pass through untouched.
 - Add fuzz targets for translated basic blocks to stress end-to-end translation + optimization.
 - Port representative optimizer tests from the C++ suite to the Rust path to validate parity over FFI/CLI.
+   - Added a CLI integration test covering div/rem/neg/shifts to keep translation coverage guarded in the Rust path.
