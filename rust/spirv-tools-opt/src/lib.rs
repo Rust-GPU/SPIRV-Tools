@@ -9,7 +9,7 @@ use egg::{
     define_language, rewrite, Applier, EGraph, Id, Language, PatternAst, RecExpr, Rewrite, Runner,
     Subst, Symbol, Var,
 };
-use std::{fmt, str::FromStr};
+use std::{fmt, str::FromStr, time::Duration};
 
 pub mod translate;
 

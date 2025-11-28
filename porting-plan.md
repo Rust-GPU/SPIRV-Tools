@@ -39,7 +39,7 @@ Tasks for this milestone:
 - [x] Translate arithmetic ops (`OpConstant`, `OpIAdd`, `OpIMul`, `OpISub`, `OpSNegate`, `OpSDiv`, `OpUDiv`, `OpSRem`, `OpUMod`) into the Rust optimizer and fold trivially solvable expressions.
 - [x] Expose a basic-block optimizer over FFI that returns reassembled SPIR-V words, preserving non-arithmetic instructions.
 - [x] Add Rust tests mirroring the C++ optimizer expectations for pass-through and simple constant folding.
-- [x] Add `cargo fuzz` coverage for SPIR-V block optimization to catch translation/rewriter panics.
+- [x] Add `cargo fuzz` coverage for SPIR-V block optimization to catch translation/rewriter panics (fuzz targets run without artificial e-graph limits).
 - [x] Expand e-graph rewrites with algebraic cancellations and emit simplified SPIR-V blocks (while preserving result ids and stability when no cost improvement occurs).
 - [x] Add criterion coverage for block-level arithmetic optimization (including small and medium block cases).
 - [ ] Expand optimizer coverage with e-graph driven rewrites (egg) for algebraic simplifications beyond simple folds. (constant-offset hoisting for add/add and add/sub landed; constant-factor hoisting for mul chains; divisor merging for nested div chains; common-factor extraction for const-scaled sums and symbolic add/sub products; cancellation of common constant factors in div/rem and sub factoring; constant-flip for negated const multiplies; negation normalization across mul/sub/double-neg; pulling divisible constants out of mul/div chains; distributing constants over add/sub to expose folds; refactoring affine sums when constants share divisors; extend to distributivity/strength-reduction cases)
