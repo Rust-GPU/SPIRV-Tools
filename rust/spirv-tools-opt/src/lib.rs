@@ -3326,6 +3326,57 @@ mod tests {
     }
 
     #[test]
+    fn optimize_arith_block_rewrites_sdiv_pow2_to_biased_shift() {
+        let int = 1;
+        let c4 = Instruction::new(
+            rspirv::spirv::Op::Constant,
+            Some(int),
+            Some(1),
+            vec![rspirv::dr::Operand::LiteralBit32(4)],
+        );
+        let c_id = Instruction::new(
+            rspirv::spirv::Op::Constant,
+            Some(int),
+            Some(2),
+            vec![rspirv::dr::Operand::LiteralBit32(5)],
+        );
+        let div = Instruction::new(
+            rspirv::spirv::Op::SDiv,
+            Some(int),
+            Some(3),
+            vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(1)],
+        );
+        let block = vec![c4, c_id, div];
+        let optimized = optimize_arith_block(&block).expect("optimization should succeed");
+        let has_shift = optimized.iter().any(|inst| {
+            inst.class.opcode == rspirv::spirv::Op::ShiftRightArithmetic
+                && inst.result_id == Some(3)
+        });
+        let folded_const = optimized.iter().any(|inst| {
+            inst.class.opcode == rspirv::spirv::Op::Constant
+                && inst.result_id == Some(3)
+                && inst
+                    .operands
+                    .iter()
+                    .any(|op| matches!(op, rspirv::dr::Operand::LiteralBit32(1)))
+        });
+        assert!(
+            has_shift || folded_const,
+            "expected biased shift or folded constant for signed power-of-two div"
+        );
+        if has_shift {
+            let has_mask = optimized.iter().any(|inst| {
+                inst.class.opcode == rspirv::spirv::Op::BitwiseAnd
+                    && inst
+                        .operands
+                        .iter()
+                        .any(|op| matches!(op, rspirv::dr::Operand::LiteralBit32(3)))
+            });
+            assert!(has_mask, "expected bias mask in signed div rewrite");
+        }
+    }
+
+    #[test]
     fn snegate_translates_and_folds() {
         let int = 1;
         let c5 = Instruction::new(
