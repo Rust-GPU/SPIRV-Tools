@@ -707,6 +707,8 @@ fn main() {
     // Generate mode-setting ordering mapping so layout checks track grammar additions.
     let mut mode_setting_match_arms = String::new();
     let mut mode_stage_match_arms = String::new();
+    let mut capability_op_match_arms = String::new();
+    let mut extension_op_match_arms = String::new();
     for inst in &grammar.instructions {
         let (kind, stage) = match inst.opname.as_str() {
             "OpCapability" => ("Capability", Some("Capabilities")),
@@ -742,6 +744,13 @@ fn main() {
             mode_stage_match_arms.push_str(&format!(
                 "        spirv::Op::{variant} => Some(ModeStage::{stage}),\n"
             ));
+        }
+        match kind {
+            "Capability" | "ConditionalCapability" => capability_op_match_arms
+                .push_str(&format!("        spirv::Op::{variant} => true,\n")),
+            "Extension" | "ConditionalExtension" => extension_op_match_arms
+                .push_str(&format!("        spirv::Op::{variant} => true,\n")),
+            _ => {}
         }
     }
 
@@ -784,6 +793,18 @@ fn main() {
     mode_setting_output.push_str("    match opcode {\n");
     mode_setting_output.push_str(&mode_stage_match_arms);
     mode_setting_output.push_str("        _ => None,\n    }\n}\n");
+
+    mode_setting_output.push_str("\n#[allow(dead_code)]\n");
+    mode_setting_output.push_str("pub fn is_capability_opcode(opcode: spirv::Op) -> bool {\n");
+    mode_setting_output.push_str("    match opcode {\n");
+    mode_setting_output.push_str(&capability_op_match_arms);
+    mode_setting_output.push_str("        _ => false,\n    }\n}\n");
+
+    mode_setting_output.push_str("\n#[allow(dead_code)]\n");
+    mode_setting_output.push_str("pub fn is_extension_opcode(opcode: spirv::Op) -> bool {\n");
+    mode_setting_output.push_str("    match opcode {\n");
+    mode_setting_output.push_str(&extension_op_match_arms);
+    mode_setting_output.push_str("        _ => false,\n    }\n}\n");
 
     let mode_setting_dest_path = out_dir.join("instruction_layout.rs");
     fs::write(mode_setting_dest_path, mode_setting_output)
