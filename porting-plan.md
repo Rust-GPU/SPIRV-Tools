@@ -425,6 +425,7 @@ Planned tasks:
 - Add fuzzing harnesses using `cargo fuzz` + `arbitrary` to stress rewrites and round-trip assembly/disassembly.
 - Establish benchmarks with `criterion` (and `hyperfine` for CLI) to track regressions against the C++ optimizer.
 - Port representative optimizer passes and their C++ tests into Rust unit/integration tests to validate e-graph results.
+   - Added C++ parity coverage for shared-addend cancellation with symbolic terms, ensuring `(x+5)-(x+2)` folds identically in Rust and C++ paths.
 
 ## Upcoming Milestone: Optimizer FFI/CLI Integration
 Expose the Rust optimizer through the existing C/C++ surfaces and provide CLI benchmarking.
