@@ -5368,6 +5368,32 @@ mod tests {
     }
 
     #[test]
+    fn mode_stage_orders_mode_settings() {
+        use super::instruction_layout::{mode_stage, ModeStage};
+
+        assert_eq!(mode_stage(Op::Capability), Some(ModeStage::Capabilities));
+        assert_eq!(
+            mode_stage(Op::ConditionalCapabilityINTEL),
+            Some(ModeStage::Capabilities)
+        );
+        assert_eq!(mode_stage(Op::Extension), Some(ModeStage::Extensions));
+        assert_eq!(
+            mode_stage(Op::ConditionalExtensionINTEL),
+            Some(ModeStage::Extensions)
+        );
+        assert_eq!(
+            mode_stage(Op::ExtInstImport),
+            Some(ModeStage::ExtInstImport)
+        );
+        assert_eq!(mode_stage(Op::MemoryModel), Some(ModeStage::MemoryModel));
+        assert_eq!(mode_stage(Op::EntryPoint), Some(ModeStage::EntryPoint));
+        assert_eq!(
+            mode_stage(Op::ExecutionMode),
+            Some(ModeStage::ExecutionMode)
+        );
+    }
+
+    #[test]
     fn validate_module_rejects_missing_header() {
         let binary = vec![0x07230203, 0, 0, 0, 0];
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
