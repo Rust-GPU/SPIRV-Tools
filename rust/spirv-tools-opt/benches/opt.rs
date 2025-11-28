@@ -29,6 +29,7 @@ fn bench_optimize(c: &mut Criterion) {
     let expr_small = dense_expr(8);
     let expr_medium = dense_expr(32);
     let block_fold = spirv_block_add_zero();
+    let block_medium = arith_block(32);
 
     c.bench_function("optimize small expr", |b| {
         b.iter(|| optimize_expr(black_box(&expr_small)))
@@ -41,6 +42,13 @@ fn bench_optimize(c: &mut Criterion) {
     c.bench_function("optimize arithmetic block", |b| {
         b.iter(|| {
             let optimized = optimize_arith_block(black_box(&block_fold)).unwrap();
+            black_box(optimized)
+        })
+    });
+
+    c.bench_function("optimize arithmetic block medium", |b| {
+        b.iter(|| {
+            let optimized = optimize_arith_block(black_box(&block_medium)).unwrap();
             black_box(optimized)
         })
     });
@@ -75,6 +83,48 @@ fn spirv_block_add_zero() -> Vec<rspirv::dr::Instruction> {
             ],
         ),
     ]
+}
+
+fn arith_block(depth: usize) -> Vec<rspirv::dr::Instruction> {
+    use rspirv::dr::Operand;
+    use rspirv::spirv::Op;
+
+    let mut insts = Vec::new();
+    let ty = 1;
+    let mut next_id = 1u32;
+
+    // Seed with one constant.
+    insts.push(rspirv::dr::Instruction::new(
+        Op::Constant,
+        Some(ty),
+        Some(next_id),
+        vec![Operand::LiteralBit32(1)],
+    ));
+    next_id += 1;
+
+    for i in 0..depth {
+        let const_id = next_id;
+        next_id += 1;
+        insts.push(rspirv::dr::Instruction::new(
+            Op::Constant,
+            Some(ty),
+            Some(const_id),
+            vec![Operand::LiteralBit32(i as u32 + 2)],
+        ));
+
+        let prev_id = const_id - 1;
+        let result_id = next_id;
+        next_id += 1;
+        let opcode = if i % 2 == 0 { Op::IAdd } else { Op::IMul };
+        insts.push(rspirv::dr::Instruction::new(
+            opcode,
+            Some(ty),
+            Some(result_id),
+            vec![Operand::IdRef(prev_id), Operand::IdRef(const_id)],
+        ));
+    }
+
+    insts
 }
 
 criterion_group!(benches, bench_optimize);
