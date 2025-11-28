@@ -175,6 +175,7 @@ Tasks for this milestone:
 - Generated a mode-setting layout map from the grammar so capabilities/extensions/memory model/entry points/execution modes route through layout checks without manual opcode lists.
 - Added mode-setting ordering enforcement using the generated map and a regression that entry points cannot precede the memory model.
 - Generated grammar-driven mode-setting stage/ordering tables (including conditional variants and extensions/imports) to remove hand-maintained opcode lists from the layout checker.
+- Added a regression to ensure execution modes cannot precede the memory model, exercising the generated stage ordering.
 
 ## Completed Milestone: Extension Allowlists Parity
 Environment-specific extension allowlists now mirror the C++ tables via the generated data set in `TargetEnv::is_extension_allowed`, with vendor gating (NV/AMDX/ARM Vulkan-only; INTEL/ALTERA OpenCL/Universal), version gates, and capability precedence covered by regressions (ray tracing adjuncts, cooperative matrices, tile shading, shader clock, fragment shading rate/density, motion blur, displacement micromaps).
