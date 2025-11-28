@@ -433,6 +433,7 @@ Planned tasks:
    - Added C++ parity coverage for factoring constant multipliers out of commuted add/sub expressions: `(4*x)+(4*y)` => `4*(x+y)` and `(6*x)-(6*y)` => `6*(x-y)`, ensuring const factoring aligns between Rust and C++.
    - Added C++ parity coverage for factoring mixed symbolic/constant multiplicands: `(x*y)+(x*3)` => `x*(y+3)` and `(x*y)-(x*3)` => `x*(y-3)`, covering affine-like patterns in both optimizers.
    - Added C++ parity coverage for mixed-constant factoring with commuted multiplicands: `(2*x)+(x*3)` => `5*x` and `(2*x)-(x*3)` => wrapped `-1 * x`, exercising both positive and wrapping-negative constant combinations.
+   - Added C++ parity coverage for mixed-constant factoring with positive difference: `(3*x)-(2*x)` => `1*x`, ensuring non-wrapping constant differences are simplified in both optimizers.
 
 ## Upcoming Milestone: Optimizer FFI/CLI Integration
 Expose the Rust optimizer through the existing C/C++ surfaces and provide CLI benchmarking.
