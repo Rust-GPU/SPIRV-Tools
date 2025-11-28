@@ -1554,6 +1554,7 @@ fn validate_words(
         run_layout_check(words.as_slice(), env)?;
     }
     let module = parse_module(words.as_slice())?;
+    validate_extension_allowlist(&module, env)?;
     let header = ValidatedHeader::from_module(&module)?;
     if let Some(&limit) = options.limits.get(&LIMIT_MAX_ID_BOUND) {
         if header.bound.declared().0 > limit {
@@ -2247,7 +2248,7 @@ fn parse_module(words: &[u32]) -> Result<rspirv::dr::Module, ValidationError> {
     Ok(module)
 }
 
-fn run_layout_check(words: &[u32], _env: TargetEnv) -> Result<(), ValidationError> {
+fn run_layout_check(words: &[u32], env: TargetEnv) -> Result<(), ValidationError> {
     struct LayoutChecker {
         memory_model_state: MemoryModelState,
         current_section: Section,
@@ -2255,10 +2256,11 @@ fn run_layout_check(words: &[u32], _env: TargetEnv) -> Result<(), ValidationErro
         capabilities: CapabilitySet,
         extensions: ExtensionSet,
         sampler_image_address_mode: Option<u32>,
+        env: TargetEnv,
     }
 
     impl LayoutChecker {
-        fn new() -> Self {
+        fn new(env: TargetEnv) -> Self {
             Self {
                 memory_model_state: MemoryModelState::new(),
                 current_section: Section::Capabilities,
@@ -2266,6 +2268,7 @@ fn run_layout_check(words: &[u32], _env: TargetEnv) -> Result<(), ValidationErro
                 capabilities: CapabilitySet::default(),
                 extensions: ExtensionSet::default(),
                 sampler_image_address_mode: None,
+                env,
             }
         }
     }
@@ -2381,7 +2384,7 @@ fn run_layout_check(words: &[u32], _env: TargetEnv) -> Result<(), ValidationErro
                         ));
                     }
                     if let Some(extension) = extension_operand(&inst) {
-                        if let Err(err) = self.extensions.insert_unchecked(extension) {
+                        if let Err(err) = self.extensions.insert(extension, self.env) {
                             return rspirv::binary::ParseAction::Error(Box::new(err));
                         }
                     }
@@ -2395,7 +2398,7 @@ fn run_layout_check(words: &[u32], _env: TargetEnv) -> Result<(), ValidationErro
                         ));
                     }
                     if let Some(extension) = extension_operand(&inst) {
-                        if let Err(err) = self.extensions.insert_unchecked(extension) {
+                        if let Err(err) = self.extensions.insert(extension, self.env) {
                             return rspirv::binary::ParseAction::Error(Box::new(err));
                         }
                     }
@@ -2444,7 +2447,7 @@ fn run_layout_check(words: &[u32], _env: TargetEnv) -> Result<(), ValidationErro
         }
     }
 
-    let mut checker = LayoutChecker::new();
+    let mut checker = LayoutChecker::new(env);
     match rspirv::binary::parse_words(words, &mut checker) {
         Ok(()) => Ok(()),
         Err(rspirv::binary::ParseState::ConsumerError(err)) => {
@@ -3141,6 +3144,20 @@ fn extension_operand(inst: &rspirv::dr::Instruction) -> Option<ExtensionName> {
             None
         }
     })
+}
+
+fn validate_extension_allowlist(
+    module: &Module,
+    env: TargetEnv,
+) -> Result<(), ValidationError> {
+    for inst in &module.extensions {
+        if let Some(extension) = extension_operand(inst) {
+            if !env.is_extension_allowed(&extension) {
+                return Err(ValidationError::DisallowedExtension { extension, env });
+            }
+        }
+    }
+    Ok(())
 }
 
 fn validate_extensions(
@@ -5428,6 +5445,72 @@ mod tests {
                 opcode: rspirv::spirv::Op::ExecutionMode,
                 operand_index: 1,
                 required_extension: ExtensionName::from("SPV_KHR_subgroup_uniform_control_flow"),
+            }
+        );
+    }
+
+    #[test]
+    fn conditional_extension_rejected_when_disallowed() {
+        use rspirv::binary::Assemble;
+        use rspirv::dr::Instruction;
+        use rspirv::spirv::{AddressingModel, Capability, MemoryModel, Op};
+
+        let mut module = rspirv::dr::Module::new();
+        module
+            .capabilities
+            .push(Instruction::new(Op::Capability, None, None, vec![rspirv::dr::Operand::Capability(Capability::Shader)]));
+        module.memory_model = Some(Instruction::new(
+            Op::MemoryModel,
+            None,
+            None,
+            vec![
+                rspirv::dr::Operand::AddressingModel(AddressingModel::Logical),
+                rspirv::dr::Operand::MemoryModel(MemoryModel::GLSL450),
+            ],
+        ));
+        module.extensions.push(Instruction::new(
+            Op::ConditionalExtensionINTEL,
+            None,
+            None,
+            vec![rspirv::dr::Operand::LiteralString("SPV_KHR_ray_tracing".into())],
+        ));
+        module.header = Some(rspirv::dr::ModuleHeader::new(5));
+        let void = rspirv::dr::Operand::IdRef(1);
+        module
+            .types_global_values
+            .push(Instruction::new(Op::TypeVoid, Some(1), None, vec![]));
+        module.types_global_values.push(Instruction::new(
+            Op::TypeFunction,
+            Some(2),
+            None,
+            vec![void.clone()],
+        ));
+        let mut func = rspirv::dr::Function::new();
+        func.def = Some(Instruction::new(
+            Op::Function,
+            Some(3),
+            Some(1),
+            vec![
+                rspirv::dr::Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
+                rspirv::dr::Operand::IdRef(2),
+            ],
+        ));
+        let mut block = rspirv::dr::Block::new();
+        block.label = Some(Instruction::new(Op::Label, Some(4), None, vec![]));
+        block
+            .instructions
+            .push(Instruction::new(Op::Return, None, None, vec![]));
+        func.blocks.push(block);
+        func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
+        module.functions.push(func);
+
+        let binary = module.assemble();
+        let error = validate_module(&binary, TargetEnv::WebGpu0).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::DisallowedExtension {
+                extension: ExtensionName::from("KHR_ray_tracing"),
+                env: TargetEnv::WebGpu0
             }
         );
     }

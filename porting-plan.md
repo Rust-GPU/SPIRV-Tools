@@ -352,6 +352,14 @@ Tasks for this milestone:
 - Thread effective SPIR-V version/env gating through ordering enforcement for precise diagnostics.
 - Keep module caching enabled so repeated validations avoid reparsing after ordering checks are applied.
 
+## Upcoming Milestone: Extension Allowlist Parity
+Ensure extension allowlists are enforced consistently during layout and full-module validation, matching C++ behavior for conditional extensions and environment-specific bans.
+
+Tasks for this milestone:
+- Enforce extension allowlists (including conditional extensions) during full validation, not just layout, and return typed `DisallowedExtension` errors.
+- Add integration tests covering conditional extensions in disallowed environments (e.g., WebGPU rejecting ray tracing extensions) and allowed environments (e.g., Vulkan).
+- Keep extension gating data driven by the grammar allowlist and environment metadata.
+
 ## CLI Development
 - [x] Introduce a `spirv-tools-cli` crate that wraps the core disassembly logic with `clap`, providing an initial `spirv-dis` binary capable of mirroring the `--no-header`/`--offsets` flags while reading from stdin or files.
 - [x] Add `spirv-as` and `spirv-val` binaries so the Rust workspace mirrors the C++ tool surface, sharing reusable helpers for option parsing and file/stdin plumbing. The validator CLI currently delegates to the existing C++ validator over the FFI bridge and is covered by unit + integration tests to guard success/failure paths.
