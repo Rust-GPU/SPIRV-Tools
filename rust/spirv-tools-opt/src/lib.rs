@@ -2434,6 +2434,41 @@ mod tests {
     }
 
     #[test]
+    fn rewrites_mod_by_one_into_zero() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),        // 0
+            SpirvLang::Const(ConstValue::new(1)),        // 1
+            SpirvLang::UMod([Id::from(0), Id::from(1)]), // 2 = x % 1
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let class = runner.egraph.find(runner.roots[0]);
+        let nodes = &runner.egraph[class].nodes;
+        let has_zero = nodes.iter().any(|n| {
+            matches!(
+                n,
+                SpirvLang::Const(val) if val.get() == 0
+            )
+        });
+        assert!(has_zero, "umod by one should fold to zero");
+
+        let expr_signed = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),        // 0
+            SpirvLang::Const(ConstValue::new(1)),        // 1
+            SpirvLang::SRem([Id::from(0), Id::from(1)]), // 2 = x % 1
+        ]);
+        let runner_signed = Runner::default().with_expr(&expr_signed).run(&rewrites());
+        let class_signed = runner_signed.egraph.find(runner_signed.roots[0]);
+        let nodes_signed = &runner_signed.egraph[class_signed].nodes;
+        let has_zero_signed = nodes_signed.iter().any(|n| {
+            matches!(
+                n,
+                SpirvLang::Const(val) if val.get() == 0
+            )
+        });
+        assert!(has_zero_signed, "srem by one should fold to zero");
+    }
+
+    #[test]
     fn rewrites_umod_const_into_div_mul_sub() {
         let expr = RecExpr::from(vec![
             SpirvLang::Symbol(Symbol::from("x")),        // 0
