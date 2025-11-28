@@ -240,6 +240,12 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("mul-zero"; "(* ?a ?b)" => { MulZero { a: var("?a"), b: var("?b") } }),
         rewrite!("mul-neg-one"; "(* ?a ?b)" => { MulNegOne { a: var("?a"), b: var("?b") } }),
         rewrite!("mul-double-neg"; "(* (neg ?a) (neg ?b))" => "(* ?a ?b)"),
+        rewrite!("add-sub-cancel-right-simple"; "(+ (- ?a ?b) ?b)" => "?a"),
+        rewrite!("add-sub-cancel-left-simple"; "(+ ?b (- ?a ?b))" => "?a"),
+        rewrite!("sub-add-cancel-right-simple"; "(- (+ ?a ?b) ?b)" => "?a"),
+        rewrite!("sub-add-cancel-left-simple"; "(- (+ ?b ?a) ?b)" => "?a"),
+        rewrite!("sub-add-cancel-right-symmetric-simple"; "(- (+ ?a ?b) ?a)" => "?b"),
+        rewrite!("sub-add-cancel-left-symmetric-simple"; "(- (+ ?b ?a) ?a)" => "?b"),
         rewrite!("add-fold"; "(+ ?a ?b)" => { FoldAdd }),
         rewrite!("mul-fold"; "(* ?a ?b)" => { FoldMul }),
         rewrite!("sub-fold"; "(- ?a ?b)" => { FoldSub }),
@@ -528,12 +534,6 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("umod-one"; "(umod ?a ?b)" => { RemOne { b: var("?b") } }),
         rewrite!("add-neg-cancel"; "(+ ?a (neg ?a))" => { AddNegZero }),
         rewrite!("add-neg-cancel-swap"; "(+ (neg ?a) ?a)" => { AddNegZero }),
-        rewrite!("add-sub-cancel-right"; "(+ (- ?x ?y) ?y)" => "?x"),
-        rewrite!("add-sub-cancel-left"; "(+ ?y (- ?x ?y))" => "?x"),
-        rewrite!("sub-add-cancel-right"; "(- (+ ?x ?y) ?y)" => "?x"),
-        rewrite!("sub-add-cancel-left"; "(- (+ ?y ?x) ?y)" => "?x"),
-        rewrite!("sub-add-cancel-right-symmetric"; "(- (+ ?x ?y) ?x)" => "?y"),
-        rewrite!("sub-add-cancel-left-symmetric"; "(- (+ ?y ?x) ?x)" => "?y"),
     ]
 }
 
