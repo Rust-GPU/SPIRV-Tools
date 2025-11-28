@@ -226,6 +226,18 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("add-factor-consts-both"; "(+ (* ?c1 ?x) (* ?c2 ?x))" => {
             AddCommonFactor { x: var("?x"), c1: var("?c1"), c2: var("?c2") }
         }),
+        rewrite!("add-factor-symbolic"; "(+ (* ?x ?y) (* ?x ?z))" => {
+            AddCommonFactorGeneral { x: var("?x"), y: var("?y"), z: var("?z") }
+        }),
+        rewrite!("add-factor-symbolic-mixed"; "(+ (* ?y ?x) (* ?x ?z))" => {
+            AddCommonFactorGeneral { x: var("?x"), y: var("?y"), z: var("?z") }
+        }),
+        rewrite!("add-factor-symbolic-right"; "(+ (* ?x ?y) (* ?z ?x))" => {
+            AddCommonFactorGeneral { x: var("?x"), y: var("?y"), z: var("?z") }
+        }),
+        rewrite!("add-factor-symbolic-both"; "(+ (* ?y ?x) (* ?z ?x))" => {
+            AddCommonFactorGeneral { x: var("?x"), y: var("?y"), z: var("?z") }
+        }),
         rewrite!("sub-factor-consts"; "(- (* ?x ?c1) (* ?x ?c2))" => {
             SubCommonFactor { x: var("?x"), c1: var("?c1"), c2: var("?c2") }
         }),
@@ -237,6 +249,18 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         }),
         rewrite!("sub-factor-consts-both"; "(- (* ?c1 ?x) (* ?c2 ?x))" => {
             SubCommonFactor { x: var("?x"), c1: var("?c1"), c2: var("?c2") }
+        }),
+        rewrite!("sub-factor-symbolic"; "(- (* ?x ?y) (* ?x ?z))" => {
+            SubCommonFactorGeneral { x: var("?x"), y: var("?y"), z: var("?z") }
+        }),
+        rewrite!("sub-factor-symbolic-mixed"; "(- (* ?y ?x) (* ?x ?z))" => {
+            SubCommonFactorGeneral { x: var("?x"), y: var("?y"), z: var("?z") }
+        }),
+        rewrite!("sub-factor-symbolic-right"; "(- (* ?x ?y) (* ?z ?x))" => {
+            SubCommonFactorGeneral { x: var("?x"), y: var("?y"), z: var("?z") }
+        }),
+        rewrite!("sub-factor-symbolic-both"; "(- (* ?y ?x) (* ?z ?x))" => {
+            SubCommonFactorGeneral { x: var("?x"), y: var("?y"), z: var("?z") }
         }),
         rewrite!("sdiv-merge-consts"; "(sdiv (sdiv ?x ?c1) ?c2)" => {
             DivMergeConst { base: var("?x"), c1: var("?c1"), c2: var("?c2"), signed: true }
@@ -388,10 +412,20 @@ struct AddCommonFactor {
     c1: Var,
     c2: Var,
 }
+struct AddCommonFactorGeneral {
+    x: Var,
+    y: Var,
+    z: Var,
+}
 struct SubCommonFactor {
     x: Var,
     c1: Var,
     c2: Var,
+}
+struct SubCommonFactorGeneral {
+    x: Var,
+    y: Var,
+    z: Var,
 }
 struct CancelMulDiv {
     x: Var,
@@ -857,6 +891,22 @@ impl Applier<SpirvLang, ()> for AddCommonFactor {
     }
 }
 
+impl Applier<SpirvLang, ()> for AddCommonFactorGeneral {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let add = egraph.add(SpirvLang::Add([subst[self.y], subst[self.z]]));
+        let mul = egraph.add(SpirvLang::Mul([subst[self.x], add]));
+        egraph.union(eclass, mul);
+        vec![mul]
+    }
+}
+
 impl Applier<SpirvLang, ()> for SubCommonFactor {
     fn apply_one(
         &self,
@@ -875,6 +925,22 @@ impl Applier<SpirvLang, ()> for SubCommonFactor {
         let merged = ConstValue::new(c1.get().wrapping_sub(c2.get()));
         let const_id = egraph.add(SpirvLang::Const(merged));
         let mul = egraph.add(SpirvLang::Mul([subst[self.x], const_id]));
+        egraph.union(eclass, mul);
+        vec![mul]
+    }
+}
+
+impl Applier<SpirvLang, ()> for SubCommonFactorGeneral {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let sub = egraph.add(SpirvLang::Sub([subst[self.y], subst[self.z]]));
+        let mul = egraph.add(SpirvLang::Mul([subst[self.x], sub]));
         egraph.union(eclass, mul);
         vec![mul]
     }
@@ -1402,6 +1468,64 @@ mod tests {
         };
         assert_eq!(symbol, &Symbol::from("x"));
         assert_eq!(constant.get(), 5, "factor should compute 9 - 4 = 5");
+    }
+
+    #[test]
+    fn factors_symbolic_multiplier_from_addition() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Symbol(Symbol::from("y")),       // 1
+            SpirvLang::Symbol(Symbol::from("z")),       // 2
+            SpirvLang::Mul([Id::from(0), Id::from(1)]), // 3 = x * y
+            SpirvLang::Mul([Id::from(0), Id::from(2)]), // 4 = x * z
+            SpirvLang::Add([Id::from(3), Id::from(4)]), // 5 = x*y + x*z
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::Mul([lhs, rhs])) = nodes.last() else {
+            panic!("expected mul root after factoring, got {:?}", nodes.last());
+        };
+        let lhs_node = &nodes[usize::from(*lhs)];
+        let rhs_node = &nodes[usize::from(*rhs)];
+        assert!(
+            matches!(lhs_node, SpirvLang::Symbol(sym) if *sym == Symbol::from("x")),
+            "expected common factor x, got {lhs_node:?}"
+        );
+        assert!(
+            matches!(rhs_node, SpirvLang::Add([a, b])
+                if matches!(&nodes[usize::from(*a)], SpirvLang::Symbol(sym) if *sym == Symbol::from("y"))
+                && matches!(&nodes[usize::from(*b)], SpirvLang::Symbol(sym) if *sym == Symbol::from("z"))),
+            "expected inner add y + z, got {rhs_node:?}"
+        );
+    }
+
+    #[test]
+    fn factors_symbolic_multiplier_from_subtraction() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Symbol(Symbol::from("y")),       // 1
+            SpirvLang::Symbol(Symbol::from("z")),       // 2
+            SpirvLang::Mul([Id::from(0), Id::from(1)]), // 3 = x * y
+            SpirvLang::Mul([Id::from(0), Id::from(2)]), // 4 = x * z
+            SpirvLang::Sub([Id::from(3), Id::from(4)]), // 5 = x*y - x*z
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::Mul([lhs, rhs])) = nodes.last() else {
+            panic!("expected mul root after factoring, got {:?}", nodes.last());
+        };
+        let lhs_node = &nodes[usize::from(*lhs)];
+        let rhs_node = &nodes[usize::from(*rhs)];
+        assert!(
+            matches!(lhs_node, SpirvLang::Symbol(sym) if *sym == Symbol::from("x")),
+            "expected common factor x, got {lhs_node:?}"
+        );
+        assert!(
+            matches!(rhs_node, SpirvLang::Sub([a, b])
+                if matches!(&nodes[usize::from(*a)], SpirvLang::Symbol(sym) if *sym == Symbol::from("y"))
+                && matches!(&nodes[usize::from(*b)], SpirvLang::Symbol(sym) if *sym == Symbol::from("z"))),
+            "expected inner sub y - z, got {rhs_node:?}"
+        );
     }
 
     #[test]
