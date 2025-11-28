@@ -264,6 +264,8 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("add-quadruple"; "(+ (+ ?x ?x) (+ ?x ?x))" => {
             AddQuadrupleToShift { x: var("?x") }
         }),
+        rewrite!("sub-shared-addends"; "(- (+ ?x ?y) (+ ?x ?z))" => "(- ?y ?z)"),
+        rewrite!("sub-shared-addends-swap"; "(- (+ ?y ?x) (+ ?x ?z))" => "(- ?y ?z)"),
         rewrite!("merge-shl-const"; "(shl (shl ?x ?a) ?b)" => {
             MergeShift { x: var("?x"), a: var("?a"), b: var("?b"), kind: ShiftKind::Left }
         }),
@@ -2237,6 +2239,28 @@ mod tests {
             matches!(nodes[usize::from(*lhs)], SpirvLang::Const(v) if v.get() == 7)
                 && matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(_)),
             "expected const 7 - x, got {nodes:?}"
+        );
+    }
+
+    #[test]
+    fn cancels_shared_addends_in_subtraction() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Symbol(Symbol::from("y")),       // 1
+            SpirvLang::Symbol(Symbol::from("z")),       // 2
+            SpirvLang::Add([Id::from(0), Id::from(1)]), // 3 = x + y
+            SpirvLang::Add([Id::from(0), Id::from(2)]), // 4 = x + z
+            SpirvLang::Sub([Id::from(3), Id::from(4)]), // 5 = (x + y) - (x + z)
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let SpirvLang::Sub([lhs, rhs]) = nodes.last().expect("optimized root") else {
+            panic!("expected sub root, got {:?}", nodes.last());
+        };
+        assert!(
+            matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("y"))
+                && matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("z")),
+            "expected y - z, got {nodes:?}"
         );
     }
 
