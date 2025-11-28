@@ -343,6 +343,15 @@ Tasks for this milestone:
 - Thread operand requirement failures through typed `ValidationError` variants so FFI/CLI callers receive structured diagnostics.
 - Keep validated-module caching active to avoid re-validation when operand checks are enabled.
 
+## Upcoming Milestone: Capability/Extension Ordering Parity
+Align capability/extension ordering (including conditional variants) with the C++ tables and broaden layout ordering coverage.
+
+Tasks for this milestone:
+- Generate ordering tables for capabilities, extensions, and conditional variants from the grammar and enforce them relative to debug/names/annotations/functions.
+- Add text/binary regressions mirroring C++ ordering checks (late capabilities/extensions/imports, conditional variants after functions, etc.).
+- Thread effective SPIR-V version/env gating through ordering enforcement for precise diagnostics.
+- Keep module caching enabled so repeated validations avoid reparsing after ordering checks are applied.
+
 ## CLI Development
 - [x] Introduce a `spirv-tools-cli` crate that wraps the core disassembly logic with `clap`, providing an initial `spirv-dis` binary capable of mirroring the `--no-header`/`--offsets` flags while reading from stdin or files.
 - [x] Add `spirv-as` and `spirv-val` binaries so the Rust workspace mirrors the C++ tool surface, sharing reusable helpers for option parsing and file/stdin plumbing. The validator CLI currently delegates to the existing C++ validator over the FFI bridge and is covered by unit + integration tests to guard success/failure paths.

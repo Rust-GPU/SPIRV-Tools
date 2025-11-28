@@ -437,10 +437,7 @@ fn main() {
         match kind.category.as_str() {
             "ValueEnum" => {
                 if has_capabilities {
-                    requirement_helpers.push_str(&format!(
-                        "fn {fn_caps}(value: spirv::{kind}) -> Vec<spirv::Capability> {{\n    let mut caps = Vec::new();\n    match value as u32 {{\n",
-                        kind = kind.kind
-                    ));
+                    let mut cap_arms = String::new();
                     for enumerant in &kind.enumerants {
                         if let Some(raw) = enumerant.value.as_deref() {
                             let capabilities = enumerant
@@ -450,7 +447,7 @@ fn main() {
                                 .map(|cap| format!("spirv::Capability::{cap:?}"))
                                 .collect::<Vec<_>>();
                             if !capabilities.is_empty() {
-                                requirement_helpers.push_str(&format!(
+                                cap_arms.push_str(&format!(
                                     "        {raw} => caps.extend([{capabilities}]),\n",
                                     raw = raw,
                                     capabilities = capabilities.join(", ")
@@ -458,13 +455,22 @@ fn main() {
                             }
                         }
                     }
-                    requirement_helpers.push_str("        _ => {}\n    }\n    caps\n}\n\n");
+                    if cap_arms.is_empty() {
+                        requirement_helpers.push_str(&format!(
+                            "fn {fn_caps}(_value: spirv::{kind}) -> Vec<spirv::Capability> {{ Vec::new() }}\n\n",
+                            kind = kind.kind
+                        ));
+                    } else {
+                        requirement_helpers.push_str(&format!(
+                            "fn {fn_caps}(value: spirv::{kind}) -> Vec<spirv::Capability> {{\n    let mut caps = Vec::new();\n    match value as u32 {{\n{cap_arms}        _ => {{}}\n    }}\n    caps\n}}\n\n",
+                            fn_caps = fn_caps,
+                            kind = kind.kind,
+                            cap_arms = cap_arms
+                        ));
+                    }
                 }
                 if has_extensions {
-                    requirement_helpers.push_str(&format!(
-                        "fn {fn_exts}(value: spirv::{kind}) -> Vec<&'static str> {{\n    let mut exts = Vec::new();\n    match value as u32 {{\n",
-                        kind = kind.kind
-                    ));
+                    let mut ext_arms = String::new();
                     for enumerant in &kind.enumerants {
                         if let Some(raw) = enumerant.value.as_deref() {
                             let extensions = enumerant
@@ -473,7 +479,7 @@ fn main() {
                                 .map(|ext| format!("\"{ext}\""))
                                 .collect::<Vec<_>>();
                             if !extensions.is_empty() {
-                                requirement_helpers.push_str(&format!(
+                                ext_arms.push_str(&format!(
                                     "        {raw} => exts.extend([{extensions}]),\n",
                                     raw = raw,
                                     extensions = extensions.join(", ")
@@ -481,7 +487,19 @@ fn main() {
                             }
                         }
                     }
-                    requirement_helpers.push_str("        _ => {}\n    }\n    exts\n}\n\n");
+                    if ext_arms.is_empty() {
+                        requirement_helpers.push_str(&format!(
+                            "fn {fn_exts}(_value: spirv::{kind}) -> Vec<&'static str> {{ Vec::new() }}\n\n",
+                            kind = kind.kind
+                        ));
+                    } else {
+                        requirement_helpers.push_str(&format!(
+                            "fn {fn_exts}(value: spirv::{kind}) -> Vec<&'static str> {{\n    let mut exts = Vec::new();\n    match value as u32 {{\n{ext_arms}        _ => {{}}\n    }}\n    exts\n}}\n\n",
+                            fn_exts = fn_exts,
+                            kind = kind.kind,
+                            ext_arms = ext_arms
+                        ));
+                    }
                 }
                 cap_match_arms.push_str(&format!(
                     "        rspirv::dr::Operand::{kind}(value) => {caps},\n",
@@ -504,10 +522,7 @@ fn main() {
             }
             "BitEnum" => {
                 if has_capabilities {
-                    requirement_helpers.push_str(&format!(
-                        "fn {fn_caps}(value: spirv::{kind}) -> Vec<spirv::Capability> {{\n    let mut caps = Vec::new();\n",
-                        kind = kind.kind
-                    ));
+                    let mut cap_lines = String::new();
                     for enumerant in &kind.enumerants {
                         if let Some(raw) = enumerant.value.as_deref() {
                             let capabilities = enumerant
@@ -517,7 +532,7 @@ fn main() {
                                 .map(|cap| format!("spirv::Capability::{cap:?}"))
                                 .collect::<Vec<_>>();
                             if !capabilities.is_empty() {
-                                requirement_helpers.push_str(&format!(
+                                cap_lines.push_str(&format!(
                                     "    if (value.bits() & {raw}) != 0 {{ caps.extend([{capabilities}]); }}\n",
                                     raw = raw,
                                     capabilities = capabilities.join(", ")
@@ -525,13 +540,22 @@ fn main() {
                             }
                         }
                     }
-                    requirement_helpers.push_str("    caps\n}\n\n");
+                    if cap_lines.is_empty() {
+                        requirement_helpers.push_str(&format!(
+                            "fn {fn_caps}(_value: spirv::{kind}) -> Vec<spirv::Capability> {{ Vec::new() }}\n\n",
+                            kind = kind.kind
+                        ));
+                    } else {
+                        requirement_helpers.push_str(&format!(
+                            "fn {fn_caps}(value: spirv::{kind}) -> Vec<spirv::Capability> {{\n    let mut caps = Vec::new();\n{cap_lines}    caps\n}}\n\n",
+                            fn_caps = fn_caps,
+                            kind = kind.kind,
+                            cap_lines = cap_lines
+                        ));
+                    }
                 }
                 if has_extensions {
-                    requirement_helpers.push_str(&format!(
-                        "fn {fn_exts}(value: spirv::{kind}) -> Vec<&'static str> {{\n    let mut exts = Vec::new();\n",
-                        kind = kind.kind
-                    ));
+                    let mut ext_lines = String::new();
                     for enumerant in &kind.enumerants {
                         if let Some(raw) = enumerant.value.as_deref() {
                             let extensions = enumerant
@@ -540,7 +564,7 @@ fn main() {
                                 .map(|ext| format!("\"{ext}\""))
                                 .collect::<Vec<_>>();
                             if !extensions.is_empty() {
-                                requirement_helpers.push_str(&format!(
+                                ext_lines.push_str(&format!(
                                     "    if (value.bits() & {raw}) != 0 {{ exts.extend([{extensions}]); }}\n",
                                     raw = raw,
                                     extensions = extensions.join(", ")
@@ -548,7 +572,19 @@ fn main() {
                             }
                         }
                     }
-                    requirement_helpers.push_str("    exts\n}\n\n");
+                    if ext_lines.is_empty() {
+                        requirement_helpers.push_str(&format!(
+                            "fn {fn_exts}(_value: spirv::{kind}) -> Vec<&'static str> {{ Vec::new() }}\n\n",
+                            kind = kind.kind
+                        ));
+                    } else {
+                        requirement_helpers.push_str(&format!(
+                            "fn {fn_exts}(value: spirv::{kind}) -> Vec<&'static str> {{\n    let mut exts = Vec::new();\n{ext_lines}    exts\n}}\n\n",
+                            fn_exts = fn_exts,
+                            kind = kind.kind,
+                            ext_lines = ext_lines
+                        ));
+                    }
                 }
                 cap_match_arms.push_str(&format!(
                     "        rspirv::dr::Operand::{kind}(value) => {caps},\n",
