@@ -13,6 +13,8 @@ use crate::{target_env::TargetEnv, version::SpirvVersion};
 
 mod capability_info;
 use capability_info::capability_info_from_grammar;
+mod instruction_classes;
+use instruction_classes::{instruction_class, InstructionClass};
 mod instruction_versions;
 use instruction_versions::grammar_required_spirv_version_for_opcode;
 mod operand_versions;
@@ -2464,6 +2466,34 @@ fn run_layout_check(words: &[u32], env: TargetEnv) -> Result<(), ValidationError
 fn instruction_section(current: Section, inst: &rspirv::dr::Instruction) -> Section {
     use rspirv::spirv::Op::*;
     let opcode = inst.class.opcode;
+    if let Some(class) = instruction_class(opcode) {
+        match class {
+            InstructionClass::Annotation => return Section::Annotations,
+            InstructionClass::ConstantCreation | InstructionClass::TypeDeclaration => {
+                return Section::TypesGlobals;
+            }
+            InstructionClass::Extension => match opcode {
+                Extension | ConditionalExtensionINTEL => return Section::Extensions,
+                ExtInstImport => return Section::ExtInstImport,
+                _ => {}
+            },
+            InstructionClass::ModeSetting => match opcode {
+                Capability | ConditionalCapabilityINTEL => return Section::Capabilities,
+                MemoryModel => return Section::MemoryModel,
+                EntryPoint | ConditionalEntryPointINTEL => return Section::EntryPoint,
+                ExecutionMode | ExecutionModeId => return Section::ExecutionMode,
+                _ => {}
+            },
+            InstructionClass::Debug => match opcode {
+                SourceContinued | Source | SourceExtension | String => return Section::Debug1,
+                Name | MemberName => return Section::Debug2,
+                ModuleProcessed => return Section::Debug3,
+                Line | NoLine => {}
+                _ => return Section::Debug1,
+            },
+        }
+    }
+
     let opname = inst.class.opname;
     if opname.starts_with("OpType")
         || opname.starts_with("OpConstant")
@@ -2472,18 +2502,7 @@ fn instruction_section(current: Section, inst: &rspirv::dr::Instruction) -> Sect
         return Section::TypesGlobals;
     }
     match opcode {
-        Capability | ConditionalCapabilityINTEL => Section::Capabilities,
-        Extension | ConditionalExtensionINTEL => Section::Extensions,
-        ExtInstImport => Section::ExtInstImport,
-        MemoryModel => Section::MemoryModel,
         SamplerImageAddressingModeNV => Section::SamplerImageAddressMode,
-        EntryPoint | ConditionalEntryPointINTEL => Section::EntryPoint,
-        ExecutionMode | ExecutionModeId => Section::ExecutionMode,
-        SourceContinued | Source | SourceExtension | String => Section::Debug1,
-        Name | MemberName => Section::Debug2,
-        ModuleProcessed => Section::Debug3,
-        Decorate | DecorateId | MemberDecorate | DecorateString | MemberDecorateString
-        | DecorationGroup | GroupDecorate | GroupMemberDecorate => Section::Annotations,
         Variable | UntypedVariableKHR => {
             if current == Section::TypesGlobals {
                 Section::TypesGlobals
@@ -5339,6 +5358,16 @@ mod tests {
     fn op(word_count: u16, opcode: u16) -> u32 {
         ((word_count as u32) << 16) | opcode as u32
     }
+
+    const EXT_SPV_GOOGLE_DECORATE_STRING_WORDS: [u32; 7] = [
+        0x5f56_5053,
+        0x474f_4f47,
+        0x645f_454c,
+        0x726f_6365,
+        0x5f65_7461,
+        0x6972_7473,
+        0x0000_676e,
+    ];
 
     #[test]
     fn validate_module_rejects_missing_header() {
@@ -10130,13 +10159,13 @@ mod tests {
             1,
             0x0000_0078,
             op(8, 6248), // OpConditionalExtensionINTEL "SPV_GOOGLE_decorate_string" (misordered after debug)
-            0x5f56_5053,
-            0x474f_4f47,
-            0x645f_454c,
-            0x726f_6365,
-            0x5f65_7461,
-            0x6972_7473,
-            0x0000_676e,
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[0],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[1],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[2],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[3],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[4],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[5],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[6],
         ];
         let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
         assert_eq!(
@@ -10174,13 +10203,13 @@ mod tests {
             op(2, 248), // OpLabel %4
             4,
             op(8, 6248), // OpConditionalExtensionINTEL "SPV_GOOGLE_decorate_string" (inside function -> error)
-            0x5f56_5053,
-            0x474f_4f47,
-            0x645f_454c,
-            0x726f_6365,
-            0x5f65_7461,
-            0x6972_7473,
-            0x0000_676e,
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[0],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[1],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[2],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[3],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[4],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[5],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[6],
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
@@ -10223,13 +10252,13 @@ mod tests {
             op(1, 253),  // OpReturn
             op(1, 56),   // OpFunctionEnd
             op(8, 6248), // OpConditionalExtensionINTEL "SPV_GOOGLE_decorate_string" (after functions -> error)
-            0x5f56_5053,
-            0x474f_4f47,
-            0x645f_454c,
-            0x726f_6365,
-            0x5f65_7461,
-            0x6972_7473,
-            0x0000_676e,
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[0],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[1],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[2],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[3],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[4],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[5],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[6],
         ];
 
         let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
@@ -10258,13 +10287,13 @@ mod tests {
             op(2, 73), // OpDecorationGroup %1 (annotations)
             1,
             op(8, 6248), // OpConditionalExtensionINTEL "SPV_GOOGLE_decorate_string" (misordered)
-            0x5f56_5053,
-            0x474f_4f47,
-            0x645f_454c,
-            0x726f_6365,
-            0x5f65_7461,
-            0x6972_7473,
-            0x0000_676e,
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[0],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[1],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[2],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[3],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[4],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[5],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[6],
         ];
         let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
         assert_eq!(
@@ -10293,13 +10322,13 @@ mod tests {
             0x2e30_3534, // ".450"
             0,
             op(8, 6248), // OpConditionalExtensionINTEL "SPV_GOOGLE_decorate_string" (misordered after import)
-            0x5f56_5053,
-            0x474f_4f47,
-            0x645f_454c,
-            0x726f_6365,
-            0x5f65_7461,
-            0x6972_7473,
-            0x0000_676e,
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[0],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[1],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[2],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[3],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[4],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[5],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[6],
             op(3, 14), // OpMemoryModel Logical GLSL450
             0,
             1,
@@ -10328,13 +10357,13 @@ mod tests {
             0,
             1,
             op(8, 6248), // OpConditionalExtensionINTEL "SPV_GOOGLE_decorate_string" (misordered after memory model)
-            0x5f56_5053,
-            0x474f_4f47,
-            0x645f_454c,
-            0x726f_6365,
-            0x5f65_7461,
-            0x6972_7473,
-            0x0000_676e,
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[0],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[1],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[2],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[3],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[4],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[5],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[6],
         ];
         let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
         assert_eq!(

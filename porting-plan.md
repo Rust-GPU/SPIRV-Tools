@@ -171,6 +171,7 @@ Tasks for this milestone:
 - Extended Vulkan-only extension gating to cover NV shader invocation reorder/cluster acceleration spheres, QCOM image processing/cooperative matrix conversion, and added regressions for NV shader invocation reorder in Universal targets.
 - Added environment regressions for NV cluster acceleration structure and QCOM image_processing2 to keep Vulkan-only vendor extensions rejected for Universal targets.
 - Tightened capability validation precedence so required extensions are reported before generic disallowance; vendor capability tests (NV ray tracing) now exercise the stricter ordering to match the C++ validator behavior.
+- Generated instruction-class mapping from the grammar to drive layout section selection for capabilities/extensions/debug/annotations, keeping ordering checks aligned as new opcodes land.
 
 ## Completed Milestone: Extension Allowlists Parity
 Environment-specific extension allowlists now mirror the C++ tables via the generated data set in `TargetEnv::is_extension_allowed`, with vendor gating (NV/AMDX/ARM Vulkan-only; INTEL/ALTERA OpenCL/Universal), version gates, and capability precedence covered by regressions (ray tracing adjuncts, cooperative matrices, tile shading, shader clock, fragment shading rate/density, motion blur, displacement micromaps).
