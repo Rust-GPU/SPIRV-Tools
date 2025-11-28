@@ -459,6 +459,7 @@ Tasks for this milestone:
 - Add CI steps to run the hyperfine and fuzz smoke scripts (`scripts/hyperfine-opt.sh`, `scripts/fuzz-smoke.sh`) to catch perf/correctness regressions.
 - [x] Add runtime toggles (env + FFI override) for the Rust optimizer so CLI/FFI callers can force-enable/disable independently of env defaults, with regression tests guarding the wrappers.
 - [x] Expose a CLI `--force-rust` flag that ignores `SPIRV_TOOLS_DISABLE_RUST_OPT` for benchmarking/rollout control, with an integration test covering env override.
+- [x] Add a CI-friendly optimizer smoke wrapper (`scripts/ci-optimizer-smoke.sh`) that runs fuzz smoke and optional hyperfine benchmarks when available.
 - Wire the Rust optimizer through the main CXX bridge behind a feature flag and port representative C++ optimizer tests to the Rust path via that bridge.
 - Add a nightly/longer-running fuzz job (separate from smoke) to stress end-to-end translation + optimization.
 - Track a “Rust path by default” toggle and document rollout/rollback procedures for CLI/FFI consumers.
