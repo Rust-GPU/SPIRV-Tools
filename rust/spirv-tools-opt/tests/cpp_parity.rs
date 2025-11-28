@@ -293,6 +293,41 @@ fn rust_and_cpp_fold_shared_addend_sub_const_chain() {
 }
 
 #[test]
+fn rust_and_cpp_fold_sub_add_chain_with_shared_mid() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+
+    let (module_words, result_id) = build_sub_add_chain();
+    let rust_insts = extract_simple_block(&module_words);
+    let rust_optimized =
+        spirv_tools_opt::translate::optimize_arith_block(&rust_insts).expect("rust optimizer");
+    let rust_const = rust_optimized.iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(result_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(9)]
+    });
+    assert!(
+        rust_const,
+        "rust optimizer should fold (10-3)+(3-1) to constant 9"
+    );
+
+    let cpp_words = run_cpp_opt(&cpp_opt, &module_words);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&cpp_words, &mut loader).expect("parse cpp optimized");
+    let module = loader.module();
+    let cpp_const = module.all_inst_iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(result_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(9)]
+    });
+    assert!(
+        cpp_const,
+        "C++ spirv-opt should fold (10-3)+(3-1) to constant 9"
+    );
+}
+
+#[test]
 fn rust_and_cpp_fold_sub_self_to_zero() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
@@ -909,6 +944,28 @@ fn build_shared_addend_sub_chain() -> (Vec<u32>, u32) {
     b.ret().expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), sub)
+}
+
+fn build_sub_add_chain() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let _ = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let c10 = b.constant_bit32(int, 10);
+    let c3 = b.constant_bit32(int, 3);
+    let c1 = b.constant_bit32(int, 1);
+    let sub1 = b.i_sub(int, None, c10, c3).expect("sub1");
+    let sub2 = b.i_sub(int, None, c3, c1).expect("sub2");
+    let add = b.i_add(int, None, sub1, sub2).expect("add");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), add)
 }
 
 fn build_add_negate_module() -> (Vec<u32>, u32) {
