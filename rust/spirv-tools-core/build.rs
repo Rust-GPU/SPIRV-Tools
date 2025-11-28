@@ -532,6 +532,10 @@ fn main() {
                     let mut cap_lines = String::new();
                     for enumerant in &kind.enumerants {
                         if let Some(raw) = enumerant.value.as_deref() {
+                            // Skip zero-valued flag entries; they do not gate any capabilities.
+                            if raw == "0" {
+                                continue;
+                            }
                             let capabilities = enumerant
                                 .capabilities
                                 .iter()
@@ -565,6 +569,10 @@ fn main() {
                     let mut ext_lines = String::new();
                     for enumerant in &kind.enumerants {
                         if let Some(raw) = enumerant.value.as_deref() {
+                            // Skip zero-valued flag entries; they do not gate extensions.
+                            if raw == "0" {
+                                continue;
+                            }
                             let extensions = enumerant
                                 .extensions
                                 .iter()
