@@ -6925,13 +6925,19 @@ mod tests {
             2,          // function type
             op(2, 248), // OpLabel %4
             4,
-            op(2, 10),   // OpExtension "X" (illegal inside function)
-            0x0000_0058, // "X"
-            op(1, 253),  // OpReturn
-            op(1, 56),   // OpFunctionEnd
+            op(8, 10), // OpExtension "SPV_GOOGLE_decorate_string" (illegal inside function)
+            0x5f56_5053,
+            0x474f_4f47,
+            0x645f_454c,
+            0x726f_6365,
+            0x5f65_7461,
+            0x6972_7473,
+            0x0000_676e,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
         ];
 
-        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
         assert_eq!(
             error,
             ValidationError::LayoutOutOfOrder {
@@ -6968,11 +6974,17 @@ mod tests {
             4,
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
-            op(2, 10),  // OpExtension "X" (after functions -> error)
-            0x0000_0058,
+            op(8, 10),  // OpExtension "SPV_GOOGLE_decorate_string" (after functions -> error)
+            0x5f56_5053,
+            0x474f_4f47,
+            0x645f_454c,
+            0x726f_6365,
+            0x5f65_7461,
+            0x6972_7473,
+            0x0000_676e,
         ];
 
-        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
         assert_eq!(
             error,
             ValidationError::LayoutOutOfOrder {

@@ -125,6 +125,7 @@ Tasks for this milestone:
   - Updated misordered extension regression in the types/globals section to use an allowlisted extension string so the ordering error is exercised without hitting the extension allowlist.
   - Swapped remaining misordered extension layout regressions to use allowlisted extension strings and Vulkan env to isolate ordering diagnostics from env allowlists (debug/annotations/import/memory-model placements).
   - Brought the execution-mode/entry-point ordering regressions for extensions in line with the allowlisted/Vulkan approach so layout violations surface independent of env allowlists.
+  - Converted the function/inside-function extension ordering regressions to use an allowlisted extension string and Vulkan env, keeping the ordering diagnostics focused.
   - Added layout regressions to keep conditional capabilities (`OpConditionalCapabilityINTEL`) out of function bodies and after functions.
   - Generated operand requirement tables now avoid unused value bindings so validator builds stay warning-free under cargo test/clippy.
   - Reject duplicate conditional capabilities during layout to mirror capability deduplication.
