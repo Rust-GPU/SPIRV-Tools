@@ -1,3 +1,4 @@
+use clap::Parser;
 use rspirv::binary::{parse_words, Assemble};
 use rspirv::dr::Instruction;
 use rspirv::spirv::Op;
@@ -8,37 +9,35 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 
+#[derive(Parser, Debug)]
+#[command(
+    author,
+    version,
+    about = "Optimize a single SPIR-V basic block using the Rust e-graph optimizer."
+)]
+struct Args {
+    /// Input SPIR-V binary; required.
+    input: PathBuf,
+    /// Optional output path; writes to stdout when omitted.
+    output: Option<PathBuf>,
+    /// Force the Rust optimizer even if SPIRV_TOOLS_DISABLE_RUST_OPT is set.
+    #[arg(long, default_value_t = false)]
+    force_rust: bool,
+    /// Skip optimization and emit the input unchanged.
+    #[arg(long, default_value_t = false)]
+    passthrough: bool,
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut force_rust = false;
-    let mut passthrough = false;
-    let mut paths = Vec::<PathBuf>::new();
-    for arg in std::env::args().skip(1) {
-        match arg.as_str() {
-            "--force-rust" => force_rust = true,
-            "--passthrough" => passthrough = true,
-            _ if arg.starts_with('-') => {
-                return Err(
-                    "usage: opt_block [--force-rust] [--passthrough] <input.spv> [output.spv]"
-                        .into(),
-                )
-            }
-            _ => paths.push(PathBuf::from(arg)),
-        }
-    }
+    let args = Args::parse();
 
-    let input = paths
-        .get(0)
-        .cloned()
-        .ok_or("usage: opt_block [--force-rust] [--passthrough] <input.spv> [output.spv]")?;
-    let output = paths.get(1).cloned();
-
-    let input_bytes = fs::read(&input)?;
+    let input_bytes = fs::read(&args.input)?;
     let words = bytes_to_words(&input_bytes)?;
 
-    let optimized = optimize_module(&words, force_rust, passthrough)?;
+    let optimized = optimize_module(&words, args.force_rust, args.passthrough)?;
     let output_bytes = words_to_bytes(&optimized);
 
-    if let Some(path) = output {
+    if let Some(path) = args.output {
         fs::write(path, output_bytes)?;
     } else {
         std::io::stdout().write_all(&output_bytes)?;

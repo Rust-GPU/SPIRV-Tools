@@ -805,6 +805,7 @@ name = "spirv-tools-opt"
 version = "0.1.0"
 dependencies = [
  "arbitrary",
+ "clap",
  "criterion",
  "egg",
  "pretty_assertions",
