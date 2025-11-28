@@ -504,8 +504,14 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("sub-of-add-merge-consts"; "(- (+ ?x ?c1) ?c2)" => {
             SubAddConstMerge { x: var("?x"), c1: var("?c1"), c2: var("?c2") }
         }),
+        rewrite!("sub-of-add-merge-consts-comm"; "(- (+ ?c1 ?x) ?c2)" => {
+            SubAddConstMerge { x: var("?x"), c1: var("?c1"), c2: var("?c2") }
+        }),
         rewrite!("sub-chain-merge-consts"; "(- (- ?x ?c1) ?c2)" => {
             SubChainConstMerge { x: var("?x"), c1: var("?c1"), c2: var("?c2") }
+        }),
+        rewrite!("sub-chain-const-lhs-merge"; "(- (- ?c1 ?x) ?c2)" => {
+            SubConstLhsChain { c1: var("?c1"), c2: var("?c2"), x: var("?x") }
         }),
         rewrite!("add-sub-merge-const-lhs"; "(+ (- ?c1 ?x) ?c2)" => {
             AddSubConstLhs { base_const: var("?c1"), rhs: var("?x"), add_const: var("?c2") }
@@ -590,6 +596,11 @@ struct SubChainConstMerge {
     x: Var,
     c1: Var,
     c2: Var,
+}
+struct SubConstLhsChain {
+    c1: Var,
+    c2: Var,
+    x: Var,
 }
 struct AddSubConstLhs {
     base_const: Var,
@@ -1137,6 +1148,29 @@ impl Applier<SpirvLang, ()> for SubChainConstMerge {
         let merged = ConstValue::new(c1.get().wrapping_add(c2.get()));
         let const_id = egraph.add(SpirvLang::Const(merged));
         let sub = egraph.add(SpirvLang::Sub([subst[self.x], const_id]));
+        egraph.union(eclass, sub);
+        vec![sub]
+    }
+}
+
+impl Applier<SpirvLang, ()> for SubConstLhsChain {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(c1) = const_value(egraph, subst[self.c1]) else {
+            return Vec::new();
+        };
+        let Some(c2) = const_value(egraph, subst[self.c2]) else {
+            return Vec::new();
+        };
+        let merged = ConstValue::new(c1.get().wrapping_sub(c2.get()));
+        let const_id = egraph.add(SpirvLang::Const(merged));
+        let sub = egraph.add(SpirvLang::Sub([const_id, subst[self.x]]));
         egraph.union(eclass, sub);
         vec![sub]
     }
@@ -2162,6 +2196,51 @@ mod tests {
             matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(_))
                 && matches!(nodes[usize::from(*rhs)], SpirvLang::Const(v) if v.get() == 8),
             "expected x - 8, got {nodes:?}"
+        );
+    }
+
+    #[test]
+    fn merges_commuted_add_then_sub_constants_into_single_offset() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Const(ConstValue::new(4)),       // 1
+            SpirvLang::Add([Id::from(1), Id::from(0)]), // 2 = 4 + x
+            SpirvLang::Const(ConstValue::new(2)),       // 3
+            SpirvLang::Sub([Id::from(2), Id::from(3)]), // 4 = (4 + x) - 2
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let SpirvLang::Add([lhs, rhs]) = nodes.last().expect("optimized root") else {
+            panic!("expected add root, got {:?}", nodes.last());
+        };
+        let lhs_const = matches!(nodes[usize::from(*lhs)], SpirvLang::Const(v) if v.get() == 2);
+        let rhs_const = matches!(nodes[usize::from(*rhs)], SpirvLang::Const(v) if v.get() == 2);
+        let lhs_sym = matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(_));
+        let rhs_sym = matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(_));
+        assert!(
+            (lhs_const && rhs_sym) || (rhs_const && lhs_sym),
+            "expected x plus folded const 2, got {nodes:?}"
+        );
+    }
+
+    #[test]
+    fn merges_const_minus_symbol_chain_constants() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new(10)),      // 0
+            SpirvLang::Symbol(Symbol::from("x")),       // 1
+            SpirvLang::Sub([Id::from(0), Id::from(1)]), // 2 = 10 - x
+            SpirvLang::Const(ConstValue::new(3)),       // 3
+            SpirvLang::Sub([Id::from(2), Id::from(3)]), // 4 = (10 - x) - 3
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let SpirvLang::Sub([lhs, rhs]) = nodes.last().expect("optimized root") else {
+            panic!("expected sub root, got {:?}", nodes.last());
+        };
+        assert!(
+            matches!(nodes[usize::from(*lhs)], SpirvLang::Const(v) if v.get() == 7)
+                && matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(_)),
+            "expected const 7 - x, got {nodes:?}"
         );
     }
 
