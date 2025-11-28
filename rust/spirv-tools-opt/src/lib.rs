@@ -2469,6 +2469,37 @@ mod tests {
     }
 
     #[test]
+    fn optimize_arith_block_folds_mod_by_one() {
+        let int = 1;
+        let c5 = Instruction::new(
+            rspirv::spirv::Op::Constant,
+            Some(int),
+            Some(1),
+            vec![rspirv::dr::Operand::LiteralBit32(5)],
+        );
+        let c1 = Instruction::new(
+            rspirv::spirv::Op::Constant,
+            Some(int),
+            Some(2),
+            vec![rspirv::dr::Operand::LiteralBit32(1)],
+        );
+        let umod = Instruction::new(
+            rspirv::spirv::Op::UMod,
+            Some(int),
+            Some(3),
+            vec![rspirv::dr::Operand::IdRef(1), rspirv::dr::Operand::IdRef(2)],
+        );
+        let block = vec![c5.clone(), c1.clone(), umod.clone()];
+        let optimized = optimize_arith_block(&block).expect("optimization should succeed");
+        let folded = optimized.iter().any(|inst| {
+            inst.class.opcode == rspirv::spirv::Op::Constant
+                && inst.result_id == Some(3)
+                && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0)]
+        });
+        assert!(folded, "umod by one should fold to zero with same id");
+    }
+
+    #[test]
     fn rewrites_umod_const_into_div_mul_sub() {
         let expr = RecExpr::from(vec![
             SpirvLang::Symbol(Symbol::from("x")),        // 0
