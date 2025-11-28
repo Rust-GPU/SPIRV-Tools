@@ -234,6 +234,9 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("add-triple-right"; "(+ ?x (+ ?x ?x))" => {
             AddTripleToMul { x: var("?x") }
         }),
+        rewrite!("add-quadruple"; "(+ (+ ?x ?x) (+ ?x ?x))" => {
+            AddQuadrupleToShift { x: var("?x") }
+        }),
         rewrite!("add-factor-consts"; "(+ (* ?x ?c1) (* ?x ?c2))" => {
             AddCommonFactor { x: var("?x"), c1: var("?c1"), c2: var("?c2") }
         }),
@@ -576,6 +579,9 @@ struct AddDuplicateToMul {
     x: Var,
 }
 struct AddTripleToMul {
+    x: Var,
+}
+struct AddQuadrupleToShift {
     x: Var,
 }
 struct MulPowerOfTwo {
@@ -1381,6 +1387,22 @@ impl Applier<SpirvLang, ()> for AddTripleToMul {
     }
 }
 
+impl Applier<SpirvLang, ()> for AddQuadrupleToShift {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let two = egraph.add(SpirvLang::Const(ConstValue::new(2)));
+        let shl = egraph.add(SpirvLang::Shl([subst[self.x], two]));
+        egraph.union(eclass, shl);
+        vec![shl]
+    }
+}
+
 impl Applier<SpirvLang, ()> for MulPowerOfTwo {
     fn apply_one(
         &self,
@@ -1807,6 +1829,31 @@ mod tests {
             found_mul,
             "expected x + x + x to admit x * 3 in the e-graph"
         );
+    }
+
+    #[test]
+    fn rewrites_add_quadruple_into_shift() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Add([Id::from(0), Id::from(0)]), // 1 = x + x
+            SpirvLang::Add([Id::from(1), Id::from(1)]), // 2 = (x + x) + (x + x)
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let class = runner.egraph.find(runner.roots[0]);
+        let nodes = &runner.egraph[class].nodes;
+        let found_shl = nodes.iter().any(|n| {
+            if let SpirvLang::Shl([lhs, rhs]) = n {
+                let lhs_sym = matches!(
+                    runner.egraph[runner.egraph.find(*lhs)].nodes.as_slice(),
+                    [SpirvLang::Symbol(sym)] if *sym == Symbol::from("x")
+                );
+                let rhs_const = const_value(&runner.egraph, *rhs).is_some_and(|c| c.get() == 2);
+                lhs_sym && rhs_const
+            } else {
+                false
+            }
+        });
+        assert!(found_shl, "expected 4*x to admit shift-left-by-2 form");
     }
 
     #[test]
