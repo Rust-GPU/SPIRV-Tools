@@ -266,6 +266,18 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("sub-factor-symbolic-both"; "(- (* ?y ?x) (* ?z ?x))" => {
             SubCommonFactorGeneral { x: var("?x"), y: var("?y"), z: var("?z") }
         }),
+        rewrite!("sdiv-pull-const-left"; "(sdiv (* ?c1 ?x) ?c2)" => {
+            DivPullConst { x: var("?x"), c1: var("?c1"), c2: var("?c2"), signed: true }
+        }),
+        rewrite!("sdiv-pull-const-right"; "(sdiv (* ?x ?c1) ?c2)" => {
+            DivPullConst { x: var("?x"), c1: var("?c1"), c2: var("?c2"), signed: true }
+        }),
+        rewrite!("udiv-pull-const-left"; "(udiv (* ?c1 ?x) ?c2)" => {
+            DivPullConst { x: var("?x"), c1: var("?c1"), c2: var("?c2"), signed: false }
+        }),
+        rewrite!("udiv-pull-const-right"; "(udiv (* ?x ?c1) ?c2)" => {
+            DivPullConst { x: var("?x"), c1: var("?c1"), c2: var("?c2"), signed: false }
+        }),
         rewrite!("sdiv-merge-consts"; "(sdiv (sdiv ?x ?c1) ?c2)" => {
             DivMergeConst { base: var("?x"), c1: var("?c1"), c2: var("?c2"), signed: true }
         }),
@@ -430,6 +442,12 @@ struct SubCommonFactorGeneral {
     x: Var,
     y: Var,
     z: Var,
+}
+struct DivPullConst {
+    x: Var,
+    c1: Var,
+    c2: Var,
+    signed: bool,
 }
 struct CancelMulDiv {
     x: Var,
@@ -1012,6 +1030,44 @@ impl Applier<SpirvLang, ()> for NegMulConst {
     }
 }
 
+impl Applier<SpirvLang, ()> for DivPullConst {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(c1) = const_value(egraph, subst[self.c1]) else {
+            return Vec::new();
+        };
+        let Some(c2) = const_value(egraph, subst[self.c2]) else {
+            return Vec::new();
+        };
+        if c2.get() == 0 {
+            return Vec::new();
+        }
+        let ratio = if self.signed {
+            let num = c1.get() as i32;
+            let den = c2.get() as i32;
+            if den == 0 || num % den != 0 {
+                return Vec::new();
+            }
+            ConstValue::new(num.wrapping_div(den) as u32)
+        } else {
+            if c1.get() % c2.get() != 0 {
+                return Vec::new();
+            }
+            ConstValue::new(c1.get().wrapping_div(c2.get()))
+        };
+        let const_id = egraph.add(SpirvLang::Const(ratio));
+        let mul = egraph.add(SpirvLang::Mul([subst[self.x], const_id]));
+        egraph.union(eclass, mul);
+        vec![mul]
+    }
+}
+
 impl Applier<SpirvLang, ()> for MulMergeConst {
     fn apply_one(
         &self,
@@ -1374,6 +1430,52 @@ mod tests {
             (-5i32) as u32,
             "constant multiplier should carry the negated value"
         );
+    }
+
+    #[test]
+    fn pulls_constant_factor_out_of_division_signed() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new(6)),       // 0
+            SpirvLang::Symbol(Symbol::from("x")),       // 1
+            SpirvLang::Mul([Id::from(0), Id::from(1)]), // 2 = 6 * x
+            SpirvLang::Const(ConstValue::new(3)),       // 3
+            SpirvLang::SDiv([Id::from(2), Id::from(3)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::Mul([lhs, rhs])) = nodes.last() else {
+            panic!("expected mul root, got {:?}", nodes.last());
+        };
+        let (symbol, constant) = match (&nodes[usize::from(*lhs)], &nodes[usize::from(*rhs)]) {
+            (SpirvLang::Symbol(sym), SpirvLang::Const(val)) => (sym, val),
+            (SpirvLang::Const(val), SpirvLang::Symbol(sym)) => (sym, val),
+            other => panic!("unexpected operands for simplified div: {other:?}"),
+        };
+        assert_eq!(symbol, &Symbol::from("x"));
+        assert_eq!(constant.get(), 2);
+    }
+
+    #[test]
+    fn pulls_constant_factor_out_of_division_unsigned() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new(12)),      // 0
+            SpirvLang::Symbol(Symbol::from("x")),       // 1
+            SpirvLang::Mul([Id::from(0), Id::from(1)]), // 2 = 12 * x
+            SpirvLang::Const(ConstValue::new(4)),       // 3
+            SpirvLang::UDiv([Id::from(2), Id::from(3)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::Mul([lhs, rhs])) = nodes.last() else {
+            panic!("expected mul root, got {:?}", nodes.last());
+        };
+        let (symbol, constant) = match (&nodes[usize::from(*lhs)], &nodes[usize::from(*rhs)]) {
+            (SpirvLang::Symbol(sym), SpirvLang::Const(val)) => (sym, val),
+            (SpirvLang::Const(val), SpirvLang::Symbol(sym)) => (sym, val),
+            other => panic!("unexpected operands for simplified div: {other:?}"),
+        };
+        assert_eq!(symbol, &Symbol::from("x"));
+        assert_eq!(constant.get(), 3);
     }
 
     #[test]
