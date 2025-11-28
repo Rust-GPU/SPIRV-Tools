@@ -501,23 +501,30 @@ fn main() {
                         ));
                     }
                 }
+                let cap_binding = if has_capabilities { "value" } else { "_" };
+                let cap_expr = if has_capabilities {
+                    format!("{fn_caps}(*value)")
+                } else {
+                    "Vec::new()".to_string()
+                };
                 cap_match_arms.push_str(&format!(
-                    "        rspirv::dr::Operand::{kind}(value) => {caps},\n",
+                    "        rspirv::dr::Operand::{kind}({cap_binding}) => {caps},\n",
                     kind = kind.kind,
-                    caps = if has_capabilities {
-                        format!("{fn_caps}(*value)")
-                    } else {
-                        "Vec::new()".to_string()
-                    }
+                    cap_binding = cap_binding,
+                    caps = cap_expr
                 ));
+
+                let ext_binding = if has_extensions { "value" } else { "_" };
+                let ext_expr = if has_extensions {
+                    format!("{fn_exts}(*value)")
+                } else {
+                    "Vec::new()".to_string()
+                };
                 ext_match_arms.push_str(&format!(
-                    "        rspirv::dr::Operand::{kind}(value) => {exts},\n",
+                    "        rspirv::dr::Operand::{kind}({ext_binding}) => {exts},\n",
                     kind = kind.kind,
-                    exts = if has_extensions {
-                        format!("{fn_exts}(*value)")
-                    } else {
-                        "Vec::new()".to_string()
-                    }
+                    ext_binding = ext_binding,
+                    exts = ext_expr
                 ));
             }
             "BitEnum" => {
@@ -586,23 +593,30 @@ fn main() {
                         ));
                     }
                 }
+                let cap_binding = if has_capabilities { "value" } else { "_" };
+                let cap_expr = if has_capabilities {
+                    format!("{fn_caps}(*value)")
+                } else {
+                    "Vec::new()".to_string()
+                };
                 cap_match_arms.push_str(&format!(
-                    "        rspirv::dr::Operand::{kind}(value) => {caps},\n",
+                    "        rspirv::dr::Operand::{kind}({cap_binding}) => {caps},\n",
                     kind = kind.kind,
-                    caps = if has_capabilities {
-                        format!("{fn_caps}(*value)")
-                    } else {
-                        "Vec::new()".to_string()
-                    }
+                    cap_binding = cap_binding,
+                    caps = cap_expr
                 ));
+
+                let ext_binding = if has_extensions { "value" } else { "_" };
+                let ext_expr = if has_extensions {
+                    format!("{fn_exts}(*value)")
+                } else {
+                    "Vec::new()".to_string()
+                };
                 ext_match_arms.push_str(&format!(
-                    "        rspirv::dr::Operand::{kind}(value) => {exts},\n",
+                    "        rspirv::dr::Operand::{kind}({ext_binding}) => {exts},\n",
                     kind = kind.kind,
-                    exts = if has_extensions {
-                        format!("{fn_exts}(*value)")
-                    } else {
-                        "Vec::new()".to_string()
-                    }
+                    ext_binding = ext_binding,
+                    exts = ext_expr
                 ));
             }
             _ => {}
