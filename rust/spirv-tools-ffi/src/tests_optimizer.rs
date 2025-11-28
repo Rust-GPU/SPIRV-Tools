@@ -244,6 +244,11 @@ mod optimizer_tests {
             found_shift || found_const,
             "mul by pow2 should strength-reduce or fold"
         );
+        // Disable optimizer and ensure passthrough works.
+        std::env::set_var("SPIRV_TOOLS_DISABLE_RUST_OPT", "1");
+        let passthrough = optimize_basic_block(&words).expect("optimizer runs");
+        std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+        assert_eq!(passthrough, words, "disable flag should skip optimization");
     }
 
     #[test]
