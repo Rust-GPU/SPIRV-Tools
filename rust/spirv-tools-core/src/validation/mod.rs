@@ -5602,11 +5602,16 @@ mod tests {
             1,
             op(2, 19), // OpTypeVoid %1 (types/globals)
             1,
-            op(3, 6248), // OpConditionalExtensionINTEL %2 "X" (after types -> error)
-            2,
-            0x0000_0058, // "X"
+            op(8, 6248), // OpConditionalExtensionINTEL "SPV_GOOGLE_decorate_string" (after types -> error)
+            0x5f56_5053,
+            0x474f_4f47,
+            0x645f_454c,
+            0x726f_6365,
+            0x5f65_7461,
+            0x6972_7473,
+            0x0000_676e,
         ];
-        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
         assert_eq!(
             error,
             ValidationError::LayoutOutOfOrder {
