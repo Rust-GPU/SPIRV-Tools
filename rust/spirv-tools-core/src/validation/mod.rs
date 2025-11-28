@@ -10129,11 +10129,16 @@ mod tests {
             0x0003_0005, // OpName %1 "x"
             1,
             0x0000_0078,
-            op(3, 6248), // OpConditionalExtensionINTEL %1 "ext" (misordered after debug)
-            1,
-            0x0074_7865,
+            op(8, 6248), // OpConditionalExtensionINTEL "SPV_GOOGLE_decorate_string" (misordered after debug)
+            0x5f56_5053,
+            0x474f_4f47,
+            0x645f_454c,
+            0x726f_6365,
+            0x5f65_7461,
+            0x6972_7473,
+            0x0000_676e,
         ];
-        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
         assert_eq!(
             error,
             ValidationError::LayoutOutOfOrder {
@@ -10168,14 +10173,19 @@ mod tests {
             2,
             op(2, 248), // OpLabel %4
             4,
-            op(3, 6248), // OpConditionalExtensionINTEL %1 "ext" (inside function -> error)
-            1,
-            0x0074_7865,
+            op(8, 6248), // OpConditionalExtensionINTEL "SPV_GOOGLE_decorate_string" (inside function -> error)
+            0x5f56_5053,
+            0x474f_4f47,
+            0x645f_454c,
+            0x726f_6365,
+            0x5f65_7461,
+            0x6972_7473,
+            0x0000_676e,
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
 
-        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
         assert_eq!(
             error,
             ValidationError::LayoutOutOfOrder {
@@ -10212,12 +10222,17 @@ mod tests {
             4,
             op(1, 253),  // OpReturn
             op(1, 56),   // OpFunctionEnd
-            op(3, 6248), // OpConditionalExtensionINTEL %1 "ext" (after functions -> error)
-            1,
-            0x0074_7865,
+            op(8, 6248), // OpConditionalExtensionINTEL "SPV_GOOGLE_decorate_string" (after functions -> error)
+            0x5f56_5053,
+            0x474f_4f47,
+            0x645f_454c,
+            0x726f_6365,
+            0x5f65_7461,
+            0x6972_7473,
+            0x0000_676e,
         ];
 
-        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
         assert_eq!(
             error,
             ValidationError::LayoutOutOfOrder {
@@ -10242,11 +10257,16 @@ mod tests {
             1,
             op(2, 73), // OpDecorationGroup %1 (annotations)
             1,
-            op(3, 6248), // OpConditionalExtensionINTEL %1 "ext" (misordered)
-            1,
-            0x0074_7865, // "ext"
+            op(8, 6248), // OpConditionalExtensionINTEL "SPV_GOOGLE_decorate_string" (misordered)
+            0x5f56_5053,
+            0x474f_4f47,
+            0x645f_454c,
+            0x726f_6365,
+            0x5f65_7461,
+            0x6972_7473,
+            0x0000_676e,
         ];
-        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
         assert_eq!(
             error,
             ValidationError::LayoutOutOfOrder {
@@ -10272,14 +10292,19 @@ mod tests {
             0x2e74_7364, // ".std"
             0x2e30_3534, // ".450"
             0,
-            op(3, 6248), // OpConditionalExtensionINTEL %2 "ext" (misordered after import)
-            2,
-            0x0074_7865,
+            op(8, 6248), // OpConditionalExtensionINTEL "SPV_GOOGLE_decorate_string" (misordered after import)
+            0x5f56_5053,
+            0x474f_4f47,
+            0x645f_454c,
+            0x726f_6365,
+            0x5f65_7461,
+            0x6972_7473,
+            0x0000_676e,
             op(3, 14), // OpMemoryModel Logical GLSL450
             0,
             1,
         ];
-        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
         assert_eq!(
             error,
             ValidationError::LayoutOutOfOrder {
@@ -10302,11 +10327,16 @@ mod tests {
             op(3, 14), // OpMemoryModel Logical GLSL450
             0,
             1,
-            op(3, 6248), // OpConditionalExtensionINTEL %1 "ext" (misordered after memory model)
-            1,
-            0x0074_7865,
+            op(8, 6248), // OpConditionalExtensionINTEL "SPV_GOOGLE_decorate_string" (misordered after memory model)
+            0x5f56_5053,
+            0x474f_4f47,
+            0x645f_454c,
+            0x726f_6365,
+            0x5f65_7461,
+            0x6972_7473,
+            0x0000_676e,
         ];
-        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
         assert_eq!(
             error,
             ValidationError::LayoutOutOfOrder {
@@ -16757,22 +16787,32 @@ mod tests {
             0,          // schema
             op(2, 17),  // OpCapability Shader
             rspirv::spirv::Capability::Shader as u32,
-            op(3, 6248), // OpConditionalExtensionINTEL %1 "ext"
-            1,
-            0x0074_7865,
-            op(3, 6248), // OpConditionalExtensionINTEL %2 "ext" (duplicate)
-            2,
-            0x0074_7865,
+            op(8, 6248), // OpConditionalExtensionINTEL "SPV_GOOGLE_decorate_string"
+            0x5f56_5053,
+            0x474f_4f47,
+            0x645f_454c,
+            0x726f_6365,
+            0x5f65_7461,
+            0x6972_7473,
+            0x0000_676e,
+            op(8, 6248), // duplicate
+            0x5f56_5053,
+            0x474f_4f47,
+            0x645f_454c,
+            0x726f_6365,
+            0x5f65_7461,
+            0x6972_7473,
+            0x0000_676e,
             op(3, 14), // OpMemoryModel Logical GLSL450
             0,
             1,
         ];
 
-        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
         assert_eq!(
             error,
             ValidationError::DuplicateExtension {
-                extension: ExtensionName::from("ext")
+                extension: ExtensionName::from("GOOGLE_decorate_string")
             }
         );
     }

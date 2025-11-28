@@ -421,6 +421,7 @@ Percentages are approximate and will be updated as new checklists are added for 
   - The generated allowlist now marks `SPV_KHR_fragment_shading_rate` and `SPV_EXT_fragment_invocation_density` as Vulkan-only to mirror the C++ tables.
 5. Generate capability/extension ordering tables from the grammar (including conditional variants), enforce them in validation, and add binary regressions for each section boundary (before debug/names/annotations/imports/memory model/types/functions) to lock parity before enabling the Rust validator by default.
    - Converted misordered conditional extension/type-section regression to use an allowlisted extension string under Vulkan so ordering errors aren’t masked by env allowlists.
+   - Updated the duplicate conditional-extension regression to use the same allowlisted extension naming (without SPV_ prefix) to match validator normalization.
 5. Port additional C++ arithmetic parity cases that exercise the newer factoring/distributivity rewrites (commuted multiplicands, shared addend cancellation); initial const-only cases have been added to the parity suite, continue expanding to symbolic/factorization scenarios while keeping rule naming collision-free.
    - Parity suite now covers shared-addend constant differences in both directions ((9+3)-(9+4) wrapping to -1 and (9+4)-(9+3) to +1) to mirror C++ folding.
    - Added symbolic shared-addend cancellation parity ((x+5)-(x+2) => 3 and (x+7)-(x+7) => 0) to ensure Rust e-graph rewrites match C++ algebraic simplification on parameterized inputs.
