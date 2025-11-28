@@ -198,6 +198,10 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("add-zero"; "(+ ?a ?b)" => { AddZero { a: var("?a"), b: var("?b") } }),
         rewrite!("add-neg-to-sub"; "(+ ?a (neg ?b))" => "(- ?a ?b)"),
         rewrite!("add-neg-to-sub-swap"; "(+ (neg ?a) ?b)" => "(- ?b ?a)"),
+        rewrite!("neg-neg-cancel"; "(neg (neg ?x))" => "?x"),
+        rewrite!("mul-neg-left"; "(* (neg ?a) ?b)" => "(neg (* ?a ?b))"),
+        rewrite!("mul-neg-right"; "(* ?a (neg ?b))" => "(neg (* ?a ?b))"),
+        rewrite!("sub-neg-both"; "(- (neg ?a) (neg ?b))" => "(- ?b ?a)"),
         rewrite!("mul-one"; "(* ?a ?b)" => { MulOne { a: var("?a"), b: var("?b") } }),
         rewrite!("mul-zero"; "(* ?a ?b)" => { MulZero { a: var("?a"), b: var("?b") } }),
         rewrite!("mul-neg-one"; "(* ?a ?b)" => { MulNegOne { a: var("?a"), b: var("?b") } }),
@@ -1326,6 +1330,72 @@ mod tests {
             matches!(lhs_node, SpirvLang::Symbol(sym) if *sym == Symbol::from("b"))
                 && matches!(rhs_node, SpirvLang::Symbol(sym) if *sym == Symbol::from("a")),
             "expected b - a but got lhs={lhs_node:?} rhs={rhs_node:?}"
+        );
+    }
+
+    #[test]
+    fn cancels_double_negation() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Neg(Id::from(0)),          // 1 = -x
+            SpirvLang::Neg(Id::from(1)),          // 2 = -(-x)
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("x"))])
+        );
+    }
+
+    #[test]
+    fn normalizes_negated_multiplicand_with_constant() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new(5)),       // 0
+            SpirvLang::Neg(Id::from(0)),                // 1 = -5
+            SpirvLang::Symbol(Symbol::from("x")),       // 2
+            SpirvLang::Mul([Id::from(1), Id::from(2)]), // 3 = (-5) * x
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        assert!(
+            nodes.iter().all(|node| !matches!(node, SpirvLang::Neg(_))),
+            "negation should be folded away: {nodes:?}"
+        );
+        let Some(SpirvLang::Mul([lhs, rhs])) = nodes.last() else {
+            panic!("expected mul root, got {:?}", nodes.last());
+        };
+        let const_val = match (&nodes[usize::from(*lhs)], &nodes[usize::from(*rhs)]) {
+            (SpirvLang::Const(val), SpirvLang::Symbol(sym)) if *sym == Symbol::from("x") => val,
+            (SpirvLang::Symbol(sym), SpirvLang::Const(val)) if *sym == Symbol::from("x") => val,
+            other => panic!("unexpected operands for normalized mul: {other:?}"),
+        };
+        assert_eq!(
+            const_val.get(),
+            (-5i32) as u32,
+            "constant multiplier should carry the negated value"
+        );
+    }
+
+    #[test]
+    fn swaps_subtraction_of_negated_terms() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::Neg(Id::from(0)),          // 2 = -x
+            SpirvLang::Neg(Id::from(1)),          // 3 = -y
+            SpirvLang::Sub([Id::from(2), Id::from(3)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::Sub([lhs, rhs])) = nodes.last() else {
+            panic!("expected sub root, got {:?}", nodes.last());
+        };
+        let lhs_node = &nodes[usize::from(*lhs)];
+        let rhs_node = &nodes[usize::from(*rhs)];
+        assert!(
+            matches!(lhs_node, SpirvLang::Symbol(sym) if *sym == Symbol::from("y"))
+                && matches!(rhs_node, SpirvLang::Symbol(sym) if *sym == Symbol::from("x")),
+            "expected y - x after swapping, got lhs={lhs_node:?} rhs={rhs_node:?}"
         );
     }
 
