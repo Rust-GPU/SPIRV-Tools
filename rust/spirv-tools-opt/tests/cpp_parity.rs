@@ -466,6 +466,41 @@ fn rust_and_cpp_cancel_shared_symbolic_addends_const_diff() {
 }
 
 #[test]
+fn rust_and_cpp_cancel_shared_symbolic_addends_exact_match() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+
+    let (module_words, result_id) = build_shared_symbolic_addends_match_module();
+    let rust_insts = extract_simple_block(&module_words);
+    let rust_optimized =
+        spirv_tools_opt::translate::optimize_arith_block(&rust_insts).expect("rust optimizer");
+    let rust_const = rust_optimized.iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(result_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0)]
+    });
+    assert!(
+        rust_const,
+        "rust optimizer should fold (x+7)-(x+7) to constant zero"
+    );
+
+    let cpp_words = run_cpp_opt(&cpp_opt, &module_words);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&cpp_words, &mut loader).expect("parse cpp optimized");
+    let module = loader.module();
+    let cpp_const = module.all_inst_iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(result_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0)]
+    });
+    assert!(
+        cpp_const,
+        "C++ spirv-opt should fold (x+7)-(x+7) to constant zero"
+    );
+}
+
+#[test]
 fn rust_and_cpp_fold_const_factor_sub_chain() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
@@ -1418,6 +1453,27 @@ fn build_shared_symbolic_addends_const_diff_module() -> (Vec<u32>, u32) {
     let c2 = b.constant_bit32(int, 2);
     let add1 = b.i_add(int, None, x, c5).expect("add1");
     let add2 = b.i_add(int, None, x, c2).expect("add2");
+    let sub = b.i_sub(int, None, add1, add2).expect("sub");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), sub)
+}
+
+fn build_shared_symbolic_addends_match_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![int]);
+    let _ = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let x = b.function_parameter(int).expect("param x");
+    let c7 = b.constant_bit32(int, 7);
+    let add1 = b.i_add(int, None, x, c7).expect("add1");
+    let add2 = b.i_add(int, None, x, c7).expect("add2");
     let sub = b.i_sub(int, None, add1, add2).expect("sub");
     b.ret().expect("ret");
     b.end_function().expect("end");
