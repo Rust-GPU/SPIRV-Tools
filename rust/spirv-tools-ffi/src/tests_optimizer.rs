@@ -4,6 +4,9 @@ mod optimizer_tests {
     use rspirv::binary::Assemble;
     use rspirv::dr::{Builder, Loader};
     use rspirv::spirv::{FunctionControl, Op};
+    use std::sync::Mutex;
+
+    static ENV_GUARD: Mutex<()> = Mutex::new(());
 
     #[test]
     fn optimizer_basic_block_pass_through_non_arith() {
@@ -470,6 +473,47 @@ mod optimizer_tests {
             }
         }
         assert!(folded, "mul by -1 should become negate or folded const");
+    }
+
+    #[test]
+    fn optimizer_respects_disable_env() {
+        let _guard = ENV_GUARD.lock().unwrap();
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(void, vec![]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        let c2 = b.constant_bit32(int, 2);
+        let c3 = b.constant_bit32(int, 3);
+        let add = b.i_add(int, None, c2, c3).expect("add");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        std::env::set_var("SPIRV_TOOLS_DISABLE_RUST_OPT", "1");
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+
+        assert_eq!(optimized, words, "disable env should passthrough");
+
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let module = loader.module();
+        let mut saw_add = false;
+        for inst in module.all_inst_iter() {
+            if inst.class.opcode == rspirv::spirv::Op::IAdd && inst.result_id == Some(add) {
+                saw_add = true;
+            }
+        }
+        assert!(saw_add, "add should remain when optimizer is disabled");
     }
 
     #[test]
