@@ -9,7 +9,7 @@ use egg::{
     define_language, rewrite, Applier, EGraph, Id, Language, PatternAst, RecExpr, Rewrite, Runner,
     Subst, Symbol, Var,
 };
-use std::{fmt, str::FromStr, time::Duration};
+use std::{fmt, str::FromStr};
 
 pub mod translate;
 
@@ -218,6 +218,7 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("sub-add-cancel-right"; "(- (+ ?a ?b) ?b)" => "?a"),
         rewrite!("sub-add-cancel-left"; "(- (+ ?a ?b) ?a)" => "?b"),
         rewrite!("sub-sub-cancel-left"; "(- ?a (- ?a ?b))" => "?b"),
+        rewrite!("add-dup-to-mul"; "(+ ?x ?x)" => { AddDuplicateToMul { x: var("?x") } }),
         rewrite!("add-factor-consts"; "(+ (* ?x ?c1) (* ?x ?c2))" => {
             AddCommonFactor { x: var("?x"), c1: var("?c1"), c2: var("?c2") }
         }),
@@ -543,6 +544,9 @@ struct FoldAffineGcd {
     k: Var,
     flipped: bool,
     op: AffineOp,
+}
+struct AddDuplicateToMul {
+    x: Var,
 }
 struct CancelMulDiv {
     x: Var,
@@ -1302,6 +1306,22 @@ impl Applier<SpirvLang, ()> for FoldAffineGcd {
     }
 }
 
+impl Applier<SpirvLang, ()> for AddDuplicateToMul {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let two = egraph.add(SpirvLang::Const(ConstValue::new(2)));
+        let mul = egraph.add(SpirvLang::Mul([subst[self.x], two]));
+        egraph.union(eclass, mul);
+        vec![mul]
+    }
+}
+
 impl Applier<SpirvLang, ()> for MulMergeConst {
     fn apply_one(
         &self,
@@ -1554,6 +1574,36 @@ mod tests {
                 SpirvLang::Neg(Id::from(0))
             ])
         );
+    }
+
+    #[test]
+    fn rewrites_add_dup_into_mul_by_two() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Add([Id::from(0), Id::from(0)]), // 1 = x + x
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let class = runner.egraph.find(runner.roots[0]);
+        let nodes = &runner.egraph[class].nodes;
+        let found_mul = nodes.iter().any(|n| {
+            if let SpirvLang::Mul([lhs, rhs]) = n {
+                let lhs_const = const_value(&runner.egraph, *lhs);
+                let rhs_const = const_value(&runner.egraph, *rhs);
+                let lhs_sym = matches!(
+                    runner.egraph[runner.egraph.find(*lhs)].nodes.as_slice(),
+                    [SpirvLang::Symbol(sym)] if *sym == Symbol::from("x")
+                );
+                let rhs_sym = matches!(
+                    runner.egraph[runner.egraph.find(*rhs)].nodes.as_slice(),
+                    [SpirvLang::Symbol(sym)] if *sym == Symbol::from("x")
+                );
+                (lhs_sym && rhs_const.map(|c| c.get()) == Some(2))
+                    || (rhs_sym && lhs_const.map(|c| c.get()) == Some(2))
+            } else {
+                false
+            }
+        });
+        assert!(found_mul, "expected x + x to admit x * 2 in the e-graph");
     }
 
     #[test]
