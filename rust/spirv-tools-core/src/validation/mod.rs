@@ -16,7 +16,7 @@ use capability_info::capability_info_from_grammar;
 mod instruction_classes;
 use instruction_classes::{instruction_class, InstructionClass};
 mod instruction_layout;
-use instruction_layout::{mode_setting_kind, mode_stage, ModeSettingKind, ModeStage};
+use instruction_layout::{is_capability_opcode, is_extension_opcode, mode_stage, ModeStage};
 mod instruction_versions;
 use instruction_versions::grammar_required_spirv_version_for_opcode;
 mod operand_versions;
@@ -2349,10 +2349,7 @@ fn run_layout_check(words: &[u32], env: TargetEnv) -> Result<(), ValidationError
                 self.mode_stage = self.mode_stage.max(stage);
             }
 
-            if matches!(
-                opcode,
-                rspirv::spirv::Op::Extension | rspirv::spirv::Op::ConditionalExtensionINTEL
-            ) {
+            if is_extension_opcode(opcode) {
                 if section < self.current_section {
                     return rspirv::binary::ParseAction::Error(Box::new(
                         ValidationError::LayoutOutOfOrder { opcode },
@@ -2363,36 +2360,27 @@ fn run_layout_check(words: &[u32], env: TargetEnv) -> Result<(), ValidationError
                         return rspirv::binary::ParseAction::Error(Box::new(err));
                     }
                 }
-            } else if let Some(mode_setting) = mode_setting_kind(opcode) {
-                match mode_setting {
-                    ModeSettingKind::MemoryModel => {
-                        if self.current_section > Section::MemoryModel {
-                            return rspirv::binary::ParseAction::Error(Box::new(
-                                ValidationError::LayoutOutOfOrder {
-                                    opcode: rspirv::spirv::Op::MemoryModel,
-                                },
-                            ));
-                        }
-                        if let Err(err) = self.memory_model_state.mark_seen() {
-                            return rspirv::binary::ParseAction::Error(Box::new(err));
-                        }
+            } else if is_capability_opcode(opcode) {
+                if section < self.current_section {
+                    return rspirv::binary::ParseAction::Error(Box::new(
+                        ValidationError::LayoutOutOfOrder { opcode },
+                    ));
+                }
+                if let Some(cap) = capability_operand(&inst) {
+                    if let Err(err) = self.capabilities.insert(cap) {
+                        return rspirv::binary::ParseAction::Error(Box::new(err));
                     }
-                    ModeSettingKind::Capability | ModeSettingKind::ConditionalCapability => {
-                        if section < self.current_section {
-                            return rspirv::binary::ParseAction::Error(Box::new(
-                                ValidationError::LayoutOutOfOrder { opcode },
-                            ));
-                        }
-                        if let Some(cap) = capability_operand(&inst) {
-                            if let Err(err) = self.capabilities.insert(cap) {
-                                return rspirv::binary::ParseAction::Error(Box::new(err));
-                            }
-                        }
-                    }
-                    ModeSettingKind::Extension | ModeSettingKind::ConditionalExtension => {
-                        // Handled above for extension-class instructions.
-                    }
-                    _ => {}
+                }
+            } else if opcode == rspirv::spirv::Op::MemoryModel {
+                if self.current_section > Section::MemoryModel {
+                    return rspirv::binary::ParseAction::Error(Box::new(
+                        ValidationError::LayoutOutOfOrder {
+                            opcode: rspirv::spirv::Op::MemoryModel,
+                        },
+                    ));
+                }
+                if let Err(err) = self.memory_model_state.mark_seen() {
+                    return rspirv::binary::ParseAction::Error(Box::new(err));
                 }
             } else {
                 match opcode {
@@ -5365,6 +5353,19 @@ mod tests {
         0x6972_7473,
         0x0000_676e,
     ];
+
+    #[test]
+    fn opcode_helpers_classify_capabilities_and_extensions() {
+        use super::instruction_layout::{is_capability_opcode, is_extension_opcode};
+
+        assert!(is_capability_opcode(Op::Capability));
+        assert!(is_capability_opcode(Op::ConditionalCapabilityINTEL));
+        assert!(is_extension_opcode(Op::Extension));
+        assert!(is_extension_opcode(Op::ConditionalExtensionINTEL));
+        assert!(!is_capability_opcode(Op::Extension));
+        assert!(!is_extension_opcode(Op::Capability));
+        assert!(!is_extension_opcode(Op::ExtInstImport));
+    }
 
     #[test]
     fn validate_module_rejects_missing_header() {

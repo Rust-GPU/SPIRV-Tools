@@ -772,6 +772,7 @@ fn main() {
     mode_setting_output.push_str("    ExecutionModeId,\n");
     mode_setting_output.push_str("    Other,\n");
     mode_setting_output.push_str("}\n\n");
+    mode_setting_output.push_str("#[allow(dead_code)]\n");
     mode_setting_output
         .push_str("pub fn mode_setting_kind(opcode: spirv::Op) -> Option<ModeSettingKind> {\n");
     mode_setting_output.push_str("    match opcode {\n");
