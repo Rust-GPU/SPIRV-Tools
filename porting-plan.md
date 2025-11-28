@@ -119,6 +119,7 @@ Tasks for this milestone:
   - Added layout regressions to keep debug/source instructions (`OpSource`, `OpSourceExtension`, `OpSourceContinued`) out of function bodies and after-function sections.
   - Extended extension layout handling to cover conditional extensions and reject duplicates.
   - Added layout regressions to keep conditional extensions (`OpConditionalExtensionINTEL`) out of function bodies and after functions.
+  - Added a binary regression with a well-formed module that ends in `OpConditionalExtensionINTEL` after a function to ensure ordering reports the conditional extension (not earlier layout violations).
   - Added layout regressions to keep conditional capabilities (`OpConditionalCapabilityINTEL`) out of function bodies and after functions.
   - Reject duplicate conditional capabilities during layout to mirror capability deduplication.
   - Added layout regression to reject `OpDecorationGroup` that appears after function definitions.

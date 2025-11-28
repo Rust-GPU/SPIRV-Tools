@@ -3146,10 +3146,7 @@ fn extension_operand(inst: &rspirv::dr::Instruction) -> Option<ExtensionName> {
     })
 }
 
-fn validate_extension_allowlist(
-    module: &Module,
-    env: TargetEnv,
-) -> Result<(), ValidationError> {
+fn validate_extension_allowlist(module: &Module, env: TargetEnv) -> Result<(), ValidationError> {
     for inst in &module.extensions {
         if let Some(extension) = extension_operand(inst) {
             if !env.is_extension_allowed(&extension) {
@@ -5334,6 +5331,7 @@ mod tests {
         format_validation_error, format_validation_error_from_words, layout_compatible_types,
         parse_module, FriendlyNames, ValidationOptions,
     };
+    use rspirv::spirv::{Capability, FunctionControl, MemoryModel, Op};
     use std::collections::{HashMap, HashSet};
     use std::num::NonZeroU32;
     use std::sync::Arc;
@@ -5456,9 +5454,12 @@ mod tests {
         use rspirv::spirv::{AddressingModel, Capability, MemoryModel, Op};
 
         let mut module = rspirv::dr::Module::new();
-        module
-            .capabilities
-            .push(Instruction::new(Op::Capability, None, None, vec![rspirv::dr::Operand::Capability(Capability::Shader)]));
+        module.capabilities.push(Instruction::new(
+            Op::Capability,
+            None,
+            None,
+            vec![rspirv::dr::Operand::Capability(Capability::Shader)],
+        ));
         module.memory_model = Some(Instruction::new(
             Op::MemoryModel,
             None,
@@ -5472,7 +5473,9 @@ mod tests {
             Op::ConditionalExtensionINTEL,
             None,
             None,
-            vec![rspirv::dr::Operand::LiteralString("SPV_KHR_ray_tracing".into())],
+            vec![rspirv::dr::Operand::LiteralString(
+                "SPV_KHR_ray_tracing".into(),
+            )],
         ));
         module.header = Some(rspirv::dr::ModuleHeader::new(5));
         let void = rspirv::dr::Operand::IdRef(1);
@@ -5511,6 +5514,53 @@ mod tests {
             ValidationError::DisallowedExtension {
                 extension: ExtensionName::from("KHR_ray_tracing"),
                 env: TargetEnv::WebGpu0
+            }
+        );
+    }
+
+    #[test]
+    fn conditional_extension_after_functions_rejected_for_ordering() {
+        // Hand-rolled module: capability + memory model, then types/functions,
+        // then a conditional extension placed after the function to trigger
+        // layout ordering validation.
+        let binary = vec![
+            0x0723_0203,
+            0x0001_0600,
+            0,
+            5, // bound
+            0,
+            op(2, Op::Capability as u16),
+            Capability::Shader as u32,
+            op(3, Op::MemoryModel as u16),
+            rspirv::spirv::AddressingModel::Logical as u32,
+            MemoryModel::GLSL450 as u32,
+            op(2, Op::TypeVoid as u16),
+            1,
+            op(3, Op::TypeFunction as u16),
+            2, // result id
+            1, // return type
+            op(5, Op::Function as u16),
+            1, // result type (void)
+            3, // result id
+            FunctionControl::NONE.bits(),
+            2, // fn type
+            op(2, Op::Label as u16),
+            4, // label
+            op(1, Op::Return as u16),
+            op(1, Op::FunctionEnd as u16),
+            op(6, Op::ConditionalExtensionINTEL as u16),
+            0x5f565053, // "SPV_"
+            0x5f52484b, // "KHR_"
+            0x5f796172, // "ray_"
+            0x63617274, // "trac"
+            0x00676e69, // "ing\0"
+        ];
+
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: Op::ConditionalExtensionINTEL
             }
         );
     }
