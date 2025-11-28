@@ -451,3 +451,12 @@ Planned tasks:
 - Add fuzz targets for translated basic blocks to stress end-to-end translation + optimization.
 - Port representative optimizer tests from the C++ suite to the Rust path to validate parity over FFI/CLI.
    - Added a CLI integration test covering div/rem/neg/shifts to keep translation coverage guarded in the Rust path.
+
+## Upcoming Milestone: Optimizer Default & CI Guardrails
+Flip the Rust optimizer on by default across FFI/CLI once parity is proven and guardrails are in place.
+
+Tasks for this milestone:
+- Add CI steps to run the hyperfine and fuzz smoke scripts (`scripts/hyperfine-opt.sh`, `scripts/fuzz-smoke.sh`) to catch perf/correctness regressions.
+- Wire the Rust optimizer through the main CXX bridge behind a feature flag and port representative C++ optimizer tests to the Rust path via that bridge.
+- Add a nightly/longer-running fuzz job (separate from smoke) to stress end-to-end translation + optimization.
+- Track a “Rust path by default” toggle and document rollout/rollback procedures for CLI/FFI consumers.
