@@ -6041,8 +6041,14 @@ mod tests {
             1,
             0x6e69_616d, // "main"
             0,
-            op(2, rspirv::spirv::Op::Extension as u16), // OpExtension "X" (after entry point -> error)
-            0x0000_0058,                                // "X"
+            op(8, rspirv::spirv::Op::Extension as u16), // OpExtension "SPV_GOOGLE_decorate_string" (after entry point -> error)
+            0x5f56_5053,                                // "SPV_"
+            0x474f_4f47,                                // "GOOG"
+            0x645f_454c,                                // "LE_d"
+            0x726f_6365,                                // "ecor"
+            0x5f65_7461,                                // "ate_"
+            0x6972_7473,                                // "stri"
+            0x0000_676e,                                // "ng\0"
             op(2, 19),                                  // OpTypeVoid %2
             2,
             op(3, 33), // OpTypeFunction %3 %2
@@ -6058,7 +6064,7 @@ mod tests {
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
-        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
         assert_eq!(
             error,
             ValidationError::LayoutOutOfOrder {
@@ -8102,9 +8108,15 @@ mod tests {
             op(3, 16), // OpExecutionMode %3 OriginUpperLeft
             3,
             rspirv::spirv::ExecutionMode::OriginUpperLeft as u32,
-            op(2, 10),   // OpExtension "X" (misordered after execution mode)
-            0x0000_0058, // "X"
-            op(2, 19),   // %1 = OpTypeVoid
+            op(8, 10), // OpExtension "SPV_GOOGLE_decorate_string" (misordered after execution mode)
+            0x5f56_5053,
+            0x474f_4f47,
+            0x645f_454c,
+            0x726f_6365,
+            0x5f65_7461,
+            0x6972_7473,
+            0x0000_676e,
+            op(2, 19), // %1 = OpTypeVoid
             1,
             op(3, 33), // %2 = OpTypeFunction %1
             2,
@@ -8119,7 +8131,7 @@ mod tests {
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
-        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
         assert_eq!(
             error,
             ValidationError::LayoutOutOfOrder {
