@@ -197,6 +197,56 @@ mod optimizer_tests {
     }
 
     #[test]
+    fn optimizer_strength_reduces_mul_pow2() {
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(void, vec![]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        let c8 = b.constant_bit32(int, 8);
+        let c2 = b.constant_bit32(int, 2);
+        // Keep operands non-constant to avoid full folding to a literal.
+        let mul = b.i_mul(int, None, c2, c8).expect("mul");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let module = loader.module();
+        let mut found_shift = false;
+        for inst in module.all_inst_iter() {
+            if inst.class.opcode == Op::ShiftLeftLogical && inst.result_id == Some(mul) {
+                found_shift = true;
+            }
+            assert_ne!(
+                inst.class.opcode,
+                Op::IMul,
+                "mul by power of two should rewrite"
+            );
+        }
+        // Allow either shift or folded constant in case both operands are const.
+        let found_const = module.all_inst_iter().any(|inst| {
+            inst.class.opcode == Op::Constant
+                && inst.result_id == Some(mul)
+                && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(16)]
+        });
+        assert!(
+            found_shift || found_const,
+            "mul by pow2 should strength-reduce or fold"
+        );
+    }
+
+    #[test]
     fn optimizer_cancels_add_sub_chain() {
         let mut b = Builder::new();
         let void = b.type_void();

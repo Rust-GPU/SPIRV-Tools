@@ -122,6 +122,47 @@ fn corpus_folds_mul_by_zero() {
 }
 
 #[test]
+fn corpus_strength_reduces_mul_by_pow2() {
+    let int = 1;
+    let c8 = inst(
+        Op::Constant,
+        int,
+        1,
+        vec![rspirv::dr::Operand::LiteralBit32(8)],
+    );
+    let c2 = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(2)],
+    );
+    let mul = inst(
+        Op::IMul,
+        int,
+        3,
+        vec![rspirv::dr::Operand::IdRef(1), rspirv::dr::Operand::IdRef(2)],
+    );
+    let optimized = optimize_arith_block(&[c8, c2, mul]).expect("optimize");
+    // Allow either shift or fully folded constant if both operands are const.
+    let saw_shift = optimized
+        .iter()
+        .any(|inst| inst.class.opcode == Op::ShiftLeftLogical && inst.result_id == Some(3));
+    let saw_const = optimized.iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(3)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(16)]
+    });
+    assert!(
+        saw_shift || saw_const,
+        "mul by power of two should strength-reduce or fold"
+    );
+    assert!(
+        optimized.iter().all(|inst| inst.class.opcode != Op::IMul),
+        "mul should be rewritten or folded"
+    );
+}
+
+#[test]
 fn corpus_folds_div_by_one() {
     let int = 1;
     let c8 = inst(
