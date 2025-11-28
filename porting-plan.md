@@ -445,8 +445,8 @@ Planned tasks:
 Expose the Rust optimizer through the existing C/C++ surfaces and provide CLI benchmarking.
 
 Planned tasks:
-- Add FFI hooks in `spirv-tools-ffi` to invoke the Rust optimizer on arithmetic/basic-block inputs, preserving the C API shape.
-- Wire the Rust optimizer into the CLI with a feature flag and add a hyperfine benchmark script comparing Rust vs C++ optimizer paths.
+- Add FFI hooks in `spirv-tools-ffi` to invoke the Rust optimizer on arithmetic/basic-block inputs, preserving the C API shape. **(in place: `optimize_basic_block` exposed, exercised by FFI tests)**
+- Wire the Rust optimizer into the CLI with a feature flag and add a hyperfine benchmark script comparing Rust vs C++ optimizer paths. **(done: `spirv-opt` uses Rust by default, `--cpp` fallback for C++; `scripts/hyperfine-opt.sh` added)**
 - Extend translation to cover common arithmetic/basic-block patterns (including div/rem/neg) and ensure non-arithmetic ops pass through untouched.
 - Add fuzz targets for translated basic blocks to stress end-to-end translation + optimization.
 - Port representative optimizer tests from the C++ suite to the Rust path to validate parity over FFI/CLI.
