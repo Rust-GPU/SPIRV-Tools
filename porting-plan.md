@@ -123,6 +123,7 @@ Tasks for this milestone:
   - Adjusted extension ordering/duplication regressions to use env-allowed extensions (and Vulkan env where necessary) so ordering/uniqueness failures trigger before allowlist gating, including NV bindless sampler address mode coverage.
   - Generator skips zero-valued bitflag enumerants when emitting operand requirements so clippy passes without bad-bitmask false positives while retaining capability/extension gating.
   - Updated misordered extension regression in the types/globals section to use an allowlisted extension string so the ordering error is exercised without hitting the extension allowlist.
+  - Swapped remaining misordered extension layout regressions to use allowlisted extension strings and Vulkan env to isolate ordering diagnostics from env allowlists (debug/annotations/import/memory-model placements).
   - Added layout regressions to keep conditional capabilities (`OpConditionalCapabilityINTEL`) out of function bodies and after functions.
   - Generated operand requirement tables now avoid unused value bindings so validator builds stay warning-free under cargo test/clippy.
   - Reject duplicate conditional capabilities during layout to mirror capability deduplication.
