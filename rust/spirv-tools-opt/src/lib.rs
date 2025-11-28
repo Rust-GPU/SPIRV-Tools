@@ -214,6 +214,18 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("sub-add-cancel-right"; "(- (+ ?a ?b) ?b)" => "?a"),
         rewrite!("sub-add-cancel-left"; "(- (+ ?a ?b) ?a)" => "?b"),
         rewrite!("sub-sub-cancel-left"; "(- ?a (- ?a ?b))" => "?b"),
+        rewrite!("add-factor-consts"; "(+ (* ?x ?c1) (* ?x ?c2))" => {
+            AddCommonFactor { x: var("?x"), c1: var("?c1"), c2: var("?c2") }
+        }),
+        rewrite!("add-factor-consts-mixed"; "(+ (* ?c1 ?x) (* ?x ?c2))" => {
+            AddCommonFactor { x: var("?x"), c1: var("?c1"), c2: var("?c2") }
+        }),
+        rewrite!("add-factor-consts-right"; "(+ (* ?x ?c1) (* ?c2 ?x))" => {
+            AddCommonFactor { x: var("?x"), c1: var("?c1"), c2: var("?c2") }
+        }),
+        rewrite!("add-factor-consts-both"; "(+ (* ?c1 ?x) (* ?c2 ?x))" => {
+            AddCommonFactor { x: var("?x"), c1: var("?c1"), c2: var("?c2") }
+        }),
         rewrite!("sdiv-merge-consts"; "(sdiv (sdiv ?x ?c1) ?c2)" => {
             DivMergeConst { base: var("?x"), c1: var("?c1"), c2: var("?c2"), signed: true }
         }),
@@ -328,6 +340,11 @@ struct DivMergeConst {
     c1: Var,
     c2: Var,
     signed: bool,
+}
+struct AddCommonFactor {
+    x: Var,
+    c1: Var,
+    c2: Var,
 }
 struct MulMergeConst {
     base: Var,
@@ -759,6 +776,29 @@ impl Applier<SpirvLang, ()> for DivMergeConst {
     }
 }
 
+impl Applier<SpirvLang, ()> for AddCommonFactor {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(c1) = const_value(egraph, subst[self.c1]) else {
+            return Vec::new();
+        };
+        let Some(c2) = const_value(egraph, subst[self.c2]) else {
+            return Vec::new();
+        };
+        let merged = ConstValue::new(c1.get().wrapping_add(c2.get()));
+        let const_id = egraph.add(SpirvLang::Const(merged));
+        let mul = egraph.add(SpirvLang::Mul([subst[self.x], const_id]));
+        egraph.union(eclass, mul);
+        vec![mul]
+    }
+}
+
 impl Applier<SpirvLang, ()> for MulMergeConst {
     fn apply_one(
         &self,
@@ -1147,6 +1187,54 @@ mod tests {
         };
         assert_eq!(symbol, &Symbol::from("y"));
         assert_eq!(constant.get(), 20, "factors should merge to 20");
+    }
+
+    #[test]
+    fn factors_common_multiplier_from_addends() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Const(ConstValue::new(2)),       // 1
+            SpirvLang::Const(ConstValue::new(3)),       // 2
+            SpirvLang::Mul([Id::from(0), Id::from(1)]), // 3 = x * 2
+            SpirvLang::Mul([Id::from(0), Id::from(2)]), // 4 = x * 3
+            SpirvLang::Add([Id::from(3), Id::from(4)]), // 5 = x*2 + x*3
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::Mul([lhs, rhs])) = nodes.last() else {
+            panic!("expected mul root, got {:?}", nodes.last());
+        };
+        let (symbol, constant) = match (&nodes[usize::from(*lhs)], &nodes[usize::from(*rhs)]) {
+            (SpirvLang::Symbol(sym), SpirvLang::Const(val)) => (sym, val),
+            (SpirvLang::Const(val), SpirvLang::Symbol(sym)) => (sym, val),
+            other => panic!("unexpected operands after factoring: {other:?}"),
+        };
+        assert_eq!(symbol, &Symbol::from("x"));
+        assert_eq!(constant.get(), 5, "factor should sum constants to 5");
+    }
+
+    #[test]
+    fn factoring_handles_commuted_multiplicands() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new(4)),       // 0
+            SpirvLang::Const(ConstValue::new(6)),       // 1
+            SpirvLang::Symbol(Symbol::from("z")),       // 2
+            SpirvLang::Mul([Id::from(0), Id::from(2)]), // 3 = 4 * z
+            SpirvLang::Mul([Id::from(2), Id::from(1)]), // 4 = z * 6
+            SpirvLang::Add([Id::from(3), Id::from(4)]), // 5 = 4*z + z*6
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::Mul([lhs, rhs])) = nodes.last() else {
+            panic!("expected mul root, got {:?}", nodes.last());
+        };
+        let (symbol, constant) = match (&nodes[usize::from(*lhs)], &nodes[usize::from(*rhs)]) {
+            (SpirvLang::Symbol(sym), SpirvLang::Const(val)) => (sym, val),
+            (SpirvLang::Const(val), SpirvLang::Symbol(sym)) => (sym, val),
+            other => panic!("unexpected operands after commuted factoring: {other:?}"),
+        };
+        assert_eq!(symbol, &Symbol::from("z"));
+        assert_eq!(constant.get(), 10, "factor should sum constants to 10");
     }
 
     #[test]
