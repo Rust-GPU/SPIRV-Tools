@@ -827,8 +827,10 @@ namespace spvtools {
   namespace ffi {
     struct ParseResult;
     struct AssembleResult;
+    struct Diagnostic;
     struct DisassembleResult;
     struct ValidateResult;
+    struct OptimizeResult;
     struct ValidatorLimit;
     struct ValidatorOptions;
     struct MessagePosition;
@@ -857,11 +859,38 @@ struct AssembleResult final {
 };
 #endif // CXXBRIDGE1_STRUCT_spvtools$ffi$AssembleResult
 
+#ifndef CXXBRIDGE1_STRUCT_spvtools$ffi$MessagePosition
+#define CXXBRIDGE1_STRUCT_spvtools$ffi$MessagePosition
+struct MessagePosition final {
+  ::std::uint32_t line CXX_DEFAULT_VALUE(0);
+  ::std::uint32_t column CXX_DEFAULT_VALUE(0);
+  ::std::uint32_t index CXX_DEFAULT_VALUE(0);
+
+  bool operator==(MessagePosition const &) const noexcept;
+  bool operator!=(MessagePosition const &) const noexcept;
+  using IsRelocatable = ::std::true_type;
+};
+#endif // CXXBRIDGE1_STRUCT_spvtools$ffi$MessagePosition
+
+#ifndef CXXBRIDGE1_STRUCT_spvtools$ffi$Diagnostic
+#define CXXBRIDGE1_STRUCT_spvtools$ffi$Diagnostic
+struct Diagnostic final {
+  ::std::uint32_t level CXX_DEFAULT_VALUE(0);
+  bool has_source CXX_DEFAULT_VALUE(false);
+  ::rust::String source;
+  ::spvtools::ffi::MessagePosition position;
+  ::rust::String message;
+
+  using IsRelocatable = ::std::true_type;
+};
+#endif // CXXBRIDGE1_STRUCT_spvtools$ffi$Diagnostic
+
 #ifndef CXXBRIDGE1_STRUCT_spvtools$ffi$DisassembleResult
 #define CXXBRIDGE1_STRUCT_spvtools$ffi$DisassembleResult
 struct DisassembleResult final {
   bool success CXX_DEFAULT_VALUE(false);
   ::rust::String text;
+  ::rust::Vec<::spvtools::ffi::Diagnostic> diagnostics;
 
   using IsRelocatable = ::std::true_type;
 };
@@ -876,6 +905,17 @@ struct ValidateResult final {
   using IsRelocatable = ::std::true_type;
 };
 #endif // CXXBRIDGE1_STRUCT_spvtools$ffi$ValidateResult
+
+#ifndef CXXBRIDGE1_STRUCT_spvtools$ffi$OptimizeResult
+#define CXXBRIDGE1_STRUCT_spvtools$ffi$OptimizeResult
+struct OptimizeResult final {
+  bool success CXX_DEFAULT_VALUE(false);
+  ::rust::String message;
+  ::rust::Vec<::std::uint32_t> words;
+
+  using IsRelocatable = ::std::true_type;
+};
+#endif // CXXBRIDGE1_STRUCT_spvtools$ffi$OptimizeResult
 
 #ifndef CXXBRIDGE1_STRUCT_spvtools$ffi$ValidatorLimit
 #define CXXBRIDGE1_STRUCT_spvtools$ffi$ValidatorLimit
@@ -907,19 +947,6 @@ struct ValidatorOptions final {
   using IsRelocatable = ::std::true_type;
 };
 #endif // CXXBRIDGE1_STRUCT_spvtools$ffi$ValidatorOptions
-
-#ifndef CXXBRIDGE1_STRUCT_spvtools$ffi$MessagePosition
-#define CXXBRIDGE1_STRUCT_spvtools$ffi$MessagePosition
-struct MessagePosition final {
-  ::std::uint32_t line CXX_DEFAULT_VALUE(0);
-  ::std::uint32_t column CXX_DEFAULT_VALUE(0);
-  ::std::uint32_t index CXX_DEFAULT_VALUE(0);
-
-  bool operator==(MessagePosition const &) const noexcept;
-  bool operator!=(MessagePosition const &) const noexcept;
-  using IsRelocatable = ::std::true_type;
-};
-#endif // CXXBRIDGE1_STRUCT_spvtools$ffi$MessagePosition
 
 extern "C" {
 bool spvtools$ffi$cxxbridge1$MessagePosition$operator$eq(MessagePosition const &, MessagePosition const &) noexcept;
@@ -970,6 +997,10 @@ void spvtools$ffi$cxxbridge1$set_rust_validator_override(bool enable) noexcept;
 
 void spvtools$ffi$cxxbridge1$clear_rust_validator_override() noexcept;
 
+void spvtools$ffi$cxxbridge1$set_rust_optimizer_override(bool enable) noexcept;
+
+void spvtools$ffi$cxxbridge1$clear_rust_optimizer_override() noexcept;
+
 void spvtools$ffi$cxxbridge1$default_validator_options(::spvtools::ffi::ValidatorOptions *return$) noexcept;
 
 void spvtools$ffi$cxxbridge1$rebind_context(::std::uint64_t handle, ::std::size_t context_ptr) noexcept;
@@ -979,6 +1010,8 @@ void spvtools$ffi$cxxbridge1$try_assemble_text(::std::uint64_t context_handle, :
 void spvtools$ffi$cxxbridge1$try_disassemble_binary(::std::uint64_t context_handle, ::rust::Slice<::std::uint32_t const> binary, ::std::uint32_t options, ::spvtools::ffi::DisassembleResult *return$) noexcept;
 
 void spvtools$ffi$cxxbridge1$validate_binary_rust(::std::uint32_t env, ::rust::Slice<::std::uint32_t const> binary, ::spvtools::ffi::ValidatorOptions const &options, ::spvtools::ffi::ValidateResult *return$) noexcept;
+
+void spvtools$ffi$cxxbridge1$optimize_basic_block(::rust::Slice<::std::uint32_t const> words, ::spvtools::ffi::OptimizeResult *return$) noexcept;
 
 void spvtools$ffi$cxxbridge1$dispatch_context_message(::std::size_t context_ptr, ::std::uint32_t level, bool has_source, ::rust::Str source, ::spvtools::ffi::MessagePosition *position, ::rust::Str message) noexcept {
   void (*dispatch_context_message$)(::std::size_t, ::std::uint32_t, bool, ::rust::Str, ::spvtools::ffi::MessagePosition, ::rust::Str) = ::spvtools::ffi::dispatch_context_message;
@@ -1108,6 +1141,14 @@ void clear_rust_validator_override() noexcept {
   spvtools$ffi$cxxbridge1$clear_rust_validator_override();
 }
 
+void set_rust_optimizer_override(bool enable) noexcept {
+  spvtools$ffi$cxxbridge1$set_rust_optimizer_override(enable);
+}
+
+void clear_rust_optimizer_override() noexcept {
+  spvtools$ffi$cxxbridge1$clear_rust_optimizer_override();
+}
+
 ::spvtools::ffi::ValidatorOptions default_validator_options() noexcept {
   ::rust::MaybeUninit<::spvtools::ffi::ValidatorOptions> return$;
   spvtools$ffi$cxxbridge1$default_validator_options(&return$.value);
@@ -1135,10 +1176,25 @@ void rebind_context(::std::uint64_t handle, ::std::size_t context_ptr) noexcept 
   spvtools$ffi$cxxbridge1$validate_binary_rust(env, binary, options, &return$.value);
   return ::std::move(return$.value);
 }
+
+::spvtools::ffi::OptimizeResult optimize_basic_block(::rust::Slice<::std::uint32_t const> words) noexcept {
+  ::rust::MaybeUninit<::spvtools::ffi::OptimizeResult> return$;
+  spvtools$ffi$cxxbridge1$optimize_basic_block(words, &return$.value);
+  return ::std::move(return$.value);
+}
 } // namespace ffi
 } // namespace spvtools
 
 extern "C" {
+void cxxbridge1$rust_vec$spvtools$ffi$Diagnostic$new(::rust::Vec<::spvtools::ffi::Diagnostic> const *ptr) noexcept;
+void cxxbridge1$rust_vec$spvtools$ffi$Diagnostic$drop(::rust::Vec<::spvtools::ffi::Diagnostic> *ptr) noexcept;
+::std::size_t cxxbridge1$rust_vec$spvtools$ffi$Diagnostic$len(::rust::Vec<::spvtools::ffi::Diagnostic> const *ptr) noexcept;
+::std::size_t cxxbridge1$rust_vec$spvtools$ffi$Diagnostic$capacity(::rust::Vec<::spvtools::ffi::Diagnostic> const *ptr) noexcept;
+::spvtools::ffi::Diagnostic const *cxxbridge1$rust_vec$spvtools$ffi$Diagnostic$data(::rust::Vec<::spvtools::ffi::Diagnostic> const *ptr) noexcept;
+void cxxbridge1$rust_vec$spvtools$ffi$Diagnostic$reserve_total(::rust::Vec<::spvtools::ffi::Diagnostic> *ptr, ::std::size_t new_cap) noexcept;
+void cxxbridge1$rust_vec$spvtools$ffi$Diagnostic$set_len(::rust::Vec<::spvtools::ffi::Diagnostic> *ptr, ::std::size_t len) noexcept;
+void cxxbridge1$rust_vec$spvtools$ffi$Diagnostic$truncate(::rust::Vec<::spvtools::ffi::Diagnostic> *ptr, ::std::size_t len) noexcept;
+
 void cxxbridge1$rust_vec$spvtools$ffi$ValidatorLimit$new(::rust::Vec<::spvtools::ffi::ValidatorLimit> const *ptr) noexcept;
 void cxxbridge1$rust_vec$spvtools$ffi$ValidatorLimit$drop(::rust::Vec<::spvtools::ffi::ValidatorLimit> *ptr) noexcept;
 ::std::size_t cxxbridge1$rust_vec$spvtools$ffi$ValidatorLimit$len(::rust::Vec<::spvtools::ffi::ValidatorLimit> const *ptr) noexcept;
@@ -1151,6 +1207,38 @@ void cxxbridge1$rust_vec$spvtools$ffi$ValidatorLimit$truncate(::rust::Vec<::spvt
 
 namespace rust {
 inline namespace cxxbridge1 {
+template <>
+Vec<::spvtools::ffi::Diagnostic>::Vec() noexcept {
+  cxxbridge1$rust_vec$spvtools$ffi$Diagnostic$new(this);
+}
+template <>
+void Vec<::spvtools::ffi::Diagnostic>::drop() noexcept {
+  return cxxbridge1$rust_vec$spvtools$ffi$Diagnostic$drop(this);
+}
+template <>
+::std::size_t Vec<::spvtools::ffi::Diagnostic>::size() const noexcept {
+  return cxxbridge1$rust_vec$spvtools$ffi$Diagnostic$len(this);
+}
+template <>
+::std::size_t Vec<::spvtools::ffi::Diagnostic>::capacity() const noexcept {
+  return cxxbridge1$rust_vec$spvtools$ffi$Diagnostic$capacity(this);
+}
+template <>
+::spvtools::ffi::Diagnostic const *Vec<::spvtools::ffi::Diagnostic>::data() const noexcept {
+  return cxxbridge1$rust_vec$spvtools$ffi$Diagnostic$data(this);
+}
+template <>
+void Vec<::spvtools::ffi::Diagnostic>::reserve_total(::std::size_t new_cap) noexcept {
+  return cxxbridge1$rust_vec$spvtools$ffi$Diagnostic$reserve_total(this, new_cap);
+}
+template <>
+void Vec<::spvtools::ffi::Diagnostic>::set_len(::std::size_t len) noexcept {
+  return cxxbridge1$rust_vec$spvtools$ffi$Diagnostic$set_len(this, len);
+}
+template <>
+void Vec<::spvtools::ffi::Diagnostic>::truncate(::std::size_t len) {
+  return cxxbridge1$rust_vec$spvtools$ffi$Diagnostic$truncate(this, len);
+}
 template <>
 Vec<::spvtools::ffi::ValidatorLimit>::Vec() noexcept {
   cxxbridge1$rust_vec$spvtools$ffi$ValidatorLimit$new(this);

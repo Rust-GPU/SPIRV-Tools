@@ -1,17 +1,3 @@
-// Copyright (c) 2025 Google LLC
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 #pragma once
 #include "spirv-tools-ffi/src/context_bridge.h"
 #include <algorithm>
@@ -820,8 +806,10 @@ namespace spvtools {
   namespace ffi {
     struct ParseResult;
     struct AssembleResult;
+    struct Diagnostic;
     struct DisassembleResult;
     struct ValidateResult;
+    struct OptimizeResult;
     struct ValidatorLimit;
     struct ValidatorOptions;
     struct MessagePosition;
@@ -850,11 +838,38 @@ struct AssembleResult final {
 };
 #endif // CXXBRIDGE1_STRUCT_spvtools$ffi$AssembleResult
 
+#ifndef CXXBRIDGE1_STRUCT_spvtools$ffi$MessagePosition
+#define CXXBRIDGE1_STRUCT_spvtools$ffi$MessagePosition
+struct MessagePosition final {
+  ::std::uint32_t line CXX_DEFAULT_VALUE(0);
+  ::std::uint32_t column CXX_DEFAULT_VALUE(0);
+  ::std::uint32_t index CXX_DEFAULT_VALUE(0);
+
+  bool operator==(MessagePosition const &) const noexcept;
+  bool operator!=(MessagePosition const &) const noexcept;
+  using IsRelocatable = ::std::true_type;
+};
+#endif // CXXBRIDGE1_STRUCT_spvtools$ffi$MessagePosition
+
+#ifndef CXXBRIDGE1_STRUCT_spvtools$ffi$Diagnostic
+#define CXXBRIDGE1_STRUCT_spvtools$ffi$Diagnostic
+struct Diagnostic final {
+  ::std::uint32_t level CXX_DEFAULT_VALUE(0);
+  bool has_source CXX_DEFAULT_VALUE(false);
+  ::rust::String source;
+  ::spvtools::ffi::MessagePosition position;
+  ::rust::String message;
+
+  using IsRelocatable = ::std::true_type;
+};
+#endif // CXXBRIDGE1_STRUCT_spvtools$ffi$Diagnostic
+
 #ifndef CXXBRIDGE1_STRUCT_spvtools$ffi$DisassembleResult
 #define CXXBRIDGE1_STRUCT_spvtools$ffi$DisassembleResult
 struct DisassembleResult final {
   bool success CXX_DEFAULT_VALUE(false);
   ::rust::String text;
+  ::rust::Vec<::spvtools::ffi::Diagnostic> diagnostics;
 
   using IsRelocatable = ::std::true_type;
 };
@@ -869,6 +884,17 @@ struct ValidateResult final {
   using IsRelocatable = ::std::true_type;
 };
 #endif // CXXBRIDGE1_STRUCT_spvtools$ffi$ValidateResult
+
+#ifndef CXXBRIDGE1_STRUCT_spvtools$ffi$OptimizeResult
+#define CXXBRIDGE1_STRUCT_spvtools$ffi$OptimizeResult
+struct OptimizeResult final {
+  bool success CXX_DEFAULT_VALUE(false);
+  ::rust::String message;
+  ::rust::Vec<::std::uint32_t> words;
+
+  using IsRelocatable = ::std::true_type;
+};
+#endif // CXXBRIDGE1_STRUCT_spvtools$ffi$OptimizeResult
 
 #ifndef CXXBRIDGE1_STRUCT_spvtools$ffi$ValidatorLimit
 #define CXXBRIDGE1_STRUCT_spvtools$ffi$ValidatorLimit
@@ -900,19 +926,6 @@ struct ValidatorOptions final {
   using IsRelocatable = ::std::true_type;
 };
 #endif // CXXBRIDGE1_STRUCT_spvtools$ffi$ValidatorOptions
-
-#ifndef CXXBRIDGE1_STRUCT_spvtools$ffi$MessagePosition
-#define CXXBRIDGE1_STRUCT_spvtools$ffi$MessagePosition
-struct MessagePosition final {
-  ::std::uint32_t line CXX_DEFAULT_VALUE(0);
-  ::std::uint32_t column CXX_DEFAULT_VALUE(0);
-  ::std::uint32_t index CXX_DEFAULT_VALUE(0);
-
-  bool operator==(MessagePosition const &) const noexcept;
-  bool operator!=(MessagePosition const &) const noexcept;
-  using IsRelocatable = ::std::true_type;
-};
-#endif // CXXBRIDGE1_STRUCT_spvtools$ffi$MessagePosition
 
 ::rust::String describe_target_env(::std::uint32_t env) noexcept;
 
@@ -960,6 +973,10 @@ void set_rust_validator_override(bool enable) noexcept;
 
 void clear_rust_validator_override() noexcept;
 
+void set_rust_optimizer_override(bool enable) noexcept;
+
+void clear_rust_optimizer_override() noexcept;
+
 ::spvtools::ffi::ValidatorOptions default_validator_options() noexcept;
 
 void rebind_context(::std::uint64_t handle, ::std::size_t context_ptr) noexcept;
@@ -969,6 +986,8 @@ void rebind_context(::std::uint64_t handle, ::std::size_t context_ptr) noexcept;
 ::spvtools::ffi::DisassembleResult try_disassemble_binary(::std::uint64_t context_handle, ::rust::Slice<::std::uint32_t const> binary, ::std::uint32_t options) noexcept;
 
 ::spvtools::ffi::ValidateResult validate_binary_rust(::std::uint32_t env, ::rust::Slice<::std::uint32_t const> binary, ::spvtools::ffi::ValidatorOptions const &options) noexcept;
+
+::spvtools::ffi::OptimizeResult optimize_basic_block(::rust::Slice<::std::uint32_t const> words) noexcept;
 } // namespace ffi
 } // namespace spvtools
 

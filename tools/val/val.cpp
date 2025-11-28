@@ -102,6 +102,10 @@ bool process_single_file(const char* filename, spv_target_env& target_env,
                          bool use_default_msg_consumer,
                          bool use_rust_validator,
                          const spvtools::ffi::ValidatorOptions& rust_options) {
+#if !defined(SPIRV_RUST_TARGET_ENV)
+  (void)use_rust_validator;
+  (void)rust_options;
+#endif
   std::vector<uint32_t> contents;
   if (!ReadBinaryFile(filename, &contents)) return false;
 

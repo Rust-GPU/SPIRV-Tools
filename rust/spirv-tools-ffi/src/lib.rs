@@ -37,9 +37,19 @@ mod ffi {
     }
 
     #[derive(Debug)]
+    struct Diagnostic {
+        level: u32,
+        has_source: bool,
+        source: String,
+        position: MessagePosition,
+        message: String,
+    }
+
+    #[derive(Debug)]
     struct DisassembleResult {
         success: bool,
         text: String,
+        diagnostics: Vec<Diagnostic>,
     }
 
     #[derive(Debug)]
@@ -549,46 +559,81 @@ pub fn try_assemble_text(context_handle: u64, text: &[u8], options: u32) -> ffi:
 }
 
 pub fn try_disassemble_binary(
-    context_handle: u64,
+    _context_handle: u64,
     binary: &[u32],
     options: u32,
 ) -> ffi::DisassembleResult {
     let requested =
         BinaryToTextOptions::from_bits_truncate(options & !BinaryToTextOptions::NONE.bits());
 
-    let context = unsafe { (context_handle as *const ContextHandle).as_ref() };
-
-    match disassemble_binary(binary, requested) {
-        Ok(text) => ffi::DisassembleResult {
+    let mut pending = Vec::new();
+    let disassembly =
+        panic::catch_unwind(AssertUnwindSafe(|| disassemble_binary(binary, requested)));
+    match disassembly {
+        Ok(Ok(text)) => ffi::DisassembleResult {
             success: true,
             text,
+            diagnostics: Vec::new(),
         },
-        Err(DisassemblyError::Unsupported(unsupported)) => {
-            if let Some(context) = context {
-                let diagnostic = DiagnosticMessage::new(
+        Ok(Err(DisassemblyError::Unsupported(unsupported))) => {
+            pending.push(
+                DiagnosticMessage::new(
                     MessageLevel::Error,
                     MessagePosition::default(),
                     format!("unsupported binary-to-text options: {unsupported:?}"),
                 )
-                .with_source("disassembler");
-                context.emit_diagnostic(&diagnostic);
-            }
+                .with_source("disassembler"),
+            );
             ffi::DisassembleResult {
                 success: false,
                 text: String::new(),
+                diagnostics: pending
+                    .into_iter()
+                    .map(to_ffi_diagnostic)
+                    .collect::<Vec<_>>(),
             }
         }
-        Err(DisassemblyError::Parse { diagnostics, .. }) => {
-            if let Some(context) = context {
-                for diagnostic in &diagnostics {
-                    context.emit_diagnostic(diagnostic);
-                }
-            }
+        Ok(Err(DisassemblyError::Parse { diagnostics, .. })) => ffi::DisassembleResult {
+            success: false,
+            text: String::new(),
+            diagnostics: diagnostics
+                .into_iter()
+                .map(to_ffi_diagnostic)
+                .collect::<Vec<_>>(),
+        },
+        Err(_) => {
+            pending.push(
+                DiagnosticMessage::new(
+                    MessageLevel::Error,
+                    MessagePosition::default(),
+                    "Rust disassembler panicked; falling back to C++ implementation",
+                )
+                .with_source("disassembler"),
+            );
             ffi::DisassembleResult {
                 success: false,
                 text: String::new(),
+                diagnostics: pending
+                    .into_iter()
+                    .map(to_ffi_diagnostic)
+                    .collect::<Vec<_>>(),
             }
         }
+    }
+}
+
+fn to_ffi_diagnostic(diagnostic: DiagnosticMessage<'_>) -> ffi::Diagnostic {
+    let position: ffi::MessagePosition = diagnostic.position().into();
+    let (has_source, source) = match diagnostic.source() {
+        Some(src) => (true, src.to_string()),
+        None => (false, String::new()),
+    };
+    ffi::Diagnostic {
+        level: diagnostic.level().to_raw(),
+        has_source,
+        source,
+        position,
+        message: diagnostic.message().to_string(),
     }
 }
 
@@ -895,6 +940,26 @@ OpFunctionEnd\n",
         let result = try_disassemble_binary(handle, &binary, options);
         assert!(result.success);
         assert!(result.text.contains("OpFunction"));
+
+        unsafe { destroy_context(handle) };
+    }
+
+    #[test]
+    fn rust_disassembler_returns_diagnostics_on_failure() {
+        let env = TargetEnv::Universal1_0.to_raw();
+        let pointer = NonNull::<c_void>::dangling().as_ptr() as usize;
+        let handle = create_context(env, pointer);
+        assert_ne!(handle, 0);
+
+        // Truncated binary header should trigger a parse error.
+        let invalid_binary = vec![0x0723_0203u32];
+        let result =
+            try_disassemble_binary(handle, &invalid_binary, BinaryToTextOptions::NONE.bits());
+        assert!(!result.success);
+        assert!(
+            !result.diagnostics.is_empty(),
+            "failing disassembly should surface diagnostics"
+        );
 
         unsafe { destroy_context(handle) };
     }

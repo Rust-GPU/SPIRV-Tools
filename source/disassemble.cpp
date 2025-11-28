@@ -30,6 +30,7 @@
 #include <set>
 #include <sstream>
 #include <stack>
+#include <string>
 #include <unordered_map>
 #include <utility>
 
@@ -1145,6 +1146,28 @@ spv_result_t spvBinaryToText(const spv_const_context context,
                                     ~SPV_BINARY_TO_TEXT_OPTION_NONE;
   const bool rust_supports_options =
       spvtools::ffi::disassembler_supports_options(effective_options);
+  bool rust_attempted = false;
+  ::rust::Vec<::spvtools::ffi::Diagnostic> rust_diagnostics;
+  auto emit_rust_diagnostics =
+      [&hijack_context](
+          const ::rust::Vec<::spvtools::ffi::Diagnostic>& diagnostics) {
+        if (!hijack_context.consumer) return;
+        for (const auto& diagnostic : diagnostics) {
+          spv_position_t position = {};
+          position.line = diagnostic.position.line;
+          position.column = diagnostic.position.column;
+          position.index = diagnostic.position.index;
+          std::string source_storage =
+              static_cast<std::string>(diagnostic.source);
+          const char* source =
+              diagnostic.has_source ? source_storage.c_str() : nullptr;
+          std::string message_storage =
+              static_cast<std::string>(diagnostic.message);
+          hijack_context.consumer(
+              static_cast<spv_message_level_t>(diagnostic.level), source,
+              position, message_storage.c_str());
+        }
+      };
   const bool has_binary = code != nullptr || wordCount == 0;
   if (spvtools::RustDisassemblerEnabled() && has_rust_context &&
       rust_supports_options &&
@@ -1152,6 +1175,8 @@ spv_result_t spvBinaryToText(const spv_const_context context,
     ::rust::Slice<const uint32_t> binary_slice(code, wordCount);
     auto rust_result = spvtools::ffi::try_disassemble_binary(
         rust_context_handle, binary_slice, sanitized_options);
+    rust_attempted = true;
+    rust_diagnostics = std::move(rust_result.diagnostics);
     if (rust_result.success) {
       std::string rust_text = static_cast<std::string>(rust_result.text);
       if (sanitized_options & SPV_BINARY_TO_TEXT_OPTION_PRINT) {
@@ -1181,8 +1206,19 @@ spv_result_t spvBinaryToText(const spv_const_context context,
           spvBinaryParse(&hijack_context, &disassembler, code, wordCount,
                          spvtools::DisassembleHeader,
                          spvtools::DisassembleInstruction, pDiagnostic)) {
+#if defined(SPIRV_RUST_TARGET_ENV)
+    if (has_rust_context && rust_attempted) {
+      emit_rust_diagnostics(rust_diagnostics);
+    }
+#endif
     return error;
   }
 
-  return disassembler.SaveTextResult(pText);
+  auto status = disassembler.SaveTextResult(pText);
+#if defined(SPIRV_RUST_TARGET_ENV)
+  if (status != SPV_SUCCESS && has_rust_context && rust_attempted) {
+    emit_rust_diagnostics(rust_diagnostics);
+  }
+#endif
+  return status;
 }
