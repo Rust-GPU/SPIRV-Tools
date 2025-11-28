@@ -919,6 +919,154 @@ fn rust_and_cpp_factor_constant_commuted_sub() {
 }
 
 #[test]
+fn rust_and_cpp_factor_symbolic_const_add() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+
+    let (module_words, result_id, x_id, y_id, const_id) =
+        build_symbolic_const_factor_add_module();
+    let rust_insts = extract_simple_block(&module_words);
+    let rust_optimized =
+        spirv_tools_opt::translate::optimize_arith_block(&rust_insts).expect("rust optimizer");
+    let rust_adds: std::collections::HashSet<u32> = rust_optimized
+        .iter()
+        .filter(|inst| inst.class.opcode == Op::IAdd)
+        .filter_map(|inst| {
+            if let [rspirv::dr::Operand::IdRef(a), rspirv::dr::Operand::IdRef(b)] =
+                inst.operands.as_slice()
+            {
+                if (a == &y_id && b == &const_id) || (a == &const_id && b == &y_id) {
+                    return inst.result_id;
+                }
+            }
+            None
+        })
+        .collect();
+    let rust_mul_matches = rust_optimized.iter().any(|inst| {
+        inst.class.opcode == Op::IMul
+            && inst.result_id == Some(result_id)
+            && matches!(
+                inst.operands.as_slice(),
+                [rspirv::dr::Operand::IdRef(a), rspirv::dr::Operand::IdRef(b)]
+                    if (a == &x_id && rust_adds.contains(b))
+                        || (b == &x_id && rust_adds.contains(a))
+            )
+    });
+    assert!(
+        rust_mul_matches,
+        "rust optimizer should factor (x*y)+(x*3) into x*(y+3)"
+    );
+
+    let cpp_words = run_cpp_opt(&cpp_opt, &module_words);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&cpp_words, &mut loader).expect("parse cpp optimized");
+    let module = loader.module();
+    let cpp_adds: std::collections::HashSet<u32> = module
+        .all_inst_iter()
+        .filter(|inst| inst.class.opcode == Op::IAdd)
+        .filter_map(|inst| {
+            if let [rspirv::dr::Operand::IdRef(a), rspirv::dr::Operand::IdRef(b)] =
+                inst.operands.as_slice()
+            {
+                if (a == &y_id && b == &const_id) || (a == &const_id && b == &y_id) {
+                    return inst.result_id;
+                }
+            }
+            None
+        })
+        .collect();
+    let cpp_mul_matches = module.all_inst_iter().any(|inst| {
+        inst.class.opcode == Op::IMul
+            && inst.result_id == Some(result_id)
+            && matches!(
+                inst.operands.as_slice(),
+                [rspirv::dr::Operand::IdRef(a), rspirv::dr::Operand::IdRef(b)]
+                    if (a == &x_id && cpp_adds.contains(b))
+                        || (b == &x_id && cpp_adds.contains(a))
+            )
+    });
+    assert!(
+        cpp_mul_matches,
+        "C++ spirv-opt should factor (x*y)+(x*3) into x*(y+3)"
+    );
+}
+
+#[test]
+fn rust_and_cpp_factor_symbolic_const_sub() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+
+    let (module_words, result_id, x_id, y_id, const_id) =
+        build_symbolic_const_factor_sub_module();
+    let rust_insts = extract_simple_block(&module_words);
+    let rust_optimized =
+        spirv_tools_opt::translate::optimize_arith_block(&rust_insts).expect("rust optimizer");
+    let rust_subs: std::collections::HashSet<u32> = rust_optimized
+        .iter()
+        .filter(|inst| inst.class.opcode == Op::ISub)
+        .filter_map(|inst| {
+            if let [rspirv::dr::Operand::IdRef(a), rspirv::dr::Operand::IdRef(b)] =
+                inst.operands.as_slice()
+            {
+                if a == &y_id && b == &const_id {
+                    return inst.result_id;
+                }
+            }
+            None
+        })
+        .collect();
+    let rust_mul_matches = rust_optimized.iter().any(|inst| {
+        inst.class.opcode == Op::IMul
+            && inst.result_id == Some(result_id)
+            && matches!(
+                inst.operands.as_slice(),
+                [rspirv::dr::Operand::IdRef(a), rspirv::dr::Operand::IdRef(b)]
+                    if (a == &x_id && rust_subs.contains(b))
+                        || (b == &x_id && rust_subs.contains(a))
+            )
+    });
+    assert!(
+        rust_mul_matches,
+        "rust optimizer should factor (x*y)-(x*3) into x*(y-3)"
+    );
+
+    let cpp_words = run_cpp_opt(&cpp_opt, &module_words);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&cpp_words, &mut loader).expect("parse cpp optimized");
+    let module = loader.module();
+    let cpp_subs: std::collections::HashSet<u32> = module
+        .all_inst_iter()
+        .filter(|inst| inst.class.opcode == Op::ISub)
+        .filter_map(|inst| {
+            if let [rspirv::dr::Operand::IdRef(a), rspirv::dr::Operand::IdRef(b)] =
+                inst.operands.as_slice()
+            {
+                if a == &y_id && b == &const_id {
+                    return inst.result_id;
+                }
+            }
+            None
+        })
+        .collect();
+    let cpp_mul_matches = module.all_inst_iter().any(|inst| {
+        inst.class.opcode == Op::IMul
+            && inst.result_id == Some(result_id)
+            && matches!(
+                inst.operands.as_slice(),
+                [rspirv::dr::Operand::IdRef(a), rspirv::dr::Operand::IdRef(b)]
+                    if (a == &x_id && cpp_subs.contains(b))
+                        || (b == &x_id && cpp_subs.contains(a))
+            )
+    });
+    assert!(
+        cpp_mul_matches,
+        "C++ spirv-opt should factor (x*y)-(x*3) into x*(y-3)"
+    );
+}
+
+#[test]
 fn rust_and_cpp_fold_const_factor_sub_chain() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
@@ -2009,6 +2157,50 @@ fn build_const_factor_commuted_sub_module() -> (Vec<u32>, u32, u32) {
     b.ret().expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), sub, sub_inner)
+}
+
+fn build_symbolic_const_factor_add_module() -> (Vec<u32>, u32, u32, u32, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![int, int]);
+    let _ = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let x = b.function_parameter(int).expect("param x");
+    let y = b.function_parameter(int).expect("param y");
+    let c3 = b.constant_bit32(int, 3);
+    let mul1 = b.i_mul(int, None, x, y).expect("mul1");
+    let mul2 = b.i_mul(int, None, x, c3).expect("mul2");
+    let add = b.i_add(int, None, mul1, mul2).expect("add");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), add, x, y, c3)
+}
+
+fn build_symbolic_const_factor_sub_module() -> (Vec<u32>, u32, u32, u32, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![int, int]);
+    let _ = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let x = b.function_parameter(int).expect("param x");
+    let y = b.function_parameter(int).expect("param y");
+    let c3 = b.constant_bit32(int, 3);
+    let mul1 = b.i_mul(int, None, x, y).expect("mul1");
+    let mul2 = b.i_mul(int, None, x, c3).expect("mul2");
+    let sub = b.i_sub(int, None, mul1, mul2).expect("sub");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), sub, x, y, c3)
 }
 
 
