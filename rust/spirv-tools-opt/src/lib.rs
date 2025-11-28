@@ -3642,6 +3642,35 @@ mod tests {
     }
 
     #[test]
+    fn factors_symbolic_multiplier_from_addition_when_commuted() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Symbol(Symbol::from("y")),       // 1
+            SpirvLang::Symbol(Symbol::from("z")),       // 2
+            SpirvLang::Mul([Id::from(1), Id::from(0)]), // 3 = y * x
+            SpirvLang::Mul([Id::from(2), Id::from(0)]), // 4 = z * x
+            SpirvLang::Add([Id::from(3), Id::from(4)]), // 5 = y*x + z*x
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::Mul([lhs, rhs])) = nodes.last() else {
+            panic!("expected mul root after factoring, got {:?}", nodes.last());
+        };
+        let lhs_node = &nodes[usize::from(*lhs)];
+        let rhs_node = &nodes[usize::from(*rhs)];
+        assert!(
+            matches!(lhs_node, SpirvLang::Symbol(sym) if *sym == Symbol::from("x")),
+            "expected common factor x, got {lhs_node:?}"
+        );
+        assert!(
+            matches!(rhs_node, SpirvLang::Add([a, b])
+                if matches!(&nodes[usize::from(*a)], SpirvLang::Symbol(sym) if *sym == Symbol::from("y"))
+                && matches!(&nodes[usize::from(*b)], SpirvLang::Symbol(sym) if *sym == Symbol::from("z"))),
+            "expected inner add y + z, got {rhs_node:?}"
+        );
+    }
+
+    #[test]
     fn factors_common_multiplier_from_subtraction() {
         let expr = RecExpr::from(vec![
             SpirvLang::Symbol(Symbol::from("x")),       // 0
