@@ -173,6 +173,7 @@ Tasks for this milestone:
 - Tightened capability validation precedence so required extensions are reported before generic disallowance; vendor capability tests (NV ray tracing) now exercise the stricter ordering to match the C++ validator behavior.
 - Generated instruction-class mapping from the grammar to drive layout section selection for capabilities/extensions/debug/annotations, keeping ordering checks aligned as new opcodes land.
 - Generated a mode-setting layout map from the grammar so capabilities/extensions/memory model/entry points/execution modes route through layout checks without manual opcode lists.
+- Added mode-setting ordering enforcement using the generated map and a regression that entry points cannot precede the memory model.
 
 ## Completed Milestone: Extension Allowlists Parity
 Environment-specific extension allowlists now mirror the C++ tables via the generated data set in `TargetEnv::is_extension_allowed`, with vendor gating (NV/AMDX/ARM Vulkan-only; INTEL/ALTERA OpenCL/Universal), version gates, and capability precedence covered by regressions (ray tracing adjuncts, cooperative matrices, tile shading, shader clock, fragment shading rate/density, motion blur, displacement micromaps).

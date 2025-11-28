@@ -1336,6 +1336,17 @@ enum FunctionState {
     Inside,
 }
 
+/// Mode-setting layout stages enforced for capabilities/extensions/imports/memory model/entry points/execution modes.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum ModeStage {
+    Capabilities,
+    Extensions,
+    ExtInstImport,
+    MemoryModel,
+    EntryPoint,
+    ExecutionMode,
+}
+
 /// A declared (possibly zero) id bound from a module header.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct DeclaredBound(pub u32);
@@ -2261,6 +2272,7 @@ fn run_layout_check(words: &[u32], env: TargetEnv) -> Result<(), ValidationError
         extensions: ExtensionSet,
         sampler_image_address_mode: Option<u32>,
         env: TargetEnv,
+        mode_stage: ModeStage,
     }
 
     impl LayoutChecker {
@@ -2273,6 +2285,7 @@ fn run_layout_check(words: &[u32], env: TargetEnv) -> Result<(), ValidationError
                 extensions: ExtensionSet::default(),
                 sampler_image_address_mode: None,
                 env,
+                mode_stage: ModeStage::Capabilities,
             }
         }
     }
@@ -2353,6 +2366,14 @@ fn run_layout_check(words: &[u32], env: TargetEnv) -> Result<(), ValidationError
                     }
                 }
             } else if let Some(mode_setting) = mode_setting_kind(opcode) {
+                if let Some(stage) = mode_stage_for_kind(mode_setting) {
+                    if stage < self.mode_stage {
+                        return rspirv::binary::ParseAction::Error(Box::new(
+                            ValidationError::LayoutOutOfOrder { opcode },
+                        ));
+                    }
+                    self.mode_stage = self.mode_stage.max(stage);
+                }
                 match mode_setting {
                     ModeSettingKind::MemoryModel => {
                         if self.current_section > Section::MemoryModel {
@@ -2539,6 +2560,26 @@ fn instruction_section(current: Section, inst: &rspirv::dr::Instruction) -> Sect
             }
         }
         _ => Section::Functions,
+    }
+}
+
+fn mode_stage_for_kind(kind: ModeSettingKind) -> Option<ModeStage> {
+    match kind {
+        ModeSettingKind::Capability | ModeSettingKind::ConditionalCapability => {
+            Some(ModeStage::Capabilities)
+        }
+        ModeSettingKind::Extension | ModeSettingKind::ConditionalExtension => {
+            Some(ModeStage::Extensions)
+        }
+        ModeSettingKind::ExtInstImport => Some(ModeStage::ExtInstImport),
+        ModeSettingKind::MemoryModel => Some(ModeStage::MemoryModel),
+        ModeSettingKind::EntryPoint | ModeSettingKind::ConditionalEntryPoint => {
+            Some(ModeStage::EntryPoint)
+        }
+        ModeSettingKind::ExecutionMode | ModeSettingKind::ExecutionModeId => {
+            Some(ModeStage::ExecutionMode)
+        }
+        ModeSettingKind::Other => Some(ModeStage::Capabilities),
     }
 }
 
@@ -16886,6 +16927,36 @@ mod tests {
             ValidationError::DisallowedExtension {
                 extension: ExtensionName::from("SPV_KHR_vulkan_memory_model"),
                 env: TargetEnv::Universal1_6
+            }
+        );
+    }
+
+    #[test]
+    fn entry_point_cannot_precede_memory_model() {
+        // Entry points are mode-setting instructions that must follow the memory model.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            4,          // bound (ids up to 3)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(5, 15), // OpEntryPoint Vertex %1 "main"
+            rspirv::spirv::ExecutionModel::Vertex as u32,
+            1,
+            0x6e69_616d, // "main"
+            0,           // string padding
+            op(3, 14),   // OpMemoryModel Logical GLSL450 (misordered after entry point)
+            0,
+            1,
+        ];
+
+        let error = validate_module(&binary, TargetEnv::Universal1_5).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::MemoryModel
             }
         );
     }
