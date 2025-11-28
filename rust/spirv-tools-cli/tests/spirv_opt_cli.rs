@@ -341,6 +341,56 @@ fn spirv_opt_cli_respects_disable_env() {
 }
 
 #[test]
+fn spirv_opt_cli_force_rust_ignores_disable_env() {
+    let _guard = ENV_GUARD.lock().unwrap();
+    let (words, add_id) = build_const_add_module();
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_spirv-opt"));
+    cmd.env("SPIRV_TOOLS_DISABLE_RUST_OPT", "1");
+    cmd.arg("--force-rust")
+        .arg("--")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+    let mut child = cmd.spawn().expect("spawn spirv-opt");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin")
+        .write_all(&words_to_bytes(&words))
+        .expect("write module");
+    let output = child.wait_with_output().expect("run spirv-opt");
+    assert!(
+        output.status.success(),
+        "spirv-opt failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let optimized_words = bytes_to_words(&output.stdout);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+    let mut saw_add = false;
+    let mut saw_const = false;
+    for inst in module.all_inst_iter() {
+        match inst.class.opcode {
+            Op::IAdd => saw_add = true,
+            Op::Constant => {
+                if inst.result_id == Some(add_id)
+                    && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(5)]
+                {
+                    saw_const = true;
+                }
+            }
+            _ => {}
+        }
+    }
+    assert!(
+        saw_const && !saw_add,
+        "force-rust should fold even when disable env is set"
+    );
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+}
+
+#[test]
 fn spirv_opt_cli_folds_mul_by_neg_one() {
     let (words, mul_id) = build_mul_neg_one_module();
     let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_spirv-opt"));
@@ -485,12 +535,8 @@ fn build_div_rem_neg_shift_module() -> (Vec<u32>, u32, u32, u32, u32, u32) {
     let div = b.u_div(int, None, c20, c4).expect("div");
     let rem = b.u_mod(int, None, c20, c4).expect("rem");
     let neg = b.s_negate(int, None, c5).expect("neg");
-    let shl = b
-        .shift_left_logical(int, None, c5, c4)
-        .expect("shl");
-    let shr = b
-        .shift_right_logical(int, None, c20, c4)
-        .expect("shr");
+    let shl = b.shift_left_logical(int, None, c5, c4).expect("shl");
+    let shr = b.shift_right_logical(int, None, c20, c4).expect("shr");
     b.ret().expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), div, rem, neg, shl, shr)

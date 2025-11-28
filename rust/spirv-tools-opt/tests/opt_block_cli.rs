@@ -53,8 +53,13 @@ fn cli_opt_block_folds_arithmetic() {
             && inst.result_id == Some(sub_id)
             && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(7)]
     });
-    let has_sub = module.all_inst_iter().any(|inst| inst.class.opcode == Op::ISub);
-    assert!(has_const_three, "folded value should be written as constant 7");
+    let has_sub = module
+        .all_inst_iter()
+        .any(|inst| inst.class.opcode == Op::ISub);
+    assert!(
+        has_const_three,
+        "folded value should be written as constant 7"
+    );
     assert!(!has_sub, "subtraction should be folded away");
 }
 

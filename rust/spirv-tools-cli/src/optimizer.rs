@@ -31,6 +31,8 @@ pub struct OptimizeConfig {
     pub rust_arith_pass: bool,
     /// Optional path to C++ spirv-opt for fallback/benchmarking.
     pub cpp_opt_path: Option<std::ffi::OsString>,
+    /// Force-enable the Rust optimizer regardless of env disable flags.
+    pub force_rust_opt: bool,
 }
 
 impl Default for OptimizeConfig {
@@ -40,6 +42,7 @@ impl Default for OptimizeConfig {
             output: None,
             rust_arith_pass: true,
             cpp_opt_path: None,
+            force_rust_opt: false,
         }
     }
 }
@@ -52,6 +55,7 @@ pub fn run_optimize(config: &OptimizeConfig) -> Result<Vec<u32>, OptimizeCliErro
     };
     let words = bytes_to_words(&bytes)?;
     if config.rust_arith_pass {
+        let _override_guard = config.force_rust_opt.then(OptimizerOverrideGuard::enable);
         let result = optimize_basic_block(&words);
         if result.success {
             return Ok(result.words);
@@ -127,6 +131,21 @@ fn bytes_to_words(bytes: &[u8]) -> Result<Vec<u32>, OptimizeCliError> {
     Ok(words)
 }
 
+struct OptimizerOverrideGuard;
+
+impl OptimizerOverrideGuard {
+    fn enable() -> Self {
+        spirv_tools_ffi::set_rust_optimizer_override(true);
+        Self
+    }
+}
+
+impl Drop for OptimizerOverrideGuard {
+    fn drop(&mut self) {
+        spirv_tools_ffi::clear_rust_optimizer_override();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -160,6 +179,7 @@ mod tests {
             output: None,
             rust_arith_pass: true,
             cpp_opt_path: None,
+            force_rust_opt: true,
         };
         let optimized = run_optimize(&config).expect("optimize");
         let mut loader = rspirv::dr::Loader::new();
@@ -205,6 +225,7 @@ mod tests {
             output: None,
             rust_arith_pass: false,
             cpp_opt_path: None,
+            force_rust_opt: false,
         };
         let optimized = run_optimize(&config).expect("optimize passthrough");
         assert_eq!(optimized, module);
@@ -242,6 +263,7 @@ mod tests {
             output: None,
             rust_arith_pass: false,
             cpp_opt_path: Some(cpp_path),
+            force_rust_opt: false,
         };
         let optimized = run_optimize(&config).expect("optimize via cpp fallback");
         let mut loader = rspirv::dr::Loader::new();
@@ -254,8 +276,7 @@ mod tests {
                 Op::IAdd => panic!("addition should be folded by CLI fallback"),
                 Op::Constant => {
                     if inst.result_id == Some(add)
-                        && inst.operands
-                            == vec![rspirv::dr::Operand::LiteralBit32(5u32)]
+                        && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(5u32)]
                     {
                         found_const_five = true;
                     }
@@ -275,6 +296,7 @@ mod tests {
             output: None,
             rust_arith_pass: true,
             cpp_opt_path: None,
+            force_rust_opt: false,
         };
         match run_optimize(&config) {
             Err(OptimizeCliError::MisalignedInput) => {}

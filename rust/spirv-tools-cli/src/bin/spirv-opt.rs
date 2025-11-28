@@ -17,6 +17,10 @@ struct Args {
     #[arg(long, default_value_t = false, action = ArgAction::SetTrue)]
     passthrough: bool,
 
+    /// Force the Rust arithmetic optimizer even if SPIRV_TOOLS_DISABLE_RUST_OPT is set.
+    #[arg(long, default_value_t = false, action = ArgAction::SetTrue)]
+    force_rust: bool,
+
     /// Use the C++ spirv-opt binary instead of the Rust optimizer.
     #[arg(long, default_value_t = false, action = ArgAction::SetTrue)]
     cpp: bool,
@@ -33,6 +37,7 @@ fn main() {
         output: args.output.clone(),
         rust_arith_pass: !(args.passthrough || args.cpp),
         cpp_opt_path: args.cpp.then(|| std::ffi::OsString::from("spirv-opt")),
+        force_rust_opt: args.force_rust,
     };
     if let Err(err) = run_and_write(&config) {
         eprintln!("{err}");

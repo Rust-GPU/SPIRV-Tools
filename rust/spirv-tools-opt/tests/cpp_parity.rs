@@ -640,8 +640,7 @@ fn rust_and_cpp_factor_symbolic_commuted_subtraction() {
         return;
     };
 
-    let (module_words, result_id, x_id, y_id, z_id) =
-        build_symbolic_factor_commuted_sub_module();
+    let (module_words, result_id, x_id, y_id, z_id) = build_symbolic_factor_commuted_sub_module();
     let rust_insts = extract_simple_block(&module_words);
     let rust_optimized =
         spirv_tools_opt::translate::optimize_arith_block(&rust_insts).expect("rust optimizer");
@@ -924,8 +923,7 @@ fn rust_and_cpp_factor_symbolic_const_add() {
         return;
     };
 
-    let (module_words, result_id, x_id, y_id, const_id) =
-        build_symbolic_const_factor_add_module();
+    let (module_words, result_id, x_id, y_id, const_id) = build_symbolic_const_factor_add_module();
     let rust_insts = extract_simple_block(&module_words);
     let rust_optimized =
         spirv_tools_opt::translate::optimize_arith_block(&rust_insts).expect("rust optimizer");
@@ -998,8 +996,7 @@ fn rust_and_cpp_factor_symbolic_const_sub() {
         return;
     };
 
-    let (module_words, result_id, x_id, y_id, const_id) =
-        build_symbolic_const_factor_sub_module();
+    let (module_words, result_id, x_id, y_id, const_id) = build_symbolic_const_factor_sub_module();
     let rust_insts = extract_simple_block(&module_words);
     let rust_optimized =
         spirv_tools_opt::translate::optimize_arith_block(&rust_insts).expect("rust optimizer");
@@ -2566,7 +2563,6 @@ fn build_zero_factor_sub_module() -> (Vec<u32>, u32) {
     b.end_function().expect("end");
     (b.module().assemble(), sub)
 }
-
 
 fn build_add_negate_module() -> (Vec<u32>, u32) {
     let mut b = Builder::new();

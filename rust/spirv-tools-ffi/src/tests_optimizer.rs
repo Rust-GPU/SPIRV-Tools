@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod optimizer_tests {
-    use crate::optimizer::optimize_basic_block;
     use crate::optimize_basic_block as optimize_wrapped_block;
+    use crate::optimizer::optimize_basic_block;
     use rspirv::binary::Assemble;
     use rspirv::dr::{Builder, Loader};
     use rspirv::spirv::{FunctionControl, Op};
@@ -612,7 +612,10 @@ mod optimizer_tests {
         crate::clear_rust_optimizer_override();
 
         assert!(optimized.success, "wrapper should not error");
-        assert_eq!(optimized.words, words, "override disable should passthrough");
+        assert_eq!(
+            optimized.words, words,
+            "override disable should passthrough"
+        );
         let mut loader = Loader::new();
         rspirv::binary::parse_words(&optimized.words, &mut loader).expect("parse optimized");
         let module = loader.module();
@@ -622,7 +625,10 @@ mod optimizer_tests {
                 saw_add = true;
             }
         }
-        assert!(saw_add, "add should remain when override disables optimizer");
+        assert!(
+            saw_add,
+            "add should remain when override disables optimizer"
+        );
     }
 
     #[test]
@@ -668,9 +674,16 @@ mod optimizer_tests {
             {
                 saw_const = true;
             }
-            assert_ne!(inst.class.opcode, rspirv::spirv::Op::IAdd, "add should fold");
+            assert_ne!(
+                inst.class.opcode,
+                rspirv::spirv::Op::IAdd,
+                "add should fold"
+            );
         }
-        assert!(saw_const, "override enable should run optimizer even when env disables it");
+        assert!(
+            saw_const,
+            "override enable should run optimizer even when env disables it"
+        );
     }
 
     #[test]
