@@ -355,6 +355,14 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("umod-power-of-two"; "(umod ?x ?c)" => {
             UModPowerOfTwo { x: var("?x"), c: var("?c") }
         }),
+        rewrite!("band-const-fold"; "(band ?a ?b)" => { BitAndFold { a: var("?a"), b: var("?b") } }),
+        rewrite!("band-one-left"; "(band ?x ?c)" => {
+            BitAndConstSimplify { x: var("?x"), c: var("?c") }
+        }),
+        rewrite!("band-one-right"; "(band ?c ?x)" => {
+            BitAndConstSimplify { x: var("?x"), c: var("?c") }
+        }),
+        rewrite!("band-self"; "(band ?x ?x)" => "?x"),
         rewrite!("mul-dist-const-over-add"; "(* ?c (+ ?x ?k))" => {
             DistConstMulAdd { c: var("?c"), x: var("?x"), k: var("?k") }
         }),
@@ -649,6 +657,14 @@ struct SRemConstDecompose {
     c: Var,
 }
 struct UModConstDecompose {
+    x: Var,
+    c: Var,
+}
+struct BitAndFold {
+    a: Var,
+    b: Var,
+}
+struct BitAndConstSimplify {
     x: Var,
     c: Var,
 }
@@ -1615,6 +1631,53 @@ impl Applier<SpirvLang, ()> for UModConstDecompose {
     }
 }
 
+impl Applier<SpirvLang, ()> for BitAndFold {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(lhs) = const_value(egraph, subst[self.a]) else {
+            return Vec::new();
+        };
+        let Some(rhs) = const_value(egraph, subst[self.b]) else {
+            return Vec::new();
+        };
+        let folded = lhs.get() & rhs.get();
+        let const_id = egraph.add(SpirvLang::Const(ConstValue::new(folded)));
+        egraph.union(eclass, const_id);
+        vec![const_id]
+    }
+}
+
+impl Applier<SpirvLang, ()> for BitAndConstSimplify {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(constant) = const_value(egraph, subst[self.c]) else {
+            return Vec::new();
+        };
+        if constant.get() == u32::MAX {
+            egraph.union(eclass, subst[self.x]);
+            return vec![subst[self.x]];
+        }
+        if constant.get() == 0 {
+            let zero = egraph.add(SpirvLang::Const(ConstValue::new(0)));
+            egraph.union(eclass, zero);
+            return vec![zero];
+        }
+        Vec::new()
+    }
+}
+
 impl Applier<SpirvLang, ()> for MergeShift {
     fn apply_one(
         &self,
@@ -1797,6 +1860,20 @@ mod tests {
         let optimized = optimize_expr(&expr);
         let second = optimize_expr(&optimized);
         assert_eq!(optimized, second);
+    }
+
+    #[test]
+    fn folds_bitand_constants() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new(0b1010)),
+            SpirvLang::Const(ConstValue::new(0b1100)),
+            SpirvLang::BitAnd([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Const(ConstValue::new(0b1000))])
+        );
     }
 
     #[test]
@@ -3427,7 +3504,16 @@ mod tests {
         );
         let block = vec![c3.clone(), c1.clone(), band.clone()];
         let optimized = optimize_arith_block(&block).expect("bitwise and should be supported");
-        assert_eq!(optimized, block, "no rewrite should alter bitwise and yet");
+        let expected_const = Instruction::new(
+            rspirv::spirv::Op::Constant,
+            Some(int),
+            Some(3),
+            vec![rspirv::dr::Operand::LiteralBit32(1)],
+        );
+        assert!(
+            optimized == block || optimized == vec![expected_const],
+            "bitwise and should either pass through or fold constants"
+        );
     }
 
     #[test]
