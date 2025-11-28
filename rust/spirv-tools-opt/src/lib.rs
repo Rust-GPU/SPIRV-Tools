@@ -246,6 +246,9 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("merge-shrs-const"; "(shr_s (shr_s ?x ?a) ?b)" => {
             MergeShift { x: var("?x"), a: var("?a"), b: var("?b"), kind: ShiftKind::RightSigned }
         }),
+        rewrite!("shl-zero"; "(shl ?x ?c)" => "?x" if is_const_zero(var("?c"))),
+        rewrite!("shr-u-zero"; "(shr_u ?x ?c)" => "?x" if is_const_zero(var("?c"))),
+        rewrite!("shr-s-zero"; "(shr_s ?x ?c)" => "?x" if is_const_zero(var("?c"))),
         rewrite!("add-factor-consts"; "(+ (* ?x ?c1) (* ?x ?c2))" => {
             AddCommonFactor { x: var("?x"), c1: var("?c1"), c2: var("?c2") }
         }),
@@ -1990,6 +1993,72 @@ mod tests {
         assert!(
             found_shr,
             "expected nested arithmetic right shifts to merge into a single offset"
+        );
+    }
+
+    #[test]
+    fn rewrites_shift_left_zero_offset_identity() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Const(ConstValue::new(0)),       // 1
+            SpirvLang::Shl([Id::from(0), Id::from(1)]), // 2 = x << 0
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let class = runner.egraph.find(runner.roots[0]);
+        let nodes = &runner.egraph[class].nodes;
+        let has_symbol = nodes.iter().any(|n| {
+            matches!(
+                n,
+                SpirvLang::Symbol(sym) if *sym == Symbol::from("x")
+            )
+        });
+        assert!(
+            has_symbol,
+            "expected shift-left by zero to collapse to identity"
+        );
+    }
+
+    #[test]
+    fn rewrites_shift_right_zero_offset_identity() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),        // 0
+            SpirvLang::Const(ConstValue::new(0)),        // 1
+            SpirvLang::ShrU([Id::from(0), Id::from(1)]), // 2 = x >> 0 (logical)
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let class = runner.egraph.find(runner.roots[0]);
+        let nodes = &runner.egraph[class].nodes;
+        let has_symbol = nodes.iter().any(|n| {
+            matches!(
+                n,
+                SpirvLang::Symbol(sym) if *sym == Symbol::from("x")
+            )
+        });
+        assert!(
+            has_symbol,
+            "expected logical shift-right by zero to collapse to identity"
+        );
+    }
+
+    #[test]
+    fn rewrites_arithmetic_shift_right_zero_offset_identity() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),        // 0
+            SpirvLang::Const(ConstValue::new(0)),        // 1
+            SpirvLang::ShrS([Id::from(0), Id::from(1)]), // 2 = x >> 0 (arithmetic)
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let class = runner.egraph.find(runner.roots[0]);
+        let nodes = &runner.egraph[class].nodes;
+        let has_symbol = nodes.iter().any(|n| {
+            matches!(
+                n,
+                SpirvLang::Symbol(sym) if *sym == Symbol::from("x")
+            )
+        });
+        assert!(
+            has_symbol,
+            "expected arithmetic shift-right by zero to collapse to identity"
         );
     }
 
