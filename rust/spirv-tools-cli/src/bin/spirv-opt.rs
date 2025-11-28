@@ -16,6 +16,10 @@ struct Args {
     /// Passthrough mode: skip Rust optimizer and emit the input unchanged.
     #[arg(long, default_value_t = false, action = ArgAction::SetTrue)]
     passthrough: bool,
+
+    /// Use the C++ spirv-opt binary instead of the Rust optimizer.
+    #[arg(long, default_value_t = false, action = ArgAction::SetTrue)]
+    cpp: bool,
 }
 
 fn main() {
@@ -27,7 +31,8 @@ fn main() {
     let config = OptimizeConfig {
         input,
         output: args.output.clone(),
-        rust_arith_pass: !args.passthrough,
+        rust_arith_pass: !(args.passthrough || args.cpp),
+        cpp_opt_path: args.cpp.then(|| std::ffi::OsString::from("spirv-opt")),
     };
     if let Err(err) = run_and_write(&config) {
         eprintln!("{err}");

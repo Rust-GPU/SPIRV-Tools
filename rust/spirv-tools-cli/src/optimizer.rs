@@ -29,6 +29,8 @@ pub struct OptimizeConfig {
     pub output: Option<PathBuf>,
     /// When true, uses the Rust arithmetic optimizer; otherwise passthrough.
     pub rust_arith_pass: bool,
+    /// Optional path to C++ spirv-opt for fallback/benchmarking.
+    pub cpp_opt_path: Option<std::ffi::OsString>,
 }
 
 impl Default for OptimizeConfig {
@@ -37,6 +39,7 @@ impl Default for OptimizeConfig {
             input: InputSource::default(),
             output: None,
             rust_arith_pass: true,
+            cpp_opt_path: None,
         }
     }
 }
@@ -48,15 +51,20 @@ pub fn run_optimize(config: &OptimizeConfig) -> Result<Vec<u32>, OptimizeCliErro
         InputSource::Path(path) => fs::read(path)?,
     };
     let words = bytes_to_words(&bytes)?;
-    if !config.rust_arith_pass {
-        return Ok(words);
+    if config.rust_arith_pass {
+        let result = optimize_basic_block(&words);
+        if result.success {
+            return Ok(result.words);
+        } else {
+            return Err(OptimizeCliError::Optimize(result.message));
+        }
     }
-    let result = optimize_basic_block(&words);
-    if result.success {
-        Ok(result.words)
-    } else {
-        Err(OptimizeCliError::Optimize(result.message))
+
+    if let Some(path) = &config.cpp_opt_path {
+        return run_cpp_opt(path, &words);
     }
+
+    Ok(words)
 }
 
 /// Writes the optimized words to the configured sink.
@@ -76,6 +84,35 @@ fn read_stdin() -> io::Result<Vec<u8>> {
     let mut buffer = Vec::new();
     io::stdin().read_to_end(&mut buffer)?;
     Ok(buffer)
+}
+
+fn run_cpp_opt(path: &std::ffi::OsStr, words: &[u32]) -> Result<Vec<u32>, OptimizeCliError> {
+    use std::process::{Command, Stdio};
+
+    let mut child = Command::new(path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .map_err(OptimizeCliError::Input)?;
+
+    {
+        let stdin = child.stdin.as_mut().ok_or_else(|| {
+            OptimizeCliError::Input(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "failed to open spirv-opt stdin",
+            ))
+        })?;
+        stdin.write_all(&words_to_bytes(words))?;
+    }
+
+    let output = child.wait_with_output().map_err(OptimizeCliError::Input)?;
+    if !output.status.success() {
+        return Err(OptimizeCliError::Optimize(format!(
+            "spirv-opt exited with status {code}",
+            code = output.status
+        )));
+    }
+    Ok(bytes_to_words(&output.stdout)?)
 }
 
 fn bytes_to_words(bytes: &[u8]) -> Result<Vec<u32>, OptimizeCliError> {
@@ -123,6 +160,7 @@ mod tests {
             input: InputSource::Path(temp.path().to_path_buf()),
             output: None,
             rust_arith_pass: true,
+            cpp_opt_path: None,
         };
         let optimized = run_optimize(&config).expect("optimize");
         let mut loader = rspirv::dr::Loader::new();
@@ -167,6 +205,7 @@ mod tests {
             input: InputSource::Path(temp.path().to_path_buf()),
             output: None,
             rust_arith_pass: false,
+            cpp_opt_path: None,
         };
         let optimized = run_optimize(&config).expect("optimize passthrough");
         assert_eq!(optimized, module);
@@ -180,6 +219,7 @@ mod tests {
             input: InputSource::Path(temp.path().to_path_buf()),
             output: None,
             rust_arith_pass: true,
+            cpp_opt_path: None,
         };
         match run_optimize(&config) {
             Err(OptimizeCliError::MisalignedInput) => {}
