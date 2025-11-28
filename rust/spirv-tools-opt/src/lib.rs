@@ -3263,6 +3263,32 @@ mod tests {
     }
 
     #[test]
+    fn optimize_arith_block_preserves_bitwise_and() {
+        let int = 1;
+        let c3 = Instruction::new(
+            rspirv::spirv::Op::Constant,
+            Some(int),
+            Some(1),
+            vec![rspirv::dr::Operand::LiteralBit32(3)],
+        );
+        let c1 = Instruction::new(
+            rspirv::spirv::Op::Constant,
+            Some(int),
+            Some(2),
+            vec![rspirv::dr::Operand::LiteralBit32(1)],
+        );
+        let band = Instruction::new(
+            rspirv::spirv::Op::BitwiseAnd,
+            Some(int),
+            Some(3),
+            vec![rspirv::dr::Operand::IdRef(1), rspirv::dr::Operand::IdRef(2)],
+        );
+        let block = vec![c3.clone(), c1.clone(), band.clone()];
+        let optimized = optimize_arith_block(&block).expect("bitwise and should be supported");
+        assert_eq!(optimized, block, "no rewrite should alter bitwise and yet");
+    }
+
+    #[test]
     fn div_by_zero_does_not_fold() {
         let int = 1;
         let c2 = Instruction::new(
