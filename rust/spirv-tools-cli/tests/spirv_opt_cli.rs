@@ -391,6 +391,51 @@ fn spirv_opt_cli_force_rust_ignores_disable_env() {
 }
 
 #[test]
+fn spirv_opt_cli_folds_affine_gcd_add() {
+    let _guard = ENV_GUARD.lock().unwrap();
+    let (words, add_id) = build_affine_gcd_add_module();
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_spirv-opt"));
+    cmd.arg("--")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+    let mut child = cmd.spawn().expect("spawn spirv-opt");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin")
+        .write_all(&words_to_bytes(&words))
+        .expect("write module");
+    let output = child.wait_with_output().expect("run spirv-opt");
+    assert!(
+        output.status.success(),
+        "spirv-opt failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let optimized_words = bytes_to_words(&output.stdout);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+    let mut saw_const = false;
+    let mut saw_ops = false;
+    for inst in module.all_inst_iter() {
+        match inst.class.opcode {
+            Op::Constant => {
+                if inst.result_id == Some(add_id)
+                    && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(36)]
+                {
+                    saw_const = true;
+                }
+            }
+            Op::IAdd | Op::IMul if inst.result_id == Some(add_id) => saw_ops = true,
+            _ => {}
+        }
+    }
+    assert!(saw_const, "affine gcd add should fold to const 36");
+    assert!(!saw_ops, "add/mul should be removed after folding");
+}
+
+#[test]
 fn spirv_opt_cli_folds_mul_by_neg_one() {
     let (words, mul_id) = build_mul_neg_one_module();
     let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_spirv-opt"));
@@ -540,4 +585,25 @@ fn build_div_rem_neg_shift_module() -> (Vec<u32>, u32, u32, u32, u32, u32) {
     b.ret().expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), div, rem, neg, shl, shr)
+}
+
+fn build_affine_gcd_add_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let _ = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let c6 = b.constant_bit32(int, 6);
+    let c12 = b.constant_bit32(int, 12);
+    let x = b.constant_bit32(int, 4);
+    let mul = b.i_mul(int, None, c6, x).expect("mul");
+    let add = b.i_add(int, None, mul, c12).expect("add");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), add)
 }
