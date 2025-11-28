@@ -268,6 +268,12 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("umod-mul-const-zero-right"; "(umod (* ?x ?c) ?c)" => {
             RemMulConstZero { c: var("?c") }
         }),
+        rewrite!("neg-mul-const-left"; "(neg (* ?c ?x))" => {
+            NegMulConst { c: var("?c"), x: var("?x") }
+        }),
+        rewrite!("neg-mul-const-right"; "(neg (* ?x ?c))" => {
+            NegMulConst { c: var("?c"), x: var("?x") }
+        }),
         rewrite!("mul-merge-consts-right"; "(* (* ?x ?c1) ?c2)" => {
             MulMergeConst { base: var("?x"), c1: var("?c1"), c2: var("?c2") }
         }),
@@ -398,6 +404,10 @@ struct MulMergeConst {
     base: Var,
     c1: Var,
     c2: Var,
+}
+struct NegMulConst {
+    c: Var,
+    x: Var,
 }
 
 impl Applier<SpirvLang, ()> for FoldAdd {
@@ -908,6 +918,27 @@ impl Applier<SpirvLang, ()> for RemMulConstZero {
         let zero = egraph.add(SpirvLang::Const(ConstValue::new(0)));
         egraph.union(eclass, zero);
         vec![zero]
+    }
+}
+
+impl Applier<SpirvLang, ()> for NegMulConst {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        // Only fold when we have a constant multiplier to flip the sign.
+        let Some(constant) = const_value(egraph, subst[self.c]) else {
+            return Vec::new();
+        };
+        let negated = ConstValue::new(constant.get().wrapping_neg());
+        let const_id = egraph.add(SpirvLang::Const(negated));
+        let mul = egraph.add(SpirvLang::Mul([subst[self.x], const_id]));
+        egraph.union(eclass, mul);
+        vec![mul]
     }
 }
 
@@ -1467,6 +1498,28 @@ mod tests {
             RecExpr::from(vec![SpirvLang::Const(ConstValue::new(0))]),
             "expected unsigned mod of multiple to fold to zero"
         );
+    }
+
+    #[test]
+    fn negating_mul_with_const_flips_constant() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new(5)),       // 0
+            SpirvLang::Symbol(Symbol::from("v")),       // 1
+            SpirvLang::Mul([Id::from(1), Id::from(0)]), // 2 = v * 5
+            SpirvLang::Neg(Id::from(2)),                // 3 = -(v * 5)
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::Mul([lhs, rhs])) = nodes.last() else {
+            panic!("expected mul root, got {:?}", nodes.last());
+        };
+        let (symbol, constant) = match (&nodes[usize::from(*lhs)], &nodes[usize::from(*rhs)]) {
+            (SpirvLang::Symbol(sym), SpirvLang::Const(val)) => (sym, val),
+            (SpirvLang::Const(val), SpirvLang::Symbol(sym)) => (sym, val),
+            other => panic!("unexpected operands after neg mul const: {other:?}"),
+        };
+        assert_eq!(symbol, &Symbol::from("v"));
+        assert_eq!(constant.get(), 0u32.wrapping_sub(5));
     }
 
     #[test]
