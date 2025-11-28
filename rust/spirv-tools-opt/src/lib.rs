@@ -237,6 +237,15 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("add-quadruple"; "(+ (+ ?x ?x) (+ ?x ?x))" => {
             AddQuadrupleToShift { x: var("?x") }
         }),
+        rewrite!("merge-shl-const"; "(shl (shl ?x ?a) ?b)" => {
+            MergeShift { x: var("?x"), a: var("?a"), b: var("?b"), kind: ShiftKind::Left }
+        }),
+        rewrite!("merge-shru-const"; "(shr_u (shr_u ?x ?a) ?b)" => {
+            MergeShift { x: var("?x"), a: var("?a"), b: var("?b"), kind: ShiftKind::RightUnsigned }
+        }),
+        rewrite!("merge-shrs-const"; "(shr_s (shr_s ?x ?a) ?b)" => {
+            MergeShift { x: var("?x"), a: var("?a"), b: var("?b"), kind: ShiftKind::RightSigned }
+        }),
         rewrite!("add-factor-consts"; "(+ (* ?x ?c1) (* ?x ?c2))" => {
             AddCommonFactor { x: var("?x"), c1: var("?c1"), c2: var("?c2") }
         }),
@@ -584,6 +593,11 @@ struct AddTripleToMul {
 struct AddQuadrupleToShift {
     x: Var,
 }
+enum ShiftKind {
+    Left,
+    RightUnsigned,
+    RightSigned,
+}
 struct MulPowerOfTwo {
     x: Var,
     c: Var,
@@ -596,6 +610,12 @@ struct DivPowerOfTwo {
 struct UModPowerOfTwo {
     x: Var,
     c: Var,
+}
+struct MergeShift {
+    x: Var,
+    a: Var,
+    b: Var,
+    kind: ShiftKind,
 }
 struct CancelMulDiv {
     x: Var,
@@ -1498,6 +1518,33 @@ impl Applier<SpirvLang, ()> for UModPowerOfTwo {
     }
 }
 
+impl Applier<SpirvLang, ()> for MergeShift {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(a) = const_value(egraph, subst[self.a]) else {
+            return Vec::new();
+        };
+        let Some(b) = const_value(egraph, subst[self.b]) else {
+            return Vec::new();
+        };
+        let total = ConstValue::new(a.get().wrapping_add(b.get()));
+        let const_id = egraph.add(SpirvLang::Const(total));
+        let merged = match self.kind {
+            ShiftKind::Left => egraph.add(SpirvLang::Shl([subst[self.x], const_id])),
+            ShiftKind::RightUnsigned => egraph.add(SpirvLang::ShrU([subst[self.x], const_id])),
+            ShiftKind::RightSigned => egraph.add(SpirvLang::ShrS([subst[self.x], const_id])),
+        };
+        egraph.union(eclass, merged);
+        vec![merged]
+    }
+}
+
 impl Applier<SpirvLang, ()> for MulMergeConst {
     fn apply_one(
         &self,
@@ -1854,6 +1901,96 @@ mod tests {
             }
         });
         assert!(found_shl, "expected 4*x to admit shift-left-by-2 form");
+    }
+
+    #[test]
+    fn rewrites_merge_nested_shl_constants() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Const(ConstValue::new(1)),       // 1
+            SpirvLang::Shl([Id::from(0), Id::from(1)]), // 2 = x << 1
+            SpirvLang::Const(ConstValue::new(2)),       // 3
+            SpirvLang::Shl([Id::from(2), Id::from(3)]), // 4 = (x << 1) << 2
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let class = runner.egraph.find(runner.roots[0]);
+        let nodes = &runner.egraph[class].nodes;
+        let found_shl = nodes.iter().any(|n| {
+            if let SpirvLang::Shl([lhs, rhs]) = n {
+                let lhs_sym = matches!(
+                    runner.egraph[runner.egraph.find(*lhs)].nodes.as_slice(),
+                    [SpirvLang::Symbol(sym)] if *sym == Symbol::from("x")
+                );
+                let rhs_const = const_value(&runner.egraph, *rhs).is_some_and(|c| c.get() == 3);
+                lhs_sym && rhs_const
+            } else {
+                false
+            }
+        });
+        assert!(
+            found_shl,
+            "expected nested shifts to merge into a single offset"
+        );
+    }
+
+    #[test]
+    fn rewrites_merge_nested_shru_constants() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),        // 0
+            SpirvLang::Const(ConstValue::new(1)),        // 1
+            SpirvLang::ShrU([Id::from(0), Id::from(1)]), // 2 = x >> 1 (logical)
+            SpirvLang::Const(ConstValue::new(2)),        // 3
+            SpirvLang::ShrU([Id::from(2), Id::from(3)]), // 4 = (x >> 1) >> 2
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let class = runner.egraph.find(runner.roots[0]);
+        let nodes = &runner.egraph[class].nodes;
+        let found_shr = nodes.iter().any(|n| {
+            if let SpirvLang::ShrU([lhs, rhs]) = n {
+                let lhs_sym = matches!(
+                    runner.egraph[runner.egraph.find(*lhs)].nodes.as_slice(),
+                    [SpirvLang::Symbol(sym)] if *sym == Symbol::from("x")
+                );
+                let rhs_const = const_value(&runner.egraph, *rhs).is_some_and(|c| c.get() == 3);
+                lhs_sym && rhs_const
+            } else {
+                false
+            }
+        });
+        assert!(
+            found_shr,
+            "expected nested logical right shifts to merge into a single offset"
+        );
+    }
+
+    #[test]
+    fn rewrites_merge_nested_shrs_constants() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),        // 0
+            SpirvLang::Const(ConstValue::new(1)),        // 1
+            SpirvLang::ShrS([Id::from(0), Id::from(1)]), // 2 = x >> 1 (arithmetic)
+            SpirvLang::Const(ConstValue::new(2)),        // 3
+            SpirvLang::ShrS([Id::from(2), Id::from(3)]), // 4 = (x >> 1) >> 2
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let class = runner.egraph.find(runner.roots[0]);
+        let nodes = &runner.egraph[class].nodes;
+        let found_shr = nodes.iter().any(|n| {
+            if let SpirvLang::ShrS([lhs, rhs]) = n {
+                let lhs_sym = matches!(
+                    runner.egraph[runner.egraph.find(*lhs)].nodes.as_slice(),
+                    [SpirvLang::Symbol(sym)] if *sym == Symbol::from("x")
+                );
+                let rhs_const = const_value(&runner.egraph, *rhs).is_some_and(|c| c.get() == 3);
+                lhs_sym && rhs_const
+            } else {
+                false
+            }
+        });
+        assert!(
+            found_shr,
+            "expected nested arithmetic right shifts to merge into a single offset"
+        );
     }
 
     #[test]
