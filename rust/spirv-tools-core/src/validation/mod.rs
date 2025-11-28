@@ -5382,6 +5382,10 @@ mod tests {
             Some(ModeStage::Extensions)
         );
         assert_eq!(
+            mode_stage(Op::ConditionalEntryPointINTEL),
+            Some(ModeStage::EntryPoint)
+        );
+        assert_eq!(
             mode_stage(Op::ExtInstImport),
             Some(ModeStage::ExtInstImport)
         );
@@ -5391,6 +5395,11 @@ mod tests {
             mode_stage(Op::ExecutionMode),
             Some(ModeStage::ExecutionMode)
         );
+        assert_eq!(
+            mode_stage(Op::ExecutionModeId),
+            Some(ModeStage::ExecutionMode)
+        );
+        assert_eq!(mode_stage(Op::TypeVoid), None);
     }
 
     #[test]
