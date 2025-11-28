@@ -279,6 +279,8 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("add-sub-shared-term-comm"; "(+ (- ?y ?x) (- ?x ?z))" => "(- ?y ?z)"),
         rewrite!("add-sub-mirror-cancel"; "(+ ?x (- ?y ?x))" => "?y"),
         rewrite!("add-sub-mirror-cancel-swap"; "(+ (- ?y ?x) ?x)" => "?y"),
+        rewrite!("add-cancels-subtrahend"; "(+ (- ?x ?y) ?y)" => "?x"),
+        rewrite!("add-cancels-subtrahend-comm"; "(+ ?y (- ?x ?y))" => "?x"),
         rewrite!("merge-shl-const"; "(shl (shl ?x ?a) ?b)" => {
             MergeShift { x: var("?x"), a: var("?a"), b: var("?b"), kind: ShiftKind::Left }
         }),
@@ -2410,6 +2412,21 @@ mod tests {
         assert_eq!(
             optimized,
             RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("y"))])
+        );
+    }
+
+    #[test]
+    fn cancels_subtrahend_in_addition() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Symbol(Symbol::from("y")),       // 1
+            SpirvLang::Sub([Id::from(0), Id::from(1)]), // 2 = x - y
+            SpirvLang::Add([Id::from(2), Id::from(1)]), // 3 = (x - y) + y
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("x"))])
         );
     }
 
