@@ -362,6 +362,9 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("band-one-right"; "(band ?c ?x)" => {
             BitAndConstSimplify { x: var("?x"), c: var("?c") }
         }),
+        rewrite!("band-mask-to-umod"; "(band ?x ?c)" => {
+            BitAndToUmod { x: var("?x"), c: var("?c") }
+        }),
         rewrite!("band-self"; "(band ?x ?x)" => "?x"),
         rewrite!("mul-dist-const-over-add"; "(* ?c (+ ?x ?k))" => {
             DistConstMulAdd { c: var("?c"), x: var("?x"), k: var("?k") }
@@ -665,6 +668,10 @@ struct BitAndFold {
     b: Var,
 }
 struct BitAndConstSimplify {
+    x: Var,
+    c: Var,
+}
+struct BitAndToUmod {
     x: Var,
     c: Var,
 }
@@ -1678,6 +1685,32 @@ impl Applier<SpirvLang, ()> for BitAndConstSimplify {
     }
 }
 
+impl Applier<SpirvLang, ()> for BitAndToUmod {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(constant) = const_value(egraph, subst[self.c]) else {
+            return Vec::new();
+        };
+        let mask = constant.get();
+        let Some(shift) = is_power_of_two(mask.wrapping_add(1)) else {
+            return Vec::new();
+        };
+        if shift == 0 {
+            return Vec::new();
+        }
+        let const_id = egraph.add(SpirvLang::Const(ConstValue::new(mask.wrapping_add(1))));
+        let umod = egraph.add(SpirvLang::UMod([subst[self.x], const_id]));
+        egraph.union(eclass, umod);
+        vec![umod]
+    }
+}
+
 impl Applier<SpirvLang, ()> for MergeShift {
     fn apply_one(
         &self,
@@ -2404,6 +2437,34 @@ mod tests {
         assert!(
             found_sub,
             "expected unsigned remainder to decompose into x - (x / c) * c"
+        );
+    }
+
+    #[test]
+    fn rewrites_band_pow2_mask_into_umod() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),          // 0
+            SpirvLang::Const(ConstValue::new(7)),          // 1 = 2^3 - 1
+            SpirvLang::BitAnd([Id::from(0), Id::from(1)]), // 2 = x & 7
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let class = runner.egraph.find(runner.roots[0]);
+        let nodes = &runner.egraph[class].nodes;
+        let found_umod = nodes.iter().any(|n| {
+            if let SpirvLang::UMod([lhs, rhs]) = n {
+                let lhs_sym = matches!(
+                    runner.egraph[runner.egraph.find(*lhs)].nodes.as_slice(),
+                    [SpirvLang::Symbol(sym)] if *sym == Symbol::from("x")
+                );
+                let rhs_const = const_value(&runner.egraph, *rhs).is_some_and(|c| c.get() == 8);
+                lhs_sym && rhs_const
+            } else {
+                false
+            }
+        });
+        assert!(
+            found_umod,
+            "expected bitwise mask to rewrite into modulo by power of two"
         );
     }
 
