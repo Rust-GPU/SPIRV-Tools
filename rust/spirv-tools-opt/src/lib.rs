@@ -219,6 +219,12 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("sub-add-cancel-left"; "(- (+ ?a ?b) ?a)" => "?b"),
         rewrite!("sub-sub-cancel-left"; "(- ?a (- ?a ?b))" => "?b"),
         rewrite!("add-dup-to-mul"; "(+ ?x ?x)" => { AddDuplicateToMul { x: var("?x") } }),
+        rewrite!("add-triple-left"; "(+ (+ ?x ?x) ?x)" => {
+            AddTripleToMul { x: var("?x") }
+        }),
+        rewrite!("add-triple-right"; "(+ ?x (+ ?x ?x))" => {
+            AddTripleToMul { x: var("?x") }
+        }),
         rewrite!("add-factor-consts"; "(+ (* ?x ?c1) (* ?x ?c2))" => {
             AddCommonFactor { x: var("?x"), c1: var("?c1"), c2: var("?c2") }
         }),
@@ -546,6 +552,9 @@ struct FoldAffineGcd {
     op: AffineOp,
 }
 struct AddDuplicateToMul {
+    x: Var,
+}
+struct AddTripleToMul {
     x: Var,
 }
 struct CancelMulDiv {
@@ -1322,6 +1331,22 @@ impl Applier<SpirvLang, ()> for AddDuplicateToMul {
     }
 }
 
+impl Applier<SpirvLang, ()> for AddTripleToMul {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let three = egraph.add(SpirvLang::Const(ConstValue::new(3)));
+        let mul = egraph.add(SpirvLang::Mul([subst[self.x], three]));
+        egraph.union(eclass, mul);
+        vec![mul]
+    }
+}
+
 impl Applier<SpirvLang, ()> for MulMergeConst {
     fn apply_one(
         &self,
@@ -1604,6 +1629,40 @@ mod tests {
             }
         });
         assert!(found_mul, "expected x + x to admit x * 2 in the e-graph");
+    }
+
+    #[test]
+    fn rewrites_add_triple_into_mul_by_three() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Add([Id::from(0), Id::from(0)]), // 1 = x + x
+            SpirvLang::Add([Id::from(1), Id::from(0)]), // 2 = (x + x) + x
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let class = runner.egraph.find(runner.roots[0]);
+        let nodes = &runner.egraph[class].nodes;
+        let found_mul = nodes.iter().any(|n| {
+            if let SpirvLang::Mul([lhs, rhs]) = n {
+                let lhs_const = const_value(&runner.egraph, *lhs);
+                let rhs_const = const_value(&runner.egraph, *rhs);
+                let lhs_sym = matches!(
+                    runner.egraph[runner.egraph.find(*lhs)].nodes.as_slice(),
+                    [SpirvLang::Symbol(sym)] if *sym == Symbol::from("x")
+                );
+                let rhs_sym = matches!(
+                    runner.egraph[runner.egraph.find(*rhs)].nodes.as_slice(),
+                    [SpirvLang::Symbol(sym)] if *sym == Symbol::from("x")
+                );
+                (lhs_sym && rhs_const.map(|c| c.get()) == Some(3))
+                    || (rhs_sym && lhs_const.map(|c| c.get()) == Some(3))
+            } else {
+                false
+            }
+        });
+        assert!(
+            found_mul,
+            "expected x + x + x to admit x * 3 in the e-graph"
+        );
     }
 
     #[test]
