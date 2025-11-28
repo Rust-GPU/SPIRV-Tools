@@ -299,6 +299,30 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("mul-dist-const-over-sub-flipped-comm"; "(* (- ?k ?x) ?c)" => {
             DistConstMulSub { c: var("?c"), x: var("?x"), k: var("?k"), flipped: true }
         }),
+        rewrite!("add-gcd-affine"; "(+ (* ?c ?x) ?k)" => {
+            FoldAffineGcd { x: var("?x"), c: var("?c"), k: var("?k"), flipped: false, op: AffineOp::Add }
+        }),
+        rewrite!("add-gcd-affine-comm"; "(+ (* ?x ?c) ?k)" => {
+            FoldAffineGcd { x: var("?x"), c: var("?c"), k: var("?k"), flipped: false, op: AffineOp::Add }
+        }),
+        rewrite!("add-gcd-affine-left"; "(+ ?k (* ?c ?x))" => {
+            FoldAffineGcd { x: var("?x"), c: var("?c"), k: var("?k"), flipped: false, op: AffineOp::Add }
+        }),
+        rewrite!("add-gcd-affine-left-comm"; "(+ ?k (* ?x ?c))" => {
+            FoldAffineGcd { x: var("?x"), c: var("?c"), k: var("?k"), flipped: false, op: AffineOp::Add }
+        }),
+        rewrite!("sub-gcd-affine"; "(- (* ?c ?x) ?k)" => {
+            FoldAffineGcd { x: var("?x"), c: var("?c"), k: var("?k"), flipped: false, op: AffineOp::Sub }
+        }),
+        rewrite!("sub-gcd-affine-comm"; "(- (* ?x ?c) ?k)" => {
+            FoldAffineGcd { x: var("?x"), c: var("?c"), k: var("?k"), flipped: false, op: AffineOp::Sub }
+        }),
+        rewrite!("sub-gcd-affine-flipped"; "(- ?k (* ?c ?x))" => {
+            FoldAffineGcd { x: var("?x"), c: var("?c"), k: var("?k"), flipped: true, op: AffineOp::Sub }
+        }),
+        rewrite!("sub-gcd-affine-flipped-comm"; "(- ?k (* ?x ?c))" => {
+            FoldAffineGcd { x: var("?x"), c: var("?c"), k: var("?k"), flipped: true, op: AffineOp::Sub }
+        }),
         rewrite!("add-fold-affine-const-right"; "(+ (* ?x ?c) ?k)" => {
             FoldAffineConst { x: var("?x"), c: var("?c"), k: var("?k"), flipped: false, op: AffineOp::Add }
         }),
@@ -507,6 +531,13 @@ struct DistConstMulSub {
     flipped: bool,
 }
 struct FoldAffineConst {
+    x: Var,
+    c: Var,
+    k: Var,
+    flipped: bool,
+    op: AffineOp,
+}
+struct FoldAffineGcd {
     x: Var,
     c: Var,
     k: Var,
@@ -1223,6 +1254,50 @@ impl Applier<SpirvLang, ()> for FoldAffineConst {
     }
 }
 
+impl Applier<SpirvLang, ()> for FoldAffineGcd {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(coeff) = const_value(egraph, subst[self.c]) else {
+            return Vec::new();
+        };
+        let Some(const_term) = const_value(egraph, subst[self.k]) else {
+            return Vec::new();
+        };
+        if coeff.get() == 0 || const_term.get() == 0 {
+            return Vec::new();
+        }
+        let gcd = gcd_u32(coeff.get(), const_term.get());
+        if gcd <= 1 || gcd == coeff.get() {
+            return Vec::new();
+        }
+        let scaled_coeff = ConstValue::new(coeff.get() / gcd);
+        let scaled_const = ConstValue::new(const_term.get() / gcd);
+        let gcd_id = egraph.add(SpirvLang::Const(ConstValue::new(gcd)));
+        let scaled_const_id = egraph.add(SpirvLang::Const(scaled_const));
+        let scaled_coeff_id = egraph.add(SpirvLang::Const(scaled_coeff));
+        let mul_x = egraph.add(SpirvLang::Mul([scaled_coeff_id, subst[self.x]]));
+        let inner = match self.op {
+            AffineOp::Add => egraph.add(SpirvLang::Add([mul_x, scaled_const_id])),
+            AffineOp::Sub => {
+                if self.flipped {
+                    egraph.add(SpirvLang::Sub([scaled_const_id, mul_x]))
+                } else {
+                    egraph.add(SpirvLang::Sub([mul_x, scaled_const_id]))
+                }
+            }
+        };
+        let factored = egraph.add(SpirvLang::Mul([gcd_id, inner]));
+        egraph.union(eclass, factored);
+        vec![factored]
+    }
+}
+
 impl Applier<SpirvLang, ()> for MulMergeConst {
     fn apply_one(
         &self,
@@ -1251,6 +1326,15 @@ fn const_value(egraph: &EGraph<SpirvLang, ()>, id: Id) -> Option<ConstValue> {
         SpirvLang::Const(value) => Some(*value),
         _ => None,
     })
+}
+
+fn gcd_u32(mut a: u32, mut b: u32) -> u32 {
+    while b != 0 {
+        let tmp = b;
+        b = a % b;
+        a = tmp;
+    }
+    a
 }
 
 fn var(name: &str) -> Var {
