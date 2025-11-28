@@ -346,6 +346,9 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("udiv-power-of-two"; "(udiv ?x ?c)" => {
             DivPowerOfTwo { x: var("?x"), c: var("?c"), signed: false }
         }),
+        rewrite!("srem-const-decompose"; "(srem ?x ?c)" => {
+            SRemConstDecompose { x: var("?x"), c: var("?c") }
+        }),
         rewrite!("umod-power-of-two"; "(umod ?x ?c)" => {
             UModPowerOfTwo { x: var("?x"), c: var("?c") }
         }),
@@ -637,6 +640,10 @@ struct DivPowerOfTwo {
     x: Var,
     c: Var,
     signed: bool,
+}
+struct SRemConstDecompose {
+    x: Var,
+    c: Var,
 }
 struct UModPowerOfTwo {
     x: Var,
@@ -1553,6 +1560,30 @@ impl Applier<SpirvLang, ()> for UModPowerOfTwo {
     }
 }
 
+impl Applier<SpirvLang, ()> for SRemConstDecompose {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(constant) = const_value(egraph, subst[self.c]) else {
+            return Vec::new();
+        };
+        if constant.get() == 0 {
+            return Vec::new();
+        }
+        let c_id = egraph.add(SpirvLang::Const(constant));
+        let div = egraph.add(SpirvLang::SDiv([subst[self.x], c_id]));
+        let mul = egraph.add(SpirvLang::Mul([div, c_id]));
+        let sub = egraph.add(SpirvLang::Sub([subst[self.x], mul]));
+        egraph.union(eclass, sub);
+        vec![sub]
+    }
+}
+
 impl Applier<SpirvLang, ()> for MergeShift {
     fn apply_one(
         &self,
@@ -2185,6 +2216,46 @@ mod tests {
         assert!(
             found_shr,
             "expected signed div by power of two to rewrite into biased shift"
+        );
+    }
+
+    #[test]
+    fn rewrites_srem_const_into_div_mul_sub() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),        // 0
+            SpirvLang::Const(ConstValue::new(5)),        // 1
+            SpirvLang::SRem([Id::from(0), Id::from(1)]), // 2 = x % 5
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let class = runner.egraph.find(runner.roots[0]);
+        let nodes = &runner.egraph[class].nodes;
+        let found_sub = nodes.iter().any(|n| {
+            if let SpirvLang::Sub([lhs, rhs]) = n {
+                let lhs_is_x = matches!(
+                    runner.egraph[runner.egraph.find(*lhs)].nodes.as_slice(),
+                    [SpirvLang::Symbol(sym)] if *sym == Symbol::from("x")
+                );
+                let rhs_eclass = runner.egraph.find(*rhs);
+                let rhs_nodes = &runner.egraph[rhs_eclass].nodes;
+                let rhs_is_mul_div = rhs_nodes.iter().any(|mul_node| {
+                    if let SpirvLang::Mul([div, c]) = mul_node {
+                        const_value(&runner.egraph, *c).is_some_and(|cv| cv.get() == 5)
+                            && runner.egraph[runner.egraph.find(*div)]
+                                .nodes
+                                .iter()
+                                .any(|div_node| matches!(div_node, SpirvLang::SDiv([_, _])))
+                    } else {
+                        false
+                    }
+                });
+                lhs_is_x && rhs_is_mul_div
+            } else {
+                false
+            }
+        });
+        assert!(
+            found_sub,
+            "expected signed remainder to decompose into x - (x / c) * c"
         );
     }
 
