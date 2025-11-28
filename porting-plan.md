@@ -338,8 +338,8 @@ Tasks for this milestone:
 Tighten operand-level capability/extension/version enforcement to mirror the C++ validator tables.
 
 Tasks for this milestone:
-- Import operand-level capability/extension/version requirement data from the SPIR-V grammar and enforce it during validation (including conditional operands).
-- Add binary/text regression tests covering operand requirements for representative instructions (e.g., memory semantics masks, subgroup scopes, and newer operand enums gated by extensions).
+- [x] Import operand-level capability/extension/version requirement data from the SPIR-V grammar and enforce it during validation (including conditional operands).
+- [x] Add binary/text regression tests covering operand requirements for representative instructions (e.g., memory semantics masks, subgroup scopes, and newer operand enums gated by extensions).
 - Thread operand requirement failures through typed `ValidationError` variants so FFI/CLI callers receive structured diagnostics.
 - Keep validated-module caching active to avoid re-validation when operand checks are enabled.
 

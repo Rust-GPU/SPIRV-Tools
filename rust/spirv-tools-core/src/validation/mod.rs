@@ -17,6 +17,10 @@ mod instruction_versions;
 use instruction_versions::grammar_required_spirv_version_for_opcode;
 mod operand_versions;
 use operand_versions::grammar_required_spirv_version_for_operand;
+mod operand_requirements;
+use operand_requirements::{
+    grammar_required_capabilities_for_operand, grammar_required_extensions_for_operand,
+};
 use std::collections::BTreeMap;
 
 /// A non-zero SPIR-V id.
@@ -2833,7 +2837,29 @@ fn validate_instruction_requirements(
                     });
                 }
             }
+            for required_cap in grammar_required_capabilities_for_operand(operand) {
+                if !capabilities.contains(&required_cap) {
+                    return Err(ValidationError::MissingOperandCapability {
+                        opcode: inst.class.opcode,
+                        operand_index: index,
+                        required_capability: required_cap,
+                    });
+                }
+            }
             for required_ext in operand.required_extensions() {
+                if !extensions
+                    .values
+                    .iter()
+                    .any(|ext| ext.as_str() == required_ext)
+                {
+                    return Err(ValidationError::MissingOperandExtension {
+                        opcode: inst.class.opcode,
+                        operand_index: index,
+                        required_extension: ExtensionName::from(required_ext),
+                    });
+                }
+            }
+            for required_ext in grammar_required_extensions_for_operand(operand) {
                 if !extensions
                     .values
                     .iter()
@@ -5345,6 +5371,63 @@ mod tests {
             error,
             ValidationError::InstructionBeforeMemoryModel {
                 opcode: rspirv::spirv::Op::TypeVoid,
+            }
+        );
+    }
+
+    #[test]
+    fn operand_requires_capability_from_grammar() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Fragment %main \"main\"",
+            "%void = OpTypeVoid",
+            "%u32 = OpTypeInt 32 0",
+            "%ptr = OpTypePointer Input %u32",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "%var = OpVariable %ptr Input",
+            "OpDecorate %var BuiltIn SubgroupSize",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::MissingOperandCapability {
+                opcode: rspirv::spirv::Op::Decorate,
+                operand_index: 2,
+                required_capability: rspirv::spirv::Capability::Kernel
+            }
+        );
+    }
+
+    #[test]
+    fn operand_requires_extension_from_grammar() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Fragment %main \"main\"",
+            "OpExecutionMode %main SubgroupUniformControlFlowKHR",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::MissingOperandExtension {
+                opcode: rspirv::spirv::Op::ExecutionMode,
+                operand_index: 1,
+                required_extension: ExtensionName::from("SPV_KHR_subgroup_uniform_control_flow"),
             }
         );
     }

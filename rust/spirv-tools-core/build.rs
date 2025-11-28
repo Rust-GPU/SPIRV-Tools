@@ -1,3 +1,4 @@
+use heck::ToShoutySnakeCase;
 use serde::{Deserialize, Deserializer};
 use spirv::{Capability as SpirvCapability, Decoration};
 use std::env;
@@ -72,14 +73,33 @@ fn parse_version(version: Option<&str>) -> Option<(u32, u32)> {
 }
 
 fn to_upper_snake(value: &str) -> String {
-    let mut out = String::new();
-    for (index, ch) in value.chars().enumerate() {
-        if ch.is_uppercase() && index > 0 {
-            out.push('_');
-        }
-        out.push(ch.to_ascii_uppercase());
+    let mut ident = value.to_shouty_snake_case();
+    if ident
+        .chars()
+        .next()
+        .map(|ch| ch.is_ascii_digit())
+        .unwrap_or(false)
+    {
+        ident.insert(0, '_');
     }
-    out
+    ident
+}
+
+fn value_enum_ident(enumerant: &str) -> String {
+    if enumerant
+        .chars()
+        .next()
+        .map(|ch| ch.is_ascii_digit())
+        .unwrap_or(false)
+    {
+        format!("_{}", enumerant)
+    } else {
+        enumerant.to_string()
+    }
+}
+
+fn bit_enum_ident(enumerant: &str) -> String {
+    to_upper_snake(enumerant)
 }
 
 fn main() {
@@ -331,9 +351,11 @@ fn main() {
                 ));
                 operand_helpers.push_str("    match value {\n");
                 for (enumerant, (major, minor), _) in &enumerant_versions {
+                    let enumerant_ident = value_enum_ident(enumerant);
                     operand_helpers.push_str(&format!(
                         "        spirv::{kind}::{enumerant} => Some(SpirvVersion::new({major}, {minor})),\n",
-                        kind = kind.kind
+                        kind = kind.kind,
+                        enumerant = enumerant_ident
                     ));
                 }
                 operand_helpers.push_str("        _ => None,\n    }\n}\n\n");
@@ -350,7 +372,7 @@ fn main() {
                 ));
                 operand_helpers.push_str("    let mut required: Option<SpirvVersion> = None;\n");
                 for (enumerant, (major, minor), _) in &enumerant_versions {
-                    let enumerant_ident = to_upper_snake(enumerant);
+                    let enumerant_ident = bit_enum_ident(enumerant);
                     operand_helpers.push_str(&format!(
                         "    if value.contains(spirv::{kind}::{enumerant}) {{ merge_version(&mut required, SpirvVersion::new({major}, {minor})); }}\n",
                         kind = kind.kind,
@@ -390,4 +412,185 @@ fn main() {
 
     let operand_dest_path = out_dir.join("operand_versions.rs");
     fs::write(operand_dest_path, operand_output).expect("failed to write operand version table");
+
+    // Generate operand capability/extension requirements from the grammar.
+    let mut requirement_helpers = String::new();
+    let mut cap_match_arms = String::new();
+    let mut ext_match_arms = String::new();
+
+    for kind in &grammar.operand_kinds {
+        let has_capabilities = kind
+            .enumerants
+            .iter()
+            .any(|enumerant| !enumerant.capabilities.is_empty());
+        let has_extensions = kind
+            .enumerants
+            .iter()
+            .any(|enumerant| !enumerant.extensions.is_empty());
+        if !has_capabilities && !has_extensions {
+            continue;
+        }
+
+        let fn_caps = format!("operand_capabilities_for_{}", kind.kind.to_lowercase());
+        let fn_exts = format!("operand_extensions_for_{}", kind.kind.to_lowercase());
+
+        match kind.category.as_str() {
+            "ValueEnum" => {
+                if has_capabilities {
+                    requirement_helpers.push_str(&format!(
+                        "fn {fn_caps}(value: spirv::{kind}) -> Vec<spirv::Capability> {{\n    let mut caps = Vec::new();\n    match value as u32 {{\n",
+                        kind = kind.kind
+                    ));
+                    for enumerant in &kind.enumerants {
+                        if let Some(raw) = enumerant.value.as_deref() {
+                            let capabilities = enumerant
+                                .capabilities
+                                .iter()
+                                .filter_map(|cap| SpirvCapability::from_str(cap).ok())
+                                .map(|cap| format!("spirv::Capability::{cap:?}"))
+                                .collect::<Vec<_>>();
+                            if !capabilities.is_empty() {
+                                requirement_helpers.push_str(&format!(
+                                    "        {raw} => caps.extend([{capabilities}]),\n",
+                                    raw = raw,
+                                    capabilities = capabilities.join(", ")
+                                ));
+                            }
+                        }
+                    }
+                    requirement_helpers.push_str("        _ => {}\n    }\n    caps\n}\n\n");
+                }
+                if has_extensions {
+                    requirement_helpers.push_str(&format!(
+                        "fn {fn_exts}(value: spirv::{kind}) -> Vec<&'static str> {{\n    let mut exts = Vec::new();\n    match value as u32 {{\n",
+                        kind = kind.kind
+                    ));
+                    for enumerant in &kind.enumerants {
+                        if let Some(raw) = enumerant.value.as_deref() {
+                            let extensions = enumerant
+                                .extensions
+                                .iter()
+                                .map(|ext| format!("\"{ext}\""))
+                                .collect::<Vec<_>>();
+                            if !extensions.is_empty() {
+                                requirement_helpers.push_str(&format!(
+                                    "        {raw} => exts.extend([{extensions}]),\n",
+                                    raw = raw,
+                                    extensions = extensions.join(", ")
+                                ));
+                            }
+                        }
+                    }
+                    requirement_helpers.push_str("        _ => {}\n    }\n    exts\n}\n\n");
+                }
+                cap_match_arms.push_str(&format!(
+                    "        rspirv::dr::Operand::{kind}(value) => {caps},\n",
+                    kind = kind.kind,
+                    caps = if has_capabilities {
+                        format!("{fn_caps}(*value)")
+                    } else {
+                        "Vec::new()".to_string()
+                    }
+                ));
+                ext_match_arms.push_str(&format!(
+                    "        rspirv::dr::Operand::{kind}(value) => {exts},\n",
+                    kind = kind.kind,
+                    exts = if has_extensions {
+                        format!("{fn_exts}(*value)")
+                    } else {
+                        "Vec::new()".to_string()
+                    }
+                ));
+            }
+            "BitEnum" => {
+                if has_capabilities {
+                    requirement_helpers.push_str(&format!(
+                        "fn {fn_caps}(value: spirv::{kind}) -> Vec<spirv::Capability> {{\n    let mut caps = Vec::new();\n",
+                        kind = kind.kind
+                    ));
+                    for enumerant in &kind.enumerants {
+                        if let Some(raw) = enumerant.value.as_deref() {
+                            let capabilities = enumerant
+                                .capabilities
+                                .iter()
+                                .filter_map(|cap| SpirvCapability::from_str(cap).ok())
+                                .map(|cap| format!("spirv::Capability::{cap:?}"))
+                                .collect::<Vec<_>>();
+                            if !capabilities.is_empty() {
+                                requirement_helpers.push_str(&format!(
+                                    "    if (value.bits() & {raw}) != 0 {{ caps.extend([{capabilities}]); }}\n",
+                                    raw = raw,
+                                    capabilities = capabilities.join(", ")
+                                ));
+                            }
+                        }
+                    }
+                    requirement_helpers.push_str("    caps\n}\n\n");
+                }
+                if has_extensions {
+                    requirement_helpers.push_str(&format!(
+                        "fn {fn_exts}(value: spirv::{kind}) -> Vec<&'static str> {{\n    let mut exts = Vec::new();\n",
+                        kind = kind.kind
+                    ));
+                    for enumerant in &kind.enumerants {
+                        if let Some(raw) = enumerant.value.as_deref() {
+                            let extensions = enumerant
+                                .extensions
+                                .iter()
+                                .map(|ext| format!("\"{ext}\""))
+                                .collect::<Vec<_>>();
+                            if !extensions.is_empty() {
+                                requirement_helpers.push_str(&format!(
+                                    "    if (value.bits() & {raw}) != 0 {{ exts.extend([{extensions}]); }}\n",
+                                    raw = raw,
+                                    extensions = extensions.join(", ")
+                                ));
+                            }
+                        }
+                    }
+                    requirement_helpers.push_str("    exts\n}\n\n");
+                }
+                cap_match_arms.push_str(&format!(
+                    "        rspirv::dr::Operand::{kind}(value) => {caps},\n",
+                    kind = kind.kind,
+                    caps = if has_capabilities {
+                        format!("{fn_caps}(*value)")
+                    } else {
+                        "Vec::new()".to_string()
+                    }
+                ));
+                ext_match_arms.push_str(&format!(
+                    "        rspirv::dr::Operand::{kind}(value) => {exts},\n",
+                    kind = kind.kind,
+                    exts = if has_extensions {
+                        format!("{fn_exts}(*value)")
+                    } else {
+                        "Vec::new()".to_string()
+                    }
+                ));
+            }
+            _ => {}
+        }
+    }
+
+    let mut requirement_output = String::new();
+    requirement_output.push_str("// @generated by build.rs; do not edit\n");
+    requirement_output.push_str("use rspirv::{dr::Operand, spirv};\n\n");
+    requirement_output.push_str(&requirement_helpers);
+    requirement_output.push_str(
+        "pub fn grammar_required_capabilities_for_operand(operand: &Operand) -> Vec<spirv::Capability> {\n",
+    );
+    requirement_output.push_str("    match operand {\n");
+    requirement_output.push_str(&cap_match_arms);
+    requirement_output.push_str("        _ => Vec::new(),\n    }\n}\n\n");
+    requirement_output.push_str(
+        "pub fn grammar_required_extensions_for_operand(operand: &Operand) -> Vec<&'static str> {\n",
+    );
+    requirement_output.push_str("    match operand {\n");
+    requirement_output.push_str(&ext_match_arms);
+    requirement_output.push_str("        _ => Vec::new(),\n    }\n}\n");
+
+    let requirement_dest_path = out_dir.join("operand_requirements.rs");
+    fs::write(requirement_dest_path, requirement_output)
+        .expect("failed to write operand requirement table");
 }
