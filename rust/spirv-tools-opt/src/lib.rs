@@ -275,6 +275,8 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("sub-shared-addend-general-swap"; "(- (+ ?s1 ?x) (+ ?s2 ?y))" => {
             SubSharedAddendEq { x: var("?x"), y: var("?y"), s1: var("?s1"), s2: var("?s2") }
         }),
+        rewrite!("add-sub-shared-term"; "(+ (- ?x ?y) (- ?y ?z))" => "(- ?x ?z)"),
+        rewrite!("add-sub-shared-term-comm"; "(+ (- ?y ?x) (- ?x ?z))" => "(- ?y ?z)"),
         rewrite!("merge-shl-const"; "(shl (shl ?x ?a) ?b)" => {
             MergeShift { x: var("?x"), a: var("?a"), b: var("?b"), kind: ShiftKind::Left }
         }),
@@ -2369,6 +2371,28 @@ mod tests {
             matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("a"))
                 && matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("d")),
             "expected a - d, got {nodes:?}"
+        );
+    }
+
+    #[test]
+    fn collapses_chain_of_subtractions_with_shared_middle_term() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Symbol(Symbol::from("y")),       // 1
+            SpirvLang::Symbol(Symbol::from("z")),       // 2
+            SpirvLang::Sub([Id::from(0), Id::from(1)]), // 3 = x - y
+            SpirvLang::Sub([Id::from(1), Id::from(2)]), // 4 = y - z
+            SpirvLang::Add([Id::from(3), Id::from(4)]), // 5 = (x - y) + (y - z)
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let SpirvLang::Sub([lhs, rhs]) = nodes.last().expect("optimized root") else {
+            panic!("expected sub root, got {:?}", nodes.last());
+        };
+        assert!(
+            matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("x"))
+                && matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("z")),
+            "expected x - z, got {nodes:?}"
         );
     }
 
