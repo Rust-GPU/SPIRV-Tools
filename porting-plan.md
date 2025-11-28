@@ -383,6 +383,7 @@ Percentages are approximate and will be updated as new checklists are added for 
    - Marked `SPV_KHR_shader_clock` as Vulkan-only in the generated allowlist and added env-gated tests for the extension and capability.
    - The generated allowlist now marks `SPV_KHR_fragment_shading_rate` and `SPV_EXT_fragment_invocation_density` as Vulkan-only to mirror the C++ tables.
 5. Port additional C++ arithmetic parity cases that exercise the newer factoring/distributivity rewrites (commuted multiplicands, shared addend cancellation); initial const-only cases have been added to the parity suite, continue expanding to symbolic/factorization scenarios while keeping rule naming collision-free.
+   - Parity suite now covers shared-addend constant differences in both directions ((9+3)-(9+4) wrapping to -1 and (9+4)-(9+3) to +1) to mirror C++ folding.
 
 ## Upcoming Milestone: Capability/Extension Ordering Parity
 Align the Rust validator’s capability/extension ordering and layout checks with the C++ tables.
