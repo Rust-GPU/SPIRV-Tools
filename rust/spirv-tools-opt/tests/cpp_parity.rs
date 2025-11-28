@@ -1251,6 +1251,76 @@ fn rust_and_cpp_factor_mixed_constants_sub_positive() {
 }
 
 #[test]
+fn rust_and_cpp_fold_zero_factor_add() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+
+    let (module_words, result_id) = build_zero_factor_add_module();
+    let rust_insts = extract_simple_block(&module_words);
+    let rust_optimized =
+        spirv_tools_opt::translate::optimize_arith_block(&rust_insts).expect("rust optimizer");
+    let rust_const_zero = rust_optimized.iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(result_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0)]
+    });
+    assert!(
+        rust_const_zero,
+        "rust optimizer should fold (0*x)+(0*y) to zero"
+    );
+
+    let cpp_words = run_cpp_opt(&cpp_opt, &module_words);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&cpp_words, &mut loader).expect("parse cpp optimized");
+    let module = loader.module();
+    let cpp_const_zero = module.all_inst_iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(result_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0)]
+    });
+    assert!(
+        cpp_const_zero,
+        "C++ spirv-opt should fold (0*x)+(0*y) to zero"
+    );
+}
+
+#[test]
+fn rust_and_cpp_fold_zero_factor_sub() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+
+    let (module_words, result_id) = build_zero_factor_sub_module();
+    let rust_insts = extract_simple_block(&module_words);
+    let rust_optimized =
+        spirv_tools_opt::translate::optimize_arith_block(&rust_insts).expect("rust optimizer");
+    let rust_const_zero = rust_optimized.iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(result_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0)]
+    });
+    assert!(
+        rust_const_zero,
+        "rust optimizer should fold (0*x)-(0*y) to zero"
+    );
+
+    let cpp_words = run_cpp_opt(&cpp_opt, &module_words);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&cpp_words, &mut loader).expect("parse cpp optimized");
+    let module = loader.module();
+    let cpp_const_zero = module.all_inst_iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(result_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0)]
+    });
+    assert!(
+        cpp_const_zero,
+        "C++ spirv-opt should fold (0*x)-(0*y) to zero"
+    );
+}
+
+#[test]
 fn rust_and_cpp_fold_const_factor_sub_chain() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
@@ -2451,6 +2521,50 @@ fn build_mixed_const_factor_sub_pos_module() -> (Vec<u32>, u32, u32) {
     b.ret().expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), sub, x)
+}
+
+fn build_zero_factor_add_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![int, int]);
+    let _ = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let x = b.function_parameter(int).expect("param x");
+    let y = b.function_parameter(int).expect("param y");
+    let c0 = b.constant_bit32(int, 0);
+    let mul1 = b.i_mul(int, None, c0, x).expect("mul1");
+    let mul2 = b.i_mul(int, None, y, c0).expect("mul2");
+    let add = b.i_add(int, None, mul1, mul2).expect("add");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), add)
+}
+
+fn build_zero_factor_sub_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![int, int]);
+    let _ = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let x = b.function_parameter(int).expect("param x");
+    let y = b.function_parameter(int).expect("param y");
+    let c0 = b.constant_bit32(int, 0);
+    let mul1 = b.i_mul(int, None, c0, x).expect("mul1");
+    let mul2 = b.i_mul(int, None, c0, y).expect("mul2");
+    let sub = b.i_sub(int, None, mul1, mul2).expect("sub");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), sub)
 }
 
 
