@@ -436,6 +436,7 @@ Planned tasks:
    - Added C++ parity coverage for mixed-constant factoring with positive difference: `(3*x)-(2*x)` => `1*x`, ensuring non-wrapping constant differences are simplified in both optimizers.
    - Added C++ parity coverage for zero-factor cancellation: `(0*x)+(0*y)` and `(0*x)-(0*y)` both fold to zero in Rust and C++ optimizers.
    - Added a short `cargo fuzz` smoke script (`scripts/fuzz-smoke.sh`) to keep the arithmetic optimizer fuzz target exercised with a bounded run.
+   - Added an FFI regression for factoring linear combinations into a single constant result, ensuring the C bridge exercises the optimizer path.
 
 ## Upcoming Milestone: Optimizer FFI/CLI Integration
 Expose the Rust optimizer through the existing C/C++ surfaces and provide CLI benchmarking.

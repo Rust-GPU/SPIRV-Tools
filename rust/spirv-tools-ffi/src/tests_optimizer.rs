@@ -200,6 +200,53 @@ mod optimizer_tests {
     }
 
     #[test]
+    fn optimizer_factors_linear_combination_into_single_mul() {
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let func_ty = b.type_function(void, vec![]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        let factor = b.constant_bit32(int, 4);
+        let c2 = b.constant_bit32(int, 2);
+        let c3 = b.constant_bit32(int, 3);
+        let mul1 = b.i_mul(int, None, factor, c2).expect("mul1");
+        let mul2 = b.i_mul(int, None, c3, factor).expect("mul2");
+        let add = b.i_add(int, None, mul1, mul2).expect("add");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let optimized_module = loader.module();
+
+        let mut found_const = false;
+        for inst in optimized_module.all_inst_iter() {
+            match inst.class.opcode {
+                Op::IAdd => panic!("addition should be factored away"),
+                Op::Constant => {
+                    if inst.result_id == Some(add)
+                        && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(20u32)]
+                    {
+                        found_const = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        assert!(found_const, "should fold to single constant result");
+    }
+
+    #[test]
     fn optimizer_strength_reduces_mul_pow2() {
         let mut b = Builder::new();
         let void = b.type_void();
