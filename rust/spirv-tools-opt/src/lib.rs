@@ -1269,6 +1269,10 @@ impl Applier<SpirvLang, ()> for FoldAffineGcd {
         let Some(const_term) = const_value(egraph, subst[self.k]) else {
             return Vec::new();
         };
+        // Only factor when coefficients are non-negative to avoid sign surprises with wrapping.
+        if coeff.get() >> 31 != 0 || const_term.get() >> 31 != 0 {
+            return Vec::new();
+        }
         if coeff.get() == 0 || const_term.get() == 0 {
             return Vec::new();
         }
@@ -1895,6 +1899,28 @@ mod tests {
                 || matches!(rhs_node, SpirvLang::Symbol(sym) if *sym == Symbol::from("x"))
                     && matches!(lhs_node, SpirvLang::Const(c) if c.get() == 18 / 6),
             "inner sub should be x - (18/6), got lhs={lhs_node:?} rhs={rhs_node:?}"
+        );
+    }
+
+    #[test]
+    fn skips_affine_factoring_with_negative_constants() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new((-6i32) as u32)), // 0
+            SpirvLang::Symbol(Symbol::from("x")),              // 1
+            SpirvLang::Mul([Id::from(0), Id::from(1)]),        // 2 = -6x
+            SpirvLang::Const(ConstValue::new((-9i32) as u32)), // 3
+            SpirvLang::Add([Id::from(2), Id::from(3)]),        // 4 = -6x + -9
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let has_positive_factor = runner.egraph.classes().any(|class| {
+            class
+                .nodes
+                .iter()
+                .any(|n| matches!(n, SpirvLang::Const(c) if c.get() == 3))
+        });
+        assert!(
+            !has_positive_factor,
+            "negative constants should not introduce positive gcd factoring"
         );
     }
 
