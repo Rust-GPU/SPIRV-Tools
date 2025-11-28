@@ -278,6 +278,27 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("udiv-pull-const-right"; "(udiv (* ?x ?c1) ?c2)" => {
             DivPullConst { x: var("?x"), c1: var("?c1"), c2: var("?c2"), signed: false }
         }),
+        rewrite!("mul-dist-const-over-add"; "(* ?c (+ ?x ?k))" => {
+            DistConstMulAdd { c: var("?c"), x: var("?x"), k: var("?k") }
+        }),
+        rewrite!("mul-dist-const-over-add-comm"; "(* (+ ?x ?k) ?c)" => {
+            DistConstMulAdd { c: var("?c"), x: var("?x"), k: var("?k") }
+        }),
+        rewrite!("mul-dist-const-over-add-swap"; "(* ?c (+ ?k ?x))" => {
+            DistConstMulAdd { c: var("?c"), x: var("?x"), k: var("?k") }
+        }),
+        rewrite!("mul-dist-const-over-sub"; "(* ?c (- ?x ?k))" => {
+            DistConstMulSub { c: var("?c"), x: var("?x"), k: var("?k"), flipped: false }
+        }),
+        rewrite!("mul-dist-const-over-sub-comm"; "(* (- ?x ?k) ?c)" => {
+            DistConstMulSub { c: var("?c"), x: var("?x"), k: var("?k"), flipped: false }
+        }),
+        rewrite!("mul-dist-const-over-sub-flipped"; "(* ?c (- ?k ?x))" => {
+            DistConstMulSub { c: var("?c"), x: var("?x"), k: var("?k"), flipped: true }
+        }),
+        rewrite!("mul-dist-const-over-sub-flipped-comm"; "(* (- ?k ?x) ?c)" => {
+            DistConstMulSub { c: var("?c"), x: var("?x"), k: var("?k"), flipped: true }
+        }),
         rewrite!("sdiv-merge-consts"; "(sdiv (sdiv ?x ?c1) ?c2)" => {
             DivMergeConst { base: var("?x"), c1: var("?c1"), c2: var("?c2"), signed: true }
         }),
@@ -448,6 +469,17 @@ struct DivPullConst {
     c1: Var,
     c2: Var,
     signed: bool,
+}
+struct DistConstMulAdd {
+    c: Var,
+    x: Var,
+    k: Var,
+}
+struct DistConstMulSub {
+    c: Var,
+    x: Var,
+    k: Var,
+    flipped: bool,
 }
 struct CancelMulDiv {
     x: Var,
@@ -1068,6 +1100,58 @@ impl Applier<SpirvLang, ()> for DivPullConst {
     }
 }
 
+impl Applier<SpirvLang, ()> for DistConstMulAdd {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(multiplier) = const_value(egraph, subst[self.c]) else {
+            return Vec::new();
+        };
+        let Some(add_const) = const_value(egraph, subst[self.k]) else {
+            return Vec::new();
+        };
+        let scaled_const = ConstValue::new(multiplier.get().wrapping_mul(add_const.get()));
+        let const_id = egraph.add(SpirvLang::Const(scaled_const));
+        let mul = egraph.add(SpirvLang::Mul([subst[self.c], subst[self.x]]));
+        let add = egraph.add(SpirvLang::Add([mul, const_id]));
+        egraph.union(eclass, add);
+        vec![add]
+    }
+}
+
+impl Applier<SpirvLang, ()> for DistConstMulSub {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(multiplier) = const_value(egraph, subst[self.c]) else {
+            return Vec::new();
+        };
+        let Some(sub_const) = const_value(egraph, subst[self.k]) else {
+            return Vec::new();
+        };
+        let scaled_const = ConstValue::new(multiplier.get().wrapping_mul(sub_const.get()));
+        let const_id = egraph.add(SpirvLang::Const(scaled_const));
+        let mul = egraph.add(SpirvLang::Mul([subst[self.c], subst[self.x]]));
+        let sub = if self.flipped {
+            egraph.add(SpirvLang::Sub([const_id, mul]))
+        } else {
+            egraph.add(SpirvLang::Sub([mul, const_id]))
+        };
+        egraph.union(eclass, sub);
+        vec![sub]
+    }
+}
+
 impl Applier<SpirvLang, ()> for MulMergeConst {
     fn apply_one(
         &self,
@@ -1476,6 +1560,96 @@ mod tests {
         };
         assert_eq!(symbol, &Symbol::from("x"));
         assert_eq!(constant.get(), 3);
+    }
+
+    #[test]
+    fn distributes_constant_mul_over_add_with_constant() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new(3)),       // 0
+            SpirvLang::Symbol(Symbol::from("x")),       // 1
+            SpirvLang::Const(ConstValue::new(2)),       // 2
+            SpirvLang::Add([Id::from(1), Id::from(2)]), // 3 = x + 2
+            SpirvLang::Mul([Id::from(0), Id::from(3)]), // 4 = 3 * (x + 2)
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::Add([lhs, rhs])) = nodes.last() else {
+            panic!("expected add root, got {:?}", nodes.last());
+        };
+        let (mul_node, const_node) = match (&nodes[usize::from(*lhs)], &nodes[usize::from(*rhs)]) {
+            (SpirvLang::Mul(_), SpirvLang::Const(c)) => (&nodes[usize::from(*lhs)], c),
+            (SpirvLang::Const(c), SpirvLang::Mul(_)) => (&nodes[usize::from(*rhs)], c),
+            other => panic!("unexpected operands for distributed mul: {other:?}"),
+        };
+        assert_eq!(const_node.get(), 6, "constant term should be scaled");
+        if let SpirvLang::Mul([a, b]) = mul_node {
+            let lhs_node = &nodes[usize::from(*a)];
+            let rhs_node = &nodes[usize::from(*b)];
+            assert!(
+                matches!(lhs_node, SpirvLang::Const(c) if c.get() == 3)
+                    && matches!(rhs_node, SpirvLang::Symbol(sym) if *sym == Symbol::from("x"))
+                    || matches!(rhs_node, SpirvLang::Const(c) if c.get() == 3)
+                        && matches!(lhs_node, SpirvLang::Symbol(sym) if *sym == Symbol::from("x")),
+                "expected 3 * x after distribution, got lhs={lhs_node:?} rhs={rhs_node:?}"
+            );
+        } else {
+            panic!("expected mul term alongside constant after distribution");
+        }
+    }
+
+    #[test]
+    fn distributes_constant_mul_over_sub_with_constant_rhs() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new(4)),       // 0
+            SpirvLang::Symbol(Symbol::from("x")),       // 1
+            SpirvLang::Const(ConstValue::new(1)),       // 2
+            SpirvLang::Sub([Id::from(1), Id::from(2)]), // 3 = x - 1
+            SpirvLang::Mul([Id::from(0), Id::from(3)]), // 4 = 4 * (x - 1)
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let nodes = runner.egraph[class].nodes.clone();
+
+        let is_scaled_mul = |id: Id| {
+            let class = runner.egraph.find(id);
+            runner.egraph[class].nodes.iter().any(|n| match n {
+                SpirvLang::Mul([lhs, rhs]) => {
+                    let lhs_const = const_value(&runner.egraph, *lhs);
+                    let rhs_const = const_value(&runner.egraph, *rhs);
+                    let lhs_sym = matches!(
+                        runner.egraph[runner.egraph.find(*lhs)].nodes.as_slice(),
+                        [SpirvLang::Symbol(sym)] if *sym == Symbol::from("x")
+                    );
+                    let rhs_sym = matches!(
+                        runner.egraph[runner.egraph.find(*rhs)].nodes.as_slice(),
+                        [SpirvLang::Symbol(sym)] if *sym == Symbol::from("x")
+                    );
+                    (lhs_const.map(|c| c.get()) == Some(4) && rhs_sym)
+                        || (rhs_const.map(|c| c.get()) == Some(4) && lhs_sym)
+                }
+                _ => false,
+            })
+        };
+
+        let distributed = nodes.iter().any(|n| {
+            if let SpirvLang::Sub([lhs, rhs]) = n {
+                let lhs_const = const_value(&runner.egraph, *lhs);
+                let rhs_const = const_value(&runner.egraph, *rhs);
+                match (lhs_const, rhs_const) {
+                    (Some(c), None) if c.get() == 4 => is_scaled_mul(*rhs),
+                    (None, Some(c)) if c.get() == 4 => is_scaled_mul(*lhs),
+                    _ => false,
+                }
+            } else {
+                false
+            }
+        });
+
+        assert!(
+            distributed,
+            "expected distributed subexpression with scaled constant and mul term"
+        );
     }
 
     #[test]
