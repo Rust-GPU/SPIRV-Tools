@@ -232,6 +232,30 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("udiv-merge-consts"; "(udiv (udiv ?x ?c1) ?c2)" => {
             DivMergeConst { base: var("?x"), c1: var("?c1"), c2: var("?c2"), signed: false }
         }),
+        rewrite!("sdiv-cancel-common-factor-left"; "(sdiv (* ?c ?x) ?c)" => {
+            CancelMulDiv { x: var("?x"), c: var("?c") }
+        }),
+        rewrite!("sdiv-cancel-common-factor-right"; "(sdiv (* ?x ?c) ?c)" => {
+            CancelMulDiv { x: var("?x"), c: var("?c") }
+        }),
+        rewrite!("udiv-cancel-common-factor-left"; "(udiv (* ?c ?x) ?c)" => {
+            CancelMulDiv { x: var("?x"), c: var("?c") }
+        }),
+        rewrite!("udiv-cancel-common-factor-right"; "(udiv (* ?x ?c) ?c)" => {
+            CancelMulDiv { x: var("?x"), c: var("?c") }
+        }),
+        rewrite!("srem-mul-const-zero-left"; "(srem (* ?c ?x) ?c)" => {
+            RemMulConstZero { c: var("?c") }
+        }),
+        rewrite!("srem-mul-const-zero-right"; "(srem (* ?x ?c) ?c)" => {
+            RemMulConstZero { c: var("?c") }
+        }),
+        rewrite!("umod-mul-const-zero-left"; "(umod (* ?c ?x) ?c)" => {
+            RemMulConstZero { c: var("?c") }
+        }),
+        rewrite!("umod-mul-const-zero-right"; "(umod (* ?x ?c) ?c)" => {
+            RemMulConstZero { c: var("?c") }
+        }),
         rewrite!("mul-merge-consts-right"; "(* (* ?x ?c1) ?c2)" => {
             MulMergeConst { base: var("?x"), c1: var("?c1"), c2: var("?c2") }
         }),
@@ -345,6 +369,13 @@ struct AddCommonFactor {
     x: Var,
     c1: Var,
     c2: Var,
+}
+struct CancelMulDiv {
+    x: Var,
+    c: Var,
+}
+struct RemMulConstZero {
+    c: Var,
 }
 struct MulMergeConst {
     base: Var,
@@ -796,6 +827,47 @@ impl Applier<SpirvLang, ()> for AddCommonFactor {
         let mul = egraph.add(SpirvLang::Mul([subst[self.x], const_id]));
         egraph.union(eclass, mul);
         vec![mul]
+    }
+}
+
+impl Applier<SpirvLang, ()> for CancelMulDiv {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(constant) = const_value(egraph, subst[self.c]) else {
+            return Vec::new();
+        };
+        if constant.get() == 0 {
+            return Vec::new();
+        }
+        egraph.union(eclass, subst[self.x]);
+        vec![subst[self.x]]
+    }
+}
+
+impl Applier<SpirvLang, ()> for RemMulConstZero {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(constant) = const_value(egraph, subst[self.c]) else {
+            return Vec::new();
+        };
+        if constant.get() == 0 {
+            return Vec::new();
+        }
+        let zero = egraph.add(SpirvLang::Const(ConstValue::new(0)));
+        egraph.union(eclass, zero);
+        vec![zero]
     }
 }
 
@@ -1258,6 +1330,79 @@ mod tests {
         };
         assert_eq!(symbol, &Symbol::from("x"));
         assert_eq!(constant.get(), 6, "divisors should merge to 6");
+    }
+
+    #[test]
+    fn cancels_common_factor_in_division() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new(5)),        // 0
+            SpirvLang::Symbol(Symbol::from("x")),        // 1
+            SpirvLang::Mul([Id::from(0), Id::from(1)]),  // 2 = 5 * x
+            SpirvLang::SDiv([Id::from(2), Id::from(0)]), // 3 = (5 * x) / 5
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(root) = nodes.last() else {
+            panic!("expected root");
+        };
+        assert!(
+            matches!(root, SpirvLang::Symbol(sym) if *sym == Symbol::from("x")),
+            "expected division to cancel to symbol, got {root:?}"
+        );
+    }
+
+    #[test]
+    fn cancels_common_factor_in_unsigned_division() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("y")),        // 0
+            SpirvLang::Const(ConstValue::new(3)),        // 1
+            SpirvLang::Mul([Id::from(0), Id::from(1)]),  // 2 = y * 3
+            SpirvLang::UDiv([Id::from(2), Id::from(1)]), // 3 = (y * 3) / 3
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(root) = nodes.last() else {
+            panic!("expected root");
+        };
+        assert!(
+            matches!(root, SpirvLang::Symbol(sym) if *sym == Symbol::from("y")),
+            "expected unsigned division to cancel to symbol, got {root:?}"
+        );
+    }
+
+    #[test]
+    fn remainder_of_multiple_of_divisor_is_zero() {
+        // We cannot guarantee divisibility for arbitrary symbolic values, so
+        // we only fold when both the multiplicative factor and divisor are
+        // constant, reducing `(c1 * x) % c1` to zero.
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new(8)),        // 0
+            SpirvLang::Symbol(Symbol::from("z")),        // 1
+            SpirvLang::Mul([Id::from(0), Id::from(1)]),  // 2 = 8 * z
+            SpirvLang::SRem([Id::from(2), Id::from(0)]), // 3 = (8 * z) % 8
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Const(ConstValue::new(0))]),
+            "expected remainder of multiple to fold to zero"
+        );
+    }
+
+    #[test]
+    fn unsigned_mod_of_multiple_of_divisor_is_zero() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new(7)),        // 0
+            SpirvLang::Symbol(Symbol::from("w")),        // 1
+            SpirvLang::Mul([Id::from(0), Id::from(1)]),  // 2 = 7 * w
+            SpirvLang::UMod([Id::from(2), Id::from(0)]), // 3 = (7 * w) % 7
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Const(ConstValue::new(0))]),
+            "expected unsigned mod of multiple to fold to zero"
+        );
     }
 
     #[test]
