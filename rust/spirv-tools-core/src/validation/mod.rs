@@ -977,6 +977,12 @@ pub enum ValidationError {
         /// The interpolation decoration applied.
         decoration: rspirv::spirv::Decoration,
     },
+    /// A BuiltIn decoration is used without a fragment entry point when one is required.
+    #[error("BuiltIn {builtin:?} requires a Fragment entry point")]
+    BuiltInRequiresFragment {
+        /// The BuiltIn applied.
+        builtin: rspirv::spirv::BuiltIn,
+    },
     /// Location/Component decorations conflict with a BuiltIn decoration on the same id.
     #[error("Location/Component decorations cannot be applied to BuiltIn variables")]
     LocationConflictsWithBuiltIn,
@@ -1679,11 +1685,11 @@ fn validate_words(
     enforce_decoration_versions(&module, target_version)?;
     enforce_block_storage_classes(&module, target_version)?;
     enforce_descriptor_storage_classes(&module)?;
+    let entry_models = collect_execution_models(&module);
     enforce_struct_block_requirements(&module, target_version)?;
     enforce_location_storage_classes(&module)?;
     enforce_builtin_location_exclusivity(&module)?;
-    let entry_models = collect_execution_models(&module);
-    enforce_builtin_storage_classes(&module)?;
+    enforce_builtin_storage_classes(&module, &entry_models)?;
     enforce_interpolation_storage_classes(&module, &definitions, &entry_models)?;
     validate_decoration_target_categories(&module, &opcodes, &definitions, &capabilities)?;
     enforce_store_type_compatibility(&module, &definitions, &options)?;
@@ -3256,15 +3262,12 @@ fn module_extension_instructions<'a>(
 ) -> impl Iterator<Item = &'a rspirv::dr::Instruction> {
     let top_level = module.extensions.iter();
     let function_bodies = module.functions.iter().flat_map(|function| {
-        function
-            .parameters
-            .iter()
-            .chain(
-                function
-                    .blocks
-                    .iter()
-                    .flat_map(|block| block.instructions.iter()),
-            )
+        function.parameters.iter().chain(
+            function
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter()),
+        )
     });
     top_level.chain(function_bodies)
 }
@@ -5343,8 +5346,11 @@ fn enforce_builtin_location_exclusivity(module: &Module) -> Result<(), Validatio
     Ok(())
 }
 
-fn enforce_builtin_storage_classes(module: &Module) -> Result<(), ValidationError> {
-    use rspirv::spirv::{BuiltIn, Decoration, Op, StorageClass};
+fn enforce_builtin_storage_classes(
+    module: &Module,
+    entry_models: &HashSet<rspirv::spirv::ExecutionModel>,
+) -> Result<(), ValidationError> {
+    use rspirv::spirv::{BuiltIn, Decoration, ExecutionModel, Op, StorageClass};
 
     // Map id -> (built-in, storage class)
     for inst in &module.annotations {
@@ -5402,6 +5408,34 @@ fn enforce_builtin_storage_classes(module: &Module) -> Result<(), ValidationErro
                 storage_class,
             });
         }
+
+        let fragment_only = matches!(
+            builtin,
+            BuiltIn::FragCoord
+                | BuiltIn::PointCoord
+                | BuiltIn::FrontFacing
+                | BuiltIn::SampleId
+                | BuiltIn::SamplePosition
+                | BuiltIn::SampleMask
+                | BuiltIn::FragDepth
+                | BuiltIn::HelperInvocation
+                | BuiltIn::FragInvocationCountEXT
+                | BuiltIn::FragSizeEXT
+                | BuiltIn::FragStencilRefEXT
+                | BuiltIn::FullyCoveredEXT
+                | BuiltIn::BaryCoordKHR
+                | BuiltIn::BaryCoordNoPerspKHR
+                | BuiltIn::BaryCoordSmoothAMD
+                | BuiltIn::BaryCoordSmoothCentroidAMD
+                | BuiltIn::BaryCoordSmoothSampleAMD
+                | BuiltIn::BaryCoordNoPerspAMD
+                | BuiltIn::BaryCoordNoPerspCentroidAMD
+                | BuiltIn::BaryCoordNoPerspSampleAMD
+                | BuiltIn::BaryCoordPullModelAMD
+        );
+        if fragment_only && !entry_models.contains(&ExecutionModel::Fragment) {
+            return Err(ValidationError::BuiltInRequiresFragment { builtin });
+        }
     }
     Ok(())
 }
@@ -5438,8 +5472,7 @@ fn enforce_interpolation_storage_classes(
             continue;
         };
         let decoration = *decoration;
-        let is_interp_base =
-            matches!(decoration, NoPerspective | Flat | Patch | Centroid | Sample);
+        let is_interp_base = matches!(decoration, NoPerspective | Flat | Patch | Centroid | Sample);
         if !is_interp_base {
             continue;
         }
@@ -5465,10 +5498,12 @@ fn enforce_interpolation_storage_classes(
         if storage_class != rspirv::spirv::StorageClass::Input
             && storage_class != rspirv::spirv::StorageClass::Output
         {
-            return Err(ValidationError::InterpolationDecorationInvalidStorageClass {
-                decoration,
-                storage_class,
-            });
+            return Err(
+                ValidationError::InterpolationDecorationInvalidStorageClass {
+                    decoration,
+                    storage_class,
+                },
+            );
         }
         if !entry_models.contains(&rspirv::spirv::ExecutionModel::Fragment) {
             return Err(ValidationError::InterpolationDecorationRequiresFragment { decoration });
@@ -18074,8 +18109,8 @@ mod tests {
         let mut options = ValidationOptions::default();
         options.skip_block_layout = true;
 
-        let error = validate_module_with_options(&binary, TargetEnv::Vulkan1_3, options)
-            .unwrap_err();
+        let error =
+            validate_module_with_options(&binary, TargetEnv::Vulkan1_3, options).unwrap_err();
         assert_eq!(
             error,
             ValidationError::LayoutOutOfOrder {
@@ -21529,6 +21564,56 @@ OpFunctionEnd
             ValidationError::InvalidDecorationTargetKind { decoration, .. }
                 if decoration == rspirv::spirv::Decoration::BuiltIn
         ));
+    }
+
+    #[test]
+    fn fragment_only_builtin_requires_fragment_entry_model() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpDecorate %var BuiltIn FragCoord
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%vec4 = OpTypeVector %f32 4
+%ptr = OpTypePointer Input %vec4
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
+            .expect_err("FragCoord requires a Fragment entry point");
+        assert_eq!(
+            err,
+            ValidationError::BuiltInRequiresFragment {
+                builtin: rspirv::spirv::BuiltIn::FragCoord
+            }
+        );
+    }
+
+    #[test]
+    fn fragment_only_builtin_allows_fragment_entry_model() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %var BuiltIn FragDepth
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%ptr = OpTypePointer Output %f32
+%var = OpVariable %ptr Output
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
+            .expect("fragment-only BuiltIns should be accepted for fragment entry points");
     }
 
     #[test]
