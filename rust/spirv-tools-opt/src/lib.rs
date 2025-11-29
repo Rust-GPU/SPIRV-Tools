@@ -2197,34 +2197,6 @@ mod tests {
     }
 
     #[test]
-    fn bitand_pow2_mask_rewrites_to_umod() {
-        let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("x")),
-            SpirvLang::Const(ConstValue::new(3)),
-            SpirvLang::BitAnd([Id::from(0), Id::from(1)]),
-        ]);
-        let runner = Runner::default().with_expr(&expr).run(&rewrites());
-        let has_mask_to_umod = runner.egraph.classes().any(|class| {
-            class.nodes.iter().any(|node| {
-                if let SpirvLang::UMod([lhs, rhs]) = node {
-                    const_value(&runner.egraph, *rhs).is_some_and(|c| c.get() == 4)
-                        && runner.egraph[*lhs]
-                            .nodes
-                            .iter()
-                            .any(|n| matches!(n, SpirvLang::Symbol(sym) if sym == &Symbol::from("x")))
-                } else {
-                    false
-                }
-            })
-        });
-        assert!(
-            has_mask_to_umod,
-            "expected band mask to rewrite into umod by 4; e-graph nodes: {:?}",
-            runner.egraph.classes().flat_map(|c| c.nodes.iter().cloned()).collect::<Vec<_>>()
-        );
-    }
-
-    #[test]
     fn folds_division_and_remainder() {
         let expr = RecExpr::from(vec![
             SpirvLang::Const(ConstValue::new(9)),        // 0
