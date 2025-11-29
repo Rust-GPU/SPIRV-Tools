@@ -919,6 +919,18 @@ pub enum ValidationError {
         /// The target environment's SPIR-V version.
         target_version: SpirvVersion,
     },
+    /// A decoration requires a newer SPIR-V version than the target environment provides.
+    #[error(
+        "decoration {decoration:?} requires SPIR-V version {required_version}, but target provides {target_version}"
+    )]
+    DecorationRequiresSpirvVersion {
+        /// The decoration that is too new.
+        decoration: rspirv::spirv::Decoration,
+        /// The minimum SPIR-V version required by the decoration.
+        required_version: SpirvVersion,
+        /// The target environment's SPIR-V version.
+        target_version: SpirvVersion,
+    },
     /// `OpSamplerImageAddressingModeNV` was declared more than once.
     #[error("OpSamplerImageAddressingModeNV should only be provided once")]
     DuplicateSamplerImageAddressingMode,
@@ -1609,6 +1621,7 @@ fn validate_words(
     enforce_struct_depth_limit(&module, &definitions, &options)?;
     validate_decoration_groups(&module, &defined_ids, &opcodes, &struct_member_counts)?;
     validate_decorations(&module, &defined_ids)?;
+    enforce_decoration_versions(&module, target_version)?;
     validate_decoration_target_categories(&module, &opcodes, &definitions, &capabilities)?;
     enforce_store_type_compatibility(&module, &definitions, &options)?;
     let entry_points = validate_entry_points(&module, &defined_ids, &opcodes)?;
@@ -4835,6 +4848,29 @@ fn enforce_small_type_storage_capabilities(
         }
     }
 
+    Ok(())
+}
+
+fn enforce_decoration_versions(
+    module: &Module,
+    target_version: SpirvVersion,
+) -> Result<(), ValidationError> {
+    for inst in &module.annotations {
+        if inst.class.opcode != rspirv::spirv::Op::Decorate {
+            continue;
+        }
+        if let Some(rspirv::dr::Operand::Decoration(decoration)) = inst.operands.get(1) {
+            if *decoration == rspirv::spirv::Decoration::BufferBlock
+                && target_version > SpirvVersion::new(1, 3)
+            {
+                return Err(ValidationError::DecorationRequiresSpirvVersion {
+                    decoration: *decoration,
+                    required_version: SpirvVersion::new(1, 3),
+                    target_version,
+                });
+            }
+        }
+    }
     Ok(())
 }
 
@@ -20332,12 +20368,44 @@ OpFunctionEnd
     }
 
     #[test]
-    fn uniform_8bit_with_buffer_block_allows_storage_buffer_capability() {
+    fn buffer_block_disallowed_after_spirv_1_3() {
+        let text = r#"
+OpCapability Shader
+OpCapability Linkage
+OpMemoryModel Logical GLSL450
+OpDecorate %buf BufferBlock
+OpMemberDecorate %buf 0 Offset 0
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%buf = OpTypeStruct %u32
+%ptr = OpTypePointer Uniform %buf
+%var = OpVariable %ptr Uniform
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_4)
+            .expect_err("BufferBlock should be disallowed after SPIR-V 1.3");
+        assert_eq!(
+            err,
+            ValidationError::DecorationRequiresSpirvVersion {
+                decoration: rspirv::spirv::Decoration::BufferBlock,
+                required_version: SpirvVersion::new(1, 3),
+                target_version: SpirvVersion::new(1, 4)
+            }
+        );
+    }
+
+    #[test]
+    fn uniform_8bit_with_block_allows_uniform_and_storage_buffer_capability() {
         let text = r#"
 OpCapability Shader
 OpCapability Int8
 OpCapability VariablePointers
 OpCapability VariablePointersStorageBuffer
+OpCapability UniformAndStorageBuffer8BitAccess
 OpCapability StorageBuffer8BitAccess
 OpExtension "SPV_KHR_storage_buffer_storage_class"
 OpExtension "SPV_KHR_variable_pointers"
@@ -20346,7 +20414,7 @@ OpMemoryModel Logical GLSL450
 OpEntryPoint Vertex %main "main" %var
 OpName %main "main"
 OpName %var "var"
-OpDecorate %buf BufferBlock
+OpDecorate %buf Block
 OpMemberDecorate %buf 0 Offset 0
 %void = OpTypeVoid
 %fn = OpTypeFunction %void
@@ -20360,7 +20428,7 @@ OpReturn
 OpFunctionEnd
 "#;
         assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
-            .expect("StorageBuffer8BitAccess with BufferBlock should allow uniform 8-bit");
+            .expect("UniformAndStorageBuffer8BitAccess with Block should allow uniform 8-bit");
     }
 
     #[test]
