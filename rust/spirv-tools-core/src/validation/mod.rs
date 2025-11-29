@@ -5464,6 +5464,20 @@ fn enforce_builtin_storage_classes(
             });
         }
 
+        let mesh_output_only = matches!(
+            builtin,
+            BuiltIn::PrimitivePointIndicesEXT
+                | BuiltIn::PrimitiveLineIndicesEXT
+                | BuiltIn::PrimitiveTriangleIndicesEXT
+                | BuiltIn::CullPrimitiveEXT
+        );
+        if mesh_output_only && storage_class != StorageClass::Output {
+            return Err(ValidationError::InvalidBuiltInStorageClass {
+                builtin,
+                storage_class,
+            });
+        }
+
         // Execution model allowlists for built-ins that are limited to specific pipeline stages.
         let required_models: Option<&[ExecutionModel]> = match builtin {
             BuiltIn::TessCoord | BuiltIn::TessLevelInner | BuiltIn::TessLevelOuter => {
@@ -21921,6 +21935,33 @@ OpFunctionEnd
 "#;
         assemble_and_validate_with_env(ok, TargetEnv::Vulkan1_2)
             .expect("mesh built-ins should be accepted for mesh entry points");
+
+        let bad_storage = r#"
+OpCapability Shader
+OpCapability MeshShadingEXT
+OpExtension "SPV_EXT_mesh_shader"
+OpMemoryModel Logical GLSL450
+OpEntryPoint MeshEXT %main "main" %var
+OpDecorate %var BuiltIn PrimitiveTriangleIndicesEXT
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(bad_storage, TargetEnv::Vulkan1_2)
+            .expect_err("mesh built-ins must use Output storage");
+        assert_eq!(
+            err,
+            ValidationError::InvalidBuiltInStorageClass {
+                builtin: rspirv::spirv::BuiltIn::PrimitiveTriangleIndicesEXT,
+                storage_class: rspirv::spirv::StorageClass::Input
+            }
+        );
     }
 
     #[test]
