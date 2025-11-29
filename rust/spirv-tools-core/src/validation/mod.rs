@@ -5476,7 +5476,7 @@ fn enforce_builtin_storage_classes(
             continue;
         }
 
-        if env.is_vulkan() && builtin == BuiltIn::VertexId {
+        if env.is_vulkan() && (builtin == BuiltIn::VertexId || builtin == BuiltIn::InstanceId) {
             return Err(ValidationError::BuiltInDisallowedForEnv { builtin, env });
         }
 
@@ -22781,6 +22781,34 @@ OpFunctionEnd
             err,
             ValidationError::BuiltInDisallowedForEnv {
                 builtin: rspirv::spirv::BuiltIn::VertexId,
+                env: TargetEnv::Vulkan1_2
+            }
+        );
+    }
+
+    #[test]
+    fn instance_id_is_disallowed_in_vulkan() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpDecorate %var BuiltIn InstanceId
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+            .expect_err("InstanceId is not allowed in Vulkan");
+        assert_eq!(
+            err,
+            ValidationError::BuiltInDisallowedForEnv {
+                builtin: rspirv::spirv::BuiltIn::InstanceId,
                 env: TargetEnv::Vulkan1_2
             }
         );
