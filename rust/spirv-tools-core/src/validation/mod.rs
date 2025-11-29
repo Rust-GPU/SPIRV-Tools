@@ -5671,7 +5671,6 @@ fn enforce_builtin_storage_classes(
                 | BuiltIn::NumSubgroups
                 | BuiltIn::SubgroupId
                 | BuiltIn::SubgroupLocalInvocationId
-                | BuiltIn::NumEnqueuedSubgroups
         );
         if compute_only
             && !entry_models.contains(&ExecutionModel::GLCompute)
@@ -5690,6 +5689,7 @@ fn enforce_builtin_storage_classes(
                 | BuiltIn::GlobalOffset
                 | BuiltIn::EnqueuedWorkgroupSize
                 | BuiltIn::GlobalLinearId
+                | BuiltIn::NumEnqueuedSubgroups
         );
         if kernel_only && !entry_models.contains(&ExecutionModel::Kernel) {
             return Err(ValidationError::BuiltInRequiresExecutionModel {
@@ -23003,6 +23003,63 @@ OpFunctionEnd
 "#;
         assemble_and_validate_with_env(subgroup_ok, TargetEnv::Universal1_6)
             .expect("subgroup built-ins should be accepted when capabilities are declared");
+
+        let num_enqueued_requires_kernel = r#"
+OpCapability Shader
+OpCapability Kernel
+OpCapability DeviceEnqueue
+OpMemoryModel Logical OpenCL
+OpEntryPoint GLCompute %main "main" %var
+OpDecorate %var BuiltIn NumEnqueuedSubgroups
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err =
+            assemble_and_validate_with_env(num_enqueued_requires_kernel, TargetEnv::Universal1_6)
+                .expect_err("NumEnqueuedSubgroups requires Kernel execution model");
+        assert!(
+            matches!(
+                err,
+                ValidationError::BuiltInRequiresExecutionModel {
+                    builtin: rspirv::spirv::BuiltIn::NumEnqueuedSubgroups,
+                    ref allowed
+                } if allowed == &vec![rspirv::spirv::ExecutionModel::Kernel]
+            ) || matches!(
+                err,
+                ValidationError::BuiltInRequiresCapability {
+                    builtin: rspirv::spirv::BuiltIn::NumEnqueuedSubgroups,
+                    capability: rspirv::spirv::Capability::DeviceEnqueue
+                }
+            ) || matches!(err, ValidationError::MissingOperandCapability { .. }),
+            "expected kernel-only or capability error, got {err:?}"
+        );
+
+        let num_enqueued_kernel_ok = r#"
+OpCapability Shader
+OpCapability Kernel
+OpCapability DeviceEnqueue
+OpMemoryModel Logical OpenCL
+OpEntryPoint Kernel %main "main" %var
+OpDecorate %var BuiltIn NumEnqueuedSubgroups
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        assemble_and_validate_with_env(num_enqueued_kernel_ok, TargetEnv::Universal1_6)
+            .expect("NumEnqueuedSubgroups allowed for Kernel execution model with DeviceEnqueue");
     }
 
     #[test]
