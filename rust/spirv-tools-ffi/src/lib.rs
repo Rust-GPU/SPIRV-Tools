@@ -460,6 +460,8 @@ fn rust_validator_enabled() -> bool {
     INIT_RUST_VALIDATOR.call_once(|| {
         if std::env::var_os("SPIRV_TOOLS_DISABLE_RUST_VALIDATOR").is_some() {
             ENABLE_RUST_VALIDATOR.store(false, Ordering::Relaxed);
+        } else if std::env::var_os("SPIRV_TOOLS_FORCE_RUST_VALIDATOR").is_some() {
+            ENABLE_RUST_VALIDATOR.store(true, Ordering::Relaxed);
         }
     });
     ENABLE_RUST_VALIDATOR.load(Ordering::Relaxed)
@@ -468,10 +470,19 @@ fn rust_validator_enabled() -> bool {
 pub fn set_rust_validator_override(enable: bool) {
     let value = if enable { 1 } else { 2 };
     RUST_VALIDATOR_OVERRIDE.store(value, Ordering::Relaxed);
+    if enable {
+        // Keep the env hint in sync so child processes/tests can pick it up.
+        std::env::set_var("SPIRV_TOOLS_FORCE_RUST_VALIDATOR", "1");
+        std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_VALIDATOR");
+    } else {
+        std::env::set_var("SPIRV_TOOLS_DISABLE_RUST_VALIDATOR", "1");
+        std::env::remove_var("SPIRV_TOOLS_FORCE_RUST_VALIDATOR");
+    }
 }
 
 pub fn clear_rust_validator_override() {
     RUST_VALIDATOR_OVERRIDE.store(0, Ordering::Relaxed);
+    std::env::remove_var("SPIRV_TOOLS_FORCE_RUST_VALIDATOR");
 }
 
 fn rust_optimizer_enabled() -> bool {
