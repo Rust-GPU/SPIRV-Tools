@@ -978,7 +978,9 @@ pub enum ValidationError {
         decoration: rspirv::spirv::Decoration,
     },
     /// Two interpolation decorations from the same exclusivity class were applied.
-    #[error("interpolation decoration {decoration:?} conflicts with existing decoration {existing:?}")]
+    #[error(
+        "interpolation decoration {decoration:?} conflicts with existing decoration {existing:?}"
+    )]
     InterpolationDecorationConflict {
         /// The decoration being applied.
         decoration: rspirv::spirv::Decoration,
@@ -1756,13 +1758,7 @@ fn validate_words(
     enforce_struct_block_requirements(&module, target_version)?;
     enforce_location_storage_classes(&module)?;
     enforce_builtin_location_exclusivity(&module)?;
-    enforce_builtin_storage_classes(
-        &module,
-        &definitions,
-        &entry_models,
-        &capabilities,
-        env,
-    )?;
+    enforce_builtin_storage_classes(&module, &definitions, &entry_models, &capabilities, env)?;
     enforce_interpolation_exclusivity(&module, &definitions)?;
     enforce_interpolation_storage_classes(&module, &definitions, &entry_models, &capabilities)?;
     enforce_interpolation_entry_point_compatibility(&module, &definitions, env)?;
@@ -5498,7 +5494,13 @@ fn enforce_builtin_storage_classes(
         {
             return Err(ValidationError::BuiltInRequiresExecutionModel {
                 builtin,
-                allowed: vec![ExecutionModel::Vertex, ExecutionModel::Geometry, ExecutionModel::TessellationEvaluation, ExecutionModel::MeshEXT, ExecutionModel::MeshNV],
+                allowed: vec![
+                    ExecutionModel::Vertex,
+                    ExecutionModel::Geometry,
+                    ExecutionModel::TessellationEvaluation,
+                    ExecutionModel::MeshEXT,
+                    ExecutionModel::MeshNV,
+                ],
             });
         }
 
@@ -5513,10 +5515,10 @@ fn enforce_builtin_storage_classes(
             | BuiltIn::GlobalOffset
             | BuiltIn::EnqueuedWorkgroupSize
             | BuiltIn::GlobalLinearId => Some(&[rspirv::spirv::Capability::Kernel]),
-        BuiltIn::WarpIDNV
-            | BuiltIn::SMIDNV
-            | BuiltIn::SMCountNV
-            | BuiltIn::WarpsPerSMNV => Some(&[rspirv::spirv::Capability::ShaderSMBuiltinsNV]),
+            BuiltIn::NumEnqueuedSubgroups => Some(&[rspirv::spirv::Capability::DeviceEnqueue]),
+            BuiltIn::WarpIDNV | BuiltIn::SMIDNV | BuiltIn::SMCountNV | BuiltIn::WarpsPerSMNV => {
+                Some(&[rspirv::spirv::Capability::ShaderSMBuiltinsNV])
+            }
             BuiltIn::CoreIDARM
             | BuiltIn::CoreCountARM
             | BuiltIn::CoreMaxIDARM
@@ -5577,7 +5579,10 @@ fn enforce_builtin_storage_classes(
         if let Some(required) = required_capability {
             if !required.iter().any(|cap| capabilities.contains(cap)) {
                 let capability = required[0];
-                return Err(ValidationError::BuiltInRequiresCapability { builtin, capability });
+                return Err(ValidationError::BuiltInRequiresCapability {
+                    builtin,
+                    capability,
+                });
             }
         }
 
@@ -5811,9 +5816,7 @@ fn resolve_builtin_pointee_type<'a>(
         .and_then(|id| definitions.get(&id))
 }
 
-fn build_decoration_lookup(
-    module: &Module,
-) -> HashMap<ResultId, Vec<rspirv::spirv::Decoration>> {
+fn build_decoration_lookup(module: &Module) -> HashMap<ResultId, Vec<rspirv::spirv::Decoration>> {
     let mut map: HashMap<ResultId, Vec<rspirv::spirv::Decoration>> = HashMap::new();
     for inst in &module.annotations {
         if inst.class.opcode != rspirv::spirv::Op::Decorate {
@@ -5836,13 +5839,17 @@ fn fragment_requires_flat(
     var_inst: &rspirv::dr::Instruction,
     definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
 ) -> bool {
-    let Some(var_id) = var_inst.result_id.and_then(|id| ResultId::try_from(id).ok()) else {
+    let Some(var_id) = var_inst
+        .result_id
+        .and_then(|id| ResultId::try_from(id).ok())
+    else {
         return false;
     };
     let Some(pointee) = resolve_builtin_pointee_type(definitions, var_id) else {
         return false;
     };
-    is_int_scalar_or_vector(pointee, definitions) || is_float_scalar_of_width(pointee, definitions, 64)
+    is_int_scalar_or_vector(pointee, definitions)
+        || is_float_scalar_of_width(pointee, definitions, 64)
 }
 
 fn is_int_scalar_or_vector(
@@ -5858,19 +5865,19 @@ fn is_int_scalar_or_vector(
             ResultId::try_from(*elem)
                 .ok()
                 .and_then(|id| definitions.get(&id))
-                .map_or(false, |inst| inst.class.opcode == rspirv::spirv::Op::TypeInt)
+                .map_or(false, |inst| {
+                    inst.class.opcode == rspirv::spirv::Op::TypeInt
+                })
         }
         _ => false,
     }
 }
 
 fn type_bit_width(ty: &rspirv::dr::Instruction) -> Option<u32> {
-    ty.operands
-        .get(0)
-        .and_then(|op| match op {
-            rspirv::dr::Operand::LiteralBit32(w) => Some(*w),
-            _ => None,
-        })
+    ty.operands.get(0).and_then(|op| match op {
+        rspirv::dr::Operand::LiteralBit32(w) => Some(*w),
+        _ => None,
+    })
 }
 
 fn is_float_scalar_of_width(
@@ -5887,7 +5894,10 @@ fn is_float_scalar_of_width(
             ResultId::try_from(*elem)
                 .ok()
                 .and_then(|id| definitions.get(&id))
-                .map_or(false, |inst| inst.class.opcode == rspirv::spirv::Op::TypeFloat && type_bit_width(inst) == Some(width))
+                .map_or(false, |inst| {
+                    inst.class.opcode == rspirv::spirv::Op::TypeFloat
+                        && type_bit_width(inst) == Some(width)
+                })
         }
         _ => false,
     }
@@ -6026,14 +6036,10 @@ fn validate_builtin_type(
         GlobalInvocationId | LocalInvocationId | WorkgroupId | NumWorkgroups => {
             is_vector_of(pointee, definitions, 3, is_int32)
         }
-        BaryCoordKHR | BaryCoordNoPerspKHR => {
-            is_vector_of(pointee, definitions, 3, is_float32)
+        BaryCoordKHR | BaryCoordNoPerspKHR => is_vector_of(pointee, definitions, 3, is_float32),
+        SubgroupEqMask | SubgroupGeMask | SubgroupGtMask | SubgroupLeMask | SubgroupLtMask => {
+            is_vector_of(pointee, definitions, 4, is_int32)
         }
-        SubgroupEqMask
-        | SubgroupGeMask
-        | SubgroupGtMask
-        | SubgroupLeMask
-        | SubgroupLtMask => is_vector_of(pointee, definitions, 4, is_int32),
         PointCoord | SamplePosition => is_vector_of(pointee, definitions, 2, is_float32),
         FrontFacing | HelperInvocation => is_bool(pointee),
         ShadingRateKHR | PrimitiveShadingRateKHR => is_int32(pointee),
@@ -6145,9 +6151,7 @@ fn enforce_interpolation_storage_classes(
             });
         }
 
-        if decoration != Patch
-            && !entry_models.contains(&rspirv::spirv::ExecutionModel::Fragment)
-        {
+        if decoration != Patch && !entry_models.contains(&rspirv::spirv::ExecutionModel::Fragment) {
             return Err(ValidationError::InterpolationDecorationRequiresFragment { decoration });
         }
     }
@@ -6281,28 +6285,34 @@ fn enforce_interpolation_entry_point_compatibility(
                 _ => continue,
             };
             let decos = decoration_lookup.get(&var_id).cloned().unwrap_or_default();
-            let has_interp = decos.iter().any(|d| matches!(d, NoPerspective | Flat | Sample | Centroid));
+            let has_interp = decos
+                .iter()
+                .any(|d| matches!(d, NoPerspective | Flat | Sample | Centroid));
             if has_interp {
                 match storage_class {
                     StorageClass::Input if model == ExecutionModel::Vertex => {
-                        return Err(ValidationError::InterpolationDecorationInvalidForEntryPoint {
-                            decoration: *decos
-                                .iter()
-                                .find(|d| matches!(d, NoPerspective | Flat | Sample | Centroid))
-                                .unwrap(),
-                            storage_class,
-                            execution_model: model,
-                        });
+                        return Err(
+                            ValidationError::InterpolationDecorationInvalidForEntryPoint {
+                                decoration: *decos
+                                    .iter()
+                                    .find(|d| matches!(d, NoPerspective | Flat | Sample | Centroid))
+                                    .unwrap(),
+                                storage_class,
+                                execution_model: model,
+                            },
+                        );
                     }
                     StorageClass::Output if model == ExecutionModel::Fragment => {
-                        return Err(ValidationError::InterpolationDecorationInvalidForEntryPoint {
-                            decoration: *decos
-                                .iter()
-                                .find(|d| matches!(d, NoPerspective | Flat | Sample | Centroid))
-                                .unwrap(),
-                            storage_class,
-                            execution_model: model,
-                        });
+                        return Err(
+                            ValidationError::InterpolationDecorationInvalidForEntryPoint {
+                                decoration: *decos
+                                    .iter()
+                                    .find(|d| matches!(d, NoPerspective | Flat | Sample | Centroid))
+                                    .unwrap(),
+                                storage_class,
+                                execution_model: model,
+                            },
+                        );
                     }
                     _ => {}
                 }
@@ -22314,8 +22324,7 @@ OpFunctionEnd
                 ValidationError::DecorationRequiresCapability {
                     decoration: rspirv::spirv::Decoration::Sample,
                     capability: rspirv::spirv::Capability::SampleRateShading
-                }
-                | ValidationError::MissingOperandCapability { .. }
+                } | ValidationError::MissingOperandCapability { .. }
             ),
             "expected SampleRateShading capability error, got {err:?}"
         );
@@ -22412,9 +22421,8 @@ OpDecorate %var Sample
 OpReturn
 OpFunctionEnd
 "#;
-        let err =
-            assemble_and_validate_with_env(centroid_sample_conflict, TargetEnv::Vulkan1_2)
-                .expect_err("Centroid/Sample/Patch are exclusive");
+        let err = assemble_and_validate_with_env(centroid_sample_conflict, TargetEnv::Vulkan1_2)
+            .expect_err("Centroid/Sample/Patch are exclusive");
         assert_eq!(
             err,
             ValidationError::InterpolationDecorationConflict {
@@ -22904,19 +22912,70 @@ OpDecorate %var BuiltIn SubgroupEqMask
 OpReturn
 OpFunctionEnd
 "#;
-        let err = assemble_and_validate_with_env(missing_ballot_capability, TargetEnv::Universal1_6)
-            .expect_err("subgroup mask built-ins require GroupNonUniformBallot capability");
+        let err =
+            assemble_and_validate_with_env(missing_ballot_capability, TargetEnv::Universal1_6)
+                .expect_err("subgroup mask built-ins require GroupNonUniformBallot capability");
         assert!(
             matches!(
                 err,
                 ValidationError::BuiltInRequiresCapability {
                     builtin: rspirv::spirv::BuiltIn::SubgroupEqMask,
                     capability: rspirv::spirv::Capability::GroupNonUniformBallot
-                }
-                | ValidationError::DisallowedCapabilityMissingExtension { .. }
+                } | ValidationError::DisallowedCapabilityMissingExtension { .. }
             ) || matches!(err, ValidationError::MissingOperandCapability { .. }),
             "expected GroupNonUniformBallot capability error, got {err:?}"
         );
+
+        let missing_device_enqueue = r#"
+OpCapability Shader
+OpCapability Kernel
+OpCapability GroupNonUniform
+OpMemoryModel Logical OpenCL
+OpEntryPoint Kernel %main "main" %var
+OpDecorate %var BuiltIn NumEnqueuedSubgroups
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(missing_device_enqueue, TargetEnv::Universal1_6)
+            .expect_err("NumEnqueuedSubgroups requires DeviceEnqueue capability");
+        assert!(
+            matches!(
+                err,
+                ValidationError::BuiltInRequiresCapability {
+                    builtin: rspirv::spirv::BuiltIn::NumEnqueuedSubgroups,
+                    capability: rspirv::spirv::Capability::DeviceEnqueue
+                }
+            ) || matches!(err, ValidationError::MissingOperandCapability { .. }),
+            "expected DeviceEnqueue capability error, got {err:?}"
+        );
+
+        let device_enqueue_ok = r#"
+OpCapability Shader
+OpCapability Kernel
+OpCapability GroupNonUniform
+OpCapability DeviceEnqueue
+OpMemoryModel Logical OpenCL
+OpEntryPoint Kernel %main "main" %var
+OpDecorate %var BuiltIn NumEnqueuedSubgroups
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        assemble_and_validate_with_env(device_enqueue_ok, TargetEnv::Universal1_6)
+            .expect("NumEnqueuedSubgroups allowed with DeviceEnqueue capability");
 
         let subgroup_ok = r#"
 OpCapability Shader
@@ -23075,8 +23134,7 @@ OpFunctionEnd
                 ValidationError::BuiltInRequiresCapability {
                     builtin: rspirv::spirv::BuiltIn::ViewIndex,
                     capability: rspirv::spirv::Capability::MultiView
-                }
-                | ValidationError::MissingOperandCapability { .. }
+                } | ValidationError::MissingOperandCapability { .. }
             ),
             "expected MultiView capability error, got {err:?}"
         );
@@ -23109,8 +23167,7 @@ OpFunctionEnd
                 ValidationError::BuiltInRequiresCapability {
                     builtin: rspirv::spirv::BuiltIn::DeviceIndex,
                     capability: rspirv::spirv::Capability::DeviceGroup
-                }
-                | ValidationError::MissingOperandCapability { .. }
+                } | ValidationError::MissingOperandCapability { .. }
             ),
             "expected DeviceGroup capability error, got {err:?}"
         );
@@ -23164,8 +23221,7 @@ OpFunctionEnd
                 ValidationError::BuiltInRequiresCapability {
                     builtin: rspirv::spirv::BuiltIn::WarpsPerSMNV,
                     capability: rspirv::spirv::Capability::ShaderSMBuiltinsNV
-                }
-                | ValidationError::MissingOperandCapability { .. }
+                } | ValidationError::MissingOperandCapability { .. }
             ),
             "expected SM built-in capability error, got {err:?}"
         );
@@ -23214,8 +23270,7 @@ OpFunctionEnd
                 ValidationError::BuiltInRequiresCapability {
                     builtin: rspirv::spirv::BuiltIn::CoreIDARM,
                     capability: rspirv::spirv::Capability::CoreBuiltinsARM
-                }
-                | ValidationError::MissingOperandCapability { .. }
+                } | ValidationError::MissingOperandCapability { .. }
             ),
             "expected ARM core capability error, got {err:?}"
         );
@@ -23564,8 +23619,7 @@ OpFunctionEnd
                 ValidationError::BuiltInRequiresCapability {
                     builtin: rspirv::spirv::BuiltIn::ShadingRateKHR,
                     ..
-                }
-                | ValidationError::MissingOperandCapability { .. }
+                } | ValidationError::MissingOperandCapability { .. }
             ),
             "expected capability error, got {err:?}"
         );
@@ -23595,8 +23649,7 @@ OpFunctionEnd
                 ValidationError::DecorationRequiresCapability {
                     decoration: rspirv::spirv::Decoration::Sample,
                     capability: rspirv::spirv::Capability::SampleRateShading
-                }
-                | ValidationError::MissingOperandCapability { .. }
+                } | ValidationError::MissingOperandCapability { .. }
             ),
             "expected SampleRateShading capability error, got {err:?}"
         );
@@ -23648,8 +23701,7 @@ OpFunctionEnd
                 ValidationError::BuiltInRequiresCapability {
                     builtin: rspirv::spirv::BuiltIn::PrimitivePointIndicesEXT,
                     ..
-                }
-                | ValidationError::MissingOperandCapability { .. }
+                } | ValidationError::MissingOperandCapability { .. }
             ),
             "expected mesh capability error, got {err:?}"
         );
@@ -23678,8 +23730,7 @@ OpFunctionEnd
                 ValidationError::BuiltInRequiresCapability {
                     builtin: rspirv::spirv::BuiltIn::LaunchIdKHR,
                     ..
-                }
-                | ValidationError::MissingOperandCapability { .. }
+                } | ValidationError::MissingOperandCapability { .. }
             ),
             "expected ray capability error, got {err:?}"
         );
@@ -23923,9 +23974,8 @@ OpFunctionEnd
                 ValidationError::BuiltInRequiresCapability {
                     builtin: rspirv::spirv::BuiltIn::GlobalOffset,
                     capability: rspirv::spirv::Capability::Kernel
-                }
-                | ValidationError::MissingOperandCapability { .. }
-                | ValidationError::MissingRequiredCapability { .. }
+                } | ValidationError::MissingOperandCapability { .. }
+                    | ValidationError::MissingRequiredCapability { .. }
             ),
             "expected Kernel capability error, got {err:?}"
         );
