@@ -22233,6 +22233,59 @@ OpFunctionEnd
     }
 
     #[test]
+    fn sample_interpolation_requires_sample_rate_shading_capability() {
+        let missing_cap = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %var Sample
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%ptr = OpTypePointer Input %f32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(missing_cap, TargetEnv::Vulkan1_2)
+            .expect_err("Sample interpolation requires SampleRateShading capability");
+        assert!(
+            matches!(
+                err,
+                ValidationError::DecorationRequiresCapability {
+                    decoration: rspirv::spirv::Decoration::Sample,
+                    capability: rspirv::spirv::Capability::SampleRateShading
+                }
+                | ValidationError::MissingOperandCapability { .. }
+            ),
+            "expected SampleRateShading capability error, got {err:?}"
+        );
+
+        let with_cap = r#"
+OpCapability Shader
+OpCapability SampleRateShading
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %var Sample
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%ptr = OpTypePointer Input %f32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        assemble_and_validate_with_env(with_cap, TargetEnv::Vulkan1_2)
+            .expect("Sample interpolation allowed when SampleRateShading is declared");
+    }
+
+    #[test]
     fn interpolation_decorations_allowed_on_input_and_output() {
         let text = r#"
 OpCapability Shader
