@@ -47,7 +47,7 @@ Close the remaining decoration/environment-specific gaps against the C++ validat
 
 Tasks for this milestone:
 - [x] Enforce interpolation/barycentric decoration storage-class and execution-model constraints with grammar-driven tables and regressions.
- - [ ] Add env-specific BuiltIn allowlists (e.g., Mesh/Fragment shading built-ins, SM built-ins) with typed errors and binary tests. (Stage-specific allowlists and BuiltIn type checks added; SM/ARM GPU core built-ins now gate on ShaderSMBuiltinsNV/CoreBuiltinsARM and require their vendor extensions; remaining env-specific deltas still pending.)
+ - [ ] Add env-specific BuiltIn allowlists (e.g., Mesh/Fragment shading built-ins, SM built-ins) with typed errors and binary tests. (Stage-specific allowlists and BuiltIn type checks added; compute-only built-ins gated to GLCompute; kernel-only built-ins gated to Kernel; SM/ARM GPU core built-ins now gate on ShaderSMBuiltinsNV/CoreBuiltinsARM and require their vendor extensions; remaining env-specific deltas still pending.)
 - [ ] Validate decoration exclusivity/compatibility pairs (e.g., interpolation vs Sample/Flat mixes, sample-rate shading requirements) against the C++ suite and port any missing tests.
 - [ ] Wire these constraints through FFI/CLI and keep validated-module caching active; run C++ corpora under the Rust path to confirm parity.
 

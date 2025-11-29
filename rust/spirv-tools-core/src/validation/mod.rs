@@ -5654,6 +5654,21 @@ fn enforce_builtin_storage_classes(
             });
         }
 
+        let kernel_only = matches!(
+            builtin,
+            BuiltIn::WorkDim
+                | BuiltIn::GlobalSize
+                | BuiltIn::GlobalOffset
+                | BuiltIn::EnqueuedWorkgroupSize
+                | BuiltIn::GlobalLinearId
+        );
+        if kernel_only && !entry_models.contains(&ExecutionModel::Kernel) {
+            return Err(ValidationError::BuiltInRequiresExecutionModel {
+                builtin,
+                allowed: vec![ExecutionModel::Kernel],
+            });
+        }
+
         // Type checks for selected built-ins.
         if let Some(var_id) = ResultId::try_from(*target).ok() {
             if let Some(pointee) = resolve_builtin_pointee_type(definitions, var_id) {
@@ -23588,6 +23603,57 @@ OpFunctionEnd
                 storage_class: rspirv::spirv::StorageClass::Input
             }
         );
+    }
+
+    #[test]
+    fn kernel_only_builtins_require_kernel_execution_model() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main" %var
+OpDecorate %var BuiltIn WorkDim
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+            .expect_err("WorkDim is a Kernel-only built-in");
+        assert!(
+            matches!(
+                err,
+                ValidationError::BuiltInRequiresExecutionModel {
+                    builtin: rspirv::spirv::BuiltIn::WorkDim,
+                    allowed: ref models
+                } if *models == vec![rspirv::spirv::ExecutionModel::Kernel]
+            ) || matches!(err, ValidationError::MissingOperandCapability { .. }),
+            "expected WorkDim to require Kernel model, got {err:?}"
+        );
+
+        let kernel_ok = r#"
+OpCapability Addresses
+OpCapability Kernel
+OpMemoryModel Physical32 OpenCL
+OpEntryPoint Kernel %main "main" %var
+OpDecorate %var BuiltIn GlobalSize
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%vec3 = OpTypeVector %u32 3
+%ptr = OpTypePointer Input %vec3
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        assemble_and_validate_with_env(kernel_ok, TargetEnv::Universal1_6)
+            .expect("Kernel execution model should allow kernel-only built-ins");
     }
 
     #[test]
