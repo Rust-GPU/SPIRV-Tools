@@ -432,6 +432,7 @@ Percentages are approximate and will be updated as new checklists are added for 
    - Ported 16-bit storage class gating (StorageBuffer/Uniform/PushConstant/Input/Output/Workgroup) so variables containing 16-bit elements now mirror the C++ capability checks.
    - Added 8-bit storage class gating (StorageBuffer/Uniform/PushConstant/Workgroup) so Int8 payloads now require the same capabilities as C++.
    - Added positive regression coverage for small-type storage paths (8/16-bit storage buffers, uniform BufferBlock fallbacks, input/output, push constants, workgroup layout) so allowed combinations stay aligned with the C++ validator.
+   - Enforced block decoration rules (Block/BufferBlock storage-class compatibility, BufferBlock version gating, descriptor-only storage classes, location/component limited to input/output) to match C++ decoration target checks.
 2. Push validated-module caching deeper through FFI/CLI entry points to avoid reparsing/validating identical inputs.
 3. Fill in remaining SPIR-V version gating and per-instruction requirements from the grammar, then revisit disassembly fixtures once validator parity is solid.
 4. Thread the generated extension allowlist through capability/extension precedence (ray tracing, cooperative matrices, tile shading) with focused regressions, and capture any OpenGL-specific quirks that still rely on heuristics.
