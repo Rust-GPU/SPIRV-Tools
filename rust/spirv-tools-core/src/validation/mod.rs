@@ -964,6 +964,14 @@ pub enum ValidationError {
     /// Location/Component decorations conflict with a BuiltIn decoration on the same id.
     #[error("Location/Component decorations cannot be applied to BuiltIn variables")]
     LocationConflictsWithBuiltIn,
+    /// A BuiltIn decoration is applied to a variable in a disallowed storage class.
+    #[error("BuiltIn {builtin:?} cannot be applied to storage class {storage_class:?}")]
+    InvalidBuiltInStorageClass {
+        /// The built-in kind.
+        builtin: rspirv::spirv::BuiltIn,
+        /// The storage class of the decorated variable.
+        storage_class: rspirv::spirv::StorageClass,
+    },
     /// `OpSamplerImageAddressingModeNV` was declared more than once.
     #[error("OpSamplerImageAddressingModeNV should only be provided once")]
     DuplicateSamplerImageAddressingMode,
@@ -1660,6 +1668,7 @@ fn validate_words(
     enforce_struct_block_requirements(&module, target_version)?;
     enforce_location_storage_classes(&module)?;
     enforce_builtin_location_exclusivity(&module)?;
+    enforce_builtin_storage_classes(&module)?;
     validate_decoration_target_categories(&module, &opcodes, &definitions, &capabilities)?;
     enforce_store_type_compatibility(&module, &definitions, &options)?;
     let entry_points = validate_entry_points(&module, &defined_ids, &opcodes)?;
@@ -5298,6 +5307,69 @@ fn enforce_builtin_location_exclusivity(module: &Module) -> Result<(), Validatio
         }
     }
 
+    Ok(())
+}
+
+fn enforce_builtin_storage_classes(module: &Module) -> Result<(), ValidationError> {
+    use rspirv::spirv::{BuiltIn, Decoration, Op, StorageClass};
+
+    // Map id -> (built-in, storage class)
+    for inst in &module.annotations {
+        if inst.class.opcode != Op::Decorate {
+            continue;
+        }
+        let Some(rspirv::dr::Operand::IdRef(target)) = inst.operands.get(0) else {
+            continue;
+        };
+        let Some(rspirv::dr::Operand::Decoration(decoration)) = inst.operands.get(1) else {
+            continue;
+        };
+        if *decoration != Decoration::BuiltIn {
+            continue;
+        }
+        let builtin = inst
+            .operands
+            .get(2)
+            .and_then(|op| match op {
+                rspirv::dr::Operand::BuiltIn(b) => Some(*b),
+                rspirv::dr::Operand::LiteralBit32(raw) => BuiltIn::from_u32(*raw),
+                _ => None,
+            })
+            .unwrap_or(BuiltIn::Position);
+
+        let Ok(id) = ResultId::try_from(*target) else {
+            continue;
+        };
+        // Look up storage class of the variable.
+        let storage_class = module.types_global_values.iter().find_map(|var| {
+            if var.class.opcode != Op::Variable {
+                return None;
+            }
+            if var.result_id != Some(u32::from(id)) {
+                return None;
+            }
+            match var.operands.first() {
+                Some(rspirv::dr::Operand::StorageClass(sc)) => Some(*sc),
+                _ => None,
+            }
+        });
+        let Some(storage_class) = storage_class else {
+            continue;
+        };
+
+        if builtin == BuiltIn::WorkgroupSize {
+            // Target-kind and type checks handle WorkgroupSize; storage class is validated elsewhere.
+            continue;
+        }
+
+        let allowed = matches!(storage_class, StorageClass::Input | StorageClass::Output);
+        if !allowed {
+            return Err(ValidationError::InvalidBuiltInStorageClass {
+                builtin,
+                storage_class,
+            });
+        }
+    }
     Ok(())
 }
 
@@ -20987,6 +21059,61 @@ OpFunctionEnd
         let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
             .expect_err("Location must not be used with BuiltIn");
         assert_eq!(err, ValidationError::LocationConflictsWithBuiltIn);
+    }
+
+    #[test]
+    fn builtin_requires_appropriate_storage_class() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpDecorate %var BuiltIn Position
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%vec4 = OpTypeVector %f32 4
+%ptr = OpTypePointer Uniform %vec4
+%var = OpVariable %ptr Uniform
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
+            .expect_err("BuiltIn Position should not be allowed on Uniform");
+        assert_eq!(
+            err,
+            ValidationError::InvalidBuiltInStorageClass {
+                builtin: rspirv::spirv::BuiltIn::Position,
+                storage_class: rspirv::spirv::StorageClass::Uniform
+            }
+        );
+
+        // WorkgroupSize is only allowed on Workgroup storage.
+        let workgroup_text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main"
+OpExecutionMode %main LocalSize 1 1 1
+OpDecorate %var BuiltIn WorkgroupSize
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%vec3 = OpTypeVector %u32 3
+%ptr = OpTypePointer Input %vec3
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(workgroup_text, TargetEnv::Universal1_5)
+            .expect_err("WorkgroupSize must follow target-kind rules");
+        assert!(matches!(
+            err,
+            ValidationError::InvalidDecorationTargetKind { decoration, .. }
+                if decoration == rspirv::spirv::Decoration::BuiltIn
+        ));
     }
 
     #[test]
