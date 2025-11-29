@@ -983,6 +983,14 @@ pub enum ValidationError {
         /// The BuiltIn applied.
         builtin: rspirv::spirv::BuiltIn,
     },
+    /// A BuiltIn decoration is used without an allowed execution model being present.
+    #[error("BuiltIn {builtin:?} requires one of the following execution models: {allowed:?}")]
+    BuiltInRequiresExecutionModel {
+        /// The BuiltIn applied.
+        builtin: rspirv::spirv::BuiltIn,
+        /// The allowed execution models for this BuiltIn.
+        allowed: Vec<rspirv::spirv::ExecutionModel>,
+    },
     /// Location/Component decorations conflict with a BuiltIn decoration on the same id.
     #[error("Location/Component decorations cannot be applied to BuiltIn variables")]
     LocationConflictsWithBuiltIn,
@@ -5454,6 +5462,67 @@ fn enforce_builtin_storage_classes(
                 builtin,
                 storage_class,
             });
+        }
+
+        // Execution model allowlists for built-ins that are limited to specific pipeline stages.
+        let required_models: Option<&[ExecutionModel]> = match builtin {
+            BuiltIn::TessCoord | BuiltIn::TessLevelInner | BuiltIn::TessLevelOuter => {
+                Some(&[ExecutionModel::TessellationEvaluation])
+            }
+            BuiltIn::PatchVertices => Some(&[ExecutionModel::TessellationControl]),
+            BuiltIn::PrimitiveId => Some(&[
+                ExecutionModel::Geometry,
+                ExecutionModel::TessellationControl,
+                ExecutionModel::TessellationEvaluation,
+                ExecutionModel::MeshNV,
+                ExecutionModel::MeshEXT,
+                ExecutionModel::RayGenerationKHR,
+                ExecutionModel::ClosestHitKHR,
+                ExecutionModel::AnyHitKHR,
+                ExecutionModel::MissKHR,
+                ExecutionModel::IntersectionKHR,
+                ExecutionModel::CallableKHR,
+            ]),
+            BuiltIn::LaunchIdKHR
+            | BuiltIn::LaunchSizeKHR
+            | BuiltIn::RayTminKHR
+            | BuiltIn::RayTmaxKHR
+            | BuiltIn::WorldRayOriginKHR
+            | BuiltIn::WorldRayDirectionKHR
+            | BuiltIn::ObjectRayOriginKHR
+            | BuiltIn::ObjectRayDirectionKHR
+            | BuiltIn::ObjectToWorldKHR
+            | BuiltIn::WorldToObjectKHR
+            | BuiltIn::InstanceCustomIndexKHR
+            | BuiltIn::InstanceId
+            | BuiltIn::RayGeometryIndexKHR
+            | BuiltIn::IncomingRayFlagsKHR
+            | BuiltIn::CullMaskKHR
+            | BuiltIn::HitKindKHR
+            | BuiltIn::HitTNV => Some(&[
+                ExecutionModel::RayGenerationKHR,
+                ExecutionModel::IntersectionKHR,
+                ExecutionModel::AnyHitKHR,
+                ExecutionModel::ClosestHitKHR,
+                ExecutionModel::MissKHR,
+                ExecutionModel::CallableKHR,
+            ]),
+            BuiltIn::PrimitiveShadingRateKHR | BuiltIn::ShadingRateKHR => {
+                Some(&[ExecutionModel::Fragment])
+            }
+            BuiltIn::PrimitivePointIndicesEXT
+            | BuiltIn::PrimitiveLineIndicesEXT
+            | BuiltIn::PrimitiveTriangleIndicesEXT
+            | BuiltIn::CullPrimitiveEXT => Some(&[ExecutionModel::MeshEXT, ExecutionModel::MeshNV]),
+            _ => None,
+        };
+        if let Some(models) = required_models {
+            if !entry_models.iter().any(|m| models.contains(m)) {
+                return Err(ValidationError::BuiltInRequiresExecutionModel {
+                    builtin,
+                    allowed: models.to_vec(),
+                });
+            }
         }
     }
     Ok(())
@@ -21690,6 +21759,62 @@ OpFunctionEnd
 "#;
         assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
             .expect("barycentric BuiltIns should be accepted for fragment entry points");
+    }
+
+    #[test]
+    fn ray_builtins_require_ray_execution_models() {
+        let text = r#"
+OpCapability Shader
+OpCapability RayTracingKHR
+OpCapability RayTracingNV
+OpExtension "SPV_KHR_ray_tracing"
+OpExtension "SPV_NV_ray_tracing"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpDecorate %var BuiltIn LaunchIdKHR
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%vec3 = OpTypeVector %u32 3
+%ptr = OpTypePointer Input %vec3
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+            .expect_err("ray built-ins require ray tracing execution models");
+        assert!(matches!(
+            err,
+            ValidationError::BuiltInRequiresExecutionModel {
+                builtin: rspirv::spirv::BuiltIn::LaunchIdKHR,
+                ..
+            }
+        ));
+
+        let ok = r#"
+OpCapability Shader
+OpCapability RayTracingKHR
+OpCapability RayTracingNV
+OpExtension "SPV_KHR_ray_tracing"
+OpExtension "SPV_NV_ray_tracing"
+OpMemoryModel Logical GLSL450
+OpEntryPoint RayGenerationKHR %main "main" %var
+OpDecorate %var BuiltIn LaunchSizeKHR
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%vec3 = OpTypeVector %u32 3
+%ptr = OpTypePointer Input %vec3
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        assemble_and_validate_with_env(ok, TargetEnv::Vulkan1_2)
+            .expect("ray built-ins should be accepted for ray tracing entry points");
     }
 
     #[test]
