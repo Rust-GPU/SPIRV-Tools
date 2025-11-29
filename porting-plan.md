@@ -38,7 +38,7 @@ Force the Rust validator through CLI/FFI, close remaining ordering/decorations g
 Tasks for this milestone:
 - [ ] Generate capability/extension ordering tables (including conditional variants) from the grammar and enforce them relative to debug/names/annotations/functions so layout parity matches C++.
 - [ ] Extend decoration target/category constraints still present in the C++ tables (interpolation/barycentric/BuiltIn env quirks) with text/binary regressions.
-- [ ] Thread extension allowlists through conditional extensions/capabilities during full validation (not just layout) and add env-gated regressions (e.g., WebGPU/Vulkan splits). **(function-body extension allowlists enforced)**
+- [ ] Thread extension allowlists through conditional extensions/capabilities during full validation (not just layout) and add env-gated regressions (e.g., WebGPU/Vulkan splits). **(function-body extensions now rejected even when layout is skipped; allowlists cover conditional extensions)**
 - [ ] Keep validated-module caching in place while the new ordering/decorations checks are added, ensuring CLI/FFI reuse validated words without re-parse.
 - [ ] Run the full C++ validation corpora with the Rust path forced on (`SPIRV_TOOLS_DISABLE_RUST_VALIDATOR=0`) and fix mismatches until the Rust path can be the default without a flag.
 

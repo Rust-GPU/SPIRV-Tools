@@ -1633,6 +1633,8 @@ fn validate_words(
     }
     if !options.skip_block_layout {
         run_layout_check(words.as_slice(), env)?;
+    } else {
+        enforce_global_section_placement(words.as_slice())?;
     }
     let module = parse_module(words.as_slice())?;
     validate_extension_allowlist(&module, env)?;
@@ -3262,6 +3264,75 @@ fn validate_extension_allowlist(module: &Module, env: TargetEnv) -> Result<(), V
         }
     }
     Ok(())
+}
+
+fn enforce_global_section_placement(words: &[u32]) -> Result<(), ValidationError> {
+    struct PlacementChecker {
+        in_function: bool,
+    }
+
+    impl PlacementChecker {
+        fn new() -> Self {
+            Self { in_function: false }
+        }
+    }
+
+    impl rspirv::binary::Consumer for PlacementChecker {
+        fn initialize(&mut self) -> rspirv::binary::ParseAction {
+            rspirv::binary::ParseAction::Continue
+        }
+
+        fn finalize(&mut self) -> rspirv::binary::ParseAction {
+            rspirv::binary::ParseAction::Continue
+        }
+
+        fn consume_header(
+            &mut self,
+            _header: rspirv::dr::ModuleHeader,
+        ) -> rspirv::binary::ParseAction {
+            rspirv::binary::ParseAction::Continue
+        }
+
+        fn consume_instruction(
+            &mut self,
+            inst: rspirv::dr::Instruction,
+        ) -> rspirv::binary::ParseAction {
+            let opcode = inst.class.opcode;
+            if self.in_function {
+                match opcode {
+                    rspirv::spirv::Op::Extension
+                    | rspirv::spirv::Op::ExtInstImport
+                    | rspirv::spirv::Op::ConditionalExtensionINTEL
+                    | rspirv::spirv::Op::Capability
+                    | rspirv::spirv::Op::ConditionalCapabilityINTEL => {
+                        return rspirv::binary::ParseAction::Error(Box::new(
+                            ValidationError::LayoutOutOfOrder { opcode },
+                        ));
+                    }
+                    rspirv::spirv::Op::FunctionEnd => {
+                        self.in_function = false;
+                    }
+                    _ => {}
+                }
+            } else if opcode == rspirv::spirv::Op::Function {
+                self.in_function = true;
+            }
+            rspirv::binary::ParseAction::Continue
+        }
+    }
+
+    let mut checker = PlacementChecker::new();
+    match rspirv::binary::parse_words(words, &mut checker) {
+        Ok(()) => Ok(()),
+        Err(rspirv::binary::ParseState::ConsumerError(err)) => {
+            if let Some(validation) = err.downcast_ref::<ValidationError>() {
+                Err(validation.clone())
+            } else {
+                Err(ValidationError::Parse(err.to_string()))
+            }
+        }
+        Err(other) => Err(ValidationError::Parse(other.to_string())),
+    }
 }
 
 fn validate_extensions(
@@ -17934,9 +18005,8 @@ mod tests {
     }
 
     #[test]
-    fn disallowed_extension_in_function_body_is_rejected_even_without_layout_check() {
-        // When layout checks are disabled, function-local extension declarations must still obey
-        // the target environment allowlist.
+    fn extensions_cannot_appear_inside_functions_even_when_layout_skipped() {
+        // When layout checks are disabled, function-local extensions remain invalid.
         const EXT_SPV_KHR_RAY_TRACING: [u32; 5] = [
             0x5f56_5053, // "SPV_"
             0x5f52_484b, // "KHR_"
@@ -17981,13 +18051,56 @@ mod tests {
         let mut options = ValidationOptions::default();
         options.skip_block_layout = true;
 
-        let error =
-            validate_module_with_options(&binary, TargetEnv::WebGpu0, options).unwrap_err();
+        let error = validate_module_with_options(&binary, TargetEnv::Vulkan1_3, options)
+            .unwrap_err();
         assert_eq!(
             error,
-            ValidationError::DisallowedExtension {
-                extension: ExtensionName::from("SPV_KHR_ray_tracing"),
-                env: TargetEnv::WebGpu0
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Extension
+            }
+        );
+    }
+
+    #[test]
+    fn capabilities_cannot_appear_inside_functions_even_when_layout_skipped() {
+        // Capabilities must remain in the capabilities section even if block layout checks are
+        // skipped.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            6,          // bound
+            0,          // schema
+            op(3, 14),  // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+            op(5, 54), // OpFunction %1 %3 None %2
+            1,
+            3,
+            rspirv::spirv::FunctionControl::NONE.bits(),
+            2,
+            op(2, 248), // OpLabel %4
+            4,
+            op(2, rspirv::spirv::Op::Capability as u16), // OpCapability Shader (inside function)
+            rspirv::spirv::Capability::Shader as u32,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+
+        let mut options = ValidationOptions::default();
+        options.skip_block_layout = true;
+
+        let error =
+            validate_module_with_options(&binary, TargetEnv::Universal1_5, options).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Capability
             }
         );
     }
