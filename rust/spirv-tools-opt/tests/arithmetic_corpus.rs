@@ -122,6 +122,63 @@ fn corpus_folds_mul_by_zero() {
 }
 
 #[test]
+fn corpus_rewrites_band_pow2_mask_into_umod() {
+    let int = 1;
+    // Build x = 5 + 6, then x & 7.
+    let c5 = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(5)],
+    );
+    let c6 = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(6)],
+    );
+    let add = inst(
+        Op::IAdd,
+        int,
+        4,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(3)],
+    );
+    let mask = inst(
+        Op::Constant,
+        int,
+        5,
+        vec![rspirv::dr::Operand::LiteralBit32(7)],
+    );
+    let band = inst(
+        Op::BitwiseAnd,
+        int,
+        6,
+        vec![rspirv::dr::Operand::IdRef(4), rspirv::dr::Operand::IdRef(5)],
+    );
+    let optimized = optimize_arith_block(&[c5, c6, add, mask, band]).expect("optimize");
+    // Expect the mask to either become a modulus by 8 or fully fold to a constant.
+    let has_umod = optimized.iter().any(|inst| {
+        inst.class.opcode == Op::UMod
+            && inst.operands.iter().any(|op| {
+                matches!(op, rspirv::dr::Operand::LiteralBit32(value) if *value == 8)
+            })
+    });
+    let has_constant = optimized
+        .iter()
+        .any(|inst| inst.class.opcode == Op::Constant);
+    assert!(
+        has_umod || has_constant,
+        "expected band mask to rewrite to modulus by 8 or fold to a constant: {optimized:?}"
+    );
+    assert!(
+        optimized
+            .iter()
+            .all(|inst| inst.class.opcode != Op::BitwiseAnd),
+        "bitwise-and should be eliminated after rewrite"
+    );
+}
+
+#[test]
 fn corpus_strength_reduces_mul_by_pow2() {
     let int = 1;
     let c8 = inst(
