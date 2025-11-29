@@ -3235,8 +3235,26 @@ fn extension_operand(inst: &rspirv::dr::Instruction) -> Option<ExtensionName> {
     })
 }
 
+fn module_extension_instructions<'a>(
+    module: &'a Module,
+) -> impl Iterator<Item = &'a rspirv::dr::Instruction> {
+    let top_level = module.extensions.iter();
+    let function_bodies = module.functions.iter().flat_map(|function| {
+        function
+            .parameters
+            .iter()
+            .chain(
+                function
+                    .blocks
+                    .iter()
+                    .flat_map(|block| block.instructions.iter()),
+            )
+    });
+    top_level.chain(function_bodies)
+}
+
 fn validate_extension_allowlist(module: &Module, env: TargetEnv) -> Result<(), ValidationError> {
-    for inst in &module.extensions {
+    for inst in module_extension_instructions(module) {
         if let Some(extension) = extension_operand(inst) {
             if !env.is_extension_allowed(&extension) {
                 return Err(ValidationError::DisallowedExtension { extension, env });
@@ -17913,6 +17931,65 @@ mod tests {
             .validate(TargetEnv::Vulkan1_2)
             .expect("extension should be accepted for Vulkan environments");
         assert_eq!(validated.header().schema(), Schema::ZERO);
+    }
+
+    #[test]
+    fn disallowed_extension_in_function_body_is_rejected_even_without_layout_check() {
+        // When layout checks are disabled, function-local extension declarations must still obey
+        // the target environment allowlist.
+        const EXT_SPV_KHR_RAY_TRACING: [u32; 5] = [
+            0x5f56_5053, // "SPV_"
+            0x5f52_484b, // "KHR_"
+            0x5f79_6172, // "ray_"
+            0x6361_7274, // "trac"
+            0x0067_6e69, // "ing\0"
+        ];
+
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            6,          // bound
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+            op(5, 54), // OpFunction %1 %3 None %2
+            1,
+            3,
+            rspirv::spirv::FunctionControl::NONE.bits(),
+            2,
+            op(2, 248), // OpLabel %4
+            4,
+            op(6, rspirv::spirv::Op::Extension as u16), // OpExtension "SPV_KHR_ray_tracing" (inside function)
+            EXT_SPV_KHR_RAY_TRACING[0],
+            EXT_SPV_KHR_RAY_TRACING[1],
+            EXT_SPV_KHR_RAY_TRACING[2],
+            EXT_SPV_KHR_RAY_TRACING[3],
+            EXT_SPV_KHR_RAY_TRACING[4],
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+
+        let mut options = ValidationOptions::default();
+        options.skip_block_layout = true;
+
+        let error =
+            validate_module_with_options(&binary, TargetEnv::WebGpu0, options).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::DisallowedExtension {
+                extension: ExtensionName::from("SPV_KHR_ray_tracing"),
+                env: TargetEnv::WebGpu0
+            }
+        );
     }
 
     #[test]
