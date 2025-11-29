@@ -5498,6 +5498,15 @@ fn enforce_builtin_storage_classes(
             }
             BuiltIn::ViewIndex => Some(&[rspirv::spirv::Capability::MultiView]),
             BuiltIn::DeviceIndex => Some(&[rspirv::spirv::Capability::DeviceGroup]),
+        BuiltIn::WarpIDNV
+            | BuiltIn::SMIDNV
+            | BuiltIn::SMCountNV
+            | BuiltIn::WarpsPerSMNV => Some(&[rspirv::spirv::Capability::ShaderSMBuiltinsNV]),
+            BuiltIn::CoreIDARM
+            | BuiltIn::CoreCountARM
+            | BuiltIn::CoreMaxIDARM
+            | BuiltIn::WarpIDARM
+            | BuiltIn::WarpMaxIDARM => Some(&[rspirv::spirv::Capability::CoreBuiltinsARM]),
             BuiltIn::BaryCoordKHR
             | BuiltIn::BaryCoordNoPerspKHR
             | BuiltIn::BaryCoordSmoothAMD
@@ -22655,6 +22664,109 @@ OpFunctionEnd
 "#;
         assemble_and_validate_with_env(ok, TargetEnv::Vulkan1_2)
             .expect("DeviceIndex allowed when DeviceGroup declared");
+    }
+
+    #[test]
+    fn shader_sm_builtins_require_capability() {
+        let nv_missing = r#"
+OpCapability Shader
+OpExtension "SPV_NV_shader_sm_builtins"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpDecorate %var BuiltIn WarpsPerSMNV
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(nv_missing, TargetEnv::Vulkan1_2)
+            .expect_err("SM built-ins require ShaderSMBuiltins or ShaderCoreBuiltinsARM");
+        assert!(
+            matches!(
+                err,
+                ValidationError::BuiltInRequiresCapability {
+                    builtin: rspirv::spirv::BuiltIn::WarpsPerSMNV,
+                    capability: rspirv::spirv::Capability::ShaderSMBuiltinsNV
+                }
+                | ValidationError::MissingOperandCapability { .. }
+            ),
+            "expected SM built-in capability error, got {err:?}"
+        );
+
+        let nv_ok = r#"
+OpCapability Shader
+OpCapability ShaderSMBuiltinsNV
+OpExtension "SPV_NV_shader_sm_builtins"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpDecorate %var BuiltIn SMCountNV
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        assemble_and_validate_with_env(nv_ok, TargetEnv::Vulkan1_2)
+            .expect("SM built-ins allowed with ShaderSMBuiltins");
+
+        let arm_missing = r#"
+OpCapability Shader
+OpExtension "SPV_ARM_core_builtins"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpDecorate %var BuiltIn CoreIDARM
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(arm_missing, TargetEnv::Vulkan1_2)
+            .expect_err("ARM core built-ins require ShaderCoreBuiltinsARM capability");
+        assert!(
+            matches!(
+                err,
+                ValidationError::BuiltInRequiresCapability {
+                    builtin: rspirv::spirv::BuiltIn::CoreIDARM,
+                    capability: rspirv::spirv::Capability::CoreBuiltinsARM
+                }
+                | ValidationError::MissingOperandCapability { .. }
+            ),
+            "expected ARM core capability error, got {err:?}"
+        );
+
+        let arm_ok = r#"
+OpCapability Shader
+OpCapability CoreBuiltinsARM
+OpExtension "SPV_ARM_core_builtins"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpDecorate %var BuiltIn CoreIDARM
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        assemble_and_validate_with_env(arm_ok, TargetEnv::Vulkan1_2)
+            .expect("ARM core built-ins allowed when CoreBuiltinsARM capability declared");
     }
 
     #[test]
