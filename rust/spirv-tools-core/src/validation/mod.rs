@@ -3329,9 +3329,9 @@ fn extension_operand(inst: &rspirv::dr::Instruction) -> Option<ExtensionName> {
     })
 }
 
-fn module_extension_instructions<'a>(
-    module: &'a Module,
-) -> impl Iterator<Item = &'a rspirv::dr::Instruction> {
+fn module_extension_instructions(
+    module: &Module,
+) -> impl Iterator<Item = &rspirv::dr::Instruction> {
     let top_level = module.extensions.iter();
     let function_bodies = module.functions.iter().flat_map(|function| {
         function.parameters.iter().chain(
@@ -4800,7 +4800,7 @@ fn has_decoration(module: &Module, target: u32, decoration: rspirv::spirv::Decor
     module.annotations.iter().any(|inst| {
         inst.class.opcode == rspirv::spirv::Op::Decorate
             && matches!(
-                (inst.operands.get(0), inst.operands.get(1)),
+                (inst.operands.first(), inst.operands.get(1)),
                 (
                     Some(rspirv::dr::Operand::IdRef(id)),
                     Some(rspirv::dr::Operand::Decoration(dec))
@@ -4893,7 +4893,7 @@ fn enforce_small_type_storage_capabilities(
         if ptr_type_inst.class.opcode != Op::TypePointer {
             continue;
         }
-        let storage_class = match ptr_type_inst.operands.get(0) {
+        let storage_class = match ptr_type_inst.operands.first() {
             Some(rspirv::dr::Operand::StorageClass(class)) => *class,
             _ => continue,
         };
@@ -5167,7 +5167,7 @@ fn enforce_descriptor_storage_classes(module: &Module) -> Result<(), ValidationE
         if inst.class.opcode != rspirv::spirv::Op::Decorate {
             continue;
         }
-        let Some(rspirv::dr::Operand::IdRef(target)) = inst.operands.get(0) else {
+        let Some(rspirv::dr::Operand::IdRef(target)) = inst.operands.first() else {
             continue;
         };
         let Some(rspirv::dr::Operand::Decoration(decoration)) = inst.operands.get(1) else {
@@ -5204,7 +5204,7 @@ fn has_block_decoration(module: &Module, type_id: ResultId) -> bool {
     module.annotations.iter().any(|inst| {
         inst.class.opcode == rspirv::spirv::Op::Decorate
             && matches!(
-                (inst.operands.get(0), inst.operands.get(1)),
+                (inst.operands.first(), inst.operands.get(1)),
                 (
                     Some(rspirv::dr::Operand::IdRef(target)),
                     Some(rspirv::dr::Operand::Decoration(dec))
@@ -5279,13 +5279,13 @@ fn enforce_struct_block_requirements(
                 let block_only = module.annotations.iter().any(|inst| {
                     inst.class.opcode == rspirv::spirv::Op::Decorate
                         && matches!(
-                            (inst.operands.get(0), inst.operands.get(1)),
-                            (
-                                Some(rspirv::dr::Operand::IdRef(target)),
-                                Some(rspirv::dr::Operand::Decoration(dec))
-                            ) if *target == u32::from(pointee)
-                                && *dec == rspirv::spirv::Decoration::BufferBlock
-                        )
+                        (inst.operands.first(), inst.operands.get(1)),
+                                (
+                                    Some(rspirv::dr::Operand::IdRef(target)),
+                                    Some(rspirv::dr::Operand::Decoration(dec))
+                                ) if *target == u32::from(pointee)
+                                    && *dec == rspirv::spirv::Decoration::BufferBlock
+                            )
                 });
                 if block_only {
                     return Err(ValidationError::InvalidBlockDecorationStorageClass {
@@ -5300,13 +5300,13 @@ fn enforce_struct_block_requirements(
                 let buffer_block = module.annotations.iter().any(|inst| {
                     inst.class.opcode == rspirv::spirv::Op::Decorate
                         && matches!(
-                            (inst.operands.get(0), inst.operands.get(1)),
-                            (
-                                Some(rspirv::dr::Operand::IdRef(target)),
-                                Some(rspirv::dr::Operand::Decoration(dec))
-                            ) if *target == u32::from(pointee)
-                                && *dec == rspirv::spirv::Decoration::BufferBlock
-                        )
+                        (inst.operands.first(), inst.operands.get(1)),
+                                (
+                                    Some(rspirv::dr::Operand::IdRef(target)),
+                                    Some(rspirv::dr::Operand::Decoration(dec))
+                                ) if *target == u32::from(pointee)
+                                    && *dec == rspirv::spirv::Decoration::BufferBlock
+                            )
                 });
                 if buffer_block {
                     return Err(ValidationError::DecorationRequiresSpirvVersion {
@@ -5346,7 +5346,7 @@ fn enforce_location_storage_classes(module: &Module) -> Result<(), ValidationErr
         if inst.class.opcode != rspirv::spirv::Op::Decorate {
             continue;
         }
-        let Some(rspirv::dr::Operand::IdRef(target)) = inst.operands.get(0) else {
+        let Some(rspirv::dr::Operand::IdRef(target)) = inst.operands.first() else {
             continue;
         };
         let Some(rspirv::dr::Operand::Decoration(decoration)) = inst.operands.get(1) else {
@@ -5398,7 +5398,7 @@ fn enforce_builtin_location_exclusivity(module: &Module) -> Result<(), Validatio
         if inst.class.opcode != rspirv::spirv::Op::Decorate {
             continue;
         }
-        let Some(rspirv::dr::Operand::IdRef(target)) = inst.operands.get(0) else {
+        let Some(rspirv::dr::Operand::IdRef(target)) = inst.operands.first() else {
             continue;
         };
         let Some(rspirv::dr::Operand::Decoration(decoration)) = inst.operands.get(1) else {
@@ -5432,7 +5432,7 @@ fn enforce_builtin_storage_classes(
         if inst.class.opcode != Op::Decorate {
             continue;
         }
-        let Some(rspirv::dr::Operand::IdRef(target)) = inst.operands.get(0) else {
+        let Some(rspirv::dr::Operand::IdRef(target)) = inst.operands.first() else {
             continue;
         };
         let Some(rspirv::dr::Operand::Decoration(decoration)) = inst.operands.get(1) else {
@@ -5701,7 +5701,7 @@ fn enforce_builtin_storage_classes(
         }
 
         // Type checks for selected built-ins.
-        if let Some(var_id) = ResultId::try_from(*target).ok() {
+        if let Ok(var_id) = ResultId::try_from(*target) {
             if let Some(pointee) = resolve_builtin_pointee_type(definitions, var_id) {
                 if let Some(error) = validate_builtin_type(builtin, pointee, definitions) {
                     return Err(error);
@@ -5789,7 +5789,7 @@ fn collect_execution_models(module: &Module) -> HashSet<rspirv::spirv::Execution
         .entry_points
         .iter()
         .filter_map(|inst| {
-            inst.operands.get(0).and_then(|op| match op {
+            inst.operands.first().and_then(|op| match op {
                 rspirv::dr::Operand::ExecutionModel(model) => Some(*model),
                 _ => None,
             })
@@ -5797,10 +5797,10 @@ fn collect_execution_models(module: &Module) -> HashSet<rspirv::spirv::Execution
         .collect()
 }
 
-fn resolve_builtin_pointee_type<'a>(
-    definitions: &'a HashMap<ResultId, rspirv::dr::Instruction>,
+fn resolve_builtin_pointee_type(
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
     var_id: ResultId,
-) -> Option<&'a rspirv::dr::Instruction> {
+) -> Option<&rspirv::dr::Instruction> {
     let var_inst = definitions.get(&var_id)?;
     let ptr_type_id = var_inst.result_type?;
     let ptr_type = ResultId::try_from(ptr_type_id)
@@ -5824,7 +5824,7 @@ fn build_decoration_lookup(module: &Module) -> HashMap<ResultId, Vec<rspirv::spi
         if inst.class.opcode != rspirv::spirv::Op::Decorate {
             continue;
         }
-        let Some(rspirv::dr::Operand::IdRef(target)) = inst.operands.get(0) else {
+        let Some(rspirv::dr::Operand::IdRef(target)) = inst.operands.first() else {
             continue;
         };
         let Some(rspirv::dr::Operand::Decoration(dec)) = inst.operands.get(1) else {
@@ -5861,22 +5861,20 @@ fn is_int_scalar_or_vector(
     match ty.class.opcode {
         rspirv::spirv::Op::TypeInt => true,
         rspirv::spirv::Op::TypeVector => {
-            let Some(rspirv::dr::Operand::IdRef(elem)) = ty.operands.get(0) else {
+            let Some(rspirv::dr::Operand::IdRef(elem)) = ty.operands.first() else {
                 return false;
             };
             ResultId::try_from(*elem)
                 .ok()
                 .and_then(|id| definitions.get(&id))
-                .map_or(false, |inst| {
-                    inst.class.opcode == rspirv::spirv::Op::TypeInt
-                })
+                .is_some_and(|inst| inst.class.opcode == rspirv::spirv::Op::TypeInt)
         }
         _ => false,
     }
 }
 
 fn type_bit_width(ty: &rspirv::dr::Instruction) -> Option<u32> {
-    ty.operands.get(0).and_then(|op| match op {
+    ty.operands.first().and_then(|op| match op {
         rspirv::dr::Operand::LiteralBit32(w) => Some(*w),
         _ => None,
     })
@@ -5890,13 +5888,13 @@ fn is_float_scalar_of_width(
     match ty.class.opcode {
         rspirv::spirv::Op::TypeFloat => type_bit_width(ty) == Some(width),
         rspirv::spirv::Op::TypeVector => {
-            let Some(rspirv::dr::Operand::IdRef(elem)) = ty.operands.get(0) else {
+            let Some(rspirv::dr::Operand::IdRef(elem)) = ty.operands.first() else {
                 return false;
             };
             ResultId::try_from(*elem)
                 .ok()
                 .and_then(|id| definitions.get(&id))
-                .map_or(false, |inst| {
+                .is_some_and(|inst| {
                     inst.class.opcode == rspirv::spirv::Op::TypeFloat
                         && type_bit_width(inst) == Some(width)
                 })
@@ -5910,7 +5908,7 @@ fn has_patch_decoration(module: &Module, target: ResultId) -> bool {
 
     module.annotations.iter().any(|inst| {
         inst.class.opcode == Op::Decorate
-            && matches!(inst.operands.get(0), Some(rspirv::dr::Operand::IdRef(id)) if *id == u32::from(target))
+            && matches!(inst.operands.first(), Some(rspirv::dr::Operand::IdRef(id)) if *id == u32::from(target))
             && matches!(inst.operands.get(1), Some(rspirv::dr::Operand::Decoration(dec)) if *dec == Decoration::Patch)
     })
 }
@@ -5924,20 +5922,12 @@ fn literal_u32(op: &rspirv::dr::Operand) -> Option<u32> {
 
 fn is_float32(inst: &rspirv::dr::Instruction) -> bool {
     inst.class.opcode == rspirv::spirv::Op::TypeFloat
-        && inst
-            .operands
-            .get(0)
-            .and_then(literal_u32)
-            .map_or(false, |w| w == 32)
+        && inst.operands.first().and_then(literal_u32) == Some(32)
 }
 
 fn is_int32(inst: &rspirv::dr::Instruction) -> bool {
     inst.class.opcode == rspirv::spirv::Op::TypeInt
-        && inst
-            .operands
-            .get(0)
-            .and_then(literal_u32)
-            .map_or(false, |w| w == 32)
+        && inst.operands.first().and_then(literal_u32) == Some(32)
 }
 
 fn is_bool(inst: &rspirv::dr::Instruction) -> bool {
@@ -5953,7 +5943,7 @@ fn is_vector_of(
     if inst.class.opcode != rspirv::spirv::Op::TypeVector {
         return false;
     }
-    let elem_id = match inst.operands.get(0) {
+    let elem_id = match inst.operands.first() {
         Some(rspirv::dr::Operand::IdRef(id)) => *id,
         _ => return false,
     };
@@ -5964,7 +5954,7 @@ fn is_vector_of(
     ResultId::try_from(elem_id)
         .ok()
         .and_then(|id| definitions.get(&id))
-        .map_or(false, element_predicate)
+        .is_some_and(element_predicate)
 }
 
 fn is_array_of(
@@ -5977,14 +5967,14 @@ fn is_array_of(
     {
         return false;
     }
-    let elem_id = match inst.operands.get(0) {
+    let elem_id = match inst.operands.first() {
         Some(rspirv::dr::Operand::IdRef(id)) => *id,
         _ => return false,
     };
     ResultId::try_from(elem_id)
         .ok()
         .and_then(|id| definitions.get(&id))
-        .map_or(false, element_predicate)
+        .is_some_and(element_predicate)
 }
 
 fn is_array_of_len(
@@ -6265,7 +6255,7 @@ fn enforce_interpolation_entry_point_compatibility(
     let decoration_lookup = build_decoration_lookup(module);
 
     for entry in &module.entry_points {
-        let Some(rspirv::dr::Operand::ExecutionModel(model)) = entry.operands.get(0) else {
+        let Some(rspirv::dr::Operand::ExecutionModel(model)) = entry.operands.first() else {
             continue;
         };
         let model = *model;
@@ -6287,9 +6277,10 @@ fn enforce_interpolation_entry_point_compatibility(
                 _ => continue,
             };
             let decos = decoration_lookup.get(&var_id).cloned().unwrap_or_default();
-            let has_interp = decos
-                .iter()
-                .any(|d| matches!(d, NoPerspective | Flat | Sample | Centroid));
+            let has_interp = decos.contains(&NoPerspective)
+                || decos.contains(&Flat)
+                || decos.contains(&Sample)
+                || decos.contains(&Centroid);
             if has_interp {
                 match storage_class {
                     StorageClass::Input if model == ExecutionModel::Vertex => {
@@ -6321,7 +6312,7 @@ fn enforce_interpolation_entry_point_compatibility(
             }
 
             if model == ExecutionModel::Fragment && storage_class == StorageClass::Input {
-                let has_flat = decos.iter().any(|d| *d == Flat);
+                let has_flat = decos.contains(&Flat);
                 if !has_flat && fragment_requires_flat(var_inst, definitions) {
                     return Err(ValidationError::FragmentInputRequiresFlat);
                 }
@@ -18925,8 +18916,10 @@ mod tests {
             op(1, 56),  // OpFunctionEnd
         ];
 
-        let mut options = ValidationOptions::default();
-        options.skip_block_layout = true;
+        let options = ValidationOptions {
+            skip_block_layout: true,
+            ..ValidationOptions::default()
+        };
 
         let error =
             validate_module_with_options(&binary, TargetEnv::Vulkan1_3, options).unwrap_err();
@@ -18969,8 +18962,10 @@ mod tests {
             op(1, 56),  // OpFunctionEnd
         ];
 
-        let mut options = ValidationOptions::default();
-        options.skip_block_layout = true;
+        let options = ValidationOptions {
+            skip_block_layout: true,
+            ..ValidationOptions::default()
+        };
 
         let error =
             validate_module_with_options(&binary, TargetEnv::Universal1_5, options).unwrap_err();
@@ -19021,8 +19016,10 @@ mod tests {
             op(1, 56),  // OpFunctionEnd
         ];
 
-        let mut options = ValidationOptions::default();
-        options.skip_block_layout = true;
+        let options = ValidationOptions {
+            skip_block_layout: true,
+            ..ValidationOptions::default()
+        };
 
         let error =
             validate_module_with_options(&binary, TargetEnv::Universal1_6, options).unwrap_err();
@@ -19065,8 +19062,10 @@ mod tests {
             op(1, 56),  // OpFunctionEnd
         ];
 
-        let mut options = ValidationOptions::default();
-        options.skip_block_layout = true;
+        let options = ValidationOptions {
+            skip_block_layout: true,
+            ..ValidationOptions::default()
+        };
 
         let error =
             validate_module_with_options(&binary, TargetEnv::Universal1_6, options).unwrap_err();
