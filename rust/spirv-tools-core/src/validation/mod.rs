@@ -5508,6 +5508,11 @@ fn enforce_builtin_storage_classes(
             }
             BuiltIn::ViewIndex => Some(&[rspirv::spirv::Capability::MultiView]),
             BuiltIn::DeviceIndex => Some(&[rspirv::spirv::Capability::DeviceGroup]),
+            BuiltIn::WorkDim
+            | BuiltIn::GlobalSize
+            | BuiltIn::GlobalOffset
+            | BuiltIn::EnqueuedWorkgroupSize
+            | BuiltIn::GlobalLinearId => Some(&[rspirv::spirv::Capability::Kernel]),
         BuiltIn::WarpIDNV
             | BuiltIn::SMIDNV
             | BuiltIn::SMCountNV
@@ -23654,6 +23659,60 @@ OpFunctionEnd
 "#;
         assemble_and_validate_with_env(kernel_ok, TargetEnv::Universal1_6)
             .expect("Kernel execution model should allow kernel-only built-ins");
+    }
+
+    #[test]
+    fn kernel_only_builtins_require_kernel_capability() {
+        let text = r#"
+OpCapability Addresses
+OpMemoryModel Physical32 OpenCL
+OpEntryPoint Kernel %main "main" %var
+OpDecorate %var BuiltIn GlobalOffset
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%vec3 = OpTypeVector %u32 3
+%ptr = OpTypePointer Input %vec3
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
+            .expect_err("Kernel-only built-ins require Kernel capability");
+        assert!(
+            matches!(
+                err,
+                ValidationError::BuiltInRequiresCapability {
+                    builtin: rspirv::spirv::BuiltIn::GlobalOffset,
+                    capability: rspirv::spirv::Capability::Kernel
+                }
+                | ValidationError::MissingOperandCapability { .. }
+                | ValidationError::MissingRequiredCapability { .. }
+            ),
+            "expected Kernel capability error, got {err:?}"
+        );
+
+        let ok = r#"
+OpCapability Addresses
+OpCapability Kernel
+OpMemoryModel Physical32 OpenCL
+OpEntryPoint Kernel %main "main" %var
+OpDecorate %var BuiltIn GlobalOffset
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%vec3 = OpTypeVector %u32 3
+%ptr = OpTypePointer Input %vec3
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        assemble_and_validate_with_env(ok, TargetEnv::Universal1_6)
+            .expect("Kernel capability should allow kernel-only built-ins");
     }
 
     #[test]
