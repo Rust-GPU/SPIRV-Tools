@@ -5823,6 +5823,10 @@ fn is_int32(inst: &rspirv::dr::Instruction) -> bool {
             .map_or(false, |w| w == 32)
 }
 
+fn is_bool(inst: &rspirv::dr::Instruction) -> bool {
+    inst.class.opcode == rspirv::spirv::Op::TypeBool
+}
+
 fn is_vector_of(
     inst: &rspirv::dr::Instruction,
     definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
@@ -5895,8 +5899,38 @@ fn validate_builtin_type(
         TessCoord => is_vector_of(pointee, definitions, 3, is_float32),
         TessLevelOuter => is_array_of_len(pointee, definitions, 4, is_float32),
         TessLevelInner => is_array_of_len(pointee, definitions, 2, is_float32),
-        PrimitiveId | Layer | ViewIndex | SampleId => is_int32(pointee),
-        SamplePosition => is_vector_of(pointee, definitions, 2, is_float32),
+        PrimitiveId
+        | Layer
+        | ViewIndex
+        | SampleId
+        | VertexId
+        | InstanceId
+        | VertexIndex
+        | InstanceIndex
+        | BaseVertex
+        | BaseInstance
+        | DrawIndex
+        | DeviceIndex
+        | InvocationId
+        | LocalInvocationIndex
+        | PatchVertices
+        | SubgroupId
+        | NumSubgroups
+        | SubgroupLocalInvocationId
+        | SubgroupSize => is_int32(pointee),
+        GlobalInvocationId | LocalInvocationId | WorkgroupId | NumWorkgroups => {
+            is_vector_of(pointee, definitions, 3, is_int32)
+        }
+        BaryCoordKHR | BaryCoordNoPerspKHR => {
+            is_vector_of(pointee, definitions, 3, is_float32)
+        }
+        SubgroupEqMask
+        | SubgroupGeMask
+        | SubgroupGtMask
+        | SubgroupLeMask
+        | SubgroupLtMask => is_vector_of(pointee, definitions, 4, is_int32),
+        PointCoord | SamplePosition => is_vector_of(pointee, definitions, 2, is_float32),
+        FrontFacing | HelperInvocation => is_bool(pointee),
         ShadingRateKHR | PrimitiveShadingRateKHR => is_int32(pointee),
         _ => true,
     };
@@ -5912,8 +5946,32 @@ fn validate_builtin_type(
         TessCoord => "vec3<f32>",
         TessLevelOuter => "array[4] of f32",
         TessLevelInner => "array[2] of f32",
-        PrimitiveId | Layer | ViewIndex | SampleId => "i32",
-        SamplePosition => "vec2<f32>",
+        PrimitiveId
+        | Layer
+        | ViewIndex
+        | SampleId
+        | VertexId
+        | InstanceId
+        | VertexIndex
+        | InstanceIndex
+        | BaseVertex
+        | BaseInstance
+        | DrawIndex
+        | DeviceIndex
+        | InvocationId
+        | LocalInvocationIndex
+        | PatchVertices
+        | SubgroupId
+        | NumSubgroups
+        | SubgroupLocalInvocationId
+        | SubgroupSize => "i32",
+        GlobalInvocationId | LocalInvocationId | WorkgroupId | NumWorkgroups => "vec3<i32>",
+        BaryCoordKHR | BaryCoordNoPerspKHR => "vec3<f32>",
+        SubgroupEqMask | SubgroupGeMask | SubgroupGtMask | SubgroupLeMask | SubgroupLtMask => {
+            "vec4<i32>"
+        }
+        PointCoord | SamplePosition => "vec2<f32>",
+        FrontFacing | HelperInvocation => "bool",
         _ => "",
     };
     Some(ValidationError::InvalidBuiltInType { builtin, expected })
@@ -22216,8 +22274,8 @@ OpDecorate %var BuiltIn BaryCoordNoPerspKHR
 %void = OpTypeVoid
 %fn = OpTypeFunction %void
 %f32 = OpTypeFloat 32
-%vec2 = OpTypeVector %f32 2
-%ptr = OpTypePointer Input %vec2
+%vec3 = OpTypeVector %f32 3
+%ptr = OpTypePointer Input %vec3
 %var = OpVariable %ptr Input
 %main = OpFunction %void None %fn
 %entry = OpLabel
@@ -22282,6 +22340,91 @@ OpFunctionEnd
 "#;
         assemble_and_validate_with_env(ok, TargetEnv::Vulkan1_2)
             .expect("ray built-ins should be accepted for ray tracing entry points");
+    }
+
+    #[test]
+    fn builtin_types_are_checked_for_common_inputs() {
+        let front_facing_wrong_type = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %var BuiltIn FrontFacing
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(front_facing_wrong_type, TargetEnv::Vulkan1_2)
+            .expect_err("FrontFacing must be a bool");
+        assert_eq!(
+            err,
+            ValidationError::InvalidBuiltInType {
+                builtin: rspirv::spirv::BuiltIn::FrontFacing,
+                expected: "bool"
+            }
+        );
+
+        let global_invocation_wrong_len = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main" %var
+OpDecorate %var BuiltIn GlobalInvocationId
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%vec2 = OpTypeVector %u32 2
+%ptr = OpTypePointer Input %vec2
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(global_invocation_wrong_len, TargetEnv::Vulkan1_2)
+            .expect_err("GlobalInvocationId must be a vec3<i32>");
+        assert_eq!(
+            err,
+            ValidationError::InvalidBuiltInType {
+                builtin: rspirv::spirv::BuiltIn::GlobalInvocationId,
+                expected: "vec3<i32>"
+            }
+        );
+
+        let barycoord_wrong_width = r#"
+OpCapability Shader
+OpCapability FragmentBarycentricKHR
+OpExtension "SPV_KHR_fragment_shader_barycentric"
+OpExtension "SPV_NV_fragment_shader_barycentric"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %var BuiltIn BaryCoordKHR
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%vec2 = OpTypeVector %f32 2
+%ptr = OpTypePointer Input %vec2
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(barycoord_wrong_width, TargetEnv::Vulkan1_2)
+            .expect_err("BaryCoordKHR must be vec3<f32>");
+        assert_eq!(
+            err,
+            ValidationError::InvalidBuiltInType {
+                builtin: rspirv::spirv::BuiltIn::BaryCoordKHR,
+                expected: "vec3<f32>"
+            }
+        );
     }
 
     #[test]
@@ -22825,8 +22968,8 @@ OpDecorate %var BuiltIn BaryCoordKHR
 %void = OpTypeVoid
 %fn = OpTypeFunction %void
 %f32 = OpTypeFloat 32
-%vec2 = OpTypeVector %f32 2
-%ptr_in = OpTypePointer Input %vec2
+%vec3 = OpTypeVector %f32 3
+%ptr_in = OpTypePointer Input %vec3
 %var = OpVariable %ptr_in Input
 %main = OpFunction %void None %fn
 %entry = OpLabel
