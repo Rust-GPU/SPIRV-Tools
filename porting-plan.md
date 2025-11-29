@@ -32,8 +32,18 @@
    - Wire Rust implementations into existing CLI tools through the shared C API.
 
 
-## Active Milestone: Optimizer Block Folding + FFI
-Port the arithmetic optimizer to Rust with e-graph-driven rewrites, expose it through the FFI, and validate with Rust-side unit tests plus fuzzing/benchmarks.
+## Active Milestone: Validator Parity Rollout
+Force the Rust validator through CLI/FFI, close remaining ordering/decorations gaps, and prepare to flip it on by default.
+
+Tasks for this milestone:
+- [ ] Generate capability/extension ordering tables (including conditional variants) from the grammar and enforce them relative to debug/names/annotations/functions so layout parity matches C++.
+- [ ] Extend decoration target/category constraints still present in the C++ tables (interpolation/barycentric/BuiltIn env quirks) with text/binary regressions.
+- [ ] Thread extension allowlists through conditional extensions/capabilities during full validation (not just layout) and add env-gated regressions (e.g., WebGPU/Vulkan splits).
+- [ ] Keep validated-module caching in place while the new ordering/decorations checks are added, ensuring CLI/FFI reuse validated words without re-parse.
+- [ ] Run the full C++ validation corpora with the Rust path forced on (`SPIRV_TOOLS_DISABLE_RUST_VALIDATOR=0`) and fix mismatches until the Rust path can be the default without a flag.
+
+## Paused Milestone: Optimizer Block Folding + FFI
+Port the arithmetic optimizer to Rust with e-graph-driven rewrites, expose it through the FFI, and validate with Rust-side unit tests plus fuzzing/benchmarks. (Paused per rollout order; resume after validator parity lands.)
 
 Tasks for this milestone:
 - [x] Translate arithmetic ops (`OpConstant`, `OpIAdd`, `OpIMul`, `OpISub`, `OpSNegate`, `OpSDiv`, `OpUDiv`, `OpSRem`, `OpUMod`) into the Rust optimizer and fold trivially solvable expressions.
