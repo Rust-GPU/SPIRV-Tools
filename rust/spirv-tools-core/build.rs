@@ -536,7 +536,12 @@ fn main() {
                     for enumerant in &kind.enumerants {
                         if let Some(raw) = enumerant.value.as_deref() {
                             // Skip zero-valued flag entries; they do not gate any capabilities.
-                            if raw == "0" {
+                            let parsed = if let Some(stripped) = raw.strip_prefix("0x") {
+                                u32::from_str_radix(stripped, 16).unwrap_or(1)
+                            } else {
+                                raw.parse::<u32>().unwrap_or(1)
+                            };
+                            if parsed == 0 {
                                 continue;
                             }
                             let capabilities = enumerant
@@ -573,7 +578,12 @@ fn main() {
                     for enumerant in &kind.enumerants {
                         if let Some(raw) = enumerant.value.as_deref() {
                             // Skip zero-valued flag entries; they do not gate extensions.
-                            if raw == "0" {
+                            let parsed = if let Some(stripped) = raw.strip_prefix("0x") {
+                                u32::from_str_radix(stripped, 16).unwrap_or(1)
+                            } else {
+                                raw.parse::<u32>().unwrap_or(1)
+                            };
+                            if parsed == 0 {
                                 continue;
                             }
                             let extensions = enumerant
