@@ -2156,6 +2156,34 @@ mod tests {
     }
 
     #[test]
+    fn bitand_with_zero_folds_to_zero() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),
+            SpirvLang::Const(ConstValue::new(0)),
+            SpirvLang::BitAnd([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Const(ConstValue::new(0))])
+        );
+    }
+
+    #[test]
+    fn bitand_with_all_ones_preserves_operand() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),
+            SpirvLang::Const(ConstValue::new(u32::MAX)),
+            SpirvLang::BitAnd([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("x"))])
+        );
+    }
+
+    #[test]
     fn folds_division_and_remainder() {
         let expr = RecExpr::from(vec![
             SpirvLang::Const(ConstValue::new(9)),        // 0
