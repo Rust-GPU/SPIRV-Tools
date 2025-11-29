@@ -42,6 +42,15 @@ Tasks for this milestone:
 - [ ] Keep validated-module caching in place while the new ordering/decorations checks are added, ensuring CLI/FFI reuse validated words without re-parse.
 - [ ] Run the full C++ validation corpora with the Rust path forced on (`SPIRV_TOOLS_DISABLE_RUST_VALIDATOR=0`) and fix mismatches until the Rust path can be the default without a flag.
 
+## Upcoming Milestone: Decoration & Env Constraint Parity
+Close the remaining decoration/environment-specific gaps against the C++ validator tables.
+
+Tasks for this milestone:
+- [ ] Enforce interpolation/barycentric decoration storage-class and execution-model constraints with grammar-driven tables and regressions.
+- [ ] Add env-specific BuiltIn allowlists (e.g., Mesh/Fragment shading built-ins, SM built-ins) with typed errors and binary tests.
+- [ ] Validate decoration exclusivity/compatibility pairs (e.g., interpolation vs Sample/Flat mixes, sample-rate shading requirements) against the C++ suite and port any missing tests.
+- [ ] Wire these constraints through FFI/CLI and keep validated-module caching active; run C++ corpora under the Rust path to confirm parity.
+
 ## Paused Milestone: Optimizer Block Folding + FFI
 Port the arithmetic optimizer to Rust with e-graph-driven rewrites, expose it through the FFI, and validate with Rust-side unit tests plus fuzzing/benchmarks. (Paused per rollout order; resume after validator parity lands.)
 
