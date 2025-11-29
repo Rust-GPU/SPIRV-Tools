@@ -4,8 +4,29 @@ use rspirv::spirv::{AddressingModel, Capability, FunctionControl, MemoryModel, O
 use std::env;
 use std::fs;
 use std::io::Write;
+use std::path::PathBuf;
 use std::process::Command;
 use tempfile::NamedTempFile;
+
+fn cpp_opt_bin() -> Option<String> {
+    if let Ok(path) = env::var("SPIRV_CPP_OPT") {
+        if !path.is_empty() {
+            return Some(path);
+        }
+    }
+    env::var_os("PATH")
+        .and_then(|paths| {
+            env::split_paths(&paths).find_map(|dir| {
+                let candidate = dir.join("spirv-opt");
+                if candidate.is_file() {
+                    Some(candidate)
+                } else {
+                    None
+                }
+            })
+        })
+        .map(|p: PathBuf| p.to_string_lossy().into_owned())
+}
 
 /// Compare the Rust arithmetic optimizer output against the C++ spirv-opt (when available).
 #[test]
@@ -2955,16 +2976,6 @@ fn build_mul_neg_one_module() -> (Vec<u32>, u32) {
     b.ret().expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), mul)
-}
-
-fn cpp_opt_bin() -> Option<String> {
-    env::var("SPIRV_CPP_OPT")
-        .ok()
-        .filter(|s| !s.is_empty())
-        .or_else(|| {
-            eprintln!("SPIRV_CPP_OPT not set; skipping C++ parity check");
-            None
-        })
 }
 
 fn is_const_five(inst: &rspirv::dr::Instruction) -> bool {

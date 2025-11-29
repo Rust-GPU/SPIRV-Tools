@@ -1,6 +1,7 @@
 use std::env;
 use std::fs;
 use std::io::Write;
+use std::path::PathBuf;
 use std::process::Command;
 
 use rspirv::binary::{parse_words, Assemble};
@@ -9,13 +10,27 @@ use rspirv::spirv::{AddressingModel, Capability, FunctionControl, MemoryModel, O
 use tempfile::NamedTempFile;
 
 fn cpp_opt_bin() -> Option<String> {
-    match env::var("SPIRV_CPP_OPT") {
-        Ok(path) if !path.is_empty() => Some(path),
-        _ => {
-            eprintln!("SPIRV_CPP_OPT not set; skipping C++ parity check");
-            None
+    if let Ok(path) = env::var("SPIRV_CPP_OPT") {
+        if !path.is_empty() {
+            return Some(path);
         }
     }
+    let from_path = env::var_os("PATH").and_then(|paths| {
+        env::split_paths(&paths).find_map(|dir| {
+            let candidate = dir.join("spirv-opt");
+            if candidate.is_file() {
+                Some(candidate)
+            } else {
+                None
+            }
+        })
+    });
+    if from_path.is_none() {
+        eprintln!(
+            "SPIRV_CPP_OPT not set and spirv-opt not found on PATH; skipping C++ parity check"
+        );
+    }
+    from_path.map(|p: PathBuf| p.to_string_lossy().into_owned())
 }
 
 #[test]
