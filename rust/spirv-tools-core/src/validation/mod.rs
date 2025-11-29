@@ -931,6 +931,16 @@ pub enum ValidationError {
         /// The target environment's SPIR-V version.
         target_version: SpirvVersion,
     },
+    /// A block decoration is applied to a struct that is used in a disallowed storage class.
+    #[error(
+        "decoration {decoration:?} cannot be used with storage class {storage_class:?} on a block-decorated type"
+    )]
+    InvalidBlockDecorationStorageClass {
+        /// The decoration (`Block` or `BufferBlock`).
+        decoration: rspirv::spirv::Decoration,
+        /// The disallowed storage class.
+        storage_class: rspirv::spirv::StorageClass,
+    },
     /// `OpSamplerImageAddressingModeNV` was declared more than once.
     #[error("OpSamplerImageAddressingModeNV should only be provided once")]
     DuplicateSamplerImageAddressingMode,
@@ -1622,6 +1632,7 @@ fn validate_words(
     validate_decoration_groups(&module, &defined_ids, &opcodes, &struct_member_counts)?;
     validate_decorations(&module, &defined_ids)?;
     enforce_decoration_versions(&module, target_version)?;
+    enforce_block_storage_classes(&module, target_version)?;
     validate_decoration_target_categories(&module, &opcodes, &definitions, &capabilities)?;
     enforce_store_type_compatibility(&module, &definitions, &options)?;
     let entry_points = validate_entry_points(&module, &defined_ids, &opcodes)?;
@@ -4871,6 +4882,121 @@ fn enforce_decoration_versions(
             }
         }
     }
+    Ok(())
+}
+
+fn enforce_block_storage_classes(
+    module: &Module,
+    target_version: SpirvVersion,
+) -> Result<(), ValidationError> {
+    use rspirv::spirv::{Decoration, StorageClass};
+
+    let mut blocks: HashMap<ResultId, (Decoration, HashSet<StorageClass>)> = HashMap::new();
+    for inst in &module.annotations {
+        if inst.class.opcode != rspirv::spirv::Op::Decorate {
+            continue;
+        }
+        if let (
+            Some(rspirv::dr::Operand::IdRef(target)),
+            Some(rspirv::dr::Operand::Decoration(decoration)),
+        ) = (inst.operands.first(), inst.operands.get(1))
+        {
+            if *decoration == Decoration::Block || *decoration == Decoration::BufferBlock {
+                if let Ok(id) = ResultId::try_from(*target) {
+                    blocks.entry(id).or_insert((*decoration, HashSet::new()));
+                }
+            }
+        }
+    }
+
+    if blocks.is_empty() {
+        return Ok(());
+    }
+
+    for var in &module.types_global_values {
+        if var.class.opcode != rspirv::spirv::Op::Variable {
+            continue;
+        }
+        let Some(rspirv::dr::Operand::StorageClass(storage_class)) = var.operands.first() else {
+            continue;
+        };
+        let Some(result_type) = var.result_type else {
+            continue;
+        };
+        let Ok(ptr_type) = ResultId::try_from(result_type) else {
+            continue;
+        };
+        let Some(ptr_inst) = module
+            .types_global_values
+            .iter()
+            .find(|inst| inst.result_id == Some(u32::from(ptr_type)))
+        else {
+            continue;
+        };
+        if ptr_inst.class.opcode != rspirv::spirv::Op::TypePointer {
+            continue;
+        }
+        let pointee = match ptr_inst.operands.get(1) {
+            Some(rspirv::dr::Operand::IdRef(raw)) => match ResultId::try_from(*raw) {
+                Ok(id) => id,
+                Err(_) => continue,
+            },
+            _ => continue,
+        };
+        if let Some((decoration, classes)) = blocks.get_mut(&pointee) {
+            classes.insert(*storage_class);
+            // Early version gate: BufferBlock was replaced after 1.3.
+            if *decoration == Decoration::BufferBlock && target_version > SpirvVersion::new(1, 3) {
+                return Err(ValidationError::DecorationRequiresSpirvVersion {
+                    decoration: *decoration,
+                    required_version: SpirvVersion::new(1, 3),
+                    target_version,
+                });
+            }
+        }
+    }
+
+    for (block_id, (decoration, storage_classes)) in blocks {
+        if storage_classes.is_empty() {
+            continue;
+        }
+        for storage_class in storage_classes {
+            let allowed = match decoration {
+                Decoration::Block => matches!(
+                    storage_class,
+                    StorageClass::Uniform
+                        | StorageClass::StorageBuffer
+                        | StorageClass::PhysicalStorageBuffer
+                        | StorageClass::PushConstant
+                ),
+                Decoration::BufferBlock => matches!(
+                    storage_class,
+                    StorageClass::Uniform
+                        | StorageClass::StorageBuffer
+                        | StorageClass::PhysicalStorageBuffer
+                ),
+                _ => true,
+            };
+            if !allowed {
+                return Err(ValidationError::InvalidBlockDecorationStorageClass {
+                    decoration,
+                    storage_class,
+                });
+            }
+
+            // PushConstant requires Block, never BufferBlock.
+            if storage_class == StorageClass::PushConstant && decoration == Decoration::BufferBlock
+            {
+                return Err(ValidationError::InvalidBlockDecorationStorageClass {
+                    decoration,
+                    storage_class,
+                });
+            }
+        }
+        // Silence unused warning when block_id isn't used otherwise.
+        let _ = block_id;
+    }
+
     Ok(())
 }
 
@@ -20394,6 +20520,66 @@ OpFunctionEnd
                 decoration: rspirv::spirv::Decoration::BufferBlock,
                 required_version: SpirvVersion::new(1, 3),
                 target_version: SpirvVersion::new(1, 4)
+            }
+        );
+    }
+
+    #[test]
+    fn buffer_block_cannot_be_used_for_push_constant() {
+        let text = r#"
+OpCapability Shader
+OpCapability Linkage
+OpMemoryModel Logical GLSL450
+OpDecorate %buf BufferBlock
+OpMemberDecorate %buf 0 Offset 0
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%buf = OpTypeStruct %u32
+%ptr = OpTypePointer PushConstant %buf
+%var = OpVariable %ptr PushConstant
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_3)
+            .expect_err("BufferBlock should not apply to push constants");
+        assert_eq!(
+            err,
+            ValidationError::InvalidBlockDecorationStorageClass {
+                decoration: rspirv::spirv::Decoration::BufferBlock,
+                storage_class: rspirv::spirv::StorageClass::PushConstant
+            }
+        );
+    }
+
+    #[test]
+    fn block_cannot_be_used_for_input_storage() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpDecorate %buf Block
+OpMemberDecorate %buf 0 Offset 0
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%buf = OpTypeStruct %u32
+%ptr = OpTypePointer Input %buf
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
+            .expect_err("Block should not apply to input variables");
+        assert_eq!(
+            err,
+            ValidationError::InvalidBlockDecorationStorageClass {
+                decoration: rspirv::spirv::Decoration::Block,
+                storage_class: rspirv::spirv::StorageClass::Input
             }
         );
     }
