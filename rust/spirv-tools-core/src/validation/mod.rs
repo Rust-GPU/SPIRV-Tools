@@ -22978,6 +22978,38 @@ OpFunctionEnd
         assemble_and_validate_with_env(device_enqueue_ok, TargetEnv::Universal1_6)
             .expect("NumEnqueuedSubgroups allowed with DeviceEnqueue capability");
 
+        let subgroup_size_missing_capability = r#"
+OpCapability Shader
+OpCapability Kernel
+OpMemoryModel Logical OpenCL
+OpEntryPoint Kernel %main "main" %var
+OpDecorate %var BuiltIn SubgroupSize
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(
+            subgroup_size_missing_capability,
+            TargetEnv::Universal1_6,
+        )
+        .expect_err("SubgroupSize requires GroupNonUniform capability");
+        assert!(
+            matches!(
+                err,
+                ValidationError::BuiltInRequiresCapability {
+                    builtin: rspirv::spirv::BuiltIn::SubgroupSize,
+                    capability: rspirv::spirv::Capability::GroupNonUniform
+                }
+            ) || matches!(err, ValidationError::MissingOperandCapability { .. }),
+            "expected GroupNonUniform capability error, got {err:?}"
+        );
+
         let subgroup_max_size_requires_kernel_model = r#"
 OpCapability Shader
 OpCapability Kernel
@@ -23056,6 +23088,38 @@ OpFunctionEnd
         assemble_and_validate_with_env(subgroup_max_size_ok, TargetEnv::Universal1_6)
             .expect("SubgroupMaxSize allowed for Kernel execution model with Kernel capability");
 
+        let subgroup_local_invocation_missing_capability = r#"
+OpCapability Shader
+OpCapability Kernel
+OpMemoryModel Logical OpenCL
+OpEntryPoint Kernel %main "main" %var
+OpDecorate %var BuiltIn SubgroupLocalInvocationId
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(
+            subgroup_local_invocation_missing_capability,
+            TargetEnv::Universal1_6,
+        )
+        .expect_err("SubgroupLocalInvocationId requires GroupNonUniform capability");
+        assert!(
+            matches!(
+                err,
+                ValidationError::BuiltInRequiresCapability {
+                    builtin: rspirv::spirv::BuiltIn::SubgroupLocalInvocationId,
+                    capability: rspirv::spirv::Capability::GroupNonUniform
+                }
+            ) || matches!(err, ValidationError::MissingOperandCapability { .. }),
+            "expected GroupNonUniform capability error, got {err:?}"
+        );
+
         let subgroup_ok = r#"
 OpCapability Shader
 OpCapability Kernel
@@ -23082,6 +23146,70 @@ OpFunctionEnd
 "#;
         assemble_and_validate_with_env(subgroup_ok, TargetEnv::Universal1_6)
             .expect("subgroup built-ins should be accepted when capabilities are declared");
+
+        let subgroup_size_missing_capability = r#"
+OpCapability Shader
+OpCapability Kernel
+OpMemoryModel Logical OpenCL
+OpEntryPoint Kernel %main "main" %var
+OpDecorate %var BuiltIn SubgroupSize
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(
+            subgroup_size_missing_capability,
+            TargetEnv::Universal1_6,
+        )
+        .expect_err("SubgroupSize requires GroupNonUniform capability");
+        assert!(
+            matches!(
+                err,
+                ValidationError::BuiltInRequiresCapability {
+                    builtin: rspirv::spirv::BuiltIn::SubgroupSize,
+                    capability: rspirv::spirv::Capability::GroupNonUniform
+                }
+            ) || matches!(err, ValidationError::MissingOperandCapability { .. }),
+            "expected GroupNonUniform capability error, got {err:?}"
+        );
+
+        let subgroup_local_invocation_missing_capability = r#"
+OpCapability Shader
+OpCapability Kernel
+OpMemoryModel Logical OpenCL
+OpEntryPoint Kernel %main "main" %var
+OpDecorate %var BuiltIn SubgroupLocalInvocationId
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(
+            subgroup_local_invocation_missing_capability,
+            TargetEnv::Universal1_6,
+        )
+        .expect_err("SubgroupLocalInvocationId requires GroupNonUniform capability");
+        assert!(
+            matches!(
+                err,
+                ValidationError::BuiltInRequiresCapability {
+                    builtin: rspirv::spirv::BuiltIn::SubgroupLocalInvocationId,
+                    capability: rspirv::spirv::Capability::GroupNonUniform
+                }
+            ) || matches!(err, ValidationError::MissingOperandCapability { .. }),
+            "expected GroupNonUniform capability error, got {err:?}"
+        );
 
         let subgroup_max_size_kernel_only = r#"
 OpCapability Shader
