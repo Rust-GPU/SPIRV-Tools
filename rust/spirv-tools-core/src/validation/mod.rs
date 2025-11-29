@@ -1631,11 +1631,7 @@ fn validate_words(
     if let Some(&schema) = words.as_slice().get(4) {
         Schema::validate(schema)?;
     }
-    if !options.skip_block_layout {
-        run_layout_check(words.as_slice(), env)?;
-    } else {
-        enforce_global_section_placement(words.as_slice())?;
-    }
+    run_layout_check(words.as_slice(), env)?;
     let module = parse_module(words.as_slice())?;
     validate_extension_allowlist(&module, env)?;
     let header = ValidatedHeader::from_module(&module)?;
@@ -3264,75 +3260,6 @@ fn validate_extension_allowlist(module: &Module, env: TargetEnv) -> Result<(), V
         }
     }
     Ok(())
-}
-
-fn enforce_global_section_placement(words: &[u32]) -> Result<(), ValidationError> {
-    struct PlacementChecker {
-        in_function: bool,
-    }
-
-    impl PlacementChecker {
-        fn new() -> Self {
-            Self { in_function: false }
-        }
-    }
-
-    impl rspirv::binary::Consumer for PlacementChecker {
-        fn initialize(&mut self) -> rspirv::binary::ParseAction {
-            rspirv::binary::ParseAction::Continue
-        }
-
-        fn finalize(&mut self) -> rspirv::binary::ParseAction {
-            rspirv::binary::ParseAction::Continue
-        }
-
-        fn consume_header(
-            &mut self,
-            _header: rspirv::dr::ModuleHeader,
-        ) -> rspirv::binary::ParseAction {
-            rspirv::binary::ParseAction::Continue
-        }
-
-        fn consume_instruction(
-            &mut self,
-            inst: rspirv::dr::Instruction,
-        ) -> rspirv::binary::ParseAction {
-            let opcode = inst.class.opcode;
-            if self.in_function {
-                match opcode {
-                    rspirv::spirv::Op::Extension
-                    | rspirv::spirv::Op::ExtInstImport
-                    | rspirv::spirv::Op::ConditionalExtensionINTEL
-                    | rspirv::spirv::Op::Capability
-                    | rspirv::spirv::Op::ConditionalCapabilityINTEL => {
-                        return rspirv::binary::ParseAction::Error(Box::new(
-                            ValidationError::LayoutOutOfOrder { opcode },
-                        ));
-                    }
-                    rspirv::spirv::Op::FunctionEnd => {
-                        self.in_function = false;
-                    }
-                    _ => {}
-                }
-            } else if opcode == rspirv::spirv::Op::Function {
-                self.in_function = true;
-            }
-            rspirv::binary::ParseAction::Continue
-        }
-    }
-
-    let mut checker = PlacementChecker::new();
-    match rspirv::binary::parse_words(words, &mut checker) {
-        Ok(()) => Ok(()),
-        Err(rspirv::binary::ParseState::ConsumerError(err)) => {
-            if let Some(validation) = err.downcast_ref::<ValidationError>() {
-                Err(validation.clone())
-            } else {
-                Err(ValidationError::Parse(err.to_string()))
-            }
-        }
-        Err(other) => Err(ValidationError::Parse(other.to_string())),
-    }
 }
 
 fn validate_extensions(
@@ -14809,8 +14736,8 @@ mod tests {
     }
 
     #[test]
-    fn skip_block_layout_allows_misordered_globals() {
-        // OpExtension after type declarations should trigger a layout error unless skipped.
+    fn skip_block_layout_does_not_bypass_global_layout_ordering() {
+        // skip_block_layout only affects block layout checks, not module section ordering.
         let binary = vec![
             0x0723_0203, // magic
             0x0001_0000, // version
@@ -14846,8 +14773,14 @@ mod tests {
             skip_block_layout: true,
             ..ValidationOptions::default()
         };
-        validate_module_with_options(&binary, TargetEnv::Universal1_6, options)
-            .expect("skip_block_layout should bypass layout ordering errors");
+        let err =
+            validate_module_with_options(&binary, TargetEnv::Universal1_6, options).unwrap_err();
+        assert_eq!(
+            err,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::ExtInstImport
+            }
+        );
     }
 
     #[test]
