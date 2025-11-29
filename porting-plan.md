@@ -228,6 +228,7 @@ Planned tasks:
 - Run existing C++ optimizer/reducer suites with `SPIRV_TOOLS_DISABLE_RUST_OPT=0` and audit any output mismatches or diagnostics that differ from the legacy path.
 - Add Rust-side fixes to close mismatches surfaced by the corpus without copying obvious C++ bugs; prefer e-graph rewrites and typed errors.
 - Keep fuzz/bench scripts (cargo fuzz, criterion/hyperfine) up to date with the Rust path to catch performance or correctness regressions as parity expands.
+- Validate the existing optimizer CLI regression suite with the Rust path enabled (done via `spirv_opt_cli_tools_tests` in CTest and `cargo test -p spirv-tools-cli`).
 
 ## Upcoming Milestone: Block/Layout Relaxations Parity
 Implement the semantics of layout-related validator options so they match the C++ validator while keeping the Rust path active.
