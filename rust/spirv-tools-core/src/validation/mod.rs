@@ -22218,6 +22218,34 @@ OpFunctionEnd
 "#;
         assemble_and_validate_with_env(allowed_model, TargetEnv::Vulkan1_2)
             .expect("PrimitiveShadingRateKHR should allow geometry entry points");
+
+        let disallowed_model = r#"
+OpCapability Shader
+OpCapability FragmentShadingRateKHR
+OpExtension "SPV_KHR_fragment_shading_rate"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %var BuiltIn PrimitiveShadingRateKHR
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Output %u32
+%var = OpVariable %ptr Output
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(disallowed_model, TargetEnv::Vulkan1_2)
+            .expect_err("PrimitiveShadingRateKHR should reject fragment-only modules");
+        assert!(matches!(
+            err,
+            ValidationError::BuiltInRequiresExecutionModel {
+                builtin: rspirv::spirv::BuiltIn::PrimitiveShadingRateKHR,
+                ..
+            }
+        ));
     }
 
     #[test]
