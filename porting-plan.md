@@ -561,3 +561,4 @@ Tasks for this milestone:
 - Wire the Rust optimizer through the main CXX bridge behind a feature flag and port representative C++ optimizer tests to the Rust path via that bridge.
 - Add a nightly/longer-running fuzz job (separate from smoke) to stress end-to-end translation + optimization.
 - Track a “Rust path by default” toggle and document rollout/rollback procedures for CLI/FFI consumers.
+- Validator clippy is warning-free; ready for full corpus parity runs with the Rust validator forced on (`SPIRV_TOOLS_DISABLE_RUST_VALIDATOR=0`).
