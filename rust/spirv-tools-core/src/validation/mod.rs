@@ -971,6 +971,12 @@ pub enum ValidationError {
         /// The storage class of the decorated variable.
         storage_class: rspirv::spirv::StorageClass,
     },
+    /// A barycentric/pull-model interpolation decoration is used without a fragment entry point.
+    #[error("interpolation decoration {decoration:?} requires a Fragment entry point")]
+    InterpolationDecorationRequiresFragment {
+        /// The interpolation decoration applied.
+        decoration: rspirv::spirv::Decoration,
+    },
     /// Location/Component decorations conflict with a BuiltIn decoration on the same id.
     #[error("Location/Component decorations cannot be applied to BuiltIn variables")]
     LocationConflictsWithBuiltIn,
@@ -5417,9 +5423,9 @@ fn enforce_interpolation_storage_classes(
             continue;
         };
         let decoration = *decoration;
-        let is_interpolation =
+        let is_interp_base =
             matches!(decoration, NoPerspective | Flat | Patch | Centroid | Sample);
-        if !is_interpolation {
+        if !is_interp_base {
             continue;
         }
         let Ok(id) = ResultId::try_from(*target) else {
