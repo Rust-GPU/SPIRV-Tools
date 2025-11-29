@@ -991,6 +991,14 @@ pub enum ValidationError {
         /// The allowed execution models for this BuiltIn.
         allowed: Vec<rspirv::spirv::ExecutionModel>,
     },
+    /// A BuiltIn decoration targets a variable with an incompatible type.
+    #[error("BuiltIn {builtin:?} requires type {expected}")]
+    InvalidBuiltInType {
+        /// The BuiltIn applied.
+        builtin: rspirv::spirv::BuiltIn,
+        /// A description of the expected type.
+        expected: &'static str,
+    },
     /// Location/Component decorations conflict with a BuiltIn decoration on the same id.
     #[error("Location/Component decorations cannot be applied to BuiltIn variables")]
     LocationConflictsWithBuiltIn,
@@ -1697,7 +1705,7 @@ fn validate_words(
     enforce_struct_block_requirements(&module, target_version)?;
     enforce_location_storage_classes(&module)?;
     enforce_builtin_location_exclusivity(&module)?;
-    enforce_builtin_storage_classes(&module, &entry_models)?;
+    enforce_builtin_storage_classes(&module, &definitions, &entry_models)?;
     enforce_interpolation_storage_classes(&module, &definitions, &entry_models)?;
     validate_decoration_target_categories(&module, &opcodes, &definitions, &capabilities)?;
     enforce_store_type_compatibility(&module, &definitions, &options)?;
@@ -5356,6 +5364,7 @@ fn enforce_builtin_location_exclusivity(module: &Module) -> Result<(), Validatio
 
 fn enforce_builtin_storage_classes(
     module: &Module,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
     entry_models: &HashSet<rspirv::spirv::ExecutionModel>,
 ) -> Result<(), ValidationError> {
     use rspirv::spirv::{BuiltIn, Decoration, ExecutionModel, Op, StorageClass};
@@ -5478,6 +5487,15 @@ fn enforce_builtin_storage_classes(
             });
         }
 
+        // Type checks for selected built-ins.
+        if let Some(var_id) = ResultId::try_from(*target).ok() {
+            if let Some(pointee) = resolve_builtin_pointee_type(definitions, var_id) {
+                if let Some(error) = validate_builtin_type(builtin, pointee, definitions) {
+                    return Err(error);
+                }
+            }
+        }
+
         // Execution model allowlists for built-ins that are limited to specific pipeline stages.
         let required_models: Option<&[ExecutionModel]> = match builtin {
             BuiltIn::TessCoord | BuiltIn::TessLevelInner | BuiltIn::TessLevelOuter => {
@@ -5553,6 +5571,123 @@ fn collect_execution_models(module: &Module) -> HashSet<rspirv::spirv::Execution
             })
         })
         .collect()
+}
+
+fn resolve_builtin_pointee_type<'a>(
+    definitions: &'a HashMap<ResultId, rspirv::dr::Instruction>,
+    var_id: ResultId,
+) -> Option<&'a rspirv::dr::Instruction> {
+    let var_inst = definitions.get(&var_id)?;
+    let ptr_type_id = var_inst.result_type?;
+    let ptr_type = ResultId::try_from(ptr_type_id)
+        .ok()
+        .and_then(|id| definitions.get(&id))?;
+    if ptr_type.class.opcode != rspirv::spirv::Op::TypePointer {
+        return None;
+    }
+    let pointee_id = match ptr_type.operands.get(1) {
+        Some(rspirv::dr::Operand::IdRef(id)) => *id,
+        _ => return None,
+    };
+    ResultId::try_from(pointee_id)
+        .ok()
+        .and_then(|id| definitions.get(&id))
+}
+
+fn literal_u32(op: &rspirv::dr::Operand) -> Option<u32> {
+    match op {
+        rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+        _ => None,
+    }
+}
+
+fn is_float32(inst: &rspirv::dr::Instruction) -> bool {
+    inst.class.opcode == rspirv::spirv::Op::TypeFloat
+        && inst
+            .operands
+            .get(0)
+            .and_then(literal_u32)
+            .map_or(false, |w| w == 32)
+}
+
+fn is_int32(inst: &rspirv::dr::Instruction) -> bool {
+    inst.class.opcode == rspirv::spirv::Op::TypeInt
+        && inst
+            .operands
+            .get(0)
+            .and_then(literal_u32)
+            .map_or(false, |w| w == 32)
+}
+
+fn is_vector_of(
+    inst: &rspirv::dr::Instruction,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    len: u32,
+    element_predicate: fn(&rspirv::dr::Instruction) -> bool,
+) -> bool {
+    if inst.class.opcode != rspirv::spirv::Op::TypeVector {
+        return false;
+    }
+    let elem_id = match inst.operands.get(0) {
+        Some(rspirv::dr::Operand::IdRef(id)) => *id,
+        _ => return false,
+    };
+    let count = inst.operands.get(1).and_then(literal_u32);
+    if count != Some(len) {
+        return false;
+    }
+    ResultId::try_from(elem_id)
+        .ok()
+        .and_then(|id| definitions.get(&id))
+        .map_or(false, element_predicate)
+}
+
+fn is_array_of(
+    inst: &rspirv::dr::Instruction,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    element_predicate: fn(&rspirv::dr::Instruction) -> bool,
+) -> bool {
+    if inst.class.opcode != rspirv::spirv::Op::TypeArray
+        && inst.class.opcode != rspirv::spirv::Op::TypeRuntimeArray
+    {
+        return false;
+    }
+    let elem_id = match inst.operands.get(0) {
+        Some(rspirv::dr::Operand::IdRef(id)) => *id,
+        _ => return false,
+    };
+    ResultId::try_from(elem_id)
+        .ok()
+        .and_then(|id| definitions.get(&id))
+        .map_or(false, element_predicate)
+}
+
+fn validate_builtin_type(
+    builtin: rspirv::spirv::BuiltIn,
+    pointee: &rspirv::dr::Instruction,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+) -> Option<ValidationError> {
+    use rspirv::spirv::BuiltIn::*;
+    let ok = match builtin {
+        FragCoord | Position => is_vector_of(pointee, definitions, 4, is_float32),
+        FragDepth | PointSize => is_float32(pointee),
+        SampleMask => is_array_of(pointee, definitions, is_int32),
+        ClipDistance | CullDistance => is_array_of(pointee, definitions, is_float32),
+        ShadingRateKHR | PrimitiveShadingRateKHR => is_vector_of(pointee, definitions, 2, is_int32),
+        _ => true,
+    };
+    if ok {
+        return None;
+    }
+    let expected = match builtin {
+        FragCoord | Position => "vec4<f32>",
+        FragDepth | PointSize => "f32",
+        SampleMask => "array/runtime array of 32-bit ints",
+        ClipDistance | CullDistance => "array/runtime array of 32-bit floats",
+        ShadingRateKHR | PrimitiveShadingRateKHR => "vec2<u32>",
+        _ => "",
+    };
+    Some(ValidationError::InvalidBuiltInType { builtin, expected })
 }
 
 fn enforce_interpolation_storage_classes(
@@ -21882,6 +22017,34 @@ OpFunctionEnd
 "#;
         assemble_and_validate_with_env(ok, TargetEnv::Vulkan1_2)
             .expect("shading rate built-ins should be accepted for fragment entry points");
+
+        let bad_type = r#"
+OpCapability Shader
+OpCapability FragmentShadingRateKHR
+OpExtension "SPV_KHR_fragment_shading_rate"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %var BuiltIn ShadingRateKHR
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(bad_type, TargetEnv::Vulkan1_2)
+            .expect_err("shading rate built-ins require vec2<u32>");
+        assert_eq!(
+            err,
+            ValidationError::InvalidBuiltInType {
+                builtin: rspirv::spirv::BuiltIn::ShadingRateKHR,
+                expected: "vec2<u32>"
+            }
+        );
     }
 
     #[test]
