@@ -86,6 +86,7 @@ Tasks for this milestone:
 - [x] Enforce structural links between entry points, execution modes, and decoration groups (execution modes must target entry points; group member decorations must target struct types and declared ids).
 - [x] Broaden decoration target constraints with paired text/binary tests (member targets, decoration categories).
 - [ ] Extend capability/extension ordering and remaining decoration constraints in layout to mirror the C++ tables.
+  - Added extra layout regressions rejecting capabilities after annotations and extensions after functions to mirror C++ ordering.
   - Added layout regressions for late `OpExtInstImport` and misordered `OpSamplerImageAddressingModeNV` to keep parity with the C++ layout tests.
   - Mirrored NV bindless sampler address mode rules (presence, uniqueness, bit-width validation) with binary regressions and layout-time checks.
   - Added Vulkan-only extension gating (e.g., `SPV_KHR_vulkan_memory_model`, ray tracing, descriptor indexing) so non-Vulkan environments reject them with explicit diagnostics.
