@@ -429,6 +429,7 @@ Percentages are approximate and will be updated as new checklists are added for 
 ## Next Up
 1. Broaden structural validation for decoration target categories and capability/extension ordering (text + binary coverage), keeping parity with the C++ validator tables.
    - Added layout-order regression tests for section ordering (ExtInstImport, debug/names/annotations) and BuiltIn target categories to lock in current behavior.
+   - Ported 16-bit storage class gating (StorageBuffer/Uniform/PushConstant/Input/Output/Workgroup) so variables containing 16-bit elements now mirror the C++ capability checks.
 2. Push validated-module caching deeper through FFI/CLI entry points to avoid reparsing/validating identical inputs.
 3. Fill in remaining SPIR-V version gating and per-instruction requirements from the grammar, then revisit disassembly fixtures once validator parity is solid.
 4. Thread the generated extension allowlist through capability/extension precedence (ray tracing, cooperative matrices, tile shading) with focused regressions, and capture any OpenGL-specific quirks that still rely on heuristics.

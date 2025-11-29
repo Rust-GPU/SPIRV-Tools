@@ -883,6 +883,30 @@ pub enum ValidationError {
         /// Missing extension.
         required_extension: ExtensionName,
     },
+    /// A variable containing a small (8- or 16-bit) element is not allowed in
+    /// the given storage class without an additional capability.
+    #[error(
+        "Allocating a variable containing a {bit_width}-bit element in {storage_class:?} storage class requires an additional capability"
+    )]
+    SmallTypeMissingCapability {
+        /// The element bit width (8 or 16).
+        bit_width: u32,
+        /// The storage class of the variable.
+        storage_class: rspirv::spirv::StorageClass,
+        /// The capability required to allow the allocation.
+        required_capability: rspirv::spirv::Capability,
+    },
+    /// A variable containing a small (8- or 16-bit) element is disallowed in
+    /// the given storage class.
+    #[error(
+        "Cannot allocate a variable containing a {bit_width}-bit type in {storage_class:?} storage class"
+    )]
+    SmallTypeDisallowedInStorageClass {
+        /// The element bit width (8 or 16).
+        bit_width: u32,
+        /// The storage class of the variable.
+        storage_class: rspirv::spirv::StorageClass,
+    },
     /// An extension requires a newer SPIR-V version than the target environment provides.
     #[error(
         "extension {extension} requires SPIR-V version {required_version}, but target provides {target_version}"
@@ -1596,6 +1620,7 @@ fn validate_words(
     enforce_access_chain_limit(&module, &options)?;
     enforce_offset_texture_operand_rule(&module, env, &options)?;
     enforce_vulkan_bitwise_widths(&module, env, &definitions, &options)?;
+    enforce_small_type_storage_capabilities(&module, &definitions, &capabilities)?;
     enforce_block_layout_rules(&module, &definitions, &options)?;
     let friendly_names = options
         .use_friendly_names
@@ -4602,6 +4627,175 @@ fn int_bit_width(
     }
 }
 
+fn has_decoration(module: &Module, target: u32, decoration: rspirv::spirv::Decoration) -> bool {
+    module.annotations.iter().any(|inst| {
+        inst.class.opcode == rspirv::spirv::Op::Decorate
+            && matches!(
+                (inst.operands.get(0), inst.operands.get(1)),
+                (
+                    Some(rspirv::dr::Operand::IdRef(id)),
+                    Some(rspirv::dr::Operand::Decoration(dec))
+                ) if *id == target && *dec == decoration
+            )
+    })
+}
+
+fn contains_sized_int_or_float(
+    type_id: TypeId,
+    target_opcode: rspirv::spirv::Op,
+    width: u32,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    visited: &mut HashSet<TypeId>,
+) -> bool {
+    if !visited.insert(type_id) {
+        return false;
+    }
+    let Ok(result_id) = ResultId::try_from(u32::from(type_id)) else {
+        return false;
+    };
+    let Some(inst) = definitions.get(&result_id) else {
+        return false;
+    };
+    match inst.class.opcode {
+        rspirv::spirv::Op::TypeInt if target_opcode == rspirv::spirv::Op::TypeInt => {
+            inst.operands.iter().any(|op| match op {
+                rspirv::dr::Operand::LiteralBit32(bits) => *bits == width,
+                rspirv::dr::Operand::LiteralBit64(bits) => *bits as u32 == width,
+                _ => false,
+            })
+        }
+        rspirv::spirv::Op::TypeFloat if target_opcode == rspirv::spirv::Op::TypeFloat => {
+            inst.operands.iter().any(|op| match op {
+                rspirv::dr::Operand::LiteralBit32(bits) => *bits == width,
+                rspirv::dr::Operand::LiteralBit64(bits) => *bits as u32 == width,
+                _ => false,
+            })
+        }
+        rspirv::spirv::Op::TypeVector
+        | rspirv::spirv::Op::TypeMatrix
+        | rspirv::spirv::Op::TypeArray
+        | rspirv::spirv::Op::TypeRuntimeArray
+        | rspirv::spirv::Op::TypeStruct
+        | rspirv::spirv::Op::TypePointer => inst.operands.iter().any(|op| {
+            if let rspirv::dr::Operand::IdRef(raw) = op {
+                if let Ok(child) = TypeId::try_from(*raw) {
+                    return contains_sized_int_or_float(
+                        child,
+                        target_opcode,
+                        width,
+                        definitions,
+                        visited,
+                    );
+                }
+            }
+            false
+        }),
+        _ => false,
+    }
+}
+
+fn enforce_small_type_storage_capabilities(
+    module: &Module,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    capabilities: &HashSet<rspirv::spirv::Capability>,
+) -> Result<(), ValidationError> {
+    use rspirv::spirv::{Capability, Decoration, Op, StorageClass};
+
+    if !capabilities.contains(&Capability::Shader) {
+        return Ok(());
+    }
+
+    let has_small_elements = |pointee: TypeId| -> bool {
+        let mut visited = HashSet::new();
+        contains_sized_int_or_float(pointee, Op::TypeInt, 16, definitions, &mut visited)
+            || contains_sized_int_or_float(pointee, Op::TypeFloat, 16, definitions, &mut visited)
+    };
+
+    for inst in &module.types_global_values {
+        if inst.class.opcode != Op::Variable && inst.class.opcode != Op::UntypedVariableKHR {
+            continue;
+        }
+        let Some(raw_type) = inst.result_type else {
+            continue;
+        };
+        let Ok(ptr_type_id) = TypeId::try_from(raw_type) else {
+            continue;
+        };
+        let Some(ptr_type_inst) = ResultId::try_from(u32::from(ptr_type_id))
+            .ok()
+            .and_then(|rid| definitions.get(&rid))
+        else {
+            continue;
+        };
+        if ptr_type_inst.class.opcode != Op::TypePointer {
+            continue;
+        }
+        let storage_class = match ptr_type_inst.operands.get(0) {
+            Some(rspirv::dr::Operand::StorageClass(class)) => *class,
+            _ => continue,
+        };
+        let pointee = match ptr_type_inst.operands.get(1) {
+            Some(rspirv::dr::Operand::IdRef(raw)) => match TypeId::try_from(*raw) {
+                Ok(id) => id,
+                Err(_) => continue,
+            },
+            _ => continue,
+        };
+
+        if !has_small_elements(pointee) {
+            continue;
+        }
+
+        let require_capability = |cap: Capability| -> Result<(), ValidationError> {
+            if capabilities.contains(&cap) {
+                Ok(())
+            } else {
+                Err(ValidationError::SmallTypeMissingCapability {
+                    bit_width: 16,
+                    storage_class,
+                    required_capability: cap,
+                })
+            }
+        };
+
+        match storage_class {
+            StorageClass::StorageBuffer | StorageClass::PhysicalStorageBuffer => {
+                require_capability(Capability::StorageBuffer16BitAccess)?
+            }
+            StorageClass::Uniform => {
+                if capabilities.contains(&Capability::UniformAndStorageBuffer16BitAccess) {
+                    continue;
+                }
+                if capabilities.contains(&Capability::StorageBuffer16BitAccess)
+                    && has_decoration(module, u32::from(pointee), Decoration::BufferBlock)
+                {
+                    continue;
+                }
+                return Err(ValidationError::SmallTypeMissingCapability {
+                    bit_width: 16,
+                    storage_class,
+                    required_capability: Capability::UniformAndStorageBuffer16BitAccess,
+                });
+            }
+            StorageClass::PushConstant => require_capability(Capability::StoragePushConstant16)?,
+            StorageClass::Input | StorageClass::Output => {
+                require_capability(Capability::StorageInputOutput16)?
+            }
+            StorageClass::Workgroup => {
+                require_capability(Capability::WorkgroupMemoryExplicitLayout16BitAccessKHR)?
+            }
+            _ => {
+                return Err(ValidationError::SmallTypeDisallowedInStorageClass {
+                    bit_width: 16,
+                    storage_class,
+                })
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn is_vulkan_env(env: TargetEnv) -> bool {
     matches!(
         env,
@@ -5335,7 +5529,7 @@ mod tests {
         format_validation_error, format_validation_error_from_words, layout_compatible_types,
         parse_module, FriendlyNames, ValidationOptions,
     };
-    use rspirv::spirv::{Capability, FunctionControl, MemoryModel, Op};
+    use rspirv::spirv::{Capability, FunctionControl, MemoryModel, Op, StorageClass};
     use std::collections::{HashMap, HashSet};
     use std::num::NonZeroU32;
     use std::sync::Arc;
@@ -19893,6 +20087,131 @@ mod tests {
         ];
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(error, ValidationError::MissingMemoryModel);
+    }
+
+    fn assemble_and_validate(text: &str) -> Result<(), ValidationError> {
+        let binary = assemble_text(text).expect("assemble text");
+        validate_module(&binary, TargetEnv::Universal1_3)
+    }
+
+    #[test]
+    fn storage_buffer_16bit_requires_capability() {
+        let text = r#"
+OpCapability Shader
+OpCapability VariablePointers
+OpCapability VariablePointersStorageBuffer
+OpExtension "SPV_KHR_storage_buffer_storage_class"
+OpExtension "SPV_KHR_variable_pointers"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpName %main "main"
+OpName %var "var"
+OpDecorate %buf Block
+OpMemberDecorate %buf 0 Offset 0
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u16 = OpTypeInt 16 0
+%buf = OpTypeStruct %u16
+%ptr = OpTypePointer StorageBuffer %buf
+%var = OpVariable %ptr StorageBuffer
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let error = assemble_and_validate(text).expect_err("expected missing capability");
+        assert_eq!(
+            error,
+            ValidationError::SmallTypeMissingCapability {
+                bit_width: 16,
+                storage_class: StorageClass::StorageBuffer,
+                required_capability: Capability::StorageBuffer16BitAccess
+            }
+        );
+    }
+
+    #[test]
+    fn uniform_16bit_without_buffer_block_needs_uniform_and_storage_buffer_capability() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpName %main "main"
+OpName %var "var"
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u16 = OpTypeInt 16 0
+%buf = OpTypeStruct %u16
+%ptr = OpTypePointer Uniform %buf
+%var = OpVariable %ptr Uniform
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let error = assemble_and_validate(text).expect_err("expected missing capability");
+        assert_eq!(
+            error,
+            ValidationError::SmallTypeMissingCapability {
+                bit_width: 16,
+                storage_class: StorageClass::Uniform,
+                required_capability: Capability::UniformAndStorageBuffer16BitAccess
+            }
+        );
+    }
+
+    #[test]
+    fn uniform_16bit_with_buffer_block_allows_storage_buffer_capability() {
+        let text = r#"
+OpCapability Shader
+OpCapability StorageBuffer16BitAccess
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpName %main "main"
+OpName %var "var"
+OpDecorate %buf BufferBlock
+OpMemberDecorate %buf 0 Offset 0
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u16 = OpTypeInt 16 0
+%buf = OpTypeStruct %u16
+%ptr = OpTypePointer Uniform %buf
+%var = OpVariable %ptr Uniform
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        assemble_and_validate(text)
+            .expect("BufferBlock + StorageBuffer16BitAccess should satisfy uniform 16-bit");
+    }
+
+    #[test]
+    fn uniform_constant_16bit_is_disallowed() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpName %main "main"
+OpName %var "var"
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u16 = OpTypeInt 16 0
+%ptr = OpTypePointer UniformConstant %u16
+%var = OpVariable %ptr UniformConstant
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let error = assemble_and_validate(text).expect_err("expected storage class rejection");
+        assert_eq!(
+            error,
+            ValidationError::SmallTypeDisallowedInStorageClass {
+                bit_width: 16,
+                storage_class: StorageClass::UniformConstant
+            }
+        );
     }
 
     #[test]
