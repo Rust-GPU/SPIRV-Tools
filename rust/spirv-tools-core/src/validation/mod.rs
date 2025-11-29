@@ -5496,6 +5496,8 @@ fn enforce_builtin_storage_classes(
             BuiltIn::ShadingRateKHR | BuiltIn::PrimitiveShadingRateKHR => {
                 Some(&[rspirv::spirv::Capability::FragmentShadingRateKHR])
             }
+            BuiltIn::ViewIndex => Some(&[rspirv::spirv::Capability::MultiView]),
+            BuiltIn::DeviceIndex => Some(&[rspirv::spirv::Capability::DeviceGroup]),
             BuiltIn::BaryCoordKHR
             | BuiltIn::BaryCoordNoPerspKHR
             | BuiltIn::BaryCoordSmoothAMD
@@ -22565,6 +22567,94 @@ OpFunctionEnd
 "#;
         assemble_and_validate_with_env(ok, TargetEnv::Vulkan1_2)
             .expect("ViewIndex allowed in geometry");
+    }
+
+    #[test]
+    fn view_index_requires_multiview_capability() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpDecorate %var BuiltIn ViewIndex
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+            .expect_err("ViewIndex requires MultiView capability");
+        assert!(
+            matches!(
+                err,
+                ValidationError::BuiltInRequiresCapability {
+                    builtin: rspirv::spirv::BuiltIn::ViewIndex,
+                    capability: rspirv::spirv::Capability::MultiView
+                }
+                | ValidationError::MissingOperandCapability { .. }
+            ),
+            "expected MultiView capability error, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn device_index_requires_device_group_capability() {
+        let text = r#"
+OpCapability Shader
+OpCapability MultiView
+OpExtension "SPV_KHR_multiview"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpDecorate %var BuiltIn DeviceIndex
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+            .expect_err("DeviceIndex requires DeviceGroup capability");
+        assert!(
+            matches!(
+                err,
+                ValidationError::BuiltInRequiresCapability {
+                    builtin: rspirv::spirv::BuiltIn::DeviceIndex,
+                    capability: rspirv::spirv::Capability::DeviceGroup
+                }
+                | ValidationError::MissingOperandCapability { .. }
+            ),
+            "expected DeviceGroup capability error, got {err:?}"
+        );
+
+        let ok = r#"
+OpCapability Shader
+OpCapability MultiView
+OpCapability DeviceGroup
+OpExtension "SPV_KHR_multiview"
+OpExtension "SPV_KHR_device_group"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpDecorate %var BuiltIn DeviceIndex
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        assemble_and_validate_with_env(ok, TargetEnv::Vulkan1_2)
+            .expect("DeviceIndex allowed when DeviceGroup declared");
     }
 
     #[test]
