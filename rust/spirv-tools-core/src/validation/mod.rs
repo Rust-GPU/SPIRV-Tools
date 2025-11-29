@@ -18106,6 +18106,102 @@ mod tests {
     }
 
     #[test]
+    fn conditional_extension_inside_function_is_rejected_even_when_layout_skipped() {
+        // Conditional extensions belong in the extensions section, not inside functions.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            6,          // bound
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+            op(5, 54), // OpFunction %1 %3 None %2
+            1,
+            3,
+            rspirv::spirv::FunctionControl::NONE.bits(),
+            2,
+            op(2, 248), // OpLabel %4
+            4,
+            op(9, rspirv::spirv::Op::ConditionalExtensionINTEL as u16), // OpConditionalExtensionINTEL %1 "SPV_GOOGLE_decorate_string"
+            1,
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[0],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[1],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[2],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[3],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[4],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[5],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[6],
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+
+        let mut options = ValidationOptions::default();
+        options.skip_block_layout = true;
+
+        let error =
+            validate_module_with_options(&binary, TargetEnv::Universal1_6, options).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::ConditionalExtensionINTEL
+            }
+        );
+    }
+
+    #[test]
+    fn conditional_capability_inside_function_is_rejected_even_when_layout_skipped() {
+        // Conditional capabilities must also remain in the capability section.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            6,          // bound
+            0,          // schema
+            op(3, 14),  // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+            op(5, 54), // OpFunction %1 %3 None %2
+            1,
+            3,
+            rspirv::spirv::FunctionControl::NONE.bits(),
+            2,
+            op(2, 248), // OpLabel %4
+            4,
+            op(3, rspirv::spirv::Op::ConditionalCapabilityINTEL as u16), // OpConditionalCapabilityINTEL %1 Shader
+            1,
+            rspirv::spirv::Capability::Shader as u32,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+
+        let mut options = ValidationOptions::default();
+        options.skip_block_layout = true;
+
+        let error =
+            validate_module_with_options(&binary, TargetEnv::Universal1_6, options).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::ConditionalCapabilityINTEL
+            }
+        );
+    }
+
+    #[test]
     fn capability_requires_min_spirv_version() {
         let text = [
             "OpCapability Shader",
