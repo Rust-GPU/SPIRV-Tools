@@ -1028,6 +1028,14 @@ pub enum ValidationError {
         /// The missing capability.
         capability: rspirv::spirv::Capability,
     },
+    /// A BuiltIn decoration is not allowed in the current environment.
+    #[error("BuiltIn {builtin:?} is not allowed in target environment {env:?}")]
+    BuiltInDisallowedForEnv {
+        /// The BuiltIn applied.
+        builtin: rspirv::spirv::BuiltIn,
+        /// The target environment in which it was used.
+        env: TargetEnv,
+    },
     /// Tessellation level built-ins must also carry a Patch decoration.
     #[error("BuiltIn {builtin:?} requires a Patch decoration")]
     BuiltInRequiresPatchDecoration {
@@ -1740,7 +1748,13 @@ fn validate_words(
     enforce_struct_block_requirements(&module, target_version)?;
     enforce_location_storage_classes(&module)?;
     enforce_builtin_location_exclusivity(&module)?;
-    enforce_builtin_storage_classes(&module, &definitions, &entry_models, &capabilities)?;
+    enforce_builtin_storage_classes(
+        &module,
+        &definitions,
+        &entry_models,
+        &capabilities,
+        env,
+    )?;
     enforce_interpolation_storage_classes(&module, &definitions, &entry_models, &capabilities)?;
     enforce_interpolation_entry_point_compatibility(&module, &definitions, env)?;
     validate_decoration_target_categories(&module, &opcodes, &definitions, &capabilities)?;
@@ -5403,6 +5417,7 @@ fn enforce_builtin_storage_classes(
     definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
     entry_models: &HashSet<rspirv::spirv::ExecutionModel>,
     capabilities: &HashSet<rspirv::spirv::Capability>,
+    env: TargetEnv,
 ) -> Result<(), ValidationError> {
     use rspirv::spirv::{BuiltIn, Decoration, ExecutionModel, Op, StorageClass};
 
@@ -5453,6 +5468,10 @@ fn enforce_builtin_storage_classes(
         if builtin == BuiltIn::WorkgroupSize {
             // Target-kind and type checks handle WorkgroupSize; storage class is validated elsewhere.
             continue;
+        }
+
+        if env.is_vulkan() && builtin == BuiltIn::VertexId {
+            return Err(ValidationError::BuiltInDisallowedForEnv { builtin, env });
         }
 
         let allowed = matches!(storage_class, StorageClass::Input | StorageClass::Output);
@@ -5673,6 +5692,7 @@ fn enforce_builtin_storage_classes(
                 ExecutionModel::MeshEXT,
                 ExecutionModel::MeshNV,
             ]),
+            BuiltIn::VertexIndex | BuiltIn::InstanceIndex => Some(&[ExecutionModel::Vertex]),
             _ => None,
         };
         if let Some(models) = required_models {
@@ -22358,6 +22378,34 @@ OpFunctionEnd
     }
 
     #[test]
+    fn vertex_id_is_disallowed_in_vulkan() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpDecorate %var BuiltIn VertexId
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+            .expect_err("VertexId is not allowed in Vulkan");
+        assert_eq!(
+            err,
+            ValidationError::BuiltInDisallowedForEnv {
+                builtin: rspirv::spirv::BuiltIn::VertexId,
+                env: TargetEnv::Vulkan1_2
+            }
+        );
+    }
+
+    #[test]
     fn compute_workgroup_builtins_require_compute_entry_point() {
         let text = r#"
 OpCapability Shader
@@ -22403,6 +22451,57 @@ OpFunctionEnd
 "#;
         assemble_and_validate_with_env(ok, TargetEnv::Vulkan1_2)
             .expect("workgroup built-ins should be accepted for compute entry points");
+    }
+
+    #[test]
+    fn vertex_index_and_instance_index_require_vertex_model() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %vid %iid
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %vid BuiltIn VertexIndex
+OpDecorate %iid BuiltIn InstanceIndex
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%vid = OpVariable %ptr Input
+%iid = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+            .expect_err("VertexIndex/InstanceIndex require vertex execution model");
+        assert!(matches!(
+            err,
+            ValidationError::BuiltInRequiresExecutionModel {
+                builtin: rspirv::spirv::BuiltIn::VertexIndex,
+                ..
+            }
+        ));
+
+        let ok = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %vid %iid
+OpDecorate %vid BuiltIn VertexIndex
+OpDecorate %iid BuiltIn InstanceIndex
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%vid = OpVariable %ptr Input
+%iid = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        assemble_and_validate_with_env(ok, TargetEnv::Vulkan1_2)
+            .expect("VertexIndex/InstanceIndex allowed for vertex entry points");
     }
 
     #[test]
