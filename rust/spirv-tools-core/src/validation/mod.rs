@@ -977,6 +977,14 @@ pub enum ValidationError {
         /// The interpolation decoration applied.
         decoration: rspirv::spirv::Decoration,
     },
+    /// Two interpolation decorations from the same exclusivity class were applied.
+    #[error("interpolation decoration {decoration:?} conflicts with existing decoration {existing:?}")]
+    InterpolationDecorationConflict {
+        /// The decoration being applied.
+        decoration: rspirv::spirv::Decoration,
+        /// The previously applied decoration in the same exclusivity class.
+        existing: rspirv::spirv::Decoration,
+    },
     /// A BuiltIn decoration is used without a fragment entry point when one is required.
     #[error("BuiltIn {builtin:?} requires a Fragment entry point")]
     BuiltInRequiresFragment {
@@ -1755,6 +1763,7 @@ fn validate_words(
         &capabilities,
         env,
     )?;
+    enforce_interpolation_exclusivity(&module, &definitions)?;
     enforce_interpolation_storage_classes(&module, &definitions, &entry_models, &capabilities)?;
     enforce_interpolation_entry_point_compatibility(&module, &definitions, env)?;
     validate_decoration_target_categories(&module, &opcodes, &definitions, &capabilities)?;
@@ -6101,6 +6110,78 @@ fn enforce_interpolation_storage_classes(
             && !entry_models.contains(&rspirv::spirv::ExecutionModel::Fragment)
         {
             return Err(ValidationError::InterpolationDecorationRequiresFragment { decoration });
+        }
+    }
+
+    Ok(())
+}
+
+fn enforce_interpolation_exclusivity(
+    module: &Module,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+) -> Result<(), ValidationError> {
+    use rspirv::spirv::Decoration::{Centroid, Flat, NoPerspective, Patch, Sample};
+
+    #[derive(Default)]
+    struct InterpDecorations {
+        base: Option<rspirv::spirv::Decoration>,
+        centroid_sample_patch: Option<rspirv::spirv::Decoration>,
+    }
+
+    let mut seen: HashMap<ResultId, InterpDecorations> = HashMap::new();
+
+    for inst in &module.annotations {
+        if inst.class.opcode != rspirv::spirv::Op::Decorate {
+            continue;
+        }
+        let mut operands = inst.operands.iter();
+        let Some(rspirv::dr::Operand::IdRef(target)) = operands.next() else {
+            continue;
+        };
+        let Some(rspirv::dr::Operand::Decoration(decoration)) = operands.next() else {
+            continue;
+        };
+        let decoration = *decoration;
+        if !matches!(decoration, Flat | NoPerspective | Centroid | Sample | Patch) {
+            continue;
+        }
+        let Ok(id) = ResultId::try_from(*target) else {
+            continue;
+        };
+        let Some(def_inst) = definitions.get(&id) else {
+            continue;
+        };
+        if def_inst.class.opcode != rspirv::spirv::Op::Variable
+            && def_inst.class.opcode != rspirv::spirv::Op::UntypedVariableKHR
+        {
+            continue;
+        }
+
+        let entry = seen.entry(id).or_default();
+        if matches!(decoration, Flat | NoPerspective) {
+            if let Some(existing) = entry.base {
+                if existing != decoration {
+                    return Err(ValidationError::InterpolationDecorationConflict {
+                        decoration,
+                        existing,
+                    });
+                }
+            } else {
+                entry.base = Some(decoration);
+            }
+        }
+
+        if matches!(decoration, Centroid | Sample | Patch) {
+            if let Some(existing) = entry.centroid_sample_patch {
+                if existing != decoration {
+                    return Err(ValidationError::InterpolationDecorationConflict {
+                        decoration,
+                        existing,
+                    });
+                }
+            } else {
+                entry.centroid_sample_patch = Some(decoration);
+            }
         }
     }
 
@@ -22173,6 +22254,65 @@ OpFunctionEnd
 "#;
         assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
             .expect("interpolation decorations should be accepted on Input/Output");
+    }
+
+    #[test]
+    fn interpolation_decorations_are_exclusive_within_each_class() {
+        let base_conflict = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %var Flat
+OpDecorate %var NoPerspective
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(base_conflict, TargetEnv::Vulkan1_2)
+            .expect_err("only one base interpolation decoration is permitted");
+        assert_eq!(
+            err,
+            ValidationError::InterpolationDecorationConflict {
+                decoration: rspirv::spirv::Decoration::NoPerspective,
+                existing: rspirv::spirv::Decoration::Flat
+            }
+        );
+
+        let centroid_sample_conflict = r#"
+OpCapability Shader
+OpCapability SampleRateShading
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %var Centroid
+OpDecorate %var Sample
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err =
+            assemble_and_validate_with_env(centroid_sample_conflict, TargetEnv::Vulkan1_2)
+                .expect_err("Centroid/Sample/Patch are exclusive");
+        assert_eq!(
+            err,
+            ValidationError::InterpolationDecorationConflict {
+                decoration: rspirv::spirv::Decoration::Sample,
+                existing: rspirv::spirv::Decoration::Centroid
+            }
+        );
     }
 
     #[test]
