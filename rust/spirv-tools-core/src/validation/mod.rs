@@ -5482,6 +5482,16 @@ fn enforce_builtin_storage_classes(
             });
         }
 
+        if env.is_vulkan()
+            && builtin == BuiltIn::ViewIndex
+            && entry_models.contains(&ExecutionModel::GLCompute)
+        {
+            return Err(ValidationError::BuiltInRequiresExecutionModel {
+                builtin,
+                allowed: vec![ExecutionModel::Vertex, ExecutionModel::Geometry, ExecutionModel::TessellationEvaluation, ExecutionModel::MeshEXT, ExecutionModel::MeshNV],
+            });
+        }
+
         let required_capability: Option<&[rspirv::spirv::Capability]> = match builtin {
             BuiltIn::ShadingRateKHR | BuiltIn::PrimitiveShadingRateKHR => {
                 Some(&[rspirv::spirv::Capability::FragmentShadingRateKHR])
@@ -22502,6 +22512,59 @@ OpFunctionEnd
 "#;
         assemble_and_validate_with_env(ok, TargetEnv::Vulkan1_2)
             .expect("VertexIndex/InstanceIndex allowed for vertex entry points");
+    }
+
+    #[test]
+    fn view_index_disallowed_for_compute() {
+        let bad = r#"
+OpCapability Shader
+OpCapability Geometry
+OpCapability MultiView
+OpExtension "SPV_KHR_multiview"
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main" %var
+OpDecorate %var BuiltIn ViewIndex
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(bad, TargetEnv::Vulkan1_2)
+            .expect_err("ViewIndex is not allowed with GLCompute");
+        assert!(matches!(
+            err,
+            ValidationError::BuiltInRequiresExecutionModel {
+                builtin: rspirv::spirv::BuiltIn::ViewIndex,
+                allowed
+            } if allowed.contains(&rspirv::spirv::ExecutionModel::Vertex)
+        ));
+
+        let ok = r#"
+OpCapability Shader
+OpCapability Geometry
+OpCapability MultiView
+OpExtension "SPV_KHR_multiview"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Geometry %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %var BuiltIn ViewIndex
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        assemble_and_validate_with_env(ok, TargetEnv::Vulkan1_2)
+            .expect("ViewIndex allowed in geometry");
     }
 
     #[test]
