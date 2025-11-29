@@ -105,6 +105,7 @@ set(TEST_SOURCES
   enum_set_test.cpp
   disassemble_rust_fallback_test.cpp
   rust_disassembler_diagnostics_test.cpp
+  rust_validator_parity_test.cpp
   ext_inst.arm_motion_engine_test.cpp
   ext_inst.cldebug100_test.cpp
   ext_inst.debuginfo_test.cpp
