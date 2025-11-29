@@ -1012,6 +1012,14 @@ pub enum ValidationError {
     /// Fragment inputs carrying integers or 64-bit floats must be flat shaded.
     #[error("fragment input with integer or 64-bit float type must use the Flat decoration")]
     FragmentInputRequiresFlat,
+    /// A decoration requires a capability that was not declared.
+    #[error("decoration {decoration:?} requires capability {capability:?}")]
+    DecorationRequiresCapability {
+        /// The decoration applied.
+        decoration: rspirv::spirv::Decoration,
+        /// The missing capability.
+        capability: rspirv::spirv::Capability,
+    },
     /// A BuiltIn decoration requires a capability that was not declared.
     #[error("BuiltIn {builtin:?} requires capability {capability:?}")]
     BuiltInRequiresCapability {
@@ -1733,7 +1741,7 @@ fn validate_words(
     enforce_location_storage_classes(&module)?;
     enforce_builtin_location_exclusivity(&module)?;
     enforce_builtin_storage_classes(&module, &definitions, &entry_models, &capabilities)?;
-    enforce_interpolation_storage_classes(&module, &definitions, &entry_models)?;
+    enforce_interpolation_storage_classes(&module, &definitions, &entry_models, &capabilities)?;
     enforce_interpolation_entry_point_compatibility(&module, &definitions, env)?;
     validate_decoration_target_categories(&module, &opcodes, &definitions, &capabilities)?;
     enforce_store_type_compatibility(&module, &definitions, &options)?;
@@ -5915,6 +5923,7 @@ fn enforce_interpolation_storage_classes(
     module: &Module,
     definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
     entry_models: &HashSet<rspirv::spirv::ExecutionModel>,
+    capabilities: &HashSet<rspirv::spirv::Capability>,
 ) -> Result<(), ValidationError> {
     use rspirv::spirv::Decoration::{Centroid, Flat, NoPerspective, Patch, Sample};
 
@@ -5963,6 +5972,16 @@ fn enforce_interpolation_storage_classes(
                 },
             );
         }
+
+        if decoration == Sample
+            && !capabilities.contains(&rspirv::spirv::Capability::SampleRateShading)
+        {
+            return Err(ValidationError::DecorationRequiresCapability {
+                decoration,
+                capability: rspirv::spirv::Capability::SampleRateShading,
+            });
+        }
+
         if decoration != Patch
             && !entry_models.contains(&rspirv::spirv::ExecutionModel::Fragment)
         {
@@ -22508,6 +22527,58 @@ OpFunctionEnd
             ),
             "expected capability error, got {err:?}"
         );
+
+        let sample_without_capability = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %var Sample
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%vec2 = OpTypeVector %f32 2
+%ptr = OpTypePointer Input %vec2
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(sample_without_capability, TargetEnv::Vulkan1_2)
+            .expect_err("Sample decoration requires SampleRateShading capability");
+        assert!(
+            matches!(
+                err,
+                ValidationError::DecorationRequiresCapability {
+                    decoration: rspirv::spirv::Decoration::Sample,
+                    capability: rspirv::spirv::Capability::SampleRateShading
+                }
+                | ValidationError::MissingOperandCapability { .. }
+            ),
+            "expected SampleRateShading capability error, got {err:?}"
+        );
+
+        let sample_with_capability = r#"
+OpCapability Shader
+OpCapability SampleRateShading
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %var Sample
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%vec2 = OpTypeVector %f32 2
+%ptr = OpTypePointer Input %vec2
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        assemble_and_validate_with_env(sample_with_capability, TargetEnv::Vulkan1_2)
+            .expect("Sample decoration allowed when SampleRateShading capability declared");
 
         let missing_mesh_capability = r#"
 OpCapability Shader
