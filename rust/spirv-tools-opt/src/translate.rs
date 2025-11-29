@@ -504,8 +504,8 @@ fn expr_cost(expr: &RecExpr<SpirvLang>) -> usize {
             | SpirvLang::UMod([a, b])
             | SpirvLang::Shl([a, b])
             | SpirvLang::ShrS([a, b])
-            | SpirvLang::ShrU([a, b])
-            | SpirvLang::BitAnd([a, b]) => 1 + costs[usize::from(*a)] + costs[usize::from(*b)],
+            | SpirvLang::ShrU([a, b]) => 1 + costs[usize::from(*a)] + costs[usize::from(*b)],
+            SpirvLang::BitAnd([a, b]) => 2 + costs[usize::from(*a)] + costs[usize::from(*b)],
         };
         costs.push(cost);
     }

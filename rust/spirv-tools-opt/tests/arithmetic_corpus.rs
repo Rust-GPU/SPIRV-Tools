@@ -159,9 +159,10 @@ fn corpus_rewrites_band_pow2_mask_into_umod() {
     // Expect the mask to either become a modulus by 8 or fully fold to a constant.
     let has_umod = optimized.iter().any(|inst| {
         inst.class.opcode == Op::UMod
-            && inst.operands.iter().any(|op| {
-                matches!(op, rspirv::dr::Operand::LiteralBit32(value) if *value == 8)
-            })
+            && inst
+                .operands
+                .iter()
+                .any(|op| matches!(op, rspirv::dr::Operand::LiteralBit32(value) if *value == 8))
     });
     let has_constant = optimized
         .iter()

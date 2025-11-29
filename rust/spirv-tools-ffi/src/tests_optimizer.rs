@@ -215,6 +215,62 @@ mod optimizer_tests {
     }
 
     #[test]
+    fn optimizer_rewrites_band_pow2_mask_to_umod() {
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let func_ty = b.type_function(void, vec![]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        // x = 5 + 6, then x & 7.
+        let c5 = b.constant_bit32(int, 2);
+        let c6 = b.constant_bit32(int, 3);
+        let add = b.i_add(int, None, c5, c6).expect("add id");
+        let mask = b.constant_bit32(int, 7);
+        let _band = b.bitwise_and(int, None, add, mask).expect("bitwise and id");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let optimized_module = loader.module();
+
+        let mut has_umod_pow2 = false;
+        let mut has_const_three = false;
+        for inst in optimized_module.all_inst_iter() {
+            if inst.class.opcode == Op::BitwiseAnd {
+                panic!("bitwise and should be eliminated");
+            }
+            if inst.class.opcode == Op::UMod
+                && inst
+                    .operands
+                    .iter()
+                    .any(|op| matches!(op, rspirv::dr::Operand::LiteralBit32(value) if *value == 8))
+            {
+                has_umod_pow2 = true;
+            }
+            if inst.class.opcode == Op::Constant
+                && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(3)]
+            {
+                has_const_three = true;
+            }
+        }
+        assert!(
+            has_umod_pow2 || has_const_three,
+            "expected band mask to become x % 8 or a folded constant"
+        );
+    }
+
+    #[test]
     fn optimizer_factors_linear_combination_into_single_mul() {
         let mut b = Builder::new();
         let void = b.type_void();

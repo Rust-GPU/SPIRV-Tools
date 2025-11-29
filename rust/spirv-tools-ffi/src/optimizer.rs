@@ -19,6 +19,7 @@ pub fn optimize_basic_block(insts: &[u32]) -> Result<Vec<u32>, String> {
                 | Op::IAdd
                 | Op::IMul
                 | Op::ISub
+                | Op::BitwiseAnd
                 | Op::SNegate
                 | Op::SDiv
                 | Op::UDiv
