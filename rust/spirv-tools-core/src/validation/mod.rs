@@ -21617,6 +21617,63 @@ OpFunctionEnd
     }
 
     #[test]
+    fn barycentric_builtin_requires_fragment_entry_model() {
+        let text = r#"
+OpCapability Shader
+OpCapability FragmentBarycentricKHR
+OpExtension "SPV_KHR_fragment_shader_barycentric"
+OpExtension "SPV_NV_fragment_shader_barycentric"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpDecorate %var BuiltIn BaryCoordKHR
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%vec2 = OpTypeVector %f32 2
+%ptr = OpTypePointer Input %vec2
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+            .expect_err("BaryCoord requires a Fragment entry point");
+        assert_eq!(
+            err,
+            ValidationError::BuiltInRequiresFragment {
+                builtin: rspirv::spirv::BuiltIn::BaryCoordKHR
+            }
+        );
+    }
+
+    #[test]
+    fn barycentric_builtin_allows_fragment_entry_model() {
+        let text = r#"
+OpCapability Shader
+OpCapability FragmentBarycentricKHR
+OpExtension "SPV_KHR_fragment_shader_barycentric"
+OpExtension "SPV_NV_fragment_shader_barycentric"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %var BuiltIn BaryCoordNoPerspKHR
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%vec2 = OpTypeVector %f32 2
+%ptr = OpTypePointer Input %vec2
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+            .expect("barycentric BuiltIns should be accepted for fragment entry points");
+    }
+
+    #[test]
     fn uniform_8bit_with_block_allows_uniform_and_storage_buffer_capability() {
         let text = r#"
 OpCapability Shader
