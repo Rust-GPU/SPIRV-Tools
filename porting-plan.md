@@ -149,7 +149,7 @@ Tasks for this milestone:
 - [ ] Expose wider structural rules (capability/extension ordering in layout, per-target decoration constraints) mirroring the C++ validator tables.
 - [ ] Enable the Rust validator over the FFI/CLI by default once structural parity is sufficiently close to C++.
 
-## Active Milestone: Capability/Extension Ordering Parity
+## Completed Milestone: Capability/Extension Ordering Parity
 Align capability/extension ordering and dependency enforcement with the C++ tables, including operand-level requirements and per-environment allowlists.
 
 Tasks for this milestone:
@@ -179,12 +179,13 @@ Tasks for this milestone:
 - Generated grammar-driven helpers for capability/extension opcodes to back upcoming ordering enforcement without manual opcode lists.
 - Routed layout capability/extension handling through the generated opcode helpers and added coverage to keep the grammar-driven classification in sync.
 - Trimmed unused mode-setting kind generation so the emitted layout tables now focus on the stage map and opcode classifiers in use.
+- Ran the full C++/CLI/FFI test corpus with the Rust path enabled (ctest in build-rust) and reached green across all validator/CLI/FFI suites, confirming ordering parity in practice.
 
 ## Completed Milestone: Extension Allowlists Parity
 Environment-specific extension allowlists now mirror the C++ tables via the generated data set in `TargetEnv::is_extension_allowed`, with vendor gating (NV/AMDX/ARM Vulkan-only; INTEL/ALTERA OpenCL/Universal), version gates, and capability precedence covered by regressions (ray tracing adjuncts, cooperative matrices, tile shading, shader clock, fragment shading rate/density, motion blur, displacement micromaps).
 
-## Upcoming Milestone: Enable Rust Validator by Default
-With allowlists and capability/extension precedence aligned, flip the Rust validator on by default behind the FFI/CLI gates.
+## Active Milestone: Enable Rust Validator by Default
+With allowlists and capability/extension precedence aligned, flip the Rust validator on by default behind the FFI/CLI gates and keep a parity harness in CI.
 
 Planned tasks:
 - Added a runtime toggle (default-on with env/override opt-out) so the FFI validator path prefers the Rust validator and falls back to C++ only when explicitly disabled; added unit coverage to lock the toggle behavior.
@@ -194,6 +195,7 @@ Planned tasks:
 - Audit remaining layout/decoration ordering rules against the C++ tables and add any missing regressions.
 - Re-run the allowlist/capability matrix against the latest SPIR-V headers snapshot to catch drift before the default flip.
 - Wire a feature flag to select the Rust validator by default in the CLI/FFI, keeping an opt-out for known gaps.
+- Add and run a parity harness (Rust vs. C++ validator outputs) over a curated corpus in CI to detect drift.
 - Run full test/CI cycles (Rust + C++) to confirm parity and update docs describing the default path.
 
 ## Upcoming Milestone: Validator Options Parity
