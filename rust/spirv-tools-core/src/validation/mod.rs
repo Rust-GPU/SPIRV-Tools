@@ -5479,6 +5479,13 @@ fn enforce_builtin_storage_classes(
             });
         }
 
+        if builtin == BuiltIn::ShadingRateKHR && storage_class != StorageClass::Input {
+            return Err(ValidationError::InvalidBuiltInStorageClass {
+                builtin,
+                storage_class,
+            });
+        }
+
         let mesh_output_only = matches!(
             builtin,
             BuiltIn::PrimitivePointIndicesEXT
@@ -5487,6 +5494,13 @@ fn enforce_builtin_storage_classes(
                 | BuiltIn::CullPrimitiveEXT
         );
         if mesh_output_only && storage_class != StorageClass::Output {
+            return Err(ValidationError::InvalidBuiltInStorageClass {
+                builtin,
+                storage_class,
+            });
+        }
+
+        if builtin == BuiltIn::PrimitiveShadingRateKHR && storage_class != StorageClass::Output {
             return Err(ValidationError::InvalidBuiltInStorageClass {
                 builtin,
                 storage_class,
@@ -5551,13 +5565,17 @@ fn enforce_builtin_storage_classes(
                 ExecutionModel::MissKHR,
                 ExecutionModel::CallableKHR,
             ]),
-            BuiltIn::PrimitiveShadingRateKHR | BuiltIn::ShadingRateKHR => {
-                Some(&[ExecutionModel::Fragment])
-            }
+            BuiltIn::ShadingRateKHR => Some(&[ExecutionModel::Fragment]),
             BuiltIn::PrimitivePointIndicesEXT
             | BuiltIn::PrimitiveLineIndicesEXT
             | BuiltIn::PrimitiveTriangleIndicesEXT
             | BuiltIn::CullPrimitiveEXT => Some(&[ExecutionModel::MeshEXT, ExecutionModel::MeshNV]),
+            BuiltIn::PrimitiveShadingRateKHR => Some(&[
+                ExecutionModel::Vertex,
+                ExecutionModel::Geometry,
+                ExecutionModel::MeshEXT,
+                ExecutionModel::MeshNV,
+            ]),
             _ => None,
         };
         if let Some(models) = required_models {
@@ -22047,16 +22065,17 @@ OpFunctionEnd
         let ok = r#"
 OpCapability Shader
 OpCapability FragmentShadingRateKHR
+OpCapability Geometry
 OpExtension "SPV_KHR_fragment_shading_rate"
 OpMemoryModel Logical GLSL450
-OpEntryPoint Fragment %main "main" %var
+OpEntryPoint Geometry %main "main" %var
 OpExecutionMode %main OriginUpperLeft
 OpDecorate %var BuiltIn PrimitiveShadingRateKHR
 %void = OpTypeVoid
 %fn = OpTypeFunction %void
 %u32 = OpTypeInt 32 0
-%ptr = OpTypePointer Input %u32
-%var = OpVariable %ptr Input
+%ptr = OpTypePointer Output %u32
+%var = OpVariable %ptr Output
 %main = OpFunction %void None %fn
 %entry = OpLabel
 OpReturn
@@ -22093,6 +22112,112 @@ OpFunctionEnd
                 expected: "i32"
             }
         );
+
+        let wrong_storage = r#"
+OpCapability Shader
+OpCapability FragmentShadingRateKHR
+OpExtension "SPV_KHR_fragment_shading_rate"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %var BuiltIn ShadingRateKHR
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Output %u32
+%var = OpVariable %ptr Output
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(wrong_storage, TargetEnv::Vulkan1_2)
+            .expect_err("ShadingRateKHR must be Input storage");
+        assert_eq!(
+            err,
+            ValidationError::InvalidBuiltInStorageClass {
+                builtin: rspirv::spirv::BuiltIn::ShadingRateKHR,
+                storage_class: rspirv::spirv::StorageClass::Output
+            }
+        );
+
+        let wrong_storage_primitive = r#"
+OpCapability Shader
+OpCapability FragmentShadingRateKHR
+OpExtension "SPV_KHR_fragment_shading_rate"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %var BuiltIn PrimitiveShadingRateKHR
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(wrong_storage_primitive, TargetEnv::Vulkan1_2)
+            .expect_err("PrimitiveShadingRateKHR must be Output storage");
+        assert_eq!(
+            err,
+            ValidationError::InvalidBuiltInStorageClass {
+                builtin: rspirv::spirv::BuiltIn::PrimitiveShadingRateKHR,
+                storage_class: rspirv::spirv::StorageClass::Input
+            }
+        );
+
+        let wrong_model = r#"
+OpCapability Shader
+OpCapability FragmentShadingRateKHR
+OpExtension "SPV_KHR_fragment_shading_rate"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %var BuiltIn PrimitiveShadingRateKHR
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Output %u32
+%var = OpVariable %ptr Output
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(wrong_model, TargetEnv::Vulkan1_2)
+            .expect_err("PrimitiveShadingRateKHR limited to vertex/geometry/mesh");
+        assert!(matches!(
+            err,
+            ValidationError::BuiltInRequiresExecutionModel {
+                builtin: rspirv::spirv::BuiltIn::PrimitiveShadingRateKHR,
+                ..
+            }
+        ));
+
+        let allowed_model = r#"
+OpCapability Shader
+OpCapability Geometry
+OpCapability FragmentShadingRateKHR
+OpExtension "SPV_KHR_fragment_shading_rate"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Geometry %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %var BuiltIn PrimitiveShadingRateKHR
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Output %u32
+%var = OpVariable %ptr Output
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        assemble_and_validate_with_env(allowed_model, TargetEnv::Vulkan1_2)
+            .expect("PrimitiveShadingRateKHR should allow geometry entry points");
     }
 
     #[test]
