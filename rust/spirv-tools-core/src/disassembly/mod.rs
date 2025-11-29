@@ -78,7 +78,7 @@ impl DisassemblyError {
             MessagePosition::default(),
             message.clone(),
         )
-        .with_source("input");
+        .with_source("disassembler");
         Self::Parse {
             message,
             diagnostics: vec![diagnostic],
