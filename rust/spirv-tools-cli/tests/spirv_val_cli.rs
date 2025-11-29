@@ -48,3 +48,72 @@ fn spirv_val_cli_reports_failure() {
         "expected validation failure to return non-zero, got {status:?}"
     );
 }
+
+fn spirv_val_supports_force_rust() -> bool {
+    let help = Command::new(env!("CARGO_BIN_EXE_spirv-val"))
+        .arg("--help")
+        .output()
+        .expect("run spirv-val --help");
+    let stdout = String::from_utf8_lossy(&help.stdout);
+    stdout.contains("--force-rust-validator")
+}
+
+fn reorder_extension_to_end(mut words: Vec<u32>) -> Vec<u32> {
+    let mut idx = 5; // skip header
+    let mut ext_slice: Option<(usize, usize)> = None;
+    while idx < words.len() {
+        let wc = (words[idx] >> 16) as usize;
+        let opcode = (words[idx] & 0xffff) as u16;
+        if opcode == rspirv::spirv::Op::Extension as u16 {
+            ext_slice = Some((idx, wc));
+            break;
+        }
+        idx += wc;
+    }
+    if let Some((start, len)) = ext_slice {
+        let extension: Vec<u32> = words.drain(start..start + len).collect();
+        words.extend(extension);
+    }
+    words
+}
+
+#[test]
+fn spirv_val_cli_rust_validator_reports_layout_error() {
+    if !spirv_val_supports_force_rust() {
+        eprintln!("spirv-val binary does not support --force-rust-validator; skipping");
+        return;
+    }
+
+    let text = r#"
+OpCapability Shader
+OpExtension "SPV_KHR_shader_clock"
+OpMemoryModel Logical GLSL450
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    let words = assemble_text(text).expect("assemble text");
+    let misordered = reorder_extension_to_end(words);
+    let bytes = words_to_bytes(&misordered);
+    let mut file = NamedTempFile::new().expect("temp file");
+    file.write_all(&bytes).expect("write binary");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_spirv-val"))
+        .arg("--force-rust-validator")
+        .arg(file.path())
+        .output()
+        .expect("run spirv-val");
+    assert!(
+        !output.status.success(),
+        "expected layout failure from rust validator, got {output:?}"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("out of order") || stderr.contains("LayoutOutOfOrder"),
+        "expected layout error message, got: {}",
+        stderr
+    );
+}
