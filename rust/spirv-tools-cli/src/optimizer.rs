@@ -116,7 +116,7 @@ fn run_cpp_opt(path: &std::ffi::OsStr, words: &[u32]) -> Result<Vec<u32>, Optimi
             code = output.status
         )));
     }
-    Ok(bytes_to_words(&output.stdout)?)
+    bytes_to_words(&output.stdout)
 }
 
 fn bytes_to_words(bytes: &[u8]) -> Result<Vec<u32>, OptimizeCliError> {

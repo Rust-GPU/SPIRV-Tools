@@ -169,6 +169,30 @@ fn cli_opt_block_passthrough_flag() {
     assert!(saw_sub, "sub should remain when passthrough flag is set");
 }
 
+#[test]
+fn cli_opt_block_rejects_unaligned_input() {
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let output = dir.path().join("output.spv");
+    // Write three bytes to force a non-multiple-of-4 error path.
+    std::fs::write(&input, [0u8, 1, 2]).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let status = Command::new(exe)
+        .arg(&input)
+        .arg(&output)
+        .status()
+        .expect("run opt_block");
+    assert!(
+        !status.success(),
+        "unaligned input should cause opt_block to fail"
+    );
+    assert!(
+        !output.exists(),
+        "output should not be produced when input is invalid"
+    );
+}
+
 static ENV_GUARD: Mutex<()> = Mutex::new(());
 
 fn words_to_bytes(words: &[u32]) -> Vec<u8> {
