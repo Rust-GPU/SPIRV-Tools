@@ -5514,7 +5514,8 @@ fn enforce_builtin_storage_classes(
             | BuiltIn::GlobalSize
             | BuiltIn::GlobalOffset
             | BuiltIn::EnqueuedWorkgroupSize
-            | BuiltIn::GlobalLinearId => Some(&[rspirv::spirv::Capability::Kernel]),
+            | BuiltIn::GlobalLinearId
+            | BuiltIn::SubgroupMaxSize => Some(&[rspirv::spirv::Capability::Kernel]),
             BuiltIn::NumEnqueuedSubgroups => Some(&[rspirv::spirv::Capability::DeviceEnqueue]),
             BuiltIn::WarpIDNV | BuiltIn::SMIDNV | BuiltIn::SMCountNV | BuiltIn::WarpsPerSMNV => {
                 Some(&[rspirv::spirv::Capability::ShaderSMBuiltinsNV])
@@ -5689,6 +5690,7 @@ fn enforce_builtin_storage_classes(
                 | BuiltIn::GlobalOffset
                 | BuiltIn::EnqueuedWorkgroupSize
                 | BuiltIn::GlobalLinearId
+                | BuiltIn::SubgroupMaxSize
                 | BuiltIn::NumEnqueuedSubgroups
         );
         if kernel_only && !entry_models.contains(&ExecutionModel::Kernel) {
@@ -23003,6 +23005,61 @@ OpFunctionEnd
 "#;
         assemble_and_validate_with_env(subgroup_ok, TargetEnv::Universal1_6)
             .expect("subgroup built-ins should be accepted when capabilities are declared");
+
+        let subgroup_max_size_kernel_only = r#"
+OpCapability Shader
+OpCapability Kernel
+OpMemoryModel Logical OpenCL
+OpEntryPoint GLCompute %main "main" %var
+OpDecorate %var BuiltIn SubgroupMaxSize
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err =
+            assemble_and_validate_with_env(subgroup_max_size_kernel_only, TargetEnv::Universal1_6)
+                .expect_err("SubgroupMaxSize is kernel-only and requires Kernel capability");
+        assert!(
+            matches!(
+                err,
+                ValidationError::BuiltInRequiresExecutionModel {
+                    builtin: rspirv::spirv::BuiltIn::SubgroupMaxSize,
+                    ..
+                }
+            ) || matches!(
+                err,
+                ValidationError::BuiltInRequiresCapability {
+                    builtin: rspirv::spirv::BuiltIn::SubgroupMaxSize,
+                    capability: rspirv::spirv::Capability::Kernel
+                }
+            ) || matches!(err, ValidationError::MissingOperandCapability { .. }),
+            "expected kernel-only SubgroupMaxSize error, got {err:?}"
+        );
+
+        let subgroup_max_size_kernel_ok = r#"
+OpCapability Shader
+OpCapability Kernel
+OpMemoryModel Logical OpenCL
+OpEntryPoint Kernel %main "main" %var
+OpDecorate %var BuiltIn SubgroupMaxSize
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        assemble_and_validate_with_env(subgroup_max_size_kernel_ok, TargetEnv::Universal1_6)
+            .expect("SubgroupMaxSize allowed for Kernel execution model with Kernel capability");
 
         let num_enqueued_requires_kernel = r#"
 OpCapability Shader
