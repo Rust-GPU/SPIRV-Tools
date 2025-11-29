@@ -961,6 +961,16 @@ pub enum ValidationError {
         /// The storage class of the decorated variable.
         storage_class: rspirv::spirv::StorageClass,
     },
+    /// An interpolation decoration is applied to a disallowed storage class.
+    #[error(
+        "interpolation decoration {decoration:?} is only permitted on Input/Output storage classes (found {storage_class:?})"
+    )]
+    InterpolationDecorationInvalidStorageClass {
+        /// The interpolation decoration applied.
+        decoration: rspirv::spirv::Decoration,
+        /// The storage class of the decorated variable.
+        storage_class: rspirv::spirv::StorageClass,
+    },
     /// Location/Component decorations conflict with a BuiltIn decoration on the same id.
     #[error("Location/Component decorations cannot be applied to BuiltIn variables")]
     LocationConflictsWithBuiltIn,
@@ -1667,6 +1677,7 @@ fn validate_words(
     enforce_location_storage_classes(&module)?;
     enforce_builtin_location_exclusivity(&module)?;
     enforce_builtin_storage_classes(&module)?;
+    enforce_interpolation_storage_classes(&module, &definitions)?;
     validate_decoration_target_categories(&module, &opcodes, &definitions, &capabilities)?;
     enforce_store_type_compatibility(&module, &definitions, &options)?;
     let entry_points = validate_entry_points(&module, &defined_ids, &opcodes)?;
@@ -5385,6 +5396,61 @@ fn enforce_builtin_storage_classes(module: &Module) -> Result<(), ValidationErro
             });
         }
     }
+    Ok(())
+}
+
+fn enforce_interpolation_storage_classes(
+    module: &Module,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+) -> Result<(), ValidationError> {
+    use rspirv::spirv::Decoration::{Centroid, Flat, NoPerspective, Patch, Sample};
+
+    for inst in &module.annotations {
+        if inst.class.opcode != rspirv::spirv::Op::Decorate {
+            continue;
+        }
+        let mut operands = inst.operands.iter();
+        let Some(rspirv::dr::Operand::IdRef(target)) = operands.next() else {
+            continue;
+        };
+        let Some(rspirv::dr::Operand::Decoration(decoration)) = operands.next() else {
+            continue;
+        };
+        let decoration = *decoration;
+        let is_interpolation =
+            matches!(decoration, NoPerspective | Flat | Patch | Centroid | Sample);
+        if !is_interpolation {
+            continue;
+        }
+        let Ok(id) = ResultId::try_from(*target) else {
+            continue;
+        };
+        let Some(def_inst) = definitions.get(&id) else {
+            continue;
+        };
+        if def_inst.class.opcode != rspirv::spirv::Op::Variable
+            && def_inst.class.opcode != rspirv::spirv::Op::UntypedVariableKHR
+        {
+            continue;
+        }
+        let storage_class = def_inst
+            .operands
+            .first()
+            .and_then(|op| match op {
+                rspirv::dr::Operand::StorageClass(sc) => Some(*sc),
+                _ => None,
+            })
+            .unwrap_or(rspirv::spirv::StorageClass::Function);
+        if storage_class != rspirv::spirv::StorageClass::Input
+            && storage_class != rspirv::spirv::StorageClass::Output
+        {
+            return Err(ValidationError::InterpolationDecorationInvalidStorageClass {
+                decoration,
+                storage_class,
+            });
+        }
+    }
+
     Ok(())
 }
 
@@ -21281,6 +21347,58 @@ OpFunctionEnd
                 storage_class: rspirv::spirv::StorageClass::PushConstant
             }
         );
+    }
+
+    #[test]
+    fn interpolation_decorations_require_input_or_output_storage() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpDecorate %var Flat
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%ptr = OpTypePointer Uniform %f32
+%var = OpVariable %ptr Uniform
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
+            .expect_err("Flat on Uniform should be rejected");
+        assert_eq!(
+            err,
+            ValidationError::InterpolationDecorationInvalidStorageClass {
+                decoration: rspirv::spirv::Decoration::Flat,
+                storage_class: rspirv::spirv::StorageClass::Uniform
+            }
+        );
+    }
+
+    #[test]
+    fn interpolation_decorations_allowed_on_input_and_output() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %in %out
+OpDecorate %in NoPerspective
+OpDecorate %out Centroid
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%ptr_in = OpTypePointer Input %f32
+%ptr_out = OpTypePointer Output %f32
+%in = OpVariable %ptr_in Input
+%out = OpVariable %ptr_out Output
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
+            .expect("interpolation decorations should be accepted on Input/Output");
     }
 
     #[test]
