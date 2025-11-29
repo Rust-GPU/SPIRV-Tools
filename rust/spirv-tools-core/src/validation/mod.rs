@@ -5651,6 +5651,10 @@ fn enforce_builtin_storage_classes(
                 | BuiltIn::LocalInvocationIndex
                 | BuiltIn::NumWorkgroups
                 | BuiltIn::WorkgroupId
+                | BuiltIn::NumSubgroups
+                | BuiltIn::SubgroupId
+                | BuiltIn::SubgroupLocalInvocationId
+                | BuiltIn::NumEnqueuedSubgroups
         );
         if compute_only
             && !entry_models.contains(&ExecutionModel::GLCompute)
@@ -22810,6 +22814,35 @@ OpFunctionEnd
 "#;
         assemble_and_validate_with_env(ok, TargetEnv::Vulkan1_2)
             .expect("workgroup built-ins should be accepted for compute entry points");
+
+        let subgroup_vertex = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpDecorate %var BuiltIn SubgroupId
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(subgroup_vertex, TargetEnv::Vulkan1_2)
+            .expect_err("subgroup built-ins require compute/kernel entry models");
+        assert!(
+            matches!(
+                err,
+                ValidationError::BuiltInRequiresExecutionModel {
+                    builtin: rspirv::spirv::BuiltIn::SubgroupId,
+                    allowed: ref models
+                } if models.contains(&rspirv::spirv::ExecutionModel::GLCompute)
+                    && models.contains(&rspirv::spirv::ExecutionModel::Kernel)
+            ) || matches!(err, ValidationError::MissingOperandCapability { .. }),
+            "expected subgroup built-ins to require compute or kernel, got {err:?}"
+        );
     }
 
     #[test]
