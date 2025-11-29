@@ -472,6 +472,14 @@ Tasks for this milestone:
 - Add decoration ordering/category checks that remain in the C++ tables (e.g., per-target-env decoration placement quirks) with paired text/binary regressions.
 - Keep ValidModule caching wired through FFI/CLI for these ordering checks to avoid reparsing/renumbering.
 
+## Upcoming Milestone: Validator Parity Rollout
+Run the full C++ validation suites with the Rust path forced on, close remaining gaps, and prepare to flip the default.
+
+Tasks for this milestone:
+- Force-enable the Rust validator across CLI/FFI parity runs and record any mismatches against the C++ validator.
+- Close any remaining decoration/env-specific placement quirks (BuiltIn allowlists, interpolation/barycentric rules) with Rust regressions.
+- Keep the plan updated with rollout status and fallbacks, and land a toggle to make the Rust validator the default once parity is demonstrated.
+
 ## Upcoming Milestone: Function and CFG Validation
 Bring function-body validation in line with the C++ validator so the Rust validator can be enabled by default.
 
