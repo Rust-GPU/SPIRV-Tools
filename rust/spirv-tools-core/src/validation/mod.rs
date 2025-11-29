@@ -22823,6 +22823,36 @@ OpFunctionEnd
     }
 
     #[test]
+    fn primitive_shading_rate_builtin_is_vulkan_only() {
+        let text = r#"
+OpCapability Shader
+OpCapability FragmentShadingRateKHR
+OpExtension "SPV_KHR_fragment_shading_rate"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpDecorate %var BuiltIn PrimitiveShadingRateKHR
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Output %u32
+%var = OpVariable %ptr Output
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
+            .expect_err("primitive shading rate built-ins are Vulkan-only");
+        assert_eq!(
+            err,
+            ValidationError::DisallowedExtension {
+                extension: ExtensionName::from("SPV_KHR_fragment_shading_rate"),
+                env: TargetEnv::Universal1_5
+            }
+        );
+    }
+
+    #[test]
     fn instance_id_is_disallowed_in_vulkan() {
         let text = r#"
 OpCapability Shader
