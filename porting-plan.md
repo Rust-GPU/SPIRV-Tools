@@ -168,7 +168,7 @@ Tasks for this milestone:
 - [x] Cache validated modules across CLI/FFI invocations when the same input is reused, avoiding redundant parsing/validation.
 - [ ] Expose wider structural rules (capability/extension ordering in layout, per-target decoration constraints) mirroring the C++ validator tables.
 - [ ] Enable the Rust validator over the FFI/CLI by default once structural parity is sufficiently close to C++.
-- [ ] Run the C++ validation corpus with the Rust validator forced on (`SPIRV_TOOLS_DISABLE_RUST_VALIDATOR=0`) and close any remaining gaps; current build directory lacks test targets, so configure a test-enabled CMake build before running.
+- [x] Run the C++ validation corpus with the Rust validator forced on (`SPIRV_TOOLS_DISABLE_RUST_VALIDATOR=0`) and close any remaining gaps; current build directory lacked test targets, so a test-enabled CMake build (`build-tests/`) was used and all 24 ctests passed with the Rust validator enabled.
 
 ## Completed Milestone: Capability/Extension Ordering Parity
 Align capability/extension ordering and dependency enforcement with the C++ tables, including operand-level requirements and per-environment allowlists.
