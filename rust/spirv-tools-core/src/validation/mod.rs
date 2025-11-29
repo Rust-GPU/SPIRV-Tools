@@ -5484,6 +5484,17 @@ fn enforce_builtin_storage_classes(
         {
             return Err(ValidationError::BuiltInDisallowedForEnv { builtin, env });
         }
+        if !env.is_vulkan()
+            && matches!(
+                builtin,
+                BuiltIn::PrimitivePointIndicesEXT
+                    | BuiltIn::PrimitiveLineIndicesEXT
+                    | BuiltIn::PrimitiveTriangleIndicesEXT
+                    | BuiltIn::CullPrimitiveEXT
+            )
+        {
+            return Err(ValidationError::BuiltInDisallowedForEnv { builtin, env });
+        }
 
         let allowed = matches!(storage_class, StorageClass::Input | StorageClass::Output);
         if !allowed {
@@ -22848,6 +22859,38 @@ OpFunctionEnd
             ValidationError::DisallowedExtension {
                 extension: ExtensionName::from("SPV_KHR_fragment_shading_rate"),
                 env: TargetEnv::Universal1_5
+            }
+        );
+    }
+
+    #[test]
+    fn mesh_builtins_are_vulkan_only() {
+        let text = r#"
+OpCapability Shader
+OpCapability MeshShadingEXT
+OpExtension "SPV_EXT_mesh_shader"
+OpMemoryModel Logical GLSL450
+OpEntryPoint MeshEXT %main "main" %var
+OpDecorate %var BuiltIn PrimitivePointIndicesEXT
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%arr3 = OpTypeArray %u32 %c3
+%c3 = OpConstant %u32 3
+%ptr = OpTypePointer Output %arr3
+%var = OpVariable %ptr Output
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
+            .expect_err("mesh built-ins are Vulkan-only");
+        assert_eq!(
+            err,
+            ValidationError::DisallowedExtension {
+                extension: ExtensionName::from("SPV_EXT_mesh_shader"),
+                env: TargetEnv::Universal1_6
             }
         );
     }

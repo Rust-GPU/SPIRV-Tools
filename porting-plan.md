@@ -51,6 +51,7 @@ Planned tasks:
 - [x] Honor `SPIRV_TOOLS_FORCE_RUST_VALIDATOR` in the CLI path so downstreams can flip the Rust validator on without extra flags while keeping a C++ fallback.
 - [x] Keep Vulkan rejecting legacy OpenGL-style built-ins (`VertexId`, `InstanceId`) with Rust-side regressions.
 - [x] Gate fragment shading rate built-ins to Vulkan-only via Rust validation with regression coverage.
+- [x] Gate mesh built-ins to Vulkan-only (extension-gated) with Rust regression coverage.
 - Keep the corpus test job (`ctest` with `SPIRV_TOOLS_DISABLE_RUST_VALIDATOR=0`) in CI to guard parity.
 - Document rollout/rollback procedures and env overrides for downstream consumers.
 
