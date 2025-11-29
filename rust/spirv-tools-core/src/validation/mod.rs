@@ -971,7 +971,7 @@ pub enum ValidationError {
         /// The storage class of the decorated variable.
         storage_class: rspirv::spirv::StorageClass,
     },
-    /// A barycentric/pull-model interpolation decoration is used without a fragment entry point.
+    /// An interpolation decoration is used without a fragment entry point.
     #[error("interpolation decoration {decoration:?} requires a Fragment entry point")]
     InterpolationDecorationRequiresFragment {
         /// The interpolation decoration applied.
@@ -1682,8 +1682,9 @@ fn validate_words(
     enforce_struct_block_requirements(&module, target_version)?;
     enforce_location_storage_classes(&module)?;
     enforce_builtin_location_exclusivity(&module)?;
+    let entry_models = collect_execution_models(&module);
     enforce_builtin_storage_classes(&module)?;
-    enforce_interpolation_storage_classes(&module, &definitions)?;
+    enforce_interpolation_storage_classes(&module, &definitions, &entry_models)?;
     validate_decoration_target_categories(&module, &opcodes, &definitions, &capabilities)?;
     enforce_store_type_compatibility(&module, &definitions, &options)?;
     let entry_points = validate_entry_points(&module, &defined_ids, &opcodes)?;
@@ -5405,9 +5406,23 @@ fn enforce_builtin_storage_classes(module: &Module) -> Result<(), ValidationErro
     Ok(())
 }
 
+fn collect_execution_models(module: &Module) -> HashSet<rspirv::spirv::ExecutionModel> {
+    module
+        .entry_points
+        .iter()
+        .filter_map(|inst| {
+            inst.operands.get(0).and_then(|op| match op {
+                rspirv::dr::Operand::ExecutionModel(model) => Some(*model),
+                _ => None,
+            })
+        })
+        .collect()
+}
+
 fn enforce_interpolation_storage_classes(
     module: &Module,
     definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    entry_models: &HashSet<rspirv::spirv::ExecutionModel>,
 ) -> Result<(), ValidationError> {
     use rspirv::spirv::Decoration::{Centroid, Flat, NoPerspective, Patch, Sample};
 
@@ -5454,6 +5469,9 @@ fn enforce_interpolation_storage_classes(
                 decoration,
                 storage_class,
             });
+        }
+        if !entry_models.contains(&rspirv::spirv::ExecutionModel::Fragment) {
+            return Err(ValidationError::InterpolationDecorationRequiresFragment { decoration });
         }
     }
 
@@ -21388,7 +21406,7 @@ OpFunctionEnd
         let text = r#"
 OpCapability Shader
 OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %in %out
+OpEntryPoint Fragment %main "main" %in %out
 OpDecorate %in NoPerspective
 OpDecorate %out Centroid
 %void = OpTypeVoid
@@ -21405,6 +21423,33 @@ OpFunctionEnd
 "#;
         assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
             .expect("interpolation decorations should be accepted on Input/Output");
+    }
+
+    #[test]
+    fn interpolation_decorations_require_fragment_execution_model() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %in
+OpDecorate %in Flat
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%ptr = OpTypePointer Input %f32
+%in = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
+            .expect_err("interpolation decorations require a Fragment entry point");
+        assert_eq!(
+            err,
+            ValidationError::InterpolationDecorationRequiresFragment {
+                decoration: rspirv::spirv::Decoration::Flat
+            }
+        );
     }
 
     #[test]
