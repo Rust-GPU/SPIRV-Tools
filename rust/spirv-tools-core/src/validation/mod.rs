@@ -5589,6 +5589,21 @@ fn enforce_builtin_storage_classes(
             });
         }
 
+        let compute_only = matches!(
+            builtin,
+            BuiltIn::GlobalInvocationId
+                | BuiltIn::LocalInvocationId
+                | BuiltIn::LocalInvocationIndex
+                | BuiltIn::NumWorkgroups
+                | BuiltIn::WorkgroupId
+        );
+        if compute_only && !entry_models.contains(&ExecutionModel::GLCompute) {
+            return Err(ValidationError::BuiltInRequiresExecutionModel {
+                builtin,
+                allowed: vec![ExecutionModel::GLCompute],
+            });
+        }
+
         // Type checks for selected built-ins.
         if let Some(var_id) = ResultId::try_from(*target).ok() {
             if let Some(pointee) = resolve_builtin_pointee_type(definitions, var_id) {
@@ -22340,6 +22355,54 @@ OpFunctionEnd
 "#;
         assemble_and_validate_with_env(ok, TargetEnv::Vulkan1_2)
             .expect("ray built-ins should be accepted for ray tracing entry points");
+    }
+
+    #[test]
+    fn compute_workgroup_builtins_require_compute_entry_point() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpDecorate %var BuiltIn GlobalInvocationId
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%vec3 = OpTypeVector %u32 3
+%ptr = OpTypePointer Input %vec3
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+            .expect_err("workgroup built-ins require compute entry points");
+        assert_eq!(
+            err,
+            ValidationError::BuiltInRequiresExecutionModel {
+                builtin: rspirv::spirv::BuiltIn::GlobalInvocationId,
+                allowed: vec![rspirv::spirv::ExecutionModel::GLCompute]
+            }
+        );
+
+        let ok = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main" %var
+OpDecorate %var BuiltIn WorkgroupId
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%vec3 = OpTypeVector %u32 3
+%ptr = OpTypePointer Input %vec3
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        assemble_and_validate_with_env(ok, TargetEnv::Vulkan1_2)
+            .expect("workgroup built-ins should be accepted for compute entry points");
     }
 
     #[test]
