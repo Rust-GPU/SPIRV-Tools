@@ -21818,6 +21818,112 @@ OpFunctionEnd
     }
 
     #[test]
+    fn shading_rate_builtins_require_fragment_execution_model() {
+        let text = r#"
+OpCapability Shader
+OpCapability FragmentShadingRateKHR
+OpExtension "SPV_KHR_fragment_shading_rate"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpDecorate %var BuiltIn ShadingRateKHR
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%vec2 = OpTypeVector %u32 2
+%ptr = OpTypePointer Input %vec2
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+            .expect_err("shading rate built-ins require fragment entry points");
+        assert!(matches!(
+            err,
+            ValidationError::BuiltInRequiresExecutionModel {
+                builtin: rspirv::spirv::BuiltIn::ShadingRateKHR,
+                ..
+            }
+        ));
+
+        let ok = r#"
+OpCapability Shader
+OpCapability FragmentShadingRateKHR
+OpExtension "SPV_KHR_fragment_shading_rate"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %var BuiltIn PrimitiveShadingRateKHR
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%vec2 = OpTypeVector %u32 2
+%ptr = OpTypePointer Input %vec2
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        assemble_and_validate_with_env(ok, TargetEnv::Vulkan1_2)
+            .expect("shading rate built-ins should be accepted for fragment entry points");
+    }
+
+    #[test]
+    fn mesh_builtins_require_mesh_execution_models() {
+        let text = r#"
+OpCapability Shader
+OpCapability Geometry
+OpCapability MeshShadingEXT
+OpExtension "SPV_EXT_mesh_shader"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpDecorate %var BuiltIn PrimitivePointIndicesEXT
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%arr = OpTypeArray %u32 %uint_3
+%uint_3 = OpConstant %u32 3
+%ptr = OpTypePointer Output %arr
+%var = OpVariable %ptr Output
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+            .expect_err("mesh built-ins require mesh execution models");
+        assert!(matches!(
+            err,
+            ValidationError::BuiltInRequiresExecutionModel {
+                builtin: rspirv::spirv::BuiltIn::PrimitivePointIndicesEXT,
+                ..
+            }
+        ));
+
+        let ok = r#"
+OpCapability Shader
+OpCapability MeshShadingEXT
+OpExtension "SPV_EXT_mesh_shader"
+OpMemoryModel Logical GLSL450
+OpEntryPoint MeshEXT %main "main" %var
+OpDecorate %var BuiltIn CullPrimitiveEXT
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Output %u32
+%var = OpVariable %ptr Output
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        assemble_and_validate_with_env(ok, TargetEnv::Vulkan1_2)
+            .expect("mesh built-ins should be accepted for mesh entry points");
+    }
+
+    #[test]
     fn barycentric_builtin_requires_input_storage() {
         let text = r#"
 OpCapability Shader
