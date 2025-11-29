@@ -184,8 +184,8 @@ Tasks for this milestone:
 ## Completed Milestone: Extension Allowlists Parity
 Environment-specific extension allowlists now mirror the C++ tables via the generated data set in `TargetEnv::is_extension_allowed`, with vendor gating (NV/AMDX/ARM Vulkan-only; INTEL/ALTERA OpenCL/Universal), version gates, and capability precedence covered by regressions (ray tracing adjuncts, cooperative matrices, tile shading, shader clock, fragment shading rate/density, motion blur, displacement micromaps).
 
-## Active Milestone: Enable Rust Validator by Default
-With allowlists and capability/extension precedence aligned, flip the Rust validator on by default behind the FFI/CLI gates and keep a parity harness in CI.
+## Completed Milestone: Enable Rust Validator by Default
+With allowlists and capability/extension precedence aligned, the Rust validator now runs by default in the CLI/FFI path (with env/flag opt-outs) and the full C++ CLI/FFI/validator corpus passes with the Rust path enabled.
 
 Planned tasks:
 - Added a runtime toggle (default-on with env/override opt-out) so the FFI validator path prefers the Rust validator and falls back to C++ only when explicitly disabled; added unit coverage to lock the toggle behavior.
@@ -220,6 +220,14 @@ Planned tasks:
 - [x] Enforce `OpStore` pointer/object type compatibility with a `relax_struct_store` escape hatch for layout-compatible structs (struct/array recursion) and typed errors; added regressions covering both relaxed acceptance, array-length mismatches, and layout-relaxed acceptance (block layout relax flags).
 
 With validator options parity achieved, proceed to capability/extension ordering and decoration/layout parity to close the remaining structural gaps.
+
+## Active Milestone: Optimizer/Reducer Parity
+Broaden optimizer/reducer parity by running the existing C++ regression corpus with the Rust path enabled and shoring up any gaps exposed by CLI/FFI flows.
+
+Planned tasks:
+- Run existing C++ optimizer/reducer suites with `SPIRV_TOOLS_DISABLE_RUST_OPT=0` and audit any output mismatches or diagnostics that differ from the legacy path.
+- Add Rust-side fixes to close mismatches surfaced by the corpus without copying obvious C++ bugs; prefer e-graph rewrites and typed errors.
+- Keep fuzz/bench scripts (cargo fuzz, criterion/hyperfine) up to date with the Rust path to catch performance or correctness regressions as parity expands.
 
 ## Upcoming Milestone: Block/Layout Relaxations Parity
 Implement the semantics of layout-related validator options so they match the C++ validator while keeping the Rust path active.
