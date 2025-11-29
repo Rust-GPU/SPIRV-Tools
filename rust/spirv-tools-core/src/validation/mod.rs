@@ -5436,6 +5436,25 @@ fn enforce_builtin_storage_classes(
         if fragment_only && !entry_models.contains(&ExecutionModel::Fragment) {
             return Err(ValidationError::BuiltInRequiresFragment { builtin });
         }
+
+        let barycentric_only_input = matches!(
+            builtin,
+            BuiltIn::BaryCoordKHR
+                | BuiltIn::BaryCoordNoPerspKHR
+                | BuiltIn::BaryCoordSmoothAMD
+                | BuiltIn::BaryCoordSmoothCentroidAMD
+                | BuiltIn::BaryCoordSmoothSampleAMD
+                | BuiltIn::BaryCoordNoPerspAMD
+                | BuiltIn::BaryCoordNoPerspCentroidAMD
+                | BuiltIn::BaryCoordNoPerspSampleAMD
+                | BuiltIn::BaryCoordPullModelAMD
+        );
+        if barycentric_only_input && storage_class != StorageClass::Input {
+            return Err(ValidationError::InvalidBuiltInStorageClass {
+                builtin,
+                storage_class,
+            });
+        }
     }
     Ok(())
 }
@@ -21671,6 +21690,62 @@ OpFunctionEnd
 "#;
         assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
             .expect("barycentric BuiltIns should be accepted for fragment entry points");
+    }
+
+    #[test]
+    fn barycentric_builtin_requires_input_storage() {
+        let text = r#"
+OpCapability Shader
+OpCapability FragmentBarycentricKHR
+OpExtension "SPV_KHR_fragment_shader_barycentric"
+OpExtension "SPV_NV_fragment_shader_barycentric"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %var BuiltIn BaryCoordKHR
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%vec2 = OpTypeVector %f32 2
+%ptr_out = OpTypePointer Output %vec2
+%var = OpVariable %ptr_out Output
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+            .expect_err("barycentric built-ins must target Input storage");
+        assert_eq!(
+            err,
+            ValidationError::InvalidBuiltInStorageClass {
+                builtin: rspirv::spirv::BuiltIn::BaryCoordKHR,
+                storage_class: rspirv::spirv::StorageClass::Output
+            }
+        );
+
+        let input_text = r#"
+OpCapability Shader
+OpCapability FragmentBarycentricKHR
+OpExtension "SPV_KHR_fragment_shader_barycentric"
+OpExtension "SPV_NV_fragment_shader_barycentric"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %var BuiltIn BaryCoordKHR
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%vec2 = OpTypeVector %f32 2
+%ptr_in = OpTypePointer Input %vec2
+%var = OpVariable %ptr_in Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        assemble_and_validate_with_env(input_text, TargetEnv::Vulkan1_2)
+            .expect("barycentric built-ins should be accepted on Input storage");
     }
 
     #[test]
