@@ -4705,12 +4705,6 @@ fn enforce_small_type_storage_capabilities(
         return Ok(());
     }
 
-    let has_small_elements = |pointee: TypeId| -> bool {
-        let mut visited = HashSet::new();
-        contains_sized_int_or_float(pointee, Op::TypeInt, 16, definitions, &mut visited)
-            || contains_sized_int_or_float(pointee, Op::TypeFloat, 16, definitions, &mut visited)
-    };
-
     for inst in &module.types_global_values {
         if inst.class.opcode != Op::Variable && inst.class.opcode != Op::UntypedVariableKHR {
             continue;
@@ -4742,53 +4736,101 @@ fn enforce_small_type_storage_capabilities(
             _ => continue,
         };
 
-        if !has_small_elements(pointee) {
-            continue;
-        }
-
-        let require_capability = |cap: Capability| -> Result<(), ValidationError> {
-            if capabilities.contains(&cap) {
-                Ok(())
-            } else {
-                Err(ValidationError::SmallTypeMissingCapability {
-                    bit_width: 16,
-                    storage_class,
-                    required_capability: cap,
-                })
-            }
+        let contains_int = |width: u32| -> bool {
+            let mut visited = HashSet::new();
+            contains_sized_int_or_float(pointee, Op::TypeInt, width, definitions, &mut visited)
+        };
+        let contains_float = |width: u32| -> bool {
+            let mut visited = HashSet::new();
+            contains_sized_int_or_float(pointee, Op::TypeFloat, width, definitions, &mut visited)
         };
 
-        match storage_class {
-            StorageClass::StorageBuffer | StorageClass::PhysicalStorageBuffer => {
-                require_capability(Capability::StorageBuffer16BitAccess)?
+        for bit_width in [8u32, 16u32] {
+            let has_width =
+                contains_int(bit_width) || (bit_width == 16 && contains_float(bit_width));
+            if !has_width {
+                continue;
             }
-            StorageClass::Uniform => {
-                if capabilities.contains(&Capability::UniformAndStorageBuffer16BitAccess) {
-                    continue;
+
+            let require_capability = |cap: Capability| -> Result<(), ValidationError> {
+                if capabilities.contains(&cap) {
+                    Ok(())
+                } else {
+                    Err(ValidationError::SmallTypeMissingCapability {
+                        bit_width,
+                        storage_class,
+                        required_capability: cap,
+                    })
                 }
-                if capabilities.contains(&Capability::StorageBuffer16BitAccess)
-                    && has_decoration(module, u32::from(pointee), Decoration::BufferBlock)
-                {
-                    continue;
+            };
+
+            match storage_class {
+                StorageClass::StorageBuffer | StorageClass::PhysicalStorageBuffer => {
+                    let required = if bit_width == 8 {
+                        Capability::StorageBuffer8BitAccess
+                    } else {
+                        Capability::StorageBuffer16BitAccess
+                    };
+                    require_capability(required)?
                 }
-                return Err(ValidationError::SmallTypeMissingCapability {
-                    bit_width: 16,
-                    storage_class,
-                    required_capability: Capability::UniformAndStorageBuffer16BitAccess,
-                });
-            }
-            StorageClass::PushConstant => require_capability(Capability::StoragePushConstant16)?,
-            StorageClass::Input | StorageClass::Output => {
-                require_capability(Capability::StorageInputOutput16)?
-            }
-            StorageClass::Workgroup => {
-                require_capability(Capability::WorkgroupMemoryExplicitLayout16BitAccessKHR)?
-            }
-            _ => {
-                return Err(ValidationError::SmallTypeDisallowedInStorageClass {
-                    bit_width: 16,
-                    storage_class,
-                })
+                StorageClass::Uniform => {
+                    let (primary, fallback) = if bit_width == 8 {
+                        (
+                            Capability::UniformAndStorageBuffer8BitAccess,
+                            Capability::StorageBuffer8BitAccess,
+                        )
+                    } else {
+                        (
+                            Capability::UniformAndStorageBuffer16BitAccess,
+                            Capability::StorageBuffer16BitAccess,
+                        )
+                    };
+                    if capabilities.contains(&primary) {
+                        continue;
+                    }
+                    if capabilities.contains(&fallback)
+                        && has_decoration(module, u32::from(pointee), Decoration::BufferBlock)
+                    {
+                        continue;
+                    }
+                    return Err(ValidationError::SmallTypeMissingCapability {
+                        bit_width,
+                        storage_class,
+                        required_capability: primary,
+                    });
+                }
+                StorageClass::PushConstant => {
+                    let required = if bit_width == 8 {
+                        Capability::StoragePushConstant8
+                    } else {
+                        Capability::StoragePushConstant16
+                    };
+                    require_capability(required)?
+                }
+                StorageClass::Input | StorageClass::Output => {
+                    if bit_width == 16 {
+                        require_capability(Capability::StorageInputOutput16)?
+                    } else {
+                        return Err(ValidationError::SmallTypeDisallowedInStorageClass {
+                            bit_width,
+                            storage_class,
+                        });
+                    }
+                }
+                StorageClass::Workgroup => {
+                    let required = if bit_width == 8 {
+                        Capability::WorkgroupMemoryExplicitLayout8BitAccessKHR
+                    } else {
+                        Capability::WorkgroupMemoryExplicitLayout16BitAccessKHR
+                    };
+                    require_capability(required)?
+                }
+                _ => {
+                    return Err(ValidationError::SmallTypeDisallowedInStorageClass {
+                        bit_width,
+                        storage_class,
+                    })
+                }
             }
         }
     }
@@ -20089,9 +20131,13 @@ mod tests {
         assert_eq!(error, ValidationError::MissingMemoryModel);
     }
 
-    fn assemble_and_validate(text: &str) -> Result<(), ValidationError> {
+    fn assemble_and_validate_with_env(text: &str, env: TargetEnv) -> Result<(), ValidationError> {
         let binary = assemble_text(text).expect("assemble text");
-        validate_module(&binary, TargetEnv::Universal1_3)
+        validate_module(&binary, env)
+    }
+
+    fn assemble_and_validate(text: &str) -> Result<(), ValidationError> {
+        assemble_and_validate_with_env(text, TargetEnv::Universal1_3)
     }
 
     #[test]
@@ -20119,7 +20165,8 @@ OpMemberDecorate %buf 0 Offset 0
 OpReturn
 OpFunctionEnd
 "#;
-        let error = assemble_and_validate(text).expect_err("expected missing capability");
+        let error = assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
+            .expect_err("expected missing capability");
         assert_eq!(
             error,
             ValidationError::SmallTypeMissingCapability {
@@ -20210,6 +20257,168 @@ OpFunctionEnd
             ValidationError::SmallTypeDisallowedInStorageClass {
                 bit_width: 16,
                 storage_class: StorageClass::UniformConstant
+            }
+        );
+    }
+
+    #[test]
+    fn storage_buffer_8bit_requires_capability() {
+        let text = r#"
+OpCapability Shader
+OpCapability Int8
+OpCapability VariablePointers
+OpCapability VariablePointersStorageBuffer
+OpExtension "SPV_KHR_storage_buffer_storage_class"
+OpExtension "SPV_KHR_variable_pointers"
+OpExtension "SPV_KHR_8bit_storage"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpName %main "main"
+OpName %var "var"
+OpDecorate %buf Block
+OpMemberDecorate %buf 0 Offset 0
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u8 = OpTypeInt 8 0
+%buf = OpTypeStruct %u8
+%ptr = OpTypePointer StorageBuffer %buf
+%var = OpVariable %ptr StorageBuffer
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let error = assemble_and_validate(text).expect_err("expected missing capability");
+        assert_eq!(
+            error,
+            ValidationError::SmallTypeMissingCapability {
+                bit_width: 8,
+                storage_class: StorageClass::StorageBuffer,
+                required_capability: Capability::StorageBuffer8BitAccess
+            }
+        );
+    }
+
+    #[test]
+    fn uniform_8bit_with_buffer_block_allows_storage_buffer_capability() {
+        let text = r#"
+OpCapability Shader
+OpCapability Int8
+OpCapability VariablePointers
+OpCapability VariablePointersStorageBuffer
+OpCapability StorageBuffer8BitAccess
+OpExtension "SPV_KHR_storage_buffer_storage_class"
+OpExtension "SPV_KHR_variable_pointers"
+OpExtension "SPV_KHR_8bit_storage"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpName %main "main"
+OpName %var "var"
+OpDecorate %buf BufferBlock
+OpMemberDecorate %buf 0 Offset 0
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u8 = OpTypeInt 8 0
+%buf = OpTypeStruct %u8
+%ptr = OpTypePointer Uniform %buf
+%var = OpVariable %ptr Uniform
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
+            .expect("StorageBuffer8BitAccess with BufferBlock should allow uniform 8-bit");
+    }
+
+    #[test]
+    fn input_8bit_is_disallowed() {
+        let text = r#"
+OpCapability Shader
+OpCapability Int8
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpName %main "main"
+OpName %var "var"
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u8 = OpTypeInt 8 0
+%ptr = OpTypePointer Input %u8
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let error = assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
+            .expect_err("expected disallowed input");
+        assert_eq!(
+            error,
+            ValidationError::SmallTypeDisallowedInStorageClass {
+                bit_width: 8,
+                storage_class: StorageClass::Input
+            }
+        );
+    }
+
+    #[test]
+    fn workgroup_16bit_requires_capability() {
+        let text = r#"
+OpCapability Shader
+OpCapability Int16
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpName %main "main"
+OpName %var "var"
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u16 = OpTypeInt 16 0
+%ptr = OpTypePointer Workgroup %u16
+%var = OpVariable %ptr Workgroup
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let error = assemble_and_validate_with_env(text, TargetEnv::Universal1_4)
+            .expect_err("expected workgroup capability");
+        assert_eq!(
+            error,
+            ValidationError::SmallTypeMissingCapability {
+                bit_width: 16,
+                storage_class: StorageClass::Workgroup,
+                required_capability: Capability::WorkgroupMemoryExplicitLayout16BitAccessKHR
+            }
+        );
+    }
+
+    #[test]
+    fn push_constant_8bit_requires_capability() {
+        let text = r#"
+OpCapability Shader
+OpCapability Int8
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpName %main "main"
+OpName %var "var"
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u8 = OpTypeInt 8 0
+%ptr = OpTypePointer PushConstant %u8
+%var = OpVariable %ptr PushConstant
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let error = assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
+            .expect_err("expected push constant capability");
+        assert_eq!(
+            error,
+            ValidationError::SmallTypeMissingCapability {
+                bit_width: 8,
+                storage_class: StorageClass::PushConstant,
+                required_capability: Capability::StoragePushConstant8
             }
         );
     }
