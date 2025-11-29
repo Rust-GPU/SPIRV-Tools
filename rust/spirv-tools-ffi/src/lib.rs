@@ -887,6 +887,55 @@ OpFunctionEnd
     }
 
     #[test]
+    fn rust_validator_reports_layout_errors() {
+        clear_rust_validator_override();
+        set_rust_validator_override(true);
+        let text = r#"
+OpCapability Shader
+OpExtension "SPV_KHR_shader_clock"
+OpMemoryModel Logical GLSL450
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let mut words =
+            assemble_text_with_options(text, TargetEnv::Vulkan1_2, TextToBinaryOptions::NONE)
+                .expect("assemble");
+        // Move the extension to the end of the module to mirror the core layout regression.
+        let mut idx = 5;
+        let mut ext_slice: Option<(usize, usize)> = None;
+        while idx < words.len() {
+            let wc = (words[idx] >> 16) as usize;
+            let opcode = (words[idx] & 0xffff) as u16;
+            if opcode == rspirv::spirv::Op::Extension as u16 {
+                ext_slice = Some((idx, wc));
+                break;
+            }
+            idx += wc;
+        }
+        let (start, len) = ext_slice.expect("extension present");
+        let extension: Vec<u32> = words.drain(start..start + len).collect();
+        words.extend(extension);
+
+        let options = default_validator_options();
+        let result =
+            validate_binary_rust_with_options(TargetEnv::Vulkan1_2.to_raw(), &words, &options);
+        assert!(
+            !result.success,
+            "layout violation should fail validation even with Rust validator enabled"
+        );
+        assert!(
+            result.message.contains("out of order"),
+            "expected layout error message, got: {}",
+            result.message
+        );
+        clear_rust_validator_override();
+    }
+
+    #[test]
     fn rust_disassembler_handles_simple_binary() {
         force_enable_rust_text_assembler_for_testing();
         let binary = assemble_text_with_env(
