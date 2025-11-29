@@ -176,8 +176,11 @@ int main(int argc, char** argv) {
 #if defined(SPIRV_RUST_TARGET_ENV)
   const bool env_disables_rust =
       std::getenv("SPIRV_TOOLS_DISABLE_RUST_VALIDATOR") != nullptr;
+  const bool env_forces_rust =
+      !env_disables_rust &&
+      std::getenv("SPIRV_TOOLS_FORCE_RUST_VALIDATOR") != nullptr;
   bool prefer_rust_validator = !env_disables_rust;
-  bool force_rust_validator = false;
+  bool force_rust_validator = env_forces_rust;
   bool force_cpp_validator = false;
 #endif
 

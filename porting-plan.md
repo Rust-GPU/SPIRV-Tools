@@ -48,6 +48,7 @@ Flip the Rust validator on by default across FFI/CLI and lock in env-specific Bu
 Planned tasks:
 - Finish remaining env-specific BuiltIn allowlists/quirks (any lingering Vulkan/OpenCL/vendor shading-rate/mesh cases) with Rust regressions.
 - Add a rollout flag/toggle to make the Rust validator the default in CLI/FFI, with a clear fallback to C++.
+- [x] Honor `SPIRV_TOOLS_FORCE_RUST_VALIDATOR` in the CLI path so downstreams can flip the Rust validator on without extra flags while keeping a C++ fallback.
 - Keep the corpus test job (`ctest` with `SPIRV_TOOLS_DISABLE_RUST_VALIDATOR=0`) in CI to guard parity.
 - Document rollout/rollback procedures and env overrides for downstream consumers.
 
