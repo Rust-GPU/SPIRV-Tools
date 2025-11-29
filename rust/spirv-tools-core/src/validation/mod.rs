@@ -999,6 +999,19 @@ pub enum ValidationError {
         /// A description of the expected type.
         expected: &'static str,
     },
+    /// An interpolation decoration is used in an entry point where it is disallowed.
+    #[error("decoration {decoration:?} on storage class {storage_class:?} is not allowed for execution model {execution_model:?}")]
+    InterpolationDecorationInvalidForEntryPoint {
+        /// The decoration applied.
+        decoration: rspirv::spirv::Decoration,
+        /// The storage class of the decorated variable.
+        storage_class: rspirv::spirv::StorageClass,
+        /// The disallowed execution model.
+        execution_model: rspirv::spirv::ExecutionModel,
+    },
+    /// Fragment inputs carrying integers or 64-bit floats must be flat shaded.
+    #[error("fragment input with integer or 64-bit float type must use the Flat decoration")]
+    FragmentInputRequiresFlat,
     /// A BuiltIn decoration requires a capability that was not declared.
     #[error("BuiltIn {builtin:?} requires capability {capability:?}")]
     BuiltInRequiresCapability {
@@ -1721,6 +1734,7 @@ fn validate_words(
     enforce_builtin_location_exclusivity(&module)?;
     enforce_builtin_storage_classes(&module, &definitions, &entry_models, &capabilities)?;
     enforce_interpolation_storage_classes(&module, &definitions, &entry_models)?;
+    enforce_interpolation_entry_point_compatibility(&module, &definitions, env)?;
     validate_decoration_target_categories(&module, &opcodes, &definitions, &capabilities)?;
     enforce_store_type_compatibility(&module, &definitions, &options)?;
     let entry_points = validate_entry_points(&module, &defined_ids, &opcodes)?;
@@ -5684,6 +5698,88 @@ fn resolve_builtin_pointee_type<'a>(
         .and_then(|id| definitions.get(&id))
 }
 
+fn build_decoration_lookup(
+    module: &Module,
+) -> HashMap<ResultId, Vec<rspirv::spirv::Decoration>> {
+    let mut map: HashMap<ResultId, Vec<rspirv::spirv::Decoration>> = HashMap::new();
+    for inst in &module.annotations {
+        if inst.class.opcode != rspirv::spirv::Op::Decorate {
+            continue;
+        }
+        let Some(rspirv::dr::Operand::IdRef(target)) = inst.operands.get(0) else {
+            continue;
+        };
+        let Some(rspirv::dr::Operand::Decoration(dec)) = inst.operands.get(1) else {
+            continue;
+        };
+        if let Ok(id) = ResultId::try_from(*target) {
+            map.entry(id).or_default().push(*dec);
+        }
+    }
+    map
+}
+
+fn fragment_requires_flat(
+    var_inst: &rspirv::dr::Instruction,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+) -> bool {
+    let Some(var_id) = var_inst.result_id.and_then(|id| ResultId::try_from(id).ok()) else {
+        return false;
+    };
+    let Some(pointee) = resolve_builtin_pointee_type(definitions, var_id) else {
+        return false;
+    };
+    is_int_scalar_or_vector(pointee, definitions) || is_float_scalar_of_width(pointee, definitions, 64)
+}
+
+fn is_int_scalar_or_vector(
+    ty: &rspirv::dr::Instruction,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+) -> bool {
+    match ty.class.opcode {
+        rspirv::spirv::Op::TypeInt => true,
+        rspirv::spirv::Op::TypeVector => {
+            let Some(rspirv::dr::Operand::IdRef(elem)) = ty.operands.get(0) else {
+                return false;
+            };
+            ResultId::try_from(*elem)
+                .ok()
+                .and_then(|id| definitions.get(&id))
+                .map_or(false, |inst| inst.class.opcode == rspirv::spirv::Op::TypeInt)
+        }
+        _ => false,
+    }
+}
+
+fn type_bit_width(ty: &rspirv::dr::Instruction) -> Option<u32> {
+    ty.operands
+        .get(0)
+        .and_then(|op| match op {
+            rspirv::dr::Operand::LiteralBit32(w) => Some(*w),
+            _ => None,
+        })
+}
+
+fn is_float_scalar_of_width(
+    ty: &rspirv::dr::Instruction,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    width: u32,
+) -> bool {
+    match ty.class.opcode {
+        rspirv::spirv::Op::TypeFloat => type_bit_width(ty) == Some(width),
+        rspirv::spirv::Op::TypeVector => {
+            let Some(rspirv::dr::Operand::IdRef(elem)) = ty.operands.get(0) else {
+                return false;
+            };
+            ResultId::try_from(*elem)
+                .ok()
+                .and_then(|id| definitions.get(&id))
+                .map_or(false, |inst| inst.class.opcode == rspirv::spirv::Op::TypeFloat && type_bit_width(inst) == Some(width))
+        }
+        _ => false,
+    }
+}
+
 fn has_patch_decoration(module: &Module, target: ResultId) -> bool {
     use rspirv::spirv::{Decoration, Op};
 
@@ -5871,6 +5967,82 @@ fn enforce_interpolation_storage_classes(
             && !entry_models.contains(&rspirv::spirv::ExecutionModel::Fragment)
         {
             return Err(ValidationError::InterpolationDecorationRequiresFragment { decoration });
+        }
+    }
+
+    Ok(())
+}
+
+fn enforce_interpolation_entry_point_compatibility(
+    module: &Module,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    env: TargetEnv,
+) -> Result<(), ValidationError> {
+    use rspirv::spirv::Decoration::{Centroid, Flat, NoPerspective, Sample};
+    use rspirv::spirv::{ExecutionModel, StorageClass};
+
+    if !is_vulkan_env(env) {
+        return Ok(());
+    }
+
+    let decoration_lookup = build_decoration_lookup(module);
+
+    for entry in &module.entry_points {
+        let Some(rspirv::dr::Operand::ExecutionModel(model)) = entry.operands.get(0) else {
+            continue;
+        };
+        let model = *model;
+        let interfaces = entry.operands.iter().skip(2).filter_map(|op| match op {
+            rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+            _ => None,
+        });
+        for var_id in interfaces {
+            let Some(var_inst) = definitions.get(&var_id) else {
+                continue;
+            };
+            if var_inst.class.opcode != rspirv::spirv::Op::Variable
+                && var_inst.class.opcode != rspirv::spirv::Op::UntypedVariableKHR
+            {
+                continue;
+            }
+            let storage_class = match var_inst.operands.first() {
+                Some(rspirv::dr::Operand::StorageClass(sc)) => *sc,
+                _ => continue,
+            };
+            let decos = decoration_lookup.get(&var_id).cloned().unwrap_or_default();
+            let has_interp = decos.iter().any(|d| matches!(d, NoPerspective | Flat | Sample | Centroid));
+            if has_interp {
+                match storage_class {
+                    StorageClass::Input if model == ExecutionModel::Vertex => {
+                        return Err(ValidationError::InterpolationDecorationInvalidForEntryPoint {
+                            decoration: *decos
+                                .iter()
+                                .find(|d| matches!(d, NoPerspective | Flat | Sample | Centroid))
+                                .unwrap(),
+                            storage_class,
+                            execution_model: model,
+                        });
+                    }
+                    StorageClass::Output if model == ExecutionModel::Fragment => {
+                        return Err(ValidationError::InterpolationDecorationInvalidForEntryPoint {
+                            decoration: *decos
+                                .iter()
+                                .find(|d| matches!(d, NoPerspective | Flat | Sample | Centroid))
+                                .unwrap(),
+                            storage_class,
+                            execution_model: model,
+                        });
+                    }
+                    _ => {}
+                }
+            }
+
+            if model == ExecutionModel::Fragment && storage_class == StorageClass::Input {
+                let has_flat = decos.iter().any(|d| *d == Flat);
+                if !has_flat && fragment_requires_flat(var_inst, definitions) {
+                    return Err(ValidationError::FragmentInputRequiresFlat);
+                }
+            }
         }
     }
 
