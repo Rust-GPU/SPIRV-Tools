@@ -200,6 +200,7 @@ impl egg::CostFunction<SpirvLang> for ExprCost {
             SpirvLang::Shl(_) | SpirvLang::ShrS(_) | SpirvLang::ShrU(_) => {
                 enode.children().iter().map(|id| costs(*id)).sum::<usize>() + 1
             }
+            SpirvLang::BitAnd(_) => enode.children().iter().map(|id| costs(*id)).sum::<usize>() + 2,
             _ => enode.children().iter().map(|id| costs(*id)).sum::<usize>() + 1,
         }
     }
@@ -2193,6 +2194,29 @@ mod tests {
         assert_eq!(
             optimized,
             RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("x"))])
+        );
+    }
+
+    #[test]
+    fn band_mask_prefers_umod_pow2() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),
+            SpirvLang::Const(ConstValue::new(7)),
+            SpirvLang::BitAnd([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let has_umod = nodes.iter().enumerate().any(|(_, node)| {
+            if let SpirvLang::UMod([lhs, rhs]) = node {
+                matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("x"))
+                    && matches!(nodes[usize::from(*rhs)], SpirvLang::Const(c) if c.get() == 8)
+            } else {
+                false
+            }
+        });
+        assert!(
+            has_umod,
+            "expected x & (2^n-1) to become x % 2^n; got {optimized:?}"
         );
     }
 
