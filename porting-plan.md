@@ -47,7 +47,7 @@ Close the remaining decoration/environment-specific gaps against the C++ validat
 
 Tasks for this milestone:
 - [x] Enforce interpolation/barycentric decoration storage-class and execution-model constraints with grammar-driven tables and regressions.
-- [ ] Add env-specific BuiltIn allowlists (e.g., Mesh/Fragment shading built-ins, SM built-ins) with typed errors and binary tests. (Stage-specific allowlists and BuiltIn type checks added; compute-only built-ins gated to GLCompute/Kernel; kernel-only built-ins gated to Kernel and require Kernel capability; subgroup built-ins require GroupNonUniform (mask built-ins also require GroupNonUniformBallot/SubgroupBallotKHR); kernel enqueue counters now require DeviceEnqueue and Kernel execution model; SubgroupMaxSize now requires Kernel capability and Kernel execution model; SM/ARM GPU core built-ins now gate on ShaderSMBuiltinsNV/CoreBuiltinsARM and require their vendor extensions; remaining env-specific deltas still pending.)
+- [ ] Add env-specific BuiltIn allowlists (e.g., Mesh/Fragment shading built-ins, SM built-ins) with typed errors and binary tests. (Stage-specific allowlists and BuiltIn type checks added; compute-only built-ins gated to GLCompute/Kernel; kernel-only built-ins gated to Kernel and require Kernel capability; subgroup built-ins require GroupNonUniform (mask built-ins also require GroupNonUniformBallot/SubgroupBallotKHR); subgroup id/size/local-invocation regressions added; kernel enqueue counters now require DeviceEnqueue and Kernel execution model; SubgroupMaxSize now requires Kernel capability and Kernel execution model; SM/ARM GPU core built-ins now gate on ShaderSMBuiltinsNV/CoreBuiltinsARM and require their vendor extensions; remaining env-specific deltas still pending.)
  - [ ] Validate decoration exclusivity/compatibility pairs (e.g., interpolation vs Sample/Flat mixes, sample-rate shading requirements) against the C++ suite and port any missing tests. (Interpolation exclusivity and Flat+Sample/Centroid conflicts covered; Sample requires SampleRateShading.)
 - [ ] Wire these constraints through FFI/CLI and keep validated-module caching active; run C++ corpora under the Rust path to confirm parity.
 
@@ -168,6 +168,7 @@ Tasks for this milestone:
 - [x] Cache validated modules across CLI/FFI invocations when the same input is reused, avoiding redundant parsing/validation.
 - [ ] Expose wider structural rules (capability/extension ordering in layout, per-target decoration constraints) mirroring the C++ validator tables.
 - [ ] Enable the Rust validator over the FFI/CLI by default once structural parity is sufficiently close to C++.
+- [ ] Run the C++ validation corpus with the Rust validator forced on (`SPIRV_TOOLS_DISABLE_RUST_VALIDATOR=0`) and close any remaining gaps; current build directory lacks test targets, so configure a test-enabled CMake build before running.
 
 ## Completed Milestone: Capability/Extension Ordering Parity
 Align capability/extension ordering and dependency enforcement with the C++ tables, including operand-level requirements and per-environment allowlists.
