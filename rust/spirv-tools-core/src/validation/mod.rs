@@ -999,6 +999,12 @@ pub enum ValidationError {
         /// A description of the expected type.
         expected: &'static str,
     },
+    /// Tessellation level built-ins must also carry a Patch decoration.
+    #[error("BuiltIn {builtin:?} requires a Patch decoration")]
+    BuiltInRequiresPatchDecoration {
+        /// The BuiltIn applied.
+        builtin: rspirv::spirv::BuiltIn,
+    },
     /// Location/Component decorations conflict with a BuiltIn decoration on the same id.
     #[error("Location/Component decorations cannot be applied to BuiltIn variables")]
     LocationConflictsWithBuiltIn,
@@ -5494,6 +5500,12 @@ fn enforce_builtin_storage_classes(
                     return Err(error);
                 }
             }
+
+            if matches!(builtin, BuiltIn::TessLevelOuter | BuiltIn::TessLevelInner)
+                && !has_patch_decoration(module, var_id)
+            {
+                return Err(ValidationError::BuiltInRequiresPatchDecoration { builtin });
+            }
         }
 
         // Execution model allowlists for built-ins that are limited to specific pipeline stages.
@@ -5594,6 +5606,16 @@ fn resolve_builtin_pointee_type<'a>(
         .and_then(|id| definitions.get(&id))
 }
 
+fn has_patch_decoration(module: &Module, target: ResultId) -> bool {
+    use rspirv::spirv::{Decoration, Op};
+
+    module.annotations.iter().any(|inst| {
+        inst.class.opcode == Op::Decorate
+            && matches!(inst.operands.get(0), Some(rspirv::dr::Operand::IdRef(id)) if *id == u32::from(target))
+            && matches!(inst.operands.get(1), Some(rspirv::dr::Operand::Decoration(dec)) if *dec == Decoration::Patch)
+    })
+}
+
 fn literal_u32(op: &rspirv::dr::Operand) -> Option<u32> {
     match op {
         rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
@@ -5662,6 +5684,21 @@ fn is_array_of(
         .map_or(false, element_predicate)
 }
 
+fn is_array_of_len(
+    inst: &rspirv::dr::Instruction,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    len: u32,
+    element_predicate: fn(&rspirv::dr::Instruction) -> bool,
+) -> bool {
+    if inst.class.opcode != rspirv::spirv::Op::TypeArray {
+        return false;
+    }
+    if array_length(inst, definitions) != Some(len) {
+        return false;
+    }
+    is_array_of(inst, definitions, element_predicate)
+}
+
 fn validate_builtin_type(
     builtin: rspirv::spirv::BuiltIn,
     pointee: &rspirv::dr::Instruction,
@@ -5673,7 +5710,12 @@ fn validate_builtin_type(
         FragDepth | PointSize => is_float32(pointee),
         SampleMask => is_array_of(pointee, definitions, is_int32),
         ClipDistance | CullDistance => is_array_of(pointee, definitions, is_float32),
-        ShadingRateKHR | PrimitiveShadingRateKHR => is_vector_of(pointee, definitions, 2, is_int32),
+        TessCoord => is_vector_of(pointee, definitions, 3, is_float32),
+        TessLevelOuter => is_array_of_len(pointee, definitions, 4, is_float32),
+        TessLevelInner => is_array_of_len(pointee, definitions, 2, is_float32),
+        PrimitiveId | Layer | ViewIndex | SampleId => is_int32(pointee),
+        SamplePosition => is_vector_of(pointee, definitions, 2, is_float32),
+        ShadingRateKHR | PrimitiveShadingRateKHR => is_int32(pointee),
         _ => true,
     };
     if ok {
@@ -5684,7 +5726,12 @@ fn validate_builtin_type(
         FragDepth | PointSize => "f32",
         SampleMask => "array/runtime array of 32-bit ints",
         ClipDistance | CullDistance => "array/runtime array of 32-bit floats",
-        ShadingRateKHR | PrimitiveShadingRateKHR => "vec2<u32>",
+        ShadingRateKHR | PrimitiveShadingRateKHR => "i32",
+        TessCoord => "vec3<f32>",
+        TessLevelOuter => "array[4] of f32",
+        TessLevelInner => "array[2] of f32",
+        PrimitiveId | Layer | ViewIndex | SampleId => "i32",
+        SamplePosition => "vec2<f32>",
         _ => "",
     };
     Some(ValidationError::InvalidBuiltInType { builtin, expected })
@@ -5742,7 +5789,9 @@ fn enforce_interpolation_storage_classes(
                 },
             );
         }
-        if !entry_models.contains(&rspirv::spirv::ExecutionModel::Fragment) {
+        if decoration != Patch
+            && !entry_models.contains(&rspirv::spirv::ExecutionModel::Fragment)
+        {
             return Err(ValidationError::InterpolationDecorationRequiresFragment { decoration });
         }
     }
@@ -21978,8 +22027,7 @@ OpDecorate %var BuiltIn ShadingRateKHR
 %void = OpTypeVoid
 %fn = OpTypeFunction %void
 %u32 = OpTypeInt 32 0
-%vec2 = OpTypeVector %u32 2
-%ptr = OpTypePointer Input %vec2
+%ptr = OpTypePointer Input %u32
 %var = OpVariable %ptr Input
 %main = OpFunction %void None %fn
 %entry = OpLabel
@@ -22007,8 +22055,7 @@ OpDecorate %var BuiltIn PrimitiveShadingRateKHR
 %void = OpTypeVoid
 %fn = OpTypeFunction %void
 %u32 = OpTypeInt 32 0
-%vec2 = OpTypeVector %u32 2
-%ptr = OpTypePointer Input %vec2
+%ptr = OpTypePointer Input %u32
 %var = OpVariable %ptr Input
 %main = OpFunction %void None %fn
 %entry = OpLabel
@@ -22029,7 +22076,8 @@ OpDecorate %var BuiltIn ShadingRateKHR
 %void = OpTypeVoid
 %fn = OpTypeFunction %void
 %u32 = OpTypeInt 32 0
-%ptr = OpTypePointer Input %u32
+%vec2 = OpTypeVector %u32 2
+%ptr = OpTypePointer Input %vec2
 %var = OpVariable %ptr Input
 %main = OpFunction %void None %fn
 %entry = OpLabel
@@ -22037,14 +22085,72 @@ OpReturn
 OpFunctionEnd
 "#;
         let err = assemble_and_validate_with_env(bad_type, TargetEnv::Vulkan1_2)
-            .expect_err("shading rate built-ins require vec2<u32>");
+            .expect_err("shading rate built-ins require 32-bit int scalars");
         assert_eq!(
             err,
             ValidationError::InvalidBuiltInType {
                 builtin: rspirv::spirv::BuiltIn::ShadingRateKHR,
-                expected: "vec2<u32>"
+                expected: "i32"
             }
         );
+    }
+
+    #[test]
+    fn tess_level_builtins_require_patch_decoration() {
+        let missing_patch = r#"
+OpCapability Shader
+OpCapability Tessellation
+OpCapability Geometry
+OpMemoryModel Logical GLSL450
+OpEntryPoint TessellationEvaluation %main "main" %var
+OpExecutionMode %main Triangles
+OpDecorate %var BuiltIn TessLevelOuter
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%float = OpTypeFloat 32
+%u32 = OpTypeInt 32 0
+%uint_4 = OpConstant %u32 4
+%arr = OpTypeArray %float %uint_4
+%ptr = OpTypePointer Input %arr
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(missing_patch, TargetEnv::Vulkan1_2)
+            .expect_err("tessellation level built-ins require Patch decoration");
+        assert_eq!(
+            err,
+            ValidationError::BuiltInRequiresPatchDecoration {
+                builtin: rspirv::spirv::BuiltIn::TessLevelOuter
+            }
+        );
+
+        let with_patch = r#"
+OpCapability Shader
+OpCapability Tessellation
+OpCapability Geometry
+OpMemoryModel Logical GLSL450
+OpEntryPoint TessellationEvaluation %main "main" %var
+OpExecutionMode %main Triangles
+OpDecorate %var BuiltIn TessLevelOuter
+OpDecorate %var Patch
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%float = OpTypeFloat 32
+%u32 = OpTypeInt 32 0
+%uint_4 = OpConstant %u32 4
+%arr = OpTypeArray %float %uint_4
+%ptr = OpTypePointer Input %arr
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        assemble_and_validate_with_env(with_patch, TargetEnv::Vulkan1_2)
+            .expect("tessellation level built-ins should require Patch decoration only");
     }
 
     #[test]
