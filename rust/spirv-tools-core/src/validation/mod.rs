@@ -3126,6 +3126,7 @@ fn required_extension_for_capability(
         ShaderClockKHR => Some("SPV_KHR_shader_clock"),
         TileShadingQCOM => Some("SPV_QCOM_tile_shading"),
         SpecConditionalINTEL | FunctionVariantsINTEL => Some("SPV_INTEL_function_variants"),
+        CoreBuiltinsARM => Some("SPV_ARM_core_builtins"),
         _ => None,
     }
 }
@@ -20396,6 +20397,51 @@ mod tests {
             .as_str()
             .validate(TargetEnv::Vulkan1_3)
             .expect("extension declared should satisfy capability");
+    }
+
+    #[test]
+    fn arm_core_builtins_capability_requires_extension() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability CoreBuiltinsARM",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = text
+            .as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect_err("CoreBuiltinsARM requires declaring the extension");
+        assert_eq!(
+            error,
+            ValidationError::DisallowedCapabilityMissingExtension {
+                capability: rspirv::spirv::Capability::CoreBuiltinsARM,
+                required_extension: "SPV_ARM_core_builtins".to_string(),
+            }
+        );
+
+        let with_extension = [
+            "OpCapability Shader",
+            "OpCapability CoreBuiltinsARM",
+            "OpExtension \"SPV_ARM_core_builtins\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        with_extension
+            .as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("extension declared should satisfy CoreBuiltinsARM capability");
     }
 
     #[test]
