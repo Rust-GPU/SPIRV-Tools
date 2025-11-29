@@ -949,6 +949,12 @@ pub enum ValidationError {
         /// The storage class of the decorated variable.
         storage_class: rspirv::spirv::StorageClass,
     },
+    /// A struct used in a resource storage class is missing the required block decoration.
+    #[error("storage class {storage_class:?} requires a Block-decorated struct type")]
+    MissingBlockDecoration {
+        /// The disallowed storage class.
+        storage_class: rspirv::spirv::StorageClass,
+    },
     /// `OpSamplerImageAddressingModeNV` was declared more than once.
     #[error("OpSamplerImageAddressingModeNV should only be provided once")]
     DuplicateSamplerImageAddressingMode,
@@ -1642,6 +1648,7 @@ fn validate_words(
     enforce_decoration_versions(&module, target_version)?;
     enforce_block_storage_classes(&module, target_version)?;
     enforce_descriptor_storage_classes(&module)?;
+    enforce_struct_block_requirements(&module, target_version)?;
     validate_decoration_target_categories(&module, &opcodes, &definitions, &capabilities)?;
     enforce_store_type_compatibility(&module, &definitions, &options)?;
     let entry_points = validate_entry_points(&module, &defined_ids, &opcodes)?;
@@ -5062,6 +5069,130 @@ fn enforce_descriptor_storage_classes(module: &Module) -> Result<(), ValidationE
         }
     }
 
+    Ok(())
+}
+
+fn has_block_decoration(module: &Module, type_id: ResultId) -> bool {
+    module.annotations.iter().any(|inst| {
+        inst.class.opcode == rspirv::spirv::Op::Decorate
+            && matches!(
+                (inst.operands.get(0), inst.operands.get(1)),
+                (
+                    Some(rspirv::dr::Operand::IdRef(target)),
+                    Some(rspirv::dr::Operand::Decoration(dec))
+                ) if *target == u32::from(type_id)
+                    && (*dec == rspirv::spirv::Decoration::Block
+                        || *dec == rspirv::spirv::Decoration::BufferBlock)
+            )
+    })
+}
+
+fn enforce_struct_block_requirements(
+    module: &Module,
+    target_version: SpirvVersion,
+) -> Result<(), ValidationError> {
+    for var in &module.types_global_values {
+        if var.class.opcode != rspirv::spirv::Op::Variable {
+            continue;
+        }
+        let Some(storage_class) = var.operands.first().and_then(|op| match op {
+            rspirv::dr::Operand::StorageClass(sc) => Some(*sc),
+            _ => None,
+        }) else {
+            continue;
+        };
+        if !matches!(
+            storage_class,
+            rspirv::spirv::StorageClass::Uniform
+                | rspirv::spirv::StorageClass::StorageBuffer
+                | rspirv::spirv::StorageClass::PhysicalStorageBuffer
+                | rspirv::spirv::StorageClass::PushConstant
+        ) {
+            continue;
+        }
+        let Some(ptr_type) = var.result_type else {
+            continue;
+        };
+        let Ok(ptr_id) = ResultId::try_from(ptr_type) else {
+            continue;
+        };
+        let Some(ptr_inst) = module
+            .types_global_values
+            .iter()
+            .find(|inst| inst.result_id == Some(u32::from(ptr_id)))
+        else {
+            continue;
+        };
+        if ptr_inst.class.opcode != rspirv::spirv::Op::TypePointer {
+            continue;
+        }
+        let pointee = match ptr_inst.operands.get(1) {
+            Some(rspirv::dr::Operand::IdRef(id)) => match ResultId::try_from(*id) {
+                Ok(id) => id,
+                Err(_) => continue,
+            },
+            _ => continue,
+        };
+        let Some(type_inst) = module
+            .types_global_values
+            .iter()
+            .find(|inst| inst.result_id == Some(u32::from(pointee)))
+        else {
+            continue;
+        };
+        if type_inst.class.opcode != rspirv::spirv::Op::TypeStruct {
+            continue;
+        }
+
+        let has_block = has_block_decoration(module, pointee);
+        if has_block {
+            if storage_class == rspirv::spirv::StorageClass::PushConstant {
+                // Must be Block, not BufferBlock.
+                let block_only = module.annotations.iter().any(|inst| {
+                    inst.class.opcode == rspirv::spirv::Op::Decorate
+                        && matches!(
+                            (inst.operands.get(0), inst.operands.get(1)),
+                            (
+                                Some(rspirv::dr::Operand::IdRef(target)),
+                                Some(rspirv::dr::Operand::Decoration(dec))
+                            ) if *target == u32::from(pointee)
+                                && *dec == rspirv::spirv::Decoration::BufferBlock
+                        )
+                });
+                if block_only {
+                    return Err(ValidationError::InvalidBlockDecorationStorageClass {
+                        decoration: rspirv::spirv::Decoration::BufferBlock,
+                        storage_class,
+                    });
+                }
+            }
+            if target_version > SpirvVersion::new(1, 3)
+                && storage_class != rspirv::spirv::StorageClass::PushConstant
+            {
+                let buffer_block = module.annotations.iter().any(|inst| {
+                    inst.class.opcode == rspirv::spirv::Op::Decorate
+                        && matches!(
+                            (inst.operands.get(0), inst.operands.get(1)),
+                            (
+                                Some(rspirv::dr::Operand::IdRef(target)),
+                                Some(rspirv::dr::Operand::Decoration(dec))
+                            ) if *target == u32::from(pointee)
+                                && *dec == rspirv::spirv::Decoration::BufferBlock
+                        )
+                });
+                if buffer_block {
+                    return Err(ValidationError::DecorationRequiresSpirvVersion {
+                        decoration: rspirv::spirv::Decoration::BufferBlock,
+                        required_version: SpirvVersion::new(1, 3),
+                        target_version,
+                    });
+                }
+            }
+            continue;
+        }
+
+        return Err(ValidationError::MissingBlockDecoration { storage_class });
+    }
     Ok(())
 }
 
@@ -20405,7 +20536,7 @@ OpFunctionEnd
     }
 
     #[test]
-    fn uniform_16bit_without_buffer_block_needs_uniform_and_storage_buffer_capability() {
+    fn uniform_16bit_without_block_is_rejected() {
         let text = r#"
 OpCapability Shader
 OpMemoryModel Logical GLSL450
@@ -20423,14 +20554,12 @@ OpName %var "var"
 OpReturn
 OpFunctionEnd
 "#;
-        let error = assemble_and_validate(text).expect_err("expected missing capability");
+        let error = assemble_and_validate(text).expect_err("expected missing block decoration");
         assert_eq!(
             error,
-            ValidationError::SmallTypeMissingCapability {
-                bit_width: 16,
-                storage_class: StorageClass::Uniform,
-                required_capability: Capability::UniformAndStorageBuffer16BitAccess
-            }
+            ValidationError::MissingBlockDecoration {
+                storage_class: StorageClass::Uniform
+            },
         );
     }
 
