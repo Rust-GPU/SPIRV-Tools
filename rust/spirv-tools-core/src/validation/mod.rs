@@ -5652,10 +5652,13 @@ fn enforce_builtin_storage_classes(
                 | BuiltIn::NumWorkgroups
                 | BuiltIn::WorkgroupId
         );
-        if compute_only && !entry_models.contains(&ExecutionModel::GLCompute) {
+        if compute_only
+            && !entry_models.contains(&ExecutionModel::GLCompute)
+            && !entry_models.contains(&ExecutionModel::Kernel)
+        {
             return Err(ValidationError::BuiltInRequiresExecutionModel {
                 builtin,
-                allowed: vec![ExecutionModel::GLCompute],
+                allowed: vec![ExecutionModel::GLCompute, ExecutionModel::Kernel],
             });
         }
 
@@ -22782,7 +22785,10 @@ OpFunctionEnd
             err,
             ValidationError::BuiltInRequiresExecutionModel {
                 builtin: rspirv::spirv::BuiltIn::GlobalInvocationId,
-                allowed: vec![rspirv::spirv::ExecutionModel::GLCompute]
+                allowed: vec![
+                    rspirv::spirv::ExecutionModel::GLCompute,
+                    rspirv::spirv::ExecutionModel::Kernel
+                ]
             }
         );
 
@@ -23732,6 +23738,29 @@ OpFunctionEnd
 "#;
         assemble_and_validate_with_env(kernel_ok, TargetEnv::Universal1_6)
             .expect("Kernel execution model should allow kernel-only built-ins");
+    }
+
+    #[test]
+    fn kernel_execution_model_allows_compute_builtins() {
+        let text = r#"
+OpCapability Addresses
+OpCapability Kernel
+OpMemoryModel Physical32 OpenCL
+OpEntryPoint Kernel %main "main" %var
+OpDecorate %var BuiltIn GlobalInvocationId
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%vec3 = OpTypeVector %u32 3
+%ptr = OpTypePointer Input %vec3
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
+            .expect("Kernel execution model should allow compute built-ins");
     }
 
     #[test]
