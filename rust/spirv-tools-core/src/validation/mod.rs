@@ -5080,7 +5080,6 @@ fn enforce_descriptor_storage_classes(module: &Module) -> Result<(), ValidationE
                 | rspirv::spirv::StorageClass::Uniform
                 | rspirv::spirv::StorageClass::StorageBuffer
                 | rspirv::spirv::StorageClass::PhysicalStorageBuffer
-                | rspirv::spirv::StorageClass::PushConstant
         );
         if !allowed {
             return Err(ValidationError::InvalidDescriptorStorageClass {
@@ -20979,6 +20978,34 @@ OpFunctionEnd
             err,
             ValidationError::InvalidDescriptorStorageClass {
                 storage_class: rspirv::spirv::StorageClass::Input
+            }
+        );
+    }
+
+    #[test]
+    fn descriptor_on_push_constant_is_rejected() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpDecorate %var Binding 0
+OpDecorate %var DescriptorSet 0
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer PushConstant %u32
+%var = OpVariable %ptr PushConstant
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
+            .expect_err("descriptor decorations on PushConstant should be rejected");
+        assert_eq!(
+            err,
+            ValidationError::InvalidDescriptorStorageClass {
+                storage_class: rspirv::spirv::StorageClass::PushConstant
             }
         );
     }
