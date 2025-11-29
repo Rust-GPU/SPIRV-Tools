@@ -5522,6 +5522,18 @@ fn enforce_builtin_storage_classes(
             | BuiltIn::CoreMaxIDARM
             | BuiltIn::WarpIDARM
             | BuiltIn::WarpMaxIDARM => Some(&[rspirv::spirv::Capability::CoreBuiltinsARM]),
+            BuiltIn::SubgroupId
+            | BuiltIn::NumSubgroups
+            | BuiltIn::SubgroupLocalInvocationId
+            | BuiltIn::SubgroupSize => Some(&[rspirv::spirv::Capability::GroupNonUniform]),
+            BuiltIn::SubgroupEqMask
+            | BuiltIn::SubgroupGeMask
+            | BuiltIn::SubgroupGtMask
+            | BuiltIn::SubgroupLeMask
+            | BuiltIn::SubgroupLtMask => Some(&[
+                rspirv::spirv::Capability::GroupNonUniformBallot,
+                rspirv::spirv::Capability::SubgroupBallotKHR,
+            ]),
             BuiltIn::BaryCoordKHR
             | BuiltIn::BaryCoordNoPerspKHR
             | BuiltIn::BaryCoordSmoothAMD
@@ -22843,6 +22855,95 @@ OpFunctionEnd
             ) || matches!(err, ValidationError::MissingOperandCapability { .. }),
             "expected subgroup built-ins to require compute or kernel, got {err:?}"
         );
+
+        let missing_group_capability = r#"
+OpCapability Shader
+OpCapability Kernel
+OpMemoryModel Logical OpenCL
+OpEntryPoint Kernel %main "main" %var
+OpDecorate %var BuiltIn NumSubgroups
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(missing_group_capability, TargetEnv::Universal1_6)
+            .expect_err("subgroup built-ins require GroupNonUniform capability");
+        assert!(
+            matches!(
+                err,
+                ValidationError::BuiltInRequiresCapability {
+                    builtin: rspirv::spirv::BuiltIn::NumSubgroups,
+                    capability: rspirv::spirv::Capability::GroupNonUniform
+                }
+            ) || matches!(err, ValidationError::MissingOperandCapability { .. }),
+            "expected GroupNonUniform capability error, got {err:?}"
+        );
+
+        let missing_ballot_capability = r#"
+OpCapability Shader
+OpCapability Kernel
+OpCapability GroupNonUniform
+OpCapability SubgroupBallotKHR
+OpMemoryModel Logical OpenCL
+OpEntryPoint Kernel %main "main" %var
+OpDecorate %var BuiltIn SubgroupEqMask
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%vec4 = OpTypeVector %u32 4
+%ptr = OpTypePointer Input %vec4
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(missing_ballot_capability, TargetEnv::Universal1_6)
+            .expect_err("subgroup mask built-ins require GroupNonUniformBallot capability");
+        assert!(
+            matches!(
+                err,
+                ValidationError::BuiltInRequiresCapability {
+                    builtin: rspirv::spirv::BuiltIn::SubgroupEqMask,
+                    capability: rspirv::spirv::Capability::GroupNonUniformBallot
+                }
+                | ValidationError::DisallowedCapabilityMissingExtension { .. }
+            ) || matches!(err, ValidationError::MissingOperandCapability { .. }),
+            "expected GroupNonUniformBallot capability error, got {err:?}"
+        );
+
+        let subgroup_ok = r#"
+OpCapability Shader
+OpCapability Kernel
+OpCapability GroupNonUniform
+OpCapability GroupNonUniformBallot
+OpCapability SubgroupBallotKHR
+OpExtension "SPV_KHR_shader_ballot"
+OpMemoryModel Logical OpenCL
+OpEntryPoint Kernel %main "main" %var %mask
+OpDecorate %var BuiltIn NumSubgroups
+OpDecorate %mask BuiltIn SubgroupGeMask
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%vec4 = OpTypeVector %u32 4
+%ptr_u32 = OpTypePointer Input %u32
+%ptr_vec = OpTypePointer Input %vec4
+%var = OpVariable %ptr_u32 Input
+%mask = OpVariable %ptr_vec Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        assemble_and_validate_with_env(subgroup_ok, TargetEnv::Universal1_6)
+            .expect("subgroup built-ins should be accepted when capabilities are declared");
     }
 
     #[test]
