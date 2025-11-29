@@ -9,6 +9,8 @@ pub enum ExtInstSetKind {
     GlslStd450,
     /// The `OpenCL.std` (100) extended instruction set.
     OpenClStd100,
+    /// The `Arm.MotionEngine.100` extended instruction set.
+    ArmMotionEngine100,
     /// An instruction set without embedded grammar metadata.
     Unknown,
 }
@@ -19,6 +21,7 @@ impl ExtInstSetKind {
         match name {
             "GLSL.std.450" => Self::GlslStd450,
             "OpenCL.std" | "OpenCL.std.100" => Self::OpenClStd100,
+            "Arm.MotionEngine.100" => Self::ArmMotionEngine100,
             _ => Self::Unknown,
         }
     }
@@ -32,6 +35,7 @@ impl ExtInstSetKind {
             ExtInstSetKind::OpenClStd100 => {
                 OpenCLStd100InstructionTable::iter().find(|inst| inst.opname == opname)
             }
+            ExtInstSetKind::ArmMotionEngine100 => None,
             ExtInstSetKind::Unknown => None,
         }
     }
@@ -45,6 +49,7 @@ impl ExtInstSetKind {
             ExtInstSetKind::OpenClStd100 => {
                 OpenCLStd100InstructionTable::iter().find(|inst| inst.opcode == opcode)
             }
+            ExtInstSetKind::ArmMotionEngine100 => None,
             ExtInstSetKind::Unknown => None,
         }
     }
@@ -90,4 +95,35 @@ impl<'a> From<&'a ExtendedInstruction<'static>> for ResolvedExtInst<'a> {
             operands: Some(inst.operands),
         }
     }
+}
+
+const ARM_MOTION_ENGINE_OPCODES: &[(u32, &str)] =
+    &[(0, "MIN_SAD"), (1, "MIN_SAD_COST"), (2, "RAW_SAD")];
+
+/// Resolves opcode names for extended instruction sets that are not covered by the core grammar.
+pub fn lookup_custom_ext_inst_opcode(
+    set_name: &str,
+    opcode_name: &str,
+) -> Option<ResolvedExtInst<'static>> {
+    if set_name == "Arm.MotionEngine.100" {
+        return ARM_MOTION_ENGINE_OPCODES
+            .iter()
+            .find(|(_, name)| *name == opcode_name)
+            .map(|(opcode, _)| ResolvedExtInst {
+                opcode: *opcode,
+                operands: None,
+            });
+    }
+    None
+}
+
+/// Returns a friendly name for extended instruction opcodes that sit outside the bundled grammar tables.
+pub fn lookup_custom_ext_inst_name(set_name: &str, opcode: u32) -> Option<&'static str> {
+    if set_name == "Arm.MotionEngine.100" {
+        return ARM_MOTION_ENGINE_OPCODES
+            .iter()
+            .find(|(value, _)| *value == opcode)
+            .map(|(_, name)| *name);
+    }
+    None
 }

@@ -14,7 +14,9 @@ use once_cell::sync::Lazy;
 #[cfg(test)]
 use std::sync::Mutex;
 
-use crate::assembly::{BinaryToTextOptions, ExtInstImportInfo, ExtInstSetKind};
+use crate::assembly::{
+    lookup_custom_ext_inst_name, BinaryToTextOptions, ExtInstImportInfo, ExtInstSetKind,
+};
 use crate::diagnostic::{DiagnosticMessage, MessagePosition};
 use crate::message::MessageLevel;
 use crate::string_literal::render_string_literal;
@@ -436,6 +438,12 @@ impl ExtInstTable {
             }
             Some(ExtInstSetKind::OpenClStd100) => {
                 OpenCLStd100InstructionTable::iter().find(|inst| inst.opcode == opcode)
+            }
+            Some(ExtInstSetKind::ArmMotionEngine100) => {
+                return self
+                    .imports
+                    .get(&set_id)
+                    .and_then(|info| lookup_custom_ext_inst_name(&info.name, opcode));
             }
             _ => None,
         }?;

@@ -358,9 +358,10 @@ Tasks for this milestone:
   - [x] Implement `NESTED_INDENT` so structured control flow is indented using merge information mirroring the C++ formatter, allowing `spirv-dis --nested-indent` to operate entirely within the Rust implementation.
   - [x] Honor the `COMMENT` option by tracking decoration metadata and per-instruction annotations, reproducing the byte-offset/decoration comment stream so `spirv-dis --comment` no longer falls back to C++.
   - [x] Reorder basic blocks on demand when `REORDER_BLOCKS` is set, using a simple CFG walk to mirror structured control-flow ordering so `spirv-dis --reorder-blocks` stays in Rust.
-  - [x] Support the `COLOR` flag by injecting ANSI escapes around IDs and comments when requested so `spirv-dis --color` produces colored output entirely in Rust.
+- [x] Support the `COLOR` flag by injecting ANSI escapes around IDs and comments when requested so `spirv-dis --color` produces colored output entirely in Rust.
 - [x] Mirror the improvements in the disassembler path (options filtering, message routing) so both directions benefit from the Rust context. (Rust disassembler now defers diagnostics to the caller so C++ fallback can consume them without double-reporting; unsupported-option errors are surfaced alongside the fallback diagnostics.)
 - [x] Add FFI/CLI-facing tests to ensure Rust disassembler diagnostics are surfaced when the Rust path fails and the C++ fallback runs, keeping message routing consistent across both implementations.
+- [x] Canonicalize assembler layout to spec order while preserving in-section ordering, and add Arm Motion Engine opcode/name lookup so extended instructions round-trip via the Rust assembler/disassembler.
 
 ## Upcoming Milestone: Operand Requirements Parity
 Tighten operand-level capability/extension/version enforcement to mirror the C++ validator tables.

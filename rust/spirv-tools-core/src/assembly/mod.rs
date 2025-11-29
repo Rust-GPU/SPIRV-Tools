@@ -19,7 +19,10 @@ pub use assembler::{
     assemble_text, assemble_text_with_env, assemble_text_with_options, AssemblyError,
     AssemblyTranslator, ModuleBuilder,
 };
-pub use ext_inst::{ExtInstImportInfo, ExtInstSetKind, ResolvedExtInst};
+pub use ext_inst::{
+    lookup_custom_ext_inst_name, lookup_custom_ext_inst_opcode, ExtInstImportInfo, ExtInstSetKind,
+    ResolvedExtInst,
+};
 pub use instruction::{
     IdRef, InstructionLayout, LiteralNumber, OperandDescriptor, ResultId, SpirvId, TypeId,
 };

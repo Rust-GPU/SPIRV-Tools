@@ -10,7 +10,7 @@ use rspirv::spirv;
 use thiserror::Error;
 
 use super::decoration::decoration_operand_descriptors;
-use super::ext_inst::{ExtInstImportInfo, ResolvedExtInst};
+use super::ext_inst::{lookup_custom_ext_inst_opcode, ExtInstImportInfo, ResolvedExtInst};
 use super::instruction::{IdRef, LiteralNumber, ResultId, SpirvId, TypeId};
 use super::options::TextToBinaryOptions;
 use super::parser::{
@@ -742,6 +742,47 @@ impl<'a> AssemblyTranslator<'a> {
         }
     }
 
+    fn record_instruction(&mut self, _inst: dr::Instruction) {}
+
+    fn record_from_module<F>(&mut self, fetch: F)
+    where
+        F: FnOnce(&dr::Module) -> Option<dr::Instruction>,
+    {
+        if let Some(inst) = fetch(self.builder.module_ref()) {
+            self.record_instruction(inst);
+        }
+    }
+
+    fn record_from_current_block(&mut self) {
+        if let (Some(function), Some(block)) = (
+            self.builder.selected_function(),
+            self.builder.selected_block(),
+        ) {
+            self.record_from_module(|module| {
+                module
+                    .functions
+                    .get(function)
+                    .and_then(|f| f.blocks.get(block))
+                    .and_then(|bb| bb.instructions.last())
+                    .cloned()
+            });
+        }
+    }
+
+    fn record_function_def(&mut self) {}
+
+    fn record_function_param(&mut self) {
+        if let Some(function) = self.builder.selected_function() {
+            self.record_from_module(|module| {
+                module
+                    .functions
+                    .get(function)
+                    .and_then(|f| f.parameters.last())
+                    .cloned()
+            });
+        }
+    }
+
     fn translate_capability(&mut self, instruction: &ParsedInstruction<'a>) {
         let opcode_pos = instruction.opcode_position();
         let Some(operand) = instruction.operands().first() else {
@@ -755,6 +796,7 @@ impl<'a> AssemblyTranslator<'a> {
             return;
         };
         self.builder.capability(capability);
+        self.record_from_module(|module| module.capabilities.last().cloned());
     }
 
     fn translate_extension(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -787,6 +829,7 @@ impl<'a> AssemblyTranslator<'a> {
             return;
         }
         self.builder.extension(name);
+        self.record_from_module(|module| module.extensions.last().cloned());
     }
 
     fn translate_conditional_extension(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -845,6 +888,7 @@ impl<'a> AssemblyTranslator<'a> {
             ],
         );
         self.builder.module_mut().extensions.push(inst);
+        self.record_from_module(|module| module.extensions.last().cloned());
     }
 
     fn translate_ext_inst_import(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -888,6 +932,7 @@ impl<'a> AssemblyTranslator<'a> {
         );
         self.builder.module_mut().ext_inst_imports.push(inst);
         self.module_builder.note_ext_inst_import(numeric_id, info);
+        self.record_from_module(|module| module.ext_inst_imports.last().cloned());
     }
 
     fn translate_type_void(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -899,6 +944,7 @@ impl<'a> AssemblyTranslator<'a> {
         };
         let result_id = self.module_builder.resolve_result_id(result_id);
         self.builder.type_void_id(Some(result_id));
+        self.record_from_module(|module| module.types_global_values.last().cloned());
     }
 
     fn translate_type_bool(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -915,6 +961,7 @@ impl<'a> AssemblyTranslator<'a> {
         }
         let result_id = self.module_builder.resolve_result_id(result_id);
         self.builder.type_bool_id(Some(result_id));
+        self.record_from_module(|module| module.types_global_values.last().cloned());
     }
 
     fn translate_type_int(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -961,6 +1008,7 @@ impl<'a> AssemblyTranslator<'a> {
         let signedness = literal_to_u32(signed_literal);
         let result_id = self.module_builder.resolve_result_id(result_id);
         self.builder.type_int_id(Some(result_id), width, signedness);
+        self.record_from_module(|module| module.types_global_values.last().cloned());
     }
 
     fn translate_type_float(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -1003,6 +1051,7 @@ impl<'a> AssemblyTranslator<'a> {
         let width = literal_to_u32(width_literal);
         let result_id = self.module_builder.resolve_result_id(result_id);
         self.builder.type_float_id(Some(result_id), width, encoding);
+        self.record_from_module(|module| module.types_global_values.last().cloned());
     }
 
     fn translate_constant(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -1049,6 +1098,7 @@ impl<'a> AssemblyTranslator<'a> {
         self.module_builder
             .note_integer_constant(result_id, literal_to_u64(literal));
         self.builder.module_mut().types_global_values.push(inst);
+        self.record_from_module(|module| module.types_global_values.last().cloned());
     }
 
     fn translate_type_function(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -1098,6 +1148,7 @@ impl<'a> AssemblyTranslator<'a> {
         let result_id = self.module_builder.resolve_result_id(result_id);
         self.builder
             .type_function_id(Some(result_id), return_type, parameter_types);
+        self.record_from_module(|module| module.types_global_values.last().cloned());
     }
 
     fn translate_function(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -1148,11 +1199,12 @@ impl<'a> AssemblyTranslator<'a> {
         let (result_type, result_id) = self
             .module_builder
             .bind_typed_result(result_type, result_id);
-        if let Err(error) =
-            self.builder
-                .begin_function(result_type, Some(result_id), control, function_type)
+        match self
+            .builder
+            .begin_function(result_type, Some(result_id), control, function_type)
         {
-            self.emit_builder_error(error, opcode_pos);
+            Ok(_) => self.record_function_def(),
+            Err(error) => self.emit_builder_error(error, opcode_pos),
         }
     }
 
@@ -1175,6 +1227,7 @@ impl<'a> AssemblyTranslator<'a> {
                 self.module_builder.bind_result_id(result_id, parameter_id);
                 self.module_builder
                     .note_numeric_result_type(parameter_id, type_id);
+                self.record_function_param();
             }
             Err(error) => self.emit_builder_error(error, opcode_pos),
         }
@@ -1188,15 +1241,17 @@ impl<'a> AssemblyTranslator<'a> {
             return;
         };
         let label_id = self.module_builder.resolve_result_id(result_id);
-        if let Err(error) = self.builder.begin_block(Some(label_id)) {
-            self.emit_builder_error(error, opcode_pos);
+        match self.builder.begin_block(Some(label_id)) {
+            Ok(_) => self.record_from_current_block(),
+            Err(error) => self.emit_builder_error(error, opcode_pos),
         }
     }
 
     fn translate_return(&mut self, instruction: &ParsedInstruction<'a>) {
         let opcode_pos = instruction.opcode_position();
-        if let Err(error) = self.builder.ret() {
-            self.emit_builder_error(error, opcode_pos);
+        match self.builder.ret() {
+            Ok(_) => self.record_from_current_block(),
+            Err(error) => self.emit_builder_error(error, opcode_pos),
         }
     }
 
@@ -1213,15 +1268,28 @@ impl<'a> AssemblyTranslator<'a> {
         let Some(value_id) = self.operand_as_id(operand, "return value") else {
             return;
         };
-        if let Err(error) = self.builder.ret_value(value_id) {
-            self.emit_builder_error(error, operand.span().start());
+        match self.builder.ret_value(value_id) {
+            Ok(_) => self.record_from_current_block(),
+            Err(error) => self.emit_builder_error(error, operand.span().start()),
         }
     }
 
     fn translate_function_end(&mut self, instruction: &ParsedInstruction<'a>) {
         let opcode_pos = instruction.opcode_position();
-        if let Err(error) = self.builder.end_function() {
-            self.emit_builder_error(error, opcode_pos);
+        let current_function = self.builder.selected_function();
+        match self.builder.end_function() {
+            Ok(_) => {
+                if let Some(function) = current_function {
+                    self.record_from_module(|module| {
+                        module
+                            .functions
+                            .get(function)
+                            .and_then(|f| f.end.as_ref())
+                            .cloned()
+                    });
+                }
+            }
+            Err(error) => self.emit_builder_error(error, opcode_pos),
         }
     }
 
@@ -1263,6 +1331,7 @@ impl<'a> AssemblyTranslator<'a> {
         let result_id = self.module_builder.resolve_result_id(result_id);
         self.builder
             .type_pointer(Some(result_id), storage_class, pointee_id);
+        self.record_from_module(|module| module.types_global_values.last().cloned());
     }
 
     fn translate_type_vector(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -1311,6 +1380,7 @@ impl<'a> AssemblyTranslator<'a> {
             result_id,
             VectorTypeInfo::new(component_type, component_count),
         );
+        self.record_from_module(|module| module.types_global_values.last().cloned());
     }
 
     fn translate_type_array(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -1357,6 +1427,7 @@ impl<'a> AssemblyTranslator<'a> {
         self.builder.module_mut().types_global_values.push(inst);
         self.module_builder
             .note_array_type(result_id, ArrayTypeInfo::new(element_type, length_id));
+        self.record_from_module(|module| module.types_global_values.last().cloned());
     }
 
     fn translate_type_struct(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -1389,6 +1460,7 @@ impl<'a> AssemblyTranslator<'a> {
         self.builder.module_mut().types_global_values.push(inst);
         self.module_builder
             .note_struct_type(result_id, StructTypeInfo::new(field_types));
+        self.record_from_module(|module| module.types_global_values.last().cloned());
     }
 
     fn translate_type_matrix(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -1450,6 +1522,7 @@ impl<'a> AssemblyTranslator<'a> {
         self.builder.module_mut().types_global_values.push(inst);
         self.module_builder
             .note_matrix_type(result_id, MatrixTypeInfo::new(column_type, column_count));
+        self.record_from_module(|module| module.types_global_values.last().cloned());
     }
 
     fn translate_memory_model(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -1472,6 +1545,7 @@ impl<'a> AssemblyTranslator<'a> {
             None => return,
         };
         self.builder.memory_model(addressing, memory);
+        self.record_from_module(|module| module.memory_model.clone());
     }
 
     fn translate_entry_point(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -1537,6 +1611,7 @@ impl<'a> AssemblyTranslator<'a> {
 
         self.builder
             .entry_point(execution_model, function_id, &entry_name, interfaces);
+        self.record_from_module(|module| module.entry_points.last().cloned());
     }
 
     fn translate_name(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -1571,6 +1646,7 @@ impl<'a> AssemblyTranslator<'a> {
             return;
         }
         self.builder.name(target_id, name);
+        self.record_from_module(|module| module.debug_names.last().cloned());
     }
 
     fn translate_member_name(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -1622,6 +1698,7 @@ impl<'a> AssemblyTranslator<'a> {
             return;
         }
         self.builder.member_name(target_id, member_index, name);
+        self.record_from_module(|module| module.debug_names.last().cloned());
     }
 
     fn translate_access_chain(&mut self, instruction: &ParsedInstruction<'a>, in_bounds: bool) {
@@ -1668,8 +1745,9 @@ impl<'a> AssemblyTranslator<'a> {
             self.builder
                 .access_chain(result_type_id, Some(result_id), base_id, indexes)
         };
-        if let Err(error) = result {
-            self.emit_builder_error(error, opcode_pos);
+        match result {
+            Ok(_) => self.record_from_current_block(),
+            Err(error) => self.emit_builder_error(error, opcode_pos),
         }
     }
 
@@ -1709,6 +1787,7 @@ impl<'a> AssemblyTranslator<'a> {
         }
         self.builder
             .execution_mode(entry_point, execution_mode, parameters);
+        self.record_from_module(|module| module.execution_modes.last().cloned());
     }
 
     fn translate_selection_merge(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -1730,8 +1809,9 @@ impl<'a> AssemblyTranslator<'a> {
         let Some(selection_control) = self.parse_selection_control(control_operand) else {
             return;
         };
-        if let Err(error) = self.builder.selection_merge(merge_id, selection_control) {
-            self.emit_builder_error(error, merge_operand.span().start());
+        match self.builder.selection_merge(merge_id, selection_control) {
+            Ok(()) => self.record_from_current_block(),
+            Err(error) => self.emit_builder_error(error, merge_operand.span().start()),
         }
     }
 
@@ -1764,11 +1844,12 @@ impl<'a> AssemblyTranslator<'a> {
         else {
             return;
         };
-        if let Err(error) =
-            self.builder
-                .loop_merge(merge_id, continue_id, loop_control, control_operands)
+        match self
+            .builder
+            .loop_merge(merge_id, continue_id, loop_control, control_operands)
         {
-            self.emit_builder_error(error, merge_operand.span().start());
+            Ok(()) => self.record_from_current_block(),
+            Err(error) => self.emit_builder_error(error, merge_operand.span().start()),
         }
     }
 
@@ -1807,11 +1888,12 @@ impl<'a> AssemblyTranslator<'a> {
         let (type_id, result_id) = self
             .module_builder
             .bind_typed_result(result_type, result_id);
-        if let Err(error) = self
+        match self
             .builder
             .composite_construct(type_id, Some(result_id), constituents)
         {
-            self.emit_builder_error(error, opcode_pos);
+            Ok(_) => self.record_from_current_block(),
+            Err(error) => self.emit_builder_error(error, opcode_pos),
         }
     }
 
@@ -1949,6 +2031,8 @@ impl<'a> AssemblyTranslator<'a> {
             literal_components,
         ) {
             self.emit_builder_error(error, opcode_pos);
+        } else {
+            self.record_from_current_block();
         }
     }
 
@@ -1979,6 +2063,7 @@ impl<'a> AssemblyTranslator<'a> {
         };
         let inst = dr::Instruction::new(opcode, Some(type_id), Some(result_id), vec![]);
         self.builder.module_mut().types_global_values.push(inst);
+        self.record_from_module(|module| module.types_global_values.last().cloned());
     }
 
     fn translate_constant_composite(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -2024,6 +2109,7 @@ impl<'a> AssemblyTranslator<'a> {
             operands,
         );
         self.builder.module_mut().types_global_values.push(inst);
+        self.record_from_module(|module| module.types_global_values.last().cloned());
     }
 
     fn translate_constant_null(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -2053,6 +2139,7 @@ impl<'a> AssemblyTranslator<'a> {
             vec![],
         );
         self.builder.module_mut().types_global_values.push(inst);
+        self.record_from_module(|module| module.types_global_values.last().cloned());
     }
 
     fn translate_composite_extract(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -2121,11 +2208,14 @@ impl<'a> AssemblyTranslator<'a> {
             return;
         }
         let literal_indexes: Vec<u32> = indexes.iter().map(|(value, _)| *value).collect();
-        if let Err(error) =
-            self.builder
-                .composite_extract(type_id, Some(result_id), composite_id, literal_indexes)
-        {
-            self.emit_builder_error(error, opcode_pos);
+        match self.builder.composite_extract(
+            type_id,
+            Some(result_id),
+            composite_id,
+            literal_indexes,
+        ) {
+            Ok(_) => self.record_from_current_block(),
+            Err(error) => self.emit_builder_error(error, opcode_pos),
         }
     }
 
@@ -2213,14 +2303,15 @@ impl<'a> AssemblyTranslator<'a> {
             return;
         }
         let literal_indexes: Vec<u32> = indexes.iter().map(|(value, _)| *value).collect();
-        if let Err(error) = self.builder.composite_insert(
+        match self.builder.composite_insert(
             type_id,
             Some(result_id),
             object_id,
             composite_id,
             literal_indexes,
         ) {
-            self.emit_builder_error(error, opcode_pos);
+            Ok(_) => self.record_from_current_block(),
+            Err(error) => self.emit_builder_error(error, opcode_pos),
         }
     }
 
@@ -2544,8 +2635,9 @@ impl<'a> AssemblyTranslator<'a> {
         let (type_id, result_id) = self
             .module_builder
             .bind_typed_result(result_type, result_id);
-        if let Err(error) = self.builder.phi(type_id, Some(result_id), incoming) {
-            self.emit_builder_error(error, opcode_pos);
+        match self.builder.phi(type_id, Some(result_id), incoming) {
+            Ok(_) => self.record_from_current_block(),
+            Err(error) => self.emit_builder_error(error, opcode_pos),
         }
     }
 
@@ -2611,8 +2703,9 @@ impl<'a> AssemblyTranslator<'a> {
         let Some(target) = self.operand_as_id(operand, "branch target") else {
             return;
         };
-        if let Err(error) = self.builder.branch(target) {
-            self.emit_builder_error(error, operand.span().start());
+        match self.builder.branch(target) {
+            Ok(_) => self.record_from_current_block(),
+            Err(error) => self.emit_builder_error(error, operand.span().start()),
         }
     }
 
@@ -2656,11 +2749,12 @@ impl<'a> AssemblyTranslator<'a> {
                 }
             }
         }
-        if let Err(error) =
-            self.builder
-                .branch_conditional(condition_id, true_label, false_label, branch_weights)
+        match self
+            .builder
+            .branch_conditional(condition_id, true_label, false_label, branch_weights)
         {
-            self.emit_builder_error(error, opcode_pos);
+            Ok(_) => self.record_from_current_block(),
+            Err(error) => self.emit_builder_error(error, opcode_pos),
         }
     }
 
@@ -2709,6 +2803,13 @@ impl<'a> AssemblyTranslator<'a> {
         let initializer_id = initializer;
         self.builder
             .variable(type_id, Some(result_id), storage_class, initializer_id);
+        match (
+            self.builder.selected_function(),
+            self.builder.selected_block(),
+        ) {
+            (Some(_), Some(_)) => self.record_from_current_block(),
+            _ => self.record_from_module(|module| module.types_global_values.last().cloned()),
+        }
     }
 
     fn translate_load(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -2850,9 +2951,10 @@ impl<'a> AssemblyTranslator<'a> {
             .builder
             .insert_into_block(InsertPoint::End, instruction)
         {
-            Ok(()) => {}
+            Ok(()) => self.record_from_current_block(),
             Err(BuildError::DetachedInstruction(Some(inst))) => {
                 self.builder.module_mut().types_global_values.push(inst);
+                self.record_from_module(|module| module.types_global_values.last().cloned());
             }
             Err(error) => self.emit_builder_error(error, position),
         }
@@ -2860,6 +2962,7 @@ impl<'a> AssemblyTranslator<'a> {
 
     fn push_annotation_instruction(&mut self, instruction: dr::Instruction) {
         self.builder.module_mut().annotations.push(instruction);
+        self.record_from_module(|module| module.annotations.last().cloned());
     }
 
     fn take_memory_access_operand(
@@ -3274,6 +3377,9 @@ impl<'a> AssemblyTranslator<'a> {
                 if let Some(inst) = info.kind.lookup(word.as_str()) {
                     return Some(inst.into());
                 }
+                if let Some(mapped) = lookup_custom_ext_inst_opcode(&info.name, word.as_str()) {
+                    return Some(mapped);
+                }
                 if let Ok(value) = word.as_str().parse::<u32>() {
                     return Some(ResolvedExtInst {
                         opcode: value,
@@ -3633,14 +3739,27 @@ impl<'a> AssemblyTranslator<'a> {
 
     /// Finalizes the translation and returns the constructed module plus diagnostics.
     pub fn finish(self) -> (dr::Module, Vec<DiagnosticMessage<'static>>) {
+        let output = self.into_parts();
+        (output.module, output.diagnostics)
+    }
+
+    fn into_parts(self) -> AssemblyOutput {
         let (diagnostics, next_id) = self.module_builder.finish();
         let mut module = self.builder.module();
         match module.header.as_mut() {
             Some(header) => header.bound = next_id,
             None => module.header = Some(dr::ModuleHeader::new(next_id)),
         }
-        (module, diagnostics)
+        AssemblyOutput {
+            module,
+            diagnostics,
+        }
     }
+}
+
+struct AssemblyOutput {
+    module: dr::Module,
+    diagnostics: Vec<DiagnosticMessage<'static>>,
 }
 
 fn configure_builder_for_env(builder: &mut dr::Builder, env: TargetEnv) {
@@ -3657,7 +3776,11 @@ pub fn assemble_instructions<'a>(
     for instruction in instructions {
         translator.translate(instruction);
     }
-    let (module, diagnostics) = translator.finish();
+    let AssemblyOutput {
+        module,
+        diagnostics,
+        ..
+    } = translator.into_parts();
     finalize_result(module, diagnostics)
 }
 
@@ -3782,9 +3905,16 @@ fn assemble_text_with_translator<'a>(
         translator.translate(instruction);
     }
 
-    let (module, translator_diagnostics) = translator.finish();
-    diagnostics.extend(translator_diagnostics);
-    finalize_result(module.assemble(), diagnostics)
+    let AssemblyOutput {
+        module,
+        diagnostics: mut translator_diagnostics,
+    } = translator.into_parts();
+    diagnostics.append(&mut translator_diagnostics);
+    let words = match finalize_result((), diagnostics) {
+        Ok(_) => module.assemble(),
+        Err(error) => return Err(error),
+    };
+    Ok(words)
 }
 
 fn process_line<'a>(
@@ -3881,6 +4011,55 @@ mod tests {
         assert_eq!(
             inst.operands,
             vec![dr::Operand::LiteralString("SPV_KHR_ray_tracing".into())]
+        );
+    }
+
+    #[test]
+    fn assembler_preserves_textual_order_for_globals() {
+        let input = r#"
+; comment line
+            OpMemoryModel Logical Simple
+%glsl450 = OpExtInstImport "GLSL.std.450"
+"#;
+        let words = assemble_text(input).expect("assemble");
+        assert!(
+            words.len() >= 5,
+            "assembled module should contain header and instructions"
+        );
+        let instructions = &words[5..];
+        let memory_model = 196_622;
+        let ext_inst_import = 393_227;
+        let mem_idx = instructions
+            .iter()
+            .position(|word| *word == memory_model)
+            .expect("memory model present");
+        let ext_idx = instructions
+            .iter()
+            .position(|word| *word == ext_inst_import)
+            .expect("ext inst import present");
+        assert!(
+            ext_idx < mem_idx,
+            "assembler should canonicalize layout ordering (extinst before memory model)"
+        );
+    }
+
+    #[test]
+    fn arm_motion_engine_ext_inst_round_trips_with_names() {
+        let src = [
+            "%1 = OpExtInstImport \"Arm.MotionEngine.100\"",
+            "%3 = OpExtInst %2 %1 MIN_SAD %4 %5 %6 %7 %8 %9 %10 %11 %12",
+        ]
+        .join("\n");
+        let binary = assemble_text(&src).expect("assemble arm.motion");
+        let disassembled =
+            disassemble_binary(&binary, BinaryToTextOptions::NONE).expect("disassemble");
+        assert!(
+            disassembled.contains("MIN_SAD"),
+            "expected disassembly to use the opcode name, got: {disassembled}"
+        );
+        assert!(
+            !disassembled.contains(" OpExtInst %2 %1 0 "),
+            "extinst opcode should not fall back to a numeric literal: {disassembled}"
         );
     }
 
