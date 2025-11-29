@@ -6192,6 +6192,14 @@ fn enforce_interpolation_exclusivity(
         }
 
         if matches!(decoration, Centroid | Sample | Patch) {
+            if let Some(existing) = entry.base {
+                if existing == Flat {
+                    return Err(ValidationError::InterpolationDecorationConflict {
+                        decoration,
+                        existing,
+                    });
+                }
+            }
             if let Some(existing) = entry.centroid_sample_patch {
                 if existing != decoration {
                     return Err(ValidationError::InterpolationDecorationConflict {
@@ -6201,6 +6209,15 @@ fn enforce_interpolation_exclusivity(
                 }
             } else {
                 entry.centroid_sample_patch = Some(decoration);
+            }
+        }
+
+        if matches!(decoration, Flat) {
+            if let Some(existing) = entry.centroid_sample_patch {
+                return Err(ValidationError::InterpolationDecorationConflict {
+                    decoration,
+                    existing,
+                });
             }
         }
     }
@@ -22384,6 +22401,62 @@ OpFunctionEnd
             ValidationError::InterpolationDecorationConflict {
                 decoration: rspirv::spirv::Decoration::Sample,
                 existing: rspirv::spirv::Decoration::Centroid
+            }
+        );
+
+        let flat_sample_conflict = r#"
+OpCapability Shader
+OpCapability SampleRateShading
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %var Flat
+OpDecorate %var Sample
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(flat_sample_conflict, TargetEnv::Vulkan1_2)
+            .expect_err("Flat may not combine with Sample/Centroid");
+        assert_eq!(
+            err,
+            ValidationError::InterpolationDecorationConflict {
+                decoration: rspirv::spirv::Decoration::Sample,
+                existing: rspirv::spirv::Decoration::Flat
+            }
+        );
+
+        let sample_then_flat_conflict = r#"
+OpCapability Shader
+OpCapability SampleRateShading
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %var Sample
+OpDecorate %var Flat
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(sample_then_flat_conflict, TargetEnv::Vulkan1_2)
+            .expect_err("Flat may not combine with Sample/Centroid");
+        assert_eq!(
+            err,
+            ValidationError::InterpolationDecorationConflict {
+                decoration: rspirv::spirv::Decoration::Flat,
+                existing: rspirv::spirv::Decoration::Sample
             }
         );
     }
