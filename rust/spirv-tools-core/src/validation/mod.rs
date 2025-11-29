@@ -20300,6 +20300,38 @@ OpFunctionEnd
     }
 
     #[test]
+    fn storage_buffer_8bit_with_capability_is_allowed() {
+        let text = r#"
+OpCapability Shader
+OpCapability Int8
+OpCapability VariablePointers
+OpCapability VariablePointersStorageBuffer
+OpCapability StorageBuffer8BitAccess
+OpExtension "SPV_KHR_storage_buffer_storage_class"
+OpExtension "SPV_KHR_variable_pointers"
+OpExtension "SPV_KHR_8bit_storage"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpName %main "main"
+OpName %var "var"
+OpDecorate %buf Block
+OpMemberDecorate %buf 0 Offset 0
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u8 = OpTypeInt 8 0
+%buf = OpTypeStruct %u8
+%ptr = OpTypePointer StorageBuffer %buf
+%var = OpVariable %ptr StorageBuffer
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
+            .expect("StorageBuffer8BitAccess should allow 8-bit storage buffer");
+    }
+
+    #[test]
     fn uniform_8bit_with_buffer_block_allows_storage_buffer_capability() {
         let text = r#"
 OpCapability Shader
@@ -20362,6 +20394,54 @@ OpFunctionEnd
     }
 
     #[test]
+    fn input_16bit_with_storage_input_output_capability_is_allowed() {
+        let text = r#"
+OpCapability Shader
+OpCapability Int16
+OpCapability StorageInputOutput16
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpName %main "main"
+OpName %var "var"
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u16 = OpTypeInt 16 0
+%ptr = OpTypePointer Input %u16
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        assemble_and_validate_with_env(text, TargetEnv::Universal1_3)
+            .expect("StorageInputOutput16 should allow 16-bit input");
+    }
+
+    #[test]
+    fn output_16bit_with_storage_input_output_capability_is_allowed() {
+        let text = r#"
+OpCapability Shader
+OpCapability Int16
+OpCapability StorageInputOutput16
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpName %main "main"
+OpName %var "var"
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u16 = OpTypeInt 16 0
+%ptr = OpTypePointer Output %u16
+%var = OpVariable %ptr Output
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        assemble_and_validate_with_env(text, TargetEnv::Universal1_3)
+            .expect("StorageInputOutput16 should allow 16-bit output");
+    }
+
+    #[test]
     fn workgroup_16bit_requires_capability() {
         let text = r#"
 OpCapability Shader
@@ -20393,6 +20473,35 @@ OpFunctionEnd
     }
 
     #[test]
+    fn workgroup_16bit_with_capability_is_allowed() {
+        let text = r#"
+OpCapability Shader
+OpCapability Int16
+OpCapability WorkgroupMemoryExplicitLayoutKHR
+OpCapability WorkgroupMemoryExplicitLayout16BitAccessKHR
+OpExtension "SPV_KHR_workgroup_memory_explicit_layout"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpName %main "main"
+OpName %var "var"
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u16 = OpTypeInt 16 0
+%ptr = OpTypePointer Workgroup %u16
+%var = OpVariable %ptr Workgroup
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        assemble_and_validate_with_env(text, TargetEnv::Universal1_4)
+            .expect_err("extension gate should reject workgroup layout without allowed env");
+
+        assemble_and_validate_with_env(text, TargetEnv::Vulkan1_1Spirv1_4)
+            .expect("WorkgroupMemoryExplicitLayout16BitAccessKHR should allow 16-bit workgroup");
+    }
+
+    #[test]
     fn push_constant_8bit_requires_capability() {
         let text = r#"
 OpCapability Shader
@@ -20421,6 +20530,30 @@ OpFunctionEnd
                 required_capability: Capability::StoragePushConstant8
             }
         );
+    }
+
+    #[test]
+    fn push_constant_8bit_with_capability_is_allowed() {
+        let text = r#"
+OpCapability Shader
+OpCapability Int8
+OpCapability StoragePushConstant8
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpName %main "main"
+OpName %var "var"
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u8 = OpTypeInt 8 0
+%ptr = OpTypePointer PushConstant %u8
+%var = OpVariable %ptr PushConstant
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
+            .expect("StoragePushConstant8 should allow 8-bit push constants");
     }
 
     #[test]
