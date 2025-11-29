@@ -22978,6 +22978,84 @@ OpFunctionEnd
         assemble_and_validate_with_env(device_enqueue_ok, TargetEnv::Universal1_6)
             .expect("NumEnqueuedSubgroups allowed with DeviceEnqueue capability");
 
+        let subgroup_max_size_requires_kernel_model = r#"
+OpCapability Shader
+OpCapability Kernel
+OpMemoryModel Logical OpenCL
+OpEntryPoint GLCompute %main "main" %var
+OpDecorate %var BuiltIn SubgroupMaxSize
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(
+            subgroup_max_size_requires_kernel_model,
+            TargetEnv::Universal1_6,
+        )
+        .expect_err("SubgroupMaxSize is kernel-only");
+        assert!(matches!(
+            err,
+            ValidationError::BuiltInRequiresExecutionModel {
+                builtin: rspirv::spirv::BuiltIn::SubgroupMaxSize,
+                ..
+            }
+        ));
+
+        let subgroup_max_size_requires_kernel_capability = r#"
+OpCapability Shader
+OpMemoryModel Logical OpenCL
+OpEntryPoint Kernel %main "main" %var
+OpDecorate %var BuiltIn SubgroupMaxSize
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(
+            subgroup_max_size_requires_kernel_capability,
+            TargetEnv::Universal1_6,
+        )
+        .expect_err("SubgroupMaxSize requires Kernel capability");
+        assert!(
+            matches!(
+                err,
+                ValidationError::BuiltInRequiresCapability {
+                    builtin: rspirv::spirv::BuiltIn::SubgroupMaxSize,
+                    capability: rspirv::spirv::Capability::Kernel
+                }
+            ) || matches!(err, ValidationError::MissingOperandCapability { .. })
+        );
+
+        let subgroup_max_size_ok = r#"
+OpCapability Shader
+OpCapability Kernel
+OpMemoryModel Logical OpenCL
+OpEntryPoint Kernel %main "main" %var
+OpDecorate %var BuiltIn SubgroupMaxSize
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        assemble_and_validate_with_env(subgroup_max_size_ok, TargetEnv::Universal1_6)
+            .expect("SubgroupMaxSize allowed for Kernel execution model with Kernel capability");
+
         let subgroup_ok = r#"
 OpCapability Shader
 OpCapability Kernel
