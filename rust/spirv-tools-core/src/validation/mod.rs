@@ -5711,6 +5711,77 @@ mod tests {
     }
 
     #[test]
+    fn capability_after_annotations_is_rejected() {
+        // Place a capability after a decorate (Annotations section) to trigger a layout error.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            3,          // bound
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(4, 59), // OpDecorate %1 Block
+            1,
+            rspirv::spirv::Decoration::Block as u32,
+            0,
+            op(2, 17), // OpCapability Linkage (after annotations -> error)
+            rspirv::spirv::Capability::Linkage as u32,
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Capability
+            }
+        );
+    }
+
+    #[test]
+    fn extension_after_functions_is_rejected() {
+        // Emit a minimal function, then relocate the extension to appear after functions to trigger a layout error.
+        let text = [
+            "OpCapability Shader",
+            "OpExtension \"SPV_KHR_shader_clock\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%func = OpTypeFunction %void",
+            "%main = OpFunction %void None %func",
+            "%lbl = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let mut words = assemble_text(&text).expect("assemble extension module");
+        // Pull the OpExtension instruction to the end of the module.
+        let mut idx = 5; // skip header
+        let mut ext_slice: Option<(usize, usize)> = None;
+        while idx < words.len() {
+            let wc = (words[idx] >> 16) as usize;
+            let opcode = (words[idx] & 0xffff) as u16;
+            if opcode == rspirv::spirv::Op::Extension as u16 {
+                ext_slice = Some((idx, wc));
+                break;
+            }
+            idx += wc;
+        }
+        let (start, len) = ext_slice.expect("extension instruction present");
+        let extension: Vec<u32> = words.drain(start..start + len).collect();
+        words.extend(extension);
+
+        let error = validate_module(&words, TargetEnv::Vulkan1_2).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Extension
+            }
+        );
+    }
+
+    #[test]
     fn names_section_must_follow_debug_section() {
         // OpName (Names section) precedes OpSource (Debug section), which should trigger an ordering error.
         let binary = vec![
