@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn bytes_to_words(bytes: &[u8]) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
-    if bytes.len() % 4 != 0 {
+    if !bytes.len().is_multiple_of(4) {
         return Err("input length is not a multiple of 4 bytes".into());
     }
     Ok(bytes
