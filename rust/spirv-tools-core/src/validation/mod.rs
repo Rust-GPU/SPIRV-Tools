@@ -5240,10 +5240,7 @@ fn enforce_location_storage_classes(module: &Module) -> Result<(), ValidationErr
         let Some(storage_class) = var_storage.get(&var_id) else {
             continue;
         };
-        if !matches!(
-            storage_class,
-            StorageClass::Input | StorageClass::Output | StorageClass::PushConstant
-        ) {
+        if !matches!(storage_class, StorageClass::Input | StorageClass::Output) {
             return Err(ValidationError::InvalidLocationStorageClass {
                 storage_class: *storage_class,
             });
@@ -20886,6 +20883,33 @@ OpFunctionEnd
             err,
             ValidationError::InvalidLocationStorageClass {
                 storage_class: rspirv::spirv::StorageClass::Uniform
+            }
+        );
+    }
+
+    #[test]
+    fn location_on_push_constant_is_rejected() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpDecorate %var Location 0
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer PushConstant %u32
+%var = OpVariable %ptr PushConstant
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
+            .expect_err("Location should be rejected on PushConstant storage");
+        assert_eq!(
+            err,
+            ValidationError::InvalidLocationStorageClass {
+                storage_class: rspirv::spirv::StorageClass::PushConstant
             }
         );
     }
