@@ -5479,6 +5479,11 @@ fn enforce_builtin_storage_classes(
         if env.is_vulkan() && (builtin == BuiltIn::VertexId || builtin == BuiltIn::InstanceId) {
             return Err(ValidationError::BuiltInDisallowedForEnv { builtin, env });
         }
+        if !env.is_vulkan()
+            && matches!(builtin, BuiltIn::ShadingRateKHR | BuiltIn::PrimitiveShadingRateKHR)
+        {
+            return Err(ValidationError::BuiltInDisallowedForEnv { builtin, env });
+        }
 
         let allowed = matches!(storage_class, StorageClass::Input | StorageClass::Output);
         if !allowed {
@@ -22782,6 +22787,37 @@ OpFunctionEnd
             ValidationError::BuiltInDisallowedForEnv {
                 builtin: rspirv::spirv::BuiltIn::VertexId,
                 env: TargetEnv::Vulkan1_2
+            }
+        );
+    }
+
+    #[test]
+    fn shading_rate_builtins_are_vulkan_only() {
+        let text = r#"
+OpCapability Shader
+OpCapability FragmentShadingRateKHR
+OpExtension "SPV_KHR_fragment_shading_rate"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %var BuiltIn ShadingRateKHR
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
+            .expect_err("fragment shading rate built-ins are Vulkan-only");
+        assert_eq!(
+            err,
+            ValidationError::DisallowedExtension {
+                extension: ExtensionName::from("SPV_KHR_fragment_shading_rate"),
+                env: TargetEnv::Universal1_5
             }
         );
     }
