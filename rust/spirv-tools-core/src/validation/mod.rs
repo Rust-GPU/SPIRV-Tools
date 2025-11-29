@@ -999,6 +999,14 @@ pub enum ValidationError {
         /// A description of the expected type.
         expected: &'static str,
     },
+    /// A BuiltIn decoration requires a capability that was not declared.
+    #[error("BuiltIn {builtin:?} requires capability {capability:?}")]
+    BuiltInRequiresCapability {
+        /// The BuiltIn applied.
+        builtin: rspirv::spirv::BuiltIn,
+        /// The missing capability.
+        capability: rspirv::spirv::Capability,
+    },
     /// Tessellation level built-ins must also carry a Patch decoration.
     #[error("BuiltIn {builtin:?} requires a Patch decoration")]
     BuiltInRequiresPatchDecoration {
@@ -1711,7 +1719,7 @@ fn validate_words(
     enforce_struct_block_requirements(&module, target_version)?;
     enforce_location_storage_classes(&module)?;
     enforce_builtin_location_exclusivity(&module)?;
-    enforce_builtin_storage_classes(&module, &definitions, &entry_models)?;
+    enforce_builtin_storage_classes(&module, &definitions, &entry_models, &capabilities)?;
     enforce_interpolation_storage_classes(&module, &definitions, &entry_models)?;
     validate_decoration_target_categories(&module, &opcodes, &definitions, &capabilities)?;
     enforce_store_type_compatibility(&module, &definitions, &options)?;
@@ -5372,6 +5380,7 @@ fn enforce_builtin_storage_classes(
     module: &Module,
     definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
     entry_models: &HashSet<rspirv::spirv::ExecutionModel>,
+    capabilities: &HashSet<rspirv::spirv::Capability>,
 ) -> Result<(), ValidationError> {
     use rspirv::spirv::{BuiltIn, Decoration, ExecutionModel, Op, StorageClass};
 
@@ -5430,6 +5439,57 @@ fn enforce_builtin_storage_classes(
                 builtin,
                 storage_class,
             });
+        }
+
+        let required_capability: Option<&[rspirv::spirv::Capability]> = match builtin {
+            BuiltIn::ShadingRateKHR | BuiltIn::PrimitiveShadingRateKHR => {
+                Some(&[rspirv::spirv::Capability::FragmentShadingRateKHR])
+            }
+            BuiltIn::BaryCoordKHR
+            | BuiltIn::BaryCoordNoPerspKHR
+            | BuiltIn::BaryCoordSmoothAMD
+            | BuiltIn::BaryCoordSmoothCentroidAMD
+            | BuiltIn::BaryCoordSmoothSampleAMD
+            | BuiltIn::BaryCoordNoPerspAMD
+            | BuiltIn::BaryCoordNoPerspCentroidAMD
+            | BuiltIn::BaryCoordNoPerspSampleAMD
+            | BuiltIn::BaryCoordPullModelAMD => {
+                Some(&[rspirv::spirv::Capability::FragmentBarycentricKHR])
+            }
+            BuiltIn::CullPrimitiveEXT
+            | BuiltIn::PrimitivePointIndicesEXT
+            | BuiltIn::PrimitiveLineIndicesEXT
+            | BuiltIn::PrimitiveTriangleIndicesEXT => Some(&[
+                rspirv::spirv::Capability::MeshShadingEXT,
+                rspirv::spirv::Capability::MeshShadingNV,
+            ]),
+            BuiltIn::LaunchIdKHR
+            | BuiltIn::LaunchSizeKHR
+            | BuiltIn::RayTminKHR
+            | BuiltIn::RayTmaxKHR
+            | BuiltIn::WorldRayOriginKHR
+            | BuiltIn::WorldRayDirectionKHR
+            | BuiltIn::ObjectRayOriginKHR
+            | BuiltIn::ObjectRayDirectionKHR
+            | BuiltIn::ObjectToWorldKHR
+            | BuiltIn::WorldToObjectKHR
+            | BuiltIn::InstanceCustomIndexKHR
+            | BuiltIn::InstanceId
+            | BuiltIn::RayGeometryIndexKHR
+            | BuiltIn::IncomingRayFlagsKHR
+            | BuiltIn::CullMaskKHR
+            | BuiltIn::HitKindKHR
+            | BuiltIn::HitTNV => Some(&[
+                rspirv::spirv::Capability::RayTracingKHR,
+                rspirv::spirv::Capability::RayTracingNV,
+            ]),
+            _ => None,
+        };
+        if let Some(required) = required_capability {
+            if !required.iter().any(|cap| capabilities.contains(cap)) {
+                let capability = required[0];
+                return Err(ValidationError::BuiltInRequiresCapability { builtin, capability });
+            }
         }
 
         let fragment_only = matches!(
@@ -22246,6 +22306,98 @@ OpFunctionEnd
                 ..
             }
         ));
+
+        let missing_capability = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %var BuiltIn ShadingRateKHR
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(missing_capability, TargetEnv::Vulkan1_2)
+            .expect_err("ShadingRateKHR requires FragmentShadingRateKHR capability");
+        assert!(
+            matches!(
+                err,
+                ValidationError::BuiltInRequiresCapability {
+                    builtin: rspirv::spirv::BuiltIn::ShadingRateKHR,
+                    ..
+                }
+                | ValidationError::MissingOperandCapability { .. }
+            ),
+            "expected capability error, got {err:?}"
+        );
+
+        let missing_mesh_capability = r#"
+OpCapability Shader
+OpExtension "SPV_EXT_mesh_shader"
+OpMemoryModel Logical GLSL450
+OpEntryPoint MeshEXT %main "main" %var
+OpDecorate %var BuiltIn PrimitivePointIndicesEXT
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%const3 = OpConstant %u32 3
+%arr = OpTypeArray %u32 %const3
+%ptr = OpTypePointer Output %arr
+%var = OpVariable %ptr Output
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(missing_mesh_capability, TargetEnv::Vulkan1_2)
+            .expect_err("mesh built-ins require MeshShadingEXT capability");
+        assert!(
+            matches!(
+                err,
+                ValidationError::BuiltInRequiresCapability {
+                    builtin: rspirv::spirv::BuiltIn::PrimitivePointIndicesEXT,
+                    ..
+                }
+                | ValidationError::MissingOperandCapability { .. }
+            ),
+            "expected mesh capability error, got {err:?}"
+        );
+
+        let missing_ray_capability = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint RayGenerationKHR %main "main" %var
+OpDecorate %var BuiltIn LaunchIdKHR
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%vec3 = OpTypeVector %u32 3
+%ptr = OpTypePointer Input %vec3
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(missing_ray_capability, TargetEnv::Vulkan1_2)
+            .expect_err("ray tracing built-ins require ray tracing capability");
+        assert!(
+            matches!(
+                err,
+                ValidationError::BuiltInRequiresCapability {
+                    builtin: rspirv::spirv::BuiltIn::LaunchIdKHR,
+                    ..
+                }
+                | ValidationError::MissingOperandCapability { .. }
+            ),
+            "expected ray capability error, got {err:?}"
+        );
     }
 
     #[test]
