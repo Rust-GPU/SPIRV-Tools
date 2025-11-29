@@ -448,6 +448,8 @@ Percentages are approximate and will be updated as new checklists are added for 
 5. Port additional C++ arithmetic parity cases that exercise the newer factoring/distributivity rewrites (commuted multiplicands, shared addend cancellation); initial const-only cases have been added to the parity suite, continue expanding to symbolic/factorization scenarios while keeping rule naming collision-free.
    - Parity suite now covers shared-addend constant differences in both directions ((9+3)-(9+4) wrapping to -1 and (9+4)-(9+3) to +1) to mirror C++ folding.
    - Added symbolic shared-addend cancellation parity ((x+5)-(x+2) => 3 and (x+7)-(x+7) => 0) to ensure Rust e-graph rewrites match C++ algebraic simplification on parameterized inputs.
+6. Harden the Rust assembler FFI path so C++ callers don’t drop function bodies when the Rust path is enabled.
+   - Added a guard that detects missing function bodies from the Rust assembler and falls back to the C++ assembler, plus an FFI regression test that assembles via a context handle and asserts the body survives.
 
 ## Upcoming Milestone: Capability/Extension Ordering Parity
 Align the Rust validator’s capability/extension ordering and layout checks with the C++ tables.

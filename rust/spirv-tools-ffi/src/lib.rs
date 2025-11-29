@@ -1,5 +1,7 @@
 use core::ffi::c_void;
 use core::ptr::NonNull;
+use rspirv::binary::parse_words;
+use rspirv::dr::Loader;
 use spirv_tools_core::assembly::{
     assemble_text_with_options, BinaryToTextOptions, TextToBinaryOptions,
 };
@@ -519,10 +521,33 @@ pub fn try_assemble_text(context_handle: u64, text: &[u8], options: u32) -> ffi:
             assemble_text_with_options(source, context.env(), options)
         })) {
             Ok(Ok(binary)) => {
-                return ffi::AssembleResult {
-                    success: true,
-                    binary,
-                };
+                let text_has_label = text
+                    .windows("OpLabel".len())
+                    .any(|window| window == b"OpLabel");
+                let mut loader = Loader::new();
+                let parsed = parse_words(&binary, &mut loader);
+                let missing_bodies = parsed.is_ok()
+                    && text_has_label
+                    && loader
+                        .module()
+                        .functions
+                        .iter()
+                        .any(|function| function.def.is_some() && function.blocks.is_empty());
+                if !missing_bodies {
+                    return ffi::AssembleResult {
+                        success: true,
+                        binary,
+                    };
+                }
+
+                pending.push(
+                    DiagnosticMessage::new(
+                        MessageLevel::Error,
+                        MessagePosition::default(),
+                        "Rust assembler produced function declarations without bodies; falling back to C++ implementation",
+                    )
+                    .with_source("input"),
+                );
             }
             Ok(Err(error)) => {
                 pending = error.into_diagnostics();
@@ -782,6 +807,54 @@ OpFunctionEnd\n";
         assert!(!result.binary.is_empty());
 
         unsafe { destroy_context(handle) };
+    }
+
+    #[test]
+    fn rust_assembler_preserves_function_body_via_context() {
+        use spirv_tools_core::assembly::TextToBinaryOptions;
+
+        set_rust_text_assembler_override(true);
+        let env = TargetEnv::Universal1_3.to_raw();
+        let pointer = NonNull::<c_void>::dangling().as_ptr() as usize;
+        let handle = create_context(env, pointer);
+        assert_ne!(handle, 0);
+
+        let text = r#"OpCapability Shader
+OpCapability Linkage
+OpCapability StorageInputOutput16
+OpExtension "SPV_KHR_16bit_storage"
+OpExtension "SPV_KHR_8bit_storage"
+OpMemoryModel Logical GLSL450
+OpMemberDecorate %half_buffer_block 0 Offset 0
+OpMemberDecorate %short_buffer_block 0 Offset 0
+%void = OpTypeVoid
+%short = OpTypeInt 16 0
+%half = OpTypeFloat 16
+%short4 = OpTypeVector %short 4
+%half4 = OpTypeVector %half 4
+%mat4x4 = OpTypeMatrix %half4 4
+%short_buffer_block = OpTypeStruct %short
+%half_buffer_block = OpTypeStruct %half
+%ptr_type = OpTypePointer Input %short
+%var = OpVariable %ptr_type Input
+%fn = OpTypeFunction %void
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd"#;
+
+        let result = try_assemble_text(handle, text.as_bytes(), TextToBinaryOptions::NONE.bits());
+        assert!(result.success, "rust assembler failed via context handle");
+
+        let disassembly =
+            disassemble_binary(&result.binary, BinaryToTextOptions::NONE).expect("disassemble");
+        assert!(
+            disassembly.contains("OpLabel") && disassembly.contains("OpReturn"),
+            "function body was stripped via context assembly: {disassembly}"
+        );
+
+        unsafe { destroy_context(handle) };
+        clear_rust_text_assembler_override();
     }
 
     #[test]
