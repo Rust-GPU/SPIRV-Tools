@@ -961,6 +961,9 @@ pub enum ValidationError {
         /// The storage class of the decorated variable.
         storage_class: rspirv::spirv::StorageClass,
     },
+    /// Location/Component decorations conflict with a BuiltIn decoration on the same id.
+    #[error("Location/Component decorations cannot be applied to BuiltIn variables")]
+    LocationConflictsWithBuiltIn,
     /// `OpSamplerImageAddressingModeNV` was declared more than once.
     #[error("OpSamplerImageAddressingModeNV should only be provided once")]
     DuplicateSamplerImageAddressingMode,
@@ -1656,6 +1659,7 @@ fn validate_words(
     enforce_descriptor_storage_classes(&module)?;
     enforce_struct_block_requirements(&module, target_version)?;
     enforce_location_storage_classes(&module)?;
+    enforce_builtin_location_exclusivity(&module)?;
     validate_decoration_target_categories(&module, &opcodes, &definitions, &capabilities)?;
     enforce_store_type_compatibility(&module, &definitions, &options)?;
     let entry_points = validate_entry_points(&module, &defined_ids, &opcodes)?;
@@ -5244,6 +5248,53 @@ fn enforce_location_storage_classes(module: &Module) -> Result<(), ValidationErr
             return Err(ValidationError::InvalidLocationStorageClass {
                 storage_class: *storage_class,
             });
+        }
+    }
+
+    Ok(())
+}
+
+fn enforce_builtin_location_exclusivity(module: &Module) -> Result<(), ValidationError> {
+    use rspirv::spirv::Decoration;
+    let mut built_ins: HashSet<ResultId> = HashSet::new();
+    for inst in &module.annotations {
+        if inst.class.opcode != rspirv::spirv::Op::Decorate {
+            continue;
+        }
+        if let (
+            Some(rspirv::dr::Operand::IdRef(target)),
+            Some(rspirv::dr::Operand::Decoration(decoration)),
+        ) = (inst.operands.first(), inst.operands.get(1))
+        {
+            if *decoration == Decoration::BuiltIn {
+                if let Ok(id) = ResultId::try_from(*target) {
+                    built_ins.insert(id);
+                }
+            }
+        }
+    }
+    if built_ins.is_empty() {
+        return Ok(());
+    }
+
+    for inst in &module.annotations {
+        if inst.class.opcode != rspirv::spirv::Op::Decorate {
+            continue;
+        }
+        let Some(rspirv::dr::Operand::IdRef(target)) = inst.operands.get(0) else {
+            continue;
+        };
+        let Some(rspirv::dr::Operand::Decoration(decoration)) = inst.operands.get(1) else {
+            continue;
+        };
+        if *decoration != Decoration::Location && *decoration != Decoration::Component {
+            continue;
+        }
+        let Ok(id) = ResultId::try_from(*target) else {
+            continue;
+        };
+        if built_ins.contains(&id) {
+            return Err(ValidationError::LocationConflictsWithBuiltIn);
         }
     }
 
@@ -20912,6 +20963,30 @@ OpFunctionEnd
                 storage_class: rspirv::spirv::StorageClass::PushConstant
             }
         );
+    }
+
+    #[test]
+    fn location_conflicts_with_builtin() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpDecorate %var BuiltIn Position
+OpDecorate %var Location 0
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%vec4 = OpTypeVector %f32 4
+%ptr = OpTypePointer Output %vec4
+%var = OpVariable %ptr Output
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
+            .expect_err("Location must not be used with BuiltIn");
+        assert_eq!(err, ValidationError::LocationConflictsWithBuiltIn);
     }
 
     #[test]
