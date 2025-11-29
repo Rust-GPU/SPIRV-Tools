@@ -941,6 +941,14 @@ pub enum ValidationError {
         /// The disallowed storage class.
         storage_class: rspirv::spirv::StorageClass,
     },
+    /// A Binding/DescriptorSet decoration is applied to a disallowed storage class.
+    #[error(
+        "descriptor decorations are not permitted on storage class {storage_class:?} (expected resource classes)"
+    )]
+    InvalidDescriptorStorageClass {
+        /// The storage class of the decorated variable.
+        storage_class: rspirv::spirv::StorageClass,
+    },
     /// `OpSamplerImageAddressingModeNV` was declared more than once.
     #[error("OpSamplerImageAddressingModeNV should only be provided once")]
     DuplicateSamplerImageAddressingMode,
@@ -1633,6 +1641,7 @@ fn validate_words(
     validate_decorations(&module, &defined_ids)?;
     enforce_decoration_versions(&module, target_version)?;
     enforce_block_storage_classes(&module, target_version)?;
+    enforce_descriptor_storage_classes(&module)?;
     validate_decoration_target_categories(&module, &opcodes, &definitions, &capabilities)?;
     enforce_store_type_compatibility(&module, &definitions, &options)?;
     let entry_points = validate_entry_points(&module, &defined_ids, &opcodes)?;
@@ -4995,6 +5004,62 @@ fn enforce_block_storage_classes(
         }
         // Silence unused warning when block_id isn't used otherwise.
         let _ = block_id;
+    }
+
+    Ok(())
+}
+
+fn enforce_descriptor_storage_classes(module: &Module) -> Result<(), ValidationError> {
+    use rspirv::spirv::Decoration;
+    let mut decorated_vars: HashMap<ResultId, rspirv::spirv::StorageClass> = HashMap::new();
+
+    for inst in &module.types_global_values {
+        if inst.class.opcode != rspirv::spirv::Op::Variable {
+            continue;
+        }
+        let Some(rspirv::dr::Operand::StorageClass(sc)) = inst.operands.first() else {
+            continue;
+        };
+        if let Some(result_id) = inst.result_id {
+            if let Ok(id) = ResultId::try_from(result_id) {
+                decorated_vars.insert(id, *sc);
+            }
+        }
+    }
+
+    for inst in &module.annotations {
+        if inst.class.opcode != rspirv::spirv::Op::Decorate {
+            continue;
+        }
+        let Some(rspirv::dr::Operand::IdRef(target)) = inst.operands.get(0) else {
+            continue;
+        };
+        let Some(rspirv::dr::Operand::Decoration(decoration)) = inst.operands.get(1) else {
+            continue;
+        };
+        if *decoration != Decoration::Binding && *decoration != Decoration::DescriptorSet {
+            continue;
+        }
+        let Ok(var_id) = ResultId::try_from(*target) else {
+            continue;
+        };
+        let Some(storage_class) = decorated_vars.get(&var_id) else {
+            continue;
+        };
+
+        let allowed = matches!(
+            storage_class,
+            rspirv::spirv::StorageClass::UniformConstant
+                | rspirv::spirv::StorageClass::Uniform
+                | rspirv::spirv::StorageClass::StorageBuffer
+                | rspirv::spirv::StorageClass::PhysicalStorageBuffer
+                | rspirv::spirv::StorageClass::PushConstant
+        );
+        if !allowed {
+            return Err(ValidationError::InvalidDescriptorStorageClass {
+                storage_class: *storage_class,
+            });
+        }
     }
 
     Ok(())
@@ -20579,6 +20644,34 @@ OpFunctionEnd
             err,
             ValidationError::InvalidBlockDecorationStorageClass {
                 decoration: rspirv::spirv::Decoration::Block,
+                storage_class: rspirv::spirv::StorageClass::Input
+            }
+        );
+    }
+
+    #[test]
+    fn descriptor_on_input_storage_is_rejected() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpDecorate %var Binding 0
+OpDecorate %var DescriptorSet 0
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
+            .expect_err("descriptor decorations on Input should be rejected");
+        assert_eq!(
+            err,
+            ValidationError::InvalidDescriptorStorageClass {
                 storage_class: rspirv::spirv::StorageClass::Input
             }
         );
