@@ -190,6 +190,7 @@ Tasks for this milestone:
   - Captured the module header's declared SPIR-V version inside `ValidatedHeader`/`ValidModule` so version-aware rules can reuse it without re-parsing.
   - Version gating for capabilities, extensions, and instructions now uses the module-declared SPIR-V version (bounded by the target environment) so modules declaring older versions report precise diagnostics.
   - Exposed the effective (clamped) SPIR-V version on `ValidModule` so FFI/CLI callers can reuse the validated version without recomputing it.
+  - Added operand-level regression for `ImageOperands::NON_PRIVATE_TEXEL` to require `VulkanMemoryModel` capability under Vulkan 1.2 when the capability is omitted.
   - Imported opcode and operand SPIR-V version requirements from the grammar and added regressions (e.g., `OpTerminateInvocation` gated at 1.6, `StorageBuffer` storage class at 1.3, `LoopControl DependencyLength` at 1.1) that exercise env clamping.
 - [x] Cache validated modules across CLI/FFI invocations when the same input is reused, avoiding redundant parsing/validation.
 - [ ] Expose wider structural rules (capability/extension ordering in layout, per-target decoration constraints) mirroring the C++ validator tables.

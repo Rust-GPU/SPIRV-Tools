@@ -5480,7 +5480,10 @@ fn enforce_builtin_storage_classes(
             return Err(ValidationError::BuiltInDisallowedForEnv { builtin, env });
         }
         if !env.is_vulkan()
-            && matches!(builtin, BuiltIn::ShadingRateKHR | BuiltIn::PrimitiveShadingRateKHR)
+            && matches!(
+                builtin,
+                BuiltIn::ShadingRateKHR | BuiltIn::PrimitiveShadingRateKHR
+            )
         {
             return Err(ValidationError::BuiltInDisallowedForEnv { builtin, env });
         }
@@ -7622,7 +7625,8 @@ mod tests {
             "OpExtension \"SPV_KHR_shader_clock\"",
         ]
         .join("\n");
-        let mut words = assemble_text(&text).expect("assemble extension-after-execution-mode module");
+        let mut words =
+            assemble_text(&text).expect("assemble extension-after-execution-mode module");
         // Move the OpExtension to the end (after execution mode).
         let mut idx = 5; // skip header
         let mut slice = None;
@@ -17839,7 +17843,7 @@ mod tests {
             op(6, Op::ConditionalEntryPointINTEL as u16),
             3, // function id
             rspirv::spirv::ExecutionModel::Fragment as u32,
-            3, // function id again
+            3,           // function id again
             0x6e69_616d, // "main"
             0,
         ];
@@ -17856,11 +17860,11 @@ mod tests {
     #[test]
     fn extension_before_capability_is_rejected() {
         let binary = vec![
-            0x0723_0203, // magic
-            0x0001_0000, // version
-            0,           // generator
-            1,           // bound (no ids)
-            0,           // schema
+            0x0723_0203,                 // magic
+            0x0001_0000,                 // version
+            0,                           // generator
+            1,                           // bound (no ids)
+            0,                           // schema
             op(8, Op::Extension as u16), // OpExtension "SPV_GOOGLE_decorate_string" (before capabilities)
             EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[0],
             EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[1],
@@ -19400,11 +19404,11 @@ mod tests {
     fn conditional_capability_disallowed_in_env() {
         // Conditional capabilities must still respect the target environment allowlist.
         let binary = vec![
-            0x07230203, // magic
-            0x00010000, // version
-            0,          // generator
-            6,          // bound
-            0,          // schema
+            0x07230203,  // magic
+            0x00010000,  // version
+            0,           // generator
+            6,           // bound
+            0,           // schema
             op(3, 6250), // OpConditionalCapabilityINTEL %1 Geometry
             1,
             rspirv::spirv::Capability::Geometry as u32,
@@ -19441,11 +19445,11 @@ mod tests {
     fn conditional_capability_requires_extension() {
         // Extension dependencies apply to conditional capabilities.
         let binary = vec![
-            0x07230203, // magic
-            0x00010000, // version
-            0,          // generator
-            6,          // bound
-            0,          // schema
+            0x07230203,  // magic
+            0x00010000,  // version
+            0,           // generator
+            6,           // bound
+            0,           // schema
             op(3, 6250), // OpConditionalCapabilityINTEL %1 SpecConditionalINTEL
             1,
             rspirv::spirv::Capability::SpecConditionalINTEL as u32,
@@ -19753,6 +19757,77 @@ mod tests {
                 operand_index: 1,
                 required_version: SpirvVersion::new(1, 5),
                 target_version: TargetEnv::Vulkan1_1Spirv1_4.spirv_version(),
+            }
+        );
+    }
+
+    #[test]
+    fn image_operands_non_private_texel_requires_vulkan_memory_model_capability() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut builder = Builder::new();
+        builder.set_version(1, 5);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.capability(rspirv::spirv::Capability::StorageImageWriteWithoutFormat);
+        // Deliberately omit VulkanMemoryModel capability while keeping the extension/version satisfied.
+        builder.extension("SPV_KHR_vulkan_memory_model");
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = builder.type_void();
+        let float = builder.type_float(32, None);
+        let int = builder.type_int(32, 1);
+        let v2int = builder.type_vector(int, 2);
+        let v4float = builder.type_vector(float, 4);
+        let image = builder.type_image(
+            float,
+            rspirv::spirv::Dim::Dim2D,
+            0,
+            0,
+            0,
+            2,
+            rspirv::spirv::ImageFormat::Unknown,
+            None,
+        );
+        let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::UniformConstant, image);
+        let float_0 = builder.constant_bit32(float, 0.0f32.to_bits());
+        let c0 = builder.constant_bit32(int, 0);
+        let coord = builder.constant_composite(v2int, [c0, c0]);
+        let texel = builder.constant_composite(v4float, [float_0, float_0, float_0, float_0]);
+        let imgvar = builder.variable(
+            ptr,
+            None,
+            rspirv::spirv::StorageClass::UniformConstant,
+            None,
+        );
+        let fn_ty = builder.type_function(void, std::iter::empty::<u32>());
+
+        builder
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        builder.begin_block(None).unwrap();
+        builder
+            .image_write(
+                imgvar,
+                coord,
+                texel,
+                Some(rspirv::spirv::ImageOperands::NON_PRIVATE_TEXEL),
+                std::iter::empty::<rspirv::dr::Operand>(),
+            )
+            .unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+
+        let binary = builder.module().assemble();
+        let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::MissingOperandCapability {
+                opcode: rspirv::spirv::Op::ImageWrite,
+                operand_index: 3,
+                required_capability: rspirv::spirv::Capability::VulkanMemoryModel
             }
         );
     }
@@ -20769,10 +20844,9 @@ mod tests {
         builder.end_function().unwrap();
 
         let words = builder.module().assemble();
-        let error = words
-            .as_slice()
-            .validate(TargetEnv::Vulkan1_2)
-            .expect_err("MakePointerVisible requires VulkanMemoryModel capability when version is satisfied");
+        let error = words.as_slice().validate(TargetEnv::Vulkan1_2).expect_err(
+            "MakePointerVisible requires VulkanMemoryModel capability when version is satisfied",
+        );
         assert_eq!(
             error,
             ValidationError::MissingOperandCapability {
