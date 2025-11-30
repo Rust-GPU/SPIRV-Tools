@@ -152,6 +152,7 @@ Planned tasks:
 - Add execution-model-aware entry-point interface storage-class validation (including kernel/ray/mesh-specific allowances) without regressing existing small-type capability checks; gate with Rust/C++ parity tests. (Vulkan-only uniqueness for PushConstant, IncomingRayPayloadKHR, HitAttributeKHR, and IncomingCallableDataKHR enforced; Input/Output now reject FP8/BFloat16 encodings and overlapping Location/Component assignments.)
 - Follow C++ handling for tessellation Patch interfaces (separate Patch/non-Patch location domains, capability/exec-mode requirements) with Rust regressions once layout/capability ordering is finalized.
 - Keep CLI/FFI parity runners updated to exercise these structural rules with the Rust validator forced on so rollout remains guarded.
+- [x] Enforce Component decoration range ([0,3]) with Rust regression coverage.
 
 ## Upcoming Milestone: Layout Ordering Parity Closure
 - Finish capability/extension ordering edge cases (conditional capability/extension placement after functions, duplication rules) with Rust regressions mirroring the C++ validator.
