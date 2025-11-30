@@ -3086,11 +3086,9 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
 
             for inst in &block.instructions {
                 let result_type = inst.result_type.and_then(|raw| TypeId::try_from(raw).ok());
-                let result_type_inst = result_type.and_then(|ty| {
-                    ResultId::try_from(u32::from(Id::from(ty)))
-                        .ok()
-                        .and_then(|rid| definitions.get(&rid))
-                });
+                let result_type_inst = result_type
+                    .and_then(|ty| ResultId::try_from(u32::from(Id::from(ty))).ok())
+                    .and_then(|rid| definitions.get(&rid));
 
                 if inst.class.opcode == rspirv::spirv::Op::Phi {
                     for pair in inst.operands.chunks(2) {
@@ -3181,6 +3179,151 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                                 expected: result_type,
                                 found: result_type,
                             });
+                        }
+                    }
+
+                    // Integer and float comparisons: result must be bool (scalar or vector of
+                    // bool matching operand shape); operands must match each other's type.
+                    let int_cmp = matches!(
+                        inst.class.opcode,
+                        rspirv::spirv::Op::IEqual
+                            | rspirv::spirv::Op::INotEqual
+                            | rspirv::spirv::Op::UGreaterThan
+                            | rspirv::spirv::Op::SGreaterThan
+                            | rspirv::spirv::Op::UGreaterThanEqual
+                            | rspirv::spirv::Op::SGreaterThanEqual
+                            | rspirv::spirv::Op::ULessThan
+                            | rspirv::spirv::Op::SLessThan
+                            | rspirv::spirv::Op::ULessThanEqual
+                            | rspirv::spirv::Op::SLessThanEqual
+                    );
+                    let float_cmp = matches!(
+                        inst.class.opcode,
+                        rspirv::spirv::Op::FOrdEqual
+                            | rspirv::spirv::Op::FUnordEqual
+                            | rspirv::spirv::Op::FOrdNotEqual
+                            | rspirv::spirv::Op::FUnordNotEqual
+                            | rspirv::spirv::Op::FOrdLessThan
+                            | rspirv::spirv::Op::FUnordLessThan
+                            | rspirv::spirv::Op::FOrdGreaterThan
+                            | rspirv::spirv::Op::FUnordGreaterThan
+                            | rspirv::spirv::Op::FOrdLessThanEqual
+                            | rspirv::spirv::Op::FUnordLessThanEqual
+                            | rspirv::spirv::Op::FOrdGreaterThanEqual
+                            | rspirv::spirv::Op::FUnordGreaterThanEqual
+                    );
+                    if int_cmp || float_cmp {
+                        let op_type = inst.operands.get(0).and_then(|op| match op {
+                            rspirv::dr::Operand::IdRef(raw) => ResultId::try_from(*raw).ok(),
+                            _ => None,
+                        });
+                        let op_type_inst = op_type
+                            .and_then(|rid| result_types.get(&rid).copied())
+                            .and_then(|tid| ResultId::try_from(u32::from(Id::from(tid))).ok())
+                            .and_then(|rid| definitions.get(&rid));
+
+                        let (component_count, is_int, is_float) =
+                            op_type_inst.map_or((None, false, false), |ty| match ty.class.opcode {
+                                rspirv::spirv::Op::TypeInt => (Some(1), true, false),
+                                rspirv::spirv::Op::TypeFloat => (Some(1), false, true),
+                                rspirv::spirv::Op::TypeVector => {
+                                    let count = ty
+                                        .operands
+                                        .get(1)
+                                        .and_then(|op| match op {
+                                            rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+                                            _ => None,
+                                        })
+                                        .map(|v| v as usize);
+                                    let elem_ty = ty.operands.first().and_then(|op| match op {
+                                        rspirv::dr::Operand::IdRef(raw) => {
+                                            ResultId::try_from(*raw).ok()
+                                        }
+                                        _ => None,
+                                    });
+                                    let elem_inst = elem_ty
+                                        .and_then(|rid| result_types.get(&rid).copied())
+                                        .and_then(|tid| {
+                                            ResultId::try_from(u32::from(Id::from(tid))).ok()
+                                        })
+                                        .and_then(|rid| definitions.get(&rid));
+                                    let elem_int = elem_inst
+                                        .map(|i| i.class.opcode == rspirv::spirv::Op::TypeInt)
+                                        .unwrap_or(false);
+                                    let elem_float = elem_inst
+                                        .map(|i| i.class.opcode == rspirv::spirv::Op::TypeFloat)
+                                        .unwrap_or(false);
+                                    (count, elem_int, elem_float)
+                                }
+                                _ => (None, false, false),
+                            });
+
+                        // Result type must be bool or vector<bool> matching operand count.
+                        let result_ok =
+                            result_type_inst.map_or(false, |ty| match ty.class.opcode {
+                                rspirv::spirv::Op::TypeBool => component_count == Some(1),
+                                rspirv::spirv::Op::TypeVector => {
+                                    let count = ty.operands.get(1).and_then(|op| match op {
+                                        rspirv::dr::Operand::LiteralBit32(v) => Some(*v as usize),
+                                        _ => None,
+                                    });
+                                    let elem_ty = ty.operands.first().and_then(|op| match op {
+                                        rspirv::dr::Operand::IdRef(raw) => {
+                                            ResultId::try_from(*raw).ok()
+                                        }
+                                        _ => None,
+                                    });
+                                    let elem_inst = elem_ty
+                                        .and_then(|rid| result_types.get(&rid).copied())
+                                        .and_then(|tid| {
+                                            ResultId::try_from(u32::from(Id::from(tid))).ok()
+                                        })
+                                        .and_then(|rid| definitions.get(&rid));
+                                    elem_inst
+                                        .map(|i| i.class.opcode == rspirv::spirv::Op::TypeBool)
+                                        .unwrap_or(false)
+                                        && count == component_count
+                                }
+                                _ => false,
+                            });
+                        if !result_ok {
+                            return Err(ValidationError::InstructionResultTypeMismatch {
+                                function: function_id,
+                                block: block_label_id,
+                                instruction: inst.class.opcode,
+                                expected: result_type,
+                                found: result_type,
+                            });
+                        }
+
+                        // Operand kinds must match and be integer for int cmp, float for float cmp.
+                        if int_cmp && !is_int {
+                            if let Some(op_type_id) =
+                                op_type.and_then(|rid| result_types.get(&rid).copied())
+                            {
+                                return Err(ValidationError::OperandTypeMismatch {
+                                    function: function_id,
+                                    block: block_label_id,
+                                    instruction: inst.class.opcode,
+                                    operand_index: 0,
+                                    expected: result_type,
+                                    found: op_type_id,
+                                });
+                            }
+                        }
+                        if float_cmp && !is_float {
+                            if let Some(op_type_id) =
+                                op_type.and_then(|rid| result_types.get(&rid).copied())
+                            {
+                                return Err(ValidationError::OperandTypeMismatch {
+                                    function: function_id,
+                                    block: block_label_id,
+                                    instruction: inst.class.opcode,
+                                    operand_index: 0,
+                                    expected: result_type,
+                                    found: op_type_id,
+                                });
+                            }
                         }
                     }
                 }
@@ -18879,6 +19022,55 @@ mod tests {
                 found: TypeId::try_from(3).unwrap(),
             }
         );
+    }
+
+    #[test]
+    fn integer_compare_requires_bool_result_and_matching_operands() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let float = b.type_float(32, None);
+        // Int compare but boolean result type is int (invalid) and operand types differ.
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let _main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let header = b.begin_block(None).unwrap();
+        let iconst = b.constant_bit32(int, 1);
+        let fconst = b.constant_bit32(float, 0x3f80_0000);
+        b.i_equal(int, None, iconst, fconst).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let words = b.module().assemble();
+        let err = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("integer compares require bool result and matching operand types");
+        assert!(
+            matches!(
+                err,
+                ValidationError::InstructionResultTypeMismatch {
+                    instruction: rspirv::spirv::Op::IEqual,
+                    ..
+                } | ValidationError::OperandTypeMismatch {
+                    instruction: rspirv::spirv::Op::IEqual,
+                    ..
+                }
+            ),
+            "expected result or operand type mismatch, got {err:?}"
+        );
+        // ensure header is used
+        let _ = header;
     }
 
     #[test]
