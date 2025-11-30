@@ -669,7 +669,7 @@ Tasks for this milestone:
 - [x] Reject unreachable blocks that declare ids referenced from reachable code, matching the C++ diagnostic shape.
 - [x] Add regression tests (text and binary) for SSA/type failures and wire them through the CLI/FFI parity runs.
 
-## Upcoming Milestone: Operand Type Table Parity
+## Completed Milestone: Operand Type Table Parity
 Broaden operand-level type checks using the grammar tables and ensure CLI/FFI parity.
 
 Tasks for this milestone:
@@ -681,3 +681,13 @@ Tasks for this milestone:
 - Add binary/text regressions for representative opcodes (shift vector widths, compare operand type compatibility, mixed signedness where allowed).
 - Wire the operand-type checks through CLI/FFI parity runs and update the C++ parity corpus to cover the new checks.
 - Keep typed `ValidationError` coverage for operand/type mismatches surfaced through the FFI boundary.
+
+## Upcoming Milestone: Entry-Point Interface Parity
+Mirror the C++ validator’s entry-point interface and storage-class rules.
+
+Tasks for this milestone:
+- Enforce execution-model-aware interface storage classes (Input/Output/Patch/Workgroup/Uniform-like) with Rust regressions mirrored from the C++ suite.
+- Validate Patch vs. non-Patch location domains for tessellation interfaces, including capability/exec-mode gates.
+- Reject function-scope variables in entry-point interfaces and duplicate interface ids with typed diagnostics (CLI/FFI parity).
+- Add binary/text regressions for Vulkan-only interface constraints (e.g., PushConstant uniqueness, IncomingRayPayloadKHR/HitAttributeKHR/IncomingCallableDataKHR uniqueness).
+- Wire entry-point interface checks through the CLI/FFI parity runs and update the corpus to match C++ diagnostics.
