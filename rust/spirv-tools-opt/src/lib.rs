@@ -430,6 +430,9 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("rotate-const-pattern"; "(bor (shl ?x ?s) (shr_u ?x ?t))" => {
             RotatePatternFold { x: var("?x"), s: var("?s"), t: var("?t") }
         }),
+        rewrite!("rotate-const-pattern-comm"; "(bor (shr_u ?x ?t) (shl ?x ?s))" => {
+            RotatePatternFold { x: var("?x"), s: var("?s"), t: var("?t") }
+        }),
         rewrite!("mul-dist-const-over-add"; "(* ?c (+ ?x ?k))" => {
             DistConstMulAdd { c: var("?c"), x: var("?x"), k: var("?k") }
         }),

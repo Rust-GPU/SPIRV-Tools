@@ -269,6 +269,54 @@ fn corpus_folds_const_rotate_left() {
 }
 
 #[test]
+fn corpus_folds_const_rotate_left_commuted_or() {
+    let int = 1;
+    let value = inst(
+        Op::Constant,
+        int,
+        1,
+        vec![rspirv::dr::Operand::LiteralBit32(1)],
+    );
+    let shift = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(4)],
+    );
+    let left = inst(
+        Op::ShiftLeftLogical,
+        int,
+        3,
+        vec![rspirv::dr::Operand::IdRef(1), rspirv::dr::Operand::IdRef(2)],
+    );
+    let inv_shift = inst(
+        Op::Constant,
+        int,
+        4,
+        vec![rspirv::dr::Operand::LiteralBit32(28)],
+    );
+    let right = inst(
+        Op::ShiftRightLogical,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(1), rspirv::dr::Operand::IdRef(4)],
+    );
+    let rot = inst(
+        Op::BitwiseOr,
+        int,
+        6,
+        vec![rspirv::dr::Operand::IdRef(5), rspirv::dr::Operand::IdRef(3)],
+    );
+    let optimized =
+        optimize_arith_block(&[value, shift, left, inv_shift, right, rot]).expect("optimize");
+    assert_eq!(optimized.len(), 1);
+    let folded = &optimized[0];
+    assert_eq!(folded.class.opcode, Op::Constant);
+    assert_eq!(folded.result_id, Some(6));
+    assert_eq!(folded.operands, vec![rspirv::dr::Operand::LiteralBit32(16)]);
+}
+
+#[test]
 fn corpus_folds_div_by_one() {
     let int = 1;
     let c8 = inst(
