@@ -397,6 +397,45 @@ fn corpus_folds_const_bor_commutes() {
 }
 
 #[test]
+fn corpus_folds_nested_bor_constants() {
+    let int = 1;
+    let c1 = inst(
+        Op::Constant,
+        int,
+        1,
+        vec![rspirv::dr::Operand::LiteralBit32(1)],
+    );
+    let c2 = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(2)],
+    );
+    let c4 = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(4)],
+    );
+    let inner = inst(
+        Op::BitwiseOr,
+        int,
+        4,
+        vec![rspirv::dr::Operand::IdRef(1), rspirv::dr::Operand::IdRef(2)],
+    );
+    let outer = inst(
+        Op::BitwiseOr,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(4), rspirv::dr::Operand::IdRef(3)],
+    );
+    let optimized = optimize_arith_block(&[c1, c2, c4, inner, outer]).expect("optimize");
+    assert_eq!(optimized.len(), 1);
+    let folded = &optimized[0];
+    assert_eq!(folded.class.opcode, Op::Constant);
+    assert_eq!(folded.operands, vec![rspirv::dr::Operand::LiteralBit32(7)]);
+}
+#[test]
 fn corpus_folds_div_by_one() {
     let int = 1;
     let c8 = inst(

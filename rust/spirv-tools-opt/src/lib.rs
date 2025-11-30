@@ -420,6 +420,7 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
             UModPowerOfTwoMask { x: var("?x"), c: var("?c") }
         }),
         rewrite!("bor-comm"; "(bor ?a ?b)" => "(bor ?b ?a)"),
+        rewrite!("bor-assoc"; "(bor ?a (bor ?b ?c))" => "(bor (bor ?a ?b) ?c)"),
         rewrite!("bor-const-fold"; "(bor ?a ?b)" => { BitOrFold { a: var("?a"), b: var("?b") } }),
         rewrite!("bor-zero-left"; "(bor ?x ?c)" => {
             BitOrConstSimplify { x: var("?x"), c: var("?c") }
