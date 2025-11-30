@@ -7716,8 +7716,11 @@ fn validate_entry_points(
             // Skip the condition operand.
             let _ = operands.next();
         }
-        // Next operand is ExecutionModel; skip it.
-        let _ = operands.next();
+        // Next operand is ExecutionModel.
+        let _execution_model = operands.next().and_then(|op| match op {
+            rspirv::dr::Operand::ExecutionModel(model) => Some(*model),
+            _ => None,
+        });
         let function_id = match operands.next() {
             Some(rspirv::dr::Operand::IdRef(id)) => {
                 ResultId::try_from(*id).map_err(|_| ValidationError::ZeroId {
