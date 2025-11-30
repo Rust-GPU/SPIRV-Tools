@@ -141,8 +141,8 @@ Flip the Rust validator on by default across CLI/FFI while keeping an escape hat
 Planned tasks:
 - [x] Add a rollout flag/env to enable the Rust validator by default in CLI/FFI with a clear C++ fallback (default now on in CMake/Bazel via `SPIRV_PREFER_RUST_VALIDATOR_DEFAULT=1`).
 - [x] Wire the validator toggle through CMake/Bazel build glue so downstreams inherit the default.
-- Update CLI help/docs to describe the Rust-default behavior and override knobs.
-- Keep the corpus/ctest parity runner in CI to guard the rollout and document rollback steps.
+- [x] Update CLI help/docs to describe the Rust-default behavior and override knobs (see `docs/rust-validator-rollout.md`).
+- Keep the corpus/ctest parity runner in CI to guard the rollout and document rollback steps (current runner: `scripts/run-rust-validator-corpus.sh`).
 - [x] Expose CLI toggles (`--prefer-rust-validator` / `--prefer-cpp-validator`) to steer the default when both validators are available.
 - [x] Add env-level defaults (`SPIRV_TOOLS_PREFER_RUST_VALIDATOR` / `SPIRV_TOOLS_PREFER_CPP_VALIDATOR`) to steer the default without forcing.
 
