@@ -156,6 +156,7 @@ Planned tasks:
 - [x] Require Component decorations to pair with Location decorations (Rust regression added).
 - [x] Reject capability instructions that appear after functions (layout out-of-order regression).
 - [x] Reject conditional capability/extension instructions that appear after functions (layout out-of-order regressions).
+- [x] Add Patch vs. non-Patch spill overlap regressions (domains remain separate; Patch overlaps still conflict).
 
 ## Upcoming Milestone: Layout Ordering Parity Closure
 - Finish capability/extension ordering edge cases (conditional capability/extension placement after functions, duplication rules) with Rust regressions mirroring the C++ validator.
