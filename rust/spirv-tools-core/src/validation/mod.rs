@@ -302,6 +302,19 @@ pub fn format_validation_error(error: &ValidationError, names: Option<&FriendlyN
                 .unwrap_or_default();
             format!("use of undefined id {}{}", names.format_id((*id).into()), func)
         }
+        (
+            ValidationError::ResultTypeNotType {
+                instruction,
+                result_type,
+                found,
+            },
+            Some(names),
+        ) => format!(
+            "{:?} uses result type {} defined by non-type opcode {:?}",
+            instruction,
+            names.format_id((*result_type).into()),
+            found
+        ),
         (ValidationError::PhiAfterNonPhi { function, block }, Some(names)) => format!(
             "{} in block {}",
             names.format_id((*function).into()),
@@ -1463,6 +1476,16 @@ pub enum ValidationError {
         /// The missing id.
         id: Id,
     },
+    /// A result type refers to an instruction that is not a type declaration.
+    #[error("instruction {instruction:?} has result type {result_type:?} defined by non-type opcode {found:?}")]
+    ResultTypeNotType {
+        /// The opcode of the instruction with the invalid type.
+        instruction: rspirv::spirv::Op,
+        /// The result type id.
+        result_type: Id,
+        /// The opcode that defined the result type id.
+        found: rspirv::spirv::Op,
+    },
     /// A merge instruction is paired with an invalid terminator.
     #[error("block {block:?} of function {function:?} has merge paired with invalid terminator {terminator:?}")]
     InvalidMergeTerminator {
@@ -1996,6 +2019,7 @@ fn validate_words(
     let defined_ids: HashSet<Id> = defined_result_ids.iter().copied().map(Id::from).collect();
     let opcodes = collect_result_opcodes(&module);
     let definitions = collect_result_instructions(&module);
+    validate_result_types_are_types(&definitions, &opcodes)?;
     let capabilities = collect_declared_capabilities(&module);
     let extensions = validate_extensions(&module, env, target_version)?;
     validate_capabilities(&module, env, target_version, &extensions)?;
@@ -2006,7 +2030,12 @@ fn validate_words(
     enforce_logical_pointer_rules(&module, &definitions, &capabilities, &options)?;
     enforce_struct_member_limit(&struct_member_counts, &options)?;
     enforce_struct_depth_limit(&module, &definitions, &options)?;
-    validate_decoration_groups(&module, &defined_result_ids, &opcodes, &struct_member_counts)?;
+    validate_decoration_groups(
+        &module,
+        &defined_result_ids,
+        &opcodes,
+        &struct_member_counts,
+    )?;
     validate_decorations(&module, &defined_result_ids)?;
     enforce_decoration_versions(&module, target_version)?;
     enforce_block_storage_classes(&module, target_version)?;
@@ -2024,7 +2053,7 @@ fn validate_words(
     let entry_points = validate_entry_points(&module, &defined_result_ids, &opcodes)?;
     validate_execution_modes(&module, &entry_points, env, &options)?;
     validate_functions(&module)?;
-    validate_operand_definitions(&module, &defined_ids, None)?;
+    validate_operand_definitions(&module, &defined_ids)?;
     enforce_function_arg_limit(&module, &options)?;
     enforce_variable_limits(&module, &options)?;
     enforce_switch_branch_limit(&module, &options)?;
@@ -2095,11 +2124,6 @@ fn collect_friendly_names(words: &[u32]) -> Option<FriendlyNames> {
 fn validate_functions(module: &Module) -> Result<(), ValidationError> {
     let definitions = collect_result_instructions(module);
     let result_types = collect_result_types(module)?;
-    let defined_ids: HashSet<Id> = module
-        .all_inst_iter()
-        .filter_map(|inst| inst.result_id)
-        .filter_map(|raw| Id::try_from(raw).ok())
-        .collect();
     let mut definition_blocks: HashMap<ResultId, Option<Id>> = HashMap::new();
     for inst in module.all_inst_iter() {
         if let Some(result_id) = inst.result_id {
@@ -2642,8 +2666,10 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
             for inst in &block.instructions {
                 if inst.class.opcode == rspirv::spirv::Op::Phi {
                     for pair in inst.operands.chunks(2) {
-                        if let (Some(rspirv::dr::Operand::IdRef(raw_value)), Some(rspirv::dr::Operand::IdRef(raw_incoming))) =
-                            (pair.get(0), pair.get(1))
+                        if let (
+                            Some(rspirv::dr::Operand::IdRef(raw_value)),
+                            Some(rspirv::dr::Operand::IdRef(raw_incoming)),
+                        ) = (pair.get(0), pair.get(1))
                         {
                             if let (Ok(value_id), Ok(incoming_block)) =
                                 (Id::try_from(*raw_value), Id::try_from(*raw_incoming))
@@ -2687,15 +2713,6 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                         }
                     }
                 }
-            }
-        }
-
-        for param in &function.parameters {
-            check_instruction_ids(param, &defined_ids, Some(function_id))?;
-        }
-        for block in &function.blocks {
-            for inst in &block.instructions {
-                check_instruction_ids(inst, &defined_ids, Some(function_id))?;
             }
         }
     }
@@ -4062,77 +4079,6 @@ fn validate_id_bound(
     }
 
     Ok(results)
-}
-
-fn check_instruction_ids(
-    inst: &rspirv::dr::Instruction,
-    defined_ids: &HashSet<Id>,
-    function: Option<Id>,
-) -> Result<(), ValidationError> {
-    if let Some(result_type) = inst.result_type {
-        if let Ok(id) = Id::try_from(result_type) {
-            if !defined_ids.contains(&id) {
-                return Err(ValidationError::UndefinedId { function, id });
-            }
-        }
-    }
-    let is_block_operand = |opcode: rspirv::spirv::Op, index: usize| -> bool {
-        match opcode {
-            rspirv::spirv::Op::Branch => index == 0,
-            rspirv::spirv::Op::BranchConditional => index == 1 || index == 2,
-            rspirv::spirv::Op::Switch => index == 1 || (index > 1 && index % 2 == 0),
-            rspirv::spirv::Op::LoopMerge => index <= 1,
-            rspirv::spirv::Op::SelectionMerge => index == 0,
-            rspirv::spirv::Op::Phi => index % 2 == 1,
-            _ => false,
-        }
-    };
-
-    for (idx, operand) in inst.operands.iter().enumerate() {
-        if is_block_operand(inst.class.opcode, idx) {
-            continue;
-        }
-        if let rspirv::dr::Operand::IdRef(raw) = operand {
-            if let Ok(id) = Id::try_from(*raw) {
-                if !defined_ids.contains(&id) {
-                    return Err(ValidationError::UndefinedId { function, id });
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-fn validate_operand_definitions(
-    module: &Module,
-    defined_ids: &HashSet<Id>,
-    function: Option<Id>,
-) -> Result<(), ValidationError> {
-    for inst in &module.capabilities {
-        check_instruction_ids(inst, defined_ids, function)?;
-    }
-    for inst in &module.extensions {
-        check_instruction_ids(inst, defined_ids, function)?;
-    }
-    for inst in &module.ext_inst_imports {
-        check_instruction_ids(inst, defined_ids, function)?;
-    }
-    if let Some(memory_model) = &module.memory_model {
-        check_instruction_ids(memory_model, defined_ids, function)?;
-    }
-    for inst in &module.entry_points {
-        check_instruction_ids(inst, defined_ids, function)?;
-    }
-    for inst in &module.execution_modes {
-        check_instruction_ids(inst, defined_ids, function)?;
-    }
-    for inst in &module.annotations {
-        check_instruction_ids(inst, defined_ids, function)?;
-    }
-    for inst in &module.types_global_values {
-        check_instruction_ids(inst, defined_ids, function)?;
-    }
-    Ok(())
 }
 
 fn validate_member_decorations(
@@ -7582,6 +7528,96 @@ fn collect_result_types(module: &Module) -> Result<HashMap<ResultId, TypeId>, Va
     Ok(map)
 }
 
+fn validate_result_types_are_types(
+    instructions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    opcodes: &HashMap<ResultId, rspirv::spirv::Op>,
+) -> Result<(), ValidationError> {
+    for inst in instructions.values() {
+        if let Some(result_type_raw) = inst.result_type {
+            if let Ok(type_id) = ResultId::try_from(result_type_raw) {
+                if let Some(type_opcode) = opcodes.get(&type_id) {
+                    if !is_type_opcode(*type_opcode) {
+                        return Err(ValidationError::ResultTypeNotType {
+                            instruction: inst.class.opcode,
+                            result_type: Id::from(type_id),
+                            found: *type_opcode,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn is_block_operand(opcode: rspirv::spirv::Op, index: usize) -> bool {
+    match opcode {
+        rspirv::spirv::Op::Branch => index == 0,
+        rspirv::spirv::Op::BranchConditional => index == 1 || index == 2,
+        rspirv::spirv::Op::Switch => index == 1 || (index > 1 && index % 2 == 0),
+        rspirv::spirv::Op::LoopMerge => index <= 1,
+        rspirv::spirv::Op::SelectionMerge => index == 0,
+        rspirv::spirv::Op::Phi => index % 2 == 1,
+        _ => false,
+    }
+}
+
+fn check_instruction_ids(
+    inst: &rspirv::dr::Instruction,
+    defined_ids: &HashSet<Id>,
+    function: Option<Id>,
+) -> Result<(), ValidationError> {
+    if let Some(result_type) = inst.result_type {
+        if let Ok(id) = Id::try_from(result_type) {
+            if !defined_ids.contains(&id) {
+                return Err(ValidationError::UndefinedId { function, id });
+            }
+        }
+    }
+
+    for (idx, operand) in inst.operands.iter().enumerate() {
+        if is_block_operand(inst.class.opcode, idx) {
+            continue;
+        }
+        if let rspirv::dr::Operand::IdRef(raw) = operand {
+            if let Ok(id) = Id::try_from(*raw) {
+                if !defined_ids.contains(&id) {
+                    return Err(ValidationError::UndefinedId { function, id });
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_operand_definitions(
+    module: &Module,
+    defined_ids: &HashSet<Id>,
+) -> Result<(), ValidationError> {
+    for inst in &module.types_global_values {
+        check_instruction_ids(inst, defined_ids, None)?;
+    }
+    for function in &module.functions {
+        let function_id = function
+            .def
+            .as_ref()
+            .and_then(|def| def.result_id)
+            .and_then(|raw| Id::try_from(raw).ok());
+        if let Some(def) = &function.def {
+            check_instruction_ids(def, defined_ids, function_id)?;
+        }
+        for param in &function.parameters {
+            check_instruction_ids(param, defined_ids, function_id)?;
+        }
+        for block in &function.blocks {
+            for inst in &block.instructions {
+                check_instruction_ids(inst, defined_ids, function_id)?;
+            }
+        }
+    }
+    Ok(())
+}
+
 fn is_void_type(type_id: TypeId, definitions: &HashMap<ResultId, rspirv::dr::Instruction>) -> bool {
     let raw: u32 = Id::from(type_id).into();
     let Ok(result_id) = ResultId::try_from(raw) else {
@@ -7756,8 +7792,7 @@ mod tests {
         validate_module, validate_module_with_options, validate_words, CheckedBound, DeclaredBound,
         DecorationTargetId, DecorationTargetKind, ExtensionName, Id, IdKind, MaybeValidModule,
         MemberDecorationTargetId, MemberIndex, MergeTargetKind, ModuleWords, OperandId, ResultId,
-        Schema,
-        SpirvVersion, TypeId, ValidModuleCache, ValidatableModule, ValidationError,
+        Schema, SpirvVersion, TypeId, ValidModuleCache, ValidatableModule, ValidationError,
     };
     use crate::assembly::assemble_text;
     use crate::target_env::TargetEnv;
@@ -16144,8 +16179,8 @@ mod tests {
             ValidationError::ContinueTargetMatchesMerge {
                 function: Id::try_from(3).unwrap(),
                 block: Id::try_from(4).unwrap(),
-            target: Id::try_from(5).unwrap()
-        }
+                target: Id::try_from(5).unwrap()
+            }
         );
     }
 
@@ -16307,7 +16342,10 @@ mod tests {
             .as_slice()
             .validate(TargetEnv::Universal1_6)
             .expect_err("global operands must reference defined ids");
-        assert!(matches!(err, ValidationError::UndefinedId { function: None, .. }));
+        assert!(matches!(
+            err,
+            ValidationError::UndefinedId { function: None, .. }
+        ));
     }
 
     #[test]
@@ -16337,6 +16375,37 @@ mod tests {
             err,
             ValidationError::UndefinedId {
                 function: Some(_),
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn result_type_must_be_type_opcode() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%int = OpTypeInt 32 1",
+            "%fn = OpTypeFunction %void",
+            "%one = OpConstant %int 1",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "%var = OpVariable %one Function",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("result types must reference type opcodes");
+        assert!(matches!(
+            err,
+            ValidationError::ResultTypeNotType {
+                instruction: rspirv::spirv::Op::Variable,
                 ..
             }
         ));
