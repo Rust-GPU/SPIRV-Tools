@@ -1,5 +1,7 @@
 use rspirv::binary::{parse_words, Assemble};
 use rspirv::dr::Builder;
+use rspirv::dr::Loader;
+use rspirv::dr::Module;
 use rspirv::spirv::{AddressingModel, Capability, FunctionControl, MemoryModel, Op};
 use std::env;
 use std::fs;
@@ -26,6 +28,80 @@ fn cpp_opt_bin() -> Option<String> {
             })
         })
         .map(|p: PathBuf| p.to_string_lossy().into_owned())
+}
+
+fn is_arith_opcode(op: Op) -> bool {
+    matches!(
+        op,
+        Op::Constant
+            | Op::IAdd
+            | Op::IMul
+            | Op::ISub
+            | Op::SNegate
+            | Op::SDiv
+            | Op::UDiv
+            | Op::UMod
+            | Op::BitwiseAnd
+            | Op::ShiftRightLogical
+            | Op::ShiftRightArithmetic
+            | Op::ShiftLeftLogical
+    )
+}
+
+fn arith_signature(insts: &[rspirv::dr::Instruction]) -> Vec<(Op, Option<u32>, Vec<String>)> {
+    let mut sig: Vec<_> = insts
+        .iter()
+        .map(|inst| {
+            (
+                inst.class.opcode,
+                inst.result_id,
+                inst.operands
+                    .iter()
+                    .map(|op| format!("{op:?}"))
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect();
+    sig.sort_by(|a, b| {
+        a.0.cmp(&b.0)
+            .then_with(|| a.1.cmp(&b.1))
+            .then_with(|| a.2.cmp(&b.2))
+    });
+    sig
+}
+
+fn run_cpp_opt_module(words: &[u32], cpp_opt: &str) -> Module {
+    let mut input = NamedTempFile::new().expect("input temp");
+    input
+        .write_all(&words_to_bytes(words))
+        .expect("write input");
+    let output = NamedTempFile::new().expect("output temp");
+    let status = Command::new(cpp_opt)
+        .arg(input.path())
+        .arg("-o")
+        .arg(output.path())
+        .arg("-O")
+        .status()
+        .expect("run spirv-opt");
+    assert!(status.success(), "C++ spirv-opt failed");
+    let cpp_words = bytes_to_words(&fs::read(output.path()).expect("read output"));
+    let mut loader = Loader::new();
+    parse_words(&cpp_words, &mut loader).expect("parse cpp optimized");
+    loader.module()
+}
+
+fn extract_arith_insts(words: &[u32]) -> Vec<rspirv::dr::Instruction> {
+    let mut loader = Loader::new();
+    parse_words(words, &mut loader).expect("parse module");
+    let module = loader.module();
+    let block = &module.functions[0].blocks[0];
+    module
+        .types_global_values
+        .iter()
+        .chain(block.instructions.iter())
+        .filter(|inst| is_arith_opcode(inst.class.opcode))
+        .cloned()
+        .collect()
 }
 
 /// Compare the Rust arithmetic optimizer output against the C++ spirv-opt (when available).
@@ -137,6 +213,56 @@ fn rust_and_cpp_fold_mul_by_zero() {
     assert!(
         !cpp_has_mul,
         "C++ spirv-opt should remove mul instruction after folding"
+    );
+}
+
+#[test]
+fn rust_and_cpp_arith_outputs_match_const_add() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+    let (module_words, _) = build_const_add_module();
+    let rust_sig = arith_signature(
+        &spirv_tools_opt::translate::optimize_arith_block(&extract_arith_insts(&module_words))
+            .expect("rust optimize"),
+    );
+    let optimized_cpp = run_cpp_opt_module(&module_words, &cpp_opt);
+    let cpp_arith: Vec<_> = optimized_cpp
+        .types_global_values
+        .iter()
+        .chain(optimized_cpp.functions[0].blocks[0].instructions.iter())
+        .filter(|inst| is_arith_opcode(inst.class.opcode))
+        .cloned()
+        .collect();
+    let cpp_sig = arith_signature(&cpp_arith);
+    assert_eq!(
+        rust_sig, cpp_sig,
+        "Rust vs C++ arithmetic output mismatch for const add"
+    );
+}
+
+#[test]
+fn rust_and_cpp_arith_outputs_match_mul_zero() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+    let module_words = build_mul_zero_module();
+    let rust_sig = arith_signature(
+        &spirv_tools_opt::translate::optimize_arith_block(&extract_arith_insts(&module_words))
+            .expect("rust optimize"),
+    );
+    let optimized_cpp = run_cpp_opt_module(&module_words, &cpp_opt);
+    let cpp_arith: Vec<_> = optimized_cpp
+        .types_global_values
+        .iter()
+        .chain(optimized_cpp.functions[0].blocks[0].instructions.iter())
+        .filter(|inst| is_arith_opcode(inst.class.opcode))
+        .cloned()
+        .collect();
+    let cpp_sig = arith_signature(&cpp_arith);
+    assert_eq!(
+        rust_sig, cpp_sig,
+        "Rust vs C++ arithmetic output mismatch for mul zero"
     );
 }
 
