@@ -516,7 +516,7 @@ Tasks for this milestone:
 - [x] Thread validated-module reuse through FFI/CLI for these new checks to avoid reparsing.
 - [x] Add regressions that exercise conditional capabilities/extensions around Debug/Names/Annotations/Types boundaries so layout errors surface identically to the C++ validator (coverage now includes extensions/capabilities after annotations, extinst import, execution modes, memory model, and inside functions).
 
-## Active Milestone: Operand Requirements Parity
+## Completed Milestone: Operand Requirements Parity
 Tighten operand-level capability/extension/version enforcement to mirror the C++ validator tables.
 
 Tasks for this milestone:
@@ -528,6 +528,14 @@ Tasks for this milestone:
 - Added operand-level regressions for `Scope::ShaderCallKHR` to require `RayTracingKHR` (failure without capability, acceptance with capability + extension in Vulkan env).
 - Added operand-level regressions for `ImageOperands::MAKE_TEXEL_VISIBLE/AVAILABLE` to require `VulkanMemoryModel` (fail without capability, pass with capability/extension under `VulkanKHR` memory model).
 - Added operand-level regressions for `ImageOperands::NON_PRIVATE_TEXEL` to require `VulkanMemoryModel` (fail without capability, pass with capability/extension under `VulkanKHR` memory model).
+
+## Active Milestone: Layout Ordering Parity
+Tighten layout ordering to match the C++ validator’s section/decoration ordering rules.
+
+Tasks for this milestone:
+- Enforce capability/extension ordering relative to debug/names/annotations and module layout (no late section regressions), including conditional extensions/capabilities.
+- Add decoration ordering/category checks that remain in the C++ tables (e.g., per-target-env decoration placement quirks) with paired text/binary regressions.
+- Keep ValidModule caching wired through FFI/CLI for these ordering checks to avoid reparsing/renumbering.
 
 ## Upcoming Milestone: Layout Ordering Parity
 Tighten layout ordering to match the C++ validator’s section/decoration ordering rules.
