@@ -6,6 +6,8 @@ binary over the parity corpus.
 ## Requirements
 - `spirv-opt` in `PATH`, or set `SPIRV_CPP_OPT=/path/to/spirv-opt`.
 - Build the Rust workspace (`cargo test -p spirv-tools-opt --tests`) to ensure dependencies are ready.
+ - To force the Rust optimizer in FFI/CLI while leaving a rollback path, set `SPIRV_TOOLS_FORCE_RUST_OPT=1`
+   (use `SPIRV_TOOLS_DISABLE_RUST_OPT=1` to revert to C++).
 
 ## Usage
 ```bash

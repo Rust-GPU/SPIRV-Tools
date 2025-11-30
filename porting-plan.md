@@ -113,7 +113,7 @@ Flip the Rust arithmetic optimizer on by default (for supported passes) while pr
 
 Planned tasks:
 - Wire the optimizer parity runner (`scripts/run-opt-parity.sh`) into CI and track regressions over time.
-- Add an env/flag to force the Rust optimizer on by default in CLI/FFI (with disable override).
+- [x] Add an env/flag to force the Rust optimizer on by default in CLI/FFI (with disable override).
 - Keep a benchmark guardrail (hyperfine/criterion) in CI or nightly to watch for regressions.
 - Document rollback/roll-forward instructions and env toggles for downstream users.
 

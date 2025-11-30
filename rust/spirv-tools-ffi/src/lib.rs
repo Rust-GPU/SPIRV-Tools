@@ -491,15 +491,29 @@ fn rust_optimizer_enabled() -> bool {
         2 => return false,
         _ => {}
     }
-    !matches!(std::env::var("SPIRV_TOOLS_DISABLE_RUST_OPT"), Ok(v) if v == "1")
+    if matches!(std::env::var("SPIRV_TOOLS_DISABLE_RUST_OPT"), Ok(v) if v == "1") {
+        return false;
+    }
+    if std::env::var_os("SPIRV_TOOLS_FORCE_RUST_OPT").is_some() {
+        return true;
+    }
+    true
 }
 
 pub fn set_rust_optimizer_override(enable: bool) {
     RUST_OPT_OVERRIDE.store(if enable { 1 } else { 2 }, Ordering::Relaxed);
+    if enable {
+        std::env::set_var("SPIRV_TOOLS_FORCE_RUST_OPT", "1");
+        std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    } else {
+        std::env::set_var("SPIRV_TOOLS_DISABLE_RUST_OPT", "1");
+        std::env::remove_var("SPIRV_TOOLS_FORCE_RUST_OPT");
+    }
 }
 
 pub fn clear_rust_optimizer_override() {
     RUST_OPT_OVERRIDE.store(0, Ordering::Relaxed);
+    std::env::remove_var("SPIRV_TOOLS_FORCE_RUST_OPT");
 }
 
 pub fn try_assemble_text(context_handle: u64, text: &[u8], options: u32) -> ffi::AssembleResult {
