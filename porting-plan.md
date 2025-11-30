@@ -92,6 +92,7 @@ Planned tasks:
 - Expand e-graph coverage to additional algebraic identities and ensure the reconstructed SPIR-V preserves ids and layout invariants.
 - [x] Add CI parity runner to diff Rust vs. C++ optimizer outputs on the arithmetic corpus; gate regressions.
 - [x] Document optimizer parity runner usage for CI/locals.
+- [x] Add hyperfine benchmark script comparing Rust opt_block, passthrough, and C++ spirv-opt for a sample module.
 
 ## Upcoming Milestone: Optimizer Parity vs C++ Arithmetic Pass
 Align the Rust arithmetic optimizer with the legacy C++ arithmetic canonicalization passes.
