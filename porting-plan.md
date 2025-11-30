@@ -543,6 +543,7 @@ Tasks for this milestone:
 - Validate function definitions: block ordering, structured control flow (merge/continue rules), and minimal well-formedness (single entry, required terminators).
 - Enforce SSA/phi correctness (dominance of defs, matching predecessor counts/types) and type checking for instructions beyond the current structural pass.
 - Detect unreachable basic blocks in functions and report them with typed diagnostics; added regression in Rust validator tests.
+- Enforce structured merge rules: merges must immediately precede their terminators, selection merges pair with conditional/switch terminators, loop merge/continue targets must exist and be distinct, and structured terminators require a selection merge.
 - Validate interface linkage for variables and descriptor sets/bindings where applicable per environment.
 - Wire the Rust validator through FFI/CLI as the default path (behind a feature flag) once the above checks and layout parity are in place, backed by mirrored gtest/integration coverage.
 

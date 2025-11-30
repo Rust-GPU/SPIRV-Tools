@@ -228,6 +228,12 @@ pub fn format_validation_error(error: &ValidationError, names: Option<&FriendlyN
                 function, block, ..
             },
             Some(names),
+        )
+        | (
+            ValidationError::MissingSelectionMerge {
+                function, block, ..
+            },
+            Some(names),
         ) => format!(
             "{} in block {}",
             names.format_id((*function).into()),
@@ -1367,6 +1373,16 @@ pub enum ValidationError {
         /// The shared target id.
         target: Id,
     },
+    /// A structured terminator is missing a required selection merge.
+    #[error("block {block:?} of function {function:?} ends with {terminator:?} but lacks a selection merge")]
+    MissingSelectionMerge {
+        /// The function containing the block.
+        function: Id,
+        /// The block with the structured terminator.
+        block: Id,
+        /// The structured terminator opcode.
+        terminator: rspirv::spirv::Op,
+    },
     /// A phi instruction has an unexpected number of incoming predecessors.
     #[error(
         "phi in block {block:?} of function {function:?} has {found} incoming values, expected {expected}"
@@ -2150,6 +2166,29 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                     }
                     _ => {}
                 }
+            }
+            let requires_selection_merge = matches!(
+                terminator_inst.class.opcode,
+                rspirv::spirv::Op::BranchConditional | rspirv::spirv::Op::Switch
+            );
+            match (requires_selection_merge, merge_instruction) {
+                (true, None) => {
+                    return Err(ValidationError::MissingSelectionMerge {
+                        function: function_id,
+                        block: block_label_id,
+                        terminator: terminator_inst.class.opcode,
+                    });
+                }
+                (true, Some((_, inst)))
+                    if inst.class.opcode != rspirv::spirv::Op::SelectionMerge =>
+                {
+                    return Err(ValidationError::MissingSelectionMerge {
+                        function: function_id,
+                        block: block_label_id,
+                        terminator: terminator_inst.class.opcode,
+                    });
+                }
+                _ => {}
             }
             let check_target = |operand: &rspirv::dr::Operand| -> Result<(), ValidationError> {
                 if let rspirv::dr::Operand::IdRef(raw) = operand {
@@ -15720,6 +15759,103 @@ mod tests {
                 function: Id::try_from(3).unwrap(),
                 block: Id::try_from(4).unwrap(),
                 target: Id::try_from(5).unwrap()
+            }
+        );
+    }
+
+    #[test]
+    fn branch_conditional_requires_selection_merge() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%bool = OpTypeBool",
+            "%true = OpConstantTrue %bool",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpBranchConditional %true %entry %entry",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("structured branch must have selection merge");
+        assert_eq!(
+            err,
+            ValidationError::MissingSelectionMerge {
+                function: Id::try_from(5).unwrap(),
+                block: Id::try_from(6).unwrap(),
+                terminator: rspirv::spirv::Op::BranchConditional
+            }
+        );
+    }
+
+    #[test]
+    fn switch_requires_selection_merge() {
+        let binary = vec![
+            0x0723_0203, // magic
+            0x0001_0000, // version 1.0
+            0,           // generator
+            10,          // bound (ids up to 9)
+            0,           // schema
+            op(2, rspirv::spirv::Op::Capability as u16),
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, rspirv::spirv::Op::MemoryModel as u16),
+            rspirv::spirv::AddressingModel::Logical as u32,
+            rspirv::spirv::MemoryModel::GLSL450 as u32,
+            op(2, rspirv::spirv::Op::TypeVoid as u16),
+            1, // %void
+            op(3, rspirv::spirv::Op::TypeFunction as u16),
+            2, // %fn
+            1, // return type
+            op(4, rspirv::spirv::Op::TypeInt as u16),
+            3, // %i32
+            32,
+            0,
+            op(4, rspirv::spirv::Op::Constant as u16),
+            3, // type
+            4, // %zero
+            0, // literal
+            op(5, rspirv::spirv::Op::Function as u16),
+            1, // return type
+            5, // %main
+            rspirv::spirv::FunctionControl::NONE.bits(),
+            2, // function type
+            op(2, rspirv::spirv::Op::Label as u16),
+            6, // %entry
+            op(5, rspirv::spirv::Op::Switch as u16),
+            4, // selector %zero
+            8, // default target
+            0, // literal
+            7, // case target
+            op(2, rspirv::spirv::Op::Label as u16),
+            7, // %case
+            op(2, rspirv::spirv::Op::Branch as u16),
+            9, // %merge
+            op(2, rspirv::spirv::Op::Label as u16),
+            8, // %default
+            op(2, rspirv::spirv::Op::Branch as u16),
+            9, // %merge
+            op(2, rspirv::spirv::Op::Label as u16),
+            9, // %merge
+            op(1, rspirv::spirv::Op::Return as u16),
+            op(1, rspirv::spirv::Op::FunctionEnd as u16),
+        ];
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("structured switch must have selection merge");
+        assert_eq!(
+            err,
+            ValidationError::MissingSelectionMerge {
+                function: Id::try_from(5).unwrap(),
+                block: Id::try_from(6).unwrap(),
+                terminator: rspirv::spirv::Op::Switch
             }
         );
     }
