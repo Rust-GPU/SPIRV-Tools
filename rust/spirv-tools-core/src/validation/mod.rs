@@ -197,6 +197,18 @@ pub fn format_validation_error(error: &ValidationError, names: Option<&FriendlyN
             names.format_id((*entry_point).into())
         ),
         (
+            ValidationError::EntryPointInterfaceLocationConflict {
+                entry_point,
+                storage_class,
+                location,
+                component,
+            },
+            Some(names),
+        ) => format!(
+            "{} {storage_class:?} location {location} component {component}",
+            names.format_id((*entry_point).into())
+        ),
+        (
             ValidationError::EntryPointInterfaceFloatEncodingInvalid {
                 interface,
                 storage_class,
@@ -1434,6 +1446,20 @@ pub enum ValidationError {
         /// The duplicated storage class.
         storage_class: rspirv::spirv::StorageClass,
     },
+    /// Entry-point interface variables consumed overlapping locations/components.
+    #[error(
+        "entry point {entry_point:?} has overlapping {storage_class:?} locations at location {location} component {component}"
+    )]
+    EntryPointInterfaceLocationConflict {
+        /// The entry-point function id.
+        entry_point: Id,
+        /// The storage class of the conflicting variables.
+        storage_class: rspirv::spirv::StorageClass,
+        /// The conflicting location.
+        location: u32,
+        /// The conflicting component.
+        component: u32,
+    },
     /// An entry point interface variable uses a disallowed floating-point encoding for its storage
     /// class in Vulkan environments.
     #[error(
@@ -2282,6 +2308,7 @@ fn validate_words(
     let entry_points =
         validate_entry_points(&module, &defined_result_ids, &opcodes, &definitions)?;
     validate_entry_point_interface_storage_classes(&module, &definitions, env)?;
+    validate_entry_point_locations(&module, &definitions, env)?;
     validate_execution_modes(&module, &entry_points, env, &options)?;
     validate_functions(&module)?;
     validate_operand_definitions(&module, &defined_ids)?;
@@ -3035,6 +3062,223 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
             }
         }
     }
+    Ok(())
+}
+
+fn constant_u32_from_defs(
+    id: ResultId,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+) -> Option<u32> {
+    let inst = definitions.get(&id)?;
+    if inst.class.opcode == rspirv::spirv::Op::Constant {
+        if let Some(rspirv::dr::Operand::LiteralBit32(value)) = inst.operands.get(0) {
+            return Some(*value);
+        }
+    }
+    None
+}
+
+fn consumed_components_for_type(
+    ty: ResultId,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    seen: &mut HashSet<ResultId>,
+) -> Option<u32> {
+    if !seen.insert(ty) {
+        return Some(0);
+    }
+    let inst = definitions.get(&ty)?;
+    match inst.class.opcode {
+        rspirv::spirv::Op::TypeInt | rspirv::spirv::Op::TypeFloat => Some(1),
+        rspirv::spirv::Op::TypeVector => inst.operands.get(1).and_then(|op| match op {
+            rspirv::dr::Operand::LiteralBit32(width) => Some(*width),
+            _ => None,
+        }),
+        rspirv::spirv::Op::TypeMatrix => {
+            let column_type = inst.operands.get(0).and_then(|op| match op {
+                rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                _ => None,
+            })?;
+            let columns = inst.operands.get(1).and_then(|op| match op {
+                rspirv::dr::Operand::LiteralBit32(count) => Some(*count),
+                _ => None,
+            })?;
+            let mut seen = seen.clone();
+            consumed_components_for_type(column_type, definitions, &mut seen)
+                .map(|per_column| per_column.saturating_mul(columns))
+        }
+        rspirv::spirv::Op::TypeArray => {
+            let element = inst.operands.get(0).and_then(|op| match op {
+                rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                _ => None,
+            })?;
+            let length_id = inst.operands.get(1).and_then(|op| match op {
+                rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                _ => None,
+            })?;
+            let length = constant_u32_from_defs(length_id, definitions)?;
+            let mut seen = seen.clone();
+            consumed_components_for_type(element, definitions, &mut seen)
+                .map(|per_element| per_element.saturating_mul(length))
+        }
+        rspirv::spirv::Op::TypeRuntimeArray => None,
+        rspirv::spirv::Op::TypeStruct => {
+            let mut total: u32 = 0;
+            for op in &inst.operands {
+                if let rspirv::dr::Operand::IdRef(member) = op {
+                    if let Ok(member_id) = ResultId::try_from(*member) {
+                        let mut seen = seen.clone();
+                        if let Some(components) =
+                            consumed_components_for_type(member_id, definitions, &mut seen)
+                        {
+                            total = total.saturating_add(components);
+                        }
+                    }
+                }
+            }
+            Some(total)
+        }
+        _ => Some(1),
+    }
+}
+
+fn location_and_component(
+    module: &Module,
+    target: ResultId,
+) -> Option<(u32, u32)> {
+    let mut location = None;
+    let mut component = 0;
+    let target_raw = target.into_inner().get();
+    for dec in &module.annotations {
+        if dec.class.opcode == rspirv::spirv::Op::Decorate {
+            if let (Some(rspirv::dr::Operand::IdRef(id)), Some(rspirv::dr::Operand::Decoration(decoration))) =
+                (dec.operands.get(0), dec.operands.get(1))
+            {
+                if *id == target_raw {
+                    match decoration {
+                        rspirv::spirv::Decoration::Location => {
+                            if let Some(rspirv::dr::Operand::LiteralBit32(loc)) =
+                                dec.operands.get(2)
+                            {
+                                location = Some(*loc);
+                            }
+                        }
+                        rspirv::spirv::Decoration::Component => {
+                            if let Some(rspirv::dr::Operand::LiteralBit32(comp)) =
+                                dec.operands.get(2)
+                            {
+                                component = *comp;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+    location.map(|loc| (loc, component))
+}
+
+fn validate_entry_point_locations(
+    module: &Module,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    env: TargetEnv,
+) -> Result<(), ValidationError> {
+    if !is_vulkan_env(env) {
+        return Ok(());
+    }
+
+    for ep in &module.entry_points {
+        let mut operands = ep.operands.iter();
+        if ep.class.opcode == rspirv::spirv::Op::ConditionalEntryPointINTEL {
+            let _ = operands.next();
+        }
+        let execution_model = operands.next().and_then(|op| match op {
+            rspirv::dr::Operand::ExecutionModel(model) => Some(*model),
+            _ => None,
+        });
+        match execution_model {
+            Some(
+                rspirv::spirv::ExecutionModel::Vertex
+                | rspirv::spirv::ExecutionModel::TessellationControl
+                | rspirv::spirv::ExecutionModel::TessellationEvaluation
+                | rspirv::spirv::ExecutionModel::Geometry
+                | rspirv::spirv::ExecutionModel::Fragment,
+            ) => {}
+            _ => continue,
+        }
+        let entry_point_id = operands
+            .next()
+            .and_then(|op| match op {
+                rspirv::dr::Operand::IdRef(ep_id) => Id::try_from(*ep_id).ok(),
+                _ => None,
+            })
+            .ok_or(ValidationError::InvalidEntryPointOperand)?;
+        // Skip name.
+        let operands = operands.skip(1);
+        let mut input_locs = HashSet::new();
+        let mut output_locs = HashSet::new();
+        for operand in operands {
+            let interface_id = match operand {
+                rspirv::dr::Operand::IdRef(id) => *id,
+                _ => continue,
+            };
+            let interface_id = match ResultId::try_from(interface_id) {
+                Ok(id) => id,
+                Err(_) => continue,
+            };
+            let storage_class = definitions
+                .get(&interface_id)
+                .and_then(|inst| inst.operands.get(0))
+                .and_then(|op| match op {
+                    rspirv::dr::Operand::StorageClass(sc) => Some(*sc),
+                    _ => None,
+                });
+            let storage_class = match storage_class {
+                Some(sc) if sc == rspirv::spirv::StorageClass::Input
+                    || sc == rspirv::spirv::StorageClass::Output =>
+                {
+                    sc
+                }
+                _ => continue,
+            };
+            let (location, component) = match location_and_component(module, interface_id) {
+                Some(loc) => loc,
+                None => continue,
+            };
+            let pointer_type = definitions
+                .get(&interface_id)
+                .and_then(|inst| inst.result_type)
+                .and_then(|ty| ResultId::try_from(ty).ok());
+            let pointee_type = pointer_type
+                .and_then(|ptr| definitions.get(&ptr))
+                .and_then(|ptr_inst| ptr_inst.operands.get(1))
+                .and_then(|op| match op {
+                    rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                    _ => None,
+                });
+            let consumed = pointee_type
+                .and_then(|ty| consumed_components_for_type(ty, definitions, &mut HashSet::new()))
+                .unwrap_or(1);
+            let loc_set = if storage_class == rspirv::spirv::StorageClass::Input {
+                &mut input_locs
+            } else {
+                &mut output_locs
+            };
+            for offset in 0..consumed {
+                let component_idx = component + offset;
+                let loc_component = (location, component_idx);
+                if !loc_set.insert(loc_component) {
+                    return Err(ValidationError::EntryPointInterfaceLocationConflict {
+                        entry_point: entry_point_id,
+                        storage_class,
+                        location,
+                        component: component_idx,
+                    });
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -26582,6 +26826,65 @@ mod tests {
                 execution_model: rspirv::spirv::ExecutionModel::Vertex,
             }
         );
+    }
+
+    #[test]
+    fn duplicate_input_locations_are_rejected_in_vulkan() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%float = OpTypeFloat 32",
+            "%ptr = OpTypePointer Input %float",
+            "%in0 = OpVariable %ptr Input",
+            "%in1 = OpVariable %ptr Input",
+            "OpDecorate %in0 Location 0",
+            "OpDecorate %in1 Location 0",
+            "OpEntryPoint Vertex %main \"main\" %in0 %in1",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Vulkan1_2)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::EntryPointInterfaceLocationConflict {
+                entry_point: Id::try_from(7).unwrap(),
+                storage_class: rspirv::spirv::StorageClass::Input,
+                location: 0,
+                component: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn duplicate_input_locations_are_allowed_outside_vulkan() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%float = OpTypeFloat 32",
+            "%ptr = OpTypePointer Input %float",
+            "%in0 = OpVariable %ptr Input",
+            "%in1 = OpVariable %ptr Input",
+            "OpDecorate %in0 Location 0",
+            "OpDecorate %in1 Location 0",
+            "OpEntryPoint Vertex %main \"main\" %in0 %in1",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Universal1_6)
+            .expect("Location overlap checks are Vulkan-specific");
     }
 
     #[test]
