@@ -3255,8 +3255,8 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                             rspirv::dr::Operand::IdRef(raw) => ResultId::try_from(*raw).ok(),
                             _ => None,
                         });
-                        let op_type_inst = op_type
-                            .and_then(|rid| result_types.get(&rid).copied())
+                        let op_type_id = op_type.and_then(|rid| result_types.get(&rid).copied());
+                        let op_type_inst = op_type_id
                             .and_then(|tid| ResultId::try_from(u32::from(Id::from(tid))).ok())
                             .and_then(|rid| definitions.get(&rid));
 
@@ -3361,6 +3361,25 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                                     expected: result_type,
                                     found: op_type_id,
                                 });
+                            }
+                        }
+                        if let Some(op1) = inst.operands.get(1).and_then(|op| match op {
+                            rspirv::dr::Operand::IdRef(raw) => ResultId::try_from(*raw).ok(),
+                            _ => None,
+                        }) {
+                            if let Some(op1_type) = result_types.get(&op1).copied() {
+                                if let Some(expected) = op_type_id {
+                                    if expected != op1_type {
+                                        return Err(ValidationError::OperandTypeMismatch {
+                                            function: function_id,
+                                            block: block_label_id,
+                                            instruction: inst.class.opcode,
+                                            operand_index: 1,
+                                            expected,
+                                            found: op1_type,
+                                        });
+                                    }
+                                }
                             }
                         }
                     }
@@ -19311,6 +19330,51 @@ mod tests {
                 instruction: rspirv::spirv::Op::FOrdEqual,
                 expected: TypeId::try_from(bool_ty).unwrap(),
                 found: TypeId::try_from(bool_ty).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn compare_operands_must_match_each_other() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let bool_ty = b.type_bool();
+        let int32 = b.type_int(32, 1);
+        let int16 = b.type_int(16, 1);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let header = b.begin_block(None).unwrap();
+        let lhs = b.constant_bit32(int32, 1);
+        let rhs = b.constant_bit32(int16, 1);
+        b.i_equal(bool_ty, None, lhs, rhs).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let words = b.module().assemble();
+        let err = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("compare operands must have the same type");
+        assert_eq!(
+            err,
+            ValidationError::OperandTypeMismatch {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(header).unwrap(),
+                instruction: rspirv::spirv::Op::IEqual,
+                operand_index: 1,
+                expected: TypeId::try_from(int32).unwrap(),
+                found: TypeId::try_from(int16).unwrap(),
             }
         );
     }
