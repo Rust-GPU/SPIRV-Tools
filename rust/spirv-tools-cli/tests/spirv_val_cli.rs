@@ -184,3 +184,41 @@ OpFunctionEnd
         .expect("run spirv-val");
     assert!(status.success(), "expected success, got {status:?}");
 }
+
+fn simple_module() -> NamedTempFile {
+    write_binary(
+        r#"
+OpCapability Shader
+OpMemoryModel Logical Simple
+OpEntryPoint Vertex %main "main"
+%void = OpTypeVoid
+%void_fn = OpTypeFunction %void
+%main = OpFunction %void None %void_fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#,
+    )
+}
+
+#[test]
+fn spirv_val_cli_honors_env_prefer_rust() {
+    let file = simple_module();
+    let status = Command::new(env!("CARGO_BIN_EXE_spirv-val"))
+        .env("SPIRV_TOOLS_PREFER_RUST_VALIDATOR", "1")
+        .arg(file.path())
+        .status()
+        .expect("run spirv-val");
+    assert!(status.success(), "expected success, got {status:?}");
+}
+
+#[test]
+fn spirv_val_cli_honors_env_prefer_cpp() {
+    let file = simple_module();
+    let status = Command::new(env!("CARGO_BIN_EXE_spirv-val"))
+        .env("SPIRV_TOOLS_PREFER_CPP_VALIDATOR", "1")
+        .arg(file.path())
+        .status()
+        .expect("run spirv-val");
+    assert!(status.success(), "expected success, got {status:?}");
+}
