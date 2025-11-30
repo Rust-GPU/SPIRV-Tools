@@ -326,6 +326,24 @@ pub fn translate_arith(instructions: &[Instruction]) -> Result<TranslatedExpr, T
                 };
                 expr.add(node)
             }
+            Op::Not => {
+                let operand = inst
+                    .operands
+                    .iter()
+                    .find_map(|op| match op {
+                        rspirv::dr::Operand::IdRef(id) => Some(*id),
+                        _ => None,
+                    })
+                    .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
+                let id = ids
+                    .get(&operand)
+                    .copied()
+                    .ok_or(TranslateError::UnknownOperand {
+                        id: operand,
+                        opcode,
+                    })?;
+                expr.add(SpirvLang::BitNot(id))
+            }
             other => return Err(TranslateError::UnsupportedOp(other)),
         };
         ids.insert(result_id, node_id);
@@ -497,6 +515,12 @@ pub fn optimize_arith_block(
                     rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
                 ],
             ),
+            SpirvLang::BitNot(x) => Instruction::new(
+                Op::Not,
+                Some(result_type),
+                Some(result_id),
+                vec![rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*x)])],
+            ),
             SpirvLang::RotL(_) | SpirvLang::RotR(_) => continue,
             SpirvLang::Shl([a, b]) => Instruction::new(
                 Op::ShiftLeftLogical,
@@ -561,6 +585,7 @@ fn expr_cost(expr: &RecExpr<SpirvLang>) -> usize {
             | SpirvLang::RotL([a, b])
             | SpirvLang::RotR([a, b]) => 1 + costs[usize::from(*a)] + costs[usize::from(*b)],
             SpirvLang::BitAnd([a, b]) => 2 + costs[usize::from(*a)] + costs[usize::from(*b)],
+            SpirvLang::BitNot(x) => 1 + costs[usize::from(*x)],
         };
         costs.push(cost);
     }
