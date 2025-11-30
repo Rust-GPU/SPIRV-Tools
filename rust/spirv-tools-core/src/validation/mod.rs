@@ -18329,6 +18329,48 @@ mod tests {
     }
 
     #[test]
+    fn phi_cannot_have_extra_predecessors() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%bool = OpTypeBool",
+            "%int = OpTypeInt 32 1",
+            "%fn = OpTypeFunction %int",
+            "%true = OpConstantTrue %bool",
+            "%zero = OpConstant %int 0",
+            "%one = OpConstant %int 1",
+            "%main = OpFunction %int None %fn",
+            "%entry = OpLabel",
+            "OpSelectionMerge %merge None",
+            "OpBranchConditional %true %merge %side",
+            "%side = OpLabel",
+            "%v = OpIAdd %int %zero %one",
+            "OpBranch %merge",
+            "%merge = OpLabel",
+            // Too many incoming predecessor/value pairs (3 pairs, but only 2 predecessors).
+            "%phi = OpPhi %int %v %side %zero %entry %one %entry",
+            "OpReturnValue %phi",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("phi cannot list more incoming predecessors than the block has");
+        assert_eq!(
+            err,
+            ValidationError::PhiDuplicatePredecessor {
+                function: Id::try_from(8).unwrap(),
+                block: Id::try_from(10).unwrap(),
+                incoming: Id::try_from(9).unwrap(),
+            }
+        );
+    }
+
+    #[test]
     fn operand_id_must_be_defined_globally() {
         let text = [
             "OpCapability Shader",

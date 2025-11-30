@@ -663,7 +663,7 @@ Mirror the C++ validator’s SSA and type checking inside function bodies.
 
 Tasks for this milestone:
 - Enforce dominance of definitions over uses (including phis) with typed `ValidationError` coverage and Rust regressions.
-- Validate `OpPhi` predecessor count/order matches predecessor blocks and that incoming value types match the phi result type.
+- [x] Validate `OpPhi` predecessor count/order matches predecessor blocks and that incoming value types match the phi result type.
 - Check operand types for common instructions beyond the current structural pass (arithmetic, logical, memory) against the grammar tables.
 - Reject unreachable blocks that declare ids referenced from reachable code, matching the C++ diagnostic shape.
 - Add regression tests (text and binary) for SSA/type failures and wire them through the CLI/FFI parity runs.
