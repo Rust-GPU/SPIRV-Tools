@@ -137,6 +137,44 @@ fn cli_opt_block_force_rust_overrides_disable_env() {
 }
 
 #[test]
+fn cli_opt_block_force_env_enables_optimizer() {
+    let _guard = ENV_GUARD.lock().unwrap();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    std::env::set_var("SPIRV_TOOLS_FORCE_RUST_OPT", "1");
+    let (words, sub_id) = build_sample_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let output = dir.path().join("output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let status = Command::new(exe)
+        .arg(&input)
+        .arg(&output)
+        .status()
+        .expect("run opt_block");
+    std::env::remove_var("SPIRV_TOOLS_FORCE_RUST_OPT");
+    assert!(status.success(), "opt_block should exit successfully");
+
+    let optimized_bytes = std::fs::read(&output).expect("read output");
+    let optimized_words = bytes_to_words(&optimized_bytes);
+    let mut loader = Loader::new();
+    rspirv::binary::parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+
+    let has_const = module.all_inst_iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(sub_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(7)]
+    });
+    let has_sub = module
+        .all_inst_iter()
+        .any(|inst| inst.class.opcode == Op::ISub);
+    assert!(has_const, "force env should fold subtraction");
+    assert!(!has_sub, "subtraction should be folded when force env is set");
+}
+
+#[test]
 fn cli_opt_block_passthrough_flag() {
     let (words, sub_id) = build_sample_module();
     let dir = tempdir().expect("tempdir");

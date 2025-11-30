@@ -93,9 +93,11 @@ fn optimize_module(
     if passthrough {
         return Ok(words.to_vec());
     }
+    let force_env = std::env::var_os("SPIRV_TOOLS_FORCE_RUST_OPT").is_some();
     if !force_rust && matches!(env::var("SPIRV_TOOLS_DISABLE_RUST_OPT"), Ok(v) if v == "1") {
         return Ok(words.to_vec());
     }
+    let _ = force_env; // reserved for future use; disable env is authoritative unless force flag.
 
     let mut loader = rspirv::dr::Loader::new();
     parse_words(words, &mut loader)?;
