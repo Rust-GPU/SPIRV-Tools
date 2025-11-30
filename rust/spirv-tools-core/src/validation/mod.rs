@@ -8741,6 +8741,7 @@ fn validate_entry_point_interface_storage_classes(
         let mut seen_ray_payload = false;
         let mut seen_hit_attribute = false;
         let mut seen_callable_data = false;
+        let mut seen_interface_ids: HashSet<Id> = HashSet::new();
         for operand in operands {
             let interface_id = match operand {
                 rspirv::dr::Operand::IdRef(id) => *id,
@@ -8750,6 +8751,12 @@ fn validate_entry_point_interface_storage_classes(
                 if let Some(inst) = definitions.get(&id) {
                     if let Some(rspirv::dr::Operand::StorageClass(storage)) = inst.operands.first()
                     {
+                        if !seen_interface_ids.insert(id.into()) {
+                            return Err(ValidationError::DuplicateEntryPointInterface {
+                                entry_point: entry_point_id,
+                                interface: id.into(),
+                            });
+                        }
                         if matches!(
                             exec_model,
                             rspirv::spirv::ExecutionModel::RayGenerationKHR
@@ -8950,6 +8957,15 @@ fn validate_entry_point_interface_storage_classes(
                                         }
                                     }
                                 }
+                            }
+                            rspirv::spirv::StorageClass::Function => {
+                                return Err(
+                                    ValidationError::EntryPointInterfaceStorageClassInvalid {
+                                        entry_point: entry_point_id,
+                                        interface: id.into_inner(),
+                                        storage_class: *storage,
+                                    },
+                                );
                             }
                             _ => {}
                         }
@@ -28929,6 +28945,65 @@ mod tests {
                 entry_point: Id::try_from(6).unwrap(),
                 interface: Id::try_from(5).unwrap(),
                 storage_class: rspirv::spirv::StorageClass::Output,
+            }
+        );
+    }
+
+    #[test]
+    fn duplicate_interface_ids_are_rejected_per_entry_point() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%int = OpTypeInt 32 0",
+            "%ptr = OpTypePointer Input %int",
+            "%in = OpVariable %ptr Input",
+            "OpEntryPoint Vertex %main \"main\" %in %in",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Vulkan1_2)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::DuplicateEntryPointInterface {
+                entry_point: Id::try_from(6).unwrap(),
+                interface: Id::try_from(5).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn function_scope_interface_is_rejected() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%int = OpTypeInt 32 0",
+            "%ptr = OpTypePointer Function %int",
+            "OpEntryPoint Vertex %main \"main\" %local",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "%local = OpVariable %ptr Function",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Vulkan1_2)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::EntryPointInterfaceStorageClassInvalid {
+                entry_point: Id::try_from(5).unwrap(),
+                interface: Id::try_from(6).unwrap(),
+                storage_class: rspirv::spirv::StorageClass::Function,
             }
         );
     }
