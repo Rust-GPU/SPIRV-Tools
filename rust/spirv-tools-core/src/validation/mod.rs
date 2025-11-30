@@ -259,6 +259,14 @@ pub fn format_validation_error(error: &ValidationError, names: Option<&FriendlyN
                 value: block,
             },
             Some(names),
+        )
+        | (
+            ValidationError::FunctionVariableStorageClassMismatch {
+                function,
+                variable: block,
+                ..
+            },
+            Some(names),
         ) => format!(
             "{} in block {}",
             names.format_id((*function).into()),
@@ -1575,6 +1583,16 @@ pub enum ValidationError {
         /// The value that is defined elsewhere.
         value: Id,
     },
+    /// A function-scoped variable uses a non-function storage class.
+    #[error("variable {variable:?} in function {function:?} must use Function storage class (found {storage_class:?})")]
+    FunctionVariableStorageClassMismatch {
+        /// The function containing the variable.
+        function: Id,
+        /// The variable id.
+        variable: Id,
+        /// The provided storage class.
+        storage_class: rspirv::spirv::StorageClass,
+    },
     /// A merge instruction is paired with an invalid terminator.
     #[error("block {block:?} of function {function:?} has merge paired with invalid terminator {terminator:?}")]
     InvalidMergeTerminator {
@@ -2653,6 +2671,23 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                         &definitions,
                         &result_types,
                     )?;
+                }
+                if inst.class.opcode == rspirv::spirv::Op::Variable {
+                    if let Some(rspirv::dr::Operand::StorageClass(storage)) =
+                        inst.operands.get(0)
+                    {
+                        if *storage != rspirv::spirv::StorageClass::Function {
+                            let variable = inst
+                                .result_id
+                                .and_then(|raw| Id::try_from(raw).ok())
+                                .unwrap_or(function_id);
+                            return Err(ValidationError::FunctionVariableStorageClassMismatch {
+                                function: function_id,
+                                variable,
+                                storage_class: *storage,
+                            });
+                        }
+                    }
                 }
                 if inst.class.opcode == rspirv::spirv::Op::Phi {
                     let phi_result_type = inst
@@ -12497,6 +12532,53 @@ mod tests {
             ValidationError::ValueDefinedInAnotherFunction {
                 function: Id::try_from(8).unwrap(),
                 value: Id::try_from(7).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn function_variable_storage_must_be_function_class() {
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            6,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+            op(4, 21), // OpTypeInt %3 32 0
+            3,
+            32,
+            0,
+            op(5, 54), // OpFunction %4 None %2
+            1,
+            4,
+            0,
+            2,
+            op(2, 248), // OpLabel %5
+            5,
+            op(4, 59), // OpVariable %3 %6 Private (invalid storage)
+            3,
+            6,
+            rspirv::spirv::StorageClass::Private as u32,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::FunctionVariableStorageClassMismatch {
+                function: Id::try_from(4).unwrap(),
+                variable: Id::try_from(6).unwrap(),
+                storage_class: rspirv::spirv::StorageClass::Private,
             }
         );
     }

@@ -542,6 +542,7 @@ Tasks for this milestone:
 - Enforce structured merge rules: merges must immediately precede their terminators, selection merges pair with conditional/switch terminators, loop merge/continue targets must exist and be distinct, and structured terminators require a selection merge.
 - [x] Enforce function call signatures (target must be a function definition; return/argument counts and types must match the callee) with Rust regressions.
 - [x] Reject values defined in one function that are referenced in another, with Rust regression coverage.
+- [x] Enforce function-scoped variables to use Function storage class with Rust regression coverage.
 - Validate interface linkage for variables and descriptor sets/bindings where applicable per environment.
 - Wire the Rust validator through FFI/CLI as the default path (behind a feature flag) once the above checks and layout parity are in place, backed by mirrored gtest/integration coverage.
 
