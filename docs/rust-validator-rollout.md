@@ -25,3 +25,4 @@ If both env vars are set, the disable flag wins. CLI flags override env preferen
 - Run the existing corpus with the Rust path forced:
   `SPIRV_TOOLS_FORCE_RUST_VALIDATOR=1 ctest --output-on-failure` in a test-enabled build dir.
 - For single binaries, `spirv-val --force-rust-validator ...` mirrors the above.
+- For an end-to-end parity sweep (validator + optimizer), run `scripts/run-parity.sh`.
