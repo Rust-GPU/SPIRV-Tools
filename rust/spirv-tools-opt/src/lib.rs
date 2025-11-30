@@ -404,6 +404,10 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("band-mask-to-umod"; "(band ?x ?c)" => {
             BitAndToUmod { x: var("?x"), c: var("?c") }
         }),
+        rewrite!("mask-then-shift-to-shift-and-umod";
+        "(shr_u (band ?x ?c_mask) ?c_shift)" => {
+            MaskThenShift { x: var("?x"), mask: var("?c_mask"), shift: var("?c_shift") }
+        }),
         rewrite!("band-self"; "(band ?x ?x)" => "?x"),
         rewrite!("umod-power-of-two-mask"; "(umod ?x ?c)" => {
             UModPowerOfTwoMask { x: var("?x"), c: var("?c") }
@@ -769,6 +773,11 @@ struct UModPowerOfTwo {
 struct UModPowerOfTwoMask {
     x: Var,
     c: Var,
+}
+struct MaskThenShift {
+    x: Var,
+    mask: Var,
+    shift: Var,
 }
 struct MergeShift {
     x: Var,
@@ -1954,6 +1963,39 @@ impl Applier<SpirvLang, ()> for UModPowerOfTwoMask {
         let mask_value = (1u32 << shift).wrapping_sub(1);
         let mask = egraph.add(SpirvLang::Const(ConstValue::new(mask_value)));
         let band = egraph.add(SpirvLang::BitAnd([subst[self.x], mask]));
+        egraph.union(eclass, band);
+        vec![band]
+    }
+}
+
+impl Applier<SpirvLang, ()> for MaskThenShift {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(mask_val) = const_value(egraph, subst[self.mask]) else {
+            return Vec::new();
+        };
+        let Some(shift_val) = const_value(egraph, subst[self.shift]) else {
+            return Vec::new();
+        };
+        let Some(mask_pow) = is_power_of_two(mask_val.get()) else {
+            return Vec::new();
+        };
+        if mask_pow == 0 {
+            return Vec::new();
+        }
+        // (x & (2^n - 1)) >> k  =>  (x >> k) & (2^n - 1 >> k)
+        let shr_const = ConstValue::new(shift_val.get());
+        let shr_const_id = egraph.add(SpirvLang::Const(shr_const));
+        let shr = egraph.add(SpirvLang::ShrU([subst[self.x], shr_const_id]));
+        let new_mask = mask_val.get().wrapping_shr(shift_val.get());
+        let mask_id = egraph.add(SpirvLang::Const(ConstValue::new(new_mask)));
+        let band = egraph.add(SpirvLang::BitAnd([shr, mask_id]));
         egraph.union(eclass, band);
         vec![band]
     }
