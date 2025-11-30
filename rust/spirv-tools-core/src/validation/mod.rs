@@ -1739,6 +1739,22 @@ pub enum ValidationError {
         /// The argument's type.
         found: TypeId,
     },
+    /// An instruction's result type does not match the expected type for the opcode.
+    #[error(
+        "instruction {instruction:?} in block {block:?} of function {function:?} has result type {found:?} but expected {expected:?}"
+    )]
+    InstructionResultTypeMismatch {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode.
+        instruction: rspirv::spirv::Op,
+        /// The expected result type.
+        expected: TypeId,
+        /// The found result type.
+        found: TypeId,
+    },
     /// An instruction operand has a type that does not match the instruction's result type.
     #[error(
         "instruction {instruction:?} in block {block:?} of function {function:?} expects operand {operand_index} to have type {expected:?} but found {found:?}"
@@ -3069,6 +3085,13 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
             let block_dominators = dominators.get(&block_label_id).unwrap_or(&empty_set);
 
             for inst in &block.instructions {
+                let result_type = inst.result_type.and_then(|raw| TypeId::try_from(raw).ok());
+                let result_type_inst = result_type.and_then(|ty| {
+                    ResultId::try_from(u32::from(Id::from(ty)))
+                        .ok()
+                        .and_then(|rid| definitions.get(&rid))
+                });
+
                 if inst.class.opcode == rspirv::spirv::Op::Phi {
                     for pair in inst.operands.chunks(2) {
                         if let (
@@ -3101,6 +3124,65 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                         }
                     }
                     continue;
+                }
+
+                // Result-type expectations for logical/bitwise/shift ops.
+                if let Some(result_type) = result_type {
+                    // Logical ops require bool result.
+                    if matches!(
+                        inst.class.opcode,
+                        rspirv::spirv::Op::LogicalAnd
+                            | rspirv::spirv::Op::LogicalOr
+                            | rspirv::spirv::Op::LogicalNot
+                    ) {
+                        let is_bool = result_type_inst
+                            .map(|inst| inst.class.opcode == rspirv::spirv::Op::TypeBool)
+                            .unwrap_or(false);
+                        if !is_bool {
+                            return Err(ValidationError::InstructionResultTypeMismatch {
+                                function: function_id,
+                                block: block_label_id,
+                                instruction: inst.class.opcode,
+                                expected: result_type,
+                                found: result_type,
+                            });
+                        }
+                    }
+
+                    // Bitwise ops require integer scalar or vector results.
+                    if matches!(
+                        inst.class.opcode,
+                        rspirv::spirv::Op::BitwiseAnd
+                            | rspirv::spirv::Op::BitwiseOr
+                            | rspirv::spirv::Op::BitwiseXor
+                            | rspirv::spirv::Op::Not
+                    ) {
+                        let ok = result_type_inst.map_or(false, |ty| match ty.class.opcode {
+                            rspirv::spirv::Op::TypeInt => true,
+                            rspirv::spirv::Op::TypeVector => {
+                                let Some(rspirv::dr::Operand::IdRef(elem)) = ty.operands.first()
+                                else {
+                                    return false;
+                                };
+                                ResultId::try_from(*elem)
+                                    .ok()
+                                    .and_then(|id| definitions.get(&id))
+                                    .is_some_and(|elem_inst| {
+                                        elem_inst.class.opcode == rspirv::spirv::Op::TypeInt
+                                    })
+                            }
+                            _ => false,
+                        });
+                        if !ok {
+                            return Err(ValidationError::InstructionResultTypeMismatch {
+                                function: function_id,
+                                block: block_label_id,
+                                instruction: inst.class.opcode,
+                                expected: result_type,
+                                found: result_type,
+                            });
+                        }
+                    }
                 }
 
                 for (operand_index, operand) in inst.operands.iter().enumerate() {
@@ -18622,6 +18704,88 @@ mod tests {
                 operand_index: 0,
                 expected: TypeId::try_from(int).unwrap(),
                 found: TypeId::try_from(bool_ty).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn logical_ops_require_bool_types() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let header = b.begin_block(None).unwrap();
+        let iconst = b.constant_bit32(int, 1);
+        b.logical_and(int, None, iconst, iconst).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let words = b.module().assemble();
+        let err = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("logical ops require bool operands and result");
+        assert_eq!(
+            err,
+            ValidationError::InstructionResultTypeMismatch {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(header).unwrap(),
+                instruction: rspirv::spirv::Op::LogicalAnd,
+                expected: TypeId::try_from(int).unwrap(),
+                found: TypeId::try_from(int).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn bitwise_ops_require_integer_types() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let float = b.type_float(32, None);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let header = b.begin_block(None).unwrap();
+        let fconst = b.constant_bit32(float, 0x3f80_0000);
+        b.bitwise_or(float, None, fconst, fconst).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let words = b.module().assemble();
+        let err = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("bitwise ops require integer operands and result");
+        assert_eq!(
+            err,
+            ValidationError::InstructionResultTypeMismatch {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(header).unwrap(),
+                instruction: rspirv::spirv::Op::BitwiseOr,
+                expected: TypeId::try_from(float).unwrap(),
+                found: TypeId::try_from(float).unwrap(),
             }
         );
     }
