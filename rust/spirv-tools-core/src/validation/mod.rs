@@ -21009,6 +21009,60 @@ mod tests {
     }
 
     #[test]
+    fn memory_access_make_pointer_available_requires_vulkan_memory_model_capability() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut builder = Builder::new();
+        builder.set_version(1, 5);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = builder.type_void();
+        let uint = builder.type_int(32, 0);
+        let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::Workgroup, uint);
+        let function_type = builder.type_function(void, std::iter::empty::<u32>());
+        let value = builder.constant_bit32(uint, 0);
+        let var = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
+
+        builder
+            .begin_function(
+                void,
+                None,
+                rspirv::spirv::FunctionControl::NONE,
+                function_type,
+            )
+            .unwrap();
+        builder.begin_block(None).unwrap();
+        let scope = builder.constant_bit32(uint, rspirv::spirv::Scope::Workgroup as u32);
+        builder
+            .store(
+                var,
+                value,
+                Some(rspirv::spirv::MemoryAccess::MAKE_POINTER_AVAILABLE),
+                [rspirv::dr::Operand::IdScope(scope)],
+            )
+            .unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+
+        let binary = builder.module().assemble();
+        let error = binary.as_slice().validate(TargetEnv::Vulkan1_2).expect_err(
+            "MakePointerAvailable requires VulkanMemoryModel capability when version is satisfied",
+        );
+        assert_eq!(
+            error,
+            ValidationError::MissingOperandCapability {
+                opcode: rspirv::spirv::Op::Store,
+                operand_index: 2,
+                required_capability: rspirv::spirv::Capability::VulkanMemoryModel
+            }
+        );
+    }
+
+    #[test]
     fn memory_access_non_private_pointer_requires_spirv_1_5() {
         use rspirv::{binary::Assemble, dr::Builder};
 
