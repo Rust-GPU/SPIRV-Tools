@@ -171,6 +171,7 @@ define_language! {
         "shr_s" = ShrS([Id; 2]),
         "shr_u" = ShrU([Id; 2]),
         "band" = BitAnd([Id; 2]),
+        "bor" = BitOr([Id; 2]),
         "-" = Sub([Id; 2]),
         "sdiv" = SDiv([Id; 2]),
         "udiv" = UDiv([Id; 2]),
@@ -416,6 +417,14 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("umod-power-of-two-mask"; "(umod ?x ?c)" => {
             UModPowerOfTwoMask { x: var("?x"), c: var("?c") }
         }),
+        rewrite!("bor-const-fold"; "(bor ?a ?b)" => { BitOrFold { a: var("?a"), b: var("?b") } }),
+        rewrite!("bor-zero-left"; "(bor ?x ?c)" => {
+            BitOrConstSimplify { x: var("?x"), c: var("?c") }
+        }),
+        rewrite!("bor-zero-right"; "(bor ?c ?x)" => {
+            BitOrConstSimplify { x: var("?x"), c: var("?c") }
+        }),
+        rewrite!("bor-self"; "(bor ?x ?x)" => "?x"),
         rewrite!("mul-dist-const-over-add"; "(* ?c (+ ?x ?k))" => {
             DistConstMulAdd { c: var("?c"), x: var("?x"), k: var("?k") }
         }),
@@ -775,6 +784,14 @@ struct UModPowerOfTwo {
     c: Var,
 }
 struct UModPowerOfTwoMask {
+    x: Var,
+    c: Var,
+}
+struct BitOrFold {
+    a: Var,
+    b: Var,
+}
+struct BitOrConstSimplify {
     x: Var,
     c: Var,
 }
@@ -1974,6 +1991,48 @@ impl Applier<SpirvLang, ()> for UModPowerOfTwoMask {
         let band = egraph.add(SpirvLang::BitAnd([subst[self.x], mask]));
         egraph.union(eclass, band);
         vec![band]
+    }
+}
+
+impl Applier<SpirvLang, ()> for BitOrFold {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(a) = const_value(egraph, subst[self.a]) else {
+            return Vec::new();
+        };
+        let Some(b) = const_value(egraph, subst[self.b]) else {
+            return Vec::new();
+        };
+        let folded = ConstValue::new(a.get() | b.get());
+        let id = egraph.add(SpirvLang::Const(folded));
+        egraph.union(eclass, id);
+        vec![id]
+    }
+}
+
+impl Applier<SpirvLang, ()> for BitOrConstSimplify {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(c) = const_value(egraph, subst[self.c]) else {
+            return Vec::new();
+        };
+        if c.get() != 0 {
+            return Vec::new();
+        }
+        egraph.union(eclass, subst[self.x]);
+        vec![subst[self.x]]
     }
 }
 

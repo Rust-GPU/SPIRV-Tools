@@ -305,6 +305,50 @@ fn corpus_preserves_rem_by_zero() {
 }
 
 #[test]
+fn corpus_simplifies_bor_zero_and_self() {
+    let int = 1;
+    let x = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(5)],
+    );
+    let zero = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(0)],
+    );
+    let or_zero = inst(
+        Op::BitwiseOr,
+        int,
+        4,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(3)],
+    );
+    let or_self = inst(
+        Op::BitwiseOr,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(2)],
+    );
+    let optimized = optimize_arith_block(&[x.clone(), zero, or_zero, or_self]).expect("opt");
+    let has_const_five = optimized.iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst
+                .operands
+                .iter()
+                .any(|op| matches!(op, rspirv::dr::Operand::LiteralBit32(v) if *v == 5))
+    });
+    assert!(has_const_five, "expected constant value 5 after OR folding");
+    assert!(
+        optimized
+            .iter()
+            .all(|inst| inst.class.opcode != Op::BitwiseOr),
+        "BitwiseOr should fold away when ORing zero or self"
+    );
+}
+
+#[test]
 fn corpus_folds_mul_by_one() {
     let int = 1;
     let c7 = inst(
