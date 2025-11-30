@@ -3221,6 +3221,9 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                                         | rspirv::spirv::Op::BitwiseOr
                                         | rspirv::spirv::Op::BitwiseXor
                                         | rspirv::spirv::Op::Not
+                                        | rspirv::spirv::Op::ShiftLeftLogical
+                                        | rspirv::spirv::Op::ShiftRightLogical
+                                        | rspirv::spirv::Op::ShiftRightArithmetic
                                         | rspirv::spirv::Op::LogicalAnd
                                         | rspirv::spirv::Op::LogicalOr
                                         | rspirv::spirv::Op::LogicalNot
@@ -18745,6 +18748,51 @@ mod tests {
                 instruction: rspirv::spirv::Op::LogicalAnd,
                 expected: TypeId::try_from(int).unwrap(),
                 found: TypeId::try_from(int).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn shift_operands_must_match_result_type() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let float = b.type_float(32, None);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let header = b.begin_block(None).unwrap();
+        let f = b.constant_bit32(float, 0x3f80_0000);
+        let i = b.constant_bit32(int, 1);
+        // Mismatched first operand.
+        b.shift_left_logical(int, None, f, i).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let words = b.module().assemble();
+        let err = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("shift operands must match result type");
+        assert_eq!(
+            err,
+            ValidationError::OperandTypeMismatch {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(header).unwrap(),
+                instruction: rspirv::spirv::Op::ShiftLeftLogical,
+                operand_index: 0,
+                expected: TypeId::try_from(int).unwrap(),
+                found: TypeId::try_from(float).unwrap(),
             }
         );
     }
