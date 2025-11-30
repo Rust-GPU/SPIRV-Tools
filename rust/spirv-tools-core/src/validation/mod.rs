@@ -20145,6 +20145,94 @@ mod tests {
     }
 
     #[test]
+    fn queue_family_scope_requires_vulkan_memory_model_capability() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut builder = Builder::new();
+        builder.set_version(1, 5);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = builder.type_void();
+        let uint = builder.type_int(32, 0);
+        let function_type = builder.type_function(void, std::iter::empty::<u32>());
+        let queue_scope = builder.constant_bit32(uint, rspirv::spirv::Scope::QueueFamilyKHR as u32);
+        let semantics =
+            builder.constant_bit32(uint, rspirv::spirv::MemorySemantics::ACQUIRE.bits());
+
+        builder
+            .begin_function(
+                void,
+                None,
+                rspirv::spirv::FunctionControl::NONE,
+                function_type,
+            )
+            .unwrap();
+        builder.begin_block(None).unwrap();
+        builder.memory_barrier(queue_scope, semantics).unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+
+        let words = builder.module().assemble();
+        let error = words
+            .as_slice()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect_err("QueueFamilyKHR scope requires VulkanMemoryModel capability");
+        assert_eq!(
+            error,
+            ValidationError::MissingOperandCapability {
+                opcode: rspirv::spirv::Op::MemoryBarrier,
+                operand_index: 0,
+                required_capability: rspirv::spirv::Capability::VulkanMemoryModel
+            }
+        );
+    }
+
+    #[test]
+    fn queue_family_scope_allows_vulkan_memory_model_capability() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut builder = Builder::new();
+        builder.set_version(1, 5);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.capability(rspirv::spirv::Capability::VulkanMemoryModel);
+        builder.extension("SPV_KHR_vulkan_memory_model");
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::VulkanKHR,
+        );
+
+        let void = builder.type_void();
+        let uint = builder.type_int(32, 0);
+        let function_type = builder.type_function(void, std::iter::empty::<u32>());
+        let queue_scope = builder.constant_bit32(uint, rspirv::spirv::Scope::QueueFamilyKHR as u32);
+        let semantics =
+            builder.constant_bit32(uint, rspirv::spirv::MemorySemantics::ACQUIRE.bits());
+
+        builder
+            .begin_function(
+                void,
+                None,
+                rspirv::spirv::FunctionControl::NONE,
+                function_type,
+            )
+            .unwrap();
+        builder.begin_block(None).unwrap();
+        builder.memory_barrier(queue_scope, semantics).unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+
+        let words = builder.module().assemble();
+        words
+            .as_slice()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("QueueFamilyKHR scope is allowed with VulkanMemoryModel capability");
+    }
+
+    #[test]
     fn memory_semantics_volatile_requires_spirv_1_5() {
         use rspirv::{binary::Assemble, dr::Builder};
 
