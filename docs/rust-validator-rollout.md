@@ -4,6 +4,8 @@ The Rust validator is enabled by default when building with Rust support. Use th
 below to roll it forward or back without rebuilding.
 
 ## CLI toggles (`spirv-val`)
+- `--prefer-rust-validator`: default to the Rust validator when both are present (overrides C++ default).
+- `--prefer-cpp-validator`: default to the legacy C++ validator when both are present.
 - `--force-rust-validator`: force the Rust validator even when the C++ path is present.
 - `--force-cpp-validator`: force the legacy C++ validator and skip the Rust path.
 
@@ -20,6 +22,8 @@ If both env vars are set, the disable flag wins. CLI flags override env preferen
    `--force-rust-validator`) to ensure the Rust path is used.
 3. Roll back: set `SPIRV_TOOLS_DISABLE_RUST_VALIDATOR=1` (or pass
    `--force-cpp-validator`) to pin to the C++ path.
+4. Nudge default without forcing: use `--prefer-rust-validator` or
+   `--prefer-cpp-validator` (or equivalent env overrides) to steer the default when both are built.
 
 ## Parity testing
 - Run the existing corpus with the Rust path forced:
