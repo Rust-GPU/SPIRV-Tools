@@ -123,11 +123,16 @@ Planned tasks:
   - Added parity coverage for mask-then-shift folding (logical shifts) to match C++ outputs.
   - Added parity coverage for signed mask-then-shift chains; signed rewrite implemented.
 
-## Upcoming Milestone: Optimizer Parity Expansion
-- Extend the arithmetic/bitwise parity corpus to cover negation chains, mixed shift combinations (logical vs arithmetic), and additional mask+shift fold patterns present in the C++ optimizer.
-- Add matching e-graph rewrites to normalize these patterns while preserving ids and stability.
-- Exercise the expanded corpus in `run-opt-parity.sh` and keep clippy/rustfmt/fuzz/hyperfine benches green.
-- Keep the parity job optional when `spirv-opt` is unavailable but fail when present and mismatching.
+## Completed Milestone: Optimizer Parity Expansion
+- Expanded the arithmetic/bitwise parity corpus to cover negation chains (double/triple), mixed logical/arithmetic shift chains, and mask+shift folding (logical and signed).
+- Added matching e-graph rewrites for mask+shift (logical and signed) and kept result id stability.
+- Parity runs via `run-opt-parity.sh` in the optimizer CI smoke script; parity suite now spans 50 cases and skips cleanly if `spirv-opt` is absent.
+- Clippy/rustfmt, fuzz/hyperfine hooks remain green alongside ctest with the Rust validator enabled.
+
+## Upcoming Milestone: Optimizer Rewrite Stability & Extension
+- Broaden e-graph rewrites to additional algebraic/bitwise identities while preserving id stability (e.g., deeper shift/mask mixes, rotate-like sequences as supported).
+- Extend the parity corpus and CLI harness to cover new cases; ensure parity continues to gate CI when `spirv-opt` is available.
+- Keep fuzz/criterion/hyperfine benches up to date to guard rewrite performance/regressions.
 
 ## Upcoming Milestone: Validator Default Enablement
 Flip the Rust validator on by default across CLI/FFI while keeping an escape hatch.
