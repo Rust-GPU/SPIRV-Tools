@@ -293,6 +293,15 @@ pub fn format_validation_error(error: &ValidationError, names: Option<&FriendlyN
             names.format_id((*incoming).into()),
             names.format_id((*block).into()),
         ),
+        (
+            ValidationError::UndefinedId { function, id },
+            Some(names),
+        ) => {
+            let func = function
+                .map(|f| format!(" in function {}", names.format_id(f.into())))
+                .unwrap_or_default();
+            format!("use of undefined id {}{}", names.format_id((*id).into()), func)
+        }
         (ValidationError::PhiAfterNonPhi { function, block }, Some(names)) => format!(
             "{} in block {}",
             names.format_id((*function).into()),
@@ -1446,6 +1455,14 @@ pub enum ValidationError {
         /// The incoming value.
         value: Id,
     },
+    /// An instruction references an id that is not defined in the module.
+    #[error("use of undefined id {id:?}")]
+    UndefinedId {
+        /// Optional function containing the use.
+        function: Option<Id>,
+        /// The missing id.
+        id: Id,
+    },
     /// A merge instruction is paired with an invalid terminator.
     #[error("block {block:?} of function {function:?} has merge paired with invalid terminator {terminator:?}")]
     InvalidMergeTerminator {
@@ -1975,7 +1992,8 @@ fn validate_words(
     }
     let module_version = header.version();
     let target_version = effective_spirv_version(env, module_version);
-    let defined_ids = validate_id_bound(&module, header)?;
+    let defined_result_ids = validate_id_bound(&module, header)?;
+    let defined_ids: HashSet<Id> = defined_result_ids.iter().copied().map(Id::from).collect();
     let opcodes = collect_result_opcodes(&module);
     let definitions = collect_result_instructions(&module);
     let capabilities = collect_declared_capabilities(&module);
@@ -1984,12 +2002,12 @@ fn validate_words(
     validate_sampler_image_addressing_mode(&module, &capabilities)?;
     validate_memory_model(&module)?;
     validate_type_functions(&module, &opcodes)?;
-    let struct_member_counts = validate_member_decorations(&module, &defined_ids)?;
+    let struct_member_counts = validate_member_decorations(&module, &defined_result_ids)?;
     enforce_logical_pointer_rules(&module, &definitions, &capabilities, &options)?;
     enforce_struct_member_limit(&struct_member_counts, &options)?;
     enforce_struct_depth_limit(&module, &definitions, &options)?;
-    validate_decoration_groups(&module, &defined_ids, &opcodes, &struct_member_counts)?;
-    validate_decorations(&module, &defined_ids)?;
+    validate_decoration_groups(&module, &defined_result_ids, &opcodes, &struct_member_counts)?;
+    validate_decorations(&module, &defined_result_ids)?;
     enforce_decoration_versions(&module, target_version)?;
     enforce_block_storage_classes(&module, target_version)?;
     enforce_descriptor_storage_classes(&module)?;
@@ -2003,9 +2021,10 @@ fn validate_words(
     enforce_interpolation_entry_point_compatibility(&module, &definitions, env)?;
     validate_decoration_target_categories(&module, &opcodes, &definitions, &capabilities)?;
     enforce_store_type_compatibility(&module, &definitions, &options)?;
-    let entry_points = validate_entry_points(&module, &defined_ids, &opcodes)?;
+    let entry_points = validate_entry_points(&module, &defined_result_ids, &opcodes)?;
     validate_execution_modes(&module, &entry_points, env, &options)?;
     validate_functions(&module)?;
+    validate_operand_definitions(&module, &defined_ids, None)?;
     enforce_function_arg_limit(&module, &options)?;
     enforce_variable_limits(&module, &options)?;
     enforce_switch_branch_limit(&module, &options)?;
@@ -2076,6 +2095,11 @@ fn collect_friendly_names(words: &[u32]) -> Option<FriendlyNames> {
 fn validate_functions(module: &Module) -> Result<(), ValidationError> {
     let definitions = collect_result_instructions(module);
     let result_types = collect_result_types(module)?;
+    let defined_ids: HashSet<Id> = module
+        .all_inst_iter()
+        .filter_map(|inst| inst.result_id)
+        .filter_map(|raw| Id::try_from(raw).ok())
+        .collect();
     let mut definition_blocks: HashMap<ResultId, Option<Id>> = HashMap::new();
     for inst in module.all_inst_iter() {
         if let Some(result_id) = inst.result_id {
@@ -2157,6 +2181,14 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                 .map(|id| (id, Default::default()))
                 .collect();
 
+        for param in &function.parameters {
+            if let Some(result_id) = param.result_id {
+                if let Ok(result_id) = ResultId::try_from(result_id) {
+                    definition_blocks.insert(result_id, Some(entry_label_id));
+                }
+            }
+        }
+
         for (block_index, block) in function.blocks.iter().enumerate() {
             let label_inst = block
                 .label
@@ -2180,13 +2212,6 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
             let mut first_terminator_index = None;
             let mut merge_instruction: Option<(usize, &rspirv::dr::Instruction)> = None;
             let mut seen_non_phi = false;
-        for param in &function.parameters {
-            if let Some(result_id) = param.result_id {
-                if let Ok(result_id) = ResultId::try_from(result_id) {
-                    definition_blocks.insert(result_id, Some(entry_label_id));
-                }
-            }
-        }
             for (index, inst) in block.instructions.iter().enumerate() {
                 if let Some(result_id) = inst.result_id {
                     if let Ok(result_id) = ResultId::try_from(result_id) {
@@ -2662,6 +2687,15 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                         }
                     }
                 }
+            }
+        }
+
+        for param in &function.parameters {
+            check_instruction_ids(param, &defined_ids, Some(function_id))?;
+        }
+        for block in &function.blocks {
+            for inst in &block.instructions {
+                check_instruction_ids(inst, &defined_ids, Some(function_id))?;
             }
         }
     }
@@ -4028,6 +4062,77 @@ fn validate_id_bound(
     }
 
     Ok(results)
+}
+
+fn check_instruction_ids(
+    inst: &rspirv::dr::Instruction,
+    defined_ids: &HashSet<Id>,
+    function: Option<Id>,
+) -> Result<(), ValidationError> {
+    if let Some(result_type) = inst.result_type {
+        if let Ok(id) = Id::try_from(result_type) {
+            if !defined_ids.contains(&id) {
+                return Err(ValidationError::UndefinedId { function, id });
+            }
+        }
+    }
+    let is_block_operand = |opcode: rspirv::spirv::Op, index: usize| -> bool {
+        match opcode {
+            rspirv::spirv::Op::Branch => index == 0,
+            rspirv::spirv::Op::BranchConditional => index == 1 || index == 2,
+            rspirv::spirv::Op::Switch => index == 1 || (index > 1 && index % 2 == 0),
+            rspirv::spirv::Op::LoopMerge => index <= 1,
+            rspirv::spirv::Op::SelectionMerge => index == 0,
+            rspirv::spirv::Op::Phi => index % 2 == 1,
+            _ => false,
+        }
+    };
+
+    for (idx, operand) in inst.operands.iter().enumerate() {
+        if is_block_operand(inst.class.opcode, idx) {
+            continue;
+        }
+        if let rspirv::dr::Operand::IdRef(raw) = operand {
+            if let Ok(id) = Id::try_from(*raw) {
+                if !defined_ids.contains(&id) {
+                    return Err(ValidationError::UndefinedId { function, id });
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_operand_definitions(
+    module: &Module,
+    defined_ids: &HashSet<Id>,
+    function: Option<Id>,
+) -> Result<(), ValidationError> {
+    for inst in &module.capabilities {
+        check_instruction_ids(inst, defined_ids, function)?;
+    }
+    for inst in &module.extensions {
+        check_instruction_ids(inst, defined_ids, function)?;
+    }
+    for inst in &module.ext_inst_imports {
+        check_instruction_ids(inst, defined_ids, function)?;
+    }
+    if let Some(memory_model) = &module.memory_model {
+        check_instruction_ids(memory_model, defined_ids, function)?;
+    }
+    for inst in &module.entry_points {
+        check_instruction_ids(inst, defined_ids, function)?;
+    }
+    for inst in &module.execution_modes {
+        check_instruction_ids(inst, defined_ids, function)?;
+    }
+    for inst in &module.annotations {
+        check_instruction_ids(inst, defined_ids, function)?;
+    }
+    for inst in &module.types_global_values {
+        check_instruction_ids(inst, defined_ids, function)?;
+    }
+    Ok(())
 }
 
 fn validate_member_decorations(
@@ -16180,6 +16285,61 @@ mod tests {
             ValidationError::PhiIncomingNotDominated { .. } => {}
             other => panic!("unexpected error: {:?}", other),
         }
+    }
+
+    #[test]
+    fn operand_id_must_be_defined_globally() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%ptr = OpTypePointer Function %missing",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("global operands must reference defined ids");
+        assert!(matches!(err, ValidationError::UndefinedId { function: None, .. }));
+    }
+
+    #[test]
+    fn operand_id_must_be_defined_in_function_scope() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%int = OpTypeInt 32 1",
+            "%fn = OpTypeFunction %int",
+            "%main = OpFunction %int None %fn",
+            "%entry = OpLabel",
+            "OpBranch %merge",
+            "%merge = OpLabel",
+            "%phi = OpPhi %int %undef %entry",
+            "OpReturnValue %phi",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("operands inside functions must reference defined ids");
+        assert!(matches!(
+            err,
+            ValidationError::UndefinedId {
+                function: Some(_),
+                ..
+            }
+        ));
     }
 
     #[test]
