@@ -1204,6 +1204,18 @@ pub enum ValidationError {
         /// The storage class of the decorated variable.
         storage_class: rspirv::spirv::StorageClass,
     },
+    /// A resource interface variable in Vulkan is missing a DescriptorSet decoration.
+    #[error("resource variable {variable:?} is missing a DescriptorSet decoration")]
+    MissingDescriptorSetDecoration {
+        /// The variable missing the decoration.
+        variable: Id,
+    },
+    /// A resource interface variable in Vulkan is missing a Binding decoration.
+    #[error("resource variable {variable:?} is missing a Binding decoration")]
+    MissingBindingDecoration {
+        /// The variable missing the decoration.
+        variable: Id,
+    },
     /// A struct used in a resource storage class is missing the required block decoration.
     #[error("storage class {storage_class:?} requires a Block-decorated struct type")]
     MissingBlockDecoration {
@@ -2397,6 +2409,7 @@ fn validate_words(
     enforce_decoration_versions(&module, target_version)?;
     enforce_block_storage_classes(&module, target_version)?;
     enforce_descriptor_storage_classes(&module)?;
+    enforce_descriptor_requirements(&module, env)?;
     let entry_models = collect_execution_models(&module);
     enforce_struct_block_requirements(&module, target_version)?;
     enforce_location_storage_classes(&module)?;
@@ -7039,7 +7052,9 @@ fn enforce_descriptor_storage_classes(module: &Module) -> Result<(), ValidationE
     let mut decorated_vars: HashMap<ResultId, rspirv::spirv::StorageClass> = HashMap::new();
 
     for inst in &module.types_global_values {
-        if inst.class.opcode != rspirv::spirv::Op::Variable {
+        if inst.class.opcode != rspirv::spirv::Op::Variable
+            && inst.class.opcode != rspirv::spirv::Op::UntypedVariableKHR
+        {
             continue;
         }
         let Some(rspirv::dr::Operand::StorageClass(sc)) = inst.operands.first() else {
@@ -7082,6 +7097,80 @@ fn enforce_descriptor_storage_classes(module: &Module) -> Result<(), ValidationE
         if !allowed {
             return Err(ValidationError::InvalidDescriptorStorageClass {
                 storage_class: *storage_class,
+            });
+        }
+    }
+
+    Ok(())
+}
+
+fn enforce_descriptor_requirements(
+    module: &Module,
+    env: TargetEnv,
+) -> Result<(), ValidationError> {
+    use rspirv::spirv::Decoration;
+
+    if !is_vulkan_env(env) {
+        return Ok(());
+    }
+
+    let interface_vars: HashSet<ResultId> = module
+        .entry_points
+        .iter()
+        .flat_map(|ep| ep.operands.iter().skip(2))
+        .filter_map(|op| match op {
+            rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+            _ => None,
+        })
+        .collect();
+    let decoration_lookup = build_decoration_lookup(module);
+    for var in &module.types_global_values {
+        if var.class.opcode != rspirv::spirv::Op::Variable
+            && var.class.opcode != rspirv::spirv::Op::UntypedVariableKHR
+        {
+            continue;
+        }
+        let Some(raw_id) = var.result_id else {
+            continue;
+        };
+        let Some(rid) = ResultId::try_from(raw_id).ok() else {
+            continue;
+        };
+        if !interface_vars.contains(&rid) {
+            continue;
+        }
+        let Some(storage_class) = var.operands.first().and_then(|op| match op {
+            rspirv::dr::Operand::StorageClass(sc) => Some(*sc),
+            _ => None,
+        }) else {
+            continue;
+        };
+        if !matches!(
+            storage_class,
+            rspirv::spirv::StorageClass::UniformConstant
+                | rspirv::spirv::StorageClass::Uniform
+                | rspirv::spirv::StorageClass::StorageBuffer
+                | rspirv::spirv::StorageClass::PhysicalStorageBuffer
+        ) {
+            continue;
+        }
+        let decos = decoration_lookup
+            .get(&rid)
+            .cloned()
+            .unwrap_or_default();
+        if decos.iter().any(|d| *d == Decoration::BuiltIn) {
+            continue;
+        }
+        let has_descriptor_set = decos.contains(&Decoration::DescriptorSet);
+        let has_binding = decos.contains(&Decoration::Binding);
+        if !has_descriptor_set {
+            return Err(ValidationError::MissingDescriptorSetDecoration {
+                variable: Id::from(rid),
+            });
+        }
+        if !has_binding {
+            return Err(ValidationError::MissingBindingDecoration {
+                variable: Id::from(rid),
             });
         }
     }
@@ -30120,6 +30209,56 @@ OpFunctionEnd
                 storage_class: rspirv::spirv::StorageClass::PushConstant
             }
         );
+    }
+
+    #[test]
+    fn resource_variable_requires_descriptor_set_in_vulkan() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpDecorate %var Binding 0
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Uniform %u32
+%var = OpVariable %ptr Uniform
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+            .expect_err("Uniform variables require DescriptorSet in Vulkan");
+        assert!(matches!(
+            err,
+            ValidationError::MissingDescriptorSetDecoration { .. }
+        ));
+    }
+
+    #[test]
+    fn resource_variable_requires_binding_in_vulkan() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpDecorate %var DescriptorSet 0
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Uniform %u32
+%var = OpVariable %ptr Uniform
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+            .expect_err("Uniform variables require Binding in Vulkan");
+        assert!(matches!(
+            err,
+            ValidationError::MissingBindingDecoration { .. }
+        ));
     }
 
     #[test]
