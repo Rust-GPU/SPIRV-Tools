@@ -234,6 +234,12 @@ pub fn format_validation_error(error: &ValidationError, names: Option<&FriendlyN
                 function, block, ..
             },
             Some(names),
+        )
+        | (
+            ValidationError::PhiIncomingTypeMismatch {
+                function, block, ..
+            },
+            Some(names),
         ) => format!(
             "{} in block {}",
             names.format_id((*function).into()),
@@ -1476,6 +1482,20 @@ pub enum ValidationError {
         /// The missing id.
         id: Id,
     },
+    /// A phi incoming value's type does not match the phi's result type.
+    #[error("phi in block {block:?} of function {function:?} expects type {expected:?} but incoming value {incoming:?} has type {found:?}")]
+    PhiIncomingTypeMismatch {
+        /// The function containing the phi.
+        function: Id,
+        /// The phi's block.
+        block: Id,
+        /// The incoming value id.
+        incoming: Id,
+        /// The expected phi result type.
+        expected: TypeId,
+        /// The incoming value's type.
+        found: TypeId,
+    },
     /// A result type refers to an instruction that is not a type declaration.
     #[error("instruction {instruction:?} has result type {result_type:?} defined by non-type opcode {found:?}")]
     ResultTypeNotType {
@@ -2544,6 +2564,10 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                 .unwrap_or(0);
             for inst in &block.instructions {
                 if inst.class.opcode == rspirv::spirv::Op::Phi {
+                    let phi_result_type = inst
+                        .result_id
+                        .and_then(|raw| ResultId::try_from(raw).ok())
+                        .and_then(|rid| result_types.get(&rid).copied());
                     let mut seen_incoming: std::collections::HashSet<Id> = Default::default();
                     for pair in inst.operands.chunks(2) {
                         if let Some(rspirv::dr::Operand::IdRef(raw_incoming)) = pair.get(1) {
@@ -2582,6 +2606,25 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                             expected: expected_preds,
                             found: pair_count,
                         });
+                    }
+                    if let Some(expected_type) = phi_result_type {
+                        for pair in inst.operands.chunks(2) {
+                            if let Some(rspirv::dr::Operand::IdRef(raw_value)) = pair.first() {
+                                if let Ok(value_id) = ResultId::try_from(*raw_value) {
+                                    if let Some(found_type) = result_types.get(&value_id).copied() {
+                                        if found_type != expected_type {
+                                            return Err(ValidationError::PhiIncomingTypeMismatch {
+                                                function: function_id,
+                                                block: block_label_id,
+                                                incoming: Id::from(value_id),
+                                                expected: expected_type,
+                                                found: found_type,
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -11954,6 +11997,68 @@ mod tests {
                 function: Id::try_from(5).unwrap(),
                 block: Id::try_from(7).unwrap(),
                 incoming: Id::try_from(8).unwrap()
+            }
+        );
+    }
+
+    #[test]
+    fn phi_incoming_value_type_must_match_result_type() {
+        // The phi expects %int but the incoming value is a %float constant.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            10,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(4, 21), // OpTypeInt %2 32 1
+            2,
+            32,
+            1,
+            op(3, 22), // OpTypeFloat %3 32
+            3,
+            32,
+            op(3, 33), // OpTypeFunction %4 %1
+            4,
+            1,
+            op(4, 43), // OpConstant %3 %5 0
+            3,
+            5,
+            0,
+            op(5, 54), // OpFunction %6 None %4
+            1,
+            6,
+            0,
+            4,
+            op(2, 248), // OpLabel %7 (entry)
+            7,
+            op(2, 249), // OpBranch %8
+            8,
+            op(2, 248), // OpLabel %8 (merge)
+            8,
+            op(5, 245), // OpPhi %2 %9 %5 %7 (incoming value has type %3)
+            2,
+            9,
+            5,
+            7,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::PhiIncomingTypeMismatch {
+                function: Id::try_from(6).unwrap(),
+                block: Id::try_from(8).unwrap(),
+                incoming: Id::try_from(5).unwrap(),
+                expected: TypeId::try_from(2).unwrap(),
+                found: TypeId::try_from(3).unwrap(),
             }
         );
     }
