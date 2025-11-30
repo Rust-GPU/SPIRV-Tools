@@ -42,7 +42,7 @@ Tasks for this milestone:
  - [x] Keep validated-module caching in place while the new ordering/decorations checks are added, ensuring CLI/FFI reuse validated words without re-parse.
  - [x] Run the full C++ validation corpora with the Rust path forced on (`SPIRV_TOOLS_DISABLE_RUST_VALIDATOR=0`) and fix mismatches until the Rust path can be the default without a flag. (Test-enabled CMake build `build-tests` runs all 24 ctests clean with the Rust validator enabled.)
 
-## Active Milestone: Rust Validator Default Rollout
+## Completed Milestone: Rust Validator Default Rollout
 Flip the Rust validator on by default across FFI/CLI and lock in env-specific BuiltIn allowlists.
 
 Planned tasks:
@@ -56,7 +56,7 @@ Planned tasks:
 - [x] Document rollout/rollback procedures and env overrides for downstream consumers.
 - [x] Keep the corpus test job (`ctest` with `SPIRV_TOOLS_DISABLE_RUST_VALIDATOR=0`) in CI to guard parity (script available; wire into CI).
 
-## Upcoming Milestone: Decoration & Env Constraint Parity
+## Completed Milestone: Decoration & Env Constraint Parity
 Close the remaining decoration/environment-specific gaps against the C++ validator tables.
 
 Tasks for this milestone:
@@ -65,7 +65,7 @@ Tasks for this milestone:
 - [x] Validate decoration exclusivity/compatibility pairs (e.g., interpolation vs Sample/Flat mixes, sample-rate shading requirements) against the C++ suite and port any missing tests. (Interpolation exclusivity and Flat+Sample/Centroid conflicts covered; Sample requires SampleRateShading.)
 - [x] Wire these constraints through FFI/CLI and keep validated-module caching active; run C++ corpora under the Rust path to confirm parity.
 
-## Paused Milestone: Optimizer Block Folding + FFI
+## Active Milestone: Optimizer Block Folding + FFI
 Port the arithmetic optimizer to Rust with e-graph-driven rewrites, expose it through the FFI, and validate with Rust-side unit tests plus fuzzing/benchmarks. (Paused per rollout order; resume after validator parity lands.)
 
 Tasks for this milestone:
@@ -80,7 +80,7 @@ Tasks for this milestone:
 - [x] Add hyperfine benchmarks alongside criterion for optimizer passes to mirror C++ tooling.
 - [ ] Wire the Rust optimizer into the CLI/FFI path behind a flag and start porting more C++ optimizer passes using e-graphs where beneficial.
 
-## Upcoming Milestone: Optimizer Integration in CLI/FFI
+## Active Milestone: Optimizer Integration in CLI/FFI
 Connect the Rust arithmetic optimizer to user-facing entry points with safety toggles and parity tests.
 
 Planned tasks:
