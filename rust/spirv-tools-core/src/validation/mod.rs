@@ -1470,6 +1470,12 @@ pub enum ValidationError {
         /// The duplicated storage class.
         storage_class: rspirv::spirv::StorageClass,
     },
+    /// Patch-decorated interface variables must be used only with tessellation execution models.
+    #[error("Patch interface variables require tessellation execution models (found {execution_model:?})")]
+    PatchDecorationRequiresTessellation {
+        /// The execution model used by the entry point.
+        execution_model: rspirv::spirv::ExecutionModel,
+    },
     /// Entry-point interface variables consumed overlapping locations/components.
     #[error(
         "entry point {entry_point:?} has overlapping {storage_class:?} locations at location {location} component {component}"
@@ -8657,6 +8663,8 @@ fn validate_entry_point_interface_storage_classes(
         return Ok(());
     }
 
+    let decoration_lookup = build_decoration_lookup(module);
+
     fn contains_disallowed_fp_encoding(
         definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
         ty: ResultId,
@@ -8757,6 +8765,9 @@ fn validate_entry_point_interface_storage_classes(
                                 interface: id.into(),
                             });
                         }
+                        let has_patch = decoration_lookup
+                            .get(&id)
+                            .map_or(false, |decs| decs.contains(&rspirv::spirv::Decoration::Patch));
                         let storage_allowed = matches!(
                             *storage,
                             rspirv::spirv::StorageClass::Input
@@ -8781,6 +8792,17 @@ fn validate_entry_point_interface_storage_classes(
                                 entry_point: entry_point_id,
                                 interface: id.into_inner(),
                                 storage_class: *storage,
+                            });
+                        }
+                        if has_patch
+                            && !matches!(
+                                exec_model,
+                                rspirv::spirv::ExecutionModel::TessellationControl
+                                    | rspirv::spirv::ExecutionModel::TessellationEvaluation
+                            )
+                        {
+                            return Err(ValidationError::PatchDecorationRequiresTessellation {
+                                execution_model: exec_model,
                             });
                         }
                         if matches!(
@@ -29030,6 +29052,36 @@ mod tests {
                 entry_point: Id::try_from(5).unwrap(),
                 interface: Id::try_from(6).unwrap(),
                 storage_class: rspirv::spirv::StorageClass::Function,
+            }
+        );
+    }
+
+    #[test]
+    fn patch_interface_requires_tessellation_execution_model() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Tessellation",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%int = OpTypeInt 32 0",
+            "%ptr = OpTypePointer Input %int",
+            "%patch = OpVariable %ptr Input",
+            "OpDecorate %patch Patch",
+            "OpEntryPoint Vertex %main \"main\" %patch",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Vulkan1_2)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::PatchDecorationRequiresTessellation {
+                execution_model: rspirv::spirv::ExecutionModel::Vertex
             }
         );
     }
