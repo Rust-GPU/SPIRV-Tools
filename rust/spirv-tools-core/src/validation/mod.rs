@@ -3103,7 +3103,7 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                     continue;
                 }
 
-                for operand in &inst.operands {
+                for (operand_index, operand) in inst.operands.iter().enumerate() {
                     if let rspirv::dr::Operand::IdRef(raw) = operand {
                         if let Ok(result_id) = ResultId::try_from(*raw) {
                             if let Some(Some(def_block)) = definition_blocks.get(&result_id) {
@@ -3119,6 +3119,44 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                                         block: block_label_id,
                                         value: Id::from(result_id),
                                     });
+                                }
+                            }
+                            // Operand type checks for simple arithmetic/logical ops: operands must
+                            // match the result type.
+                            if let Some(result_type) =
+                                inst.result_type.and_then(|raw| TypeId::try_from(raw).ok())
+                            {
+                                let requires_operand_type_match = matches!(
+                                    inst.class.opcode,
+                                    rspirv::spirv::Op::IAdd
+                                        | rspirv::spirv::Op::ISub
+                                        | rspirv::spirv::Op::IMul
+                                        | rspirv::spirv::Op::SDiv
+                                        | rspirv::spirv::Op::UDiv
+                                        | rspirv::spirv::Op::SRem
+                                        | rspirv::spirv::Op::UMod
+                                        | rspirv::spirv::Op::BitwiseAnd
+                                        | rspirv::spirv::Op::BitwiseOr
+                                        | rspirv::spirv::Op::BitwiseXor
+                                        | rspirv::spirv::Op::Not
+                                        | rspirv::spirv::Op::LogicalAnd
+                                        | rspirv::spirv::Op::LogicalOr
+                                        | rspirv::spirv::Op::LogicalNot
+                                );
+                                if requires_operand_type_match {
+                                    if let Some(found_type) = result_types.get(&result_id).copied()
+                                    {
+                                        if found_type != result_type {
+                                            return Err(ValidationError::OperandTypeMismatch {
+                                                function: function_id,
+                                                block: block_label_id,
+                                                instruction: inst.class.opcode,
+                                                operand_index,
+                                                expected: result_type,
+                                                found: found_type,
+                                            });
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -18540,6 +18578,50 @@ mod tests {
                 operand_index: 0,
                 expected: TypeId::try_from(int).unwrap(),
                 found: TypeId::try_from(float).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn bitwise_operands_must_match_result_type() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let bool_ty = b.type_bool();
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let header = b.begin_block(None).unwrap();
+        let bool_const = b.constant_true(bool_ty);
+        let iconst = b.constant_bit32(int, 1);
+        b.bitwise_and(int, None, bool_const, iconst).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let words = b.module().assemble();
+        let err = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("bitwise operands must match result type");
+        assert_eq!(
+            err,
+            ValidationError::OperandTypeMismatch {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(header).unwrap(),
+                instruction: rspirv::spirv::Op::BitwiseAnd,
+                operand_index: 0,
+                expected: TypeId::try_from(int).unwrap(),
+                found: TypeId::try_from(bool_ty).unwrap(),
             }
         );
     }

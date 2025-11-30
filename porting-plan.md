@@ -665,5 +665,5 @@ Tasks for this milestone:
 - [x] Enforce dominance of definitions over uses (including phis) with typed `ValidationError` coverage and Rust regressions.
 - [x] Validate `OpPhi` predecessor count/order matches predecessor blocks and that incoming value types match the phi result type.
 - [x] Check operand types for common arithmetic instructions against their result types, rejecting mismatched operand types in Rust tests.
-- Reject unreachable blocks that declare ids referenced from reachable code, matching the C++ diagnostic shape.
-- Add regression tests (text and binary) for SSA/type failures and wire them through the CLI/FFI parity runs.
+- [ ] Reject unreachable blocks that declare ids referenced from reachable code, matching the C++ diagnostic shape.
+- [ ] Add regression tests (text and binary) for SSA/type failures and wire them through the CLI/FFI parity runs.
