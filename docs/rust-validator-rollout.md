@@ -14,7 +14,8 @@ below to roll it forward or back without rebuilding.
 If both env vars are set, the disable flag wins. CLI flags override env preference.
 
 ## Rollout guidance
-1. Default: leave env unset and the Rust validator will be chosen when available.
+1. Default: leave env unset and the Rust validator will be chosen when available; if Rust support
+   is not built, the CLI/FFI falls back to C++ automatically.
 2. Roll forward: set `SPIRV_TOOLS_FORCE_RUST_VALIDATOR=1` (or pass
    `--force-rust-validator`) to ensure the Rust path is used.
 3. Roll back: set `SPIRV_TOOLS_DISABLE_RUST_VALIDATOR=1` (or pass
