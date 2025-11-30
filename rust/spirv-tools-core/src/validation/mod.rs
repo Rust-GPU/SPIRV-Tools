@@ -20971,6 +20971,79 @@ mod tests {
     }
 
     #[test]
+    fn extension_cannot_appear_after_names() {
+        // Extensions belong before the names section; placing them after OpName should fail.
+        let text = [
+            "OpCapability Shader",
+            "OpExtension \"SPV_GOOGLE_decorate_string\"",
+            "OpMemoryModel Logical GLSL450",
+            "OpName %1 \"x\"",
+            "%void = OpTypeVoid",
+        ]
+        .join("\n");
+        let mut words = assemble_text(&text).expect("assemble");
+        // Move extension after the name/type to trigger ordering.
+        let mut ext_slice: Option<(usize, usize)> = None;
+        let mut idx = 5;
+        while idx < words.len() {
+            let wc = (words[idx] >> 16) as usize;
+            let opcode = words[idx] & 0xffff;
+            if opcode == rspirv::spirv::Op::Extension as u32 {
+                ext_slice = Some((idx, wc));
+                break;
+            }
+            idx += wc;
+        }
+        let (start, wc) = ext_slice.expect("extension present");
+        let ext: Vec<u32> = words.drain(start..start + wc).collect();
+        words.extend(ext);
+
+        let err = validate_module(&words, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            err,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Extension
+            }
+        );
+    }
+
+    #[test]
+    fn conditional_extension_cannot_appear_after_debug() {
+        // Conditional extensions must not trail debug/source instructions.
+        let binary = vec![
+            0x0723_0203, // magic
+            0x0001_0000, // version
+            0,           // generator
+            3,           // bound (ids up to 2)
+            0,           // schema
+            op(2, 17),   // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(3, 3), // OpSource Unknown 0 (debug section)
+            0,
+            0,
+            op(8, 6248), // OpConditionalExtensionINTEL "SPV_GOOGLE_decorate_string" (after debug -> error)
+            0x5f56_5053,
+            0x474f_4f47,
+            0x645f_454c,
+            0x726f_6365,
+            0x5f65_7461,
+            0x6972_7473,
+            0x0000_676e,
+        ];
+
+        let err = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            err,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::ConditionalExtensionINTEL
+            }
+        );
+    }
+
+    #[test]
     fn conditional_capability_disallowed_in_env() {
         // Conditional capabilities must still respect the target environment allowlist.
         let binary = vec![
