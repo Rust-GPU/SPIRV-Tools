@@ -212,14 +212,25 @@ pub fn format_validation_error(error: &ValidationError, names: Option<&FriendlyN
             ValidationError::ExecutionModeRequiresExecutionModel {
                 entry_point,
                 mode,
-                found,
-                allowed,
+                execution_model,
+                allowed_models,
             },
             Some(names),
         ) => format!(
-            "{} uses {found:?} with mode {mode:?} (allowed: {:?})",
+            "{} uses {execution_model:?} with mode {mode:?} (allowed: {:?})",
             names.format_id((*entry_point).into()),
-            allowed
+            allowed_models
+        ),
+        (
+            ValidationError::InvalidExecutionModeValue {
+                entry_point,
+                mode,
+                value,
+            },
+            Some(names),
+        ) => format!(
+            "{} has {mode:?} value {value}",
+            names.format_id((*entry_point).into())
         ),
         (
             ValidationError::EntryPointInterfaceFloatEncodingInvalid {
@@ -1473,19 +1484,29 @@ pub enum ValidationError {
         /// The conflicting component.
         component: u32,
     },
-    /// An execution mode was used with an incompatible execution model.
+    /// Execution mode requires a specific execution model and is invalid for this entry point.
     #[error(
-        "execution mode {mode:?} is only valid for models {allowed:?} but entry point {entry_point:?} uses {found:?}"
+        "execution mode {mode:?} requires execution model {allowed_models:?} but entry point {entry_point:?} uses {execution_model:?}"
     )]
     ExecutionModeRequiresExecutionModel {
-        /// The entry-point function id.
+        /// The entry point id.
         entry_point: Id,
-        /// The execution mode that was invalid.
+        /// The execution mode being applied.
         mode: rspirv::spirv::ExecutionMode,
-        /// The execution model actually used by the entry point.
-        found: rspirv::spirv::ExecutionModel,
-        /// The allowed execution models.
-        allowed: Vec<rspirv::spirv::ExecutionModel>,
+        /// The execution model actually used.
+        execution_model: rspirv::spirv::ExecutionModel,
+        /// Allowed execution models.
+        allowed_models: Vec<rspirv::spirv::ExecutionModel>,
+    },
+    /// Execution mode uses an invalid literal value for the current environment/capabilities.
+    #[error("execution mode {mode:?} on entry point {entry_point:?} uses invalid value {value}")]
+    InvalidExecutionModeValue {
+        /// The entry point id.
+        entry_point: Id,
+        /// The offending execution mode.
+        mode: rspirv::spirv::ExecutionMode,
+        /// The invalid literal value.
+        value: u32,
     },
     /// An entry point interface variable uses a disallowed floating-point encoding for its storage
     /// class in Vulkan environments.
@@ -2336,7 +2357,7 @@ fn validate_words(
         validate_entry_points(&module, &defined_result_ids, &opcodes, &definitions)?;
     validate_entry_point_interface_storage_classes(&module, &definitions, env)?;
     validate_entry_point_locations(&module, &definitions, env)?;
-    validate_execution_modes(&module, &entry_points, env, &options)?;
+    validate_execution_modes(&module, &entry_points, env, &options, &capabilities)?;
     validate_functions(&module)?;
     validate_operand_definitions(&module, &defined_ids)?;
     enforce_function_arg_limit(&module, &options)?;
@@ -8365,6 +8386,7 @@ fn validate_execution_modes(
     entry_points: &HashSet<ResultId>,
     env: TargetEnv,
     options: &ValidationOptions,
+    capabilities: &HashSet<rspirv::spirv::Capability>,
 ) -> Result<(), ValidationError> {
     let mut entry_point_models: HashMap<ResultId, rspirv::spirv::ExecutionModel> = HashMap::new();
     for ep in &module.entry_points {
@@ -8421,8 +8443,20 @@ fn validate_execution_modes(
                             return Err(ValidationError::ExecutionModeRequiresExecutionModel {
                                 entry_point: function.into_inner(),
                                 mode: execution_mode,
-                                found: *model,
-                                allowed: allowed.to_vec(),
+                                execution_model: *model,
+                                allowed_models: allowed.to_vec(),
+                            });
+                        }
+                        if env.is_vulkan()
+                            && capabilities.contains(&rspirv::spirv::Capability::MeshShadingEXT)
+                            && matches!(mode.operands.get(2), Some(rspirv::dr::Operand::LiteralBit32(v)) if *v == 0)
+                            && (*model == rspirv::spirv::ExecutionModel::MeshEXT
+                                || *model == rspirv::spirv::ExecutionModel::MeshNV)
+                        {
+                            return Err(ValidationError::InvalidExecutionModeValue {
+                                entry_point: function.into_inner(),
+                                mode: execution_mode,
+                                value: 0,
                             });
                         }
                     }
@@ -8437,8 +8471,19 @@ fn validate_execution_modes(
                             return Err(ValidationError::ExecutionModeRequiresExecutionModel {
                                 entry_point: function.into_inner(),
                                 mode: execution_mode,
-                                found: *model,
-                                allowed: allowed.to_vec(),
+                                execution_model: *model,
+                                allowed_models: allowed.to_vec(),
+                            });
+                        }
+                        if env.is_vulkan()
+                            && capabilities.contains(&rspirv::spirv::Capability::MeshShadingEXT)
+                            && execution_mode == rspirv::spirv::ExecutionMode::OutputPrimitivesEXT
+                            && matches!(mode.operands.get(2), Some(rspirv::dr::Operand::LiteralBit32(v)) if *v == 0)
+                        {
+                            return Err(ValidationError::InvalidExecutionModeValue {
+                                entry_point: function.into_inner(),
+                                mode: execution_mode,
+                                value: 0,
                             });
                         }
                     }
@@ -27127,7 +27172,7 @@ mod tests {
             error,
             ValidationError::ExecutionModeRequiresExecutionModel {
                 mode: rspirv::spirv::ExecutionMode::OutputVertices,
-                found: rspirv::spirv::ExecutionModel::Vertex,
+                execution_model: rspirv::spirv::ExecutionModel::Vertex,
                 ..
             }
         ));
@@ -27158,7 +27203,7 @@ mod tests {
             error,
             ValidationError::ExecutionModeRequiresExecutionModel {
                 mode: rspirv::spirv::ExecutionMode::OutputPrimitivesEXT,
-                found: rspirv::spirv::ExecutionModel::Geometry,
+                execution_model: rspirv::spirv::ExecutionModel::Geometry,
                 ..
             }
         ));
