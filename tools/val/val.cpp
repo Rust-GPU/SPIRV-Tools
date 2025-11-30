@@ -87,6 +87,8 @@ Options:
   --before-hlsl-legalization       Allows code patterns that are intended to be
                                    fixed by spirv-opt's legalization passes.
 #if defined(SPIRV_RUST_TARGET_ENV)
+  --prefer-rust-validator          Default to the Rust validator when both are available.
+  --prefer-cpp-validator           Default to the legacy C++ validator when both are available.
   --force-rust-validator           Prefer the Rust validator even when both are available.
   --force-cpp-validator            Force the legacy C++ validator (disables the Rust path).
 #endif
@@ -180,6 +182,7 @@ int main(int argc, char** argv) {
       !env_disables_rust &&
       std::getenv("SPIRV_TOOLS_FORCE_RUST_VALIDATOR") != nullptr;
   bool prefer_rust_validator = !env_disables_rust;
+  bool prefer_cpp_validator = false;
   bool force_rust_validator = env_forces_rust;
   bool force_cpp_validator = false;
 #endif
@@ -312,6 +315,12 @@ int main(int argc, char** argv) {
         force_rust_validator = true;
       } else if (0 == strcmp(cur_arg, "--force-cpp-validator")) {
         force_cpp_validator = true;
+      } else if (0 == strcmp(cur_arg, "--prefer-rust-validator")) {
+        prefer_rust_validator = true;
+        prefer_cpp_validator = false;
+      } else if (0 == strcmp(cur_arg, "--prefer-cpp-validator")) {
+        prefer_cpp_validator = true;
+        prefer_rust_validator = false;
 #endif
       } else if (0 == cur_arg[1]) {
         // Setting a filename of "-" to indicate stdin.
@@ -344,7 +353,7 @@ int main(int argc, char** argv) {
   }
 
 #if defined(SPIRV_RUST_TARGET_ENV)
-  bool use_rust_validator = prefer_rust_validator;
+  bool use_rust_validator = prefer_rust_validator && !prefer_cpp_validator;
   if (force_cpp_validator) use_rust_validator = false;
   if (force_rust_validator) use_rust_validator = true;
 #else

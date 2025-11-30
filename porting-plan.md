@@ -125,6 +125,7 @@ Planned tasks:
 - Wire the validator toggle through CMake/Bazel build glue so downstreams inherit the default.
 - Update CLI help/docs to describe the Rust-default behavior and override knobs.
 - Keep the corpus/ctest parity runner in CI to guard the rollout and document rollback steps.
+- [x] Expose CLI toggles (`--prefer-rust-validator` / `--prefer-cpp-validator`) to steer the default when both validators are available.
 
 ## Active Milestone: Structural Validator Rules
 Enforce target-environment specific structural rules and reuse validated modules across interfaces.
