@@ -317,6 +317,54 @@ fn corpus_folds_const_rotate_left_commuted_or() {
 }
 
 #[test]
+fn corpus_does_not_fold_non_complementary_shift_or() {
+    let int = 1;
+    let value = inst(
+        Op::Constant,
+        int,
+        1,
+        vec![rspirv::dr::Operand::LiteralBit32(1)],
+    );
+    let shift_left = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(3)],
+    );
+    let shift_right = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(3)],
+    );
+    let left = inst(
+        Op::ShiftLeftLogical,
+        int,
+        4,
+        vec![rspirv::dr::Operand::IdRef(1), rspirv::dr::Operand::IdRef(2)],
+    );
+    let right = inst(
+        Op::ShiftRightLogical,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(1), rspirv::dr::Operand::IdRef(3)],
+    );
+    let or_inst = inst(
+        Op::BitwiseOr,
+        int,
+        6,
+        vec![rspirv::dr::Operand::IdRef(4), rspirv::dr::Operand::IdRef(5)],
+    );
+    let optimized = optimize_arith_block(&[value, shift_left, shift_right, left, right, or_inst])
+        .expect("optimize");
+    // Should not fold to a single const because shifts are not complementary.
+    assert!(
+        optimized.len() > 1,
+        "non-complementary shift-or should not fold to a constant: {optimized:?}"
+    );
+}
+
+#[test]
 fn corpus_folds_div_by_one() {
     let int = 1;
     let c8 = inst(

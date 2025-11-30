@@ -2067,6 +2067,10 @@ impl Applier<SpirvLang, ()> for RotatePatternFold {
         let Some(t) = const_value(egraph, subst[self.t]) else {
             return Vec::new();
         };
+        // Only fold when the shifts are complementary (s + t == word size).
+        if (s.get().wrapping_add(t.get())) % 32 != 0 {
+            return Vec::new();
+        }
         let left = x.get().wrapping_shl(s.get() % 32);
         let right = x.get().wrapping_shr(t.get() % 32);
         let folded = ConstValue::new(left | right);

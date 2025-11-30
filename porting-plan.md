@@ -133,7 +133,7 @@ Planned tasks:
 - Broaden e-graph rewrites to additional algebraic/bitwise identities while preserving id stability (e.g., deeper shift/mask mixes, rotate-like sequences as supported).
 - Extend the parity corpus and CLI harness to cover new cases; ensure parity continues to gate CI when `spirv-opt` is available.
 - Keep fuzz/criterion/hyperfine benches up to date to guard rewrite performance/regressions.
- - Add rotate-left/right support in the optimizer (where enabled) with parity coverage and rewrites, staying within SPIR-V capability limits. (basic rotate folding via shifted-or patterns is in place; expand patterns and coverage)
+ - Add rotate-left/right support in the optimizer (where enabled) with parity coverage and rewrites, staying within SPIR-V capability limits. (basic rotate folding via shifted-or patterns is in place with complementary-shift guard; expand patterns and coverage)
 
 ## Upcoming Milestone: Validator Default Enablement
 Flip the Rust validator on by default across CLI/FFI while keeping an escape hatch.
