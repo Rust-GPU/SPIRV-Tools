@@ -17579,6 +17579,55 @@ mod tests {
     }
 
     #[test]
+    fn selection_merge_must_precede_switch() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let entry = b.begin_block(None).unwrap();
+        let merge_label = b.id();
+        let zero = b.constant_bit32(int, 0);
+        b.selection_merge(merge_label, rspirv::spirv::SelectionControl::NONE)
+            .unwrap();
+        b.nop().unwrap(); // Placement violation between merge and switch.
+        b.switch(
+            zero,
+            merge_label,
+            vec![(rspirv::dr::Operand::LiteralBit32(0), merge_label)],
+        )
+        .unwrap();
+        b.begin_block(Some(merge_label)).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let words = b.module().assemble();
+
+        let err = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("selection merge must sit immediately before switch");
+        assert_eq!(
+            err,
+            ValidationError::MergeInstructionNotBeforeTerminator {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(entry).unwrap(),
+            }
+        );
+    }
+
+    #[test]
     fn loop_merge_targets_must_be_distinct_and_exist() {
         let text = [
             "OpCapability Shader",
