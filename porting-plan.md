@@ -136,6 +136,7 @@ Planned tasks:
 - Mirror annotation-placement rules (decorations, decoration groups, member decorations/names) against function/after-function sections with Rust tests.
 - Keep block-layout skipping from bypassing ordering/placement validation.
 - Verify ordering rules on binaries the text assembler would reorder (hand-built word tests) to mirror the C++ coverage.
+- Add ordering regressions for extensions/conditional extensions placed after entry points, names, and annotations to match C++ layout behavior.
 
 ## Active Milestone: Structural Validator Rules
 Enforce target-environment specific structural rules and reuse validated modules across interfaces.
