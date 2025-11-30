@@ -4295,12 +4295,15 @@ fn validate_instruction_requirements(
                 || inst.class.opcode == rspirv::spirv::Op::ExecutionModeId)
                 && matches!(
                     operand,
-                    rspirv::dr::Operand::ExecutionMode(rspirv::spirv::ExecutionMode::OutputVertices)
+                    rspirv::dr::Operand::ExecutionMode(
+                        rspirv::spirv::ExecutionMode::OutputVertices
+                            | rspirv::spirv::ExecutionMode::OutputPrimitivesEXT
+                    )
                 )
             {
-                // OutputVertices is permitted by multiple capabilities depending on execution
-                // model (Geometry, Tessellation, Mesh); those are validated separately, so skip
-                // operand-level capability checks here to avoid over-constraining.
+                // OutputVertices/OutputPrimitivesEXT capability requirements are enforced via the
+                // entry point's execution model checks; skipping operand-level capability checks
+                // here avoids false positives.
                 continue;
             }
             if matches!(operand, rspirv::dr::Operand::Capability(_)) {
@@ -26903,6 +26906,28 @@ mod tests {
         MaybeValidModule::Text(&text)
             .validate(TargetEnv::Universal1_6)
             .expect("Location overlap checks are Vulkan-specific");
+    }
+
+    #[test]
+    fn geometry_output_vertices_execution_mode_is_accepted() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Geometry",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Geometry %main \"main\"",
+            "OpExecutionMode %main OutputTriangleStrip",
+            "OpExecutionMode %main OutputVertices 3",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("Geometry OutputVertices should not trigger operand capability errors");
     }
 
     #[test]
