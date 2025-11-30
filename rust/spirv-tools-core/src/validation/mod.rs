@@ -2353,8 +2353,7 @@ fn validate_words(
     enforce_interpolation_entry_point_compatibility(&module, &definitions, env)?;
     validate_decoration_target_categories(&module, &opcodes, &definitions, &capabilities)?;
     enforce_store_type_compatibility(&module, &definitions, &options)?;
-    let entry_points =
-        validate_entry_points(&module, &defined_result_ids, &opcodes, &definitions)?;
+    let entry_points = validate_entry_points(&module, &defined_result_ids, &opcodes, &definitions)?;
     validate_entry_point_interface_storage_classes(&module, &definitions, env)?;
     validate_entry_point_locations(&module, &definitions, env)?;
     validate_execution_modes(&module, &entry_points, env, &options, &capabilities)?;
@@ -2872,8 +2871,7 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                     )?;
                 }
                 if inst.class.opcode == rspirv::spirv::Op::Variable {
-                    if let Some(rspirv::dr::Operand::StorageClass(storage)) =
-                        inst.operands.get(0)
+                    if let Some(rspirv::dr::Operand::StorageClass(storage)) = inst.operands.first()
                     {
                         if *storage != rspirv::spirv::StorageClass::Function {
                             let variable = inst
@@ -2946,7 +2944,8 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                         for pair in inst.operands.chunks(2) {
                             if let Some(rspirv::dr::Operand::IdRef(raw_value)) = pair.first() {
                                 if let Ok(value_id) = ResultId::try_from(*raw_value) {
-                                    if let Some(Some(def_block)) = definition_blocks.get(&value_id) {
+                                    if let Some(Some(def_block)) = definition_blocks.get(&value_id)
+                                    {
                                         if !block_ids.contains(def_block) {
                                             return Err(
                                                 ValidationError::ValueDefinedInAnotherFunction {
@@ -3119,7 +3118,7 @@ fn constant_u32_from_defs(
 ) -> Option<u32> {
     let inst = definitions.get(&id)?;
     if inst.class.opcode == rspirv::spirv::Op::Constant {
-        if let Some(rspirv::dr::Operand::LiteralBit32(value)) = inst.operands.get(0) {
+        if let Some(rspirv::dr::Operand::LiteralBit32(value)) = inst.operands.first() {
             return Some(*value);
         }
     }
@@ -3142,7 +3141,7 @@ fn consumed_components_for_type(
             _ => None,
         }),
         rspirv::spirv::Op::TypeMatrix => {
-            let column_type = inst.operands.get(0).and_then(|op| match op {
+            let column_type = inst.operands.first().and_then(|op| match op {
                 rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
                 _ => None,
             })?;
@@ -3155,7 +3154,7 @@ fn consumed_components_for_type(
                 .map(|per_column| per_column.saturating_mul(columns))
         }
         rspirv::spirv::Op::TypeArray => {
-            let element = inst.operands.get(0).and_then(|op| match op {
+            let element = inst.operands.first().and_then(|op| match op {
                 rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
                 _ => None,
             })?;
@@ -3193,7 +3192,7 @@ fn has_patch_decoration(module: &Module, target: ResultId) -> bool {
     let target_raw = target.into_inner().get();
     module.annotations.iter().any(|dec| {
         dec.class.opcode == rspirv::spirv::Op::Decorate
-            && matches!(dec.operands.get(0), Some(rspirv::dr::Operand::IdRef(id)) if *id == target_raw)
+            && matches!(dec.operands.first(), Some(rspirv::dr::Operand::IdRef(id)) if *id == target_raw)
             && matches!(dec.operands.get(1), Some(rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::Patch)))
     })
 }
@@ -3204,8 +3203,10 @@ fn location_and_component(module: &Module, target: ResultId) -> Option<(u32, u32
     let target_raw = target.into_inner().get();
     for dec in &module.annotations {
         if dec.class.opcode == rspirv::spirv::Op::Decorate {
-            if let (Some(rspirv::dr::Operand::IdRef(id)), Some(rspirv::dr::Operand::Decoration(decoration))) =
-                (dec.operands.get(0), dec.operands.get(1))
+            if let (
+                Some(rspirv::dr::Operand::IdRef(id)),
+                Some(rspirv::dr::Operand::Decoration(decoration)),
+            ) = (dec.operands.first(), dec.operands.get(1))
             {
                 if *id == target_raw {
                     match decoration {
@@ -3284,14 +3285,15 @@ fn validate_entry_point_locations(
             };
             let storage_class = definitions
                 .get(&interface_id)
-                .and_then(|inst| inst.operands.get(0))
+                .and_then(|inst| inst.operands.first())
                 .and_then(|op| match op {
                     rspirv::dr::Operand::StorageClass(sc) => Some(*sc),
                     _ => None,
                 });
             let storage_class = match storage_class {
-                Some(sc) if sc == rspirv::spirv::StorageClass::Input
-                    || sc == rspirv::spirv::StorageClass::Output =>
+                Some(sc)
+                    if sc == rspirv::spirv::StorageClass::Input
+                        || sc == rspirv::spirv::StorageClass::Output =>
                 {
                     sc
                 }
@@ -3323,9 +3325,7 @@ fn validate_entry_point_locations(
                 (rspirv::spirv::StorageClass::Output, false) => &mut output_locs,
                 _ => unreachable!(),
             };
-            let start_index = location
-                .saturating_mul(4)
-                .saturating_add(component);
+            let start_index = location.saturating_mul(4).saturating_add(component);
             for offset in 0..consumed {
                 let linear = start_index.saturating_add(offset);
                 let loc_component = (linear / 4, linear % 4);
@@ -3385,21 +3385,22 @@ fn validate_function_call(
             found: callee_inst.class.opcode,
         });
     }
-    let signature = signatures.get(&callee_id).ok_or(
-        ValidationError::FunctionCallTargetNotFunction {
-            function: function_id,
-            target: callee_id,
-            found: callee_inst.class.opcode,
-        },
-    )?;
-
-    let call_result_type =
-        call.result_type
-            .and_then(|raw| TypeId::try_from(raw).ok())
-            .ok_or(ValidationError::ZeroId {
-                kind: IdKind::ResultType,
-                opcode: call.class.opcode,
+    let signature =
+        signatures
+            .get(&callee_id)
+            .ok_or(ValidationError::FunctionCallTargetNotFunction {
+                function: function_id,
+                target: callee_id,
+                found: callee_inst.class.opcode,
             })?;
+
+    let call_result_type = call
+        .result_type
+        .and_then(|raw| TypeId::try_from(raw).ok())
+        .ok_or(ValidationError::ZeroId {
+            kind: IdKind::ResultType,
+            opcode: call.class.opcode,
+        })?;
     if call_result_type != signature.return_type {
         return Err(ValidationError::FunctionCallResultTypeMismatch {
             function: function_id,
@@ -3431,10 +3432,12 @@ fn validate_function_call(
             kind: IdKind::Operand,
             opcode: call.class.opcode,
         })?;
-        let arg_type = result_types.get(&arg_id).ok_or(ValidationError::UndefinedId {
-            function: Some(function_id),
-            id: Id::from(arg_id),
-        })?;
+        let arg_type = result_types
+            .get(&arg_id)
+            .ok_or(ValidationError::UndefinedId {
+                function: Some(function_id),
+                id: Id::from(arg_id),
+            })?;
         if arg_type != expected_type {
             return Err(ValidationError::FunctionCallArgumentTypeMismatch {
                 function: function_id,
@@ -8163,7 +8166,7 @@ fn validate_entry_points(
                     return Err(ValidationError::MissingEntryPointTarget {
                         target: interface_id.into_inner(),
                     });
-                    }
+                }
                 if !interfaces.insert(interface_id) {
                     return Err(ValidationError::DuplicateEntryPointInterface {
                         entry_point: function_id.into_inner(),
@@ -8179,7 +8182,7 @@ fn validate_entry_points(
                     }
                     if let Some(var_inst) = definitions.get(&interface_id) {
                         if let Some(rspirv::dr::Operand::StorageClass(storage)) =
-                            var_inst.operands.get(0)
+                            var_inst.operands.first()
                         {
                             if *storage == rspirv::spirv::StorageClass::Function {
                                 return Err(
@@ -8243,7 +8246,7 @@ fn validate_entry_point_interface_storage_classes(
             rspirv::spirv::Op::TypeVector
             | rspirv::spirv::Op::TypeMatrix
             | rspirv::spirv::Op::TypeArray
-            | rspirv::spirv::Op::TypeRuntimeArray => inst.operands.get(0).and_then(|op| {
+            | rspirv::spirv::Op::TypeRuntimeArray => inst.operands.first().and_then(|op| {
                 if let rspirv::dr::Operand::IdRef(element) = op {
                     ResultId::try_from(*element)
                         .ok()
@@ -8293,8 +8296,7 @@ fn validate_entry_point_interface_storage_classes(
             };
             if let Ok(id) = ResultId::try_from(interface_id) {
                 if let Some(inst) = definitions.get(&id) {
-                    if let Some(rspirv::dr::Operand::StorageClass(storage)) =
-                        inst.operands.get(0)
+                    if let Some(rspirv::dr::Operand::StorageClass(storage)) = inst.operands.first()
                     {
                         match storage {
                             rspirv::spirv::StorageClass::PushConstant => {
@@ -8312,7 +8314,7 @@ fn validate_entry_point_interface_storage_classes(
                                 if seen_ray_payload {
                                     return Err(
                                         ValidationError::EntryPointInterfaceStorageClassDuplicate {
-                                            entry_point: entry_point_id.into(),
+                                            entry_point: entry_point_id,
                                             storage_class: *storage,
                                         },
                                     );
@@ -8323,7 +8325,7 @@ fn validate_entry_point_interface_storage_classes(
                                 if seen_hit_attribute {
                                     return Err(
                                         ValidationError::EntryPointInterfaceStorageClassDuplicate {
-                                            entry_point: entry_point_id.into(),
+                                            entry_point: entry_point_id,
                                             storage_class: *storage,
                                         },
                                     );
@@ -8334,7 +8336,7 @@ fn validate_entry_point_interface_storage_classes(
                                 if seen_callable_data {
                                     return Err(
                                         ValidationError::EntryPointInterfaceStorageClassDuplicate {
-                                            entry_point: entry_point_id.into(),
+                                            entry_point: entry_point_id,
                                             storage_class: *storage,
                                         },
                                     );
@@ -8352,11 +8354,13 @@ fn validate_entry_point_interface_storage_classes(
                                         {
                                             if let Ok(pointee_id) = ResultId::try_from(*pointee) {
                                                 let mut seen_types = HashSet::new();
-                                                if let Some(encoding) = contains_disallowed_fp_encoding(
-                                                    definitions,
-                                                    pointee_id,
-                                                    &mut seen_types,
-                                                ) {
+                                                if let Some(encoding) =
+                                                    contains_disallowed_fp_encoding(
+                                                        definitions,
+                                                        pointee_id,
+                                                        &mut seen_types,
+                                                    )
+                                                {
                                                     return Err(
                                                         ValidationError::EntryPointInterfaceFloatEncodingInvalid {
                                                             interface: id.into(),
@@ -13112,7 +13116,7 @@ mod tests {
         );
         let void = builder.type_void();
         let int = builder.type_int(32, 0);
-        let callee_ty = builder.type_function(int, [int].into_iter());
+        let callee_ty = builder.type_function(int, [int]);
         let main_ty = builder.type_function(void, std::iter::empty::<u32>());
 
         let callee = builder
@@ -13161,7 +13165,7 @@ mod tests {
         let void = builder.type_void();
         let int = builder.type_int(32, 0);
         let float = builder.type_float(32, None);
-        let callee_ty = builder.type_function(int, [int].into_iter());
+        let callee_ty = builder.type_function(int, [int]);
         let main_ty = builder.type_function(void, std::iter::empty::<u32>());
 
         let callee = builder
@@ -13178,7 +13182,7 @@ mod tests {
         let entry = builder.begin_block(None).unwrap();
         let float_const = builder.constant_bit32(float, 0x3f80_0000);
         builder
-            .function_call(int, None, callee, [float_const].into_iter())
+            .function_call(int, None, callee, [float_const])
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
@@ -22151,8 +22155,8 @@ mod tests {
             2,
             op(2, 248), // OpLabel %4
             4,
-            op(1, 253), // OpReturn
-            op(1, 56),  // OpFunctionEnd
+            op(1, 253),                                            // OpReturn
+            op(1, 56),                                             // OpFunctionEnd
             (6 << 16) | (rspirv::spirv::Op::ExtInstImport as u32), // OpExtInstImport %5 "GLSL.std.450" (after functions)
             5,
             0x4c53_4c47, // "GLSL"
@@ -22272,8 +22276,8 @@ mod tests {
             2,
             op(2, 248), // OpLabel %4
             4,
-            op(1, 253), // OpReturn
-            op(1, 56),  // OpFunctionEnd
+            op(1, 253),                                      // OpReturn
+            op(1, 56),                                       // OpFunctionEnd
             op(4, rspirv::spirv::Op::DecorateString as u16), // OpDecorateString %3 UserSemantic "foo" (after functions)
             3,
             rspirv::spirv::Decoration::UserSemantic as u32,
@@ -26916,7 +26920,9 @@ mod tests {
             "OpFunctionEnd",
         ]
         .join("\n");
-        MaybeValidModule::Text(&text).validate(TargetEnv::Universal1_6).unwrap();
+        MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Universal1_6)
+            .unwrap();
     }
 
     #[test]

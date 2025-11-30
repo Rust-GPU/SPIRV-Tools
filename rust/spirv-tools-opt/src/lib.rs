@@ -2207,7 +2207,7 @@ mod tests {
         ]);
         let optimized = optimize_expr(&expr);
         let nodes = optimized.as_ref();
-        let has_umod = nodes.iter().enumerate().any(|(_, node)| {
+        let has_umod = nodes.iter().any(|node| {
             if let SpirvLang::UMod([lhs, rhs]) = node {
                 matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("x"))
                     && matches!(nodes[usize::from(*rhs)], SpirvLang::Const(c) if c.get() == 8)

@@ -171,7 +171,10 @@ fn cli_opt_block_force_env_enables_optimizer() {
         .all_inst_iter()
         .any(|inst| inst.class.opcode == Op::ISub);
     assert!(has_const, "force env should fold subtraction");
-    assert!(!has_sub, "subtraction should be folded when force env is set");
+    assert!(
+        !has_sub,
+        "subtraction should be folded when force env is set"
+    );
 }
 
 #[test]
