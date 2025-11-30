@@ -692,4 +692,5 @@ Tasks for this milestone:
 - Add binary/text regressions for Vulkan-only interface constraints (e.g., PushConstant uniqueness, IncomingRayPayloadKHR/HitAttributeKHR/IncomingCallableDataKHR uniqueness).
   - [x] Duplicate IncomingCallableDataKHR and HitAttributeKHR interfaces now rejected in Vulkan with Rust regressions.
   - [x] Duplicate IncomingRayPayloadKHR interface now rejected in Vulkan with a Rust regression.
+- Enforce ray-tracing entry-point interface storage-class allowlists in the validator and extend regressions around ray-specific interface classes.
 - Wire entry-point interface checks through the CLI/FFI parity runs and update the corpus to match C++ diagnostics.

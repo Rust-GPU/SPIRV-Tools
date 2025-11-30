@@ -8720,7 +8720,13 @@ fn validate_entry_point_interface_storage_classes(
             let _ = operands.next();
         }
         // ExecutionModel
-        let _ = operands.next();
+        let exec_model = operands
+            .next()
+            .and_then(|op| match op {
+                rspirv::dr::Operand::ExecutionModel(model) => Some(*model),
+                _ => None,
+            })
+            .ok_or(ValidationError::InvalidEntryPointOperand)?;
         let entry_point_id = operands
             .next()
             .and_then(|op| match op {
@@ -8744,6 +8750,38 @@ fn validate_entry_point_interface_storage_classes(
                 if let Some(inst) = definitions.get(&id) {
                     if let Some(rspirv::dr::Operand::StorageClass(storage)) = inst.operands.first()
                     {
+                        if matches!(
+                            exec_model,
+                            rspirv::spirv::ExecutionModel::RayGenerationKHR
+                                | rspirv::spirv::ExecutionModel::IntersectionKHR
+                                | rspirv::spirv::ExecutionModel::AnyHitKHR
+                                | rspirv::spirv::ExecutionModel::ClosestHitKHR
+                                | rspirv::spirv::ExecutionModel::MissKHR
+                                | rspirv::spirv::ExecutionModel::CallableKHR
+                        ) {
+                            let allowed = matches!(
+                                *storage,
+                                rspirv::spirv::StorageClass::IncomingRayPayloadKHR
+                                    | rspirv::spirv::StorageClass::RayPayloadKHR
+                                    | rspirv::spirv::StorageClass::HitAttributeKHR
+                                    | rspirv::spirv::StorageClass::IncomingCallableDataKHR
+                                    | rspirv::spirv::StorageClass::CallableDataKHR
+                                    | rspirv::spirv::StorageClass::PushConstant
+                                    | rspirv::spirv::StorageClass::ShaderRecordBufferKHR
+                                    | rspirv::spirv::StorageClass::UniformConstant
+                                    | rspirv::spirv::StorageClass::Input
+                                    | rspirv::spirv::StorageClass::Output
+                            );
+                            if !allowed {
+                                return Err(
+                                    ValidationError::EntryPointInterfaceStorageClassInvalid {
+                                        entry_point: entry_point_id,
+                                        interface: id.into_inner(),
+                                        storage_class: *storage,
+                                    },
+                                );
+                            }
+                        }
                         match storage {
                             rspirv::spirv::StorageClass::PushConstant => {
                                 if seen_push_constant {
