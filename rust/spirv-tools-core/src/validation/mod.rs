@@ -29780,7 +29780,9 @@ mod tests {
             "%void = OpTypeVoid",
             "%fn = OpTypeFunction %void",
             "%float = OpTypeFloat 32",
+            "%vec2 = OpTypeVector %float 2",
             "%ptr = OpTypePointer Input %float",
+            "%ptr_vec = OpTypePointer Input %vec2",
             "%patch = OpVariable %ptr Input",
             "%nonpatch = OpVariable %ptr Input",
             "OpDecorate %patch Patch",
@@ -29795,6 +29797,38 @@ mod tests {
         MaybeValidModule::Text(&text)
             .validate(TargetEnv::Vulkan1_2)
             .expect("Patch and non-Patch locations use separate domains");
+    }
+
+    #[test]
+    fn patch_and_non_patch_locations_separate_even_when_components_spill() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Tessellation",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint TessellationControl %main \"main\" %patch %nonpatch",
+            "OpExecutionMode %main OutputVertices 3",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%float = OpTypeFloat 32",
+            "%vec2 = OpTypeVector %float 2",
+            "%ptr = OpTypePointer Input %float",
+            "%ptr_vec = OpTypePointer Input %vec2",
+            "%patch = OpVariable %ptr_vec Input",
+            "%nonpatch = OpVariable %ptr Input",
+            "OpDecorate %patch Patch",
+            "OpDecorate %patch Location 0",
+            "OpDecorate %patch Component 3", // occupies loc0 comp3 and spills into loc1 comp0
+            "OpDecorate %nonpatch Location 1",
+            "OpDecorate %nonpatch Component 0",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("Patch and non-Patch domains remain separate even when components spill");
     }
 
     #[test]
