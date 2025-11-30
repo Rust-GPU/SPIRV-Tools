@@ -369,6 +369,34 @@ fn corpus_does_not_fold_non_complementary_shift_or() {
 }
 
 #[test]
+fn corpus_folds_const_bor_commutes() {
+    let int = 1;
+    let c1 = inst(
+        Op::Constant,
+        int,
+        1,
+        vec![rspirv::dr::Operand::LiteralBit32(1)],
+    );
+    let c2 = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(2)],
+    );
+    let bor = inst(
+        Op::BitwiseOr,
+        int,
+        3,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(1)],
+    );
+    let optimized = optimize_arith_block(&[c1, c2, bor]).expect("optimize");
+    assert_eq!(optimized.len(), 1);
+    let folded = &optimized[0];
+    assert_eq!(folded.class.opcode, Op::Constant);
+    assert_eq!(folded.operands, vec![rspirv::dr::Operand::LiteralBit32(3)]);
+}
+
+#[test]
 fn corpus_folds_div_by_one() {
     let int = 1;
     let c8 = inst(
