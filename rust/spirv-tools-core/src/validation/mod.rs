@@ -18285,6 +18285,50 @@ mod tests {
     }
 
     #[test]
+    fn phi_incoming_types_must_match_result_type() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%bool = OpTypeBool",
+            "%int = OpTypeInt 32 1",
+            "%uint = OpTypeInt 32 0",
+            "%fn = OpTypeFunction %int",
+            "%true = OpConstantTrue %bool",
+            "%zero_i = OpConstant %int 0",
+            "%zero_u = OpConstant %uint 0",
+            "%main = OpFunction %int None %fn",
+            "%entry = OpLabel",
+            "OpSelectionMerge %merge None",
+            "OpBranchConditional %true %merge %side",
+            "%side = OpLabel",
+            "OpBranch %merge",
+            "%merge = OpLabel",
+            // Incoming value type (%uint) does not match phi result type (%int).
+            "%phi = OpPhi %int %zero_u %side %zero_i %entry",
+            "OpReturnValue %phi",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("phi incoming types must match result type");
+        assert_eq!(
+            err,
+            ValidationError::PhiIncomingTypeMismatch {
+                function: Id::try_from(9).unwrap(),
+                block: Id::try_from(11).unwrap(),
+                incoming: Id::try_from(8).unwrap(),
+                expected: TypeId::try_from(3).unwrap(),
+                found: TypeId::try_from(4).unwrap()
+            }
+        );
+    }
+
+    #[test]
     fn operand_id_must_be_defined_globally() {
         let text = [
             "OpCapability Shader",
