@@ -544,6 +544,7 @@ Tasks for this milestone:
 - [x] Reject values defined in one function that are referenced in another, with Rust regression coverage.
 - [x] Enforce function-scoped variables to use Function storage class with Rust regression coverage.
 - [x] Enforce function-scoped variables to be declared in the entry block with Rust regression coverage.
+- [x] Enforce entry-point interface variables to avoid Function storage class with Rust regression coverage.
 - Validate interface linkage for variables and descriptor sets/bindings where applicable per environment.
 - Wire the Rust validator through FFI/CLI as the default path (behind a feature flag) once the above checks and layout parity are in place, backed by mirrored gtest/integration coverage.
 
