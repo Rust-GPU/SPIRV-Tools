@@ -119,6 +119,7 @@ Planned tasks:
 - [x] Add a CLI/FFI parity harness to diff Rust vs C++ optimizer outputs on the arithmetic corpus and gate on regressions. (Expanded corpus: const add, mul zero, div/rem, mul by pow2)
   - Parity now runs in `scripts/ci-optimizer-smoke.sh` via `scripts/run-opt-parity.sh` when `spirv-opt` is available.
   - Corpus expanded with shift-chain and mask-to-pow2 cases to mirror C++ output signatures.
+  - Added parity coverage for arithmetic shift chains and negation chains.
 
 ## Upcoming Milestone: Optimizer Parity Expansion
 - Extend the arithmetic/bitwise parity corpus to cover negation chains, mixed shift combinations (logical vs arithmetic), and additional mask+shift fold patterns present in the C++ optimizer.
