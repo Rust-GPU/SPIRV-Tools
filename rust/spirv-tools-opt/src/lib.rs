@@ -172,6 +172,8 @@ define_language! {
         "shr_u" = ShrU([Id; 2]),
         "band" = BitAnd([Id; 2]),
         "bor" = BitOr([Id; 2]),
+        "rotl" = RotL([Id; 2]),
+        "rotr" = RotR([Id; 2]),
         "-" = Sub([Id; 2]),
         "sdiv" = SDiv([Id; 2]),
         "udiv" = UDiv([Id; 2]),
@@ -425,6 +427,9 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
             BitOrConstSimplify { x: var("?x"), c: var("?c") }
         }),
         rewrite!("bor-self"; "(bor ?x ?x)" => "?x"),
+        rewrite!("rotate-const-pattern"; "(bor (shl ?x ?s) (shr_u ?x ?t))" => {
+            RotatePatternFold { x: var("?x"), s: var("?s"), t: var("?t") }
+        }),
         rewrite!("mul-dist-const-over-add"; "(* ?c (+ ?x ?k))" => {
             DistConstMulAdd { c: var("?c"), x: var("?x"), k: var("?k") }
         }),
@@ -794,6 +799,11 @@ struct BitOrFold {
 struct BitOrConstSimplify {
     x: Var,
     c: Var,
+}
+struct RotatePatternFold {
+    x: Var,
+    s: Var,
+    t: Var,
 }
 struct MaskThenShift {
     x: Var,
@@ -2033,6 +2043,33 @@ impl Applier<SpirvLang, ()> for BitOrConstSimplify {
         }
         egraph.union(eclass, subst[self.x]);
         vec![subst[self.x]]
+    }
+}
+
+impl Applier<SpirvLang, ()> for RotatePatternFold {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(x) = const_value(egraph, subst[self.x]) else {
+            return Vec::new();
+        };
+        let Some(s) = const_value(egraph, subst[self.s]) else {
+            return Vec::new();
+        };
+        let Some(t) = const_value(egraph, subst[self.t]) else {
+            return Vec::new();
+        };
+        let left = x.get().wrapping_shl(s.get() % 32);
+        let right = x.get().wrapping_shr(t.get() % 32);
+        let folded = ConstValue::new(left | right);
+        let id = egraph.add(SpirvLang::Const(folded));
+        egraph.union(eclass, id);
+        vec![id]
     }
 }
 

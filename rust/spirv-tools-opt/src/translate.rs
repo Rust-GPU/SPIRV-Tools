@@ -483,6 +483,7 @@ pub fn optimize_arith_block(
                     rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
                 ],
             ),
+            SpirvLang::RotL(_) | SpirvLang::RotR(_) => continue,
             SpirvLang::Shl([a, b]) => Instruction::new(
                 Op::ShiftLeftLogical,
                 Some(result_type),
@@ -541,7 +542,9 @@ fn expr_cost(expr: &RecExpr<SpirvLang>) -> usize {
             | SpirvLang::Shl([a, b])
             | SpirvLang::ShrS([a, b])
             | SpirvLang::ShrU([a, b])
-            | SpirvLang::BitOr([a, b]) => 1 + costs[usize::from(*a)] + costs[usize::from(*b)],
+            | SpirvLang::BitOr([a, b])
+            | SpirvLang::RotL([a, b])
+            | SpirvLang::RotR([a, b]) => 1 + costs[usize::from(*a)] + costs[usize::from(*b)],
             SpirvLang::BitAnd([a, b]) => 2 + costs[usize::from(*a)] + costs[usize::from(*b)],
         };
         costs.push(cost);
