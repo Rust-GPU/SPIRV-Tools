@@ -128,15 +128,15 @@ Planned tasks:
 - [x] Expose CLI toggles (`--prefer-rust-validator` / `--prefer-cpp-validator`) to steer the default when both validators are available.
 - [x] Add env-level defaults (`SPIRV_TOOLS_PREFER_RUST_VALIDATOR` / `SPIRV_TOOLS_PREFER_CPP_VALIDATOR`) to steer the default without forcing.
 
-## Upcoming Milestone: Layout Ordering Parity
+## Completed Milestone: Layout Ordering Parity
 Match the C++ validator’s capability/extension/import ordering and annotation placement rules in the Rust validator.
 
-Planned tasks:
-- Enforce capability/extension/import ordering relative to debug/names/annotations/types/globals/functions, including conditional capabilities/extensions, with Rust regression tests.
-- Mirror annotation-placement rules (decorations, decoration groups, member decorations/names) against function/after-function sections with Rust tests.
-- Keep block-layout skipping from bypassing ordering/placement validation.
-- Verify ordering rules on binaries the text assembler would reorder (hand-built word tests) to mirror the C++ coverage.
-- Add ordering regressions for extensions/conditional extensions placed after entry points, names, and annotations to match C++ layout behavior.
+- [x] Enforce capability/extension/import ordering relative to debug/names/annotations/types/globals/functions, including conditional capabilities/extensions, with Rust regression tests.
+- [x] Mirror annotation-placement rules (decorations, decoration groups, member decorations/names) against function/after-function sections with Rust tests.
+- [x] Keep block-layout skipping from bypassing ordering/placement validation.
+- [x] Verify ordering rules on binaries the text assembler would reorder (hand-built word tests) to mirror the C++ coverage.
+- [x] Add ordering regressions for extensions/conditional extensions placed after entry points, names, and annotations to match C++ layout behavior.
+- [x] Full ctest run with `SPIRV_TOOLS_DISABLE_RUST_VALIDATOR=0` passes (24 tests), matching the C++ suite with the Rust validator enabled.
 
 ## Active Milestone: Structural Validator Rules
 Enforce target-environment specific structural rules and reuse validated modules across interfaces.
@@ -504,34 +504,11 @@ Percentages are approximate and will be updated as new checklists are added for 
 - Mapping of large switch-based operand logic into data-driven Rust structures without performance regressions.
 
 ## Next Up
-1. Broaden structural validation for decoration target categories and capability/extension ordering (text + binary coverage), keeping parity with the C++ validator tables.
-   - Added layout-order regression tests for section ordering (ExtInstImport, debug/names/annotations) and BuiltIn target categories to lock in current behavior.
-   - Ported 16-bit storage class gating (StorageBuffer/Uniform/PushConstant/Input/Output/Workgroup) so variables containing 16-bit elements now mirror the C++ capability checks.
-   - Added 8-bit storage class gating (StorageBuffer/Uniform/PushConstant/Workgroup) so Int8 payloads now require the same capabilities as C++.
-   - Added positive regression coverage for small-type storage paths (8/16-bit storage buffers, uniform BufferBlock fallbacks, input/output, push constants, workgroup layout) so allowed combinations stay aligned with the C++ validator.
-   - Enforced block decoration rules (Block/BufferBlock storage-class compatibility, BufferBlock version gating, descriptor-only storage classes, location/component limited to input/output) to match C++ decoration target checks.
-   - Enforced BuiltIn/location exclusivity and storage-class allowlists for BuiltIn decorations to mirror the C++ tables.
-2. Push validated-module caching deeper through FFI/CLI entry points to avoid reparsing/validating identical inputs.
-3. Fill in remaining SPIR-V version gating and per-instruction requirements from the grammar, then revisit disassembly fixtures once validator parity is solid.
-4. Thread the generated extension allowlist through capability/extension precedence (ray tracing, cooperative matrices, tile shading) with focused regressions, and capture any OpenGL-specific quirks that still rely on heuristics.
-   - The allowlist now gates capability-required extensions; vendor capabilities error out early when their extensions are forbidden by the target environment.
-   - Added env-gated regressions for RayTracingKHR, CooperativeMatrixNV, TileShadingQCOM, fragment shading rate/density, MeshShadingEXT, fragment shader interlock, NV shader image footprint, atomic float add, shader invocation reorder, and NV cluster acceleration capabilities to ensure capability enablement respects the per-env allowlist even when the extensions are declared.
-   - Marked `SPV_KHR_cooperative_matrix` as Vulkan-only in the generated allowlist and added coverage for CooperativeMatrixKHR capabilities requiring the extension and being rejected outside Vulkan even when declared.
-   - Added capability/extension precedence coverage for ray-tracing adjunct capabilities (`RayTracingLinearSweptSpheresGeometryNV`, `RayTracingOpacityMicromapEXT`) to ensure their extensions are required and rejected outside Vulkan even when declared.
-   - Added coverage for NV ray-tracing motion blur: capability now requires `SPV_NV_ray_tracing_motion_blur`, and non-Vulkan environments reject it even when the extensions are declared.
-   - Added coverage for NV ray-tracing displacement micromaps: capability now requires `SPV_NV_displacement_micromap` and is rejected in non-Vulkan environments even when declared.
-   - Marked `SPV_KHR_device_group` as Vulkan-only and added env/version-gated regressions for the extension and capability.
-  - Marked `SPV_KHR_shader_clock` as Vulkan-only in the generated allowlist and added env-gated tests for the extension and capability.
-  - The generated allowlist now marks `SPV_KHR_fragment_shading_rate` and `SPV_EXT_fragment_invocation_density` as Vulkan-only to mirror the C++ tables.
-5. Generate capability/extension ordering tables from the grammar (including conditional variants), enforce them in validation, and add binary regressions for each section boundary (before debug/names/annotations/imports/memory model/types/functions) to lock parity before enabling the Rust validator by default.
-   - Converted misordered conditional extension/type-section regression to use an allowlisted extension string under Vulkan so ordering errors aren’t masked by env allowlists.
-   - Updated the duplicate conditional-extension regression to use the same allowlisted extension naming (without SPV_ prefix) to match validator normalization.
-   - Brought all conditional extension layout regressions (debug/names, annotations, imports, memory model, functions) in line with the allowlisted/Vulkan pattern so ordering checks aren’t hidden by env allowlists.
-5. Port additional C++ arithmetic parity cases that exercise the newer factoring/distributivity rewrites (commuted multiplicands, shared addend cancellation); initial const-only cases have been added to the parity suite, continue expanding to symbolic/factorization scenarios while keeping rule naming collision-free.
-   - Parity suite now covers shared-addend constant differences in both directions ((9+3)-(9+4) wrapping to -1 and (9+4)-(9+3) to +1) to mirror C++ folding.
-   - Added symbolic shared-addend cancellation parity ((x+5)-(x+2) => 3 and (x+7)-(x+7) => 0) to ensure Rust e-graph rewrites match C++ algebraic simplification on parameterized inputs.
-6. Harden the Rust assembler FFI path so C++ callers don’t drop function bodies when the Rust path is enabled.
-   - Added a guard that detects missing function bodies from the Rust assembler and falls back to the C++ assembler, plus an FFI regression test that assembles via a context handle and asserts the body survives.
+1. Finish function/CFG parity: deepen SSA/type checking inside functions (result types, operand types, interface linkage), grow merge/continue/phi regressions, and align dominance rules with the C++ validator where they still diverge.
+2. Close any remaining decoration/env constraints that are still table-driven in C++ (e.g., leftover built-in placement quirks) and back them with Rust regressions.
+3. Push validated-module caching through CLI/FFI plumbing where re-parsing still happens, keeping the Rust path zero-cost when reused.
+4. Round out SPIR-V version/extension gating pulled from the grammar (instruction/operand-level) and document the Rust-default validator rollout knobs for CLI/FFI callers.
+5. Keep validator rollout guardrails in CI: run the ctest/corpus jobs with `SPIRV_TOOLS_DISABLE_RUST_VALIDATOR=0`, and capture any deltas before flipping the default.
 
 ## Completed Milestone: Capability/Extension Ordering Parity
 Align the Rust validator’s capability/extension ordering and layout checks with the C++ tables.
@@ -555,13 +532,6 @@ Tasks for this milestone:
 - Added operand-level regressions for `ImageOperands::MAKE_TEXEL_VISIBLE/AVAILABLE` to require `VulkanMemoryModel` (fail without capability, pass with capability/extension under `VulkanKHR` memory model).
 - Added operand-level regressions for `ImageOperands::NON_PRIVATE_TEXEL` to require `VulkanMemoryModel` (fail without capability, pass with capability/extension under `VulkanKHR` memory model).
 
-## Completed Milestone: Layout Ordering Parity
-Tightened layout ordering to match the C++ validator’s section/decoration ordering rules.
-
-- Enforced capability/extension/ExtInstImport ordering relative to debug/names/annotations/types/functions (including conditional variants) with binary regressions for each section boundary.
-- Added layout regressions for late `OpExtInstImport` placement (after memory model, after types/globals, and inside functions).
-- Kept validated-module caching wired through FFI/CLI for these ordering checks to avoid reparsing/renumbering.
-
 ## Active Milestone: Function and CFG Validation
 Bring function-body validation in line with the C++ validator so the Rust validator can be enabled by default.
 
@@ -573,30 +543,13 @@ Tasks for this milestone:
 - Validate interface linkage for variables and descriptor sets/bindings where applicable per environment.
 - Wire the Rust validator through FFI/CLI as the default path (behind a feature flag) once the above checks and layout parity are in place, backed by mirrored gtest/integration coverage.
 
-## Upcoming Milestone: Layout Ordering Parity
-Tighten layout ordering to match the C++ validator’s section/decoration ordering rules.
-
-Tasks for this milestone:
-- Enforce capability/extension ordering relative to debug/names/annotations and module layout (no late section regressions), including conditional extensions/capabilities.
-- Add decoration ordering/category checks that remain in the C++ tables (e.g., per-target-env decoration placement quirks) with paired text/binary regressions.
-- Keep ValidModule caching wired through FFI/CLI for these ordering checks to avoid reparsing/renumbering.
-
-## Upcoming Milestone: Validator Parity Rollout
+## Active Milestone: Validator Parity Rollout
 Run the full C++ validation suites with the Rust path forced on, close remaining gaps, and prepare to flip the default.
 
 Tasks for this milestone:
-- Force-enable the Rust validator across CLI/FFI parity runs and record any mismatches against the C++ validator.
+- [x] Force-enable the Rust validator across CLI/FFI parity runs and record any mismatches against the C++ validator. (ctest suite passes with the Rust validator forced on)
 - Close any remaining decoration/env-specific placement quirks (BuiltIn allowlists, interpolation/barycentric rules) with Rust regressions.
 - Keep the plan updated with rollout status and fallbacks, and land a toggle to make the Rust validator the default once parity is demonstrated.
-
-## Upcoming Milestone: Function and CFG Validation
-Bring function-body validation in line with the C++ validator so the Rust validator can be enabled by default.
-
-Tasks for this milestone:
-- Validate function definitions: block ordering, structured control flow (merge/continue rules), and minimal well-formedness (single entry, terminals).
-- Enforce SSA/phi correctness (dominance of defs, matching predecessor counts/types) and type checking for instructions beyond the current structural pass.
-- Validate interface linkage for variables and descriptor sets/bindings where applicable per environment.
-- Wire the Rust validator through FFI/CLI as the default path (behind a feature flag) once the above checks and layout parity are in place, backed by mirrored gtest/integration coverage.
 
 ## Upcoming Milestone: Optimizer E-Graph Port
 Drive the optimizer rewrite in Rust using `egg`/e-graphs with fuzzing and performance guardrails.
