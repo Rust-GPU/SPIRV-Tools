@@ -239,6 +239,17 @@ pub fn format_validation_error(error: &ValidationError, names: Option<&FriendlyN
             names.format_id((*function).into()),
             names.format_id((*block).into())
         ),
+        (
+            ValidationError::MissingBlockLabel {
+                function,
+                block_index,
+            },
+            Some(names),
+        ) => format!(
+            "{} missing OpLabel in block {}",
+            names.format_id((*function).into()),
+            block_index
+        ),
         (ValidationError::PhiAfterNonPhi { function, block }, Some(names)) => format!(
             "{} in block {}",
             names.format_id((*function).into()),
@@ -1388,6 +1399,14 @@ pub enum ValidationError {
         /// The structured terminator opcode.
         terminator: rspirv::spirv::Op,
     },
+    /// A basic block is missing its required `OpLabel`.
+    #[error("function {function:?} contains a block without OpLabel at index {block_index}")]
+    MissingBlockLabel {
+        /// The function containing the malformed block.
+        function: Id,
+        /// The ordinal of the block within the function.
+        block_index: usize,
+    },
     /// A phi instruction appears after non-phi instructions in a block.
     #[error(
         "block {block:?} of function {function:?} has phi instructions after non-phi instructions"
@@ -2053,7 +2072,20 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                 .map(|id| (id, Default::default()))
                 .collect();
 
-        for block in &function.blocks {
+        for (block_index, block) in function.blocks.iter().enumerate() {
+            let label_inst = block
+                .label
+                .as_ref()
+                .ok_or(ValidationError::MissingBlockLabel {
+                    function: function_id,
+                    block_index: block_index,
+                })?;
+            if label_inst.class.opcode != rspirv::spirv::Op::Label {
+                return Err(ValidationError::MissingBlockLabel {
+                    function: function_id,
+                    block_index: block_index,
+                });
+            }
             let block_label_id = block
                 .label
                 .as_ref()

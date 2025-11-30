@@ -198,6 +198,7 @@ Tasks for this milestone:
   - Imported opcode and operand SPIR-V version requirements from the grammar and added regressions (e.g., `OpTerminateInvocation` gated at 1.6, `StorageBuffer` storage class at 1.3, `LoopControl DependencyLength` at 1.1) that exercise env clamping.
 - [x] Cache validated modules across CLI/FFI invocations when the same input is reused, avoiding redundant parsing/validation.
 - [ ] Expose wider structural rules (capability/extension ordering in layout, per-target decoration constraints) mirroring the C++ validator tables.
+ - [x] Enforce basic-block structure: every block now requires an `OpLabel` and phi instructions must be contiguous at the top of the block, matching C++ CFG rules with Rust regressions.
 - [ ] Enable the Rust validator over the FFI/CLI by default once structural parity is sufficiently close to C++.
 - [x] Run the C++ validation corpus with the Rust validator forced on (`SPIRV_TOOLS_DISABLE_RUST_VALIDATOR=0`) and close any remaining gaps; current build directory lacked test targets, so a test-enabled CMake build (`build-tests/`) was used and all 24 ctests passed with the Rust validator enabled.
 
