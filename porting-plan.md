@@ -675,6 +675,7 @@ Broaden operand-level type checks using the grammar tables and ensure CLI/FFI pa
 Tasks for this milestone:
 - Import operand-type expectations from the grammar for arithmetic/logical/bitwise/shift/compare instructions and enforce them in the Rust validator.
   - [x] Enforce integer/float compare result types are bool (matching operand shape) and that operands match each other and their expected scalar kinds.
+  - [x] Enforce shift count operands are integers matching the value’s component count and bit width, with Rust regressions for scalar and vector counts.
 - Add binary/text regressions for representative opcodes (shift vector widths, compare operand type compatibility, mixed signedness where allowed).
 - Wire the operand-type checks through CLI/FFI parity runs and update the C++ parity corpus to cover the new checks.
 - Keep typed `ValidationError` coverage for operand/type mismatches surfaced through the FFI boundary.

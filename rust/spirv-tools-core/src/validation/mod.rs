@@ -3073,6 +3073,44 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
             }
         }
 
+        let integer_shape = |ty_inst: &rspirv::dr::Instruction| -> Option<(usize, u32)> {
+            match ty_inst.class.opcode {
+                rspirv::spirv::Op::TypeInt => ty_inst
+                    .operands
+                    .get(0)
+                    .and_then(|op| match op {
+                        rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+                        _ => None,
+                    })
+                    .map(|width| (1, width)),
+                rspirv::spirv::Op::TypeVector => {
+                    let elem_ty = ty_inst.operands.first().and_then(|op| match op {
+                        rspirv::dr::Operand::IdRef(raw) => ResultId::try_from(*raw).ok(),
+                        _ => None,
+                    });
+                    let elem_inst = elem_ty.and_then(|rid| definitions.get(&rid));
+                    let width = elem_inst.and_then(|inst| match inst.class.opcode {
+                        rspirv::spirv::Op::TypeInt => {
+                            inst.operands.get(0).and_then(|op| match op {
+                                rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+                                _ => None,
+                            })
+                        }
+                        _ => None,
+                    });
+                    let count = ty_inst.operands.get(1).and_then(|op| match op {
+                        rspirv::dr::Operand::LiteralBit32(v) => Some(*v as usize),
+                        _ => None,
+                    });
+                    match (count, width) {
+                        (Some(c), Some(w)) => Some((c, w)),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            }
+        };
+
         // Validate dominance: general operands must be dominated by their definition block.
         for block in &function.blocks {
             let block_label_id = block
@@ -3346,6 +3384,77 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                                     });
                                 }
                             }
+                            if matches!(
+                                inst.class.opcode,
+                                rspirv::spirv::Op::ShiftLeftLogical
+                                    | rspirv::spirv::Op::ShiftRightLogical
+                                    | rspirv::spirv::Op::ShiftRightArithmetic
+                            ) {
+                                let Some(result_type) =
+                                    inst.result_type.and_then(|raw| TypeId::try_from(raw).ok())
+                                else {
+                                    continue;
+                                };
+                                let Some(result_inst) = result_type_inst else {
+                                    continue;
+                                };
+                                let Some((result_components, result_width)) =
+                                    integer_shape(result_inst)
+                                else {
+                                    return Err(ValidationError::InstructionResultTypeMismatch {
+                                        function: function_id,
+                                        block: block_label_id,
+                                        instruction: inst.class.opcode,
+                                        expected: result_type,
+                                        found: result_type,
+                                    });
+                                };
+
+                                if let Some(op_type_id) = result_types.get(&result_id).copied() {
+                                    if operand_index == 0 {
+                                        if op_type_id != result_type {
+                                            return Err(ValidationError::OperandTypeMismatch {
+                                                function: function_id,
+                                                block: block_label_id,
+                                                instruction: inst.class.opcode,
+                                                operand_index,
+                                                expected: result_type,
+                                                found: op_type_id,
+                                            });
+                                        }
+                                    } else if operand_index == 1 {
+                                        let op_inst =
+                                            ResultId::try_from(u32::from(Id::from(op_type_id)))
+                                                .ok()
+                                                .and_then(|rid| definitions.get(&rid));
+                                        let Some((op_components, op_width)) =
+                                            op_inst.and_then(|i| integer_shape(i))
+                                        else {
+                                            return Err(ValidationError::OperandTypeMismatch {
+                                                function: function_id,
+                                                block: block_label_id,
+                                                instruction: inst.class.opcode,
+                                                operand_index,
+                                                expected: result_type,
+                                                found: op_type_id,
+                                            });
+                                        };
+                                        if op_components != result_components
+                                            || op_width != result_width
+                                        {
+                                            return Err(ValidationError::OperandTypeMismatch {
+                                                function: function_id,
+                                                block: block_label_id,
+                                                instruction: inst.class.opcode,
+                                                operand_index,
+                                                expected: result_type,
+                                                found: op_type_id,
+                                            });
+                                        }
+                                    }
+                                }
+                                continue;
+                            }
                             // Operand type checks for simple arithmetic/logical ops: operands must
                             // match the result type.
                             if let Some(result_type) =
@@ -3364,9 +3473,6 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                                         | rspirv::spirv::Op::BitwiseOr
                                         | rspirv::spirv::Op::BitwiseXor
                                         | rspirv::spirv::Op::Not
-                                        | rspirv::spirv::Op::ShiftLeftLogical
-                                        | rspirv::spirv::Op::ShiftRightLogical
-                                        | rspirv::spirv::Op::ShiftRightArithmetic
                                         | rspirv::spirv::Op::LogicalAnd
                                         | rspirv::spirv::Op::LogicalOr
                                         | rspirv::spirv::Op::LogicalNot
@@ -18936,6 +19042,96 @@ mod tests {
                 operand_index: 0,
                 expected: TypeId::try_from(int).unwrap(),
                 found: TypeId::try_from(float).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn shift_count_must_match_component_width() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int32 = b.type_int(32, 0);
+        let int16 = b.type_int(16, 0);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let header = b.begin_block(None).unwrap();
+        let lhs = b.constant_bit32(int32, 1);
+        let count = b.constant_bit32(int16, 1);
+        b.shift_left_logical(int32, None, lhs, count).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let words = b.module().assemble();
+        let err = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("shift count must match bit width and component count");
+        assert_eq!(
+            err,
+            ValidationError::OperandTypeMismatch {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(header).unwrap(),
+                instruction: rspirv::spirv::Op::ShiftLeftLogical,
+                operand_index: 1,
+                expected: TypeId::try_from(int32).unwrap(),
+                found: TypeId::try_from(int16).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn shift_count_vector_shape_must_match_value() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let vec_ty = b.type_vector(int, 2);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let header = b.begin_block(None).unwrap();
+        let zero = b.constant_bit32(int, 0);
+        let vec = b.constant_composite(vec_ty, [zero, zero]);
+        let scalar_count = b.constant_bit32(int, 1);
+        b.shift_right_logical(vec_ty, None, vec, scalar_count)
+            .unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let words = b.module().assemble();
+        let err = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("shift count shape must match vector value");
+        assert_eq!(
+            err,
+            ValidationError::OperandTypeMismatch {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(header).unwrap(),
+                instruction: rspirv::spirv::Op::ShiftRightLogical,
+                operand_index: 1,
+                expected: TypeId::try_from(vec_ty).unwrap(),
+                found: TypeId::try_from(int).unwrap(),
             }
         );
     }
