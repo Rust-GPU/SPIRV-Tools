@@ -27,6 +27,11 @@ config_setting(
 )
 
 config_setting(
+    name = "prefer_cpp_validator_default",
+    define_values = {"spirv_tools_prefer_rust_validator": "false"},
+)
+
+config_setting(
     name = "spirv_rust_profile_debug",
     define_values = {"spirv_tools_rust_profile": "debug"},
 )
