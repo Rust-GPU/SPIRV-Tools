@@ -667,4 +667,13 @@ Tasks for this milestone:
 - [x] Check operand types for common arithmetic instructions against their result types, rejecting mismatched operand types in Rust tests.
 - [x] Check logical/bitwise operand and result types (bool for logical, integer for bitwise) with Rust regressions mirroring C++ validation.
 - [x] Reject unreachable blocks that declare ids referenced from reachable code, matching the C++ diagnostic shape.
-- [ ] Add regression tests (text and binary) for SSA/type failures and wire them through the CLI/FFI parity runs.
+- [x] Add regression tests (text and binary) for SSA/type failures and wire them through the CLI/FFI parity runs.
+
+## Upcoming Milestone: Operand Type Table Parity
+Broaden operand-level type checks using the grammar tables and ensure CLI/FFI parity.
+
+Tasks for this milestone:
+- Import operand-type expectations from the grammar for arithmetic/logical/bitwise/shift/compare instructions and enforce them in the Rust validator.
+- Add binary/text regressions for representative opcodes (shift vector widths, compare operand type compatibility, mixed signedness where allowed).
+- Wire the operand-type checks through CLI/FFI parity runs and update the C++ parity corpus to cover the new checks.
+- Keep typed `ValidationError` coverage for operand/type mismatches surfaced through the FFI boundary.
