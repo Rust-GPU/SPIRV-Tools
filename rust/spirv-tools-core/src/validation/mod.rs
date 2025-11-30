@@ -18404,6 +18404,48 @@ mod tests {
     }
 
     #[test]
+    fn value_must_dominate_non_phi_uses() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%bool = OpTypeBool",
+            "%int = OpTypeInt 32 1",
+            "%fn = OpTypeFunction %int",
+            "%true = OpConstantTrue %bool",
+            "%zero = OpConstant %int 0",
+            "%main = OpFunction %int None %fn",
+            "%entry = OpLabel",
+            "OpSelectionMerge %merge None",
+            // Branch to merge and to then; merge has two predecessors.
+            "OpBranchConditional %true %then %merge",
+            "%then = OpLabel",
+            "%v = OpIAdd %int %zero %zero",
+            "OpBranch %merge",
+            "%merge = OpLabel",
+            // Use %v, which is not available along the direct %entry -> %merge edge.
+            "%sum = OpIAdd %int %v %zero",
+            "OpReturnValue %sum",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("values must dominate all non-phi uses");
+        assert_eq!(
+            err,
+            ValidationError::ValueNotDominated {
+                function: Id::try_from(7).unwrap(),
+                block: Id::try_from(9).unwrap(),
+                value: Id::try_from(11).unwrap()
+            }
+        );
+    }
+
+    #[test]
     fn operand_id_must_be_defined_globally() {
         let text = [
             "OpCapability Shader",
