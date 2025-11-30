@@ -4298,12 +4298,13 @@ fn validate_instruction_requirements(
                     rspirv::dr::Operand::ExecutionMode(
                         rspirv::spirv::ExecutionMode::OutputVertices
                             | rspirv::spirv::ExecutionMode::OutputPrimitivesEXT
+                            | rspirv::spirv::ExecutionMode::OutputLinesEXT
+                            | rspirv::spirv::ExecutionMode::OutputTrianglesEXT
                     )
                 )
             {
-                // OutputVertices/OutputPrimitivesEXT capability requirements are enforced via the
-                // entry point's execution model checks; skipping operand-level capability checks
-                // here avoids false positives.
+                // Output* execution modes are validated against the entry point execution model;
+                // skipping operand capability checks avoids over-constraining mesh/geometry/tess.
                 continue;
             }
             if matches!(operand, rspirv::dr::Operand::Capability(_)) {
@@ -26994,6 +26995,30 @@ mod tests {
         MaybeValidModule::Text(&text)
             .validate(TargetEnv::Vulkan1_2)
             .expect("Geometry OutputVertices should not trigger operand capability errors");
+    }
+
+    #[test]
+    fn mesh_output_primitives_execution_mode_is_accepted() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability MeshShadingNV",
+            "OpExtension \"SPV_NV_mesh_shader\"",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint MeshNV %main \"main\"",
+            "OpExecutionMode %main OutputTrianglesEXT",
+            "OpExecutionMode %main OutputVertices 3",
+            "OpExecutionMode %main OutputPrimitivesEXT 2",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("Mesh OutputTriangles/OutputVertices/OutputPrimitivesEXT should validate");
     }
 
     #[test]
