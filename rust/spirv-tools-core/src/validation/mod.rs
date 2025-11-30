@@ -3257,6 +3257,11 @@ fn manual_required_capabilities_for_operand(
         {
             &[rspirv::spirv::Capability::VulkanMemoryModel]
         }
+        rspirv::dr::Operand::ImageOperands(operands)
+            if operands.contains(rspirv::spirv::ImageOperands::NON_PRIVATE_TEXEL) =>
+        {
+            &[rspirv::spirv::Capability::VulkanMemoryModel]
+        }
         _ => &[],
     }
 }
@@ -19770,77 +19775,6 @@ mod tests {
     }
 
     #[test]
-    fn image_operands_non_private_texel_requires_vulkan_memory_model_capability() {
-        use rspirv::{binary::Assemble, dr::Builder};
-
-        let mut builder = Builder::new();
-        builder.set_version(1, 5);
-        builder.capability(rspirv::spirv::Capability::Shader);
-        builder.capability(rspirv::spirv::Capability::StorageImageWriteWithoutFormat);
-        // Deliberately omit VulkanMemoryModel capability while keeping the extension/version satisfied.
-        builder.extension("SPV_KHR_vulkan_memory_model");
-        builder.memory_model(
-            rspirv::spirv::AddressingModel::Logical,
-            rspirv::spirv::MemoryModel::GLSL450,
-        );
-
-        let void = builder.type_void();
-        let float = builder.type_float(32, None);
-        let int = builder.type_int(32, 1);
-        let v2int = builder.type_vector(int, 2);
-        let v4float = builder.type_vector(float, 4);
-        let image = builder.type_image(
-            float,
-            rspirv::spirv::Dim::Dim2D,
-            0,
-            0,
-            0,
-            2,
-            rspirv::spirv::ImageFormat::Unknown,
-            None,
-        );
-        let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::UniformConstant, image);
-        let float_0 = builder.constant_bit32(float, 0.0f32.to_bits());
-        let c0 = builder.constant_bit32(int, 0);
-        let coord = builder.constant_composite(v2int, [c0, c0]);
-        let texel = builder.constant_composite(v4float, [float_0, float_0, float_0, float_0]);
-        let imgvar = builder.variable(
-            ptr,
-            None,
-            rspirv::spirv::StorageClass::UniformConstant,
-            None,
-        );
-        let fn_ty = builder.type_function(void, std::iter::empty::<u32>());
-
-        builder
-            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
-            .unwrap();
-        builder.begin_block(None).unwrap();
-        builder
-            .image_write(
-                imgvar,
-                coord,
-                texel,
-                Some(rspirv::spirv::ImageOperands::NON_PRIVATE_TEXEL),
-                std::iter::empty::<rspirv::dr::Operand>(),
-            )
-            .unwrap();
-        builder.ret().unwrap();
-        builder.end_function().unwrap();
-
-        let binary = builder.module().assemble();
-        let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
-        assert_eq!(
-            error,
-            ValidationError::MissingOperandCapability {
-                opcode: rspirv::spirv::Op::ImageWrite,
-                operand_index: 3,
-                required_capability: rspirv::spirv::Capability::VulkanMemoryModel
-            }
-        );
-    }
-
-    #[test]
     fn physical_storage_addressing_model_requires_capability() {
         let text = [
             "OpCapability Shader",
@@ -20011,6 +19945,7 @@ mod tests {
         let mut builder = Builder::new();
         builder.set_version(1, 5);
         builder.capability(rspirv::spirv::Capability::Shader);
+        builder.extension("SPV_KHR_vulkan_memory_model");
         builder.memory_model(
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
@@ -20825,6 +20760,152 @@ mod tests {
             .as_slice()
             .validate(TargetEnv::Vulkan1_2)
             .expect("MakeTexelAvailable image operand allowed with VulkanMemoryModel capability");
+    }
+
+    #[test]
+    fn image_operands_non_private_texel_requires_vulkan_memory_model_capability() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut builder = Builder::new();
+        builder.set_version(1, 5);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = builder.type_void();
+        let int = builder.type_int(32, 0);
+        let float = builder.type_float(32, None);
+        let v2int = builder.type_vector(int, 2);
+        let v4float = builder.type_vector(float, 4);
+        let image = builder.type_image(
+            float,
+            rspirv::spirv::Dim::Dim2D,
+            0,
+            0,
+            0,
+            2,
+            rspirv::spirv::ImageFormat::Rgba32f,
+            None,
+        );
+        let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::UniformConstant, image);
+        let function_type = builder.type_function(void, std::iter::empty::<u32>());
+        let int_0 = builder.constant_bit32(int, 0);
+        let float_0 = builder.constant_bit32(float, 0.0f32.to_bits());
+        let coord = builder.constant_composite(v2int, [int_0, int_0]);
+        let texel = builder.constant_composite(v4float, [float_0, float_0, float_0, float_0]);
+        let img = builder.variable(
+            ptr,
+            None,
+            rspirv::spirv::StorageClass::UniformConstant,
+            None,
+        );
+
+        builder
+            .begin_function(
+                void,
+                None,
+                rspirv::spirv::FunctionControl::NONE,
+                function_type,
+            )
+            .unwrap();
+        builder.begin_block(None).unwrap();
+        builder
+            .image_write(
+                img,
+                coord,
+                texel,
+                Some(rspirv::spirv::ImageOperands::NON_PRIVATE_TEXEL),
+                std::iter::empty::<rspirv::dr::Operand>(),
+            )
+            .unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+
+        let words = builder.module().assemble();
+        let error = words
+            .as_slice()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect_err("NonPrivateTexel image operand requires VulkanMemoryModel capability");
+        assert_eq!(
+            error,
+            ValidationError::MissingOperandCapability {
+                opcode: rspirv::spirv::Op::ImageWrite,
+                operand_index: 3,
+                required_capability: rspirv::spirv::Capability::VulkanMemoryModel
+            }
+        );
+    }
+
+    #[test]
+    fn image_operands_non_private_texel_allows_vulkan_memory_model_capability() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut builder = Builder::new();
+        builder.set_version(1, 5);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.capability(rspirv::spirv::Capability::VulkanMemoryModel);
+        builder.extension("SPV_KHR_vulkan_memory_model");
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::VulkanKHR,
+        );
+
+        let void = builder.type_void();
+        let int = builder.type_int(32, 0);
+        let float = builder.type_float(32, None);
+        let v2int = builder.type_vector(int, 2);
+        let v4float = builder.type_vector(float, 4);
+        let image = builder.type_image(
+            float,
+            rspirv::spirv::Dim::Dim2D,
+            0,
+            0,
+            0,
+            2,
+            rspirv::spirv::ImageFormat::Rgba32f,
+            None,
+        );
+        let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::UniformConstant, image);
+        let function_type = builder.type_function(void, std::iter::empty::<u32>());
+        let int_0 = builder.constant_bit32(int, 0);
+        let float_0 = builder.constant_bit32(float, 0.0f32.to_bits());
+        let coord = builder.constant_composite(v2int, [int_0, int_0]);
+        let texel = builder.constant_composite(v4float, [float_0, float_0, float_0, float_0]);
+        let img = builder.variable(
+            ptr,
+            None,
+            rspirv::spirv::StorageClass::UniformConstant,
+            None,
+        );
+
+        builder
+            .begin_function(
+                void,
+                None,
+                rspirv::spirv::FunctionControl::NONE,
+                function_type,
+            )
+            .unwrap();
+        builder.begin_block(None).unwrap();
+        builder
+            .image_write(
+                img,
+                coord,
+                texel,
+                Some(rspirv::spirv::ImageOperands::NON_PRIVATE_TEXEL),
+                std::iter::empty::<rspirv::dr::Operand>(),
+            )
+            .unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+
+        let words = builder.module().assemble();
+        words
+            .as_slice()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("NonPrivateTexel image operand allowed with VulkanMemoryModel capability");
     }
 
     #[test]
