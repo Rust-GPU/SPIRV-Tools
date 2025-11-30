@@ -7607,6 +7607,94 @@ mod tests {
     }
 
     #[test]
+    fn extension_after_execution_mode_is_rejected() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%lbl = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+            "OpEntryPoint Fragment %main \"main\"",
+            "OpExecutionMode %main OriginUpperLeft",
+            "OpExtension \"SPV_KHR_shader_clock\"",
+        ]
+        .join("\n");
+        let mut words = assemble_text(&text).expect("assemble extension-after-execution-mode module");
+        // Move the OpExtension to the end (after execution mode).
+        let mut idx = 5; // skip header
+        let mut slice = None;
+        while idx < words.len() {
+            let wc = (words[idx] >> 16) as usize;
+            let opcode = (words[idx] & 0xffff) as u16;
+            if opcode == rspirv::spirv::Op::Extension as u16 {
+                slice = Some((idx, wc));
+                break;
+            }
+            idx += wc;
+        }
+        let (start, len) = slice.expect("extension present");
+        let ext: Vec<u32> = words.drain(start..start + len).collect();
+        words.extend(ext);
+
+        let error = validate_module(&words, TargetEnv::Vulkan1_2).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Extension
+            }
+        );
+    }
+
+    #[test]
+    fn extension_inside_function_is_rejected() {
+        let binary = vec![
+            0x0723_0203, // magic
+            0x0001_0000, // version
+            0,           // generator
+            4,           // bound (ids up to 3)
+            0,           // schema
+            op(2, Op::Capability as u16),
+            Capability::Shader as u32,
+            op(3, Op::MemoryModel as u16),
+            rspirv::spirv::AddressingModel::Logical as u32,
+            MemoryModel::GLSL450 as u32,
+            op(2, Op::TypeVoid as u16),
+            1,
+            op(3, Op::TypeFunction as u16),
+            2, // result id
+            1, // return type
+            op(5, Op::Function as u16),
+            1, // result type
+            3, // result id
+            FunctionControl::NONE.bits(),
+            2, // fn type
+            op(2, Op::Label as u16),
+            4, // label
+            op(8, Op::Extension as u16),
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[0],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[1],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[2],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[3],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[4],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[5],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[6],
+            op(1, Op::Return as u16),
+            op(1, Op::FunctionEnd as u16),
+        ];
+
+        let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Extension
+            }
+        );
+    }
+
+    #[test]
     fn capability_after_extension_is_rejected() {
         let binary = vec![
             0x0723_0203, // magic
