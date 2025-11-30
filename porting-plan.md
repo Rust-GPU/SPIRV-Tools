@@ -691,4 +691,5 @@ Tasks for this milestone:
 - Reject function-scope variables in entry-point interfaces and duplicate interface ids with typed diagnostics (CLI/FFI parity).
 - Add binary/text regressions for Vulkan-only interface constraints (e.g., PushConstant uniqueness, IncomingRayPayloadKHR/HitAttributeKHR/IncomingCallableDataKHR uniqueness).
   - [x] Duplicate IncomingCallableDataKHR and HitAttributeKHR interfaces now rejected in Vulkan with Rust regressions.
+  - [x] Duplicate IncomingRayPayloadKHR interface now rejected in Vulkan with a Rust regression.
 - Wire entry-point interface checks through the CLI/FFI parity runs and update the corpus to match C++ diagnostics.

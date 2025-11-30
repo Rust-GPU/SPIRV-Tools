@@ -28669,6 +28669,41 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_incoming_ray_payload_interface_is_rejected_in_vulkan() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability RayTracingKHR",
+            "OpExtension \"SPV_KHR_ray_tracing\"",
+            "OpCapability RayTracingNV",
+            "OpExtension \"SPV_NV_ray_tracing\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%int = OpTypeInt 32 0",
+            "%payload = OpTypeStruct %int",
+            "%ptr = OpTypePointer IncomingRayPayloadKHR %payload",
+            "%p0 = OpVariable %ptr IncomingRayPayloadKHR",
+            "%p1 = OpVariable %ptr IncomingRayPayloadKHR",
+            "OpEntryPoint RayGenerationKHR %main \"main\" %p0 %p1",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Vulkan1_2)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::EntryPointInterfaceStorageClassDuplicate {
+                entry_point: Id::try_from(8).unwrap(),
+                storage_class: rspirv::spirv::StorageClass::IncomingRayPayloadKHR,
+            }
+        );
+    }
+
+    #[test]
     fn duplicate_hit_attribute_interface_is_rejected_in_vulkan() {
         let text = [
             "OpCapability Shader",
