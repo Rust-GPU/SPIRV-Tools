@@ -29877,6 +29877,49 @@ mod tests {
     }
 
     #[test]
+    fn patch_struct_spill_conflicts_with_patch_neighbor() {
+        // Patch variable consumes location 0 component 2..3 and spills into location 1 component 0..1.
+        // Another patch variable starts at location 1 component 1, so they overlap in the patch domain.
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Tessellation",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint TessellationControl %main \"main\" %p0 %p1",
+            "OpExecutionMode %main OutputVertices 3",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%float = OpTypeFloat 32",
+            "%vec4 = OpTypeVector %float 4",
+            "%ptr = OpTypePointer Input %vec4",
+            "%p0 = OpVariable %ptr Input",
+            "%p1 = OpVariable %ptr Input",
+            "OpDecorate %p0 Patch",
+            "OpDecorate %p0 Location 0",
+            "OpDecorate %p0 Component 2", // spans loc0 comp2,3 and loc1 comp0,1
+            "OpDecorate %p1 Patch",
+            "OpDecorate %p1 Location 1",
+            "OpDecorate %p1 Component 1",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let err = MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Vulkan1_2)
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            ValidationError::EntryPointInterfaceLocationConflict {
+                storage_class: rspirv::spirv::StorageClass::Input,
+                location: 1,
+                component: 1,
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn capabilities_after_functions_are_rejected() {
         let text = r#"
 OpCapability Shader
@@ -29960,6 +30003,40 @@ OpFunctionEnd
         MaybeValidModule::Text(&text)
             .validate(TargetEnv::Vulkan1_2)
             .expect("Patch and non-Patch domains remain separate even when components spill");
+    }
+
+    #[test]
+    fn non_patch_spill_does_not_conflict_with_patch() {
+        // Non-Patch variable spills from location 0 component 2 into location 1 component 0.
+        // Patch variable at location 1 component 0 is in a separate domain and should be allowed.
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Tessellation",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint TessellationControl %main \"main\" %patch %nonpatch",
+            "OpExecutionMode %main OutputVertices 3",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%float = OpTypeFloat 32",
+            "%vec2 = OpTypeVector %float 2",
+            "%ptr = OpTypePointer Input %float",
+            "%ptr_vec = OpTypePointer Input %vec2",
+            "%patch = OpVariable %ptr Input",
+            "%nonpatch = OpVariable %ptr_vec Input",
+            "OpDecorate %patch Patch",
+            "OpDecorate %patch Location 1",
+            "OpDecorate %patch Component 0",
+            "OpDecorate %nonpatch Location 0",
+            "OpDecorate %nonpatch Component 2", // spills into location 1 component 0
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("Patch and non-Patch domains are distinct even when non-Patch spills into the next location");
     }
 
     #[test]
