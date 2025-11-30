@@ -19270,6 +19270,52 @@ mod tests {
     }
 
     #[test]
+    fn vector_compare_requires_vector_bool_result() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let float = b.type_float(32, None);
+        let vec2 = b.type_vector(float, 2);
+        let bool_ty = b.type_bool();
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let header = b.begin_block(None).unwrap();
+        let zero = b.constant_bit32(float, 0);
+        let vec_a = b.constant_composite(vec2, [zero, zero]);
+        let vec_b = b.constant_composite(vec2, [zero, zero]);
+        // Wrong result type: scalar bool instead of vector<bool, 2>.
+        b.f_ord_equal(bool_ty, None, vec_a, vec_b).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let words = b.module().assemble();
+        let err = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("vector compares require vector<bool> result matching operand shape");
+        assert_eq!(
+            err,
+            ValidationError::InstructionResultTypeMismatch {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(header).unwrap(),
+                instruction: rspirv::spirv::Op::FOrdEqual,
+                expected: TypeId::try_from(bool_ty).unwrap(),
+                found: TypeId::try_from(bool_ty).unwrap(),
+            }
+        );
+    }
+
+    #[test]
     fn unreachable_definition_used_in_entry_is_rejected() {
         let text = [
             "OpCapability Shader",
