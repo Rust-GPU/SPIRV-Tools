@@ -250,6 +250,21 @@ pub fn format_validation_error(error: &ValidationError, names: Option<&FriendlyN
             names.format_id((*function).into()),
             block_index
         ),
+        (
+            ValidationError::MergeTargetIsBlock {
+                function,
+                block,
+                kind,
+                target,
+            },
+            Some(names),
+        ) => format!(
+            "{} uses {:?} target {} equal to its block {}",
+            names.format_id((*function).into()),
+            kind,
+            names.format_id((*target).into()),
+            names.format_id((*block).into()),
+        ),
         (ValidationError::PhiAfterNonPhi { function, block }, Some(names)) => format!(
             "{} in block {}",
             names.format_id((*function).into()),
@@ -1369,6 +1384,18 @@ pub enum ValidationError {
         /// The missing block id.
         target: Id,
     },
+    /// A merge or continue target aliases its own block.
+    #[error("{kind} target {target:?} in block {block:?} of function {function:?} must not be the block itself")]
+    MergeTargetIsBlock {
+        /// The function containing the merge.
+        function: Id,
+        /// The block containing the merge.
+        block: Id,
+        /// Whether the offending target is the merge or continue target.
+        kind: MergeTargetKind,
+        /// The offending block id.
+        target: Id,
+    },
     /// A merge instruction is paired with an invalid terminator.
     #[error("block {block:?} of function {function:?} has merge paired with invalid terminator {terminator:?}")]
     InvalidMergeTerminator {
@@ -2160,6 +2187,14 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                             merge_inst.operands.get(0)
                         {
                             if let Ok(target) = Id::try_from(*raw_merge) {
+                                if target == block_label_id {
+                                    return Err(ValidationError::MergeTargetIsBlock {
+                                        function: function_id,
+                                        block: block_label_id,
+                                        kind: MergeTargetKind::Merge,
+                                        target,
+                                    });
+                                }
                                 if !block_ids.contains(&target) {
                                     return Err(ValidationError::MergeTargetMissing {
                                         function: function_id,
@@ -2191,6 +2226,14 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                             _ => None,
                         });
                         if let Some(target) = merge_target {
+                            if target == block_label_id {
+                                return Err(ValidationError::MergeTargetIsBlock {
+                                    function: function_id,
+                                    block: block_label_id,
+                                    kind: MergeTargetKind::Merge,
+                                    target,
+                                });
+                            }
                             if !block_ids.contains(&target) {
                                 return Err(ValidationError::MergeTargetMissing {
                                     function: function_id,
@@ -2201,6 +2244,14 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                             }
                         }
                         if let Some(target) = continue_target {
+                            if target == block_label_id {
+                                return Err(ValidationError::MergeTargetIsBlock {
+                                    function: function_id,
+                                    block: block_label_id,
+                                    kind: MergeTargetKind::Continue,
+                                    target,
+                                });
+                            }
                             if !block_ids.contains(&target) {
                                 return Err(ValidationError::MergeTargetMissing {
                                     function: function_id,
@@ -7428,7 +7479,8 @@ mod tests {
     use super::{
         validate_module, validate_module_with_options, validate_words, CheckedBound, DeclaredBound,
         DecorationTargetId, DecorationTargetKind, ExtensionName, Id, IdKind, MaybeValidModule,
-        MemberDecorationTargetId, MemberIndex, ModuleWords, OperandId, ResultId, Schema,
+        MemberDecorationTargetId, MemberIndex, MergeTargetKind, ModuleWords, OperandId, ResultId,
+        Schema,
         SpirvVersion, TypeId, ValidModuleCache, ValidatableModule, ValidationError,
     };
     use crate::assembly::assemble_text;
@@ -15816,7 +15868,73 @@ mod tests {
             ValidationError::ContinueTargetMatchesMerge {
                 function: Id::try_from(3).unwrap(),
                 block: Id::try_from(4).unwrap(),
-                target: Id::try_from(5).unwrap()
+            target: Id::try_from(5).unwrap()
+        }
+        );
+    }
+
+    #[test]
+    fn selection_merge_target_cannot_be_header() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%bool = OpTypeBool",
+            "%true = OpConstantTrue %bool",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            // Merge target aliases the header block.
+            "OpSelectionMerge %entry None",
+            "OpBranchConditional %true %entry %entry",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("selection merge target cannot equal its own block");
+        assert_eq!(
+            err,
+            ValidationError::MergeTargetIsBlock {
+                function: Id::try_from(5).unwrap(),
+                block: Id::try_from(6).unwrap(),
+                kind: MergeTargetKind::Merge,
+                target: Id::try_from(6).unwrap()
+            }
+        );
+    }
+
+    #[test]
+    fn loop_merge_targets_cannot_be_header() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            // Merge and continue targets both alias the header block.
+            "OpLoopMerge %entry %entry None",
+            "OpBranch %entry",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("loop merge cannot target its own header");
+        assert_eq!(
+            err,
+            ValidationError::MergeTargetIsBlock {
+                function: Id::try_from(3).unwrap(),
+                block: Id::try_from(4).unwrap(),
+                kind: MergeTargetKind::Merge,
+                target: Id::try_from(4).unwrap()
             }
         );
     }
