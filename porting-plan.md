@@ -200,6 +200,7 @@ Tasks for this milestone:
 - [ ] Expose wider structural rules (capability/extension ordering in layout, per-target decoration constraints) mirroring the C++ validator tables.
  - [x] Enforce basic-block structure: every block now requires an `OpLabel` and phi instructions must be contiguous at the top of the block, matching C++ CFG rules with Rust regressions.
  - [x] Structured merges cannot target their own header block (merge/continue/self), matching C++ structured control-flow checks.
+ - [x] Enforce dominance: SSA value uses must be dominated by their definitions, and phi incoming values must dominate the incoming edge, with Rust regressions.
 - [ ] Enable the Rust validator over the FFI/CLI by default once structural parity is sufficiently close to C++.
 - [x] Run the C++ validation corpus with the Rust validator forced on (`SPIRV_TOOLS_DISABLE_RUST_VALIDATOR=0`) and close any remaining gaps; current build directory lacked test targets, so a test-enabled CMake build (`build-tests/`) was used and all 24 ctests passed with the Rust validator enabled.
 

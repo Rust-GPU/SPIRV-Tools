@@ -265,6 +265,34 @@ pub fn format_validation_error(error: &ValidationError, names: Option<&FriendlyN
             names.format_id((*target).into()),
             names.format_id((*block).into()),
         ),
+        (
+            ValidationError::ValueNotDominated {
+                function,
+                block,
+                value,
+            },
+            Some(names),
+        ) => format!(
+            "{} uses value {} in block {} before its definition dominates",
+            names.format_id((*function).into()),
+            names.format_id((*value).into()),
+            names.format_id((*block).into()),
+        ),
+        (
+            ValidationError::PhiIncomingNotDominated {
+                function,
+                block,
+                incoming,
+                value,
+            },
+            Some(names),
+        ) => format!(
+            "{} uses incoming value {} for predecessor {} in block {} before its definition dominates",
+            names.format_id((*function).into()),
+            names.format_id((*value).into()),
+            names.format_id((*incoming).into()),
+            names.format_id((*block).into()),
+        ),
         (ValidationError::PhiAfterNonPhi { function, block }, Some(names)) => format!(
             "{} in block {}",
             names.format_id((*function).into()),
@@ -1396,6 +1424,28 @@ pub enum ValidationError {
         /// The offending block id.
         target: Id,
     },
+    /// A value is used in a block that is not dominated by its definition.
+    #[error("value {value:?} in block {block:?} of function {function:?} is not dominated by its definition")]
+    ValueNotDominated {
+        /// The function containing the use.
+        function: Id,
+        /// The block where the value is used.
+        block: Id,
+        /// The value that is not dominated by its definition.
+        value: Id,
+    },
+    /// A phi incoming value is not dominated by its definition along the incoming edge.
+    #[error("phi incoming value {value:?} for predecessor {incoming:?} in block {block:?} of function {function:?} is not dominated by its definition")]
+    PhiIncomingNotDominated {
+        /// The function containing the phi.
+        function: Id,
+        /// The phi's block.
+        block: Id,
+        /// The incoming predecessor block.
+        incoming: Id,
+        /// The incoming value.
+        value: Id,
+    },
     /// A merge instruction is paired with an invalid terminator.
     #[error("block {block:?} of function {function:?} has merge paired with invalid terminator {terminator:?}")]
     InvalidMergeTerminator {
@@ -2026,6 +2076,14 @@ fn collect_friendly_names(words: &[u32]) -> Option<FriendlyNames> {
 fn validate_functions(module: &Module) -> Result<(), ValidationError> {
     let definitions = collect_result_instructions(module);
     let result_types = collect_result_types(module)?;
+    let mut definition_blocks: HashMap<ResultId, Option<Id>> = HashMap::new();
+    for inst in module.all_inst_iter() {
+        if let Some(result_id) = inst.result_id {
+            if let Ok(id) = ResultId::try_from(result_id) {
+                definition_blocks.entry(id).or_insert(None);
+            }
+        }
+    }
     let mut seen_definition = false;
     for function in &module.functions {
         let function_id = function
@@ -2122,7 +2180,19 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
             let mut first_terminator_index = None;
             let mut merge_instruction: Option<(usize, &rspirv::dr::Instruction)> = None;
             let mut seen_non_phi = false;
+        for param in &function.parameters {
+            if let Some(result_id) = param.result_id {
+                if let Ok(result_id) = ResultId::try_from(result_id) {
+                    definition_blocks.insert(result_id, Some(entry_label_id));
+                }
+            }
+        }
             for (index, inst) in block.instructions.iter().enumerate() {
+                if let Some(result_id) = inst.result_id {
+                    if let Ok(result_id) = ResultId::try_from(result_id) {
+                        definition_blocks.insert(result_id, Some(block_label_id));
+                    }
+                }
                 if rspirv::grammar::reflect::is_block_terminator(inst.class.opcode) {
                     first_terminator_index = Some(index);
                     break;
@@ -2491,6 +2561,107 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                     function: function_id,
                     block: *block_id,
                 });
+            }
+        }
+
+        // Compute dominators.
+        let mut dominators: HashMap<Id, std::collections::HashSet<Id>> = HashMap::new();
+        for id in &block_ids {
+            let mut set: std::collections::HashSet<Id> = if *id == entry_label_id {
+                Default::default()
+            } else {
+                block_ids.clone()
+            };
+            set.insert(*id);
+            dominators.insert(*id, set);
+        }
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for block in &block_ids {
+                if *block == entry_label_id {
+                    continue;
+                }
+                let preds = predecessors.get(block).cloned().unwrap_or_default();
+                if preds.is_empty() {
+                    continue;
+                }
+                let mut new_dom: std::collections::HashSet<Id> = block_ids.clone();
+                for pred in preds {
+                    if let Some(pred_dom) = dominators.get(&pred) {
+                        new_dom = new_dom
+                            .intersection(pred_dom)
+                            .copied()
+                            .collect::<std::collections::HashSet<_>>();
+                    }
+                }
+                new_dom.insert(*block);
+                if new_dom != *dominators.get(block).unwrap_or(&Default::default()) {
+                    dominators.insert(*block, new_dom);
+                    changed = true;
+                }
+            }
+        }
+
+        // Validate dominance: general operands must be dominated by their definition block.
+        for block in &function.blocks {
+            let block_label_id = block
+                .label
+                .as_ref()
+                .and_then(|inst| inst.result_id)
+                .and_then(|raw| Id::try_from(raw).ok())
+                .unwrap_or(entry_label_id);
+            let empty_set: std::collections::HashSet<Id> = Default::default();
+            let block_dominators = dominators.get(&block_label_id).unwrap_or(&empty_set);
+
+            for inst in &block.instructions {
+                if inst.class.opcode == rspirv::spirv::Op::Phi {
+                    for pair in inst.operands.chunks(2) {
+                        if let (Some(rspirv::dr::Operand::IdRef(raw_value)), Some(rspirv::dr::Operand::IdRef(raw_incoming))) =
+                            (pair.get(0), pair.get(1))
+                        {
+                            if let (Ok(value_id), Ok(incoming_block)) =
+                                (Id::try_from(*raw_value), Id::try_from(*raw_incoming))
+                            {
+                                if let Ok(result_id) = ResultId::try_from(*raw_value) {
+                                    if let Some(Some(def_block)) = definition_blocks.get(&result_id)
+                                    {
+                                        let incoming_empty: std::collections::HashSet<Id> =
+                                            Default::default();
+                                        let incoming_dominators = dominators
+                                            .get(&incoming_block)
+                                            .unwrap_or(&incoming_empty);
+                                        if !incoming_dominators.contains(def_block) {
+                                            return Err(ValidationError::PhiIncomingNotDominated {
+                                                function: function_id,
+                                                block: block_label_id,
+                                                incoming: incoming_block,
+                                                value: value_id,
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    continue;
+                }
+
+                for operand in &inst.operands {
+                    if let rspirv::dr::Operand::IdRef(raw) = operand {
+                        if let Ok(result_id) = ResultId::try_from(*raw) {
+                            if let Some(Some(def_block)) = definition_blocks.get(&result_id) {
+                                if !block_dominators.contains(def_block) {
+                                    return Err(ValidationError::ValueNotDominated {
+                                        function: function_id,
+                                        block: block_label_id,
+                                        value: Id::from(result_id),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -15937,6 +16108,78 @@ mod tests {
                 target: Id::try_from(4).unwrap()
             }
         );
+    }
+
+    #[test]
+    fn value_use_must_be_dominated_by_definition() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%bool = OpTypeBool",
+            "%int = OpTypeInt 32 1",
+            "%fn = OpTypeFunction %int",
+            "%true = OpConstantTrue %bool",
+            "%zero = OpConstant %int 0",
+            "%one = OpConstant %int 1",
+            "%main = OpFunction %int None %fn",
+            "%entry = OpLabel",
+            "OpSelectionMerge %merge None",
+            "OpBranchConditional %true %then %else",
+            "%then = OpLabel",
+            "OpBranch %merge",
+            "%else = OpLabel",
+            "%v = OpIAdd %int %zero %one",
+            "OpBranch %merge",
+            "%merge = OpLabel",
+            "OpReturnValue %v",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("value defined in else does not dominate merge");
+        assert!(matches!(err, ValidationError::ValueNotDominated { .. }));
+    }
+
+    #[test]
+    fn phi_incoming_must_be_dominated_along_edge() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%bool = OpTypeBool",
+            "%int = OpTypeInt 32 1",
+            "%fn = OpTypeFunction %int",
+            "%true = OpConstantTrue %bool",
+            "%zero = OpConstant %int 0",
+            "%one = OpConstant %int 1",
+            "%main = OpFunction %int None %fn",
+            "%entry = OpLabel",
+            "OpSelectionMerge %merge None",
+            "OpBranchConditional %true %merge %then",
+            "%then = OpLabel",
+            "%v = OpIAdd %int %zero %one",
+            "OpBranch %merge",
+            "%merge = OpLabel",
+            "%phi = OpPhi %int %v %entry %v %then",
+            "OpReturnValue %phi",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("phi incoming must be dominated along its predecessor edge");
+        match err {
+            ValidationError::PhiIncomingNotDominated { .. } => {}
+            other => panic!("unexpected error: {:?}", other),
+        }
     }
 
     #[test]
