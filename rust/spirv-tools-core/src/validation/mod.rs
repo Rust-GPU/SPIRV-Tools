@@ -29127,6 +29127,44 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_patch_locations_conflict() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Tessellation",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint TessellationControl %main \"main\" %p0 %p1",
+            "OpExecutionMode %main OutputVertices 3",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%float = OpTypeFloat 32",
+            "%ptr = OpTypePointer Input %float",
+            "%p0 = OpVariable %ptr Input",
+            "%p1 = OpVariable %ptr Input",
+            "OpDecorate %p0 Patch",
+            "OpDecorate %p0 Location 0",
+            "OpDecorate %p1 Patch",
+            "OpDecorate %p1 Location 0",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Vulkan1_2)
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            ValidationError::EntryPointInterfaceLocationConflict {
+                storage_class: rspirv::spirv::StorageClass::Input,
+                location: 0,
+                component: 0,
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn duplicate_hit_attribute_interface_is_rejected_in_vulkan() {
         let text = [
             "OpCapability Shader",
