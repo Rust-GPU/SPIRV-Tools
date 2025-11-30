@@ -21376,6 +21376,212 @@ mod tests {
     }
 
     #[test]
+    fn memory_access_make_pointer_visible_copy_requires_spirv_1_5() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut builder = Builder::new();
+        builder.set_version(1, 4);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = builder.type_void();
+        let uint = builder.type_int(32, 0);
+        let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::Workgroup, uint);
+        let fn_ty = builder.type_function(void, std::iter::empty::<u32>());
+        let src = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
+        let dst = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
+        let scope = builder.constant_bit32(uint, rspirv::spirv::Scope::Workgroup as u32);
+
+        builder
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        builder.begin_block(None).unwrap();
+        builder
+            .copy_memory(
+                dst,
+                src,
+                Some(rspirv::spirv::MemoryAccess::MAKE_POINTER_VISIBLE),
+                None,
+                [rspirv::dr::Operand::IdScope(scope)],
+            )
+            .unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+
+        let words = builder.module().assemble();
+        let error = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_4)
+            .expect_err("MakePointerVisible copy requires SPIR-V 1.5");
+        assert_eq!(
+            error,
+            ValidationError::OperandRequiresSpirvVersion {
+                opcode: rspirv::spirv::Op::CopyMemory,
+                operand_index: 2,
+                required_version: SpirvVersion::new(1, 5),
+                target_version: SpirvVersion::new(1, 4),
+            }
+        );
+    }
+
+    #[test]
+    fn memory_access_make_pointer_visible_copy_requires_vulkan_memory_model_capability() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut builder = Builder::new();
+        builder.set_version(1, 5);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.extension("SPV_KHR_vulkan_memory_model");
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = builder.type_void();
+        let uint = builder.type_int(32, 0);
+        let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::Workgroup, uint);
+        let fn_ty = builder.type_function(void, std::iter::empty::<u32>());
+        let src = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
+        let dst = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
+        let scope = builder.constant_bit32(uint, rspirv::spirv::Scope::Workgroup as u32);
+
+        builder
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        builder.begin_block(None).unwrap();
+        builder
+            .copy_memory(
+                dst,
+                src,
+                Some(rspirv::spirv::MemoryAccess::MAKE_POINTER_VISIBLE),
+                None,
+                [rspirv::dr::Operand::IdScope(scope)],
+            )
+            .unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+
+        let words = builder.module().assemble();
+        let error = words.as_slice().validate(TargetEnv::Vulkan1_2).expect_err(
+            "MakePointerVisible copy requires VulkanMemoryModel capability when version is satisfied",
+        );
+        assert_eq!(
+            error,
+            ValidationError::MissingOperandCapability {
+                opcode: rspirv::spirv::Op::CopyMemory,
+                operand_index: 2,
+                required_capability: rspirv::spirv::Capability::VulkanMemoryModel
+            }
+        );
+    }
+
+    #[test]
+    fn memory_access_make_pointer_available_copy_requires_spirv_1_5() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut builder = Builder::new();
+        builder.set_version(1, 4);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = builder.type_void();
+        let uint = builder.type_int(32, 0);
+        let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::Workgroup, uint);
+        let fn_ty = builder.type_function(void, std::iter::empty::<u32>());
+        let src = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
+        let dst = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
+        let scope = builder.constant_bit32(uint, rspirv::spirv::Scope::Workgroup as u32);
+
+        builder
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        builder.begin_block(None).unwrap();
+        builder
+            .copy_memory(
+                dst,
+                src,
+                Some(rspirv::spirv::MemoryAccess::MAKE_POINTER_AVAILABLE),
+                None,
+                [rspirv::dr::Operand::IdScope(scope)],
+            )
+            .unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+
+        let words = builder.module().assemble();
+        let error = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_4)
+            .expect_err("MakePointerAvailable copy requires SPIR-V 1.5");
+        assert_eq!(
+            error,
+            ValidationError::OperandRequiresSpirvVersion {
+                opcode: rspirv::spirv::Op::CopyMemory,
+                operand_index: 2,
+                required_version: SpirvVersion::new(1, 5),
+                target_version: SpirvVersion::new(1, 4),
+            }
+        );
+    }
+
+    #[test]
+    fn memory_access_make_pointer_available_copy_requires_vulkan_memory_model_capability() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut builder = Builder::new();
+        builder.set_version(1, 5);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.extension("SPV_KHR_vulkan_memory_model");
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = builder.type_void();
+        let uint = builder.type_int(32, 0);
+        let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::Workgroup, uint);
+        let fn_ty = builder.type_function(void, std::iter::empty::<u32>());
+        let src = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
+        let dst = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
+        let scope = builder.constant_bit32(uint, rspirv::spirv::Scope::Workgroup as u32);
+
+        builder
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        builder.begin_block(None).unwrap();
+        builder
+            .copy_memory(
+                dst,
+                src,
+                Some(rspirv::spirv::MemoryAccess::MAKE_POINTER_AVAILABLE),
+                None,
+                [rspirv::dr::Operand::IdScope(scope)],
+            )
+            .unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+
+        let words = builder.module().assemble();
+        let error = words.as_slice().validate(TargetEnv::Vulkan1_2).expect_err(
+            "MakePointerAvailable copy requires VulkanMemoryModel capability when version is satisfied",
+        );
+        assert_eq!(
+            error,
+            ValidationError::MissingOperandCapability {
+                opcode: rspirv::spirv::Op::CopyMemory,
+                operand_index: 2,
+                required_capability: rspirv::spirv::Capability::VulkanMemoryModel
+            }
+        );
+    }
+
+    #[test]
     fn memory_access_non_private_pointer_requires_spirv_1_5() {
         use rspirv::{binary::Assemble, dr::Builder};
 

@@ -194,6 +194,7 @@ Tasks for this milestone:
   - Added operand-level regression for `MemoryAccess::NON_PRIVATE_POINTER` to require `VulkanMemoryModel` capability under Vulkan 1.2 when the capability is omitted.
   - Added operand-level regression for `MemoryAccess::MAKE_POINTER_AVAILABLE` to require `VulkanMemoryModel` capability under Vulkan 1.2 when the capability is omitted.
   - Added operand-level regressions for `OpCopyMemory` with `MemoryAccess::NON_PRIVATE_POINTER` (both SPIR-V 1.5 gating and VulkanMemoryModel capability) to mirror load/store coverage.
+  - Added operand-level regressions for `OpCopyMemory` using `MAKE_POINTER_VISIBLE`/`MAKE_POINTER_AVAILABLE` to enforce SPIR-V 1.5 gating and VulkanMemoryModel capability under Vulkan 1.2.
   - Imported opcode and operand SPIR-V version requirements from the grammar and added regressions (e.g., `OpTerminateInvocation` gated at 1.6, `StorageBuffer` storage class at 1.3, `LoopControl DependencyLength` at 1.1) that exercise env clamping.
 - [x] Cache validated modules across CLI/FFI invocations when the same input is reused, avoiding redundant parsing/validation.
 - [ ] Expose wider structural rules (capability/extension ordering in layout, per-target decoration constraints) mirroring the C++ validator tables.
