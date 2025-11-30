@@ -576,6 +576,7 @@ Tasks for this milestone:
 - Enforce structured merge rules: merges must immediately precede their terminators, selection merges pair with conditional/switch terminators, loop merge/continue targets must exist and be distinct, and structured terminators require a selection merge.
 - [x] Reject loop headers that terminate with anything other than the structured terminator after `OpLoopMerge` (e.g., `OpReturn`), matching C++ structured CFG checks with a Rust regression.
 - [x] Reject unreachable terminators immediately following `OpLoopMerge`, mirroring the C++ structured CFG validation with Rust coverage.
+- [x] Reject other non-branch terminators after `OpLoopMerge` (e.g., `OpReturnValue`, `OpKill`) with Rust regressions matching the C++ validator.
 - [x] Enforce function call signatures (target must be a function definition; return/argument counts and types must match the callee) with Rust regressions.
 - [x] Reject values defined in one function that are referenced in another, with Rust regression coverage.
 - [x] Enforce function-scoped variables to use Function storage class with Rust regression coverage.
