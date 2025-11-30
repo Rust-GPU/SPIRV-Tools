@@ -46,8 +46,8 @@ Tasks for this milestone:
 Flip the Rust validator on by default across FFI/CLI and lock in env-specific BuiltIn allowlists.
 
 Planned tasks:
-- Finish remaining env-specific BuiltIn allowlists/quirks (any lingering Vulkan/OpenCL/vendor shading-rate/mesh cases) with Rust regressions.
-- Add a rollout flag/toggle to make the Rust validator the default in CLI/FFI, with a clear fallback to C++.
+- [x] Finish remaining env-specific BuiltIn allowlists/quirks (any lingering Vulkan/OpenCL/vendor shading-rate/mesh cases) with Rust regressions.
+- [x] Add a rollout flag/toggle to make the Rust validator the default in CLI/FFI, with a clear fallback to C++.
 - [x] Honor `SPIRV_TOOLS_FORCE_RUST_VALIDATOR` in the CLI path so downstreams can flip the Rust validator on without extra flags while keeping a C++ fallback.
 - [x] Keep Vulkan rejecting legacy OpenGL-style built-ins (`VertexId`, `InstanceId`) with Rust-side regressions.
 - [x] Gate fragment shading rate built-ins to Vulkan-only via Rust validation with regression coverage.
@@ -62,7 +62,7 @@ Tasks for this milestone:
 - [x] Enforce interpolation/barycentric decoration storage-class and execution-model constraints with grammar-driven tables and regressions.
 - [x] Add env-specific BuiltIn allowlists (e.g., Mesh/Fragment shading built-ins, SM built-ins) with typed errors and binary tests. (Stage-specific allowlists and BuiltIn type checks added; compute-only built-ins gated to GLCompute/Kernel; kernel-only built-ins gated to Kernel and require Kernel capability; subgroup built-ins require GroupNonUniform (mask built-ins also require GroupNonUniformBallot/SubgroupBallotKHR); subgroup id/size/local-invocation regressions added; kernel enqueue counters now require DeviceEnqueue and Kernel execution model; SubgroupMaxSize now requires Kernel capability and Kernel execution model; SM/ARM GPU core built-ins now gate on ShaderSMBuiltinsNV/CoreBuiltinsARM and require their vendor extensions; fragment shading rate and mesh built-ins now Vulkan-only; legacy GL-style built-ins rejected in Vulkan.)
 - [x] Validate decoration exclusivity/compatibility pairs (e.g., interpolation vs Sample/Flat mixes, sample-rate shading requirements) against the C++ suite and port any missing tests. (Interpolation exclusivity and Flat+Sample/Centroid conflicts covered; Sample requires SampleRateShading.)
-- [ ] Wire these constraints through FFI/CLI and keep validated-module caching active; run C++ corpora under the Rust path to confirm parity.
+- [x] Wire these constraints through FFI/CLI and keep validated-module caching active; run C++ corpora under the Rust path to confirm parity.
 
 ## Paused Milestone: Optimizer Block Folding + FFI
 Port the arithmetic optimizer to Rust with e-graph-driven rewrites, expose it through the FFI, and validate with Rust-side unit tests plus fuzzing/benchmarks. (Paused per rollout order; resume after validator parity lands.)
