@@ -187,6 +187,16 @@ pub fn format_validation_error(error: &ValidationError, names: Option<&FriendlyN
             names.format_id((*interface).into())
         ),
         (
+            ValidationError::DuplicateEntryPoint {
+                function,
+                execution_model,
+            },
+            Some(names),
+        ) => format!(
+            "{} ({execution_model:?})",
+            names.format_id((*function).into())
+        ),
+        (
             ValidationError::DuplicateEntryPointInterface {
                 entry_point,
                 interface,
@@ -1398,6 +1408,14 @@ pub enum ValidationError {
         entry_point: Id,
         /// The duplicated interface id.
         interface: Id,
+    },
+    /// An entry point was declared more than once for the same function and execution model.
+    #[error("entry point for function {function:?} with execution model {execution_model:?} is declared more than once")]
+    DuplicateEntryPoint {
+        /// The function id targeted by the entry point.
+        function: Id,
+        /// The execution model used by the duplicate entry point.
+        execution_model: rspirv::spirv::ExecutionModel,
     },
     /// An execution mode targets a function that is not declared as an entry point.
     #[error("execution mode target {function} is not declared as an entry point")]
@@ -7728,6 +7746,7 @@ fn validate_entry_points(
     definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
 ) -> Result<HashSet<ResultId>, ValidationError> {
     let mut entry_points = HashSet::new();
+    let mut seen: HashSet<(ResultId, rspirv::spirv::ExecutionModel)> = HashSet::new();
     for ep in &module.entry_points {
         let entry_opcode = ep.class.opcode;
         let mut operands = ep.operands.iter();
@@ -7736,7 +7755,7 @@ fn validate_entry_points(
             let _ = operands.next();
         }
         // Next operand is ExecutionModel.
-        let _execution_model = operands.next().and_then(|op| match op {
+        let execution_model = operands.next().and_then(|op| match op {
             rspirv::dr::Operand::ExecutionModel(model) => Some(*model),
             _ => None,
         });
@@ -7759,6 +7778,14 @@ fn validate_entry_points(
                 return Err(ValidationError::InvalidEntryPointTarget {
                     target: function_id.into_inner(),
                     opcode: *opcode,
+                });
+            }
+        }
+        if let Some(model) = execution_model {
+            if !seen.insert((function_id, model)) {
+                return Err(ValidationError::DuplicateEntryPoint {
+                    function: function_id.into_inner(),
+                    execution_model: model,
                 });
             }
         }
@@ -26207,6 +26234,33 @@ mod tests {
             ValidationError::DuplicateEntryPointInterface {
                 entry_point: Id::try_from(6).unwrap(),
                 interface: Id::try_from(5).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn duplicate_entry_point_declarations_are_rejected() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "OpEntryPoint Vertex %main \"main\"",
+            "OpEntryPoint Vertex %main \"main\"",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Universal1_6)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::DuplicateEntryPoint {
+                function: Id::try_from(3).unwrap(),
+                execution_model: rspirv::spirv::ExecutionModel::Vertex,
             }
         );
     }

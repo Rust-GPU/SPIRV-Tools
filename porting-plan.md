@@ -150,6 +150,7 @@ Tasks for this milestone:
 - [x] Add typed extension names plus env-aware extension gating (Vulkan/OpenCL prefix rules) and capability→extension dependencies (ray tracing, mesh shading, fragment shading rate/interlock, atomic float add/min/max, tile shading).
 - [x] Apply grammar-driven instruction/operand capability/extension requirements and SPIR-V version gating for newer opcodes/capabilities.
 - [x] Enforce structural links between entry points, execution modes, and decoration groups (execution modes must target entry points; group member decorations must target struct types and declared ids).
+- [x] Reject invalid entry-point interfaces (function-scope variables, duplicate interface ids) and duplicate entry-point declarations for the same function/execution model with typed diagnostics.
 - [x] Broaden decoration target constraints with paired text/binary tests (member targets, decoration categories).
 - [ ] Extend capability/extension ordering and remaining decoration constraints in layout to mirror the C++ tables.
   - Added extra layout regressions rejecting capabilities after annotations and extensions after functions to mirror C++ ordering.
