@@ -165,6 +165,7 @@ Tasks for this milestone:
 - [x] Enforce structural links between entry points, execution modes, and decoration groups (execution modes must target entry points; group member decorations must target struct types and declared ids).
 - [x] Reject invalid entry-point interfaces (function-scope variables, duplicate interface ids) and duplicate entry-point declarations for the same function/execution model with typed diagnostics.
 - [x] Broaden decoration target constraints with paired text/binary tests (member targets, decoration categories).
+- [x] Enforce execution-mode compatibility/value rules for OutputVertices, OutputLinesEXT/OutputTrianglesEXT, and OutputPrimitivesEXT (geometry/tessellation/mesh only; mesh counts non-zero in Vulkan MeshShadingEXT) with Rust tests.
 - [ ] Extend capability/extension ordering and remaining decoration constraints in layout to mirror the C++ tables.
   - Added extra layout regressions rejecting capabilities after annotations and extensions after functions to mirror C++ ordering.
   - Added layout regressions for late `OpExtInstImport` and misordered `OpSamplerImageAddressingModeNV` to keep parity with the C++ layout tests.
