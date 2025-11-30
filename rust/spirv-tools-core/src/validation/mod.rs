@@ -20786,6 +20786,44 @@ mod tests {
     }
 
     #[test]
+    fn capability_cannot_appear_after_annotations() {
+        // Capabilities must precede debug/names/annotations; relocating a capability past
+        // annotations should be rejected as an ordering violation.
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%one = OpConstantTrue %void", // malformed on purpose to get an id to decorate
+            "OpDecorate %one RelaxedPrecision",
+        ]
+        .join("\n");
+        let mut words = assemble_text(&text).expect("assemble");
+        // Move the capability to the end of the module to violate ordering.
+        let mut idx = 5;
+        let mut cap_slice: Option<(usize, usize)> = None;
+        while idx < words.len() {
+            let wc = (words[idx] >> 16) as usize;
+            let opcode = words[idx] & 0xffff;
+            if opcode == rspirv::spirv::Op::Capability as u32 {
+                cap_slice = Some((idx, wc));
+                break;
+            }
+            idx += wc;
+        }
+        let (start, len) = cap_slice.expect("capability present");
+        let capability: Vec<u32> = words.drain(start..start + len).collect();
+        words.extend(capability);
+
+        let err = validate_module(&words, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            err,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Capability
+            }
+        );
+    }
+
+    #[test]
     fn conditional_capability_disallowed_in_env() {
         // Conditional capabilities must still respect the target environment allowlist.
         let binary = vec![
