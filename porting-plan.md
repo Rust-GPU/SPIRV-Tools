@@ -146,7 +146,7 @@ Planned tasks:
 - [x] Expose CLI toggles (`--prefer-rust-validator` / `--prefer-cpp-validator`) to steer the default when both validators are available.
 - [x] Add env-level defaults (`SPIRV_TOOLS_PREFER_RUST_VALIDATOR` / `SPIRV_TOOLS_PREFER_CPP_VALIDATOR`) to steer the default without forcing.
 
-## Active Milestone: Residual Layout & Structural Parity
+## Completed Milestone: Residual Layout & Structural Parity
 - Finish capability/extension ordering gaps relative to the C++ validator (remaining conditional capability/extension placements and after-function checks) with Rust regressions.
 - Close outstanding decoration placement/compatibility constraints in layout to mirror the C++ tables, adding paired text/binary tests.
 - Add execution-model-aware entry-point interface storage-class validation (including kernel/ray/mesh-specific allowances) without regressing existing small-type capability checks; gate with Rust/C++ parity tests. (Vulkan-only uniqueness for PushConstant, IncomingRayPayloadKHR, HitAttributeKHR, and IncomingCallableDataKHR enforced; Input/Output now reject FP8/BFloat16 encodings and overlapping Location/Component assignments.)
@@ -158,11 +158,10 @@ Planned tasks:
 - [x] Reject conditional capability/extension instructions that appear after functions (layout out-of-order regressions).
 - [x] Add Patch vs. non-Patch spill overlap regressions (domains remain separate; Patch overlaps still conflict).
 
-## Upcoming Milestone: Layout Ordering Parity Closure
-- Finish capability/extension ordering edge cases (conditional capability/extension placement after functions, duplication rules) with Rust regressions mirroring the C++ validator.
-- Lock decoration placement rules (Patch/Component/Location combinations, member vs. non-member scopes) with paired text/binary tests generated from the C++ corpus.
-- Add tessellation Patch interface location-domain tests once ordering/capability gates are aligned, and mirror C++ diagnostics for overlaps.
-- Keep the validator cache/FFI path exercising the Rust layout checks in CLI parity runs.
+## Active Milestone: SSA & Type Validation Hardening
+- Deepen SSA/type checking inside functions to mirror any remaining C++ parity gaps (e.g., composite extracts/inserts, pointer ops) with Rust regressions.
+- Add more function-body structural checks where C++ still leads (remaining unreachable-block or phi-shape edge cases) and port associated tests.
+- Keep the Rust-forced corpus/ctest runner (`scripts/run-rust-validator-corpus.sh`) in the loop after structural updates.
 
 ## Completed Milestone: Layout Ordering Parity
 Match the C++ validator’s capability/extension/import ordering and annotation placement rules in the Rust validator.
