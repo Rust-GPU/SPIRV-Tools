@@ -120,6 +120,12 @@ Planned tasks:
   - Parity now runs in `scripts/ci-optimizer-smoke.sh` via `scripts/run-opt-parity.sh` when `spirv-opt` is available.
   - Corpus expanded with shift-chain and mask-to-pow2 cases to mirror C++ output signatures.
 
+## Upcoming Milestone: Optimizer Parity Expansion
+- Extend the arithmetic/bitwise parity corpus to cover negation chains, mixed shift combinations (logical vs arithmetic), and additional mask+shift fold patterns present in the C++ optimizer.
+- Add matching e-graph rewrites to normalize these patterns while preserving ids and stability.
+- Exercise the expanded corpus in `run-opt-parity.sh` and keep clippy/rustfmt/fuzz/hyperfine benches green.
+- Keep the parity job optional when `spirv-opt` is unavailable but fail when present and mismatching.
+
 ## Upcoming Milestone: Validator Default Enablement
 Flip the Rust validator on by default across CLI/FFI while keeping an escape hatch.
 
