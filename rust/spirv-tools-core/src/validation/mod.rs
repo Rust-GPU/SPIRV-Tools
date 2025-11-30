@@ -20868,6 +20868,45 @@ mod tests {
     }
 
     #[test]
+    fn conditional_extension_cannot_appear_after_annotations() {
+        // Conditional extensions belong in the extensions section; placing them after annotations
+        // should trigger a layout error.
+        let binary = vec![
+            0x0723_0203, // magic
+            0x0001_0000, // version
+            0,           // generator
+            5,           // bound (ids up to 4)
+            0,           // schema
+            op(2, 17),   // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(3, 71), // OpDecorate %1 RelaxedPrecision (annotations)
+            1,
+            rspirv::spirv::Decoration::RelaxedPrecision as u32,
+            op(2, 19), // OpTypeVoid %1 (types)
+            1,
+            op(8, 6248), // OpConditionalExtensionINTEL "SPV_GOOGLE_decorate_string" (after annotations/types -> error)
+            0x5f56_5053, // "SPV_"
+            0x474f_4f47, // "GOOG"
+            0x645f_454c, // "LE_d"
+            0x726f_6365, // "ecor"
+            0x5f65_7461, // "ate_"
+            0x6972_7473, // "stri"
+            0x0000_676e, // "ng\0"
+        ];
+
+        let err = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            err,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::ConditionalExtensionINTEL
+            }
+        );
+    }
+
+    #[test]
     fn conditional_capability_disallowed_in_env() {
         // Conditional capabilities must still respect the target environment allowlist.
         let binary = vec![
