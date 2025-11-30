@@ -1228,6 +1228,12 @@ pub enum ValidationError {
         /// The storage class of the decorated variable.
         storage_class: rspirv::spirv::StorageClass,
     },
+    /// A Component decoration used an out-of-range component value.
+    #[error("Component decoration must be in the range [0, 3] (found {component})")]
+    ComponentOutOfRange {
+        /// The declared component value.
+        component: u32,
+    },
     /// An interpolation decoration is applied to a disallowed storage class.
     #[error(
         "interpolation decoration {decoration:?} is only permitted on Input/Output storage classes (found {storage_class:?})"
@@ -7343,6 +7349,16 @@ fn enforce_location_storage_classes(module: &Module) -> Result<(), ValidationErr
             return Err(ValidationError::InvalidLocationStorageClass {
                 storage_class: *storage_class,
             });
+        }
+        if *decoration == Decoration::Component {
+            let Some(rspirv::dr::Operand::LiteralBit32(component)) = inst.operands.get(2) else {
+                continue;
+            };
+            if *component > 3 {
+                return Err(ValidationError::ComponentOutOfRange {
+                    component: *component,
+                });
+            }
         }
     }
 
@@ -29675,6 +29691,35 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn component_values_must_be_within_range() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %in",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%float = OpTypeFloat 32",
+            "%ptr = OpTypePointer Input %float",
+            "%in = OpVariable %ptr Input",
+            "OpDecorate %in Component 5",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let err = MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Vulkan1_2)
+            .unwrap_err();
+        assert_eq!(
+            err,
+            ValidationError::ComponentOutOfRange {
+                component: 5
+            }
+        );
     }
 
     #[test]
