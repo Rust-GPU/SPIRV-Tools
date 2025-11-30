@@ -502,13 +502,14 @@ Percentages are approximate and will be updated as new checklists are added for 
 6. Harden the Rust assembler FFI path so C++ callers don’t drop function bodies when the Rust path is enabled.
    - Added a guard that detects missing function bodies from the Rust assembler and falls back to the C++ assembler, plus an FFI regression test that assembles via a context handle and asserts the body survives.
 
-## Upcoming Milestone: Capability/Extension Ordering Parity
+## Active Milestone: Capability/Extension Ordering Parity
 Align the Rust validator’s capability/extension ordering and layout checks with the C++ tables.
 
 Tasks for this milestone:
 - Import capability/extension ordering tables (including conditional capabilities/extensions) and enforce them with text/binary regression tests.
 - Mirror environment-specific decoration/layout constraints driven by the grammar data.
 - Thread validated-module reuse through FFI/CLI for these new checks to avoid reparsing.
+- Add regressions that exercise conditional capabilities/extensions around Debug/Names/Annotations/Types boundaries so layout errors surface identically to the C++ validator.
 
 ## Upcoming Milestone: Layout Ordering Parity
 Tighten layout ordering to match the C++ validator’s section/decoration ordering rules.
