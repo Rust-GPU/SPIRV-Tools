@@ -687,6 +687,7 @@ Mirror the C++ validator’s entry-point interface and storage-class rules.
 
 Tasks for this milestone:
 - Enforce execution-model-aware interface storage classes (Input/Output/Patch/Workgroup/Uniform-like) with Rust regressions mirrored from the C++ suite.
+- [x] Enforce entry-point interface storage-class allowlists (including function-scope rejection and ray/IO rules) with new Rust regressions; keep workgroup layout cases aligned with existing capability gates.
 - Validate Patch vs. non-Patch location domains for tessellation interfaces, including capability/exec-mode gates.
 - [x] Reject function-scope variables in entry-point interfaces and duplicate interface ids with typed diagnostics (CLI/FFI parity).
 - Add binary/text regressions for Vulkan-only interface constraints (e.g., PushConstant uniqueness, IncomingRayPayloadKHR/HitAttributeKHR/IncomingCallableDataKHR uniqueness).

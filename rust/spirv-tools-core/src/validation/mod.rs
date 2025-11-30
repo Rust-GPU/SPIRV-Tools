@@ -8748,13 +8748,39 @@ fn validate_entry_point_interface_storage_classes(
                 _ => continue,
             };
             if let Ok(id) = ResultId::try_from(interface_id) {
-                if let Some(inst) = definitions.get(&id) {
-                    if let Some(rspirv::dr::Operand::StorageClass(storage)) = inst.operands.first()
+                    if let Some(inst) = definitions.get(&id) {
+                        if let Some(rspirv::dr::Operand::StorageClass(storage)) = inst.operands.first()
                     {
                         if !seen_interface_ids.insert(id.into()) {
                             return Err(ValidationError::DuplicateEntryPointInterface {
                                 entry_point: entry_point_id,
                                 interface: id.into(),
+                            });
+                        }
+                        let storage_allowed = matches!(
+                            *storage,
+                            rspirv::spirv::StorageClass::Input
+                                | rspirv::spirv::StorageClass::Output
+                                | rspirv::spirv::StorageClass::Uniform
+                                | rspirv::spirv::StorageClass::UniformConstant
+                                | rspirv::spirv::StorageClass::PushConstant
+                                | rspirv::spirv::StorageClass::StorageBuffer
+                                | rspirv::spirv::StorageClass::PhysicalStorageBuffer
+                                | rspirv::spirv::StorageClass::Workgroup
+                                | rspirv::spirv::StorageClass::Private
+                                | rspirv::spirv::StorageClass::IncomingRayPayloadKHR
+                                | rspirv::spirv::StorageClass::RayPayloadKHR
+                                | rspirv::spirv::StorageClass::HitAttributeKHR
+                                | rspirv::spirv::StorageClass::IncomingCallableDataKHR
+                                | rspirv::spirv::StorageClass::CallableDataKHR
+                                | rspirv::spirv::StorageClass::ShaderRecordBufferKHR
+                                | rspirv::spirv::StorageClass::TaskPayloadWorkgroupEXT
+                        );
+                        if !storage_allowed {
+                            return Err(ValidationError::EntryPointInterfaceStorageClassInvalid {
+                                entry_point: entry_point_id,
+                                interface: id.into_inner(),
+                                storage_class: *storage,
                             });
                         }
                         if matches!(
