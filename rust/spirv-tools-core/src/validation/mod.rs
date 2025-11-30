@@ -4506,6 +4506,11 @@ fn run_layout_check(words: &[u32], env: TargetEnv) -> Result<(), ValidationError
 fn instruction_section(current: Section, inst: &rspirv::dr::Instruction) -> Section {
     use rspirv::spirv::Op::*;
     let opcode = inst.class.opcode;
+    match opcode {
+        Capability | ConditionalCapabilityINTEL => return Section::Capabilities,
+        Extension | ConditionalExtensionINTEL => return Section::Extensions,
+        _ => {}
+    }
     if let Some(class) = instruction_class(opcode) {
         match class {
             InstructionClass::Annotation => return Section::Annotations,
@@ -9679,6 +9684,21 @@ mod tests {
 
     fn op(word_count: u16, opcode: u16) -> u32 {
         ((word_count as u32) << 16) | opcode as u32
+    }
+
+    fn reorder_opcode_to_end(mut words: Vec<u32>, opcode: Op) -> Vec<u32> {
+        let mut idx = 5; // skip header
+        while idx < words.len() {
+            let wc = (words[idx] >> 16) as usize;
+            let op = (words[idx] & 0xffff) as u32;
+            if op == opcode as u32 {
+                let inst: Vec<u32> = words.drain(idx..idx + wc).collect();
+                words.extend(inst);
+                break;
+            }
+            idx += wc;
+        }
+        words
     }
 
     const EXT_SPV_GOOGLE_DECORATE_STRING_WORDS: [u32; 7] = [
@@ -29767,6 +29787,30 @@ mod tests {
             .validate(TargetEnv::Vulkan1_2)
             .unwrap_err();
         assert_eq!(err, ValidationError::ComponentMissingLocation);
+    }
+
+    #[test]
+    fn capabilities_after_functions_are_rejected() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main"
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let words = assemble_text(text).expect("assemble text");
+        let reordered = reorder_opcode_to_end(words, rspirv::spirv::Op::Capability);
+        let err = validate_module(&reordered, TargetEnv::Vulkan1_2).unwrap_err();
+        assert_eq!(
+            err,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Capability
+            }
+        );
     }
 
     #[test]
