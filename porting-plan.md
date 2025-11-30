@@ -91,6 +91,7 @@ Planned tasks:
 - Add more affine/distributivity rewrites to expose constant folding (mixed add/sub chains, constant factorization) and port matching C++ arithmetic tests to Rust/FFI/CLI harnesses. (added add/sub operand cancellation, constant-chain merges, shared-addend cancellation including constant addends `(x+c)-(y+c)=>x-y`, commuted shared addends `(b+a)-(d+b)=>a-d`, chained sub merges `(x-y)+(y-z)=>x-z`, mirrored add/sub cancel `(x)+(y-x)=>y`, subtrahend cancellation `(x-y)+y=>x`, and factoring with commuted multiplicands `y*x + z*x` / `y*x - z*x` into `x*(y±z)` with unit coverage; broader factorization still pending and parity tests to mirror C++ remain to be ported)
 - Expand e-graph coverage to additional algebraic identities and ensure the reconstructed SPIR-V preserves ids and layout invariants.
 - [x] Add CI parity runner to diff Rust vs. C++ optimizer outputs on the arithmetic corpus; gate regressions.
+- [x] Document optimizer parity runner usage for CI/locals.
 
 ## Upcoming Milestone: Optimizer Parity vs C++ Arithmetic Pass
 Align the Rust arithmetic optimizer with the legacy C++ arithmetic canonicalization passes.
