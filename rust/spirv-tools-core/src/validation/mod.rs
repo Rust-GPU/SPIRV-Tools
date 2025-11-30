@@ -1739,6 +1739,24 @@ pub enum ValidationError {
         /// The argument's type.
         found: TypeId,
     },
+    /// An instruction operand has a type that does not match the instruction's result type.
+    #[error(
+        "instruction {instruction:?} in block {block:?} of function {function:?} expects operand {operand_index} to have type {expected:?} but found {found:?}"
+    )]
+    OperandTypeMismatch {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The instruction opcode.
+        instruction: rspirv::spirv::Op,
+        /// The zero-based operand index.
+        operand_index: usize,
+        /// The expected operand type.
+        expected: TypeId,
+        /// The found operand type.
+        found: TypeId,
+    },
     /// A phi incoming value's type does not match the phi's result type.
     #[error("phi in block {block:?} of function {function:?} expects type {expected:?} but incoming value {incoming:?} has type {found:?}")]
     PhiIncomingTypeMismatch {
@@ -3101,6 +3119,43 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                                         block: block_label_id,
                                         value: Id::from(result_id),
                                     });
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Basic operand type checks for arithmetic instructions: operands must
+                // match the instruction's result type.
+                if let Some(result_type) =
+                    inst.result_type.and_then(|raw| TypeId::try_from(raw).ok())
+                {
+                    let requires_operand_type_match = matches!(
+                        inst.class.opcode,
+                        rspirv::spirv::Op::IAdd
+                            | rspirv::spirv::Op::ISub
+                            | rspirv::spirv::Op::IMul
+                            | rspirv::spirv::Op::SDiv
+                            | rspirv::spirv::Op::UDiv
+                            | rspirv::spirv::Op::SRem
+                            | rspirv::spirv::Op::UMod
+                    );
+                    if requires_operand_type_match {
+                        for (operand_index, operand) in inst.operands.iter().enumerate() {
+                            if let rspirv::dr::Operand::IdRef(raw) = operand {
+                                if let Ok(op_id) = ResultId::try_from(*raw) {
+                                    if let Some(found_type) = result_types.get(&op_id).copied() {
+                                        if found_type != result_type {
+                                            return Err(ValidationError::OperandTypeMismatch {
+                                                function: function_id,
+                                                block: block_label_id,
+                                                instruction: inst.class.opcode,
+                                                operand_index,
+                                                expected: result_type,
+                                                found: found_type,
+                                            });
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -18441,6 +18496,50 @@ mod tests {
                 function: Id::try_from(7).unwrap(),
                 block: Id::try_from(9).unwrap(),
                 value: Id::try_from(11).unwrap()
+            }
+        );
+    }
+
+    #[test]
+    fn integer_add_operands_must_match_result_type() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let float = b.type_float(32, None);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let header = b.begin_block(None).unwrap();
+        let fconst = b.constant_bit32(float, 0x3f80_0000);
+        let iconst = b.constant_bit32(int, 1);
+        b.i_add(int, None, fconst, iconst).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let words = b.module().assemble();
+        let err = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("integer add operands must match result type");
+        assert_eq!(
+            err,
+            ValidationError::OperandTypeMismatch {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(header).unwrap(),
+                instruction: rspirv::spirv::Op::IAdd,
+                operand_index: 0,
+                expected: TypeId::try_from(int).unwrap(),
+                found: TypeId::try_from(float).unwrap(),
             }
         );
     }
