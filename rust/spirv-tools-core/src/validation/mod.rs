@@ -9493,6 +9493,49 @@ mod tests {
     }
 
     #[test]
+    fn ext_inst_import_cannot_follow_types_and_globals() {
+        // Imported instruction sets must appear before the types-and-globals section.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            6,          // bound (ids up to 5)
+            0,          // schema
+            op(2, 17),  // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // %1 = OpTypeVoid (enters TypesGlobals)
+            1,
+            op(3, rspirv::spirv::Op::ExtInstImport as u16), // %2 = OpExtInstImport "G" (misordered after types)
+            2,
+            0x0000_0047, // "G"
+            op(3, 33),   // %3 = OpTypeFunction %1
+            3,
+            1,
+            op(5, 54), // %4 = OpFunction %1 None %3
+            1,
+            4,
+            0,
+            3,
+            op(2, 248), // %5 = OpLabel
+            5,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+
+        let error = validate_module(&binary, TargetEnv::Universal1_6)
+            .expect_err("OpExtInstImport must precede types/globals");
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::ExtInstImport
+            }
+        );
+    }
+
+    #[test]
     fn member_decorate_string_cannot_appear_inside_functions() {
         // OpMemberDecorateString must stay in the annotations section; placing it inside a
         // function body should be rejected.
