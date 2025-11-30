@@ -126,6 +126,7 @@ Planned tasks:
 - Update CLI help/docs to describe the Rust-default behavior and override knobs.
 - Keep the corpus/ctest parity runner in CI to guard the rollout and document rollback steps.
 - [x] Expose CLI toggles (`--prefer-rust-validator` / `--prefer-cpp-validator`) to steer the default when both validators are available.
+- [x] Add env-level defaults (`SPIRV_TOOLS_PREFER_RUST_VALIDATOR` / `SPIRV_TOOLS_PREFER_CPP_VALIDATOR`) to steer the default without forcing.
 
 ## Active Milestone: Structural Validator Rules
 Enforce target-environment specific structural rules and reuse validated modules across interfaces.

@@ -181,10 +181,23 @@ int main(int argc, char** argv) {
   const bool env_forces_rust =
       !env_disables_rust &&
       std::getenv("SPIRV_TOOLS_FORCE_RUST_VALIDATOR") != nullptr;
+  const bool env_prefers_cpp =
+      !env_disables_rust &&
+      std::getenv("SPIRV_TOOLS_PREFER_CPP_VALIDATOR") != nullptr;
+  const bool env_prefers_rust =
+      !env_disables_rust &&
+      std::getenv("SPIRV_TOOLS_PREFER_RUST_VALIDATOR") != nullptr;
   bool prefer_rust_validator = !env_disables_rust;
   bool prefer_cpp_validator = false;
   bool force_rust_validator = env_forces_rust;
   bool force_cpp_validator = false;
+  if (env_prefers_cpp) {
+    prefer_cpp_validator = true;
+    prefer_rust_validator = false;
+  } else if (env_prefers_rust) {
+    prefer_rust_validator = true;
+    prefer_cpp_validator = false;
+  }
 #endif
 
   for (int argi = 1; continue_processing && argi < argc; ++argi) {

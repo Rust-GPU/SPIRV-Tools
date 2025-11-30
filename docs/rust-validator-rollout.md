@@ -12,6 +12,8 @@ below to roll it forward or back without rebuilding.
 ## Environment toggles
 - `SPIRV_TOOLS_FORCE_RUST_VALIDATOR=1`: prefer Rust validation (honored by CLI/FFI).
 - `SPIRV_TOOLS_DISABLE_RUST_VALIDATOR=1`: disable the Rust validator and use C++.
+- `SPIRV_TOOLS_PREFER_RUST_VALIDATOR=1`: default to the Rust validator when both are built.
+- `SPIRV_TOOLS_PREFER_CPP_VALIDATOR=1`: default to the C++ validator when both are built.
 
 If both env vars are set, the disable flag wins. CLI flags override env preference.
 
