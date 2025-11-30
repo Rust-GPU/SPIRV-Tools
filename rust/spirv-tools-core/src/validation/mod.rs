@@ -252,6 +252,13 @@ pub fn format_validation_error(error: &ValidationError, names: Option<&FriendlyN
                 function, block, ..
             },
             Some(names),
+        )
+        | (
+            ValidationError::ValueDefinedInAnotherFunction {
+                function,
+                value: block,
+            },
+            Some(names),
         ) => format!(
             "{} in block {}",
             names.format_id((*function).into()),
@@ -1560,6 +1567,14 @@ pub enum ValidationError {
         /// The opcode that defined the result type id.
         found: rspirv::spirv::Op,
     },
+    /// An operand refers to a value defined in another function.
+    #[error("value {value:?} used in function {function:?} is defined in a different function")]
+    ValueDefinedInAnotherFunction {
+        /// The function containing the use.
+        function: Id,
+        /// The value that is defined elsewhere.
+        value: Id,
+    },
     /// A merge instruction is paired with an invalid terminator.
     #[error("block {block:?} of function {function:?} has merge paired with invalid terminator {terminator:?}")]
     InvalidMergeTerminator {
@@ -2687,6 +2702,16 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                         for pair in inst.operands.chunks(2) {
                             if let Some(rspirv::dr::Operand::IdRef(raw_value)) = pair.first() {
                                 if let Ok(value_id) = ResultId::try_from(*raw_value) {
+                                    if let Some(Some(def_block)) = definition_blocks.get(&value_id) {
+                                        if !block_ids.contains(def_block) {
+                                            return Err(
+                                                ValidationError::ValueDefinedInAnotherFunction {
+                                                    function: function_id,
+                                                    value: Id::from(value_id),
+                                                },
+                                            );
+                                        }
+                                    }
                                     if let Some(found_type) = result_types.get(&value_id).copied() {
                                         if found_type != expected_type {
                                             return Err(ValidationError::PhiIncomingTypeMismatch {
@@ -2821,6 +2846,12 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                     if let rspirv::dr::Operand::IdRef(raw) = operand {
                         if let Ok(result_id) = ResultId::try_from(*raw) {
                             if let Some(Some(def_block)) = definition_blocks.get(&result_id) {
+                                if !block_ids.contains(def_block) {
+                                    return Err(ValidationError::ValueDefinedInAnotherFunction {
+                                        function: function_id,
+                                        value: Id::from(result_id),
+                                    });
+                                }
                                 if !block_dominators.contains(def_block) {
                                     return Err(ValidationError::ValueNotDominated {
                                         function: function_id,
@@ -12434,6 +12465,38 @@ mod tests {
                 function: Id::try_from(main).unwrap(),
                 expected: TypeId::try_from(int).unwrap(),
                 found: TypeId::try_from(float).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn value_defined_in_another_function_is_rejected() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%int = OpTypeInt 32 0",
+            "%void = OpTypeVoid",
+            "%fn_i = OpTypeFunction %int",
+            "%one = OpConstant %int 1",
+            "%f1 = OpFunction %int None %fn_i",
+            "%l1 = OpLabel",
+            "%add = OpIAdd %int %one %one",
+            "OpReturnValue %add",
+            "OpFunctionEnd",
+            "%f2 = OpFunction %int None %fn_i",
+            "%l2 = OpLabel",
+            "OpReturnValue %add",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Universal1_6)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::ValueDefinedInAnotherFunction {
+                function: Id::try_from(8).unwrap(),
+                value: Id::try_from(7).unwrap(),
             }
         );
     }
