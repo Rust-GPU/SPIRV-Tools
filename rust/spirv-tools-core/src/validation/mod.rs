@@ -20703,6 +20703,52 @@ mod tests {
     }
 
     #[test]
+    fn extinst_import_cannot_appear_after_functions() {
+        // OpExtInstImport must precede functions; placing it after a function should trigger a
+        // layout error.
+        let binary = vec![
+            0x0723_0203, // magic
+            0x0001_0000, // version
+            0,           // generator
+            6,           // bound (ids up to 5)
+            0,           // schema
+            op(2, 17),   // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+            op(5, 54), // OpFunction %1 %3 None %2
+            1,
+            3,
+            rspirv::spirv::FunctionControl::NONE.bits(),
+            2,
+            op(2, 248), // OpLabel %4
+            4,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+            (6 << 16) | (rspirv::spirv::Op::ExtInstImport as u32), // OpExtInstImport %5 "GLSL.std.450" (after functions)
+            5,
+            0x4c53_4c47, // "GLSL"
+            0x6474_732e, // ".std"
+            0x3035_342e, // ".450"
+            0,           // string terminator padding
+        ];
+
+        let err = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            err,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::ExtInstImport
+            }
+        );
+    }
+
+    #[test]
     fn conditional_capability_disallowed_in_env() {
         // Conditional capabilities must still respect the target environment allowlist.
         let binary = vec![
