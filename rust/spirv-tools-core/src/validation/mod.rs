@@ -19852,6 +19852,54 @@ mod tests {
     }
 
     #[test]
+    fn memory_access_non_private_pointer_requires_vulkan_memory_model_capability() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut builder = Builder::new();
+        builder.set_version(1, 5);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        // Provide the extension but deliberately omit the VulkanMemoryModel capability.
+        builder.extension("SPV_KHR_vulkan_memory_model");
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = builder.type_void();
+        let int = builder.type_int(32, 1);
+        let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::Function, int);
+        let fn_ty = builder.type_function(void, std::iter::empty::<u32>());
+
+        builder
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        builder.begin_block(None).unwrap();
+        let var_id = builder.variable(ptr, None, rspirv::spirv::StorageClass::Function, None);
+        builder
+            .load(
+                int,
+                None,
+                var_id,
+                Some(rspirv::spirv::MemoryAccess::NON_PRIVATE_POINTER),
+                std::iter::empty::<rspirv::dr::Operand>(),
+            )
+            .unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+
+        let binary = builder.module().assemble();
+        let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::MissingOperandCapability {
+                opcode: rspirv::spirv::Op::Load,
+                operand_index: 1,
+                required_capability: rspirv::spirv::Capability::VulkanMemoryModel
+            }
+        );
+    }
+
+    #[test]
     fn memory_semantics_make_visible_requires_spirv_1_5() {
         use rspirv::{binary::Assemble, dr::Builder};
 
