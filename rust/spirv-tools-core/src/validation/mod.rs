@@ -209,6 +209,19 @@ pub fn format_validation_error(error: &ValidationError, names: Option<&FriendlyN
             names.format_id((*entry_point).into())
         ),
         (
+            ValidationError::ExecutionModeRequiresExecutionModel {
+                entry_point,
+                mode,
+                found,
+                allowed,
+            },
+            Some(names),
+        ) => format!(
+            "{} uses {found:?} with mode {mode:?} (allowed: {:?})",
+            names.format_id((*entry_point).into()),
+            allowed
+        ),
+        (
             ValidationError::EntryPointInterfaceFloatEncodingInvalid {
                 interface,
                 storage_class,
@@ -1459,6 +1472,20 @@ pub enum ValidationError {
         location: u32,
         /// The conflicting component.
         component: u32,
+    },
+    /// An execution mode was used with an incompatible execution model.
+    #[error(
+        "execution mode {mode:?} is only valid for models {allowed:?} but entry point {entry_point:?} uses {found:?}"
+    )]
+    ExecutionModeRequiresExecutionModel {
+        /// The entry-point function id.
+        entry_point: Id,
+        /// The execution mode that was invalid.
+        mode: rspirv::spirv::ExecutionMode,
+        /// The execution model actually used by the entry point.
+        found: rspirv::spirv::ExecutionModel,
+        /// The allowed execution models.
+        allowed: Vec<rspirv::spirv::ExecutionModel>,
     },
     /// An entry point interface variable uses a disallowed floating-point encoding for its storage
     /// class in Vulkan environments.
@@ -8339,6 +8366,25 @@ fn validate_execution_modes(
     env: TargetEnv,
     options: &ValidationOptions,
 ) -> Result<(), ValidationError> {
+    let mut entry_point_models: HashMap<ResultId, rspirv::spirv::ExecutionModel> = HashMap::new();
+    for ep in &module.entry_points {
+        let mut operands = ep.operands.iter();
+        if ep.class.opcode == rspirv::spirv::Op::ConditionalEntryPointINTEL {
+            let _ = operands.next();
+        }
+        let execution_model = operands.next().and_then(|op| match op {
+            rspirv::dr::Operand::ExecutionModel(model) => Some(*model),
+            _ => None,
+        });
+        let function = operands.next().and_then(|op| match op {
+            rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+            _ => None,
+        });
+        if let (Some(model), Some(function)) = (execution_model, function) {
+            entry_point_models.insert(function, model);
+        }
+    }
+
     for mode in &module.execution_modes {
         let mut operands = mode.operands.iter();
         // First operand is the target entry point function.
@@ -8355,11 +8401,49 @@ fn validate_execution_modes(
             });
         }
 
-        if let Some(execution_mode) = execution_mode_from_operand(mode.operands.get(1)) {
+        let execution_mode = execution_mode_from_operand(mode.operands.get(1));
+        if let Some(execution_mode) = execution_mode {
             if execution_mode == rspirv::spirv::ExecutionMode::LocalSizeId
                 && !local_size_id_allowed(env, options)
             {
                 return Err(ValidationError::LocalSizeIdNotAllowed { env });
+            }
+            if let Some(model) = entry_point_models.get(&function) {
+                match execution_mode {
+                    rspirv::spirv::ExecutionMode::OutputVertices => {
+                        let allowed = [
+                            rspirv::spirv::ExecutionModel::Geometry,
+                            rspirv::spirv::ExecutionModel::TessellationControl,
+                            rspirv::spirv::ExecutionModel::MeshEXT,
+                            rspirv::spirv::ExecutionModel::MeshNV,
+                        ];
+                        if !allowed.contains(model) {
+                            return Err(ValidationError::ExecutionModeRequiresExecutionModel {
+                                entry_point: function.into_inner(),
+                                mode: execution_mode,
+                                found: *model,
+                                allowed: allowed.to_vec(),
+                            });
+                        }
+                    }
+                    rspirv::spirv::ExecutionMode::OutputLinesEXT
+                    | rspirv::spirv::ExecutionMode::OutputTrianglesEXT
+                    | rspirv::spirv::ExecutionMode::OutputPrimitivesEXT => {
+                        let allowed = [
+                            rspirv::spirv::ExecutionModel::MeshEXT,
+                            rspirv::spirv::ExecutionModel::MeshNV,
+                        ];
+                        if !allowed.contains(model) {
+                            return Err(ValidationError::ExecutionModeRequiresExecutionModel {
+                                entry_point: function.into_inner(),
+                                mode: execution_mode,
+                                found: *model,
+                                allowed: allowed.to_vec(),
+                            });
+                        }
+                    }
+                    _ => {}
+                }
             }
         }
     }
@@ -27019,6 +27103,65 @@ mod tests {
         MaybeValidModule::Text(&text)
             .validate(TargetEnv::Vulkan1_2)
             .expect("Mesh OutputTriangles/OutputVertices/OutputPrimitivesEXT should validate");
+    }
+
+    #[test]
+    fn output_vertices_requires_geometry_or_tess_or_mesh() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\"",
+            "OpExecutionMode %main OutputVertices 3",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Vulkan1_2)
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            ValidationError::ExecutionModeRequiresExecutionModel {
+                mode: rspirv::spirv::ExecutionMode::OutputVertices,
+                found: rspirv::spirv::ExecutionModel::Vertex,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn output_primitives_ext_requires_mesh_execution_model() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Geometry",
+            "OpCapability Tessellation",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Geometry %main \"main\"",
+            "OpExecutionMode %main OutputTriangleStrip",
+            "OpExecutionMode %main OutputPrimitivesEXT 2",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Vulkan1_2)
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            ValidationError::ExecutionModeRequiresExecutionModel {
+                mode: rspirv::spirv::ExecutionMode::OutputPrimitivesEXT,
+                found: rspirv::spirv::ExecutionModel::Geometry,
+                ..
+            }
+        ));
     }
 
     #[test]
