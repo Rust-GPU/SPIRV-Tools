@@ -624,6 +624,7 @@ Planned tasks:
   - Restored shift constant folding rewrites with a pure-constant guard and added unit/corpus coverage to match the C++ optimizer’s behavior while keeping rotation folding safe.
   - Added bitwise XOR language support (translation, rewrites, const folding) with corpus and unit coverage to keep parity with C++ bitwise optimizations.
   - Added C++ parity coverage for bitwise XOR folding in the Rust optimizer path to keep the FFI/CLI surface aligned.
+  - Added bitwise NOT support (translation, rewrites, const folding) with corpus and C++ parity coverage to align the Rust optimizer with spirv-opt.
 
 ## Upcoming Milestone: Optimizer FFI/CLI Integration
 Expose the Rust optimizer through the existing C/C++ surfaces and provide CLI benchmarking.

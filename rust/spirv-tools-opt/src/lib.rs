@@ -222,7 +222,7 @@ impl egg::CostFunction<SpirvLang> for ExprCost {
             SpirvLang::BitAnd(_) | SpirvLang::BitXor(_) => {
                 enode.children().iter().map(|id| costs(*id)).sum::<usize>() + 2
             }
-            SpirvLang::BitNot(_) => enode.children().iter().map(|id| costs(*id)).sum::<usize>(),
+            SpirvLang::BitNot(_) => enode.children().iter().map(|id| costs(*id)).sum::<usize>() + 1,
             _ => enode.children().iter().map(|id| costs(*id)).sum::<usize>() + 1,
         }
     }

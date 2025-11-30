@@ -679,6 +679,28 @@ fn corpus_folds_bxor_constants() {
 }
 
 #[test]
+fn corpus_folds_bnot_constants() {
+    let int = 1;
+    let c1 = inst(
+        Op::Constant,
+        int,
+        1,
+        vec![rspirv::dr::Operand::LiteralBit32(0)],
+    );
+    let bnot = inst(Op::Not, int, 2, vec![rspirv::dr::Operand::IdRef(1)]);
+    let optimized = optimize_arith_block(&[c1, bnot]).expect("optimize");
+    let folded = optimized
+        .iter()
+        .find(|inst| inst.result_id == Some(2))
+        .expect("result id 2 present");
+    assert_eq!(folded.class.opcode, Op::Constant);
+    assert_eq!(
+        folded.operands,
+        vec![rspirv::dr::Operand::LiteralBit32(u32::MAX)]
+    );
+}
+
+#[test]
 fn corpus_cancels_add_sub() {
     let int = 1;
     let ca = inst(
