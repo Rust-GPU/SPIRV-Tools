@@ -1661,6 +1661,20 @@ pub enum ValidationError {
         /// The missing block id.
         target: Id,
     },
+    /// A merge instruction targets a block that is not dominated by the header.
+    #[error(
+        "{kind} target {target:?} in block {block:?} of function {function:?} is not dominated by the header"
+    )]
+    MergeTargetNotDominated {
+        /// The function containing the merge.
+        function: Id,
+        /// The block containing the merge.
+        block: Id,
+        /// Whether the target is the merge or continue target.
+        kind: MergeTargetKind,
+        /// The target block id.
+        target: Id,
+    },
     /// A merge or continue target aliases its own block.
     #[error("{kind} target {target:?} in block {block:?} of function {function:?} must not be the block itself")]
     MergeTargetIsBlock {
@@ -2480,6 +2494,7 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
         let signature = validate_function_signature(function_id, function, &definitions)?;
         signatures.insert(function_id, signature);
     }
+    let mut recorded_merges: Vec<(Id, Id, MergeTargetKind, Id)> = Vec::new(); // (function, header, kind, target)
     let mut definition_blocks: HashMap<ResultId, Option<Id>> = HashMap::new();
     for inst in module.all_inst_iter() {
         if let Some(result_id) = inst.result_id {
@@ -2680,6 +2695,12 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                                         target,
                                     });
                                 }
+                                recorded_merges.push((
+                                    function_id,
+                                    block_label_id,
+                                    MergeTargetKind::Merge,
+                                    target,
+                                ));
                             }
                         }
                     }
@@ -2719,6 +2740,12 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                                     target,
                                 });
                             }
+                            recorded_merges.push((
+                                function_id,
+                                block_label_id,
+                                MergeTargetKind::Merge,
+                                target,
+                            ));
                         }
                         if let Some(target) = continue_target {
                             if target == block_label_id {
@@ -2737,6 +2764,12 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                                     target,
                                 });
                             }
+                            recorded_merges.push((
+                                function_id,
+                                block_label_id,
+                                MergeTargetKind::Continue,
+                                target,
+                            ));
                         }
                         if let (Some(merge_target), Some(continue_target)) =
                             (merge_target, continue_target)
@@ -2756,6 +2789,9 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
             let requires_selection_merge = matches!(
                 terminator_inst.class.opcode,
                 rspirv::spirv::Op::BranchConditional | rspirv::spirv::Op::Switch
+            ) && !matches!(
+                merge_instruction,
+                Some((_, inst)) if inst.class.opcode == rspirv::spirv::Op::LoopMerge
             );
             match (requires_selection_merge, merge_instruction) {
                 (true, None) => {
@@ -3076,6 +3112,25 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                     dominators.insert(*block, new_dom);
                     changed = true;
                 }
+            }
+        }
+
+        for (function, header, kind, target) in
+            recorded_merges
+                .iter()
+                .copied()
+                .filter(|(func, _, _, _)| *func == function_id)
+        {
+            let Some(target_doms) = dominators.get(&target) else {
+                continue;
+            };
+            if !target_doms.contains(&header) && header != target {
+                return Err(ValidationError::MergeTargetNotDominated {
+                    function,
+                    block: header,
+                    kind,
+                    target,
+                });
             }
         }
 
@@ -18471,6 +18526,183 @@ mod tests {
                 function: Id::try_from(main).unwrap(),
                 block: Id::try_from(header).unwrap(),
                 terminator: rspirv::spirv::Op::Unreachable
+            }
+        );
+    }
+
+    #[test]
+    fn selection_merge_target_must_be_dominated_by_header() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+
+        let void = b.type_void();
+        let bool = b.type_bool();
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let _entry = b.begin_block(None).unwrap();
+        let header = b.id();
+        let merge = b.id();
+        let cond = b.constant_true(bool);
+        b.selection_merge(merge, rspirv::spirv::SelectionControl::NONE)
+            .unwrap();
+        b.branch_conditional(cond, header, merge, std::iter::empty())
+            .unwrap();
+
+        b.begin_block(Some(header)).unwrap();
+        b.selection_merge(merge, rspirv::spirv::SelectionControl::NONE)
+            .unwrap();
+        b.branch_conditional(cond, merge, merge, std::iter::empty())
+            .unwrap();
+
+        b.begin_block(Some(merge)).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let words = b.module().assemble();
+        let err = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("merge target should be dominated by header");
+        assert_eq!(
+            err,
+            ValidationError::MergeTargetNotDominated {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(header).unwrap(),
+                kind: MergeTargetKind::Merge,
+                target: Id::try_from(merge).unwrap()
+            }
+        );
+    }
+
+    #[test]
+    fn loop_merge_target_must_be_dominated_by_header() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+
+        let void = b.type_void();
+        let bool = b.type_bool();
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let _entry = b.begin_block(None).unwrap();
+        let header = b.id();
+        let merge = b.id();
+        let cont = b.id();
+        let cond = b.constant_true(bool);
+        b.selection_merge(merge, rspirv::spirv::SelectionControl::NONE)
+            .unwrap();
+        b.branch_conditional(cond, header, merge, std::iter::empty())
+            .unwrap();
+
+        b.begin_block(Some(header)).unwrap();
+        b.loop_merge(
+            merge,
+            cont,
+            rspirv::spirv::LoopControl::NONE,
+            std::iter::empty::<rspirv::dr::Operand>(),
+        )
+        .unwrap();
+        b.branch_conditional(cond, merge, cont, std::iter::empty())
+            .unwrap();
+
+        b.begin_block(Some(cont)).unwrap();
+        b.branch(header).unwrap();
+
+        b.begin_block(Some(merge)).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let words = b.module().assemble();
+        let err = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("loop merge target should be dominated by header");
+        assert_eq!(
+            err,
+            ValidationError::MergeTargetNotDominated {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(header).unwrap(),
+                kind: MergeTargetKind::Merge,
+                target: Id::try_from(merge).unwrap()
+            }
+        );
+    }
+
+    #[test]
+    fn loop_continue_target_must_be_dominated_by_header() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+
+        let void = b.type_void();
+        let bool = b.type_bool();
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let _entry = b.begin_block(None).unwrap();
+        let header = b.id();
+        let merge = b.id();
+        let cont = b.id();
+        let cond = b.constant_true(bool);
+        b.selection_merge(cont, rspirv::spirv::SelectionControl::NONE)
+            .unwrap();
+        b.branch_conditional(cond, header, cont, std::iter::empty())
+            .unwrap();
+
+        b.begin_block(Some(header)).unwrap();
+        b.loop_merge(
+            merge,
+            cont,
+            rspirv::spirv::LoopControl::NONE,
+            std::iter::empty::<rspirv::dr::Operand>(),
+        )
+        .unwrap();
+        b.branch_conditional(cond, merge, cont, std::iter::empty())
+            .unwrap();
+
+        b.begin_block(Some(cont)).unwrap();
+        b.branch(header).unwrap();
+
+        b.begin_block(Some(merge)).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let words = b.module().assemble();
+        let err = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("loop continue target should be dominated by header");
+        assert_eq!(
+            err,
+            ValidationError::MergeTargetNotDominated {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(header).unwrap(),
+                kind: MergeTargetKind::Continue,
+                target: Id::try_from(cont).unwrap()
             }
         );
     }

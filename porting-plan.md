@@ -574,6 +574,7 @@ Tasks for this milestone:
 - Enforce SSA/phi correctness (dominance of defs, matching predecessor counts/types) and type checking for instructions beyond the current structural pass.
 - Detect unreachable basic blocks in functions and report them with typed diagnostics; added regression in Rust validator tests.
 - Enforce structured merge rules: merges must immediately precede their terminators, selection merges pair with conditional/switch terminators, loop merge/continue targets must exist and be distinct, and structured terminators require a selection merge.
+- [x] Enforce structured dominance: selection/loop merge and continue targets must be dominated by their headers, with Rust regressions mirroring the C++ validator.
 - [x] Reject loop headers that terminate with anything other than the structured terminator after `OpLoopMerge` (e.g., `OpReturn`), matching C++ structured CFG checks with a Rust regression.
 - [x] Reject unreachable terminators immediately following `OpLoopMerge`, mirroring the C++ structured CFG validation with Rust coverage.
 - [x] Reject other non-branch terminators after `OpLoopMerge` (e.g., `OpReturnValue`, `OpKill`) with Rust regressions matching the C++ validator.
