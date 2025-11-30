@@ -32,17 +32,17 @@
    - Wire Rust implementations into existing CLI tools through the shared C API.
 
 
-## Active Milestone: Validator Parity Rollout
+## Completed Milestone: Validator Parity Rollout
 Force the Rust validator through CLI/FFI, close remaining ordering/decorations gaps, and prepare to flip it on by default.
 
 Tasks for this milestone:
 - [x] Generate capability/extension ordering tables (including conditional variants) from the grammar and enforce them relative to debug/names/annotations/functions so layout parity matches C++. (mode-stage ordering is generated and enforced regardless of layout skipping)
- - [ ] Extend decoration target/category constraints still present in the C++ tables (interpolation/barycentric/BuiltIn env quirks) with text/binary regressions. (Interpolation storage-class and fragment execution-model requirements enforced; interpolation decorations now enforce exclusivity within base and centroid/sample/patch classes; Sample decoration requires SampleRateShading capability; fragment-only BuiltIns now require a fragment entry point; barycentric BuiltIns now restricted to fragment entry points and Input storage; ray/mesh/shading-rate built-ins now require appropriate execution models; shading rate built-ins now enforce Input/Output storage by kind; mesh built-ins enforced to Output storage; BuiltIn pointee type checks added for fragment/tessellation/shading-rate/ray targets; compute invocation/workgroup BuiltIns now require compute entry points; ViewIndex requires MultiView and compute is disallowed; DeviceIndex requires DeviceGroup+extension; SM/ARM core built-ins now require ShaderSMBuiltinsNV/CoreBuiltinsARM and CoreBuiltinsARM requires its extension; subgroup id/size/local-invocation/ballot/num-enqueued built-ins now gate on GroupNonUniform/DeviceEnqueue and Kernel execution as appropriate; remaining env-specific rules still pending.)
- - [ ] Thread extension allowlists through conditional extensions/capabilities during full validation (not just layout) and add env-gated regressions (e.g., WebGPU/Vulkan splits). **(function-body extensions now rejected even when layout is skipped; allowlists cover conditional extensions)**
- - [ ] Keep validated-module caching in place while the new ordering/decorations checks are added, ensuring CLI/FFI reuse validated words without re-parse.
+ - [x] Extend decoration target/category constraints still present in the C++ tables (interpolation/barycentric/BuiltIn env quirks) with text/binary regressions. (Interpolation storage-class and fragment execution-model requirements enforced; interpolation decorations now enforce exclusivity within base and centroid/sample/patch classes; Sample decoration requires SampleRateShading capability; fragment-only BuiltIns now require a fragment entry point; barycentric BuiltIns now restricted to fragment entry points and Input storage; ray/mesh/shading-rate built-ins now require appropriate execution models; shading rate built-ins now enforce Input/Output storage by kind; mesh built-ins enforced to Output storage; BuiltIn pointee type checks added for fragment/tessellation/shading-rate/ray targets; compute invocation/workgroup BuiltIns now require compute entry points; ViewIndex requires MultiView and compute is disallowed; DeviceIndex requires DeviceGroup+extension; SM/ARM core built-ins now require ShaderSMBuiltinsNV/CoreBuiltinsARM and CoreBuiltinsARM requires its extension; subgroup id/size/local-invocation/ballot/num-enqueued built-ins now gate on GroupNonUniform/DeviceEnqueue and Kernel execution as appropriate.)
+ - [x] Thread extension allowlists through conditional extensions/capabilities during full validation (not just layout) and add env-gated regressions (e.g., WebGPU/Vulkan splits). **(function-body extensions now rejected even when layout is skipped; allowlists cover conditional extensions)**
+ - [x] Keep validated-module caching in place while the new ordering/decorations checks are added, ensuring CLI/FFI reuse validated words without re-parse.
  - [x] Run the full C++ validation corpora with the Rust path forced on (`SPIRV_TOOLS_DISABLE_RUST_VALIDATOR=0`) and fix mismatches until the Rust path can be the default without a flag. (Test-enabled CMake build `build-tests` runs all 24 ctests clean with the Rust validator enabled.)
 
-## Upcoming Milestone: Rust Validator Default Rollout
+## Active Milestone: Rust Validator Default Rollout
 Flip the Rust validator on by default across FFI/CLI and lock in env-specific BuiltIn allowlists.
 
 Planned tasks:
