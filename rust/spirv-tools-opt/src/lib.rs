@@ -3760,6 +3760,33 @@ mod tests {
     }
 
     #[test]
+    fn factors_common_multiplier_from_three_addends() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Const(ConstValue::new(2)),       // 1
+            SpirvLang::Const(ConstValue::new(3)),       // 2
+            SpirvLang::Const(ConstValue::new(5)),       // 3
+            SpirvLang::Mul([Id::from(0), Id::from(1)]), // 4 = x * 2
+            SpirvLang::Mul([Id::from(0), Id::from(2)]), // 5 = x * 3
+            SpirvLang::Add([Id::from(4), Id::from(5)]), // 6 = x*2 + x*3
+            SpirvLang::Mul([Id::from(0), Id::from(3)]), // 7 = x * 5
+            SpirvLang::Add([Id::from(6), Id::from(7)]), // 8 = (x*2 + x*3) + x*5
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::Mul([lhs, rhs])) = nodes.last() else {
+            panic!("expected mul root after factoring, got {:?}", nodes.last());
+        };
+        let (symbol, constant) = match (&nodes[usize::from(*lhs)], &nodes[usize::from(*rhs)]) {
+            (SpirvLang::Symbol(sym), SpirvLang::Const(val)) => (sym, val),
+            (SpirvLang::Const(val), SpirvLang::Symbol(sym)) => (sym, val),
+            other => panic!("unexpected operands after factoring three addends: {other:?}"),
+        };
+        assert_eq!(symbol, &Symbol::from("x"));
+        assert_eq!(constant.get(), 10, "factor should sum constants to 10");
+    }
+
+    #[test]
     fn factors_symbolic_multiplier_from_addition() {
         let expr = RecExpr::from(vec![
             SpirvLang::Symbol(Symbol::from("x")),       // 0
