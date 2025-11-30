@@ -28634,6 +28634,76 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_incoming_callable_data_interface_is_rejected_in_vulkan() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability RayTracingKHR",
+            "OpExtension \"SPV_KHR_ray_tracing\"",
+            "OpCapability RayTracingNV",
+            "OpExtension \"SPV_NV_ray_tracing\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%int = OpTypeInt 32 0",
+            "%data = OpTypeStruct %int",
+            "%ptr = OpTypePointer IncomingCallableDataKHR %data",
+            "%c0 = OpVariable %ptr IncomingCallableDataKHR",
+            "%c1 = OpVariable %ptr IncomingCallableDataKHR",
+            "OpEntryPoint CallableKHR %main \"main\" %c0 %c1",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Vulkan1_2)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::EntryPointInterfaceStorageClassDuplicate {
+                entry_point: Id::try_from(8).unwrap(),
+                storage_class: rspirv::spirv::StorageClass::IncomingCallableDataKHR,
+            }
+        );
+    }
+
+    #[test]
+    fn duplicate_hit_attribute_interface_is_rejected_in_vulkan() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability RayTracingKHR",
+            "OpExtension \"SPV_KHR_ray_tracing\"",
+            "OpCapability RayTracingNV",
+            "OpExtension \"SPV_NV_ray_tracing\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%int = OpTypeInt 32 0",
+            "%attr = OpTypeStruct %int",
+            "%ptr = OpTypePointer HitAttributeKHR %attr",
+            "%h0 = OpVariable %ptr HitAttributeKHR",
+            "%h1 = OpVariable %ptr HitAttributeKHR",
+            "OpEntryPoint ClosestHitKHR %main \"main\" %h0 %h1",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Vulkan1_2)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::EntryPointInterfaceStorageClassDuplicate {
+                entry_point: Id::try_from(8).unwrap(),
+                storage_class: rspirv::spirv::StorageClass::HitAttributeKHR,
+            }
+        );
+    }
+
+    #[test]
     fn bfloat16_interface_is_rejected_for_vulkan_input_output() {
         let text = [
             "OpCapability Shader",
