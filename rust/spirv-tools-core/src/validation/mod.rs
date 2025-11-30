@@ -18371,6 +18371,39 @@ mod tests {
     }
 
     #[test]
+    fn unreachable_definition_cannot_be_used_in_reachable_block() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%bool = OpTypeBool",
+            "%fn = OpTypeFunction %bool",
+            "%main = OpFunction %bool None %fn",
+            "%entry = OpLabel",
+            // Use a value defined only in an unreachable block.
+            "OpReturnValue %undef",
+            "%unreachable = OpLabel",
+            "%undef = OpConstantTrue %bool",
+            "OpReturnValue %undef",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("definitions in unreachable blocks cannot be used in reachable code");
+        assert_eq!(
+            err,
+            ValidationError::UnreachableBlock {
+                function: Id::try_from(4).unwrap(),
+                block: Id::try_from(7).unwrap()
+            }
+        );
+    }
+
+    #[test]
     fn operand_id_must_be_defined_globally() {
         let text = [
             "OpCapability Shader",
