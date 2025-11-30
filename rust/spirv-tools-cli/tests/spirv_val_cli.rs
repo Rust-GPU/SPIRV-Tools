@@ -58,6 +58,15 @@ fn spirv_val_supports_force_rust() -> bool {
     stdout.contains("--force-rust-validator")
 }
 
+fn spirv_val_supports_prefer_flags() -> bool {
+    let help = Command::new(env!("CARGO_BIN_EXE_spirv-val"))
+        .arg("--help")
+        .output()
+        .expect("run spirv-val --help");
+    let stdout = String::from_utf8_lossy(&help.stdout);
+    stdout.contains("--prefer-rust-validator") && stdout.contains("--prefer-cpp-validator")
+}
+
 fn reorder_extension_to_end(mut words: Vec<u32>) -> Vec<u32> {
     let mut idx = 5; // skip header
     let mut ext_slice: Option<(usize, usize)> = None;
@@ -116,4 +125,62 @@ OpFunctionEnd
         "expected layout error message, got: {}",
         stderr
     );
+}
+
+#[test]
+fn spirv_val_cli_accepts_prefer_rust_validator_flag() {
+    if !spirv_val_supports_prefer_flags() {
+        eprintln!("spirv-val binary does not support prefer flags; skipping");
+        return;
+    }
+
+    let file = write_binary(
+        r#"
+OpCapability Shader
+OpMemoryModel Logical Simple
+OpEntryPoint Vertex %main "main"
+%void = OpTypeVoid
+%void_fn = OpTypeFunction %void
+%main = OpFunction %void None %void_fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#,
+    );
+
+    let status = Command::new(env!("CARGO_BIN_EXE_spirv-val"))
+        .arg("--prefer-rust-validator")
+        .arg(file.path())
+        .status()
+        .expect("run spirv-val");
+    assert!(status.success(), "expected success, got {status:?}");
+}
+
+#[test]
+fn spirv_val_cli_accepts_prefer_cpp_validator_flag() {
+    if !spirv_val_supports_prefer_flags() {
+        eprintln!("spirv-val binary does not support prefer flags; skipping");
+        return;
+    }
+
+    let file = write_binary(
+        r#"
+OpCapability Shader
+OpMemoryModel Logical Simple
+OpEntryPoint Vertex %main "main"
+%void = OpTypeVoid
+%void_fn = OpTypeFunction %void
+%main = OpFunction %void None %void_fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#,
+    );
+
+    let status = Command::new(env!("CARGO_BIN_EXE_spirv-val"))
+        .arg("--prefer-cpp-validator")
+        .arg(file.path())
+        .status()
+        .expect("run spirv-val");
+    assert!(status.success(), "expected success, got {status:?}");
 }
