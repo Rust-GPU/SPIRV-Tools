@@ -1234,6 +1234,9 @@ pub enum ValidationError {
         /// The declared component value.
         component: u32,
     },
+    /// A Component decoration was applied without a corresponding Location decoration.
+    #[error("Component decoration requires a Location decoration on the same id")]
+    ComponentMissingLocation,
     /// An interpolation decoration is applied to a disallowed storage class.
     #[error(
         "interpolation decoration {decoration:?} is only permitted on Input/Output storage classes (found {storage_class:?})"
@@ -7313,6 +7316,7 @@ fn enforce_location_storage_classes(module: &Module) -> Result<(), ValidationErr
 
     // Map variables to their storage class.
     let mut var_storage: HashMap<ResultId, StorageClass> = HashMap::new();
+    let mut has_location: HashSet<ResultId> = HashSet::new();
     for inst in &module.types_global_values {
         if inst.class.opcode != rspirv::spirv::Op::Variable {
             continue;
@@ -7322,6 +7326,22 @@ fn enforce_location_storage_classes(module: &Module) -> Result<(), ValidationErr
         {
             if let Ok(id) = ResultId::try_from(result_id) {
                 var_storage.insert(id, *sc);
+            }
+        }
+    }
+    for inst in &module.annotations {
+        if inst.class.opcode != rspirv::spirv::Op::Decorate {
+            continue;
+        }
+        let Some(rspirv::dr::Operand::IdRef(target)) = inst.operands.first() else {
+            continue;
+        };
+        let Some(rspirv::dr::Operand::Decoration(decoration)) = inst.operands.get(1) else {
+            continue;
+        };
+        if *decoration == Decoration::Location {
+            if let Ok(var_id) = ResultId::try_from(*target) {
+                has_location.insert(var_id);
             }
         }
     }
@@ -7358,6 +7378,9 @@ fn enforce_location_storage_classes(module: &Module) -> Result<(), ValidationErr
                 return Err(ValidationError::ComponentOutOfRange {
                     component: *component,
                 });
+            }
+            if !has_location.contains(&var_id) {
+                return Err(ValidationError::ComponentMissingLocation);
             }
         }
     }
@@ -29720,6 +29743,30 @@ mod tests {
                 component: 5
             }
         );
+    }
+
+    #[test]
+    fn component_requires_location() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %in",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%float = OpTypeFloat 32",
+            "%ptr = OpTypePointer Input %float",
+            "%in = OpVariable %ptr Input",
+            "OpDecorate %in Component 1",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let err = MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Vulkan1_2)
+            .unwrap_err();
+        assert_eq!(err, ValidationError::ComponentMissingLocation);
     }
 
     #[test]
