@@ -197,6 +197,17 @@ pub fn format_validation_error(error: &ValidationError, names: Option<&FriendlyN
             names.format_id((*entry_point).into())
         ),
         (
+            ValidationError::EntryPointInterfaceFloatEncodingInvalid {
+                interface,
+                storage_class,
+                encoding,
+            },
+            Some(names),
+        ) => format!(
+            "{} in {storage_class:?} uses {encoding:?}",
+            names.format_id((*interface).into())
+        ),
+        (
             ValidationError::DuplicateEntryPoint {
                 function,
                 execution_model,
@@ -1422,6 +1433,19 @@ pub enum ValidationError {
         entry_point: Id,
         /// The duplicated storage class.
         storage_class: rspirv::spirv::StorageClass,
+    },
+    /// An entry point interface variable uses a disallowed floating-point encoding for its storage
+    /// class in Vulkan environments.
+    #[error(
+        "entry point interface {interface:?} in storage class {storage_class:?} uses disallowed floating-point encoding {encoding:?}"
+    )]
+    EntryPointInterfaceFloatEncodingInvalid {
+        /// The interface variable id.
+        interface: Id,
+        /// The storage class of the interface variable.
+        storage_class: rspirv::spirv::StorageClass,
+        /// The offending FP encoding.
+        encoding: rspirv::spirv::FPEncoding,
     },
     /// An entry point listed the same interface id more than once.
     #[error("entry point {entry_point:?} lists interface id {interface:?} more than once")]
@@ -7872,6 +7896,63 @@ fn validate_entry_point_interface_storage_classes(
         return Ok(());
     }
 
+    fn contains_disallowed_fp_encoding(
+        definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+        ty: ResultId,
+        seen: &mut HashSet<ResultId>,
+    ) -> Option<rspirv::spirv::FPEncoding> {
+        if !seen.insert(ty) {
+            return None;
+        }
+        let inst = definitions.get(&ty)?;
+        match inst.class.opcode {
+            rspirv::spirv::Op::TypeFloat => inst.operands.iter().find_map(|op| match op {
+                rspirv::dr::Operand::FPEncoding(encoding)
+                    if matches!(
+                        encoding,
+                        rspirv::spirv::FPEncoding::Float8E4M3EXT
+                            | rspirv::spirv::FPEncoding::Float8E5M2EXT
+                            | rspirv::spirv::FPEncoding::BFloat16KHR
+                    ) =>
+                {
+                    Some(*encoding)
+                }
+                _ => None,
+            }),
+            rspirv::spirv::Op::TypePointer => inst.operands.get(1).and_then(|op| {
+                if let rspirv::dr::Operand::IdRef(pointee) = op {
+                    ResultId::try_from(*pointee)
+                        .ok()
+                        .and_then(|id| contains_disallowed_fp_encoding(definitions, id, seen))
+                } else {
+                    None
+                }
+            }),
+            rspirv::spirv::Op::TypeVector
+            | rspirv::spirv::Op::TypeMatrix
+            | rspirv::spirv::Op::TypeArray
+            | rspirv::spirv::Op::TypeRuntimeArray => inst.operands.get(0).and_then(|op| {
+                if let rspirv::dr::Operand::IdRef(element) = op {
+                    ResultId::try_from(*element)
+                        .ok()
+                        .and_then(|id| contains_disallowed_fp_encoding(definitions, id, seen))
+                } else {
+                    None
+                }
+            }),
+            rspirv::spirv::Op::TypeStruct => inst.operands.iter().find_map(|op| {
+                if let rspirv::dr::Operand::IdRef(member) = op {
+                    ResultId::try_from(*member)
+                        .ok()
+                        .and_then(|id| contains_disallowed_fp_encoding(definitions, id, seen))
+                } else {
+                    None
+                }
+            }),
+            _ => None,
+        }
+    }
+
     for ep in &module.entry_points {
         let mut operands = ep.operands.iter();
         if ep.class.opcode == rspirv::spirv::Op::ConditionalEntryPointINTEL {
@@ -7947,6 +8028,35 @@ fn validate_entry_point_interface_storage_classes(
                                     );
                                 }
                                 seen_callable_data = true;
+                            }
+                            rspirv::spirv::StorageClass::Input
+                            | rspirv::spirv::StorageClass::Output => {
+                                if let Some(pointer_type) =
+                                    inst.result_type.and_then(|ty| ResultId::try_from(ty).ok())
+                                {
+                                    if let Some(pointer_inst) = definitions.get(&pointer_type) {
+                                        if let Some(rspirv::dr::Operand::IdRef(pointee)) =
+                                            pointer_inst.operands.get(1)
+                                        {
+                                            if let Ok(pointee_id) = ResultId::try_from(*pointee) {
+                                                let mut seen_types = HashSet::new();
+                                                if let Some(encoding) = contains_disallowed_fp_encoding(
+                                                    definitions,
+                                                    pointee_id,
+                                                    &mut seen_types,
+                                                ) {
+                                                    return Err(
+                                                        ValidationError::EntryPointInterfaceFloatEncodingInvalid {
+                                                            interface: id.into(),
+                                                            storage_class: *storage,
+                                                            encoding,
+                                                        },
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                             _ => {}
                         }
@@ -26411,9 +26521,40 @@ mod tests {
             "OpFunctionEnd",
         ]
         .join("\n");
-        MaybeValidModule::Text(&text)
-            .validate(TargetEnv::Universal1_6)
-            .expect("Non-Vulkan envs should not reject duplicate push constants");
+        MaybeValidModule::Text(&text).validate(TargetEnv::Universal1_6).unwrap();
+    }
+
+    #[test]
+    fn bfloat16_interface_is_rejected_for_vulkan_input_output() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability BFloat16TypeKHR",
+            "OpExtension \"SPV_KHR_bfloat16\"",
+            "OpExtension \"SPV_KHR_bfloat16_conversion\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%bf16 = OpTypeFloat 16 BFloat16KHR",
+            "%ptr = OpTypePointer Input %bf16",
+            "%var = OpVariable %ptr Input",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Vulkan1_2)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::EntryPointInterfaceFloatEncodingInvalid {
+                interface: Id::try_from(5).unwrap(),
+                storage_class: rspirv::spirv::StorageClass::Input,
+                encoding: rspirv::spirv::FPEncoding::BFloat16KHR,
+            }
+        );
     }
 
     #[test]
