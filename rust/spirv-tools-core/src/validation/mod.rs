@@ -2394,7 +2394,7 @@ fn validate_words(
     validate_decoration_target_categories(&module, &opcodes, &definitions, &capabilities)?;
     enforce_store_type_compatibility(&module, &definitions, &options)?;
     let entry_points = validate_entry_points(&module, &defined_result_ids, &opcodes, &definitions)?;
-    validate_entry_point_interface_storage_classes(&module, &definitions, env)?;
+    validate_entry_point_interface_storage_classes(&module, &definitions, &capabilities, env)?;
     validate_entry_point_locations(&module, &definitions, env)?;
     validate_execution_modes(&module, &entry_points, env, &options, &capabilities)?;
     validate_functions(&module)?;
@@ -8657,6 +8657,7 @@ fn validate_entry_points(
 fn validate_entry_point_interface_storage_classes(
     module: &Module,
     definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    capabilities: &HashSet<rspirv::spirv::Capability>,
     env: TargetEnv,
 ) -> Result<(), ValidationError> {
     if !is_vulkan_env(env) {
@@ -8792,6 +8793,14 @@ fn validate_entry_point_interface_storage_classes(
                                 entry_point: entry_point_id,
                                 interface: id.into_inner(),
                                 storage_class: *storage,
+                            });
+                        }
+                        if has_patch
+                            && !capabilities.contains(&rspirv::spirv::Capability::Tessellation)
+                        {
+                            return Err(ValidationError::DecorationRequiresCapability {
+                                decoration: rspirv::spirv::Decoration::Patch,
+                                capability: rspirv::spirv::Capability::Tessellation,
                             });
                         }
                         if has_patch
@@ -29084,6 +29093,37 @@ mod tests {
                 execution_model: rspirv::spirv::ExecutionModel::Vertex
             }
         );
+    }
+
+    #[test]
+    fn patch_interface_requires_tessellation_capability() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%int = OpTypeInt 32 0",
+            "%ptr = OpTypePointer Input %int",
+            "%patch = OpVariable %ptr Input",
+            "OpDecorate %patch Patch",
+            "OpEntryPoint TessellationControl %main \"main\" %patch",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Vulkan1_2)
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            ValidationError::MissingOperandCapability {
+                opcode: rspirv::spirv::Op::EntryPoint,
+                required_capability: rspirv::spirv::Capability::Tessellation,
+                ..
+            }
+        ));
     }
 
     #[test]
