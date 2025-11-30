@@ -8781,6 +8781,25 @@ fn validate_entry_point_interface_storage_classes(
                                     },
                                 );
                             }
+                        } else {
+                            // Non-ray entry points cannot list ray-specific storage classes.
+                            if matches!(
+                                *storage,
+                                rspirv::spirv::StorageClass::IncomingRayPayloadKHR
+                                    | rspirv::spirv::StorageClass::RayPayloadKHR
+                                    | rspirv::spirv::StorageClass::HitAttributeKHR
+                                    | rspirv::spirv::StorageClass::IncomingCallableDataKHR
+                                    | rspirv::spirv::StorageClass::CallableDataKHR
+                                    | rspirv::spirv::StorageClass::ShaderRecordBufferKHR
+                            ) {
+                                return Err(
+                                    ValidationError::EntryPointInterfaceStorageClassInvalid {
+                                        entry_point: entry_point_id,
+                                        interface: id.into_inner(),
+                                        storage_class: *storage,
+                                    },
+                                );
+                            }
                         }
                         match storage {
                             rspirv::spirv::StorageClass::PushConstant => {
@@ -28736,6 +28755,41 @@ mod tests {
             error,
             ValidationError::EntryPointInterfaceStorageClassDuplicate {
                 entry_point: Id::try_from(8).unwrap(),
+                storage_class: rspirv::spirv::StorageClass::IncomingRayPayloadKHR,
+            }
+        );
+    }
+
+    #[test]
+    fn non_ray_entry_point_rejects_ray_payload_interface() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability RayTracingKHR",
+            "OpExtension \"SPV_KHR_ray_tracing\"",
+            "OpCapability RayTracingNV",
+            "OpExtension \"SPV_NV_ray_tracing\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%int = OpTypeInt 32 0",
+            "%payload = OpTypeStruct %int",
+            "%ptr = OpTypePointer IncomingRayPayloadKHR %payload",
+            "%p0 = OpVariable %ptr IncomingRayPayloadKHR",
+            "OpEntryPoint Vertex %main \"main\" %p0",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Vulkan1_2)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::EntryPointInterfaceStorageClassInvalid {
+                entry_point: Id::try_from(7).unwrap(),
+                interface: Id::try_from(6).unwrap(),
                 storage_class: rspirv::spirv::StorageClass::IncomingRayPayloadKHR,
             }
         );
