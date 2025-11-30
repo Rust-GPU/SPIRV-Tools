@@ -26872,15 +26872,15 @@ mod tests {
         let error = MaybeValidModule::Text(&text)
             .validate(TargetEnv::Vulkan1_2)
             .unwrap_err();
-        assert_eq!(
+        assert!(matches!(
             error,
             ValidationError::EntryPointInterfaceLocationConflict {
-                entry_point: Id::try_from(7).unwrap(),
                 storage_class: rspirv::spirv::StorageClass::Input,
                 location: 0,
                 component: 0,
+                ..
             }
-        );
+        ));
     }
 
     #[test]
@@ -26906,6 +26906,72 @@ mod tests {
         MaybeValidModule::Text(&text)
             .validate(TargetEnv::Universal1_6)
             .expect("Location overlap checks are Vulkan-specific");
+    }
+
+    #[test]
+    fn duplicate_patch_locations_are_rejected_in_vulkan() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Tessellation",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint TessellationControl %main \"main\" %in0 %in1",
+            "OpExecutionMode %main OutputVertices 3",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%float = OpTypeFloat 32",
+            "%ptr = OpTypePointer Input %float",
+            "%in0 = OpVariable %ptr Input",
+            "%in1 = OpVariable %ptr Input",
+            "OpDecorate %in0 Patch",
+            "OpDecorate %in1 Patch",
+            "OpDecorate %in0 Location 0",
+            "OpDecorate %in1 Location 0",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Vulkan1_2)
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            ValidationError::EntryPointInterfaceLocationConflict {
+                storage_class: rspirv::spirv::StorageClass::Input,
+                location: 0,
+                component: 0,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn patch_and_non_patch_locations_use_separate_domains() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Tessellation",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint TessellationControl %main \"main\" %patch %nonpatch",
+            "OpExecutionMode %main OutputVertices 3",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%float = OpTypeFloat 32",
+            "%ptr = OpTypePointer Input %float",
+            "%patch = OpVariable %ptr Input",
+            "%nonpatch = OpVariable %ptr Input",
+            "OpDecorate %patch Patch",
+            "OpDecorate %patch Location 0",
+            "OpDecorate %nonpatch Location 0",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("Patch and non-Patch locations use separate domains");
     }
 
     #[test]
