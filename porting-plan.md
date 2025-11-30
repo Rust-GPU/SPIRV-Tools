@@ -135,6 +135,12 @@ Planned tasks:
 - Follow C++ handling for tessellation Patch interfaces (separate Patch/non-Patch location domains, capability/exec-mode requirements) with Rust regressions once layout/capability ordering is finalized.
 - Keep CLI/FFI parity runners updated to exercise these structural rules with the Rust validator forced on so rollout remains guarded.
 
+## Upcoming Milestone: Layout Ordering Parity Closure
+- Finish capability/extension ordering edge cases (conditional capability/extension placement after functions, duplication rules) with Rust regressions mirroring the C++ validator.
+- Lock decoration placement rules (Patch/Component/Location combinations, member vs. non-member scopes) with paired text/binary tests generated from the C++ corpus.
+- Add tessellation Patch interface location-domain tests once ordering/capability gates are aligned, and mirror C++ diagnostics for overlaps.
+- Keep the validator cache/FFI path exercising the Rust layout checks in CLI parity runs.
+
 ## Completed Milestone: Layout Ordering Parity
 Match the C++ validator’s capability/extension/import ordering and annotation placement rules in the Rust validator.
 
