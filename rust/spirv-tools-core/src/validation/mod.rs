@@ -7072,7 +7072,9 @@ mod tests {
         format_validation_error, format_validation_error_from_words, layout_compatible_types,
         parse_module, FriendlyNames, ValidationOptions,
     };
-    use rspirv::spirv::{Capability, FunctionControl, MemoryModel, Op, StorageClass};
+    use rspirv::spirv::{
+        Capability, ExecutionMode, FunctionControl, MemoryModel, Op, StorageClass,
+    };
     use std::collections::{HashMap, HashSet};
     use std::num::NonZeroU32;
     use std::sync::Arc;
@@ -17574,6 +17576,70 @@ mod tests {
             error,
             ValidationError::LayoutOutOfOrder {
                 opcode: rspirv::spirv::Op::ConditionalEntryPointINTEL
+            }
+        );
+    }
+
+    #[test]
+    fn conditional_entry_point_cannot_follow_execution_modes() {
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            4,          // bound (ids up to 3)
+            0,          // schema
+            op(2, Op::Capability as u16),
+            Capability::Shader as u32,
+            op(3, Op::MemoryModel as u16),
+            rspirv::spirv::AddressingModel::Logical as u32,
+            MemoryModel::GLSL450 as u32,
+            op(6, Op::ExecutionMode as u16),
+            3, // function id
+            ExecutionMode::LocalSize as u32,
+            1,
+            1,
+            1,
+            op(6, Op::ConditionalEntryPointINTEL as u16),
+            3, // function id
+            rspirv::spirv::ExecutionModel::Fragment as u32,
+            3, // function id again
+            0x6e69_616d, // "main"
+            0,
+        ];
+
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::ConditionalEntryPointINTEL
+            }
+        );
+    }
+
+    #[test]
+    fn extension_before_capability_is_rejected() {
+        let binary = vec![
+            0x0723_0203, // magic
+            0x0001_0000, // version
+            0,           // generator
+            1,           // bound (no ids)
+            0,           // schema
+            op(8, Op::Extension as u16), // OpExtension "SPV_GOOGLE_decorate_string" (before capabilities)
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[0],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[1],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[2],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[3],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[4],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[5],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[6],
+            op(2, Op::Capability as u16),
+            Capability::Shader as u32,
+        ];
+        let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Capability
             }
         );
     }
