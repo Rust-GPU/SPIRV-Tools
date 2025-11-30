@@ -200,6 +200,39 @@ pub fn format_validation_error(error: &ValidationError, names: Option<&FriendlyN
             names.format_id((*function).into()),
             names.format_id((*block).into())
         ),
+        (
+            ValidationError::MergeTargetMissing {
+                function, target, ..
+            },
+            Some(names),
+        ) => format!(
+            "{} missing block {}",
+            names.format_id((*function).into()),
+            names.format_id((*target).into())
+        ),
+        (
+            ValidationError::MergeInstructionNotBeforeTerminator {
+                function, block, ..
+            },
+            Some(names),
+        )
+        | (
+            ValidationError::InvalidMergeTerminator {
+                function, block, ..
+            },
+            Some(names),
+        )
+        | (ValidationError::DuplicateMergeInstruction { function, block }, Some(names))
+        | (
+            ValidationError::ContinueTargetMatchesMerge {
+                function, block, ..
+            },
+            Some(names),
+        ) => format!(
+            "{} in block {}",
+            names.format_id((*function).into()),
+            names.format_id((*block).into())
+        ),
         (ValidationError::MissingReturnValue { function, .. }, Some(names)) => {
             names.format_id((*function).into())
         }
@@ -1286,6 +1319,54 @@ pub enum ValidationError {
         /// The unreachable block's label id.
         block: Id,
     },
+    /// A merge instruction was not placed immediately before the block terminator.
+    #[error("merge instruction in block {block:?} of function {function:?} must immediately precede the terminator")]
+    MergeInstructionNotBeforeTerminator {
+        /// The function containing the block.
+        function: Id,
+        /// The block containing the misplaced merge.
+        block: Id,
+    },
+    /// A block contains multiple merge instructions.
+    #[error("block {block:?} in function {function:?} contains multiple merge instructions")]
+    DuplicateMergeInstruction {
+        /// The function containing the block.
+        function: Id,
+        /// The block with duplicate merge instructions.
+        block: Id,
+    },
+    /// A merge instruction targets a block that does not exist.
+    #[error("{kind} target {target:?} in block {block:?} of function {function:?} does not exist")]
+    MergeTargetMissing {
+        /// The function containing the merge.
+        function: Id,
+        /// The block containing the merge.
+        block: Id,
+        /// Whether the missing target is the merge or continue target.
+        kind: MergeTargetKind,
+        /// The missing block id.
+        target: Id,
+    },
+    /// A merge instruction is paired with an invalid terminator.
+    #[error("block {block:?} of function {function:?} has merge paired with invalid terminator {terminator:?}")]
+    InvalidMergeTerminator {
+        /// The function containing the merge.
+        function: Id,
+        /// The block containing the merge.
+        block: Id,
+        /// The unexpected terminator opcode.
+        terminator: rspirv::spirv::Op,
+    },
+    /// A loop merge specifies the same block for merge and continue targets.
+    #[error("loop merge in block {block:?} of function {function:?} uses the same target for merge and continue")]
+    ContinueTargetMatchesMerge {
+        /// The function containing the loop.
+        function: Id,
+        /// The block containing the loop merge.
+        block: Id,
+        /// The shared target id.
+        target: Id,
+    },
     /// A phi instruction has an unexpected number of incoming predecessors.
     #[error(
         "phi in block {block:?} of function {function:?} has {found} incoming values, expected {expected}"
@@ -1426,6 +1507,24 @@ pub enum ValidationError {
         /// The parameter type that was void.
         parameter: TypeId,
     },
+}
+
+/// Identifies the role of a merge target for diagnostics.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MergeTargetKind {
+    /// The merge block target.
+    Merge,
+    /// The loop continue target.
+    Continue,
+}
+
+impl std::fmt::Display for MergeTargetKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MergeTargetKind::Merge => f.write_str("merge"),
+            MergeTargetKind::Continue => f.write_str("continue"),
+        }
+    }
 }
 
 /// Categories of ids that must be non-zero.
@@ -1931,10 +2030,22 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                 .and_then(|raw| Id::try_from(raw).ok())
                 .unwrap_or(entry_label_id);
             let mut first_terminator_index = None;
+            let mut merge_instruction: Option<(usize, &rspirv::dr::Instruction)> = None;
             for (index, inst) in block.instructions.iter().enumerate() {
                 if rspirv::grammar::reflect::is_block_terminator(inst.class.opcode) {
                     first_terminator_index = Some(index);
                     break;
+                }
+                if inst.class.opcode == rspirv::spirv::Op::SelectionMerge
+                    || inst.class.opcode == rspirv::spirv::Op::LoopMerge
+                {
+                    if merge_instruction.is_some() {
+                        return Err(ValidationError::DuplicateMergeInstruction {
+                            function: function_id,
+                            block: block_label_id,
+                        });
+                    }
+                    merge_instruction = Some((index, inst));
                 }
             }
             if first_terminator_index.is_none() {
@@ -1952,6 +2063,94 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
             }
 
             let terminator_inst = &block.instructions[terminator_index];
+            if let Some((merge_index, merge_inst)) = merge_instruction {
+                if merge_index + 1 != terminator_index {
+                    return Err(ValidationError::MergeInstructionNotBeforeTerminator {
+                        function: function_id,
+                        block: block_label_id,
+                    });
+                }
+                match merge_inst.class.opcode {
+                    rspirv::spirv::Op::SelectionMerge => {
+                        match terminator_inst.class.opcode {
+                            rspirv::spirv::Op::BranchConditional | rspirv::spirv::Op::Switch => {}
+                            other => {
+                                return Err(ValidationError::InvalidMergeTerminator {
+                                    function: function_id,
+                                    block: block_label_id,
+                                    terminator: other,
+                                });
+                            }
+                        }
+                        if let Some(rspirv::dr::Operand::IdRef(raw_merge)) =
+                            merge_inst.operands.get(0)
+                        {
+                            if let Ok(target) = Id::try_from(*raw_merge) {
+                                if !block_ids.contains(&target) {
+                                    return Err(ValidationError::MergeTargetMissing {
+                                        function: function_id,
+                                        block: block_label_id,
+                                        kind: MergeTargetKind::Merge,
+                                        target,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    rspirv::spirv::Op::LoopMerge => {
+                        match terminator_inst.class.opcode {
+                            rspirv::spirv::Op::Branch | rspirv::spirv::Op::BranchConditional => {}
+                            other => {
+                                return Err(ValidationError::InvalidMergeTerminator {
+                                    function: function_id,
+                                    block: block_label_id,
+                                    terminator: other,
+                                });
+                            }
+                        }
+                        let merge_target = merge_inst.operands.get(0).and_then(|op| match op {
+                            rspirv::dr::Operand::IdRef(raw) => Id::try_from(*raw).ok(),
+                            _ => None,
+                        });
+                        let continue_target = merge_inst.operands.get(1).and_then(|op| match op {
+                            rspirv::dr::Operand::IdRef(raw) => Id::try_from(*raw).ok(),
+                            _ => None,
+                        });
+                        if let Some(target) = merge_target {
+                            if !block_ids.contains(&target) {
+                                return Err(ValidationError::MergeTargetMissing {
+                                    function: function_id,
+                                    block: block_label_id,
+                                    kind: MergeTargetKind::Merge,
+                                    target,
+                                });
+                            }
+                        }
+                        if let Some(target) = continue_target {
+                            if !block_ids.contains(&target) {
+                                return Err(ValidationError::MergeTargetMissing {
+                                    function: function_id,
+                                    block: block_label_id,
+                                    kind: MergeTargetKind::Continue,
+                                    target,
+                                });
+                            }
+                        }
+                        if let (Some(merge_target), Some(continue_target)) =
+                            (merge_target, continue_target)
+                        {
+                            if merge_target == continue_target {
+                                return Err(ValidationError::ContinueTargetMatchesMerge {
+                                    function: function_id,
+                                    block: block_label_id,
+                                    target: merge_target,
+                                });
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
             let check_target = |operand: &rspirv::dr::Operand| -> Result<(), ValidationError> {
                 if let rspirv::dr::Operand::IdRef(raw) = operand {
                     if let Ok(target) = Id::try_from(*raw) {
@@ -15420,6 +15619,107 @@ mod tests {
                 limit_kind: LIMIT_MAX_CONTROL_FLOW_NESTING_DEPTH,
                 limit: 0,
                 found: 1
+            }
+        );
+    }
+
+    #[test]
+    fn selection_merge_requires_conditional_terminator() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpSelectionMerge %merge None",
+            "OpBranch %merge",
+            "%merge = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("selection merges must pair with conditional terminators");
+        assert_eq!(
+            err,
+            ValidationError::InvalidMergeTerminator {
+                function: Id::try_from(3).unwrap(),
+                block: Id::try_from(4).unwrap(),
+                terminator: rspirv::spirv::Op::Branch
+            }
+        );
+    }
+
+    #[test]
+    fn merge_must_immediately_precede_terminator() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%bool = OpTypeBool",
+            "%ptr = OpTypePointer Function %bool",
+            "%true = OpConstantTrue %bool",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "%var = OpVariable %ptr Function",
+            "OpSelectionMerge %merge None",
+            "%tmp = OpLoad %bool %var",
+            "OpBranchConditional %true %merge %merge",
+            "%merge = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("merge must sit immediately before terminator");
+        assert_eq!(
+            err,
+            ValidationError::MergeInstructionNotBeforeTerminator {
+                function: Id::try_from(6).unwrap(),
+                block: Id::try_from(7).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn loop_merge_targets_must_be_distinct_and_exist() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            // merge and continue use the same target, which is invalid.
+            "OpLoopMerge %merge %merge None",
+            "OpBranch %merge",
+            "%merge = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("loop merge cannot reuse the merge block as continue target");
+        assert_eq!(
+            err,
+            ValidationError::ContinueTargetMatchesMerge {
+                function: Id::try_from(3).unwrap(),
+                block: Id::try_from(4).unwrap(),
+                target: Id::try_from(5).unwrap()
             }
         );
     }
