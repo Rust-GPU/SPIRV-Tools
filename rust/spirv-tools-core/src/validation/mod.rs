@@ -7521,6 +7521,92 @@ mod tests {
     }
 
     #[test]
+    fn extension_after_annotations_is_rejected() {
+        let binary = vec![
+            0x0723_0203, // magic
+            0x0001_0000, // version
+            0,           // generator
+            2,           // bound (ids up to 1)
+            0,           // schema
+            op(2, Op::Capability as u16),
+            Capability::Shader as u32,
+            op(3, Op::MemoryModel as u16),
+            rspirv::spirv::AddressingModel::Logical as u32,
+            MemoryModel::GLSL450 as u32,
+            op(3, Op::Decorate as u16),
+            1, // target id
+            rspirv::spirv::Decoration::RelaxedPrecision as u32,
+            op(8, Op::Extension as u16),
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[0],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[1],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[2],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[3],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[4],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[5],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[6],
+            op(4, Op::TypeInt as u16),
+            1, // result id
+            32,
+            0,
+        ];
+        let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Extension
+            }
+        );
+    }
+
+    #[test]
+    fn extension_after_ext_inst_import_is_rejected() {
+        let clock_ext = [
+            1599492179, 1599227979, 1684105331, 1667199589, 1801678700, 0,
+        ];
+        let glsl_ext = [0x4c53_4c47, 0x6474_732e, 0x3035_342e, 0];
+        let binary = vec![
+            0x0723_0203, // magic
+            0x0001_0000, // version
+            0,           // generator
+            2,           // bound (ids up to 1)
+            0,           // schema
+            op(2, Op::Capability as u16),
+            Capability::Shader as u32,
+            op(8, Op::Extension as u16),
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[0],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[1],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[2],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[3],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[4],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[5],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[6],
+            op(6, Op::ExtInstImport as u16),
+            1, // result id
+            glsl_ext[0],
+            glsl_ext[1],
+            glsl_ext[2],
+            glsl_ext[3],
+            op(7, Op::Extension as u16),
+            clock_ext[0],
+            clock_ext[1],
+            clock_ext[2],
+            clock_ext[3],
+            clock_ext[4],
+            clock_ext[5],
+            op(3, Op::MemoryModel as u16),
+            rspirv::spirv::AddressingModel::Logical as u32,
+            MemoryModel::GLSL450 as u32,
+        ];
+        let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Extension
+            }
+        );
+    }
+
+    #[test]
     fn names_section_must_follow_debug_section() {
         // OpName (Names section) precedes OpSource (Debug section), which should trigger an ordering error.
         let binary = vec![
