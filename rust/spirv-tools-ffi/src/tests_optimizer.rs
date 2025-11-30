@@ -641,6 +641,74 @@ mod optimizer_tests {
     }
 
     #[test]
+    fn optimizer_force_env_is_cleared_with_override_reset() {
+        let _env = OptimizerEnvGuard::new();
+        crate::set_rust_optimizer_override(true);
+        assert_eq!(
+            std::env::var("SPIRV_TOOLS_FORCE_RUST_OPT").as_deref(),
+            Ok("1")
+        );
+        crate::clear_rust_optimizer_override();
+        assert!(std::env::var("SPIRV_TOOLS_FORCE_RUST_OPT").is_err());
+    }
+
+    #[test]
+    fn optimizer_disable_env_wins_over_force_env() {
+        let _env = OptimizerEnvGuard::new();
+        std::env::set_var("SPIRV_TOOLS_DISABLE_RUST_OPT", "1");
+        std::env::set_var("SPIRV_TOOLS_FORCE_RUST_OPT", "1");
+
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(void, vec![]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        let c2 = b.constant_bit32(int, 2);
+        let c3 = b.constant_bit32(int, 3);
+        let add = b.i_add(int, None, c2, c3).expect("add");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_wrapped_block(&words);
+
+        std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+        std::env::remove_var("SPIRV_TOOLS_FORCE_RUST_OPT");
+
+        assert!(optimized.success, "wrapper should not error");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized.words, &mut loader).expect("parse optimized");
+        let module = loader.module();
+        let mut saw_add = false;
+        let mut found_const_five = false;
+        for inst in module.all_inst_iter() {
+            match inst.class.opcode {
+                rspirv::spirv::Op::IAdd if inst.result_id == Some(add) => saw_add = true,
+                rspirv::spirv::Op::Constant => {
+                    if inst.operands == vec![rspirv::dr::Operand::LiteralBit32(5u32)]
+                        && inst.result_id == Some(add)
+                    {
+                        found_const_five = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        assert!(
+            saw_add && !found_const_five,
+            "disable env should win even when force env is set"
+        );
+    }
+
+    #[test]
     fn optimizer_override_can_disable_even_without_env() {
         let _env = OptimizerEnvGuard::new();
         crate::set_rust_optimizer_override(false);
