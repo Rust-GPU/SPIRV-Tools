@@ -53,7 +53,7 @@ Planned tasks:
 - [x] Gate fragment shading rate built-ins to Vulkan-only via Rust validation with regression coverage.
 - [x] Gate mesh built-ins to Vulkan-only (extension-gated) with Rust regression coverage.
 - Keep the corpus test job (`ctest` with `SPIRV_TOOLS_DISABLE_RUST_VALIDATOR=0`) in CI to guard parity.
-- Document rollout/rollback procedures and env overrides for downstream consumers.
+- [x] Document rollout/rollback procedures and env overrides for downstream consumers.
 
 ## Upcoming Milestone: Decoration & Env Constraint Parity
 Close the remaining decoration/environment-specific gaps against the C++ validator tables.
