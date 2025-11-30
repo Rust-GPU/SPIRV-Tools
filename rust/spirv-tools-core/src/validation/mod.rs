@@ -28796,6 +28796,40 @@ mod tests {
     }
 
     #[test]
+    fn non_ray_entry_point_rejects_shader_record_buffer_interface() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability RayTracingKHR",
+            "OpExtension \"SPV_KHR_ray_tracing\"",
+            "OpCapability RayTracingNV",
+            "OpExtension \"SPV_NV_ray_tracing\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%int = OpTypeInt 32 0",
+            "%ptr = OpTypePointer ShaderRecordBufferKHR %int",
+            "%buf = OpVariable %ptr ShaderRecordBufferKHR",
+            "OpEntryPoint Vertex %main \"main\" %buf",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Vulkan1_2)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::EntryPointInterfaceStorageClassInvalid {
+                entry_point: Id::try_from(6).unwrap(),
+                interface: Id::try_from(5).unwrap(),
+                storage_class: rspirv::spirv::StorageClass::ShaderRecordBufferKHR,
+            }
+        );
+    }
+
+    #[test]
     fn duplicate_hit_attribute_interface_is_rejected_in_vulkan() {
         let text = [
             "OpCapability Shader",

@@ -694,4 +694,5 @@ Tasks for this milestone:
   - [x] Duplicate IncomingRayPayloadKHR interface now rejected in Vulkan with a Rust regression.
 - Enforce ray-tracing entry-point interface storage-class allowlists in the validator and extend regressions around ray-specific interface classes.
   - [x] Reject ray-only storage classes (payload/hit/callable) on non-ray entry points with Rust regression.
+  - [x] Reject ShaderRecordBufferKHR on non-ray entry points with Rust regression.
 - Wire entry-point interface checks through the CLI/FFI parity runs and update the corpus to match C++ diagnostics.
