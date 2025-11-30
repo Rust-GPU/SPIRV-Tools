@@ -629,6 +629,7 @@ Planned tasks:
   - Added validator regression ensuring `OpLoopMerge` remains immediately before its terminator (no intervening instructions) to mirror the C++ structured control-flow checks.
   - Added validator regression ensuring loop headers cannot terminate with `OpSwitch` after `OpLoopMerge`, keeping terminator constraints aligned with the C++ validator.
   - Added validator regressions for missing merge/continue targets (selection/loop merges must reference in-function blocks), matching the C++ structured CFG checks.
+  - Added validator regression for missing loop continue targets, ensuring `OpLoopMerge` continue operands reference valid blocks (parity with C++).
 
 ## Upcoming Milestone: Optimizer FFI/CLI Integration
 Expose the Rust optimizer through the existing C/C++ surfaces and provide CLI benchmarking.

@@ -17831,6 +17831,61 @@ mod tests {
     }
 
     #[test]
+    fn loop_continue_target_must_exist() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+
+        let void = b.type_void();
+        let bool_ty = b.type_bool();
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let header = b.begin_block(None).unwrap();
+        let merge = b.id();
+        let missing_continue = b.constant_false(bool_ty);
+        let body = b.id();
+        b.loop_merge(
+            merge,
+            missing_continue,
+            rspirv::spirv::LoopControl::NONE,
+            std::iter::empty::<rspirv::dr::Operand>(),
+        )
+        .unwrap();
+        b.branch(body).unwrap();
+
+        b.begin_block(Some(body)).unwrap();
+        b.branch(merge).unwrap();
+
+        b.begin_block(Some(merge)).unwrap();
+        b.ret().unwrap();
+
+        b.end_function().unwrap();
+
+        let words = b.module().assemble();
+        let err = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("loop continue target must be a block in the same function");
+        assert_eq!(
+            err,
+            ValidationError::MergeTargetMissing {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(header).unwrap(),
+                kind: MergeTargetKind::Continue,
+                target: Id::try_from(missing_continue).unwrap(),
+            }
+        );
+    }
+
+    #[test]
     fn loop_merge_targets_must_be_distinct_and_exist() {
         let text = [
             "OpCapability Shader",
