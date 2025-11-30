@@ -576,6 +576,7 @@ Tasks for this milestone:
 - Enforce structured merge rules: merges must immediately precede their terminators, selection merges pair with conditional/switch terminators, loop merge/continue targets must exist and be distinct, and structured terminators require a selection merge.
 - [x] Enforce structured dominance: selection/loop merge and continue targets must be dominated by their headers, with Rust regressions mirroring the C++ validator.
 - [x] Validate Vulkan resource interface linkage: Uniform/UniformConstant/StorageBuffer/PhysicalStorageBuffer variables require DescriptorSet and Binding decorations, with Rust regressions.
+- [x] Validate interface linkage for variables and descriptor sets/bindings where applicable per environment.
 - [x] Reject loop headers that terminate with anything other than the structured terminator after `OpLoopMerge` (e.g., `OpReturn`), matching C++ structured CFG checks with a Rust regression.
 - [x] Reject unreachable terminators immediately following `OpLoopMerge`, mirroring the C++ structured CFG validation with Rust coverage.
 - [x] Reject other non-branch terminators after `OpLoopMerge` (e.g., `OpReturnValue`, `OpKill`) with Rust regressions matching the C++ validator.
@@ -593,6 +594,7 @@ Run the full C++ validation suites with the Rust path forced on, close remaining
 
 Tasks for this milestone:
 - [x] Force-enable the Rust validator across CLI/FFI parity runs and record any mismatches against the C++ validator. (ctest suite passes with the Rust validator forced on)
+- Add a feature flag/CLI toggle to make the Rust validator the default path once parity is complete and document the fallback.
 - Close any remaining decoration/env-specific placement quirks (BuiltIn allowlists, interpolation/barycentric rules) with Rust regressions.
 - Keep the plan updated with rollout status and fallbacks, and land a toggle to make the Rust validator the default once parity is demonstrated.
 
