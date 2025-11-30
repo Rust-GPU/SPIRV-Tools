@@ -529,13 +529,21 @@ Tasks for this milestone:
 - Added operand-level regressions for `ImageOperands::MAKE_TEXEL_VISIBLE/AVAILABLE` to require `VulkanMemoryModel` (fail without capability, pass with capability/extension under `VulkanKHR` memory model).
 - Added operand-level regressions for `ImageOperands::NON_PRIVATE_TEXEL` to require `VulkanMemoryModel` (fail without capability, pass with capability/extension under `VulkanKHR` memory model).
 
-## Active Milestone: Layout Ordering Parity
-Tighten layout ordering to match the C++ validator’s section/decoration ordering rules.
+## Completed Milestone: Layout Ordering Parity
+Tightened layout ordering to match the C++ validator’s section/decoration ordering rules.
+
+- Enforced capability/extension/ExtInstImport ordering relative to debug/names/annotations/types/functions (including conditional variants) with binary regressions for each section boundary.
+- Added layout regressions for late `OpExtInstImport` placement (after memory model, after types/globals, and inside functions).
+- Kept validated-module caching wired through FFI/CLI for these ordering checks to avoid reparsing/renumbering.
+
+## Active Milestone: Function and CFG Validation
+Bring function-body validation in line with the C++ validator so the Rust validator can be enabled by default.
 
 Tasks for this milestone:
-- Enforce capability/extension ordering relative to debug/names/annotations and module layout (no late section regressions), including conditional extensions/capabilities.
-- Add decoration ordering/category checks that remain in the C++ tables (e.g., per-target-env decoration placement quirks) with paired text/binary regressions.
-- Keep ValidModule caching wired through FFI/CLI for these ordering checks to avoid reparsing/renumbering.
+- Validate function definitions: block ordering, structured control flow (merge/continue rules), and minimal well-formedness (single entry, required terminators).
+- Enforce SSA/phi correctness (dominance of defs, matching predecessor counts/types) and type checking for instructions beyond the current structural pass.
+- Validate interface linkage for variables and descriptor sets/bindings where applicable per environment.
+- Wire the Rust validator through FFI/CLI as the default path (behind a feature flag) once the above checks and layout parity are in place, backed by mirrored gtest/integration coverage.
 
 ## Upcoming Milestone: Layout Ordering Parity
 Tighten layout ordering to match the C++ validator’s section/decoration ordering rules.
