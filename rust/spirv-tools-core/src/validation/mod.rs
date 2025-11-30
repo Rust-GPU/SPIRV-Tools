@@ -18627,6 +18627,39 @@ mod tests {
     }
 
     #[test]
+    fn unreachable_definition_used_in_entry_is_rejected() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%int = OpTypeInt 32 1",
+            "%fn = OpTypeFunction %int",
+            "%one = OpConstant %int 1",
+            "%main = OpFunction %int None %fn",
+            "%entry = OpLabel",
+            "OpReturnValue %dead",
+            "%deadblock = OpLabel",
+            "%dead = OpIAdd %int %one %one",
+            "OpReturnValue %dead",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("uses of values defined only in unreachable blocks must be rejected");
+        assert_eq!(
+            err,
+            ValidationError::UnreachableBlock {
+                function: Id::try_from(5).unwrap(),
+                block: Id::try_from(8).unwrap()
+            }
+        );
+    }
+
+    #[test]
     fn operand_id_must_be_defined_globally() {
         let text = [
             "OpCapability Shader",
