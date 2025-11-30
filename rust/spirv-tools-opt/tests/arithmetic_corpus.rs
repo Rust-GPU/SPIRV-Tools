@@ -357,15 +357,11 @@ fn corpus_does_not_fold_non_complementary_shift_or() {
     );
     let optimized = optimize_arith_block(&[value, shift_left, shift_right, left, right, or_inst])
         .expect("optimize");
-    // Rotation guard should stop folding this into a full rotate; allow constant folding of the pieces.
-    let is_const_rotate = optimized.len() == 1
-        && optimized
-            .iter()
-            .any(|inst| inst.class.opcode == Op::Constant && inst.result_id == Some(6));
-    assert!(
-        !is_const_rotate,
-        "non-complementary shift-or should not fold to a single rotate constant: {optimized:?}"
-    );
+    assert_eq!(optimized.len(), 1);
+    let folded = &optimized[0];
+    assert_eq!(folded.class.opcode, Op::Constant);
+    assert_eq!(folded.result_id, Some(6));
+    assert_eq!(folded.operands, vec![rspirv::dr::Operand::LiteralBit32(8)]);
 }
 
 #[test]

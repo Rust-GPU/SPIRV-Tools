@@ -295,6 +295,9 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("merge-shrs-const"; "(shr_s (shr_s ?x ?a) ?b)" => {
             MergeShift { x: var("?x"), a: var("?a"), b: var("?b"), kind: ShiftKind::RightSigned }
         }),
+        rewrite!("shl-const-fold"; "(shl ?a ?b)" => { ShlFoldConst { a: var("?a"), b: var("?b") } }),
+        rewrite!("shr-u-const-fold"; "(shr_u ?a ?b)" => { ShrUFoldConst { a: var("?a"), b: var("?b") } }),
+        rewrite!("shr-s-const-fold"; "(shr_s ?a ?b)" => { ShrSFoldConst { a: var("?a"), b: var("?b") } }),
         rewrite!("shl-zero"; "(shl ?x ?c)" => "?x" if is_const_zero(var("?c"))),
         rewrite!("shr-u-zero"; "(shr_u ?x ?c)" => "?x" if is_const_zero(var("?c"))),
         rewrite!("shr-s-zero"; "(shr_s ?x ?c)" => "?x" if is_const_zero(var("?c"))),
@@ -825,6 +828,18 @@ struct MergeShift {
     a: Var,
     b: Var,
     kind: ShiftKind,
+}
+struct ShlFoldConst {
+    a: Var,
+    b: Var,
+}
+struct ShrUFoldConst {
+    a: Var,
+    b: Var,
+}
+struct ShrSFoldConst {
+    a: Var,
+    b: Var,
 }
 struct CancelMulDiv {
     x: Var,
@@ -2174,6 +2189,75 @@ impl Applier<SpirvLang, ()> for MergeShift {
     }
 }
 
+impl Applier<SpirvLang, ()> for ShlFoldConst {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(lhs) = pure_const_value(egraph, subst[self.a]) else {
+            return Vec::new();
+        };
+        let Some(rhs) = pure_const_value(egraph, subst[self.b]) else {
+            return Vec::new();
+        };
+        let amount = rhs.get() & 31;
+        let folded = ConstValue::new(lhs.get().wrapping_shl(amount));
+        let id = egraph.add(SpirvLang::Const(folded));
+        egraph.union(eclass, id);
+        vec![id]
+    }
+}
+
+impl Applier<SpirvLang, ()> for ShrUFoldConst {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(lhs) = pure_const_value(egraph, subst[self.a]) else {
+            return Vec::new();
+        };
+        let Some(rhs) = pure_const_value(egraph, subst[self.b]) else {
+            return Vec::new();
+        };
+        let amount = rhs.get() & 31;
+        let folded = ConstValue::new(lhs.get().wrapping_shr(amount));
+        let id = egraph.add(SpirvLang::Const(folded));
+        egraph.union(eclass, id);
+        vec![id]
+    }
+}
+
+impl Applier<SpirvLang, ()> for ShrSFoldConst {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(lhs) = pure_const_value(egraph, subst[self.a]) else {
+            return Vec::new();
+        };
+        let Some(rhs) = pure_const_value(egraph, subst[self.b]) else {
+            return Vec::new();
+        };
+        let amount = rhs.get() & 31;
+        let folded = ConstValue::new((lhs.get() as i32).wrapping_shr(amount) as u32);
+        let id = egraph.add(SpirvLang::Const(folded));
+        egraph.union(eclass, id);
+        vec![id]
+    }
+}
+
 impl Applier<SpirvLang, ()> for MulMergeConst {
     fn apply_one(
         &self,
@@ -2202,6 +2286,26 @@ fn const_value(egraph: &EGraph<SpirvLang, ()>, id: Id) -> Option<ConstValue> {
         SpirvLang::Const(value) => Some(*value),
         _ => None,
     })
+}
+
+fn pure_const_value(egraph: &EGraph<SpirvLang, ()>, id: Id) -> Option<ConstValue> {
+    let mut constants = egraph[id].nodes.iter().filter_map(|node| match node {
+        SpirvLang::Const(value) => Some(*value),
+        _ => None,
+    });
+    let value = constants.next()?;
+    if constants.next().is_some() {
+        return None;
+    }
+    if egraph[id]
+        .nodes
+        .iter()
+        .all(|node| matches!(node, SpirvLang::Const(_)))
+    {
+        Some(value)
+    } else {
+        None
+    }
 }
 
 fn gcd_u32(mut a: u32, mut b: u32) -> u32 {
@@ -2984,6 +3088,21 @@ mod tests {
     }
 
     #[test]
+    fn folds_const_sub_then_add_back() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new(42)), // 0
+            SpirvLang::Const(ConstValue::new(5)),  // 1
+            SpirvLang::Sub([Id::from(0), Id::from(1)]),
+            SpirvLang::Add([Id::from(2), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Const(ConstValue::new(42))])
+        );
+    }
+
+    #[test]
     fn rewrites_arithmetic_shift_right_zero_offset_identity() {
         let expr = RecExpr::from(vec![
             SpirvLang::Symbol(Symbol::from("x")),        // 0
@@ -3003,6 +3122,45 @@ mod tests {
             has_symbol,
             "expected arithmetic shift-right by zero to collapse to identity"
         );
+    }
+
+    #[test]
+    fn folds_constant_shifts() {
+        let cases = [
+            (
+                RecExpr::from(vec![
+                    SpirvLang::Const(ConstValue::new(3)),       // 0
+                    SpirvLang::Const(ConstValue::new(1)),       // 1
+                    SpirvLang::Shl([Id::from(0), Id::from(1)]), // 2 = 3 << 1
+                ]),
+                ConstValue::new(6),
+            ),
+            (
+                RecExpr::from(vec![
+                    SpirvLang::Const(ConstValue::new(4)),        // 0
+                    SpirvLang::Const(ConstValue::new(1)),        // 1
+                    SpirvLang::ShrU([Id::from(0), Id::from(1)]), // 2 = 4 >> 1
+                ]),
+                ConstValue::new(2),
+            ),
+            (
+                RecExpr::from(vec![
+                    SpirvLang::Const(ConstValue::new(0x8000_0000)), // 0
+                    SpirvLang::Const(ConstValue::new(1)),           // 1
+                    SpirvLang::ShrS([Id::from(0), Id::from(1)]),    // 2 = arithmetic right shift
+                ]),
+                ConstValue::new(0xC000_0000),
+            ),
+        ];
+
+        for (expr, expected) in cases {
+            let optimized = optimize_expr(&expr);
+            assert_eq!(
+                optimized,
+                RecExpr::from(vec![SpirvLang::Const(expected)]),
+                "failed to fold shift in {expr:?}"
+            );
+        }
     }
 
     #[test]
