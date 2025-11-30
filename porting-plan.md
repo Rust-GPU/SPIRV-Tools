@@ -128,6 +128,15 @@ Planned tasks:
 - [x] Expose CLI toggles (`--prefer-rust-validator` / `--prefer-cpp-validator`) to steer the default when both validators are available.
 - [x] Add env-level defaults (`SPIRV_TOOLS_PREFER_RUST_VALIDATOR` / `SPIRV_TOOLS_PREFER_CPP_VALIDATOR`) to steer the default without forcing.
 
+## Upcoming Milestone: Layout Ordering Parity
+Match the C++ validator’s capability/extension/import ordering and annotation placement rules in the Rust validator.
+
+Planned tasks:
+- Enforce capability/extension/import ordering relative to debug/names/annotations/types/globals/functions, including conditional capabilities/extensions, with Rust regression tests.
+- Mirror annotation-placement rules (decorations, decoration groups, member decorations/names) against function/after-function sections with Rust tests.
+- Keep block-layout skipping from bypassing ordering/placement validation.
+- Verify ordering rules on binaries the text assembler would reorder (hand-built word tests) to mirror the C++ coverage.
+
 ## Active Milestone: Structural Validator Rules
 Enforce target-environment specific structural rules and reuse validated modules across interfaces.
 
