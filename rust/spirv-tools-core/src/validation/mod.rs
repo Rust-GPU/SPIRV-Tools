@@ -3141,10 +3141,16 @@ fn consumed_components_for_type(
     }
 }
 
-fn location_and_component(
-    module: &Module,
-    target: ResultId,
-) -> Option<(u32, u32)> {
+fn has_patch_decoration(module: &Module, target: ResultId) -> bool {
+    let target_raw = target.into_inner().get();
+    module.annotations.iter().any(|dec| {
+        dec.class.opcode == rspirv::spirv::Op::Decorate
+            && matches!(dec.operands.get(0), Some(rspirv::dr::Operand::IdRef(id)) if *id == target_raw)
+            && matches!(dec.operands.get(1), Some(rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::Patch)))
+    })
+}
+
+fn location_and_component(module: &Module, target: ResultId) -> Option<(u32, u32)> {
     let mut location = None;
     let mut component = 0;
     let target_raw = target.into_inner().get();
@@ -3215,8 +3221,10 @@ fn validate_entry_point_locations(
             .ok_or(ValidationError::InvalidEntryPointOperand)?;
         // Skip name.
         let operands = operands.skip(1);
-    let mut input_locs = HashSet::new();
-    let mut output_locs = HashSet::new();
+        let mut input_locs = HashSet::new();
+        let mut output_locs = HashSet::new();
+        let mut patch_input_locs = HashSet::new();
+        let mut patch_output_locs = HashSet::new();
         for operand in operands {
             let interface_id = match operand {
                 rspirv::dr::Operand::IdRef(id) => *id,
@@ -3259,10 +3267,13 @@ fn validate_entry_point_locations(
             let consumed = pointee_type
                 .and_then(|ty| consumed_components_for_type(ty, definitions, &mut HashSet::new()))
                 .unwrap_or(1);
-            let loc_set = if storage_class == rspirv::spirv::StorageClass::Input {
-                &mut input_locs
-            } else {
-                &mut output_locs
+            let is_patch = has_patch_decoration(module, interface_id);
+            let loc_set = match (storage_class, is_patch) {
+                (rspirv::spirv::StorageClass::Input, true) => &mut patch_input_locs,
+                (rspirv::spirv::StorageClass::Input, false) => &mut input_locs,
+                (rspirv::spirv::StorageClass::Output, true) => &mut patch_output_locs,
+                (rspirv::spirv::StorageClass::Output, false) => &mut output_locs,
+                _ => unreachable!(),
             };
             let start_index = location
                 .saturating_mul(4)
@@ -7226,16 +7237,6 @@ fn is_float_scalar_of_width(
     }
 }
 
-fn has_patch_decoration(module: &Module, target: ResultId) -> bool {
-    use rspirv::spirv::{Decoration, Op};
-
-    module.annotations.iter().any(|inst| {
-        inst.class.opcode == Op::Decorate
-            && matches!(inst.operands.first(), Some(rspirv::dr::Operand::IdRef(id)) if *id == u32::from(target))
-            && matches!(inst.operands.get(1), Some(rspirv::dr::Operand::Decoration(dec)) if *dec == Decoration::Patch)
-    })
-}
-
 fn literal_u32(op: &rspirv::dr::Operand) -> Option<u32> {
     match op {
         rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
@@ -8767,6 +8768,7 @@ mod tests {
     fn validate_module_rejects_ids_beyond_bound() {
         let text = [
             "OpCapability Shader",
+            "OpCapability Tessellation",
             "OpMemoryModel Logical GLSL450",
             "%void = OpTypeVoid",
         ]
@@ -8790,6 +8792,7 @@ mod tests {
     fn validate_module_requires_memory_model() {
         let text = [
             "OpCapability Shader",
+            "OpCapability Tessellation",
             "%void = OpTypeVoid",
             "%fn = OpTypeFunction %void",
         ]
