@@ -20907,6 +20907,70 @@ mod tests {
     }
 
     #[test]
+    fn extension_cannot_appear_after_annotations() {
+        // Regular extensions must also precede annotations/names/types/globals.
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpName %1 \"x\"",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+        ]
+        .join("\n");
+        let mut words = assemble_text(&text).expect("assemble");
+        // Append an extension after the annotations/types to trigger ordering.
+        words.extend_from_slice(&[
+            0x0008_000a, // OpExtension "SPV_GOOGLE_decorate_string"
+            0x5f56_5053,
+            0x474f_4f47,
+            0x645f_454c,
+            0x726f_6365,
+            0x5f65_7461,
+            0x6972_7473,
+            0x0000_676e,
+        ]);
+
+        let err = validate_module(&words, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            err,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Extension
+            }
+        );
+    }
+
+    #[test]
+    fn conditional_extension_cannot_appear_after_names() {
+        // Conditional extensions must not trail the names section.
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpName %1 \"x\"",
+            "%void = OpTypeVoid",
+        ]
+        .join("\n");
+        let mut words = assemble_text(&text).expect("assemble");
+        words.extend_from_slice(&[
+            0x0008_1868, // OpConditionalExtensionINTEL "SPV_GOOGLE_decorate_string"
+            0x5f56_5053,
+            0x474f_4f47,
+            0x645f_454c,
+            0x726f_6365,
+            0x5f65_7461,
+            0x6972_7473,
+            0x0000_676e,
+        ]);
+
+        let err = validate_module(&words, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            err,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::ConditionalExtensionINTEL
+            }
+        );
+    }
+
+    #[test]
     fn conditional_capability_disallowed_in_env() {
         // Conditional capabilities must still respect the target environment allowlist.
         let binary = vec![
