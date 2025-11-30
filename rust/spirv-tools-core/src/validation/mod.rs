@@ -4291,6 +4291,18 @@ fn validate_instruction_requirements(
         for (index, operand) in inst.operands.iter().enumerate() {
             let resolved_operand = resolve_id_operand(module, operand);
             let operand = resolved_operand.as_ref().unwrap_or(operand);
+            if (inst.class.opcode == rspirv::spirv::Op::ExecutionMode
+                || inst.class.opcode == rspirv::spirv::Op::ExecutionModeId)
+                && matches!(
+                    operand,
+                    rspirv::dr::Operand::ExecutionMode(rspirv::spirv::ExecutionMode::OutputVertices)
+                )
+            {
+                // OutputVertices is permitted by multiple capabilities depending on execution
+                // model (Geometry, Tessellation, Mesh); those are validated separately, so skip
+                // operand-level capability checks here to avoid over-constraining.
+                continue;
+            }
             if matches!(operand, rspirv::dr::Operand::Capability(_)) {
                 // Capability dependencies are validated separately to avoid over-constraining
                 // the declaration order.
