@@ -174,6 +174,18 @@ pub fn format_validation_error(error: &ValidationError, names: Option<&FriendlyN
         (ValidationError::InvalidEntryPointTarget { target, .. }, Some(names)) => {
             names.format_id((*target).into())
         }
+        (
+            ValidationError::EntryPointInterfaceStorageClassInvalid {
+                entry_point,
+                interface,
+                ..
+            },
+            Some(names),
+        ) => format!(
+            "{} interface {}",
+            names.format_id((*entry_point).into()),
+            names.format_id((*interface).into())
+        ),
         (ValidationError::FunctionDeclarationAfterDefinition { function }, Some(names)) => {
             names.format_id((*function).into())
         }
@@ -1356,6 +1368,18 @@ pub enum ValidationError {
         /// The opcode actually defining that id.
         opcode: rspirv::spirv::Op,
     },
+    /// An entry point interface variable uses an invalid storage class.
+    #[error(
+        "entry point {entry_point:?} interface {interface:?} uses storage class {storage_class:?}"
+    )]
+    EntryPointInterfaceStorageClassInvalid {
+        /// The entry-point function id.
+        entry_point: Id,
+        /// The interface variable id.
+        interface: Id,
+        /// The invalid storage class.
+        storage_class: rspirv::spirv::StorageClass,
+    },
     /// An execution mode targets a function that is not declared as an entry point.
     #[error("execution mode target {function} is not declared as an entry point")]
     ExecutionModeWithoutEntryPoint {
@@ -2172,7 +2196,8 @@ fn validate_words(
     enforce_interpolation_entry_point_compatibility(&module, &definitions, env)?;
     validate_decoration_target_categories(&module, &opcodes, &definitions, &capabilities)?;
     enforce_store_type_compatibility(&module, &definitions, &options)?;
-    let entry_points = validate_entry_points(&module, &defined_result_ids, &opcodes)?;
+    let entry_points =
+        validate_entry_points(&module, &defined_result_ids, &opcodes, &definitions)?;
     validate_execution_modes(&module, &entry_points, env, &options)?;
     validate_functions(&module)?;
     validate_operand_definitions(&module, &defined_ids)?;
@@ -7681,6 +7706,7 @@ fn validate_entry_points(
     module: &Module,
     defined_ids: &HashSet<ResultId>,
     opcodes: &HashMap<ResultId, rspirv::spirv::Op>,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
 ) -> Result<HashSet<ResultId>, ValidationError> {
     let mut entry_points = HashSet::new();
     for ep in &module.entry_points {
@@ -7735,6 +7761,21 @@ fn validate_entry_points(
                             target: interface_id.into_inner(),
                             opcode: *opcode,
                         });
+                    }
+                    if let Some(var_inst) = definitions.get(&interface_id) {
+                        if let Some(rspirv::dr::Operand::StorageClass(storage)) =
+                            var_inst.operands.get(0)
+                        {
+                            if *storage == rspirv::spirv::StorageClass::Function {
+                                return Err(
+                                    ValidationError::EntryPointInterfaceStorageClassInvalid {
+                                        entry_point: function_id.into_inner(),
+                                        interface: interface_id.into_inner(),
+                                        storage_class: *storage,
+                                    },
+                                );
+                            }
+                        }
                     }
                 }
             }
@@ -26078,6 +26119,36 @@ mod tests {
             ValidationError::InvalidEntryPointTarget {
                 target: Id::try_from(1).unwrap(),
                 opcode: rspirv::spirv::Op::TypeVoid
+            }
+        );
+    }
+
+    #[test]
+    fn entry_point_interfaces_cannot_reference_function_variables() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%int = OpTypeInt 32 0",
+            "%ptr_fn = OpTypePointer Function %int",
+            "%fn = OpTypeFunction %void",
+            "OpEntryPoint Vertex %main \"main\" %func_var",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "%func_var = OpVariable %ptr_fn Function",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Universal1_6)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::EntryPointInterfaceStorageClassInvalid {
+                entry_point: Id::try_from(5).unwrap(),
+                interface: Id::try_from(6).unwrap(),
+                storage_class: rspirv::spirv::StorageClass::Function,
             }
         );
     }
