@@ -504,7 +504,7 @@ Percentages are approximate and will be updated as new checklists are added for 
 - Mapping of large switch-based operand logic into data-driven Rust structures without performance regressions.
 
 ## Next Up
-1. Finish function/CFG parity: deepen SSA/type checking inside functions (operand types beyond calls/phi), validate interface linkage and descriptor set/binding rules, grow merge/continue/phi regressions, and align dominance rules with the C++ validator where they still diverge.
+1. Finish function/CFG parity: deepen SSA/type checking inside functions (operand types beyond calls/phi), validate interface linkage and descriptor set/binding rules, grow merge/continue/phi regressions (including duplicate label detection), and align dominance rules with the C++ validator where they still diverge.
 2. Close any remaining decoration/env constraints that are still table-driven in C++ (e.g., leftover built-in placement quirks) and back them with Rust regressions.
 3. Push validated-module caching through CLI/FFI plumbing where re-parsing still happens, keeping the Rust path zero-cost when reused.
 4. Round out SPIR-V version/extension gating pulled from the grammar (instruction/operand-level) and document the Rust-default validator rollout knobs for CLI/FFI callers.
@@ -541,6 +541,7 @@ Tasks for this milestone:
 - Detect unreachable basic blocks in functions and report them with typed diagnostics; added regression in Rust validator tests.
 - Enforce structured merge rules: merges must immediately precede their terminators, selection merges pair with conditional/switch terminators, loop merge/continue targets must exist and be distinct, and structured terminators require a selection merge.
 - [x] Enforce function call signatures (target must be a function definition; return/argument counts and types must match the callee) with Rust regressions.
+- [x] Reject values defined in one function that are referenced in another, with Rust regression coverage.
 - Validate interface linkage for variables and descriptor sets/bindings where applicable per environment.
 - Wire the Rust validator through FFI/CLI as the default path (behind a feature flag) once the above checks and layout parity are in place, backed by mirrored gtest/integration coverage.
 
