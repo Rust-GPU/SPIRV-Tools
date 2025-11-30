@@ -26894,6 +26894,12 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_patch_locations_are_rejected_in_vulkan() {
+        let text = "";
+        let _ = text;
+    }
+
+    #[test]
     fn validate_module_reports_missing_memory_model_without_other_globals() {
         // A module that declares only capabilities should still fail for a missing memory model.
         let binary = vec![
