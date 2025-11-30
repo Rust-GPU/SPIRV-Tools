@@ -8846,8 +8846,82 @@ fn validate_entry_point_interface_storage_classes(
                                 }
                                 seen_callable_data = true;
                             }
-                            rspirv::spirv::StorageClass::Input
-                            | rspirv::spirv::StorageClass::Output => {
+                            rspirv::spirv::StorageClass::Input => {
+                                let allow_input = matches!(
+                                    exec_model,
+                                    rspirv::spirv::ExecutionModel::Vertex
+                                        | rspirv::spirv::ExecutionModel::TessellationControl
+                                        | rspirv::spirv::ExecutionModel::TessellationEvaluation
+                                        | rspirv::spirv::ExecutionModel::Geometry
+                                        | rspirv::spirv::ExecutionModel::Fragment
+                                        | rspirv::spirv::ExecutionModel::MeshEXT
+                                        | rspirv::spirv::ExecutionModel::TaskEXT
+                                        | rspirv::spirv::ExecutionModel::GLCompute
+                                        | rspirv::spirv::ExecutionModel::RayGenerationKHR
+                                        | rspirv::spirv::ExecutionModel::IntersectionKHR
+                                        | rspirv::spirv::ExecutionModel::AnyHitKHR
+                                        | rspirv::spirv::ExecutionModel::ClosestHitKHR
+                                        | rspirv::spirv::ExecutionModel::MissKHR
+                                        | rspirv::spirv::ExecutionModel::CallableKHR
+                                );
+                                if !allow_input {
+                                    return Err(
+                                        ValidationError::EntryPointInterfaceStorageClassInvalid {
+                                            entry_point: entry_point_id,
+                                            interface: id.into_inner(),
+                                            storage_class: *storage,
+                                        },
+                                    );
+                                }
+                                if let Some(pointer_type) =
+                                    inst.result_type.and_then(|ty| ResultId::try_from(ty).ok())
+                                {
+                                    if let Some(pointer_inst) = definitions.get(&pointer_type) {
+                                        if let Some(rspirv::dr::Operand::IdRef(pointee)) =
+                                            pointer_inst.operands.get(1)
+                                        {
+                                            if let Ok(pointee_id) = ResultId::try_from(*pointee) {
+                                                let mut seen_types = HashSet::new();
+                                                if let Some(encoding) =
+                                                    contains_disallowed_fp_encoding(
+                                                        definitions,
+                                                        pointee_id,
+                                                        &mut seen_types,
+                                                    )
+                                                {
+                                                    return Err(
+                                                        ValidationError::EntryPointInterfaceFloatEncodingInvalid {
+                                                            interface: id.into(),
+                                                            storage_class: *storage,
+                                                            encoding,
+                                                        },
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            rspirv::spirv::StorageClass::Output => {
+                                let allow_output = matches!(
+                                    exec_model,
+                                    rspirv::spirv::ExecutionModel::Vertex
+                                        | rspirv::spirv::ExecutionModel::TessellationControl
+                                        | rspirv::spirv::ExecutionModel::TessellationEvaluation
+                                        | rspirv::spirv::ExecutionModel::Geometry
+                                        | rspirv::spirv::ExecutionModel::Fragment
+                                        | rspirv::spirv::ExecutionModel::MeshEXT
+                                        | rspirv::spirv::ExecutionModel::TaskEXT
+                                );
+                                if !allow_output {
+                                    return Err(
+                                        ValidationError::EntryPointInterfaceStorageClassInvalid {
+                                            entry_point: entry_point_id,
+                                            interface: id.into_inner(),
+                                            storage_class: *storage,
+                                        },
+                                    );
+                                }
                                 if let Some(pointer_type) =
                                     inst.result_type.and_then(|ty| ResultId::try_from(ty).ok())
                                 {
@@ -28825,6 +28899,36 @@ mod tests {
                 entry_point: Id::try_from(6).unwrap(),
                 interface: Id::try_from(5).unwrap(),
                 storage_class: rspirv::spirv::StorageClass::ShaderRecordBufferKHR,
+            }
+        );
+    }
+
+    #[test]
+    fn compute_entry_point_rejects_output_interface() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%int = OpTypeInt 32 0",
+            "%ptr = OpTypePointer Output %int",
+            "%out = OpVariable %ptr Output",
+            "OpEntryPoint GLCompute %main \"main\" %out",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Vulkan1_2)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::EntryPointInterfaceStorageClassInvalid {
+                entry_point: Id::try_from(6).unwrap(),
+                interface: Id::try_from(5).unwrap(),
+                storage_class: rspirv::spirv::StorageClass::Output,
             }
         );
     }
