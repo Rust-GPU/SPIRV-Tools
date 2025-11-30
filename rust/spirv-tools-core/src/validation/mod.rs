@@ -20233,6 +20233,101 @@ mod tests {
     }
 
     #[test]
+    fn shader_call_scope_requires_ray_tracing_capability() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut builder = Builder::new();
+        builder.set_version(1, 4);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.extension("SPV_KHR_ray_tracing");
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = builder.type_void();
+        let uint = builder.type_int(32, 0);
+        let function_type = builder.type_function(void, std::iter::empty::<u32>());
+        let shader_call_scope =
+            builder.constant_bit32(uint, rspirv::spirv::Scope::ShaderCallKHR as u32);
+        let semantics =
+            builder.constant_bit32(uint, rspirv::spirv::MemorySemantics::ACQUIRE.bits());
+
+        builder
+            .begin_function(
+                void,
+                None,
+                rspirv::spirv::FunctionControl::NONE,
+                function_type,
+            )
+            .unwrap();
+        builder.begin_block(None).unwrap();
+        builder
+            .control_barrier(shader_call_scope, shader_call_scope, semantics)
+            .unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+
+        let words = builder.module().assemble();
+        let error = words
+            .as_slice()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect_err("ShaderCallKHR scope requires RayTracingKHR capability when present");
+        assert_eq!(
+            error,
+            ValidationError::MissingOperandCapability {
+                opcode: rspirv::spirv::Op::ControlBarrier,
+                operand_index: 0,
+                required_capability: rspirv::spirv::Capability::RayTracingKHR
+            }
+        );
+    }
+
+    #[test]
+    fn shader_call_scope_allows_ray_tracing_capability() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut builder = Builder::new();
+        builder.set_version(1, 4);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.capability(rspirv::spirv::Capability::RayTracingKHR);
+        builder.extension("SPV_KHR_ray_tracing");
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = builder.type_void();
+        let uint = builder.type_int(32, 0);
+        let function_type = builder.type_function(void, std::iter::empty::<u32>());
+        let shader_call_scope =
+            builder.constant_bit32(uint, rspirv::spirv::Scope::ShaderCallKHR as u32);
+        let semantics =
+            builder.constant_bit32(uint, rspirv::spirv::MemorySemantics::ACQUIRE.bits());
+
+        builder
+            .begin_function(
+                void,
+                None,
+                rspirv::spirv::FunctionControl::NONE,
+                function_type,
+            )
+            .unwrap();
+        builder.begin_block(None).unwrap();
+        builder
+            .control_barrier(shader_call_scope, shader_call_scope, semantics)
+            .unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+
+        let words = builder.module().assemble();
+        words
+            .as_slice()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("ShaderCallKHR scope allowed with RayTracingKHR capability");
+    }
+
+    #[test]
     fn memory_semantics_volatile_requires_spirv_1_5() {
         use rspirv::{binary::Assemble, dr::Builder};
 

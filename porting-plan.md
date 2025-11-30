@@ -525,6 +525,7 @@ Tasks for this milestone:
 - Thread operand requirement failures through typed `ValidationError` variants so FFI/CLI callers receive structured diagnostics.
 - Keep validated-module caching active to avoid re-validation when operand checks are enabled.
 - Added operand-level regressions for `Scope::QueueFamilyKHR` to require `VulkanMemoryModel` (failure without capability, acceptance with capability + extension under the Vulkan memory model).
+- Added operand-level regressions for `Scope::ShaderCallKHR` to require `RayTracingKHR` (failure without capability, acceptance with capability + extension in Vulkan env).
 
 ## Upcoming Milestone: Layout Ordering Parity
 Tighten layout ordering to match the C++ validator’s section/decoration ordering rules.
