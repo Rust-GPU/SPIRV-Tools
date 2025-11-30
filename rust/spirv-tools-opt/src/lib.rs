@@ -254,6 +254,7 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("sub-zero-left"; "(- ?a ?b)" => { SubZeroLeft }),
         rewrite!("sub-self"; "(- ?a ?a)" => { SubSelf }),
         rewrite!("sub-neg-right-to-add"; "(- ?a (neg ?b))" => "(+ ?a ?b)"),
+        rewrite!("sub-neg-left-to-neg-add"; "(- (neg ?a) ?b)" => "(neg (+ ?a ?b))"),
         rewrite!("sub-sub-cancel-left"; "(- ?a (- ?a ?b))" => "?b"),
         rewrite!("add-dup-to-mul"; "(+ ?x ?x)" => { AddDuplicateToMul { x: var("?x") } }),
         rewrite!("add-triple-left"; "(+ (+ ?x ?x) ?x)" => {
@@ -3207,6 +3208,27 @@ mod tests {
             matches!(lhs_node, SpirvLang::Symbol(sym) if *sym == Symbol::from("b"))
                 && matches!(rhs_node, SpirvLang::Symbol(sym) if *sym == Symbol::from("a")),
             "expected b - a but got lhs={lhs_node:?} rhs={rhs_node:?}"
+        );
+    }
+
+    #[test]
+    fn rewrites_sub_neg_left_to_neg_add() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("a")),       // 0
+            SpirvLang::Symbol(Symbol::from("b")),       // 1
+            SpirvLang::Neg(Id::from(0)),                // 2 = -a
+            SpirvLang::Sub([Id::from(2), Id::from(1)]), // 3 = (-a) - b
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let neg_add: RecExpr<SpirvLang> = "(neg (+ a b))".parse().unwrap();
+        let Some(neg_add_id) = runner.egraph.lookup_expr(&neg_add) else {
+            panic!("expected -(a + b) to be introduced by rewrites");
+        };
+        assert_eq!(
+            runner.egraph.find(root),
+            runner.egraph.find(neg_add_id),
+            "expected -(a + b) to be equivalent to (-a) - b"
         );
     }
 
