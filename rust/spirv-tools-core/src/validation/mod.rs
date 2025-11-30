@@ -3215,8 +3215,8 @@ fn validate_entry_point_locations(
             .ok_or(ValidationError::InvalidEntryPointOperand)?;
         // Skip name.
         let operands = operands.skip(1);
-        let mut input_locs = HashSet::new();
-        let mut output_locs = HashSet::new();
+    let mut input_locs = HashSet::new();
+    let mut output_locs = HashSet::new();
         for operand in operands {
             let interface_id = match operand {
                 rspirv::dr::Operand::IdRef(id) => *id,
@@ -3264,15 +3264,18 @@ fn validate_entry_point_locations(
             } else {
                 &mut output_locs
             };
+            let start_index = location
+                .saturating_mul(4)
+                .saturating_add(component);
             for offset in 0..consumed {
-                let component_idx = component + offset;
-                let loc_component = (location, component_idx);
+                let linear = start_index.saturating_add(offset);
+                let loc_component = (linear / 4, linear % 4);
                 if !loc_set.insert(loc_component) {
                     return Err(ValidationError::EntryPointInterfaceLocationConflict {
                         entry_point: entry_point_id,
                         storage_class,
-                        location,
-                        component: component_idx,
+                        location: loc_component.0,
+                        component: loc_component.1,
                     });
                 }
             }
