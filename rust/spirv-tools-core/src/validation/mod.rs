@@ -20749,6 +20749,43 @@ mod tests {
     }
 
     #[test]
+    fn extension_cannot_appear_after_types() {
+        // Extensions belong in the extensions section; placing one after types/globals should
+        // trigger a layout error.
+        let text = [
+            "OpCapability Shader",
+            "OpExtension \"SPV_GOOGLE_decorate_string\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+        ]
+        .join("\n");
+        let mut words = assemble_text(&text).expect("assemble");
+        // Move the extension to appear after the type to trigger layout ordering.
+        let mut idx = 5;
+        let mut ext_slice: Option<(usize, usize)> = None;
+        while idx < words.len() {
+            let wc = (words[idx] >> 16) as usize;
+            let opcode = words[idx] & 0xffff;
+            if opcode == rspirv::spirv::Op::Extension as u32 {
+                ext_slice = Some((idx, wc));
+                break;
+            }
+            idx += wc;
+        }
+        let (start, len) = ext_slice.expect("extension present");
+        let ext_inst: Vec<u32> = words.drain(start..start + len).collect();
+        words.extend(ext_inst);
+
+        let err = validate_module(&words, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            err,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::Extension
+            }
+        );
+    }
+
+    #[test]
     fn conditional_capability_disallowed_in_env() {
         // Conditional capabilities must still respect the target environment allowlist.
         let binary = vec![
