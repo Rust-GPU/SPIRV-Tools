@@ -506,10 +506,10 @@ Percentages are approximate and will be updated as new checklists are added for 
 Align the Rust validator’s capability/extension ordering and layout checks with the C++ tables.
 
 Tasks for this milestone:
-- Import capability/extension ordering tables (including conditional capabilities/extensions) and enforce them with text/binary regression tests.
-- Mirror environment-specific decoration/layout constraints driven by the grammar data.
-- Thread validated-module reuse through FFI/CLI for these new checks to avoid reparsing.
-- Add regressions that exercise conditional capabilities/extensions around Debug/Names/Annotations/Types boundaries so layout errors surface identically to the C++ validator.
+- [ ] Import capability/extension ordering tables (including conditional capabilities/extensions) and enforce them with text/binary regression tests.
+- [ ] Mirror environment-specific decoration/layout constraints driven by the grammar data.
+- [ ] Thread validated-module reuse through FFI/CLI for these new checks to avoid reparsing.
+- [x] Add regressions that exercise conditional capabilities/extensions around Debug/Names/Annotations/Types boundaries so layout errors surface identically to the C++ validator (coverage now includes extensions/capabilities after annotations, extinst import, execution modes, memory model, and inside functions).
 
 ## Upcoming Milestone: Layout Ordering Parity
 Tighten layout ordering to match the C++ validator’s section/decoration ordering rules.
