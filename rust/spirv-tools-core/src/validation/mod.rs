@@ -267,6 +267,13 @@ pub fn format_validation_error(error: &ValidationError, names: Option<&FriendlyN
                 ..
             },
             Some(names),
+        )
+        | (
+            ValidationError::FunctionVariableNotInEntryBlock {
+                function,
+                variable: block,
+            },
+            Some(names),
         ) => format!(
             "{} in block {}",
             names.format_id((*function).into()),
@@ -1593,6 +1600,14 @@ pub enum ValidationError {
         /// The provided storage class.
         storage_class: rspirv::spirv::StorageClass,
     },
+    /// A function-scoped variable is not declared in the entry block.
+    #[error("variable {variable:?} in function {function:?} must be declared in the entry block")]
+    FunctionVariableNotInEntryBlock {
+        /// The function containing the variable.
+        function: Id,
+        /// The variable id.
+        variable: Id,
+    },
     /// A merge instruction is paired with an invalid terminator.
     #[error("block {block:?} of function {function:?} has merge paired with invalid terminator {terminator:?}")]
     InvalidMergeTerminator {
@@ -2651,7 +2666,7 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
             }
         }
 
-        for block in &function.blocks {
+        for (block_index, block) in function.blocks.iter().enumerate() {
             let block_label_id = block
                 .label
                 .as_ref()
@@ -2685,6 +2700,16 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                                 function: function_id,
                                 variable,
                                 storage_class: *storage,
+                            });
+                        }
+                        if block_index != 0 {
+                            let variable = inst
+                                .result_id
+                                .and_then(|raw| Id::try_from(raw).ok())
+                                .unwrap_or(function_id);
+                            return Err(ValidationError::FunctionVariableNotInEntryBlock {
+                                function: function_id,
+                                variable,
                             });
                         }
                     }
@@ -12542,7 +12567,7 @@ mod tests {
             0x07230203,
             0x00010000,
             0,
-            6,
+            10,
             0,
             op(2, 17), // OpCapability Shader
             rspirv::spirv::Capability::Shader as u32,
@@ -12565,10 +12590,10 @@ mod tests {
             2,
             op(2, 248), // OpLabel %5
             5,
-            op(4, 59), // OpVariable %3 %6 Private (invalid storage)
+            op(4, 59), // OpVariable %3 %6 Workgroup (invalid storage)
             3,
             6,
-            rspirv::spirv::StorageClass::Private as u32,
+            rspirv::spirv::StorageClass::Workgroup as u32,
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
@@ -12578,7 +12603,58 @@ mod tests {
             ValidationError::FunctionVariableStorageClassMismatch {
                 function: Id::try_from(4).unwrap(),
                 variable: Id::try_from(6).unwrap(),
-                storage_class: rspirv::spirv::StorageClass::Private,
+                storage_class: rspirv::spirv::StorageClass::Workgroup,
+            }
+        );
+    }
+
+    #[test]
+    fn function_variable_must_be_in_entry_block() {
+        // Function-scope variable appears in the second block.
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            10,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+            op(4, 21), // OpTypeInt %3 32 0
+            3,
+            32,
+            0,
+            op(5, 54), // OpFunction %4 None %2
+            1,
+            4,
+            0,
+            2,
+            op(2, 248), // OpLabel %5
+            5,
+            op(2, 249), // OpBranch %6
+            6,
+            op(2, 248), // OpLabel %6
+            6,
+            op(4, 59), // OpVariable %3 %7 Function (misplaced)
+            3,
+            7,
+            rspirv::spirv::StorageClass::Function as u32,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::FunctionVariableNotInEntryBlock {
+                function: Id::try_from(4).unwrap(),
+                variable: Id::try_from(7).unwrap(),
             }
         );
     }
