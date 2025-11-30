@@ -26894,6 +26894,46 @@ mod tests {
     }
 
     #[test]
+    fn component_spill_overlaps_across_locations_are_rejected_in_vulkan() {
+        // First variable occupies location 0 component 3 and spills into location 1 component 0.
+        // Second variable explicitly targets location 1 component 0, so they overlap.
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %a %b",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%float = OpTypeFloat 32",
+            "%vec2 = OpTypeVector %float 2",
+            "%ptr = OpTypePointer Input %vec2",
+            "%ptr_scalar = OpTypePointer Input %float",
+            "%a = OpVariable %ptr Input",
+            "%b = OpVariable %ptr_scalar Input",
+            "OpDecorate %a Location 0",
+            "OpDecorate %a Component 3",
+            "OpDecorate %b Location 1",
+            "OpDecorate %b Component 0",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Vulkan1_2)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::EntryPointInterfaceLocationConflict {
+                entry_point: Id::try_from(1).unwrap(),
+                storage_class: rspirv::spirv::StorageClass::Input,
+                location: 1,
+                component: 0,
+            }
+        );
+    }
+
+    #[test]
     fn validate_module_reports_missing_memory_model_without_other_globals() {
         // A module that declares only capabilities should still fail for a missing memory model.
         let binary = vec![
