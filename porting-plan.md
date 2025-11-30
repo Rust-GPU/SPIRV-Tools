@@ -526,6 +526,7 @@ Tasks for this milestone:
 - Keep validated-module caching active to avoid re-validation when operand checks are enabled.
 - Added operand-level regressions for `Scope::QueueFamilyKHR` to require `VulkanMemoryModel` (failure without capability, acceptance with capability + extension under the Vulkan memory model).
 - Added operand-level regressions for `Scope::ShaderCallKHR` to require `RayTracingKHR` (failure without capability, acceptance with capability + extension in Vulkan env).
+- Added operand-level regressions for `ImageOperands::MAKE_TEXEL_VISIBLE/AVAILABLE` to require `VulkanMemoryModel` (fail without capability, pass with capability/extension under `VulkanKHR` memory model).
 
 ## Upcoming Milestone: Layout Ordering Parity
 Tighten layout ordering to match the C++ validator’s section/decoration ordering rules.
