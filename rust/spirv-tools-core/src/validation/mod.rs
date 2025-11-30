@@ -19094,6 +19094,88 @@ mod tests {
     }
 
     #[test]
+    fn conditional_capability_disallowed_in_env() {
+        // Conditional capabilities must still respect the target environment allowlist.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            6,          // bound
+            0,          // schema
+            op(3, 6250), // OpConditionalCapabilityINTEL %1 Geometry
+            1,
+            rspirv::spirv::Capability::Geometry as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %2
+            2,
+            op(3, 33), // OpTypeFunction %3 %2
+            3,
+            2,
+            op(5, 54), // OpFunction %2 %4 None %3
+            2,
+            4,
+            0,
+            3,
+            op(2, 248), // OpLabel %5
+            5,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+
+        let error = validate_module(&binary, TargetEnv::WebGpu0).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::DisallowedCapability {
+                capability: rspirv::spirv::Capability::Geometry,
+                env: TargetEnv::WebGpu0
+            }
+        );
+    }
+
+    #[test]
+    fn conditional_capability_requires_extension() {
+        // Extension dependencies apply to conditional capabilities.
+        let binary = vec![
+            0x07230203, // magic
+            0x00010000, // version
+            0,          // generator
+            6,          // bound
+            0,          // schema
+            op(3, 6250), // OpConditionalCapabilityINTEL %1 SpecConditionalINTEL
+            1,
+            rspirv::spirv::Capability::SpecConditionalINTEL as u32,
+            op(3, 14), // OpMemoryModel Logical OpenCL
+            2,         // OpenCL
+            0,
+            op(2, 19), // OpTypeVoid %2
+            2,
+            op(3, 33), // OpTypeFunction %3 %2
+            3,
+            2,
+            op(5, 54), // OpFunction %2 %4 None %3
+            2,
+            4,
+            0,
+            3,
+            op(2, 248), // OpLabel %5
+            5,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::DisallowedCapabilityMissingExtension {
+                capability: rspirv::spirv::Capability::SpecConditionalINTEL,
+                required_extension: "SPV_INTEL_function_variants".to_string()
+            }
+        );
+    }
+
+    #[test]
     fn capability_requires_min_spirv_version() {
         let text = [
             "OpCapability Shader",
