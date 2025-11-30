@@ -186,6 +186,17 @@ pub fn format_validation_error(error: &ValidationError, names: Option<&FriendlyN
             names.format_id((*entry_point).into()),
             names.format_id((*interface).into())
         ),
+        (
+            ValidationError::DuplicateEntryPointInterface {
+                entry_point,
+                interface,
+            },
+            Some(names),
+        ) => format!(
+            "{} duplicate interface {}",
+            names.format_id((*entry_point).into()),
+            names.format_id((*interface).into())
+        ),
         (ValidationError::FunctionDeclarationAfterDefinition { function }, Some(names)) => {
             names.format_id((*function).into())
         }
@@ -1379,6 +1390,14 @@ pub enum ValidationError {
         interface: Id,
         /// The invalid storage class.
         storage_class: rspirv::spirv::StorageClass,
+    },
+    /// An entry point listed the same interface id more than once.
+    #[error("entry point {entry_point:?} lists interface id {interface:?} more than once")]
+    DuplicateEntryPointInterface {
+        /// The entry-point function id.
+        entry_point: Id,
+        /// The duplicated interface id.
+        interface: Id,
     },
     /// An execution mode targets a function that is not declared as an entry point.
     #[error("execution mode target {function} is not declared as an entry point")]
@@ -7746,6 +7765,7 @@ fn validate_entry_points(
         entry_points.insert(function_id);
         // Skip the name operand.
         let _ = operands.next();
+        let mut interfaces = HashSet::new();
         for operand in operands {
             if let rspirv::dr::Operand::IdRef(id) = operand {
                 let interface_id =
@@ -7756,6 +7776,12 @@ fn validate_entry_points(
                 if !defined_ids.contains(&interface_id) {
                     return Err(ValidationError::MissingEntryPointTarget {
                         target: interface_id.into_inner(),
+                    });
+                    }
+                if !interfaces.insert(interface_id) {
+                    return Err(ValidationError::DuplicateEntryPointInterface {
+                        entry_point: function_id.into_inner(),
+                        interface: interface_id.into_inner(),
                     });
                 }
                 if let Some(opcode) = opcodes.get(&interface_id) {
@@ -26152,6 +26178,35 @@ mod tests {
                 entry_point: Id::try_from(5).unwrap(),
                 interface: Id::try_from(6).unwrap(),
                 storage_class: rspirv::spirv::StorageClass::Function,
+            }
+        );
+    }
+
+    #[test]
+    fn entry_point_interfaces_must_be_unique() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%int = OpTypeInt 32 0",
+            "%ptr_in = OpTypePointer Input %int",
+            "%fn = OpTypeFunction %void",
+            "%var = OpVariable %ptr_in Input",
+            "OpEntryPoint Vertex %main \"main\" %var %var",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Universal1_6)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::DuplicateEntryPointInterface {
+                entry_point: Id::try_from(6).unwrap(),
+                interface: Id::try_from(5).unwrap(),
             }
         );
     }
