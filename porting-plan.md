@@ -120,6 +120,7 @@ Planned tasks:
   - Parity now runs in `scripts/ci-optimizer-smoke.sh` via `scripts/run-opt-parity.sh` when `spirv-opt` is available.
   - Corpus expanded with shift-chain and mask-to-pow2 cases to mirror C++ output signatures.
   - Added parity coverage for arithmetic shift chains and negation chains.
+  - Added parity coverage for mask-then-shift folding (logical shifts) to match C++ outputs.
 
 ## Upcoming Milestone: Optimizer Parity Expansion
 - Extend the arithmetic/bitwise parity corpus to cover negation chains, mixed shift combinations (logical vs arithmetic), and additional mask+shift fold patterns present in the C++ optimizer.
