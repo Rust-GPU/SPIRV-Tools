@@ -52,7 +52,7 @@ Planned tasks:
 - [x] Keep Vulkan rejecting legacy OpenGL-style built-ins (`VertexId`, `InstanceId`) with Rust-side regressions.
 - [x] Gate fragment shading rate built-ins to Vulkan-only via Rust validation with regression coverage.
 - [x] Gate mesh built-ins to Vulkan-only (extension-gated) with Rust regression coverage.
-- Keep the corpus test job (`ctest` with `SPIRV_TOOLS_DISABLE_RUST_VALIDATOR=0`) in CI to guard parity.
+- [x] Provide a corpus runner (`scripts/run-rust-validator-corpus.sh`) that forces the Rust validator for CI/locals; wire into CI to guard parity.
 - [x] Document rollout/rollback procedures and env overrides for downstream consumers.
 
 ## Upcoming Milestone: Decoration & Env Constraint Parity
