@@ -239,6 +239,11 @@ pub fn format_validation_error(error: &ValidationError, names: Option<&FriendlyN
             names.format_id((*function).into()),
             names.format_id((*block).into())
         ),
+        (ValidationError::PhiAfterNonPhi { function, block }, Some(names)) => format!(
+            "{} in block {}",
+            names.format_id((*function).into()),
+            names.format_id((*block).into())
+        ),
         (ValidationError::MissingReturnValue { function, .. }, Some(names)) => {
             names.format_id((*function).into())
         }
@@ -1383,6 +1388,16 @@ pub enum ValidationError {
         /// The structured terminator opcode.
         terminator: rspirv::spirv::Op,
     },
+    /// A phi instruction appears after non-phi instructions in a block.
+    #[error(
+        "block {block:?} of function {function:?} has phi instructions after non-phi instructions"
+    )]
+    PhiAfterNonPhi {
+        /// The function containing the block.
+        function: Id,
+        /// The block containing the misordered phi.
+        block: Id,
+    },
     /// A phi instruction has an unexpected number of incoming predecessors.
     #[error(
         "phi in block {block:?} of function {function:?} has {found} incoming values, expected {expected}"
@@ -2047,10 +2062,21 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                 .unwrap_or(entry_label_id);
             let mut first_terminator_index = None;
             let mut merge_instruction: Option<(usize, &rspirv::dr::Instruction)> = None;
+            let mut seen_non_phi = false;
             for (index, inst) in block.instructions.iter().enumerate() {
                 if rspirv::grammar::reflect::is_block_terminator(inst.class.opcode) {
                     first_terminator_index = Some(index);
                     break;
+                }
+                if inst.class.opcode == rspirv::spirv::Op::Phi {
+                    if seen_non_phi {
+                        return Err(ValidationError::PhiAfterNonPhi {
+                            function: function_id,
+                            block: block_label_id,
+                        });
+                    }
+                } else {
+                    seen_non_phi = true;
                 }
                 if inst.class.opcode == rspirv::spirv::Op::SelectionMerge
                     || inst.class.opcode == rspirv::spirv::Op::LoopMerge
@@ -15856,6 +15882,74 @@ mod tests {
                 function: Id::try_from(5).unwrap(),
                 block: Id::try_from(6).unwrap(),
                 terminator: rspirv::spirv::Op::Switch
+            }
+        );
+    }
+
+    #[test]
+    fn phi_must_precede_non_phi_in_block() {
+        let binary = vec![
+            0x0723_0203, // magic
+            0x0001_0000, // version 1.0
+            0,           // generator
+            11,          // bound (ids up to 10)
+            0,           // schema
+            op(2, rspirv::spirv::Op::Capability as u16),
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, rspirv::spirv::Op::MemoryModel as u16),
+            rspirv::spirv::AddressingModel::Logical as u32,
+            rspirv::spirv::MemoryModel::GLSL450 as u32,
+            op(2, rspirv::spirv::Op::TypeVoid as u16),
+            1, // %void
+            op(4, rspirv::spirv::Op::TypeInt as u16),
+            2, // %i32
+            32,
+            0,
+            op(3, rspirv::spirv::Op::TypeFunction as u16),
+            3, // %fn
+            1, // return type
+            op(4, rspirv::spirv::Op::Constant as u16),
+            2, // type
+            4, // %c
+            0, // literal
+            op(5, rspirv::spirv::Op::Function as u16),
+            1, // return type
+            5, // %main
+            rspirv::spirv::FunctionControl::NONE.bits(),
+            3, // function type
+            op(2, rspirv::spirv::Op::Label as u16),
+            6, // %entry
+            op(2, rspirv::spirv::Op::Branch as u16),
+            8, // %merge
+            op(2, rspirv::spirv::Op::Label as u16),
+            7, // %side
+            op(2, rspirv::spirv::Op::Branch as u16),
+            8, // %merge
+            op(2, rspirv::spirv::Op::Label as u16),
+            8, // %merge
+            op(3, rspirv::spirv::Op::Undef as u16),
+            2, // type %i32
+            9, // %tmp
+            // OpPhi %i32 %c %entry %c %side  (word count 7)
+            op(7, rspirv::spirv::Op::Phi as u16),
+            2,  // type
+            10, // result id %phi
+            4,  // value %c
+            6,  // incoming block %entry
+            4,  // value %c
+            7,  // incoming block %side
+            op(1, rspirv::spirv::Op::Return as u16),
+            op(1, rspirv::spirv::Op::FunctionEnd as u16),
+        ];
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("phi must be grouped before non-phi instructions");
+        assert_eq!(
+            err,
+            ValidationError::PhiAfterNonPhi {
+                function: Id::try_from(5).unwrap(),
+                block: Id::try_from(8).unwrap(),
             }
         );
     }
