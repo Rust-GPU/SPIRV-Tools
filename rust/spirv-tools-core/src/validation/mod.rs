@@ -195,6 +195,11 @@ pub fn format_validation_error(error: &ValidationError, names: Option<&FriendlyN
             names.format_id((*function).into()),
             names.format_id((*target).into())
         ),
+        (ValidationError::UnreachableBlock { function, block }, Some(names)) => format!(
+            "{} contains unreachable block {}",
+            names.format_id((*function).into()),
+            names.format_id((*block).into())
+        ),
         (ValidationError::MissingReturnValue { function, .. }, Some(names)) => {
             names.format_id((*function).into())
         }
@@ -1273,6 +1278,14 @@ pub enum ValidationError {
         /// The missing block target.
         target: Id,
     },
+    /// A basic block is unreachable from the function's entry block.
+    #[error("function {function:?} contains unreachable block {block:?}")]
+    UnreachableBlock {
+        /// The function id containing the unreachable block.
+        function: Id,
+        /// The unreachable block's label id.
+        block: Id,
+    },
     /// A phi instruction has an unexpected number of incoming predecessors.
     #[error(
         "phi in block {block:?} of function {function:?} has {found} incoming values, expected {expected}"
@@ -1903,6 +1916,12 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                 .copied()
                 .map(|id| (id, Default::default()))
                 .collect();
+        let mut successors: std::collections::HashMap<Id, std::collections::HashSet<Id>> =
+            block_ids
+                .iter()
+                .copied()
+                .map(|id| (id, Default::default()))
+                .collect();
 
         for block in &function.blocks {
             let block_label_id = block
@@ -1990,6 +2009,9 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                                 if let Some(preds) = predecessors.get_mut(&target) {
                                     preds.insert(block_label_id);
                                 }
+                                if let Some(succs) = successors.get_mut(&block_label_id) {
+                                    succs.insert(target);
+                                }
                             }
                         }
                     }
@@ -2001,6 +2023,9 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                             if let Ok(target) = Id::try_from(*raw) {
                                 if let Some(preds) = predecessors.get_mut(&target) {
                                     preds.insert(block_label_id);
+                                }
+                                if let Some(succs) = successors.get_mut(&block_label_id) {
+                                    succs.insert(target);
                                 }
                             }
                         }
@@ -2018,6 +2043,9 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                                 if let Ok(target) = Id::try_from(*raw) {
                                     if let Some(preds) = predecessors.get_mut(&target) {
                                         preds.insert(block_label_id);
+                                    }
+                                    if let Some(succs) = successors.get_mut(&block_label_id) {
+                                        succs.insert(target);
                                     }
                                 }
                             }
@@ -2090,6 +2118,32 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                         });
                     }
                 }
+            }
+        }
+
+        let reachable: std::collections::HashSet<Id> = {
+            let mut reachable = std::collections::HashSet::new();
+            let mut worklist = vec![entry_label_id];
+            while let Some(block) = worklist.pop() {
+                if !reachable.insert(block) {
+                    continue;
+                }
+                if let Some(succs) = successors.get(&block) {
+                    worklist.extend(succs.iter().copied());
+                }
+            }
+            reachable
+        };
+
+        for block_id in &block_ids {
+            if *block_id == entry_label_id {
+                continue;
+            }
+            if !reachable.contains(block_id) {
+                return Err(ValidationError::UnreachableBlock {
+                    function: function_id,
+                    block: *block_id,
+                });
             }
         }
     }
@@ -11787,6 +11841,45 @@ mod tests {
             ValidationError::EntryBlockHasPredecessor {
                 function: Id::try_from(3).unwrap(),
                 entry: Id::try_from(4).unwrap()
+            }
+        );
+    }
+
+    #[test]
+    fn unreachable_block_is_rejected() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut builder = Builder::new();
+        builder.set_version(1, 6);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = builder.type_void();
+        let fn_ty = builder.type_function(void, std::iter::empty::<u32>());
+
+        let function_id = builder
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let _entry = builder.begin_block(None).unwrap();
+        builder.ret().unwrap();
+
+        let unreachable = builder.begin_block(None).unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+
+        let words = builder.module().assemble();
+        let error = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("unreachable block should be rejected");
+        assert_eq!(
+            error,
+            ValidationError::UnreachableBlock {
+                function: Id::try_from(function_id).unwrap(),
+                block: Id::try_from(unreachable).unwrap()
             }
         );
     }
