@@ -10141,6 +10141,93 @@ mod tests {
     }
 
     #[test]
+    fn conditional_capability_after_functions_is_rejected() {
+        // Place OpConditionalCapabilityINTEL after the function to trigger layout ordering error.
+        let binary = vec![
+            0x0723_0203, // magic
+            0x0001_0600, // version 1.6
+            0,           // generator
+            6,           // bound (ids up to 5)
+            0,           // schema
+            op(2, Op::Capability as u16),
+            Capability::Shader as u32,
+            op(3, Op::MemoryModel as u16),
+            rspirv::spirv::AddressingModel::Logical as u32,
+            MemoryModel::GLSL450 as u32,
+            op(2, Op::TypeVoid as u16),
+            1,
+            op(3, Op::TypeFunction as u16),
+            2, // result id
+            1, // return type
+            op(5, Op::Function as u16),
+            1, // result type
+            3, // result id
+            FunctionControl::NONE.bits(),
+            2, // fn type
+            op(2, Op::Label as u16),
+            4, // label id
+            op(1, Op::Return as u16),
+            op(1, Op::FunctionEnd as u16),
+            op(3, Op::ConditionalCapabilityINTEL as u16),
+            5, // result id
+            Capability::Shader as u32,
+        ];
+        let err = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
+        assert_eq!(
+            err,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::ConditionalCapabilityINTEL
+            }
+        );
+    }
+
+    #[test]
+    fn conditional_extension_after_functions_is_rejected() {
+        // Place OpConditionalExtensionINTEL after the function to trigger layout ordering error.
+        let binary = vec![
+            0x0723_0203, // magic
+            0x0001_0600, // version 1.6
+            0,           // generator
+            6,           // bound (ids up to 5)
+            0,           // schema
+            op(2, Op::Capability as u16),
+            Capability::Shader as u32,
+            op(3, Op::MemoryModel as u16),
+            rspirv::spirv::AddressingModel::Logical as u32,
+            MemoryModel::GLSL450 as u32,
+            op(2, Op::TypeVoid as u16),
+            1,
+            op(3, Op::TypeFunction as u16),
+            2, // result id
+            1, // return type
+            op(5, Op::Function as u16),
+            1, // result type
+            3, // result id
+            FunctionControl::NONE.bits(),
+            2, // fn type
+            op(2, Op::Label as u16),
+            4, // label id
+            op(1, Op::Return as u16),
+            op(1, Op::FunctionEnd as u16),
+            op(8, Op::ConditionalExtensionINTEL as u16),
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[0],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[1],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[2],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[3],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[4],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[5],
+            EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[6],
+        ];
+        let err = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
+        assert_eq!(
+            err,
+            ValidationError::LayoutOutOfOrder {
+                opcode: rspirv::spirv::Op::ConditionalExtensionINTEL
+            }
+        );
+    }
+
+    #[test]
     fn extension_after_annotations_is_rejected() {
         let binary = vec![
             0x0723_0203, // magic
