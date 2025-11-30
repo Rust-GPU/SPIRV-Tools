@@ -502,14 +502,23 @@ Percentages are approximate and will be updated as new checklists are added for 
 6. Harden the Rust assembler FFI path so C++ callers don’t drop function bodies when the Rust path is enabled.
    - Added a guard that detects missing function bodies from the Rust assembler and falls back to the C++ assembler, plus an FFI regression test that assembles via a context handle and asserts the body survives.
 
-## Active Milestone: Capability/Extension Ordering Parity
+## Completed Milestone: Capability/Extension Ordering Parity
 Align the Rust validator’s capability/extension ordering and layout checks with the C++ tables.
 
 Tasks for this milestone:
-- [ ] Import capability/extension ordering tables (including conditional capabilities/extensions) and enforce them with text/binary regression tests.
-- [ ] Mirror environment-specific decoration/layout constraints driven by the grammar data.
-- [ ] Thread validated-module reuse through FFI/CLI for these new checks to avoid reparsing.
+- [x] Import capability/extension ordering tables (including conditional capabilities/extensions) and enforce them with text/binary regression tests (mode-stage/order checks are generated from the grammar; regressions cover conditional variants and late-section placements).
+- [x] Mirror environment-specific decoration/layout constraints driven by the grammar data.
+- [x] Thread validated-module reuse through FFI/CLI for these new checks to avoid reparsing.
 - [x] Add regressions that exercise conditional capabilities/extensions around Debug/Names/Annotations/Types boundaries so layout errors surface identically to the C++ validator (coverage now includes extensions/capabilities after annotations, extinst import, execution modes, memory model, and inside functions).
+
+## Active Milestone: Operand Requirements Parity
+Tighten operand-level capability/extension/version enforcement to mirror the C++ validator tables.
+
+Tasks for this milestone:
+- Import operand-level capability/extension/version requirement data from the SPIR-V grammar and enforce it during validation (including conditional operands).
+- Add binary/text regression tests covering operand requirements for representative instructions (e.g., memory semantics masks, subgroup scopes, and newer operand enums gated by extensions).
+- Thread operand requirement failures through typed `ValidationError` variants so FFI/CLI callers receive structured diagnostics.
+- Keep validated-module caching active to avoid re-validation when operand checks are enabled.
 
 ## Upcoming Milestone: Layout Ordering Parity
 Tighten layout ordering to match the C++ validator’s section/decoration ordering rules.
