@@ -88,6 +88,8 @@ option(SPIRV_WERROR "Enable error on warning" ON)
 
 option(SPIRV_ENABLE_RUST_TARGET_ENV
        "Enable Rust implementations for selected target environment helpers" OFF)
+option(SPIRV_PREFER_RUST_VALIDATOR_DEFAULT
+       "Prefer the Rust validator by default when Rust support is enabled" ON)
 set(SPIRV_RUST_PROFILE "release" CACHE STRING
     "Cargo profile to use when building Rust crates (used when SPIRV_ENABLE_RUST_TARGET_ENV=ON)")
 if(("${CMAKE_CXX_COMPILER_ID}" MATCHES "GNU") OR (("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang") AND (NOT CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC")))
@@ -133,6 +135,12 @@ endif()
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/)
 
 if(SPIRV_ENABLE_RUST_TARGET_ENV)
+  if(SPIRV_PREFER_RUST_VALIDATOR_DEFAULT)
+    add_definitions(-DSPIRV_PREFER_RUST_VALIDATOR_DEFAULT=1)
+  else()
+    add_definitions(-DSPIRV_PREFER_RUST_VALIDATOR_DEFAULT=0)
+  endif()
+
   set(SPIRV_RUST_MANIFEST ${PROJECT_SOURCE_DIR}/rust/Cargo.toml)
   if(NOT EXISTS ${SPIRV_RUST_MANIFEST})
     message(FATAL_ERROR "Expected Rust workspace at ${PROJECT_SOURCE_DIR}/rust when SPIRV_ENABLE_RUST_TARGET_ENV is ON")
