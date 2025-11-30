@@ -17734,6 +17734,52 @@ mod tests {
     }
 
     #[test]
+    fn loop_merge_cannot_be_followed_by_return() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+
+        let void = b.type_void();
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let header = b.begin_block(None).unwrap();
+        let merge = b.id();
+        let cont = b.id();
+        b.loop_merge(
+            merge,
+            cont,
+            rspirv::spirv::LoopControl::NONE,
+            std::iter::empty::<rspirv::dr::Operand>(),
+        )
+        .unwrap();
+        // Invalid terminator after loop merge.
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let words = b.module().assemble();
+        let err = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("loop header cannot end in OpReturn after loop merge");
+        assert_eq!(
+            err,
+            ValidationError::InvalidMergeTerminator {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(header).unwrap(),
+                terminator: rspirv::spirv::Op::Return
+            }
+        );
+    }
+
+    #[test]
     fn selection_merge_target_must_exist() {
         use rspirv::{binary::Assemble, dr::Builder};
 
