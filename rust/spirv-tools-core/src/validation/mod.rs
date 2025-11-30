@@ -201,6 +201,18 @@ pub fn format_validation_error(error: &ValidationError, names: Option<&FriendlyN
             names.format_id((*block).into())
         ),
         (
+            ValidationError::FunctionCallTargetNotFunction {
+                function,
+                target,
+                ..
+            },
+            Some(names),
+        ) => format!(
+            "{} calls non-function {}",
+            names.format_id((*function).into()),
+            names.format_id((*target).into())
+        ),
+        (
             ValidationError::MergeTargetMissing {
                 function, target, ..
             },
@@ -1482,6 +1494,48 @@ pub enum ValidationError {
         /// The missing id.
         id: Id,
     },
+    /// A function call targets an id that is not a function definition.
+    #[error("call target {target:?} in function {function:?} is not a function (found {found:?})")]
+    FunctionCallTargetNotFunction {
+        /// The function containing the call.
+        function: Id,
+        /// The target id.
+        target: Id,
+        /// The opcode that defined the target.
+        found: rspirv::spirv::Op,
+    },
+    /// A function call returns a value with a mismatched type.
+    #[error("call in function {function:?} returns type {found:?}, expected {expected:?}")]
+    FunctionCallResultTypeMismatch {
+        /// The function containing the call.
+        function: Id,
+        /// The expected return type.
+        expected: TypeId,
+        /// The found return type.
+        found: TypeId,
+    },
+    /// A function call provides the wrong number of arguments.
+    #[error("call in function {function:?} has {found} arguments but callee expects {expected}")]
+    FunctionCallArgumentCountMismatch {
+        /// The function containing the call.
+        function: Id,
+        /// The expected argument count.
+        expected: usize,
+        /// The provided argument count.
+        found: usize,
+    },
+    /// A function call provides an argument of the wrong type.
+    #[error("call in function {function:?} expects parameter type {expected:?} but argument {argument:?} has type {found:?}")]
+    FunctionCallArgumentTypeMismatch {
+        /// The function containing the call.
+        function: Id,
+        /// The argument id.
+        argument: Id,
+        /// The expected parameter type.
+        expected: TypeId,
+        /// The argument's type.
+        found: TypeId,
+    },
     /// A phi incoming value's type does not match the phi's result type.
     #[error("phi in block {block:?} of function {function:?} expects type {expected:?} but incoming value {incoming:?} has type {found:?}")]
     PhiIncomingTypeMismatch {
@@ -2144,6 +2198,17 @@ fn collect_friendly_names(words: &[u32]) -> Option<FriendlyNames> {
 fn validate_functions(module: &Module) -> Result<(), ValidationError> {
     let definitions = collect_result_instructions(module);
     let result_types = collect_result_types(module)?;
+    let mut signatures: HashMap<Id, FunctionSignature> = HashMap::new();
+    for function in &module.functions {
+        let function_id = function
+            .def
+            .as_ref()
+            .and_then(|inst| inst.result_id)
+            .and_then(|raw| Id::try_from(raw).ok())
+            .unwrap_or(Id::try_from(1).expect("non-zero literal"));
+        let signature = validate_function_signature(function_id, function, &definitions)?;
+        signatures.insert(function_id, signature);
+    }
     let mut definition_blocks: HashMap<ResultId, Option<Id>> = HashMap::new();
     for inst in module.all_inst_iter() {
         if let Some(result_id) = inst.result_id {
@@ -2162,7 +2227,9 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
             .unwrap_or(Id::try_from(1).expect("non-zero literal"));
 
         let is_declaration = function.blocks.is_empty() && function.parameters.is_empty();
-        let signature = validate_function_signature(function_id, function, &definitions)?;
+        let signature = signatures
+            .get(&function_id)
+            .expect("signatures precomputed");
         if is_declaration {
             if seen_definition {
                 return Err(ValidationError::FunctionDeclarationAfterDefinition {
@@ -2563,6 +2630,15 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                 .map(|set| set.len())
                 .unwrap_or(0);
             for inst in &block.instructions {
+                if inst.class.opcode == rspirv::spirv::Op::FunctionCall {
+                    validate_function_call(
+                        function_id,
+                        inst,
+                        &signatures,
+                        &definitions,
+                        &result_types,
+                    )?;
+                }
                 if inst.class.opcode == rspirv::spirv::Op::Phi {
                     let phi_result_type = inst
                         .result_id
@@ -2765,6 +2841,105 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
 #[derive(Debug)]
 struct FunctionSignature {
     return_type: TypeId,
+    parameter_types: Vec<TypeId>,
+}
+
+fn validate_function_call(
+    function_id: Id,
+    call: &rspirv::dr::Instruction,
+    signatures: &HashMap<Id, FunctionSignature>,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    result_types: &HashMap<ResultId, TypeId>,
+) -> Result<(), ValidationError> {
+    let Some(rspirv::dr::Operand::IdRef(raw_callee)) = call.operands.first() else {
+        return Err(ValidationError::ZeroId {
+            kind: IdKind::Operand,
+            opcode: call.class.opcode,
+        });
+    };
+    let callee_id = Id::try_from(*raw_callee).map_err(|_| ValidationError::ZeroId {
+        kind: IdKind::Operand,
+        opcode: call.class.opcode,
+    })?;
+    let callee_result_id =
+        ResultId::try_from(*raw_callee).map_err(|_| ValidationError::ZeroId {
+            kind: IdKind::Operand,
+            opcode: call.class.opcode,
+        })?;
+    let callee_inst = definitions
+        .get(&callee_result_id)
+        .ok_or(ValidationError::UndefinedId {
+            function: Some(function_id),
+            id: callee_id,
+        })?;
+    if callee_inst.class.opcode != rspirv::spirv::Op::Function {
+        return Err(ValidationError::FunctionCallTargetNotFunction {
+            function: function_id,
+            target: callee_id,
+            found: callee_inst.class.opcode,
+        });
+    }
+    let signature = signatures.get(&callee_id).ok_or(
+        ValidationError::FunctionCallTargetNotFunction {
+            function: function_id,
+            target: callee_id,
+            found: callee_inst.class.opcode,
+        },
+    )?;
+
+    let call_result_type =
+        call.result_type
+            .and_then(|raw| TypeId::try_from(raw).ok())
+            .ok_or(ValidationError::ZeroId {
+                kind: IdKind::ResultType,
+                opcode: call.class.opcode,
+            })?;
+    if call_result_type != signature.return_type {
+        return Err(ValidationError::FunctionCallResultTypeMismatch {
+            function: function_id,
+            expected: signature.return_type,
+            found: call_result_type,
+        });
+    }
+
+    let provided_args = call.operands.iter().skip(1).collect::<Vec<_>>();
+    if provided_args.len() != signature.parameter_types.len() {
+        return Err(ValidationError::FunctionCallArgumentCountMismatch {
+            function: function_id,
+            expected: signature.parameter_types.len(),
+            found: provided_args.len(),
+        });
+    }
+
+    for (expected_type, operand) in signature.parameter_types.iter().zip(provided_args) {
+        let raw_id = match operand {
+            rspirv::dr::Operand::IdRef(raw) => *raw,
+            _ => {
+                return Err(ValidationError::ZeroId {
+                    kind: IdKind::Operand,
+                    opcode: call.class.opcode,
+                });
+            }
+        };
+        let arg_id = ResultId::try_from(raw_id).map_err(|_| ValidationError::ZeroId {
+            kind: IdKind::Operand,
+            opcode: call.class.opcode,
+        })?;
+        let arg_type = result_types.get(&arg_id).ok_or(ValidationError::UndefinedId {
+            function: Some(function_id),
+            id: Id::from(arg_id),
+        })?;
+        if arg_type != expected_type {
+            return Err(ValidationError::FunctionCallArgumentTypeMismatch {
+                function: function_id,
+                argument: Id::from(arg_id),
+                expected: *expected_type,
+                found: *arg_type,
+            });
+        }
+    }
+
+    Ok(())
 }
 
 fn validate_function_signature(
@@ -2896,7 +3071,10 @@ fn validate_function_signature(
         }
     }
 
-    Ok(FunctionSignature { return_type })
+    Ok(FunctionSignature {
+        return_type,
+        parameter_types: expected_params,
+    })
 }
 
 fn hash_words(words: &[u32], env: TargetEnv) -> u64 {
@@ -12059,6 +12237,203 @@ mod tests {
                 incoming: Id::try_from(5).unwrap(),
                 expected: TypeId::try_from(2).unwrap(),
                 found: TypeId::try_from(3).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn function_call_target_must_be_function() {
+        let binary = vec![
+            0x07230203,
+            0x00010000,
+            0,
+            7,
+            0,
+            op(2, 17), // OpCapability Shader
+            rspirv::spirv::Capability::Shader as u32,
+            op(3, 14), // OpMemoryModel Logical GLSL450
+            0,
+            1,
+            op(2, 19), // OpTypeVoid %1
+            1,
+            op(3, 33), // OpTypeFunction %2 %1
+            2,
+            1,
+            op(4, 21), // OpTypeInt %3 32 0
+            3,
+            32,
+            0,
+            op(5, 54), // OpFunction %4 None %2
+            1,
+            4,
+            0,
+            2,
+            op(2, 248), // OpLabel %5
+            5,
+            op(4, 57), // OpFunctionCall %1 %6 %3 (target is not a function)
+            1,
+            6,
+            3,
+            op(1, 253), // OpReturn
+            op(1, 56),  // OpFunctionEnd
+        ];
+        let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::FunctionCallTargetNotFunction {
+                function: Id::try_from(4).unwrap(),
+                target: Id::try_from(3).unwrap(),
+                found: rspirv::spirv::Op::TypeInt,
+            }
+        );
+    }
+
+    #[test]
+    fn function_call_argument_count_must_match() {
+        use rspirv::{binary::Assemble, dr::Builder};
+        let mut builder = Builder::new();
+        builder.set_version(1, 6);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+        let void = builder.type_void();
+        let int = builder.type_int(32, 0);
+        let callee_ty = builder.type_function(int, [int].into_iter());
+        let main_ty = builder.type_function(void, std::iter::empty::<u32>());
+
+        let callee = builder
+            .begin_function(int, None, rspirv::spirv::FunctionControl::NONE, callee_ty)
+            .unwrap();
+        let param = builder.function_parameter(int).unwrap();
+        builder.begin_block(None).unwrap();
+        builder.ret_value(param).unwrap();
+        builder.end_function().unwrap();
+
+        let main = builder
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, main_ty)
+            .unwrap();
+        builder.begin_block(None).unwrap();
+        builder
+            .function_call(int, None, callee, std::iter::empty())
+            .unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+
+        let words = builder.module().assemble();
+        let error = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::FunctionCallArgumentCountMismatch {
+                function: Id::try_from(main).unwrap(),
+                expected: 1,
+                found: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn function_call_argument_types_must_match() {
+        use rspirv::{binary::Assemble, dr::Builder};
+        let mut builder = Builder::new();
+        builder.set_version(1, 6);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+        let void = builder.type_void();
+        let int = builder.type_int(32, 0);
+        let float = builder.type_float(32, None);
+        let callee_ty = builder.type_function(int, [int].into_iter());
+        let main_ty = builder.type_function(void, std::iter::empty::<u32>());
+
+        let callee = builder
+            .begin_function(int, None, rspirv::spirv::FunctionControl::NONE, callee_ty)
+            .unwrap();
+        let param = builder.function_parameter(int).unwrap();
+        builder.begin_block(None).unwrap();
+        builder.ret_value(param).unwrap();
+        builder.end_function().unwrap();
+
+        let main = builder
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, main_ty)
+            .unwrap();
+        let entry = builder.begin_block(None).unwrap();
+        let float_const = builder.constant_bit32(float, 0x3f80_0000);
+        builder
+            .function_call(int, None, callee, [float_const].into_iter())
+            .unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+
+        let words = builder.module().assemble();
+        let error = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::FunctionCallArgumentTypeMismatch {
+                function: Id::try_from(main).unwrap(),
+                argument: Id::try_from(float_const).unwrap(),
+                expected: TypeId::try_from(int).unwrap(),
+                found: TypeId::try_from(float).unwrap(),
+            }
+        );
+        // ensure entry used to silence warnings
+        let _ = entry;
+    }
+
+    #[test]
+    fn function_call_result_type_must_match() {
+        use rspirv::{binary::Assemble, dr::Builder};
+        let mut builder = Builder::new();
+        builder.set_version(1, 6);
+        builder.capability(rspirv::spirv::Capability::Shader);
+        builder.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+        let void = builder.type_void();
+        let int = builder.type_int(32, 0);
+        let float = builder.type_float(32, None);
+        let callee_ty = builder.type_function(int, std::iter::empty::<u32>());
+        let main_ty = builder.type_function(void, std::iter::empty::<u32>());
+
+        let callee = builder
+            .begin_function(int, None, rspirv::spirv::FunctionControl::NONE, callee_ty)
+            .unwrap();
+        builder.begin_block(None).unwrap();
+        let zero = builder.constant_bit32(int, 0);
+        builder.ret_value(zero).unwrap();
+        builder.end_function().unwrap();
+
+        let main = builder
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, main_ty)
+            .unwrap();
+        builder.begin_block(None).unwrap();
+        builder
+            .function_call(float, None, callee, std::iter::empty::<u32>())
+            .unwrap();
+        builder.ret().unwrap();
+        builder.end_function().unwrap();
+
+        let words = builder.module().assemble();
+        let error = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::FunctionCallResultTypeMismatch {
+                function: Id::try_from(main).unwrap(),
+                expected: TypeId::try_from(int).unwrap(),
+                found: TypeId::try_from(float).unwrap(),
             }
         );
     }
