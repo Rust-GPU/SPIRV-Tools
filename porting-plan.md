@@ -697,4 +697,4 @@ Tasks for this milestone:
   - [x] Reject ray-only storage classes (payload/hit/callable) on non-ray entry points with Rust regression.
   - [x] Reject ShaderRecordBufferKHR on non-ray entry points with Rust regression.
   - [x] Enforce Input/Output interface presence only on shader stages that allow them; added compute-stage Output rejection regression.
-- Wire entry-point interface checks through the CLI/FFI parity runs and update the corpus to match C++ diagnostics.
+- [x] Wire entry-point interface checks through the CLI/FFI parity runs and update the corpus to match C++ diagnostics (`scripts/run-rust-validator-corpus.sh build-tests`).
