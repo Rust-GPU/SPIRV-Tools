@@ -2219,12 +2219,12 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                 .as_ref()
                 .ok_or(ValidationError::MissingBlockLabel {
                     function: function_id,
-                    block_index: block_index,
+                    block_index,
                 })?;
             if label_inst.class.opcode != rspirv::spirv::Op::Label {
                 return Err(ValidationError::MissingBlockLabel {
                     function: function_id,
-                    block_index: block_index,
+                    block_index,
                 });
             }
             let block_label_id = block
@@ -2303,7 +2303,7 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                             }
                         }
                         if let Some(rspirv::dr::Operand::IdRef(raw_merge)) =
-                            merge_inst.operands.get(0)
+                            merge_inst.operands.first()
                         {
                             if let Ok(target) = Id::try_from(*raw_merge) {
                                 if target == block_label_id {
@@ -2336,7 +2336,7 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                                 });
                             }
                         }
-                        let merge_target = merge_inst.operands.get(0).and_then(|op| match op {
+                        let merge_target = merge_inst.operands.first().and_then(|op| match op {
                             rspirv::dr::Operand::IdRef(raw) => Id::try_from(*raw).ok(),
                             _ => None,
                         });
@@ -2669,7 +2669,7 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                         if let (
                             Some(rspirv::dr::Operand::IdRef(raw_value)),
                             Some(rspirv::dr::Operand::IdRef(raw_incoming)),
-                        ) = (pair.get(0), pair.get(1))
+                        ) = (pair.first(), pair.get(1))
                         {
                             if let (Ok(value_id), Ok(incoming_block)) =
                                 (Id::try_from(*raw_value), Id::try_from(*raw_incoming))
@@ -7550,6 +7550,7 @@ fn validate_result_types_are_types(
     Ok(())
 }
 
+#[allow(clippy::manual_is_multiple_of)]
 fn is_block_operand(opcode: rspirv::spirv::Op, index: usize) -> bool {
     match opcode {
         rspirv::spirv::Op::Branch => index == 0,
