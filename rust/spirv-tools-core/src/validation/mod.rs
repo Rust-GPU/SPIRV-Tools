@@ -187,6 +187,16 @@ pub fn format_validation_error(error: &ValidationError, names: Option<&FriendlyN
             names.format_id((*interface).into())
         ),
         (
+            ValidationError::EntryPointInterfaceStorageClassDuplicate {
+                entry_point,
+                storage_class,
+            },
+            Some(names),
+        ) => format!(
+            "{} has duplicate {storage_class:?} interfaces",
+            names.format_id((*entry_point).into())
+        ),
+        (
             ValidationError::DuplicateEntryPoint {
                 function,
                 execution_model,
@@ -1379,6 +1389,9 @@ pub enum ValidationError {
         /// The missing target id.
         target: Id,
     },
+    /// An entry point operand had the wrong kind.
+    #[error("entry point operands are malformed")]
+    InvalidEntryPointOperand,
     /// An entry point referenced an id of the wrong kind (non-function or non-interface variable).
     #[error(
         "entry point target {target} has opcode {opcode:?} which is invalid for this position"
@@ -1399,6 +1412,15 @@ pub enum ValidationError {
         /// The interface variable id.
         interface: Id,
         /// The invalid storage class.
+        storage_class: rspirv::spirv::StorageClass,
+    },
+    /// An entry point listed more than one interface variable with a storage class
+    /// that must be unique for that entry point (Vulkan environments).
+    #[error("entry point {entry_point:?} has more than one interface variable with storage class {storage_class:?}")]
+    EntryPointInterfaceStorageClassDuplicate {
+        /// The entry-point function id.
+        entry_point: Id,
+        /// The duplicated storage class.
         storage_class: rspirv::spirv::StorageClass,
     },
     /// An entry point listed the same interface id more than once.
@@ -2235,6 +2257,7 @@ fn validate_words(
     enforce_store_type_compatibility(&module, &definitions, &options)?;
     let entry_points =
         validate_entry_points(&module, &defined_result_ids, &opcodes, &definitions)?;
+    validate_entry_point_interface_storage_classes(&module, &definitions, env)?;
     validate_execution_modes(&module, &entry_points, env, &options)?;
     validate_functions(&module)?;
     validate_operand_definitions(&module, &defined_ids)?;
@@ -7838,6 +7861,102 @@ fn validate_entry_points(
         }
     }
     Ok(entry_points)
+}
+
+fn validate_entry_point_interface_storage_classes(
+    module: &Module,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    env: TargetEnv,
+) -> Result<(), ValidationError> {
+    if !is_vulkan_env(env) {
+        return Ok(());
+    }
+
+    for ep in &module.entry_points {
+        let mut operands = ep.operands.iter();
+        if ep.class.opcode == rspirv::spirv::Op::ConditionalEntryPointINTEL {
+            let _ = operands.next();
+        }
+        // ExecutionModel
+        let _ = operands.next();
+        let entry_point_id = operands
+            .next()
+            .and_then(|op| match op {
+                rspirv::dr::Operand::IdRef(ep_id) => Some(*ep_id),
+                _ => None,
+            })
+            .and_then(|raw| Id::try_from(raw).ok())
+            .ok_or(ValidationError::InvalidEntryPointOperand)?;
+        // Skip the name operand.
+        let operands = operands.skip(1);
+        let mut seen_push_constant = false;
+        let mut seen_ray_payload = false;
+        let mut seen_hit_attribute = false;
+        let mut seen_callable_data = false;
+        for operand in operands {
+            let interface_id = match operand {
+                rspirv::dr::Operand::IdRef(id) => *id,
+                _ => continue,
+            };
+            if let Ok(id) = ResultId::try_from(interface_id) {
+                if let Some(inst) = definitions.get(&id) {
+                    if let Some(rspirv::dr::Operand::StorageClass(storage)) =
+                        inst.operands.get(0)
+                    {
+                        match storage {
+                            rspirv::spirv::StorageClass::PushConstant => {
+                                if seen_push_constant {
+                                    return Err(
+                                        ValidationError::EntryPointInterfaceStorageClassDuplicate {
+                                            entry_point: entry_point_id,
+                                            storage_class: *storage,
+                                        },
+                                    );
+                                }
+                                seen_push_constant = true;
+                            }
+                            rspirv::spirv::StorageClass::IncomingRayPayloadKHR => {
+                                if seen_ray_payload {
+                                    return Err(
+                                        ValidationError::EntryPointInterfaceStorageClassDuplicate {
+                                            entry_point: entry_point_id.into(),
+                                            storage_class: *storage,
+                                        },
+                                    );
+                                }
+                                seen_ray_payload = true;
+                            }
+                            rspirv::spirv::StorageClass::HitAttributeKHR => {
+                                if seen_hit_attribute {
+                                    return Err(
+                                        ValidationError::EntryPointInterfaceStorageClassDuplicate {
+                                            entry_point: entry_point_id.into(),
+                                            storage_class: *storage,
+                                        },
+                                    );
+                                }
+                                seen_hit_attribute = true;
+                            }
+                            rspirv::spirv::StorageClass::IncomingCallableDataKHR => {
+                                if seen_callable_data {
+                                    return Err(
+                                        ValidationError::EntryPointInterfaceStorageClassDuplicate {
+                                            entry_point: entry_point_id.into(),
+                                            storage_class: *storage,
+                                        },
+                                    );
+                                }
+                                seen_callable_data = true;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn validate_execution_modes(
@@ -26236,6 +26355,65 @@ mod tests {
                 interface: Id::try_from(5).unwrap(),
             }
         );
+    }
+
+    #[test]
+    fn duplicate_push_constant_interface_is_rejected_in_vulkan() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%int = OpTypeInt 32 0",
+            "%pc = OpTypeStruct %int",
+            "OpDecorate %pc Block",
+            "OpMemberDecorate %pc 0 Offset 0",
+            "%ptr = OpTypePointer PushConstant %pc",
+            "%pc0 = OpVariable %ptr PushConstant",
+            "%pc1 = OpVariable %ptr PushConstant",
+            "OpEntryPoint Vertex %main \"main\" %pc0 %pc1",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let error = MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Vulkan1_2)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::EntryPointInterfaceStorageClassDuplicate {
+                entry_point: Id::try_from(8).unwrap(),
+                storage_class: rspirv::spirv::StorageClass::PushConstant,
+            }
+        );
+    }
+
+    #[test]
+    fn duplicate_push_constant_interface_is_allowed_outside_vulkan() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%int = OpTypeInt 32 0",
+            "%pc = OpTypeStruct %int",
+            "OpDecorate %pc Block",
+            "OpMemberDecorate %pc 0 Offset 0",
+            "%ptr = OpTypePointer PushConstant %pc",
+            "%pc0 = OpVariable %ptr PushConstant",
+            "%pc1 = OpVariable %ptr PushConstant",
+            "OpEntryPoint Vertex %main \"main\" %pc0 %pc1",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        MaybeValidModule::Text(&text)
+            .validate(TargetEnv::Universal1_6)
+            .expect("Non-Vulkan envs should not reject duplicate push constants");
     }
 
     #[test]
