@@ -24,6 +24,17 @@ else
   echo "[optimizer-smoke] fuzz smoke script not found; skipping"
 fi
 
+echo "[optimizer-smoke] running Rust vs C++ optimizer parity..."
+if [[ -x "${ROOT}/scripts/run-opt-parity.sh" ]]; then
+  # Allow a missing C++ spirv-opt to skip parity without failing the entire job.
+  if ! (cd "${ROOT}" && bash "${ROOT}/scripts/run-opt-parity.sh"); then
+    echo "[optimizer-smoke] parity run failed; set SPIRV_CPP_OPT to point at spirv-opt if not on PATH"
+    exit 1
+  fi
+else
+  echo "[optimizer-smoke] run-opt-parity.sh not found; skipping parity check"
+fi
+
 echo "[optimizer-smoke] running hyperfine benchmarks (if available)..."
 if command -v hyperfine >/dev/null 2>&1; then
   if [[ -x "${ROOT}/scripts/hyperfine-opt.sh" ]]; then

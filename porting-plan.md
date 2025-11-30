@@ -117,6 +117,7 @@ Planned tasks:
 - Keep a benchmark guardrail (hyperfine/criterion) in CI or nightly to watch for regressions.
 - [x] Document rollback/roll-forward instructions and env toggles for downstream users.
 - [x] Add a CLI/FFI parity harness to diff Rust vs C++ optimizer outputs on the arithmetic corpus and gate on regressions. (Expanded corpus: const add, mul zero, div/rem, mul by pow2)
+  - Parity now runs in `scripts/ci-optimizer-smoke.sh` via `scripts/run-opt-parity.sh` when `spirv-opt` is available.
 
 ## Upcoming Milestone: Validator Default Enablement
 Flip the Rust validator on by default across CLI/FFI while keeping an escape hatch.
