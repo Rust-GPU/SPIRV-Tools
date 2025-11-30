@@ -108,6 +108,15 @@ Planned tasks:
 - Add a parity runner in CI that exercises `SPIRV_CPP_OPT` when available to keep regressions visible.
 
 
+## Upcoming Milestone: Optimizer Default Rollout
+Flip the Rust arithmetic optimizer on by default (for supported passes) while preserving a C++ fallback.
+
+Planned tasks:
+- Wire the optimizer parity runner (`scripts/run-opt-parity.sh`) into CI and track regressions over time.
+- Add an env/flag to force the Rust optimizer on by default in CLI/FFI (with disable override).
+- Keep a benchmark guardrail (hyperfine/criterion) in CI or nightly to watch for regressions.
+- Document rollback/roll-forward instructions and env toggles for downstream users.
+
 ## Active Milestone: Structural Validator Rules
 Enforce target-environment specific structural rules and reuse validated modules across interfaces.
 
