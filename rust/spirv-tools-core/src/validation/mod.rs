@@ -19380,6 +19380,51 @@ mod tests {
     }
 
     #[test]
+    fn compare_operands_cannot_mix_signed_and_unsigned_ints() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let bool_ty = b.type_bool();
+        let int = b.type_int(32, 1);
+        let uint = b.type_int(32, 0);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let header = b.begin_block(None).unwrap();
+        let lhs = b.constant_bit32(int, 1);
+        let rhs = b.constant_bit32(uint, 1);
+        b.i_equal(bool_ty, None, lhs, rhs).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let words = b.module().assemble();
+        let err = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("compare operands must have identical types, not just width");
+        assert_eq!(
+            err,
+            ValidationError::OperandTypeMismatch {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(header).unwrap(),
+                instruction: rspirv::spirv::Op::IEqual,
+                operand_index: 1,
+                expected: TypeId::try_from(int).unwrap(),
+                found: TypeId::try_from(uint).unwrap(),
+            }
+        );
+    }
+
+    #[test]
     fn unreachable_definition_used_in_entry_is_rejected() {
         let text = [
             "OpCapability Shader",
