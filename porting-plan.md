@@ -116,7 +116,7 @@ Planned tasks:
 - [x] Add an env/flag to force the Rust optimizer on by default in CLI/FFI (with disable override).
 - Keep a benchmark guardrail (hyperfine/criterion) in CI or nightly to watch for regressions.
 - [x] Document rollback/roll-forward instructions and env toggles for downstream users.
-- [x] Add a CLI/FFI parity harness to diff Rust vs C++ optimizer outputs on the arithmetic corpus and gate on regressions.
+- [x] Add a CLI/FFI parity harness to diff Rust vs C++ optimizer outputs on the arithmetic corpus and gate on regressions. (Expanded corpus: const add, mul zero, div/rem, mul by pow2)
 
 ## Upcoming Milestone: Validator Default Enablement
 Flip the Rust validator on by default across CLI/FFI while keeping an escape hatch.

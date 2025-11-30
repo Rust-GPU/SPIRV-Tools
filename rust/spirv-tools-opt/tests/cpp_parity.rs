@@ -267,6 +267,56 @@ fn rust_and_cpp_arith_outputs_match_mul_zero() {
 }
 
 #[test]
+fn rust_and_cpp_arith_outputs_match_div_rem() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+    let module_words = build_div_rem_module();
+    let rust_sig = arith_signature(
+        &spirv_tools_opt::translate::optimize_arith_block(&extract_arith_insts(&module_words))
+            .expect("rust optimize"),
+    );
+    let optimized_cpp = run_cpp_opt_module(&module_words, &cpp_opt);
+    let cpp_arith: Vec<_> = optimized_cpp
+        .types_global_values
+        .iter()
+        .chain(optimized_cpp.functions[0].blocks[0].instructions.iter())
+        .filter(|inst| is_arith_opcode(inst.class.opcode))
+        .cloned()
+        .collect();
+    let cpp_sig = arith_signature(&cpp_arith);
+    assert_eq!(
+        rust_sig, cpp_sig,
+        "Rust vs C++ arithmetic output mismatch for div/rem"
+    );
+}
+
+#[test]
+fn rust_and_cpp_arith_outputs_match_mul_pow2() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+    let module_words = build_mul_pow2_module();
+    let rust_sig = arith_signature(
+        &spirv_tools_opt::translate::optimize_arith_block(&extract_arith_insts(&module_words))
+            .expect("rust optimize"),
+    );
+    let optimized_cpp = run_cpp_opt_module(&module_words, &cpp_opt);
+    let cpp_arith: Vec<_> = optimized_cpp
+        .types_global_values
+        .iter()
+        .chain(optimized_cpp.functions[0].blocks[0].instructions.iter())
+        .filter(|inst| is_arith_opcode(inst.class.opcode))
+        .cloned()
+        .collect();
+    let cpp_sig = arith_signature(&cpp_arith);
+    assert_eq!(
+        rust_sig, cpp_sig,
+        "Rust vs C++ arithmetic output mismatch for mul by pow2"
+    );
+}
+
+#[test]
 fn rust_and_cpp_fold_add_zero() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
@@ -2303,6 +2353,46 @@ fn build_mul_zero_module() -> Vec<u32> {
     let c4 = b.constant_bit32(int, 4);
     let c0 = b.constant_bit32(int, 0);
     let _ = b.i_mul(int, None, c4, c0).expect("mul");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    b.module().assemble()
+}
+
+fn build_div_rem_module() -> Vec<u32> {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let _ = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let c9 = b.constant_bit32(int, 9);
+    let c3 = b.constant_bit32(int, 3);
+    let div = b.u_div(int, None, c9, c3).expect("div");
+    let _ = b.u_mod(int, None, div, c3).expect("rem");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    b.module().assemble()
+}
+
+fn build_mul_pow2_module() -> Vec<u32> {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let _ = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let x = b.variable(int, None, rspirv::spirv::StorageClass::Function, None);
+    let c4 = b.constant_bit32(int, 4);
+    let mul = b.i_mul(int, None, x, c4).expect("mul");
+    let _ = b.i_add(int, None, mul, c4).expect("add");
     b.ret().expect("ret");
     b.end_function().expect("end");
     b.module().assemble()
