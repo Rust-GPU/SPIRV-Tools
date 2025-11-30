@@ -116,6 +116,7 @@ Planned tasks:
 - [x] Add an env/flag to force the Rust optimizer on by default in CLI/FFI (with disable override).
 - Keep a benchmark guardrail (hyperfine/criterion) in CI or nightly to watch for regressions.
 - [x] Document rollback/roll-forward instructions and env toggles for downstream users.
+- Add a CLI/FFI parity harness to diff Rust vs C++ optimizer outputs on the arithmetic corpus and gate on regressions.
 
 ## Upcoming Milestone: Validator Default Enablement
 Flip the Rust validator on by default across CLI/FFI while keeping an escape hatch.
@@ -166,7 +167,8 @@ Tasks for this milestone:
 - [x] Reject invalid entry-point interfaces (function-scope variables, duplicate interface ids) and duplicate entry-point declarations for the same function/execution model with typed diagnostics.
 - [x] Broaden decoration target constraints with paired text/binary tests (member targets, decoration categories).
 - [x] Enforce execution-mode compatibility/value rules for OutputVertices, OutputLinesEXT/OutputTrianglesEXT, and OutputPrimitivesEXT (geometry/tessellation/mesh only; mesh counts non-zero in Vulkan MeshShadingEXT) with Rust tests.
-- [ ] Extend capability/extension ordering and remaining decoration constraints in layout to mirror the C++ tables.
+- [x] Run full ctest parity with Rust validator enabled (`SPIRV_TOOLS_DISABLE_RUST_VALIDATOR=0`) to confirm layout/decoration ordering remains aligned with C++.
+- [x] Extend capability/extension ordering and remaining decoration constraints in layout to mirror the C++ tables.
   - Added extra layout regressions rejecting capabilities after annotations and extensions after functions to mirror C++ ordering.
   - Added layout regressions for late `OpExtInstImport` and misordered `OpSamplerImageAddressingModeNV` to keep parity with the C++ layout tests.
   - Mirrored NV bindless sampler address mode rules (presence, uniqueness, bit-width validation) with binary regressions and layout-time checks.
