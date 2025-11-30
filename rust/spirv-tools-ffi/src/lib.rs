@@ -462,6 +462,10 @@ fn rust_validator_enabled() -> bool {
             ENABLE_RUST_VALIDATOR.store(false, Ordering::Relaxed);
         } else if std::env::var_os("SPIRV_TOOLS_FORCE_RUST_VALIDATOR").is_some() {
             ENABLE_RUST_VALIDATOR.store(true, Ordering::Relaxed);
+        } else if std::env::var_os("SPIRV_TOOLS_PREFER_CPP_VALIDATOR").is_some() {
+            ENABLE_RUST_VALIDATOR.store(false, Ordering::Relaxed);
+        } else if std::env::var_os("SPIRV_TOOLS_PREFER_RUST_VALIDATOR").is_some() {
+            ENABLE_RUST_VALIDATOR.store(true, Ordering::Relaxed);
         }
     });
     ENABLE_RUST_VALIDATOR.load(Ordering::Relaxed)
