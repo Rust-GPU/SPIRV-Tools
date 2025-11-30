@@ -626,6 +626,7 @@ Planned tasks:
   - Added C++ parity coverage for bitwise XOR folding in the Rust optimizer path to keep the FFI/CLI surface aligned.
   - Added bitwise NOT support (translation, rewrites, const folding) with corpus and C++ parity coverage to align the Rust optimizer with spirv-opt.
   - Added validator regression ensuring `OpSelectionMerge` still sits immediately before `OpSwitch`, matching structured control flow placement rules from the C++ validator.
+  - Added validator regression ensuring `OpLoopMerge` remains immediately before its terminator (no intervening instructions) to mirror the C++ structured control-flow checks.
 
 ## Upcoming Milestone: Optimizer FFI/CLI Integration
 Expose the Rust optimizer through the existing C/C++ surfaces and provide CLI benchmarking.
