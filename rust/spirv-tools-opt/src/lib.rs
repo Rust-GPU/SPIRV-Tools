@@ -34,7 +34,7 @@ pub mod fuzzing {
             let node = if idx == 0 {
                 SpirvLang::Const(ConstValue::new(u.arbitrary()?))
             } else {
-                match u.choose(&[0u8, 1, 2, 3, 4, 5, 6, 7, 8, 9])? {
+                match u.choose(&[0u8, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10])? {
                     0 => SpirvLang::Const(ConstValue::new(u.arbitrary()?)),
                     1 => {
                         let a = choose_child(u, idx - 1)?;
@@ -91,6 +91,16 @@ pub mod fuzzing {
                         let a = choose_child(u, idx - 1)?;
                         let b = choose_child(u, idx - 1)?;
                         SpirvLang::BitAnd([Id::from(a), Id::from(b)])
+                    }
+                    9 => {
+                        let a = choose_child(u, idx - 1)?;
+                        let b = choose_child(u, idx - 1)?;
+                        SpirvLang::BitOr([Id::from(a), Id::from(b)])
+                    }
+                    10 => {
+                        let a = choose_child(u, idx - 1)?;
+                        let b = choose_child(u, idx - 1)?;
+                        SpirvLang::BitXor([Id::from(a), Id::from(b)])
                     }
                     _ => {
                         let a = choose_child(u, idx - 1)?;
@@ -172,6 +182,7 @@ define_language! {
         "shr_u" = ShrU([Id; 2]),
         "band" = BitAnd([Id; 2]),
         "bor" = BitOr([Id; 2]),
+        "bxor" = BitXor([Id; 2]),
         "rotl" = RotL([Id; 2]),
         "rotr" = RotR([Id; 2]),
         "-" = Sub([Id; 2]),
@@ -203,7 +214,9 @@ impl egg::CostFunction<SpirvLang> for ExprCost {
             SpirvLang::Shl(_) | SpirvLang::ShrS(_) | SpirvLang::ShrU(_) => {
                 enode.children().iter().map(|id| costs(*id)).sum::<usize>() + 1
             }
-            SpirvLang::BitAnd(_) => enode.children().iter().map(|id| costs(*id)).sum::<usize>() + 2,
+            SpirvLang::BitAnd(_) | SpirvLang::BitXor(_) => {
+                enode.children().iter().map(|id| costs(*id)).sum::<usize>() + 2
+            }
             _ => enode.children().iter().map(|id| costs(*id)).sum::<usize>() + 1,
         }
     }
@@ -432,6 +445,16 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
             BitOrConstSimplify { x: var("?x"), c: var("?c") }
         }),
         rewrite!("bor-self"; "(bor ?x ?x)" => "?x"),
+        rewrite!("bxor-comm"; "(bxor ?a ?b)" => "(bxor ?b ?a)"),
+        rewrite!("bxor-assoc"; "(bxor ?a (bxor ?b ?c))" => "(bxor (bxor ?a ?b) ?c)"),
+        rewrite!("bxor-const-fold"; "(bxor ?a ?b)" => { BitXorFold { a: var("?a"), b: var("?b") } }),
+        rewrite!("bxor-zero-left"; "(bxor ?x ?c)" => {
+            BitXorConstSimplify { x: var("?x"), c: var("?c") }
+        }),
+        rewrite!("bxor-zero-right"; "(bxor ?c ?x)" => {
+            BitXorConstSimplify { x: var("?x"), c: var("?c") }
+        }),
+        rewrite!("bxor-self"; "(bxor ?x ?x)" => { BitXorSelf { _x: var("?x") } }),
         rewrite!("rotate-const-pattern"; "(bor (shl ?x ?s) (shr_u ?x ?t))" => {
             RotatePatternFold { x: var("?x"), s: var("?s"), t: var("?t") }
         }),
@@ -807,6 +830,17 @@ struct BitOrFold {
 struct BitOrConstSimplify {
     x: Var,
     c: Var,
+}
+struct BitXorFold {
+    a: Var,
+    b: Var,
+}
+struct BitXorConstSimplify {
+    x: Var,
+    c: Var,
+}
+struct BitXorSelf {
+    _x: Var,
 }
 struct RotatePatternFold {
     x: Var,
@@ -2066,6 +2100,63 @@ impl Applier<SpirvLang, ()> for BitOrConstSimplify {
     }
 }
 
+impl Applier<SpirvLang, ()> for BitXorFold {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(a) = const_value(egraph, subst[self.a]) else {
+            return Vec::new();
+        };
+        let Some(b) = const_value(egraph, subst[self.b]) else {
+            return Vec::new();
+        };
+        let folded = ConstValue::new(a.get() ^ b.get());
+        let id = egraph.add(SpirvLang::Const(folded));
+        egraph.union(eclass, id);
+        vec![id]
+    }
+}
+
+impl Applier<SpirvLang, ()> for BitXorConstSimplify {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(c) = const_value(egraph, subst[self.c]) else {
+            return Vec::new();
+        };
+        if c.get() != 0 {
+            return Vec::new();
+        }
+        egraph.union(eclass, subst[self.x]);
+        vec![subst[self.x]]
+    }
+}
+
+impl Applier<SpirvLang, ()> for BitXorSelf {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        _subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let zero = egraph.add(SpirvLang::Const(ConstValue::new(0)));
+        egraph.union(eclass, zero);
+        vec![zero]
+    }
+}
+
 impl Applier<SpirvLang, ()> for RotatePatternFold {
     fn apply_one(
         &self,
@@ -3186,6 +3277,36 @@ mod tests {
             }
         });
         assert!(found_shl, "expected x * 8 to admit x << 3");
+    }
+
+    #[test]
+    fn folds_bitwise_xor_identities() {
+        // x ^ 0 => x
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),          // 0
+            SpirvLang::Const(ConstValue::new(0)),          // 1
+            SpirvLang::BitXor([Id::from(0), Id::from(1)]), // 2
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let class = runner.egraph.find(runner.roots[0]);
+        let nodes = &runner.egraph[class].nodes;
+        let has_symbol = nodes
+            .iter()
+            .any(|n| matches!(n, SpirvLang::Symbol(sym) if *sym == Symbol::from("x")));
+        assert!(has_symbol, "expected x ^ 0 to reduce to x");
+
+        // c ^ c => 0, 3 ^ 5 => 6
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new(3)),          // 0
+            SpirvLang::Const(ConstValue::new(5)),          // 1
+            SpirvLang::BitXor([Id::from(0), Id::from(0)]), // 2
+            SpirvLang::BitXor([Id::from(0), Id::from(1)]), // 3
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Const(ConstValue::new(6))])
+        );
     }
 
     #[test]
@@ -4701,6 +4822,34 @@ mod tests {
             optimized == block || optimized == vec![expected_const],
             "bitwise and should either pass through or fold constants"
         );
+    }
+
+    #[test]
+    fn optimize_arith_block_folds_bitwise_xor_constants() {
+        let int = 1;
+        let c3 = Instruction::new(
+            rspirv::spirv::Op::Constant,
+            Some(int),
+            Some(1),
+            vec![rspirv::dr::Operand::LiteralBit32(3)],
+        );
+        let c5 = Instruction::new(
+            rspirv::spirv::Op::Constant,
+            Some(int),
+            Some(2),
+            vec![rspirv::dr::Operand::LiteralBit32(5)],
+        );
+        let bxor = Instruction::new(
+            rspirv::spirv::Op::BitwiseXor,
+            Some(int),
+            Some(3),
+            vec![rspirv::dr::Operand::IdRef(1), rspirv::dr::Operand::IdRef(2)],
+        );
+        let optimized = optimize_arith_block(&[c3, c5, bxor]).expect("bitwise xor supported");
+        assert_eq!(optimized.len(), 1);
+        let folded = &optimized[0];
+        assert_eq!(folded.class.opcode, rspirv::spirv::Op::Constant);
+        assert_eq!(folded.operands, vec![rspirv::dr::Operand::LiteralBit32(6)]);
     }
 
     #[test]

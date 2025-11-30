@@ -622,6 +622,7 @@ Planned tasks:
   - Added a hyperfine benchmark script (`scripts/hyperfine-opt.sh`) to compare the Rust optimizer CLI against the C++ spirv-opt when available.
   - Added a `--cpp` fallback flag to `spirv-opt` CLI to run the C++ binary for benchmarking/compatibility, while keeping the Rust path enabled by default.
   - Restored shift constant folding rewrites with a pure-constant guard and added unit/corpus coverage to match the C++ optimizer’s behavior while keeping rotation folding safe.
+  - Added bitwise XOR language support (translation, rewrites, const folding) with corpus and unit coverage to keep parity with C++ bitwise optimizations.
 
 ## Upcoming Milestone: Optimizer FFI/CLI Integration
 Expose the Rust optimizer through the existing C/C++ surfaces and provide CLI benchmarking.

@@ -651,6 +651,34 @@ fn corpus_folds_add_with_negated_operand() {
 }
 
 #[test]
+fn corpus_folds_bxor_constants() {
+    let int = 1;
+    let c1 = inst(
+        Op::Constant,
+        int,
+        1,
+        vec![rspirv::dr::Operand::LiteralBit32(3)],
+    );
+    let c2 = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(5)],
+    );
+    let xor = inst(
+        Op::BitwiseXor,
+        int,
+        3,
+        vec![rspirv::dr::Operand::IdRef(1), rspirv::dr::Operand::IdRef(2)],
+    );
+    let optimized = optimize_arith_block(&[c1, c2, xor]).expect("optimize");
+    assert_eq!(optimized.len(), 1);
+    let folded = &optimized[0];
+    assert_eq!(folded.class.opcode, Op::Constant);
+    assert_eq!(folded.operands, vec![rspirv::dr::Operand::LiteralBit32(6)]);
+}
+
+#[test]
 fn corpus_cancels_add_sub() {
     let int = 1;
     let ca = inst(
