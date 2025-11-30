@@ -131,7 +131,7 @@ Planned tasks:
 ## Upcoming Milestone: Residual Layout & Structural Parity
 - Finish capability/extension ordering gaps relative to the C++ validator (remaining conditional capability/extension placements and after-function checks) with Rust regressions.
 - Close outstanding decoration placement/compatibility constraints in layout to mirror the C++ tables, adding paired text/binary tests.
-- Add execution-model-aware entry-point interface storage-class validation (including kernel/ray/mesh-specific allowances) without regressing existing small-type capability checks; gate with Rust/C++ parity tests.
+- Add execution-model-aware entry-point interface storage-class validation (including kernel/ray/mesh-specific allowances) without regressing existing small-type capability checks; gate with Rust/C++ parity tests. (Vulkan-only uniqueness for PushConstant, IncomingRayPayloadKHR, HitAttributeKHR, and IncomingCallableDataKHR enforced.)
 - Keep CLI/FFI parity runners updated to exercise these structural rules with the Rust validator forced on so rollout remains guarded.
 
 ## Completed Milestone: Layout Ordering Parity
