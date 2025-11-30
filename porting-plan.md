@@ -135,11 +135,11 @@ Planned tasks:
 - Keep fuzz/criterion/hyperfine benches up to date to guard rewrite performance/regressions.
  - Add rotate-left/right support in the optimizer (where enabled) with parity coverage and rewrites, staying within SPIR-V capability limits. (basic rotate folding via shifted-or patterns is in place with complementary-shift guard; expand patterns and coverage)
 
-## Upcoming Milestone: Validator Default Enablement
+## Completed Milestone: Validator Default Enablement
 Flip the Rust validator on by default across CLI/FFI while keeping an escape hatch.
 
 Planned tasks:
-- Add a rollout flag/env to enable the Rust validator by default in CLI/FFI with a clear C++ fallback.
+- [x] Add a rollout flag/env to enable the Rust validator by default in CLI/FFI with a clear C++ fallback (default now on in CMake/Bazel via `SPIRV_PREFER_RUST_VALIDATOR_DEFAULT=1`).
 - [x] Wire the validator toggle through CMake/Bazel build glue so downstreams inherit the default.
 - Update CLI help/docs to describe the Rust-default behavior and override knobs.
 - Keep the corpus/ctest parity runner in CI to guard the rollout and document rollback steps.
