@@ -167,6 +167,7 @@ Planned tasks:
 - ✅ Cover `OpPtrAccessChain` and `OpInBoundsPtrAccessChain` with pointer-specific validation (integer indices, literal struct indices, result type/storage-class alignment) using builder-based modules.
 - ✅ Validate pointer comparisons (`OpPtrEqual`/`OpPtrNotEqual`) require boolean results and pointer operands with matching pointer types (typed and untyped pointer support).
 - ✅ Validate dynamic vector extracts/inserts: operand must be a vector, result/component types must align, and indices must be integer scalars (builder-based regressions).
+- ✅ Validate `OpVectorTimesScalar` type rules (vector operand must be a vector, scalar must match component type, result type must match the vector) with Rust regressions.
 
 ## Completed Milestone: Layout Ordering Parity
 Match the C++ validator’s capability/extension/import ordering and annotation placement rules in the Rust validator.

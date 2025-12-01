@@ -2290,6 +2290,22 @@ pub enum ValidationError {
         /// The offending type.
         found: TypeId,
     },
+    /// A vector-times-scalar operand violates type rules.
+    #[error(
+        "instruction {instruction:?} in block {block:?} of function {function:?} has mismatched vector/scalar types: vector {vector_type:?}, scalar {scalar_type:?}"
+    )]
+    VectorTimesScalarTypeMismatch {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode (always `OpVectorTimesScalar`).
+        instruction: rspirv::spirv::Op,
+        /// The vector operand type.
+        vector_type: TypeId,
+        /// The scalar operand type.
+        scalar_type: TypeId,
+    },
     /// A function references a missing or invalid function type.
     #[error("function {function:?} has an invalid function type {type_id:?}")]
     InvalidFunctionType {
@@ -3613,6 +3629,101 @@ fn validate_functions(
                             instruction: inst.class.opcode,
                             operand_index: 2,
                             found: index_type_id,
+                        });
+                    }
+                }
+                if inst.class.opcode == rspirv::spirv::Op::VectorTimesScalar {
+                    let Some(block) = &block.label else {
+                        continue;
+                    };
+                    let Some(block_label_id) = block
+                        .result_id
+                        .and_then(|raw| Id::try_from(raw).ok())
+                    else {
+                        continue;
+                    };
+
+                    let vector_operand = inst
+                        .operands
+                        .get(0)
+                        .and_then(|op| match op {
+                            rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                            _ => None,
+                        });
+                    let Some(vector_operand) = vector_operand else {
+                        continue;
+                    };
+                    let Some(vector_type_id) = result_types.get(&vector_operand).copied() else {
+                        continue;
+                    };
+                    let Some(vector_type_inst) = ResultId::try_from(u32::from(vector_type_id))
+                        .ok()
+                        .and_then(|rid| definitions.get(&rid))
+                    else {
+                        return Err(ValidationError::VectorOperandNotVector {
+                            function: function_id,
+                            block: block_label_id,
+                            instruction: inst.class.opcode,
+                            operand: 0,
+                            found: vector_type_id,
+                        });
+                    };
+                    if vector_type_inst.class.opcode != rspirv::spirv::Op::TypeVector {
+                        return Err(ValidationError::VectorOperandNotVector {
+                            function: function_id,
+                            block: block_label_id,
+                            instruction: inst.class.opcode,
+                            operand: 0,
+                            found: vector_type_id,
+                        });
+                    }
+                    let (component_type, _) = vector_info(vector_type_inst);
+                    let Some(component_type) = component_type else {
+                        return Err(ValidationError::VectorOperandNotVector {
+                            function: function_id,
+                            block: block_label_id,
+                            instruction: inst.class.opcode,
+                            operand: 0,
+                            found: vector_type_id,
+                        });
+                    };
+
+                    let scalar_operand = inst
+                        .operands
+                        .get(1)
+                        .and_then(|op| match op {
+                            rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                            _ => None,
+                        });
+                    let Some(scalar_operand) = scalar_operand else {
+                        continue;
+                    };
+                    let Some(scalar_type_id) = result_types.get(&scalar_operand).copied() else {
+                        continue;
+                    };
+                    if scalar_type_id != component_type {
+                        return Err(ValidationError::VectorTimesScalarTypeMismatch {
+                            function: function_id,
+                            block: block_label_id,
+                            instruction: inst.class.opcode,
+                            vector_type: vector_type_id,
+                            scalar_type: scalar_type_id,
+                        });
+                    }
+
+                    let Some(result_type_id) = inst
+                        .result_type
+                        .and_then(|raw| TypeId::try_from(raw).ok())
+                    else {
+                        continue;
+                    };
+                    if result_type_id != vector_type_id {
+                        return Err(ValidationError::InstructionResultTypeMismatch {
+                            function: function_id,
+                            block: block_label_id,
+                            instruction: inst.class.opcode,
+                            expected: vector_type_id,
+                            found: result_type_id,
                         });
                     }
                 }
@@ -22102,6 +22213,95 @@ mod tests {
                 instruction: rspirv::spirv::Op::VectorInsertDynamic,
                 operand_index: 2,
                 found: TypeId::try_from(float).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn vector_times_scalar_scalar_type_must_match_component() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let float = b.type_float(32, None);
+        let vec2 = b.type_vector(int, 2);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let entry = b.begin_block(None).unwrap();
+        let vector = b.undef(vec2, None);
+        let scalar = b.constant_bit32(float, 0.0f32.to_bits());
+        b.vector_times_scalar(vec2, None, vector, scalar).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let binary = b.module().assemble();
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("vector times scalar requires scalar to match vector component type");
+        assert_eq!(
+            err,
+            ValidationError::VectorTimesScalarTypeMismatch {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(entry).unwrap(),
+                instruction: rspirv::spirv::Op::VectorTimesScalar,
+                vector_type: TypeId::try_from(vec2).unwrap(),
+                scalar_type: TypeId::try_from(float).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn vector_times_scalar_result_type_must_match_vector() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let float = b.type_float(32, None);
+        let vec2 = b.type_vector(int, 2);
+        let v2f = b.type_vector(float, 2);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let entry = b.begin_block(None).unwrap();
+        let vector = b.undef(vec2, None);
+        let scalar = b.constant_bit32(int, 2);
+        b.vector_times_scalar(v2f, None, vector, scalar).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let binary = b.module().assemble();
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("vector times scalar result type must match vector operand");
+        assert_eq!(
+            err,
+            ValidationError::InstructionResultTypeMismatch {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(entry).unwrap(),
+                instruction: rspirv::spirv::Op::VectorTimesScalar,
+                expected: TypeId::try_from(vec2).unwrap(),
+                found: TypeId::try_from(v2f).unwrap(),
             }
         );
     }
