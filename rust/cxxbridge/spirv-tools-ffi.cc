@@ -906,10 +906,21 @@ struct ValidateResult final {
 };
 #endif // CXXBRIDGE1_STRUCT_spvtools$ffi$ValidateResult
 
+#ifndef CXXBRIDGE1_ENUM_spvtools$ffi$OptimizeError
+#define CXXBRIDGE1_ENUM_spvtools$ffi$OptimizeError
+enum class OptimizeError : ::std::uint8_t {
+  None,
+  Disabled,
+  Parse,
+  Optimize,
+};
+#endif // CXXBRIDGE1_ENUM_spvtools$ffi$OptimizeError
+
 #ifndef CXXBRIDGE1_STRUCT_spvtools$ffi$OptimizeResult
 #define CXXBRIDGE1_STRUCT_spvtools$ffi$OptimizeResult
 struct OptimizeResult final {
   bool success CXX_DEFAULT_VALUE(false);
+  ::spvtools::ffi::OptimizeError error CXX_DEFAULT_VALUE(::spvtools::ffi::OptimizeError::None);
   ::rust::String message;
   ::rust::Vec<::std::uint32_t> words;
 
