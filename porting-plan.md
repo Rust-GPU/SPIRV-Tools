@@ -149,6 +149,7 @@ Planned tasks:
 - Update CLI help/docs to describe optimizer toggles and rollback/roll-forward guidance. **(`spirv-opt --help` now lists flags/env; docs updated)**
 - [x] Expose optimizer error kinds to C++ callers/tests so parse/opt/disabled are distinguishable in native integrations. **(cxxbridge exports `OptimizeError`; C++ bridge tests assert parse/disabled behavior)**
 - Expand parity coverage to include shift-by-zero elimination and keep FFI parity aligned with CLI coverage. **(CLI + FFI tests cover shift-by-zero folding with id stability)**
+- Broaden parity to include unsigned-identity rewrites (e.g., divide-by-one) across CLI/FFI and C++ comparison.
 - Keep clippy/rustfmt/cargo fuzz smoke tests green after wiring the integration.
 
 ## Completed Milestone: Validator Default Enablement

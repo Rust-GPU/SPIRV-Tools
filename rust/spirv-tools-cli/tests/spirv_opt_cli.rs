@@ -216,6 +216,48 @@ fn spirv_opt_cli_folds_mul_by_one() {
 }
 
 #[test]
+fn spirv_opt_cli_folds_udiv_by_one() {
+    let (words, div_id) = build_udiv_one_module();
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_spirv-opt"));
+    cmd.arg("--")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+    let mut child = cmd.spawn().expect("spawn spirv-opt");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin")
+        .write_all(&words_to_bytes(&words))
+        .expect("write module");
+    let output = child.wait_with_output().expect("run spirv-opt");
+    assert!(
+        output.status.success(),
+        "spirv-opt failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let optimized_words = bytes_to_words(&output.stdout);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+
+    let mut found_const = false;
+    for inst in module.all_inst_iter() {
+        assert_ne!(inst.class.opcode, Op::UDiv, "udiv by one should be removed");
+        if inst.class.opcode == Op::Constant
+            && inst.result_id == Some(div_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(9)]
+        {
+            found_const = true;
+        }
+    }
+    assert!(
+        found_const,
+        "udiv by one should fold to original value with same id"
+    );
+}
+
+#[test]
 fn spirv_opt_cli_folds_shift_by_zero() {
     let (words, shl_id) = build_shift_zero_module();
     let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_spirv-opt"));
@@ -666,6 +708,12 @@ fn spirv_opt_cli_cpp_mode_matches_rust_pow2_div_output() {
 }
 
 #[test]
+fn spirv_opt_cli_cpp_mode_matches_rust_udiv_one_output() {
+    let (words, _) = build_udiv_one_module();
+    assert_cpp_cli_matches_rust(&words, "udiv by one");
+}
+
+#[test]
 fn spirv_opt_cli_cpp_mode_matches_rust_shift_zero_output() {
     let (words, _) = build_shift_zero_module();
     assert_cpp_cli_matches_rust(&words, "shift by zero");
@@ -728,6 +776,28 @@ fn build_mul_one_module() -> (Vec<u32>, u32) {
     b.ret().expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), mul)
+}
+
+fn build_udiv_one_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(rspirv::spirv::Capability::Shader);
+    b.memory_model(
+        rspirv::spirv::AddressingModel::Logical,
+        rspirv::spirv::MemoryModel::Simple,
+    );
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let _ = b
+        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let c9 = b.constant_bit32(int, 9);
+    let c1 = b.constant_bit32(int, 1);
+    let div = b.u_div(int, None, c9, c1).expect("div id");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), div)
 }
 
 fn build_shift_zero_module() -> (Vec<u32>, u32) {
