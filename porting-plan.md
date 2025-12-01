@@ -711,14 +711,15 @@ Planned tasks:
   - Added an FFI regression for affine GCD subtraction folding (`(14*2)-21 -> 7`) to keep the bridge aligned with the Rust optimizer behavior.
    - Added a short `cargo fuzz` smoke script (`scripts/fuzz-smoke.sh`) to keep the arithmetic optimizer fuzz target exercised with a bounded run.
   - Added an FFI regression for factoring linear combinations into a single constant result, ensuring the C bridge exercises the optimizer path.
-  - Added a CLI-facing `opt_block` binary and integration test to optimize basic blocks on-disk, paving the way for drop-in CLI parity and hyperfine comparisons.
-  - Added a hyperfine benchmark script (`scripts/hyperfine-opt.sh`) to compare the Rust optimizer CLI against the C++ spirv-opt when available.
-  - Added a `--cpp` fallback flag to `spirv-opt` CLI to run the C++ binary for benchmarking/compatibility, while keeping the Rust path enabled by default.
-  - Restored shift constant folding rewrites with a pure-constant guard and added unit/corpus coverage to match the C++ optimizer’s behavior while keeping rotation folding safe.
-  - Added bitwise XOR language support (translation, rewrites, const folding) with corpus and unit coverage to keep parity with C++ bitwise optimizations.
-  - Added C++ parity coverage for bitwise XOR folding in the Rust optimizer path to keep the FFI/CLI surface aligned.
-  - Added bitwise NOT support (translation, rewrites, const folding) with corpus and C++ parity coverage to align the Rust optimizer with spirv-opt.
-  - Added validator regression ensuring `OpSelectionMerge` still sits immediately before `OpSwitch`, matching structured control flow placement rules from the C++ validator.
+- Added a CLI-facing `opt_block` binary and integration test to optimize basic blocks on-disk, paving the way for drop-in CLI parity and hyperfine comparisons.
+- Added a hyperfine benchmark script (`scripts/hyperfine-opt.sh`) to compare the Rust optimizer CLI against the C++ spirv-opt when available.
+- Added a `--cpp` fallback flag to `spirv-opt` CLI to run the C++ binary for benchmarking/compatibility, while keeping the Rust path enabled by default.
+- Restored shift constant folding rewrites with a pure-constant guard and added unit/corpus coverage to match the C++ optimizer’s behavior while keeping rotation folding safe.
+- Added bitwise XOR language support (translation, rewrites, const folding) with corpus and unit coverage to keep parity with C++ bitwise optimizations.
+- Defaulted width inference to 32 bits when no constants are present so complement-based folds (`x & ~x`, `x | ~x`) still fire, with unit coverage to lock in the fallback.
+- Added C++ parity coverage for bitwise XOR folding in the Rust optimizer path to keep the FFI/CLI surface aligned.
+- Added bitwise NOT support (translation, rewrites, const folding) with corpus and C++ parity coverage to align the Rust optimizer with spirv-opt.
+- Added validator regression ensuring `OpSelectionMerge` still sits immediately before `OpSwitch`, matching structured control flow placement rules from the C++ validator.
   - Added validator regression ensuring `OpLoopMerge` remains immediately before its terminator (no intervening instructions) to mirror the C++ structured control-flow checks.
   - Added validator regression ensuring loop headers cannot terminate with `OpSwitch` after `OpLoopMerge`, keeping terminator constraints aligned with the C++ validator.
   - Added validator regressions for missing merge/continue targets (selection/loop merges must reference in-function blocks), matching the C++ structured CFG checks.
