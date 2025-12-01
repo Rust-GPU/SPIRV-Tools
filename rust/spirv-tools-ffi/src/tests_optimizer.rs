@@ -463,6 +463,148 @@ mod optimizer_tests {
         );
     }
 
+    #[test]
+    fn optimizer_folds_bitand_zero() {
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(void, vec![]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        let value = b.constant_bit32(int, 0xDEAD_BEEF);
+        let zero = b.constant_bit32(int, 0);
+        let band = b.bitwise_and(int, None, value, zero).expect("and");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let module = loader.module();
+
+        let mut saw_zero = false;
+        for inst in module.all_inst_iter() {
+            assert_ne!(
+                inst.class.opcode,
+                Op::BitwiseAnd,
+                "and with zero should be eliminated"
+            );
+            if inst.class.opcode == Op::Constant
+                && inst.result_id == Some(band)
+                && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0)]
+            {
+                saw_zero = true;
+            }
+        }
+        assert!(saw_zero, "and with zero should fold to zero with same id");
+    }
+
+    #[test]
+    fn optimizer_folds_bitor_zero() {
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(void, vec![]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        let lhs = b.constant_bit32(int, 2);
+        let rhs = b.constant_bit32(int, 3);
+        let value = b.i_add(int, None, lhs, rhs).expect("value");
+        let zero = b.constant_bit32(int, 0);
+        let bor = b.bitwise_or(int, None, value, zero).expect("or");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let module = loader.module();
+
+        let mut saw_const = false;
+        for inst in module.all_inst_iter() {
+            assert_ne!(
+                inst.class.opcode,
+                Op::BitwiseOr,
+                "or with zero should be eliminated"
+            );
+            if inst.class.opcode == Op::Constant
+                && inst.result_id == Some(bor)
+                && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(5)]
+            {
+                saw_const = true;
+            }
+        }
+        assert!(
+            saw_const,
+            "or with zero should fold to original value with same id"
+        );
+    }
+
+    #[test]
+    fn optimizer_folds_bitxor_zero() {
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(void, vec![]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        let lhs = b.constant_bit32(int, 7);
+        let rhs = b.constant_bit32(int, 9);
+        let value = b.i_add(int, None, lhs, rhs).expect("value");
+        let zero = b.constant_bit32(int, 0);
+        let bxor = b.bitwise_xor(int, None, value, zero).expect("xor");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let module = loader.module();
+
+        let mut saw_const = false;
+        for inst in module.all_inst_iter() {
+            assert_ne!(
+                inst.class.opcode,
+                Op::BitwiseXor,
+                "xor with zero should be eliminated"
+            );
+            if inst.class.opcode == Op::Constant
+                && inst.result_id == Some(bxor)
+                && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(16)]
+            {
+                saw_const = true;
+            }
+        }
+        assert!(
+            saw_const,
+            "xor with zero should fold to the original value with same id"
+        );
+    }
+
 
     #[test]
     fn optimizer_factors_linear_combination_into_single_mul() {

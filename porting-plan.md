@@ -154,6 +154,7 @@ Planned tasks:
 - [x] Broaden parity to include signed divide/remainder by one across CLI/FFI vs. C++ outputs.
 - [x] Broaden parity to include rotate-folding patterns across CLI/FFI vs. C++ outputs.
 - [x] Add parity for bitwise all-ones identities (and/or) and xor-to-not lowering across CLI/FFI so C++ outputs stay aligned.
+- [x] Add parity for bitwise zero identities (and/or/xor) across CLI/FFI so identity/absorbing forms stay in lockstep with C++.
 - Keep clippy/rustfmt/cargo fuzz smoke tests green after wiring the integration.
 
 ## Completed Milestone: Validator Default Enablement

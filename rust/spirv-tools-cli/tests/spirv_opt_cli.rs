@@ -609,6 +609,141 @@ fn spirv_opt_cli_rewrites_bitxor_all_ones_to_not() {
 }
 
 #[test]
+fn spirv_opt_cli_folds_bitand_zero() {
+    let (words, and_id) = build_bitand_zero_module();
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_spirv-opt"));
+    cmd.arg("--")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+    let mut child = cmd.spawn().expect("spawn spirv-opt");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin")
+        .write_all(&words_to_bytes(&words))
+        .expect("write module");
+    let output = child.wait_with_output().expect("run spirv-opt");
+    assert!(
+        output.status.success(),
+        "spirv-opt failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let optimized_words = bytes_to_words(&output.stdout);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+
+    let mut saw_zero = false;
+    for inst in module.all_inst_iter() {
+        assert_ne!(
+            inst.class.opcode,
+            Op::BitwiseAnd,
+            "and with zero should be eliminated"
+        );
+        if inst.class.opcode == Op::Constant
+            && inst.result_id == Some(and_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0)]
+        {
+            saw_zero = true;
+        }
+    }
+    assert!(saw_zero, "and with zero should fold to zero with same id");
+}
+
+#[test]
+fn spirv_opt_cli_folds_bitor_zero() {
+    let (words, or_id) = build_bitor_zero_module();
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_spirv-opt"));
+    cmd.arg("--")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+    let mut child = cmd.spawn().expect("spawn spirv-opt");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin")
+        .write_all(&words_to_bytes(&words))
+        .expect("write module");
+    let output = child.wait_with_output().expect("run spirv-opt");
+    assert!(
+        output.status.success(),
+        "spirv-opt failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let optimized_words = bytes_to_words(&output.stdout);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+
+    let mut found_const = false;
+    for inst in module.all_inst_iter() {
+        assert_ne!(
+            inst.class.opcode,
+            Op::BitwiseOr,
+            "or with zero should be eliminated"
+        );
+        if inst.class.opcode == Op::Constant
+            && inst.result_id == Some(or_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(5)]
+        {
+            found_const = true;
+        }
+    }
+    assert!(
+        found_const,
+        "or with zero should fold to the original value with same id"
+    );
+}
+
+#[test]
+fn spirv_opt_cli_folds_bitxor_zero() {
+    let (words, xor_id) = build_bitxor_zero_module();
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_spirv-opt"));
+    cmd.arg("--")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+    let mut child = cmd.spawn().expect("spawn spirv-opt");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin")
+        .write_all(&words_to_bytes(&words))
+        .expect("write module");
+    let output = child.wait_with_output().expect("run spirv-opt");
+    assert!(
+        output.status.success(),
+        "spirv-opt failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let optimized_words = bytes_to_words(&output.stdout);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+
+    let mut found_const = false;
+    for inst in module.all_inst_iter() {
+        assert_ne!(
+            inst.class.opcode,
+            Op::BitwiseXor,
+            "xor with zero should be eliminated"
+        );
+        if inst.class.opcode == Op::Constant
+            && inst.result_id == Some(xor_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(16)]
+        {
+            found_const = true;
+        }
+    }
+    assert!(
+        found_const,
+        "xor with zero should fold to the original value with same id"
+    );
+}
+
+#[test]
 fn spirv_opt_cli_rewrites_umod_pow2_to_mask() {
     let (words, umod_id) = build_umod_pow2_module();
     let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_spirv-opt"));
@@ -1291,6 +1426,76 @@ fn build_bitxor_all_ones_module() -> (Vec<u32>, u32) {
     let bxor = b
         .bitwise_xor(int, None, value, ones)
         .expect("bitwise xor");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), bxor)
+}
+
+fn build_bitand_zero_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(rspirv::spirv::Capability::Shader);
+    b.memory_model(
+        rspirv::spirv::AddressingModel::Logical,
+        rspirv::spirv::MemoryModel::Simple,
+    );
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let _ = b
+        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let value = b.constant_bit32(int, 0xDEAD_BEEF);
+    let zero = b.constant_bit32(int, 0);
+    let band = b.bitwise_and(int, None, value, zero).expect("bitwise and");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), band)
+}
+
+fn build_bitor_zero_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(rspirv::spirv::Capability::Shader);
+    b.memory_model(
+        rspirv::spirv::AddressingModel::Logical,
+        rspirv::spirv::MemoryModel::Simple,
+    );
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let _ = b
+        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let lhs = b.constant_bit32(int, 2);
+    let rhs = b.constant_bit32(int, 3);
+    let value = b.i_add(int, None, lhs, rhs).expect("value");
+    let zero = b.constant_bit32(int, 0);
+    let bor = b.bitwise_or(int, None, value, zero).expect("bitwise or");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), bor)
+}
+
+fn build_bitxor_zero_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(rspirv::spirv::Capability::Shader);
+    b.memory_model(
+        rspirv::spirv::AddressingModel::Logical,
+        rspirv::spirv::MemoryModel::Simple,
+    );
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let _ = b
+        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let lhs = b.constant_bit32(int, 7);
+    let rhs = b.constant_bit32(int, 9);
+    let value = b.i_add(int, None, lhs, rhs).expect("value");
+    let zero = b.constant_bit32(int, 0);
+    let bxor = b.bitwise_xor(int, None, value, zero).expect("bitwise xor");
     b.ret().expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), bxor)
