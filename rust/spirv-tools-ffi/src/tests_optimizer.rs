@@ -204,6 +204,30 @@ mod optimizer_tests {
         (b.module().assemble(), add, param)
     }
 
+    fn build_factored_const_mul_sum_module() -> (Vec<u32>, u32) {
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(void, vec![int, int]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        b.begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let lhs = b.function_parameter(int).unwrap();
+        let rhs = b.function_parameter(int).unwrap();
+        b.begin_block(None).unwrap();
+        let c4 = b.constant_bit32(int, 4);
+        let mul_left = b.i_mul(int, None, lhs, c4).expect("mul left");
+        let mul_right = b.i_mul(int, None, rhs, c4).expect("mul right");
+        let add = b.i_add(int, None, mul_left, mul_right).expect("add");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        (b.module().assemble(), add)
+    }
+
     #[test]
     fn optimizer_factors_common_multiplicand() {
         let (words, add_id, param_id) = build_factored_mul_sum_module();
@@ -262,6 +286,96 @@ mod optimizer_tests {
             "factored multiply should reuse add id and use 5 * param"
         );
         assert!(!add_present, "addition should be removed after factoring");
+    }
+
+    #[test]
+    fn optimizer_factors_shared_constant_from_sum() {
+        let (words, add_id) = build_factored_const_mul_sum_module();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let optimized_module = loader.module();
+
+        let mut constants = std::collections::HashMap::new();
+        let mut add_result = None;
+        let mut scaling_count = 0;
+        let mut factored = false;
+
+        for inst in optimized_module.all_inst_iter() {
+            match inst.class.opcode {
+                Op::Constant => {
+                    if let (Some(id), Some(value)) = (
+                        inst.result_id,
+                        inst.operands.first().and_then(|op| match op {
+                            rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+                            _ => None,
+                        }),
+                    ) {
+                        constants.insert(id, value);
+                    }
+                }
+                Op::IAdd => {
+                    add_result = inst.result_id;
+                }
+                Op::IMul => {
+                    scaling_count += 1;
+                    if inst.result_id != Some(add_id) {
+                        continue;
+                    }
+                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                        continue;
+                    };
+                    let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
+                        continue;
+                    };
+                    let Some(add_res_id) = add_result else {
+                        continue;
+                    };
+                    let uses_add = lhs == add_res_id || rhs == add_res_id;
+                    let const_id = if lhs == add_res_id { rhs } else { lhs };
+                    let is_const_four = constants
+                        .get(&const_id)
+                        .copied()
+                        .map(|v| v == 4)
+                        .unwrap_or(false);
+                    factored = uses_add && is_const_four;
+                }
+                Op::ShiftLeftLogical => {
+                    scaling_count += 1;
+                    if inst.result_id != Some(add_id) {
+                        continue;
+                    }
+                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                        continue;
+                    };
+                    let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
+                        continue;
+                    };
+                    let Some(add_res_id) = add_result else {
+                        continue;
+                    };
+                    let uses_add = lhs == add_res_id;
+                    let is_shift_two = constants
+                        .get(&rhs)
+                        .copied()
+                        .map(|v| v == 2)
+                        .unwrap_or(false);
+                    factored = uses_add && is_shift_two;
+                }
+                _ => {}
+            }
+        }
+
+        assert_eq!(
+            scaling_count, 1,
+            "factoring should leave one scaling instruction"
+        );
+        assert!(add_result.is_some(), "addition should remain as inner sum");
+        assert!(
+            factored,
+            "factored multiply should reuse add result and multiply by four"
+        );
     }
 
     #[test]
