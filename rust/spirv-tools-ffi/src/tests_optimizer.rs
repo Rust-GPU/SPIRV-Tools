@@ -36,6 +36,38 @@ mod optimizer_tests {
     }
 
     #[test]
+    fn optimizer_reports_disabled_kind() {
+        let _guard = OptimizerEnvGuard::new();
+        std::env::set_var("SPIRV_TOOLS_DISABLE_RUST_OPT", "1");
+
+        // Build a simple module that would otherwise be optimized.
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(void, vec![]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        let c2 = b.constant_bit32(int, 2);
+        let c3 = b.constant_bit32(int, 3);
+        let _ = b.i_add(int, None, c2, c3);
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let result = optimize_wrapped_block(&words);
+        assert!(result.success, "disable should passthrough successfully");
+        assert_eq!(result.error, crate::OptimizeError::Disabled);
+        assert_eq!(result.words, words, "disable should leave module unchanged");
+    }
+
+    #[test]
     fn optimizer_basic_block_pass_through_non_arith() {
         let mut b = Builder::new();
         let void = b.type_void();
