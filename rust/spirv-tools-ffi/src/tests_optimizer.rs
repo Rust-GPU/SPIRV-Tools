@@ -252,6 +252,30 @@ mod optimizer_tests {
         (b.module().assemble(), sub)
     }
 
+    fn build_factored_symbolic_mul_sub_module() -> (Vec<u32>, u32, u32, u32, u32) {
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(void, vec![int, int, int]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        b.begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let base = b.function_parameter(int).unwrap();
+        let lhs = b.function_parameter(int).unwrap();
+        let rhs = b.function_parameter(int).unwrap();
+        b.begin_block(None).unwrap();
+        let mul_left = b.i_mul(int, None, base, lhs).expect("mul left");
+        let mul_right = b.i_mul(int, None, base, rhs).expect("mul right");
+        let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        (b.module().assemble(), sub, base, lhs, rhs)
+    }
+
     #[test]
     fn optimizer_factors_common_multiplicand() {
         let (words, add_id, param_id) = build_factored_mul_sum_module();
@@ -488,6 +512,59 @@ mod optimizer_tests {
             "factoring should leave a single scaling op"
         );
         assert!(factored, "scaling should reuse the subtract result id");
+    }
+
+    #[test]
+    fn optimizer_factors_symbolic_multiplicand_from_sub() {
+        let (words, sub_id, base, lhs, rhs) = build_factored_symbolic_mul_sub_module();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let optimized_module = loader.module();
+
+        let mut mul_count = 0;
+        let mut sub_seen = false;
+        let mut factored = false;
+        let mut diff_id = None;
+
+        for inst in optimized_module.all_inst_iter() {
+            match inst.class.opcode {
+                Op::ISub => {
+                    diff_id = inst.result_id;
+                    let Some(lhs_id) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                        continue;
+                    };
+                    let Some(rhs_id) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
+                        continue;
+                    };
+                    if (lhs_id == lhs && rhs_id == rhs) || (lhs_id == rhs && rhs_id == lhs) {
+                        sub_seen = true;
+                    }
+                }
+                Op::IMul => {
+                    mul_count += 1;
+                    if inst.result_id != Some(sub_id) {
+                        continue;
+                    }
+                    let Some(lhs_id) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                        continue;
+                    };
+                    let Some(rhs_id) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
+                        continue;
+                    };
+                    let uses_base = lhs_id == base || rhs_id == base;
+                    let diff_operand = if lhs_id == base { rhs_id } else { lhs_id };
+                    factored = uses_base && diff_id == Some(diff_operand);
+                }
+                Op::IAdd => panic!("addition should not remain for subtract factoring"),
+                _ => {}
+            }
+        }
+
+        assert_eq!(mul_count, 1, "factoring should leave one multiply");
+        assert!(sub_seen, "inner subtraction should remain");
+        assert!(factored, "mul should reuse sub id and use base*diff");
     }
 
     #[test]
