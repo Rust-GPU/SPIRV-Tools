@@ -2306,6 +2306,162 @@ pub enum ValidationError {
         /// The scalar operand type.
         scalar_type: TypeId,
     },
+    /// A matrix operation operand is not a matrix type.
+    #[error(
+        "instruction {instruction:?} in block {block:?} of function {function:?} uses operand {operand} with non-matrix type {found:?}"
+    )]
+    MatrixOperandNotMatrix {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode.
+        instruction: rspirv::spirv::Op,
+        /// The operand index (zero-based).
+        operand: u32,
+        /// The non-matrix type.
+        found: TypeId,
+    },
+    /// A matrix/vector multiply has mismatched component types.
+    #[error(
+        "matrix/vector multiply in block {block:?} of function {function:?} uses component types {matrix_component:?} and {vector_component:?}"
+    )]
+    MatrixTimesVectorComponentTypeMismatch {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The matrix component type.
+        matrix_component: TypeId,
+        /// The vector component type.
+        vector_component: TypeId,
+    },
+    /// A matrix/vector multiply has incompatible dimensions.
+    #[error(
+        "matrix/vector multiply in block {block:?} of function {function:?} has {matrix_columns} matrix columns but vector has {vector_components} components"
+    )]
+    MatrixTimesVectorDimensionMismatch {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// Matrix column count.
+        matrix_columns: u32,
+        /// Vector component count.
+        vector_components: u32,
+    },
+    /// A vector/matrix multiply has mismatched component types.
+    #[error(
+        "vector/matrix multiply in block {block:?} of function {function:?} uses component types {vector_component:?} and {matrix_component:?}"
+    )]
+    VectorTimesMatrixComponentTypeMismatch {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The vector component type.
+        vector_component: TypeId,
+        /// The matrix component type.
+        matrix_component: TypeId,
+    },
+    /// A vector/matrix multiply has incompatible dimensions.
+    #[error(
+        "vector/matrix multiply in block {block:?} of function {function:?} has vector components {vector_components} but matrix rows {matrix_rows}"
+    )]
+    VectorTimesMatrixDimensionMismatch {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// Vector component count.
+        vector_components: u32,
+        /// Matrix row count.
+        matrix_rows: u32,
+    },
+    /// A vector/matrix multiply result type is invalid.
+    #[error(
+        "vector/matrix multiply in block {block:?} of function {function:?} expects a vector of {expected_components} components but found {found_components}"
+    )]
+    VectorTimesMatrixResultDimensionMismatch {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// Expected result component count.
+        expected_components: u32,
+        /// Actual result component count.
+        found_components: u32,
+    },
+    /// A matrix/matrix multiply has incompatible dimensions.
+    #[error(
+        "matrix/matrix multiply in block {block:?} of function {function:?} has left columns {left_columns} that do not match right rows {right_rows}"
+    )]
+    MatrixTimesMatrixDimensionMismatch {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// Left matrix column count.
+        left_columns: u32,
+        /// Right matrix row count.
+        right_rows: u32,
+    },
+    /// A matrix/matrix multiply uses mismatched component types.
+    #[error(
+        "matrix/matrix multiply in block {block:?} of function {function:?} uses component types {left_component:?} and {right_component:?}"
+    )]
+    MatrixTimesMatrixComponentTypeMismatch {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// Left matrix component type.
+        left_component: TypeId,
+        /// Right matrix component type.
+        right_component: TypeId,
+    },
+    /// A matrix/matrix multiply result type is invalid.
+    #[error(
+        "matrix/matrix multiply in block {block:?} of function {function:?} expects a matrix with {expected_columns} columns of length {expected_rows} but found a different shape"
+    )]
+    MatrixTimesMatrixResultShapeMismatch {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// Expected column count.
+        expected_columns: u32,
+        /// Expected row count.
+        expected_rows: u32,
+    },
+    /// A vector/matrix multiply result uses a mismatched component type.
+    #[error(
+        "vector/matrix multiply in block {block:?} of function {function:?} expects component type {expected:?} but found {found:?}"
+    )]
+    VectorTimesMatrixResultComponentTypeMismatch {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// Expected component type.
+        expected: TypeId,
+        /// Found component type.
+        found: TypeId,
+    },
+    /// A matrix/matrix multiply result uses a mismatched component type.
+    #[error(
+        "matrix/matrix multiply in block {block:?} of function {function:?} expects component type {expected:?} but found {found:?}"
+    )]
+    MatrixTimesMatrixResultComponentTypeMismatch {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// Expected component type.
+        expected: TypeId,
+        /// Found component type.
+        found: TypeId,
+    },
     /// A function references a missing or invalid function type.
     #[error("function {function:?} has an invalid function type {type_id:?}")]
     InvalidFunctionType {
@@ -3408,26 +3564,21 @@ fn validate_functions(
                     let Some(block) = &block.label else {
                         continue;
                     };
-                    let Some(block_label_id) = block
-                        .result_id
-                        .and_then(|raw| Id::try_from(raw).ok())
+                    let Some(block_label_id) =
+                        block.result_id.and_then(|raw| Id::try_from(raw).ok())
                     else {
                         continue;
                     };
-                    let Some(result_type_id) = inst
-                        .result_type
-                        .and_then(|raw| TypeId::try_from(raw).ok())
+                    let Some(result_type_id) =
+                        inst.result_type.and_then(|raw| TypeId::try_from(raw).ok())
                     else {
                         continue;
                     };
 
-                    let vector_operand = inst
-                        .operands
-                        .get(0)
-                        .and_then(|op| match op {
-                            rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
-                            _ => None,
-                        });
+                    let vector_operand = inst.operands.get(0).and_then(|op| match op {
+                        rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                        _ => None,
+                    });
                     let Some(vector_operand) = vector_operand else {
                         continue;
                     };
@@ -3477,13 +3628,10 @@ fn validate_functions(
                         });
                     }
 
-                    let index_operand = inst
-                        .operands
-                        .get(1)
-                        .and_then(|op| match op {
-                            rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
-                            _ => None,
-                        });
+                    let index_operand = inst.operands.get(1).and_then(|op| match op {
+                        rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                        _ => None,
+                    });
                     let Some(index_operand) = index_operand else {
                         continue;
                     };
@@ -3510,26 +3658,21 @@ fn validate_functions(
                     let Some(block) = &block.label else {
                         continue;
                     };
-                    let Some(block_label_id) = block
-                        .result_id
-                        .and_then(|raw| Id::try_from(raw).ok())
+                    let Some(block_label_id) =
+                        block.result_id.and_then(|raw| Id::try_from(raw).ok())
                     else {
                         continue;
                     };
-                    let Some(result_type_id) = inst
-                        .result_type
-                        .and_then(|raw| TypeId::try_from(raw).ok())
+                    let Some(result_type_id) =
+                        inst.result_type.and_then(|raw| TypeId::try_from(raw).ok())
                     else {
                         continue;
                     };
 
-                    let vector_operand = inst
-                        .operands
-                        .get(0)
-                        .and_then(|op| match op {
-                            rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
-                            _ => None,
-                        });
+                    let vector_operand = inst.operands.get(0).and_then(|op| match op {
+                        rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                        _ => None,
+                    });
                     let Some(vector_operand) = vector_operand else {
                         continue;
                     };
@@ -3578,17 +3721,15 @@ fn validate_functions(
                         });
                     }
 
-                    let component_operand = inst
-                        .operands
-                        .get(1)
-                        .and_then(|op| match op {
-                            rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
-                            _ => None,
-                        });
+                    let component_operand = inst.operands.get(1).and_then(|op| match op {
+                        rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                        _ => None,
+                    });
                     let Some(component_operand) = component_operand else {
                         continue;
                     };
-                    let Some(component_operand_type) = result_types.get(&component_operand).copied()
+                    let Some(component_operand_type) =
+                        result_types.get(&component_operand).copied()
                     else {
                         continue;
                     };
@@ -3603,13 +3744,10 @@ fn validate_functions(
                         });
                     }
 
-                    let index_operand = inst
-                        .operands
-                        .get(2)
-                        .and_then(|op| match op {
-                            rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
-                            _ => None,
-                        });
+                    let index_operand = inst.operands.get(2).and_then(|op| match op {
+                        rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                        _ => None,
+                    });
                     let Some(index_operand) = index_operand else {
                         continue;
                     };
@@ -3636,20 +3774,16 @@ fn validate_functions(
                     let Some(block) = &block.label else {
                         continue;
                     };
-                    let Some(block_label_id) = block
-                        .result_id
-                        .and_then(|raw| Id::try_from(raw).ok())
+                    let Some(block_label_id) =
+                        block.result_id.and_then(|raw| Id::try_from(raw).ok())
                     else {
                         continue;
                     };
 
-                    let vector_operand = inst
-                        .operands
-                        .get(0)
-                        .and_then(|op| match op {
-                            rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
-                            _ => None,
-                        });
+                    let vector_operand = inst.operands.get(0).and_then(|op| match op {
+                        rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                        _ => None,
+                    });
                     let Some(vector_operand) = vector_operand else {
                         continue;
                     };
@@ -3688,13 +3822,10 @@ fn validate_functions(
                         });
                     };
 
-                    let scalar_operand = inst
-                        .operands
-                        .get(1)
-                        .and_then(|op| match op {
-                            rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
-                            _ => None,
-                        });
+                    let scalar_operand = inst.operands.get(1).and_then(|op| match op {
+                        rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                        _ => None,
+                    });
                     let Some(scalar_operand) = scalar_operand else {
                         continue;
                     };
@@ -3711,9 +3842,8 @@ fn validate_functions(
                         });
                     }
 
-                    let Some(result_type_id) = inst
-                        .result_type
-                        .and_then(|raw| TypeId::try_from(raw).ok())
+                    let Some(result_type_id) =
+                        inst.result_type.and_then(|raw| TypeId::try_from(raw).ok())
                     else {
                         continue;
                     };
@@ -3727,20 +3857,507 @@ fn validate_functions(
                         });
                     }
                 }
-                if inst.class.opcode == rspirv::spirv::Op::VectorShuffle {
+                if inst.class.opcode == rspirv::spirv::Op::MatrixTimesVector {
                     let Some(block) = &block.label else {
                         continue;
                     };
-                    let Some(block_label_id) = block
-                        .result_id
-                        .and_then(|raw| Id::try_from(raw).ok())
+                    let Some(block_label_id) =
+                        block.result_id.and_then(|raw| Id::try_from(raw).ok())
+                    else {
+                        continue;
+                    };
+                    let Some(result_type_id) =
+                        inst.result_type.and_then(|raw| TypeId::try_from(raw).ok())
                     else {
                         continue;
                     };
 
-                    let Some(result_type_id) = inst
-                        .result_type
-                        .and_then(|raw| TypeId::try_from(raw).ok())
+                    let matrix_operand = inst.operands.get(0).and_then(|op| match op {
+                        rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                        _ => None,
+                    });
+                    let Some(matrix_operand) = matrix_operand else {
+                        continue;
+                    };
+                    let Some(matrix_type_id) = result_types.get(&matrix_operand).copied() else {
+                        continue;
+                    };
+                    let Some((matrix_component, matrix_rows, matrix_columns, matrix_column_type)) =
+                        matrix_details(matrix_type_id, &definitions)
+                    else {
+                        return Err(ValidationError::MatrixOperandNotMatrix {
+                            function: function_id,
+                            block: block_label_id,
+                            instruction: inst.class.opcode,
+                            operand: 0,
+                            found: matrix_type_id,
+                        });
+                    };
+
+                    let vector_operand = inst.operands.get(1).and_then(|op| match op {
+                        rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                        _ => None,
+                    });
+                    let Some(vector_operand) = vector_operand else {
+                        continue;
+                    };
+                    let Some(vector_type_id) = result_types.get(&vector_operand).copied() else {
+                        continue;
+                    };
+                    let Some(vector_type_inst) = type_instruction(vector_type_id, &definitions)
+                    else {
+                        return Err(ValidationError::VectorOperandNotVector {
+                            function: function_id,
+                            block: block_label_id,
+                            instruction: inst.class.opcode,
+                            operand: 1,
+                            found: vector_type_id,
+                        });
+                    };
+                    if vector_type_inst.class.opcode != rspirv::spirv::Op::TypeVector {
+                        return Err(ValidationError::VectorOperandNotVector {
+                            function: function_id,
+                            block: block_label_id,
+                            instruction: inst.class.opcode,
+                            operand: 1,
+                            found: vector_type_id,
+                        });
+                    }
+                    let (vector_component, vector_len) = vector_info(vector_type_inst);
+                    let Some(vector_component) = vector_component else {
+                        return Err(ValidationError::VectorOperandNotVector {
+                            function: function_id,
+                            block: block_label_id,
+                            instruction: inst.class.opcode,
+                            operand: 1,
+                            found: vector_type_id,
+                        });
+                    };
+                    let Some(vector_len) = vector_len else {
+                        return Err(ValidationError::VectorOperandNotVector {
+                            function: function_id,
+                            block: block_label_id,
+                            instruction: inst.class.opcode,
+                            operand: 1,
+                            found: vector_type_id,
+                        });
+                    };
+
+                    if matrix_component != vector_component {
+                        return Err(ValidationError::MatrixTimesVectorComponentTypeMismatch {
+                            function: function_id,
+                            block: block_label_id,
+                            matrix_component,
+                            vector_component,
+                        });
+                    }
+                    if matrix_columns != vector_len {
+                        return Err(ValidationError::MatrixTimesVectorDimensionMismatch {
+                            function: function_id,
+                            block: block_label_id,
+                            matrix_columns,
+                            vector_components: vector_len,
+                        });
+                    }
+
+                    let Some(expected_result_type) =
+                        TypeId::try_from(u32::from(matrix_column_type)).ok()
+                    else {
+                        continue;
+                    };
+                    if result_type_id != expected_result_type {
+                        return Err(ValidationError::InstructionResultTypeMismatch {
+                            function: function_id,
+                            block: block_label_id,
+                            instruction: inst.class.opcode,
+                            expected: expected_result_type,
+                            found: result_type_id,
+                        });
+                    }
+                    if let Some(result_inst) = type_instruction(result_type_id, &definitions) {
+                        if result_inst.class.opcode != rspirv::spirv::Op::TypeVector {
+                            return Err(ValidationError::InstructionResultTypeMismatch {
+                                function: function_id,
+                                block: block_label_id,
+                                instruction: inst.class.opcode,
+                                expected: expected_result_type,
+                                found: result_type_id,
+                            });
+                        }
+                        let (result_component, result_len) = vector_info(result_inst);
+                        match result_component {
+                            Some(result_component) if result_component == matrix_component => {}
+                            _ => {
+                                return Err(ValidationError::InstructionResultTypeMismatch {
+                                    function: function_id,
+                                    block: block_label_id,
+                                    instruction: inst.class.opcode,
+                                    expected: expected_result_type,
+                                    found: result_type_id,
+                                });
+                            }
+                        }
+                        match result_len {
+                            Some(result_len) if result_len == matrix_rows => {}
+                            _ => {
+                                return Err(ValidationError::InstructionResultTypeMismatch {
+                                    function: function_id,
+                                    block: block_label_id,
+                                    instruction: inst.class.opcode,
+                                    expected: expected_result_type,
+                                    found: result_type_id,
+                                });
+                            }
+                        }
+                    }
+                }
+                if inst.class.opcode == rspirv::spirv::Op::VectorTimesMatrix {
+                    let Some(block) = &block.label else {
+                        continue;
+                    };
+                    let Some(block_label_id) =
+                        block.result_id.and_then(|raw| Id::try_from(raw).ok())
+                    else {
+                        continue;
+                    };
+                    let Some(result_type_id) =
+                        inst.result_type.and_then(|raw| TypeId::try_from(raw).ok())
+                    else {
+                        continue;
+                    };
+
+                    let vector_operand = inst.operands.get(0).and_then(|op| match op {
+                        rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                        _ => None,
+                    });
+                    let Some(vector_operand) = vector_operand else {
+                        continue;
+                    };
+                    let Some(vector_type_id) = result_types.get(&vector_operand).copied() else {
+                        continue;
+                    };
+                    let Some(vector_type_inst) = type_instruction(vector_type_id, &definitions)
+                    else {
+                        return Err(ValidationError::VectorOperandNotVector {
+                            function: function_id,
+                            block: block_label_id,
+                            instruction: inst.class.opcode,
+                            operand: 0,
+                            found: vector_type_id,
+                        });
+                    };
+                    if vector_type_inst.class.opcode != rspirv::spirv::Op::TypeVector {
+                        return Err(ValidationError::VectorOperandNotVector {
+                            function: function_id,
+                            block: block_label_id,
+                            instruction: inst.class.opcode,
+                            operand: 0,
+                            found: vector_type_id,
+                        });
+                    }
+                    let (vector_component, vector_len) = vector_info(vector_type_inst);
+                    let Some(vector_component) = vector_component else {
+                        return Err(ValidationError::VectorOperandNotVector {
+                            function: function_id,
+                            block: block_label_id,
+                            instruction: inst.class.opcode,
+                            operand: 0,
+                            found: vector_type_id,
+                        });
+                    };
+                    let Some(vector_len) = vector_len else {
+                        return Err(ValidationError::VectorOperandNotVector {
+                            function: function_id,
+                            block: block_label_id,
+                            instruction: inst.class.opcode,
+                            operand: 0,
+                            found: vector_type_id,
+                        });
+                    };
+
+                    let matrix_operand = inst.operands.get(1).and_then(|op| match op {
+                        rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                        _ => None,
+                    });
+                    let Some(matrix_operand) = matrix_operand else {
+                        continue;
+                    };
+                    let Some(matrix_type_id) = result_types.get(&matrix_operand).copied() else {
+                        continue;
+                    };
+                    let Some((matrix_component, matrix_rows, matrix_columns, _)) =
+                        matrix_details(matrix_type_id, &definitions)
+                    else {
+                        return Err(ValidationError::MatrixOperandNotMatrix {
+                            function: function_id,
+                            block: block_label_id,
+                            instruction: inst.class.opcode,
+                            operand: 1,
+                            found: matrix_type_id,
+                        });
+                    };
+
+                    if vector_component != matrix_component {
+                        return Err(ValidationError::VectorTimesMatrixComponentTypeMismatch {
+                            function: function_id,
+                            block: block_label_id,
+                            vector_component,
+                            matrix_component,
+                        });
+                    }
+                    if vector_len != matrix_rows {
+                        return Err(ValidationError::VectorTimesMatrixDimensionMismatch {
+                            function: function_id,
+                            block: block_label_id,
+                            vector_components: vector_len,
+                            matrix_rows,
+                        });
+                    }
+
+                    if let Some(result_vector_inst) = type_instruction(result_type_id, &definitions)
+                    {
+                        if result_vector_inst.class.opcode != rspirv::spirv::Op::TypeVector {
+                            return Err(
+                                ValidationError::VectorTimesMatrixResultDimensionMismatch {
+                                    function: function_id,
+                                    block: block_label_id,
+                                    expected_components: matrix_columns,
+                                    found_components: 0,
+                                },
+                            );
+                        }
+                        let (result_component, result_len) = vector_info(result_vector_inst);
+                        let Some(result_component) = result_component else {
+                            return Err(
+                                ValidationError::VectorTimesMatrixResultComponentTypeMismatch {
+                                    function: function_id,
+                                    block: block_label_id,
+                                    expected: matrix_component,
+                                    found: matrix_component,
+                                },
+                            );
+                        };
+                        if result_component != matrix_component {
+                            return Err(
+                                ValidationError::VectorTimesMatrixResultComponentTypeMismatch {
+                                    function: function_id,
+                                    block: block_label_id,
+                                    expected: matrix_component,
+                                    found: result_component,
+                                },
+                            );
+                        }
+                        match result_len {
+                            Some(result_len) if result_len == matrix_columns => {}
+                            Some(result_len) => {
+                                return Err(
+                                    ValidationError::VectorTimesMatrixResultDimensionMismatch {
+                                        function: function_id,
+                                        block: block_label_id,
+                                        expected_components: matrix_columns,
+                                        found_components: result_len,
+                                    },
+                                );
+                            }
+                            None => {
+                                return Err(
+                                    ValidationError::VectorTimesMatrixResultDimensionMismatch {
+                                        function: function_id,
+                                        block: block_label_id,
+                                        expected_components: matrix_columns,
+                                        found_components: 0,
+                                    },
+                                );
+                            }
+                        }
+                    }
+                }
+                if inst.class.opcode == rspirv::spirv::Op::MatrixTimesMatrix {
+                    let Some(block) = &block.label else {
+                        continue;
+                    };
+                    let Some(block_label_id) =
+                        block.result_id.and_then(|raw| Id::try_from(raw).ok())
+                    else {
+                        continue;
+                    };
+                    let Some(result_type_id) =
+                        inst.result_type.and_then(|raw| TypeId::try_from(raw).ok())
+                    else {
+                        continue;
+                    };
+
+                    let left_operand = inst.operands.get(0).and_then(|op| match op {
+                        rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                        _ => None,
+                    });
+                    let Some(left_operand) = left_operand else {
+                        continue;
+                    };
+                    let Some(left_type_id) = result_types.get(&left_operand).copied() else {
+                        continue;
+                    };
+                    let Some((left_component, left_rows, left_columns, _)) =
+                        matrix_details(left_type_id, &definitions)
+                    else {
+                        return Err(ValidationError::MatrixOperandNotMatrix {
+                            function: function_id,
+                            block: block_label_id,
+                            instruction: inst.class.opcode,
+                            operand: 0,
+                            found: left_type_id,
+                        });
+                    };
+
+                    let right_operand = inst.operands.get(1).and_then(|op| match op {
+                        rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                        _ => None,
+                    });
+                    let Some(right_operand) = right_operand else {
+                        continue;
+                    };
+                    let Some(right_type_id) = result_types.get(&right_operand).copied() else {
+                        continue;
+                    };
+                    let Some((right_component, right_rows, right_columns, _)) =
+                        matrix_details(right_type_id, &definitions)
+                    else {
+                        return Err(ValidationError::MatrixOperandNotMatrix {
+                            function: function_id,
+                            block: block_label_id,
+                            instruction: inst.class.opcode,
+                            operand: 1,
+                            found: right_type_id,
+                        });
+                    };
+
+                    if left_component != right_component {
+                        return Err(ValidationError::MatrixTimesMatrixComponentTypeMismatch {
+                            function: function_id,
+                            block: block_label_id,
+                            left_component,
+                            right_component,
+                        });
+                    }
+                    if left_columns != right_rows {
+                        return Err(ValidationError::MatrixTimesMatrixDimensionMismatch {
+                            function: function_id,
+                            block: block_label_id,
+                            left_columns,
+                            right_rows,
+                        });
+                    }
+
+                    let Some(result_inst) = type_instruction(result_type_id, &definitions) else {
+                        return Err(ValidationError::MatrixTimesMatrixResultShapeMismatch {
+                            function: function_id,
+                            block: block_label_id,
+                            expected_columns: right_columns,
+                            expected_rows: left_rows,
+                        });
+                    };
+                    if result_inst.class.opcode != rspirv::spirv::Op::TypeMatrix {
+                        return Err(ValidationError::MatrixTimesMatrixResultShapeMismatch {
+                            function: function_id,
+                            block: block_label_id,
+                            expected_columns: right_columns,
+                            expected_rows: left_rows,
+                        });
+                    }
+                    let (result_column_type, result_columns) = matrix_info(result_inst);
+                    let Some(result_columns) = result_columns else {
+                        return Err(ValidationError::MatrixTimesMatrixResultShapeMismatch {
+                            function: function_id,
+                            block: block_label_id,
+                            expected_columns: right_columns,
+                            expected_rows: left_rows,
+                        });
+                    };
+                    if result_columns != right_columns {
+                        return Err(ValidationError::MatrixTimesMatrixResultShapeMismatch {
+                            function: function_id,
+                            block: block_label_id,
+                            expected_columns: right_columns,
+                            expected_rows: left_rows,
+                        });
+                    }
+                    let Some(result_column_type) = result_column_type else {
+                        return Err(ValidationError::MatrixTimesMatrixResultShapeMismatch {
+                            function: function_id,
+                            block: block_label_id,
+                            expected_columns: right_columns,
+                            expected_rows: left_rows,
+                        });
+                    };
+                    let Some(result_column_inst) =
+                        type_instruction(result_column_type, &definitions)
+                    else {
+                        return Err(ValidationError::MatrixTimesMatrixResultShapeMismatch {
+                            function: function_id,
+                            block: block_label_id,
+                            expected_columns: right_columns,
+                            expected_rows: left_rows,
+                        });
+                    };
+                    if result_column_inst.class.opcode != rspirv::spirv::Op::TypeVector {
+                        return Err(ValidationError::MatrixTimesMatrixResultShapeMismatch {
+                            function: function_id,
+                            block: block_label_id,
+                            expected_columns: right_columns,
+                            expected_rows: left_rows,
+                        });
+                    }
+                    let (result_component, result_rows) = vector_info(result_column_inst);
+                    let Some(result_rows) = result_rows else {
+                        return Err(ValidationError::MatrixTimesMatrixResultShapeMismatch {
+                            function: function_id,
+                            block: block_label_id,
+                            expected_columns: right_columns,
+                            expected_rows: left_rows,
+                        });
+                    };
+                    if result_rows != left_rows {
+                        return Err(ValidationError::MatrixTimesMatrixResultShapeMismatch {
+                            function: function_id,
+                            block: block_label_id,
+                            expected_columns: right_columns,
+                            expected_rows: left_rows,
+                        });
+                    }
+                    if let Some(result_component) = result_component {
+                        if result_component != left_component {
+                            return Err(
+                                ValidationError::MatrixTimesMatrixResultComponentTypeMismatch {
+                                    function: function_id,
+                                    block: block_label_id,
+                                    expected: left_component,
+                                    found: result_component,
+                                },
+                            );
+                        }
+                    } else {
+                        return Err(
+                            ValidationError::MatrixTimesMatrixResultComponentTypeMismatch {
+                                function: function_id,
+                                block: block_label_id,
+                                expected: left_component,
+                                found: left_component,
+                            },
+                        );
+                    }
+                }
+                if inst.class.opcode == rspirv::spirv::Op::VectorShuffle {
+                    let Some(block) = &block.label else {
+                        continue;
+                    };
+                    let Some(block_label_id) =
+                        block.result_id.and_then(|raw| Id::try_from(raw).ok())
+                    else {
+                        continue;
+                    };
+
+                    let Some(result_type_id) =
+                        inst.result_type.and_then(|raw| TypeId::try_from(raw).ok())
                     else {
                         continue;
                     };
@@ -3799,7 +4416,11 @@ fn validate_functions(
                     let (vec1_component, vec1_len) = match vector_type_info(vec1_type_id) {
                         Ok(info) => info,
                         Err(mut err) => {
-                            if let ValidationError::VectorShuffleOperandNotVector { ref mut operand, .. } = err {
+                            if let ValidationError::VectorShuffleOperandNotVector {
+                                ref mut operand,
+                                ..
+                            } = err
+                            {
                                 *operand = 0;
                             }
                             return Err(err);
@@ -3808,7 +4429,11 @@ fn validate_functions(
                     let (vec2_component, vec2_len) = match vector_type_info(vec2_type_id) {
                         Ok(info) => info,
                         Err(mut err) => {
-                            if let ValidationError::VectorShuffleOperandNotVector { ref mut operand, .. } = err {
+                            if let ValidationError::VectorShuffleOperandNotVector {
+                                ref mut operand,
+                                ..
+                            } = err
+                            {
                                 *operand = 1;
                             }
                             return Err(err);
@@ -6503,9 +7128,8 @@ fn validate_instruction_requirements(
                 if inst.class.opcode == rspirv::spirv::Op::PtrDiff
                     && required_cap == rspirv::spirv::Capability::Addresses
                     && (capabilities.contains(&rspirv::spirv::Capability::UntypedPointersKHR)
-                        || capabilities.contains(
-                            &rspirv::spirv::Capability::PhysicalStorageBufferAddresses,
-                        ))
+                        || capabilities
+                            .contains(&rspirv::spirv::Capability::PhysicalStorageBufferAddresses))
                 {
                     continue;
                 }
@@ -7733,6 +8357,27 @@ fn matrix_info(inst: &rspirv::dr::Instruction) -> (Option<TypeId>, Option<u32>) 
         _ => None,
     });
     (column, count)
+}
+
+fn matrix_details(
+    type_id: TypeId,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+) -> Option<(TypeId, u32, u32, ResultId)> {
+    let matrix_result = ResultId::try_from(u32::from(type_id)).ok()?;
+    let inst = definitions.get(&matrix_result)?;
+    if inst.class.opcode != rspirv::spirv::Op::TypeMatrix {
+        return None;
+    }
+    let (column_type, columns) = matrix_info(inst);
+    let column_type = column_type?;
+    let columns = columns?;
+    let column_result = ResultId::try_from(u32::from(column_type)).ok()?;
+    let column_inst = definitions.get(&column_result)?;
+    if column_inst.class.opcode != rspirv::spirv::Op::TypeVector {
+        return None;
+    }
+    let (component_type, rows) = vector_info(column_inst);
+    Some((component_type?, rows?, columns, column_result))
 }
 
 fn enforce_block_layout_rules(
@@ -21244,6 +21889,7 @@ mod tests {
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
         b.memory_model(
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
@@ -21288,6 +21934,7 @@ mod tests {
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
         b.memory_model(
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
@@ -21332,6 +21979,7 @@ mod tests {
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
         b.memory_model(
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
@@ -21373,6 +22021,7 @@ mod tests {
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
         b.memory_model(
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
@@ -21418,6 +22067,7 @@ mod tests {
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
         b.memory_model(
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
@@ -21462,6 +22112,7 @@ mod tests {
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
         b.memory_model(
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
@@ -21508,6 +22159,7 @@ mod tests {
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
         b.memory_model(
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
@@ -21549,6 +22201,7 @@ mod tests {
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
         b.memory_model(
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
@@ -21592,6 +22245,7 @@ mod tests {
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
         b.memory_model(
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
@@ -21641,6 +22295,7 @@ mod tests {
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
         b.memory_model(
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
@@ -21687,6 +22342,7 @@ mod tests {
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
         b.memory_model(
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
@@ -21732,6 +22388,7 @@ mod tests {
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
         b.memory_model(
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
@@ -21777,6 +22434,7 @@ mod tests {
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
         b.memory_model(
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
@@ -21821,6 +22479,7 @@ mod tests {
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
         b.memory_model(
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
@@ -21867,6 +22526,7 @@ mod tests {
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
         b.memory_model(
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
@@ -21911,6 +22571,7 @@ mod tests {
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
         b.memory_model(
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
@@ -21954,6 +22615,7 @@ mod tests {
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
         b.memory_model(
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
@@ -21997,6 +22659,7 @@ mod tests {
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
         b.memory_model(
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
@@ -22013,7 +22676,8 @@ mod tests {
         let entry = b.begin_block(None).unwrap();
         let vector = b.undef(vec2, None);
         let index = b.constant_bit32(int, 0);
-        b.vector_extract_dynamic(float, None, vector, index).unwrap();
+        b.vector_extract_dynamic(float, None, vector, index)
+            .unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
 
@@ -22041,6 +22705,7 @@ mod tests {
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
         b.memory_model(
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
@@ -22085,6 +22750,7 @@ mod tests {
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
         b.memory_model(
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
@@ -22131,6 +22797,7 @@ mod tests {
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
         b.memory_model(
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
@@ -22178,6 +22845,7 @@ mod tests {
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
         b.memory_model(
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
@@ -22224,6 +22892,7 @@ mod tests {
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
         b.memory_model(
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
@@ -22268,6 +22937,7 @@ mod tests {
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
         b.memory_model(
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
@@ -22302,6 +22972,519 @@ mod tests {
                 instruction: rspirv::spirv::Op::VectorTimesScalar,
                 expected: TypeId::try_from(vec2).unwrap(),
                 found: TypeId::try_from(v2f).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn matrix_times_vector_component_type_must_match() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let float = b.type_float(32, None);
+        let vec2 = b.type_vector(int, 2);
+        let vec2f = b.type_vector(float, 2);
+        let mat2 = b.type_matrix(vec2, 2);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let entry = b.begin_block(None).unwrap();
+        let matrix = b.undef(mat2, None);
+        let vector = b.undef(vec2f, None);
+        b.matrix_times_vector(vec2, None, matrix, vector).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let binary = b.module().assemble();
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("matrix/vector multiply requires matching component types");
+        assert_eq!(
+            err,
+            ValidationError::MatrixTimesVectorComponentTypeMismatch {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(entry).unwrap(),
+                matrix_component: TypeId::try_from(int).unwrap(),
+                vector_component: TypeId::try_from(float).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn matrix_times_vector_dimensions_must_match() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let vec2 = b.type_vector(int, 2);
+        let mat3x2 = b.type_matrix(vec2, 3);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let entry = b.begin_block(None).unwrap();
+        let matrix = b.undef(mat3x2, None);
+        let vector = b.undef(vec2, None);
+        b.matrix_times_vector(vec2, None, matrix, vector).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let binary = b.module().assemble();
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err(
+                "matrix/vector multiply requires vector components to match matrix columns",
+            );
+        assert_eq!(
+            err,
+            ValidationError::MatrixTimesVectorDimensionMismatch {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(entry).unwrap(),
+                matrix_columns: 3,
+                vector_components: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn matrix_times_vector_result_type_must_match_column() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let vec2 = b.type_vector(int, 2);
+        let vec3 = b.type_vector(int, 3);
+        let mat2 = b.type_matrix(vec2, 2);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let entry = b.begin_block(None).unwrap();
+        let matrix = b.undef(mat2, None);
+        let vector = b.undef(vec2, None);
+        b.matrix_times_vector(vec3, None, matrix, vector).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let binary = b.module().assemble();
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("matrix/vector multiply result type must match matrix column type");
+        assert_eq!(
+            err,
+            ValidationError::InstructionResultTypeMismatch {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(entry).unwrap(),
+                instruction: rspirv::spirv::Op::MatrixTimesVector,
+                expected: TypeId::try_from(vec2).unwrap(),
+                found: TypeId::try_from(vec3).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn vector_times_matrix_component_type_must_match() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let float = b.type_float(32, None);
+        let vec2 = b.type_vector(float, 2);
+        let vec3 = b.type_vector(float, 3);
+        let vec2i = b.type_vector(int, 2);
+        let mat2x3 = b.type_matrix(vec2i, 3);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let entry = b.begin_block(None).unwrap();
+        let vector = b.undef(vec2, None);
+        let matrix = b.undef(mat2x3, None);
+        b.vector_times_matrix(vec3, None, vector, matrix).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let binary = b.module().assemble();
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("vector/matrix multiply requires matching component types");
+        assert_eq!(
+            err,
+            ValidationError::VectorTimesMatrixComponentTypeMismatch {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(entry).unwrap(),
+                vector_component: TypeId::try_from(float).unwrap(),
+                matrix_component: TypeId::try_from(int).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn vector_times_matrix_dimensions_must_match() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let vec3 = b.type_vector(int, 3);
+        let vec4 = b.type_vector(int, 4);
+        let mat2x3 = b.type_matrix(vec3, 2);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let entry = b.begin_block(None).unwrap();
+        let vector = b.undef(vec4, None);
+        let matrix = b.undef(mat2x3, None);
+        b.vector_times_matrix(vec3, None, vector, matrix).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let binary = b.module().assemble();
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("vector/matrix multiply requires vector length to match matrix rows");
+        assert_eq!(
+            err,
+            ValidationError::VectorTimesMatrixDimensionMismatch {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(entry).unwrap(),
+                vector_components: 4,
+                matrix_rows: 3,
+            }
+        );
+    }
+
+    #[test]
+    fn vector_times_matrix_result_dimensions_must_match_columns() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let vec2 = b.type_vector(int, 2);
+        let vec4 = b.type_vector(int, 4);
+        let mat2x3 = b.type_matrix(vec2, 3);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let entry = b.begin_block(None).unwrap();
+        let vector = b.undef(vec2, None);
+        let matrix = b.undef(mat2x3, None);
+        b.vector_times_matrix(vec4, None, vector, matrix).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let binary = b.module().assemble();
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("vector/matrix multiply result length must equal matrix columns");
+        assert_eq!(
+            err,
+            ValidationError::VectorTimesMatrixResultDimensionMismatch {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(entry).unwrap(),
+                expected_components: 3,
+                found_components: 4,
+            }
+        );
+    }
+
+    #[test]
+    fn vector_times_matrix_result_component_type_must_match() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let float = b.type_float(32, None);
+        let vec2 = b.type_vector(int, 2);
+        let vec3f = b.type_vector(float, 3);
+        let mat2x3 = b.type_matrix(vec2, 3);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let entry = b.begin_block(None).unwrap();
+        let vector = b.undef(vec2, None);
+        let matrix = b.undef(mat2x3, None);
+        b.vector_times_matrix(vec3f, None, vector, matrix).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let binary = b.module().assemble();
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("vector/matrix multiply result component must match matrix component");
+        assert_eq!(
+            err,
+            ValidationError::VectorTimesMatrixResultComponentTypeMismatch {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(entry).unwrap(),
+                expected: TypeId::try_from(int).unwrap(),
+                found: TypeId::try_from(float).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn matrix_times_matrix_dimensions_must_match() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let vec2 = b.type_vector(int, 2);
+        let mat2x3 = b.type_matrix(vec2, 3);
+        let mat2x2 = b.type_matrix(vec2, 2);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let entry = b.begin_block(None).unwrap();
+        let left = b.undef(mat2x3, None);
+        let right = b.undef(mat2x2, None);
+        b.matrix_times_matrix(mat2x3, None, left, right).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let binary = b.module().assemble();
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("matrix/matrix multiply requires left columns to equal right rows");
+        assert_eq!(
+            err,
+            ValidationError::MatrixTimesMatrixDimensionMismatch {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(entry).unwrap(),
+                left_columns: 3,
+                right_rows: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn matrix_times_matrix_component_types_must_match() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let float = b.type_float(32, None);
+        let vec2i = b.type_vector(int, 2);
+        let vec2f = b.type_vector(float, 2);
+        let mat2x2i = b.type_matrix(vec2i, 2);
+        let mat2x2f = b.type_matrix(vec2f, 2);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let entry = b.begin_block(None).unwrap();
+        let left = b.undef(mat2x2i, None);
+        let right = b.undef(mat2x2f, None);
+        b.matrix_times_matrix(mat2x2i, None, left, right).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let binary = b.module().assemble();
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("matrix/matrix multiply requires matching component types");
+        assert_eq!(
+            err,
+            ValidationError::MatrixTimesMatrixComponentTypeMismatch {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(entry).unwrap(),
+                left_component: TypeId::try_from(int).unwrap(),
+                right_component: TypeId::try_from(float).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn matrix_times_matrix_result_shape_must_match_operands() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let vec2 = b.type_vector(int, 2);
+        let vec3 = b.type_vector(int, 3);
+        let mat2x3 = b.type_matrix(vec2, 3);
+        let mat3x4 = b.type_matrix(vec3, 4);
+        let mat3x3 = b.type_matrix(vec3, 3);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let entry = b.begin_block(None).unwrap();
+        let left = b.undef(mat2x3, None);
+        let right = b.undef(mat3x4, None);
+        b.matrix_times_matrix(mat3x3, None, left, right).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let binary = b.module().assemble();
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err(
+                "matrix/matrix multiply result shape must match left rows and right columns",
+            );
+        assert_eq!(
+            err,
+            ValidationError::MatrixTimesMatrixResultShapeMismatch {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(entry).unwrap(),
+                expected_columns: 4,
+                expected_rows: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn matrix_times_matrix_result_component_type_must_match_operands() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Matrix);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let float = b.type_float(32, None);
+        let vec2i = b.type_vector(int, 2);
+        let vec3i = b.type_vector(int, 3);
+        let vec2f = b.type_vector(float, 2);
+        let mat2x3 = b.type_matrix(vec2i, 3);
+        let mat3x2 = b.type_matrix(vec3i, 2);
+        let mat2x2f = b.type_matrix(vec2f, 2);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let entry = b.begin_block(None).unwrap();
+        let left = b.undef(mat2x3, None);
+        let right = b.undef(mat3x2, None);
+        b.matrix_times_matrix(mat2x2f, None, left, right).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let binary = b.module().assemble();
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err(
+                "matrix/matrix multiply result component must match the operand component type",
+            );
+        assert_eq!(
+            err,
+            ValidationError::MatrixTimesMatrixResultComponentTypeMismatch {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(entry).unwrap(),
+                expected: TypeId::try_from(int).unwrap(),
+                found: TypeId::try_from(float).unwrap(),
             }
         );
     }

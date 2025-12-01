@@ -168,6 +168,7 @@ Planned tasks:
 - ✅ Validate pointer comparisons (`OpPtrEqual`/`OpPtrNotEqual`) require boolean results and pointer operands with matching pointer types (typed and untyped pointer support).
 - ✅ Validate dynamic vector extracts/inserts: operand must be a vector, result/component types must align, and indices must be integer scalars (builder-based regressions).
 - ✅ Validate `OpVectorTimesScalar` type rules (vector operand must be a vector, scalar must match component type, result type must match the vector) with Rust regressions.
+- ✅ Validate matrix multiplication type rules for `OpMatrixTimesVector`, `OpVectorTimesMatrix`, and `OpMatrixTimesMatrix` (operands must be matrices/vectors with matching component types and aligned dimensions; results must reflect the derived row/column shapes) with Rust regressions.
 
 ## Completed Milestone: Layout Ordering Parity
 Match the C++ validator’s capability/extension/import ordering and annotation placement rules in the Rust validator.
