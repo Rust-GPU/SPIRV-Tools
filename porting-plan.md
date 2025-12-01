@@ -596,6 +596,7 @@ Tasks for this milestone:
 - [x] Enforce uniqueness of entry-point interface ids with Rust regression coverage.
 - Validate interface linkage for variables and descriptor sets/bindings where applicable per environment.
 - Wire the Rust validator through FFI/CLI as the default path (behind a feature flag) once the above checks and layout parity are in place, backed by mirrored gtest/integration coverage.
+- ✅ Tightened pointer comparison validation to match C++: boolean result + pointer operand checks for `OpPtrEqual`/`OpPtrNotEqual`, storage-class gating (VariablePointers/StorageBuffer/PhysicalStorageBuffer), untyped-pointer parity under Vulkan, and relaxed `OpPtrDiff` `Addresses` requirement when `UntypedPointersKHR` or `PhysicalStorageBufferAddresses` are present.
 
 ## Active Milestone: Validator Parity Rollout
 Run the full C++ validation suites with the Rust path forced on, close remaining gaps, and prepare to flip the default.

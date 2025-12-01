@@ -1830,6 +1830,36 @@ pub enum ValidationError {
         /// The non-pointer operand type that was provided.
         found: TypeId,
     },
+    /// Pointer comparisons require specific capabilities for their storage class.
+    #[error(
+        "instruction {instruction:?} in block {block:?} of function {function:?} on storage class {storage_class:?} requires capability {required_capability:?}"
+    )]
+    PointerComparisonMissingCapability {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The instruction opcode.
+        instruction: rspirv::spirv::Op,
+        /// The pointer storage class.
+        storage_class: rspirv::spirv::StorageClass,
+        /// The required capability.
+        required_capability: rspirv::spirv::Capability,
+    },
+    /// Pointer comparisons are limited to specific storage classes.
+    #[error(
+        "instruction {instruction:?} in block {block:?} of function {function:?} cannot operate on storage class {storage_class:?}"
+    )]
+    PointerComparisonInvalidStorageClass {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The instruction opcode.
+        instruction: rspirv::spirv::Op,
+        /// The storage class in use.
+        storage_class: rspirv::spirv::StorageClass,
+    },
     /// An access chain base is not a pointer type.
     #[error(
         "instruction {instruction:?} in block {block:?} of function {function:?} requires a pointer base (found {base_type:?})"
@@ -2617,7 +2647,7 @@ fn validate_words(
     validate_entry_point_interface_storage_classes(&module, &definitions, &capabilities, env)?;
     validate_entry_point_locations(&module, &definitions, env)?;
     validate_execution_modes(&module, &entry_points, env, &options, &capabilities)?;
-    validate_functions(&module)?;
+    validate_functions(&module, &capabilities)?;
     validate_operand_definitions(&module, &defined_ids)?;
     enforce_function_arg_limit(&module, &options)?;
     enforce_variable_limits(&module, &options)?;
@@ -2686,7 +2716,10 @@ fn collect_friendly_names(words: &[u32]) -> Option<FriendlyNames> {
     Some(build_friendly_name_table(&module))
 }
 
-fn validate_functions(module: &Module) -> Result<(), ValidationError> {
+fn validate_functions(
+    module: &Module,
+    capabilities: &HashSet<rspirv::spirv::Capability>,
+) -> Result<(), ValidationError> {
     let definitions = collect_result_instructions(module);
     let result_types = collect_result_types(module)?;
     let mut signatures: HashMap<Id, FunctionSignature> = HashMap::new();
@@ -4012,15 +4045,26 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                         }
                     }
 
-                    // Pointer comparisons require a boolean result and pointer operands
-                    // with matching types.
+                    // Pointer comparisons require a boolean result for equality, integer result
+                    // for pointer difference, pointer operands, matching pointer types, and
+                    // appropriate storage-class capabilities.
                     if matches!(
                         inst.class.opcode,
-                        rspirv::spirv::Op::PtrEqual | rspirv::spirv::Op::PtrNotEqual
+                        rspirv::spirv::Op::PtrEqual
+                            | rspirv::spirv::Op::PtrNotEqual
+                            | rspirv::spirv::Op::PtrDiff
                     ) {
-                        let is_bool = result_type_inst
-                            .is_some_and(|ty| ty.class.opcode == rspirv::spirv::Op::TypeBool);
-                        if !is_bool {
+                        let result_ok = match inst.class.opcode {
+                            rspirv::spirv::Op::PtrEqual | rspirv::spirv::Op::PtrNotEqual => {
+                                result_type_inst.is_some_and(|ty| {
+                                    ty.class.opcode == rspirv::spirv::Op::TypeBool
+                                })
+                            }
+                            rspirv::spirv::Op::PtrDiff => result_type_inst
+                                .is_some_and(|ty| ty.class.opcode == rspirv::spirv::Op::TypeInt),
+                            _ => false,
+                        };
+                        if !result_ok {
                             return Err(ValidationError::InstructionResultTypeMismatch {
                                 function: function_id,
                                 block: block_label_id,
@@ -4038,23 +4082,12 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                                 _ => None,
                             }
                         };
-                        let is_pointer_type = |ty: TypeId| -> bool {
-                            ResultId::try_from(u32::from(Id::from(ty)))
-                                .ok()
-                                .and_then(|rid| definitions.get(&rid))
-                                .map(|inst| {
-                                    matches!(
-                                        inst.class.opcode,
-                                        rspirv::spirv::Op::TypePointer
-                                            | rspirv::spirv::Op::TypeUntypedPointerKHR
-                                    )
-                                })
-                                .unwrap_or(false)
-                        };
 
                         let op0_type = inst.operands.get(0).and_then(operand_type);
                         if let Some(op0_type) = op0_type {
-                            if !is_pointer_type(op0_type) {
+                            let Some((op0_opcode, op0_storage_class)) =
+                                pointer_info(op0_type, &definitions)
+                            else {
                                 return Err(ValidationError::PointerComparisonOperandNotPointer {
                                     function: function_id,
                                     block: block_label_id,
@@ -4062,9 +4095,12 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                                     operand_index: 0,
                                     found: op0_type,
                                 });
-                            }
+                            };
+
                             if let Some(op1_type) = inst.operands.get(1).and_then(operand_type) {
-                                if !is_pointer_type(op1_type) {
+                                let Some((op1_opcode, op1_storage_class)) =
+                                    pointer_info(op1_type, &definitions)
+                                else {
                                     return Err(
                                         ValidationError::PointerComparisonOperandNotPointer {
                                             function: function_id,
@@ -4074,16 +4110,96 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                                             found: op1_type,
                                         },
                                     );
+                                };
+
+                                match inst.class.opcode {
+                                    rspirv::spirv::Op::PtrDiff => {
+                                        if op0_type != op1_type {
+                                            return Err(ValidationError::OperandTypeMismatch {
+                                                function: function_id,
+                                                block: block_label_id,
+                                                instruction: inst.class.opcode,
+                                                operand_index: 1,
+                                                expected: op0_type,
+                                                found: op1_type,
+                                            });
+                                        }
+                                    }
+                                    _ => {
+                                        let storage_classes_match =
+                                            op0_storage_class == op1_storage_class;
+                                        let allows_untyped_mismatch = storage_classes_match
+                                            && (op0_opcode
+                                                == rspirv::spirv::Op::TypeUntypedPointerKHR
+                                                || op1_opcode
+                                                    == rspirv::spirv::Op::TypeUntypedPointerKHR);
+
+                                        if op0_type != op1_type && !allows_untyped_mismatch {
+                                            return Err(ValidationError::OperandTypeMismatch {
+                                                function: function_id,
+                                                block: block_label_id,
+                                                instruction: inst.class.opcode,
+                                                operand_index: 1,
+                                                expected: op0_type,
+                                                found: op1_type,
+                                            });
+                                        }
+
+                                        if !storage_classes_match {
+                                            return Err(ValidationError::OperandTypeMismatch {
+                                                function: function_id,
+                                                block: block_label_id,
+                                                instruction: inst.class.opcode,
+                                                operand_index: 1,
+                                                expected: op0_type,
+                                                found: op1_type,
+                                            });
+                                        }
+                                    }
                                 }
-                                if op0_type != op1_type {
-                                    return Err(ValidationError::OperandTypeMismatch {
-                                        function: function_id,
-                                        block: block_label_id,
-                                        instruction: inst.class.opcode,
-                                        operand_index: 1,
-                                        expected: op0_type,
-                                        found: op1_type,
-                                    });
+
+                                match op0_storage_class {
+                                    rspirv::spirv::StorageClass::StorageBuffer => {
+                                        if !capabilities.contains(
+                                            &rspirv::spirv::Capability::VariablePointersStorageBuffer,
+                                        ) {
+                                            return Err(
+                                                ValidationError::PointerComparisonMissingCapability {
+                                                    function: function_id,
+                                                    block: block_label_id,
+                                                    instruction: inst.class.opcode,
+                                                    storage_class: op0_storage_class,
+                                                    required_capability: rspirv::spirv::Capability::VariablePointersStorageBuffer,
+                                                },
+                                            );
+                                        }
+                                    }
+                                    rspirv::spirv::StorageClass::Workgroup => {
+                                        if !capabilities
+                                            .contains(&rspirv::spirv::Capability::VariablePointers)
+                                        {
+                                            return Err(
+                                                ValidationError::PointerComparisonMissingCapability {
+                                                    function: function_id,
+                                                    block: block_label_id,
+                                                    instruction: inst.class.opcode,
+                                                    storage_class: op0_storage_class,
+                                                    required_capability: rspirv::spirv::Capability::VariablePointers,
+                                                },
+                                            );
+                                        }
+                                    }
+                                    rspirv::spirv::StorageClass::PhysicalStorageBuffer => {}
+                                    _ => {
+                                        return Err(
+                                            ValidationError::PointerComparisonInvalidStorageClass {
+                                                function: function_id,
+                                                block: block_label_id,
+                                                instruction: inst.class.opcode,
+                                                storage_class: op0_storage_class,
+                                            },
+                                        );
+                                    }
                                 }
                             }
                         }
@@ -5771,6 +5887,15 @@ fn validate_instruction_requirements(
         }
         for &required_cap in inst.class.capabilities {
             if !capabilities.contains(&required_cap) {
+                if inst.class.opcode == rspirv::spirv::Op::PtrDiff
+                    && required_cap == rspirv::spirv::Capability::Addresses
+                    && (capabilities.contains(&rspirv::spirv::Capability::UntypedPointersKHR)
+                        || capabilities.contains(
+                            &rspirv::spirv::Capability::PhysicalStorageBufferAddresses,
+                        ))
+                {
+                    continue;
+                }
                 return Err(ValidationError::MissingInstructionCapability {
                     opcode: inst.class.opcode,
                     required_capability: required_cap,
@@ -9496,6 +9621,23 @@ fn is_pointer_type(
         .unwrap_or(false)
 }
 
+fn pointer_info(
+    pointer_type: TypeId,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+) -> Option<(rspirv::spirv::Op, rspirv::spirv::StorageClass)> {
+    let rid = ResultId::try_from(u32::from(Id::from(pointer_type))).ok()?;
+    let inst = definitions.get(&rid)?;
+    match inst.class.opcode {
+        rspirv::spirv::Op::TypePointer | rspirv::spirv::Op::TypeUntypedPointerKHR => {
+            inst.operands.first().and_then(|op| match op {
+                rspirv::dr::Operand::StorageClass(sc) => Some((inst.class.opcode, *sc)),
+                _ => None,
+            })
+        }
+        _ => None,
+    }
+}
+
 fn validate_decoration_target_categories(
     module: &Module,
     opcodes: &HashMap<ResultId, rspirv::spirv::Op>,
@@ -10447,6 +10589,7 @@ fn is_type_opcode(opcode: rspirv::spirv::Op) -> bool {
             | rspirv::spirv::Op::TypeStruct
             | rspirv::spirv::Op::TypeOpaque
             | rspirv::spirv::Op::TypePointer
+            | rspirv::spirv::Op::TypeUntypedPointerKHR
             | rspirv::spirv::Op::TypeFunction
             | rspirv::spirv::Op::TypeEvent
             | rspirv::spirv::Op::TypeDeviceEvent
@@ -21617,7 +21760,7 @@ mod tests {
         use rspirv::{
             binary::Assemble,
             dr::{Builder, InsertPoint, Operand},
-            spirv::{Capability, FunctionControl, MemoryModel, Op, StorageClass},
+            spirv::{Capability, FunctionControl, MemoryModel, Op},
         };
 
         let mut b = Builder::new();
@@ -21684,7 +21827,7 @@ mod tests {
         use rspirv::{
             binary::Assemble,
             dr::{Builder, InsertPoint, Operand},
-            spirv::{Capability, FunctionControl, MemoryModel, Op, StorageClass},
+            spirv::{Capability, FunctionControl, MemoryModel, Op},
         };
 
         let mut b = Builder::new();
@@ -21761,7 +21904,7 @@ mod tests {
         use rspirv::{
             binary::Assemble,
             dr::{Builder, InsertPoint, Operand},
-            spirv::{Capability, FunctionControl, MemoryModel, Op, StorageClass},
+            spirv::{Capability, FunctionControl, MemoryModel, Op},
         };
 
         let mut b = Builder::new();
@@ -21827,7 +21970,7 @@ mod tests {
         use rspirv::{
             binary::Assemble,
             dr::{Builder, InsertPoint, Operand},
-            spirv::{Capability, FunctionControl, MemoryModel, Op, StorageClass},
+            spirv::{Capability, FunctionControl, MemoryModel, Op},
         };
 
         let mut b = Builder::new();
@@ -21892,7 +22035,7 @@ mod tests {
         use rspirv::{
             binary::Assemble,
             dr::{Builder, InsertPoint, Operand},
-            spirv::{Capability, FunctionControl, MemoryModel, Op, StorageClass},
+            spirv::{Capability, FunctionControl, MemoryModel, Op},
         };
 
         let mut b = Builder::new();
@@ -21959,7 +22102,7 @@ mod tests {
         use rspirv::{
             binary::Assemble,
             dr::{Builder, InsertPoint, Operand},
-            spirv::{Capability, FunctionControl, MemoryModel, Op, StorageClass},
+            spirv::{Capability, FunctionControl, MemoryModel, Op},
         };
 
         let mut b = Builder::new();
@@ -22036,7 +22179,7 @@ mod tests {
         use rspirv::{
             binary::Assemble,
             dr::{Builder, InsertPoint, Operand},
-            spirv::{Capability, FunctionControl, MemoryModel, Op, StorageClass},
+            spirv::{Capability, FunctionControl, MemoryModel, Op},
         };
 
         let mut b = Builder::new();
@@ -22102,7 +22245,7 @@ mod tests {
         use rspirv::{
             binary::Assemble,
             dr::{Builder, InsertPoint, Operand},
-            spirv::{Capability, FunctionControl, MemoryModel, Op, StorageClass},
+            spirv::{Capability, FunctionControl, MemoryModel, Op},
         };
 
         let mut b = Builder::new();
@@ -22167,7 +22310,7 @@ mod tests {
         use rspirv::{
             binary::Assemble,
             dr::{Builder, InsertPoint, Operand},
-            spirv::{Capability, FunctionControl, MemoryModel, Op, StorageClass},
+            spirv::{Capability, FunctionControl, MemoryModel, Op},
         };
 
         let mut b = Builder::new();
@@ -22225,11 +22368,71 @@ mod tests {
     }
 
     #[test]
+    fn ptr_equal_requires_variable_pointers_storage_buffer_capability() {
+        use rspirv::{
+            binary::Assemble,
+            dr::{Builder, InsertPoint, Operand},
+            spirv::{Capability, FunctionControl, MemoryModel, Op},
+        };
+
+        let mut b = Builder::new();
+        b.capability(Capability::Shader);
+        b.extension("SPV_KHR_variable_pointers");
+        b.extension("SPV_KHR_storage_buffer_storage_class");
+        // Intentionally omit VariablePointersStorageBuffer.
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let bool_ty = b.type_bool();
+        let int_ty = b.type_int(32, 0);
+        let ptr_int = b.type_pointer(None, StorageClass::StorageBuffer, int_ty);
+        let ptr_val = b.undef(ptr_int, None);
+
+        let func = b
+            .begin_function(void, None, FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let block = b.begin_block(None).unwrap();
+        let cmp = b.id();
+        b.insert_into_block(
+            InsertPoint::End,
+            rspirv::dr::Instruction::new(
+                Op::PtrEqual,
+                Some(bool_ty),
+                Some(cmp),
+                vec![Operand::IdRef(ptr_val), Operand::IdRef(ptr_val)],
+            ),
+        )
+        .unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let err = b
+            .module()
+            .assemble()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("storage buffer pointer comparisons require capability");
+        assert_eq!(
+            err,
+            ValidationError::PointerComparisonMissingCapability {
+                function: Id::try_from(func).unwrap(),
+                block: Id::try_from(block).unwrap(),
+                instruction: Op::PtrEqual,
+                storage_class: StorageClass::StorageBuffer,
+                required_capability: Capability::VariablePointersStorageBuffer,
+            }
+        );
+    }
+
+    #[test]
     fn ptr_equal_operands_must_be_pointers() {
         use rspirv::{
             binary::Assemble,
             dr::{Builder, InsertPoint, Operand},
-            spirv::{Capability, FunctionControl, MemoryModel, Op, StorageClass},
+            spirv::{Capability, FunctionControl, MemoryModel, Op},
         };
 
         let mut b = Builder::new();
@@ -22292,7 +22495,7 @@ mod tests {
         use rspirv::{
             binary::Assemble,
             dr::{Builder, InsertPoint, Operand},
-            spirv::{Capability, FunctionControl, MemoryModel, Op, StorageClass},
+            spirv::{Capability, FunctionControl, MemoryModel, Op},
         };
 
         let mut b = Builder::new();
@@ -22351,6 +22554,536 @@ mod tests {
                 found: TypeId::try_from(ptr_f32).unwrap(),
             }
         );
+    }
+
+    #[test]
+    fn ptr_diff_operands_must_match_pointer_types() {
+        use rspirv::{
+            binary::Assemble,
+            dr::{Builder, InsertPoint, Operand},
+            spirv::{Capability, FunctionControl, MemoryModel, Op},
+        };
+
+        let mut b = Builder::new();
+        b.capability(Capability::Addresses);
+        b.capability(Capability::Kernel);
+        b.capability(Capability::Shader);
+        b.capability(Capability::VariablePointersStorageBuffer);
+        b.capability(Capability::VariablePointers);
+        b.extension("SPV_KHR_variable_pointers");
+        b.extension("SPV_KHR_storage_buffer_storage_class");
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let int_ty = b.type_int(32, 0);
+        let float_ty = b.type_float(32, None);
+        let ptr_int = b.type_pointer(None, StorageClass::StorageBuffer, int_ty);
+        let ptr_float = b.type_pointer(None, StorageClass::StorageBuffer, float_ty);
+        let undef_int_ptr = b.undef(ptr_int, None);
+        let undef_float_ptr = b.undef(ptr_float, None);
+
+        let main = b
+            .begin_function(void, None, FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let header = b.begin_block(None).unwrap();
+        let diff = b.id();
+        b.insert_into_block(
+            InsertPoint::End,
+            rspirv::dr::Instruction::new(
+                Op::PtrDiff,
+                Some(int_ty),
+                Some(diff),
+                vec![
+                    Operand::IdRef(undef_int_ptr),
+                    Operand::IdRef(undef_float_ptr),
+                ],
+            ),
+        )
+        .unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let err = b
+            .module()
+            .assemble()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("ptr diff requires matching pointer operand types");
+        assert_eq!(
+            err,
+            ValidationError::OperandTypeMismatch {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(header).unwrap(),
+                instruction: Op::PtrDiff,
+                operand_index: 1,
+                expected: TypeId::try_from(ptr_int).unwrap(),
+                found: TypeId::try_from(ptr_float).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn ptr_equal_allows_untyped_pointer_mismatch_with_matching_storage_class() {
+        use rspirv::{
+            binary::Assemble,
+            dr::{Builder, InsertPoint, Operand},
+            spirv::{Capability, FunctionControl, MemoryModel, Op},
+        };
+
+        let mut b = Builder::new();
+        b.capability(Capability::Shader);
+        b.capability(Capability::VariablePointers);
+        b.capability(Capability::VariablePointersStorageBuffer);
+        b.capability(Capability::UntypedPointersKHR);
+        b.extension("SPV_KHR_variable_pointers");
+        b.extension("SPV_KHR_storage_buffer_storage_class");
+        b.extension("SPV_KHR_untyped_pointers");
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            MemoryModel::GLSL450,
+        );
+
+        let ptr1 = b.id();
+        b.module_mut()
+            .types_global_values
+            .push(rspirv::dr::Instruction::new(
+                Op::TypeUntypedPointerKHR,
+                None,
+                Some(ptr1),
+                vec![Operand::StorageClass(StorageClass::StorageBuffer)],
+            ));
+        let ptr2 = b.id();
+        b.module_mut()
+            .types_global_values
+            .push(rspirv::dr::Instruction::new(
+                Op::TypeUntypedPointerKHR,
+                None,
+                Some(ptr2),
+                vec![Operand::StorageClass(StorageClass::StorageBuffer)],
+            ));
+
+        let void = b.type_void();
+        let bool_ty = b.type_bool();
+        let fn_ty = b.type_function(void, [ptr1, ptr2]);
+
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let param1 = b.function_parameter(ptr1).unwrap();
+        let param2 = b.function_parameter(ptr2).unwrap();
+        let _block = b.begin_block(None).unwrap();
+        let cmp = b.id();
+        b.insert_into_block(
+            InsertPoint::End,
+            rspirv::dr::Instruction::new(
+                Op::PtrEqual,
+                Some(bool_ty),
+                Some(cmp),
+                vec![Operand::IdRef(param1), Operand::IdRef(param2)],
+            ),
+        )
+        .unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        b.module()
+            .assemble()
+            .validate(TargetEnv::Vulkan1_3)
+            .expect("untyped pointers with matching storage class should be allowed");
+    }
+
+    #[test]
+    fn ptr_equal_untyped_pointer_storage_classes_must_match() {
+        use rspirv::{
+            binary::Assemble,
+            dr::{Builder, InsertPoint, Operand},
+            spirv::{Capability, FunctionControl, MemoryModel, Op},
+        };
+
+        let mut b = Builder::new();
+        b.capability(Capability::Shader);
+        b.capability(Capability::VariablePointers);
+        b.capability(Capability::UntypedPointersKHR);
+        b.capability(Capability::VariablePointersStorageBuffer);
+        b.extension("SPV_KHR_variable_pointers");
+        b.extension("SPV_KHR_storage_buffer_storage_class");
+        b.extension("SPV_KHR_untyped_pointers");
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            MemoryModel::GLSL450,
+        );
+
+        let ptr1 = b.id();
+        b.module_mut()
+            .types_global_values
+            .push(rspirv::dr::Instruction::new(
+                Op::TypeUntypedPointerKHR,
+                None,
+                Some(ptr1),
+                vec![Operand::StorageClass(StorageClass::StorageBuffer)],
+            ));
+        let ptr2 = b.id();
+        b.module_mut()
+            .types_global_values
+            .push(rspirv::dr::Instruction::new(
+                Op::TypeUntypedPointerKHR,
+                None,
+                Some(ptr2),
+                vec![Operand::StorageClass(StorageClass::Workgroup)],
+            ));
+
+        let void = b.type_void();
+        let bool_ty = b.type_bool();
+        let fn_ty = b.type_function(void, [ptr1, ptr2]);
+
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let param1 = b.function_parameter(ptr1).unwrap();
+        let param2 = b.function_parameter(ptr2).unwrap();
+        let _block = b.begin_block(None).unwrap();
+        let cmp = b.id();
+        b.insert_into_block(
+            InsertPoint::End,
+            rspirv::dr::Instruction::new(
+                Op::PtrEqual,
+                Some(bool_ty),
+                Some(cmp),
+                vec![Operand::IdRef(param1), Operand::IdRef(param2)],
+            ),
+        )
+        .unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let err = b
+            .module()
+            .assemble()
+            .validate(TargetEnv::Vulkan1_3)
+            .expect_err("storage classes must match even for untyped pointers");
+        assert!(
+            matches!(
+                err,
+                ValidationError::OperandTypeMismatch {
+                    instruction: rspirv::spirv::Op::PtrEqual,
+                    ..
+                }
+            ),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn ptr_diff_result_type_must_be_integer() {
+        use rspirv::{
+            binary::Assemble,
+            dr::{Builder, InsertPoint, Operand},
+            spirv::{Capability, FunctionControl, MemoryModel, Op},
+        };
+
+        let mut b = Builder::new();
+        b.capability(Capability::Addresses);
+        b.capability(Capability::Kernel);
+        b.capability(Capability::Shader);
+        b.capability(Capability::Linkage);
+        b.capability(Capability::VariablePointersStorageBuffer);
+        b.capability(Capability::VariablePointers);
+        b.extension("SPV_KHR_variable_pointers");
+        b.extension("SPV_KHR_storage_buffer_storage_class");
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let bool_ty = b.type_bool();
+        let int_ty = b.type_int(32, 0);
+        let ptr_int = b.type_pointer(None, StorageClass::StorageBuffer, int_ty);
+        let ptr_val = b.undef(ptr_int, None);
+
+        let func = b
+            .begin_function(void, None, FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let block = b.begin_block(None).unwrap();
+        let diff = b.id();
+        b.insert_into_block(
+            InsertPoint::End,
+            rspirv::dr::Instruction::new(
+                Op::PtrDiff,
+                // Deliberately invalid result type.
+                Some(bool_ty),
+                Some(diff),
+                vec![Operand::IdRef(ptr_val), Operand::IdRef(ptr_val)],
+            ),
+        )
+        .unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let binary = b.module().assemble();
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("ptr diff requires integer result");
+        assert_eq!(
+            err,
+            ValidationError::InstructionResultTypeMismatch {
+                function: Id::try_from(func).unwrap(),
+                block: Id::try_from(block).unwrap(),
+                instruction: Op::PtrDiff,
+                expected: TypeId::try_from(bool_ty).unwrap(),
+                found: TypeId::try_from(bool_ty).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn ptr_diff_operands_must_be_pointers() {
+        use rspirv::{
+            binary::Assemble,
+            dr::{Builder, InsertPoint, Operand},
+            spirv::{Capability, FunctionControl, MemoryModel, Op},
+        };
+
+        let mut b = Builder::new();
+        b.capability(Capability::Addresses);
+        b.capability(Capability::Kernel);
+        b.capability(Capability::Shader);
+        b.capability(Capability::Linkage);
+        b.capability(Capability::VariablePointersStorageBuffer);
+        b.capability(Capability::VariablePointers);
+        b.extension("SPV_KHR_variable_pointers");
+        b.extension("SPV_KHR_storage_buffer_storage_class");
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let int_ty = b.type_int(32, 0);
+        let zero = b.constant_bit32(int_ty, 0);
+
+        let func = b
+            .begin_function(void, None, FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let block = b.begin_block(None).unwrap();
+        let diff = b.id();
+        b.insert_into_block(
+            InsertPoint::End,
+            rspirv::dr::Instruction::new(
+                Op::PtrDiff,
+                Some(int_ty),
+                Some(diff),
+                vec![Operand::IdRef(zero), Operand::IdRef(zero)],
+            ),
+        )
+        .unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let binary = b.module().assemble();
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("ptr diff operands must be pointers");
+        assert_eq!(
+            err,
+            ValidationError::PointerComparisonOperandNotPointer {
+                function: Id::try_from(func).unwrap(),
+                block: Id::try_from(block).unwrap(),
+                instruction: Op::PtrDiff,
+                operand_index: 0,
+                found: TypeId::try_from(int_ty).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn ptr_diff_storage_class_must_be_allowed() {
+        use rspirv::{
+            binary::Assemble,
+            dr::{Builder, InsertPoint, Operand},
+            spirv::{Capability, FunctionControl, MemoryModel, Op, StorageClass},
+        };
+
+        let mut b = Builder::new();
+        b.capability(Capability::Addresses);
+        b.capability(Capability::Kernel);
+        b.capability(Capability::Shader);
+        b.capability(Capability::Linkage);
+        b.capability(Capability::VariablePointersStorageBuffer);
+        b.capability(Capability::VariablePointers);
+        b.extension("SPV_KHR_variable_pointers");
+        b.extension("SPV_KHR_storage_buffer_storage_class");
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let int_ty = b.type_int(32, 0);
+        let ptr_int = b.type_pointer(None, StorageClass::Function, int_ty);
+
+        let func = b
+            .begin_function(void, None, FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let block = b.begin_block(None).unwrap();
+        let var = b.variable(ptr_int, None, StorageClass::Function, None);
+        let diff = b.id();
+        b.insert_into_block(
+            InsertPoint::End,
+            rspirv::dr::Instruction::new(
+                Op::PtrDiff,
+                Some(int_ty),
+                Some(diff),
+                vec![Operand::IdRef(var), Operand::IdRef(var)],
+            ),
+        )
+        .unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let binary = b.module().assemble();
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("ptr diff disallows private storage class");
+        assert_eq!(
+            err,
+            ValidationError::PointerComparisonInvalidStorageClass {
+                function: Id::try_from(func).unwrap(),
+                block: Id::try_from(block).unwrap(),
+                instruction: Op::PtrDiff,
+                storage_class: StorageClass::Function,
+            }
+        );
+    }
+
+    #[test]
+    fn ptr_diff_workgroup_requires_variable_pointers_capability() {
+        use rspirv::{
+            binary::Assemble,
+            dr::{Builder, InsertPoint, Operand},
+            spirv::{Capability, FunctionControl, MemoryModel, Op, StorageClass},
+        };
+
+        let mut b = Builder::new();
+        b.capability(Capability::Addresses);
+        b.capability(Capability::Kernel);
+        b.capability(Capability::Shader);
+        b.capability(Capability::Linkage);
+        b.capability(Capability::VariablePointersStorageBuffer);
+        b.extension("SPV_KHR_variable_pointers");
+        b.extension("SPV_KHR_storage_buffer_storage_class");
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let int_ty = b.type_int(32, 0);
+        let ptr_int = b.type_pointer(None, StorageClass::Workgroup, int_ty);
+        let ptr_val = b.undef(ptr_int, None);
+
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let _block = b.begin_block(None).unwrap();
+        let diff = b.id();
+        b.insert_into_block(
+            InsertPoint::End,
+            rspirv::dr::Instruction::new(
+                Op::PtrDiff,
+                Some(int_ty),
+                Some(diff),
+                vec![Operand::IdRef(ptr_val), Operand::IdRef(ptr_val)],
+            ),
+        )
+        .unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let binary = b.module().assemble();
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("workgroup pointer comparisons require VariablePointers");
+        assert_eq!(
+            err,
+            ValidationError::MissingInstructionCapability {
+                opcode: Op::PtrDiff,
+                required_capability: Capability::VariablePointers
+            }
+        );
+    }
+
+    #[test]
+    fn ptr_diff_allows_untyped_pointer_storage_buffer() {
+        use rspirv::{
+            binary::Assemble,
+            dr::{Builder, InsertPoint, Operand},
+            spirv::{Capability, FunctionControl, MemoryModel, Op, StorageClass},
+        };
+
+        let mut b = Builder::new();
+        b.capability(Capability::Shader);
+        b.capability(Capability::PhysicalStorageBufferAddresses);
+        b.capability(Capability::VariablePointersStorageBuffer);
+        b.capability(Capability::UntypedPointersKHR);
+        b.capability(Capability::VariablePointers);
+        b.extension("SPV_KHR_variable_pointers");
+        b.extension("SPV_KHR_storage_buffer_storage_class");
+        b.extension("SPV_KHR_untyped_pointers");
+        b.extension("SPV_KHR_physical_storage_buffer");
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            MemoryModel::GLSL450,
+        );
+
+        let ptr = b.id();
+        b.module_mut()
+            .types_global_values
+            .push(rspirv::dr::Instruction::new(
+                Op::TypeUntypedPointerKHR,
+                None,
+                Some(ptr),
+                vec![Operand::StorageClass(StorageClass::StorageBuffer)],
+            ));
+        let void = b.type_void();
+        let int_ty = b.type_int(32, 0);
+        let fn_ty = b.type_function(void, [ptr, ptr]);
+
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let param1 = b.function_parameter(ptr).unwrap();
+        let param2 = b.function_parameter(ptr).unwrap();
+        let _block = b.begin_block(None).unwrap();
+        let diff = b.id();
+        b.insert_into_block(
+            InsertPoint::End,
+            rspirv::dr::Instruction::new(
+                Op::PtrDiff,
+                Some(int_ty),
+                Some(diff),
+                vec![Operand::IdRef(param1), Operand::IdRef(param2)],
+            ),
+        )
+        .unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        b.module()
+            .assemble()
+            .validate(TargetEnv::Vulkan1_3)
+            .expect("untyped pointer comparisons should succeed");
     }
 
     #[test]
