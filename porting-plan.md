@@ -626,12 +626,13 @@ Planned tasks:
 - Add fuzzing harnesses using `cargo fuzz` + `arbitrary` to stress rewrites and round-trip assembly/disassembly.
 - Establish benchmarks with `criterion` (and `hyperfine` for CLI) to track regressions against the C++ optimizer.
 - Port representative optimizer passes and their C++ tests into Rust unit/integration tests to validate e-graph results.
-   - Added C++ parity coverage for shared-addend cancellation with symbolic terms, ensuring `(x+5)-(x+2)` folds identically in Rust and C++ paths.
-   - Added C++ parity coverage for shared-addend cancellation that simplifies to zero: `(x+7)-(x+7)` -> `0` in both Rust and C++ optimizers.
-   - Added C++ parity coverage for factoring a symbolic multiplier across subtracted constants: `(x*5)-(x*2)` => `3*x`, confirming the e-graph factoring rewrites match spirv-opt.
-   - Added C++ parity coverage for factoring commuted symbolic multiplicands in both addition and subtraction: `(y*x)+(x*z)` => `x*(y+z)` and `(y*x)-(z*x)` => `x*(y-z)`, exercising commuted-operand factoring in Rust and C++.
-   - Added C++ parity coverage for factoring constant multipliers out of commuted add/sub expressions: `(4*x)+(4*y)` => `4*(x+y)` and `(6*x)-(6*y)` => `6*(x-y)`, ensuring const factoring aligns between Rust and C++.
-   - Added C++ parity coverage for factoring mixed symbolic/constant multiplicands: `(x*y)+(x*3)` => `x*(y+3)` and `(x*y)-(x*3)` => `x*(y-3)`, covering affine-like patterns in both optimizers.
+  - Added C++ parity coverage for shared-addend cancellation with symbolic terms, ensuring `(x+5)-(x+2)` folds identically in Rust and C++ paths.
+  - Added C++ parity coverage for shared-addend cancellation that simplifies to zero: `(x+7)-(x+7)` -> `0` in both Rust and C++ optimizers.
+  - Added C++ parity coverage for factoring a symbolic multiplier across subtracted constants: `(x*5)-(x*2)` => `3*x`, confirming the e-graph factoring rewrites match spirv-opt.
+  - Added C++ parity coverage for factoring commuted symbolic multiplicands in both addition and subtraction: `(y*x)+(x*z)` => `x*(y+z)` and `(y*x)-(z*x)` => `x*(y-z)`, exercising commuted-operand factoring in Rust and C++.
+  - Added C++ parity coverage for factoring constant multipliers out of commuted add/sub expressions: `(4*x)+(4*y)` => `4*(x+y)` and `(6*x)-(6*y)` => `6*(x-y)`, ensuring const factoring aligns between Rust and C++.
+  - Added C++ parity coverage for factoring mixed symbolic/constant multiplicands: `(x*y)+(x*3)` => `x*(y+3)` and `(x*y)-(x*3)` => `x*(y-3)`, covering affine-like patterns in both optimizers.
+  - Added C++ parity coverage for implicit unit coefficients: `x + (x*3)` => `4*x` and `(7*x) - x` => `6*x`, keeping Rust/C++ factoring aligned.
   - Added C++ parity coverage for mixed-constant factoring with commuted multiplicands: `(2*x)+(x*3)` => `5*x` and `(2*x)-(x*3)` => wrapped `-1 * x`, exercising both positive and wrapping-negative constant combinations.
   - Added C++ parity coverage for mixed-constant factoring with positive difference: `(3*x)-(2*x)` => `1*x`, ensuring non-wrapping constant differences are simplified in both optimizers.
   - Added C++ parity coverage for zero-factor cancellation: `(0*x)+(0*y)` and `(0*x)-(0*y)` both fold to zero in Rust and C++ optimizers.
