@@ -1432,6 +1432,27 @@ fn build_factored_const_mul_sum_module() -> (Vec<u32>, u32) {
     (b.module().assemble(), add)
 }
 
+fn build_factored_const_mul_sub_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![int, int]);
+    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let lhs = b.function_parameter(int).expect("lhs param");
+    let rhs = b.function_parameter(int).expect("rhs param");
+    b.begin_block(None).expect("block");
+    let c4 = b.constant_bit32(int, 4);
+    let mul_left = b.i_mul(int, None, lhs, c4).expect("mul left");
+    let mul_right = b.i_mul(int, None, rhs, c4).expect("mul right");
+    let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), sub)
+}
+
 fn build_factored_mul_sum_module() -> (Vec<u32>, u32, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
@@ -1644,6 +1665,113 @@ fn spirv_opt_cli_factors_shared_constant_from_sum() {
 }
 
 #[test]
+fn spirv_opt_cli_factors_shared_constant_from_sub() {
+    let (words, sub_id) = build_factored_const_mul_sub_module();
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_spirv-opt"));
+    cmd.arg("--")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+    let mut child = cmd.spawn().expect("spawn spirv-opt");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin")
+        .write_all(&words_to_bytes(&words))
+        .expect("write module");
+    let output = child.wait_with_output().expect("run spirv-opt");
+    assert!(
+        output.status.success(),
+        "spirv-opt failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let optimized_words = bytes_to_words(&output.stdout);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+
+    let mut constants = std::collections::HashMap::new();
+    let mut sub_count = 0;
+    let mut scaling_count = 0;
+    let mut factored = false;
+    let mut inner_sub = None;
+
+    for inst in module.all_inst_iter() {
+        match inst.class.opcode {
+            Op::Constant => {
+                if let (Some(id), Some(value)) = (
+                    inst.result_id,
+                    inst.operands.first().and_then(|op| match op {
+                        rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+                        _ => None,
+                    }),
+                ) {
+                    constants.insert(id, value);
+                }
+            }
+            Op::IAdd => {
+                panic!("addition should not remain after factoring the subtract");
+            }
+            Op::ISub => {
+                sub_count += 1;
+                inner_sub = inst.result_id;
+            }
+            Op::IMul => {
+                scaling_count += 1;
+                if inst.result_id != Some(sub_id) {
+                    continue;
+                }
+                let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    continue;
+                };
+                let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
+                    continue;
+                };
+                let uses_sub = inner_sub.is_some_and(|sid| lhs == sid || rhs == sid);
+                let const_id = if inner_sub.is_some_and(|sid| lhs == sid) {
+                    rhs
+                } else {
+                    lhs
+                };
+                let is_const_four = constants
+                    .get(&const_id)
+                    .copied()
+                    .map(|v| v == 4)
+                    .unwrap_or(false);
+                factored = uses_sub && is_const_four;
+            }
+            Op::ShiftLeftLogical => {
+                scaling_count += 1;
+                if inst.result_id != Some(sub_id) {
+                    continue;
+                }
+                let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    continue;
+                };
+                let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
+                    continue;
+                };
+                let uses_sub = inner_sub.is_some_and(|sid| lhs == sid);
+                let is_shift_two = constants
+                    .get(&rhs)
+                    .copied()
+                    .map(|v| v == 2)
+                    .unwrap_or(false);
+                factored = uses_sub && is_shift_two;
+            }
+            _ => {}
+        }
+    }
+
+    assert_eq!(sub_count, 1, "inner subtract should remain");
+    assert_eq!(
+        scaling_count, 1,
+        "factoring should leave a single scaling op"
+    );
+    assert!(factored, "scaling should reuse the subtract result id");
+}
+
+#[test]
 fn spirv_opt_cli_cpp_mode_matches_rust_factored_mul_output() {
     let (words, _, _) = build_factored_mul_sum_module();
     assert_cpp_cli_matches_rust(&words, "factored mul sum");
@@ -1653,6 +1781,12 @@ fn spirv_opt_cli_cpp_mode_matches_rust_factored_mul_output() {
 fn spirv_opt_cli_cpp_mode_matches_rust_factored_const_output() {
     let (words, _) = build_factored_const_mul_sum_module();
     assert_cpp_cli_matches_rust(&words, "factored const sum");
+}
+
+#[test]
+fn spirv_opt_cli_cpp_mode_matches_rust_factored_const_sub_output() {
+    let (words, _) = build_factored_const_mul_sub_module();
+    assert_cpp_cli_matches_rust(&words, "factored const sub");
 }
 
 fn words_to_bytes(words: &[u32]) -> Vec<u8> {
