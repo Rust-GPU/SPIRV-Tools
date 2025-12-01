@@ -601,7 +601,7 @@ Tasks for this milestone:
 - Wire the Rust validator through FFI/CLI as the default path (behind a feature flag) once the above checks and layout parity are in place, backed by mirrored gtest/integration coverage.
 - ✅ Tightened pointer comparison validation to match C++: boolean result + pointer operand checks for `OpPtrEqual`/`OpPtrNotEqual`, storage-class gating (VariablePointers/StorageBuffer/PhysicalStorageBuffer), untyped-pointer parity under Vulkan, and relaxed `OpPtrDiff` `Addresses` requirement when `UntypedPointersKHR` or `PhysicalStorageBufferAddresses` are present.
 
-## Active Milestone: Validator Parity Rollout
+## Completed Milestone: Validator Parity Rollout
 Run the full C++ validation suites with the Rust path forced on, close remaining gaps, and prepare to flip the default.
 
 Tasks for this milestone:
@@ -610,7 +610,7 @@ Tasks for this milestone:
 - [x] Close decoration/env-specific placement quirks (BuiltIn allowlists, interpolation/barycentric rules) with Rust regressions to mirror C++ behavior.
 - Keep the plan updated with rollout status and fallbacks, and land a toggle to make the Rust validator the default once parity is demonstrated.
 
-## Upcoming Milestone: Optimizer E-Graph Port
+## Active Milestone: Optimizer E-Graph Port
 Drive the optimizer rewrite in Rust using `egg`/e-graphs with fuzzing and performance guardrails.
 
 Planned tasks:
