@@ -2755,6 +2755,34 @@ mod tests {
     }
 
     #[test]
+    fn folds_division_u64() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new64(8)),
+            SpirvLang::Const(ConstValue::new64(4)),
+            SpirvLang::UDiv([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Const(ConstValue::new_with_width(2, 64))])
+        );
+    }
+
+    #[test]
+    fn folds_remainder_u64() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new64(10)),
+            SpirvLang::Const(ConstValue::new64(4)),
+            SpirvLang::UMod([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Const(ConstValue::new_with_width(2, 64))])
+        );
+    }
+
+    #[test]
     fn folds_multiplication_with_commutativity() {
         let expr = RecExpr::from(vec![
             SpirvLang::Const(ConstValue::new(2)),       // 0
