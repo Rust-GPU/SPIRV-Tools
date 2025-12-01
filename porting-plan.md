@@ -147,6 +147,7 @@ Planned tasks:
 - Add hyperfine/criterion benches for the CLI path to track Rust vs. passthrough/C++ optimizer performance. **(hyperfine-opt.sh benchmarks Rust/passthrough/C++ paths; criterion bench in `rust/spirv-tools-cli/benches/optimizer_cli.rs`)**
 - Update CLI help/docs to describe optimizer toggles and rollback/roll-forward guidance. **(`spirv-opt --help` now lists flags/env; docs updated)**
 - Expose optimizer error kinds to C++ callers/tests so parse/opt/disabled are distinguishable in native integrations. **(cxxbridge now exports `OptimizeError`; wire into C++ callers next)**
+- Expand parity coverage to include shift-by-zero elimination and keep FFI parity aligned with CLI coverage. **(CLI + FFI tests cover shift-by-zero folding with id stability)**
 - Keep clippy/rustfmt/cargo fuzz smoke tests green after wiring the integration.
 
 ## Completed Milestone: Validator Default Enablement
