@@ -3075,6 +3075,24 @@ mod tests {
     }
 
     #[test]
+    fn bitand_complement_defaults_to_32bit_zero() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),
+            SpirvLang::BitNot(Id::from(0)),
+            SpirvLang::BitAnd([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        assert_eq!(nodes.len(), 1, "expected fold to a single constant");
+        if let SpirvLang::Const(c) = nodes[0] {
+            assert_eq!(c.get(), 0);
+            assert_eq!(c.width_bits(), 32);
+        } else {
+            panic!("expected constant; got {optimized:?}");
+        }
+    }
+
+    #[test]
     fn band_mask_prefers_umod_pow2() {
         let expr = RecExpr::from(vec![
             SpirvLang::Symbol(Symbol::from("x")),
@@ -3109,6 +3127,24 @@ mod tests {
             optimized,
             RecExpr::from(vec![SpirvLang::Const(ConstValue::new(u32::MAX))])
         );
+    }
+
+    #[test]
+    fn bitor_complement_defaults_to_32bit_width() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),
+            SpirvLang::BitNot(Id::from(0)),
+            SpirvLang::BitOr([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        assert_eq!(nodes.len(), 1, "expected fold to a single constant");
+        if let SpirvLang::Const(c) = nodes[0] {
+            assert_eq!(c.get(), u32::MAX);
+            assert_eq!(c.width_bits(), 32);
+        } else {
+            panic!("expected constant; got {optimized:?}");
+        }
     }
 
     #[test]
