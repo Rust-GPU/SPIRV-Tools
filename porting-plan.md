@@ -138,6 +138,14 @@ Planned tasks:
 - Keep fuzz/criterion/hyperfine benches up to date to guard rewrite performance/regressions.
  - Add rotate-left/right support in the optimizer (where enabled) with parity coverage and rewrites, staying within SPIR-V capability limits. (basic rotate folding via shifted-or patterns is in place with complementary-shift guard; expand patterns and coverage)
 
+## Upcoming Milestone: Optimizer CLI/FFI Integration
+- Expose the Rust arithmetic optimizer through CLI/FFI entry points with a flag/env toggle and a documented C++ fallback.
+- Add end-to-end CLI/FFI parity tests diffing Rust vs. C++ outputs on the arithmetic corpus (skip cleanly when `spirv-opt` is unavailable).
+- Thread typed error handling (`thiserror`) through the CLI/FFI boundary so optimizer failures surface structured diagnostics.
+- Add hyperfine/criterion benches for the CLI path to track Rust vs. passthrough/C++ optimizer performance.
+- Update CLI help/docs to describe optimizer toggles and rollback/roll-forward guidance.
+- Keep clippy/rustfmt/cargo fuzz smoke tests green after wiring the integration.
+
 ## Completed Milestone: Validator Default Enablement
 Flip the Rust validator on by default across CLI/FFI while keeping an escape hatch.
 
