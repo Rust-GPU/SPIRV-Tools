@@ -595,6 +595,12 @@ fn spirv_opt_cli_cpp_mode_matches_rust_srem_non_divisible_output() {
     assert_cpp_cli_matches_rust(&words, "srem non-divisible");
 }
 
+#[test]
+fn spirv_opt_cli_cpp_mode_matches_rust_mul_neg_one_output() {
+    let (words, _) = build_mul_neg_one_module();
+    assert_cpp_cli_matches_rust(&words, "mul by -1");
+}
+
 fn words_to_bytes(words: &[u32]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(words.len() * 4);
     for word in words {
