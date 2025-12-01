@@ -601,6 +601,12 @@ fn spirv_opt_cli_cpp_mode_matches_rust_mul_neg_one_output() {
     assert_cpp_cli_matches_rust(&words, "mul by -1");
 }
 
+#[test]
+fn spirv_opt_cli_cpp_mode_matches_rust_affine_gcd_add_output() {
+    let (words, _) = build_affine_gcd_add_module();
+    assert_cpp_cli_matches_rust(&words, "affine gcd add");
+}
+
 fn words_to_bytes(words: &[u32]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(words.len() * 4);
     for word in words {
