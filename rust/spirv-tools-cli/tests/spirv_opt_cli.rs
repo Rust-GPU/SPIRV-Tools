@@ -555,6 +555,33 @@ fn spirv_opt_cli_cpp_mode_matches_rust_output() {
     );
 }
 
+#[test]
+fn spirv_opt_cli_cpp_mode_matches_rust_umod_pow2_output() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+    let (words, _) = build_umod_pow2_module();
+
+    let rust_output = run_cli_with_path(&words, &[], None);
+    assert!(
+        rust_output.status.success(),
+        "rust cli failed: {}",
+        String::from_utf8_lossy(&rust_output.stderr)
+    );
+
+    let cpp_output = run_cli_with_path(&words, &["--cpp"], Some(&cpp_opt));
+    assert!(
+        cpp_output.status.success(),
+        "cpp cli failed: {}",
+        String::from_utf8_lossy(&cpp_output.stderr)
+    );
+
+    assert_eq!(
+        rust_output.stdout, cpp_output.stdout,
+        "Rust optimizer output should match C++ spirv-opt output for pow2 umod"
+    );
+}
+
 fn words_to_bytes(words: &[u32]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(words.len() * 4);
     for word in words {
