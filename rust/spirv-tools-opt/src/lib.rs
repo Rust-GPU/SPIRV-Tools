@@ -2783,6 +2783,40 @@ mod tests {
     }
 
     #[test]
+    fn folds_signed_division_u64() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new64((-8i64) as u64)),
+            SpirvLang::Const(ConstValue::new64(2)),
+            SpirvLang::SDiv([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Const(ConstValue::new_with_width(
+                (-4i64) as u64,
+                64
+            ))])
+        );
+    }
+
+    #[test]
+    fn folds_signed_remainder_u64() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new64((-9i64) as u64)),
+            SpirvLang::Const(ConstValue::new64(4)),
+            SpirvLang::SRem([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Const(ConstValue::new_with_width(
+                (-1i64) as u64,
+                64
+            ))])
+        );
+    }
+
+    #[test]
     fn folds_multiplication_with_commutativity() {
         let expr = RecExpr::from(vec![
             SpirvLang::Const(ConstValue::new(2)),       // 0
