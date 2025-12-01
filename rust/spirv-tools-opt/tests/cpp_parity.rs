@@ -2122,6 +2122,37 @@ fn rust_and_cpp_fold_mul_mod_divisible_const_to_zero() {
 }
 
 #[test]
+fn rust_and_cpp_preserve_non_divisible_const_ratio_in_division() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+
+    let (module_words, result_id) = build_mul_div_non_divisible_ratio_module();
+    let rust_insts = extract_simple_block(&module_words);
+    let rust_optimized =
+        spirv_tools_opt::translate::optimize_arith_block(&rust_insts).expect("rust optimizer");
+    let rust_udiv_matches = rust_optimized
+        .iter()
+        .any(|inst| inst.class.opcode == Op::UDiv && inst.result_id == Some(result_id));
+    assert!(
+        rust_udiv_matches,
+        "rust optimizer should keep (5*x)/2 as a division when constants are not divisible"
+    );
+
+    let cpp_words = run_cpp_opt(&cpp_opt, &module_words);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&cpp_words, &mut loader).expect("parse cpp optimized");
+    let module = loader.module();
+    let cpp_udiv_matches = module
+        .all_inst_iter()
+        .any(|inst| inst.class.opcode == Op::UDiv && inst.result_id == Some(result_id));
+    assert!(
+        cpp_udiv_matches,
+        "C++ spirv-opt should keep (5*x)/2 as a division when constants are not divisible"
+    );
+}
+
+#[test]
 fn rust_and_cpp_fold_zero_factor_add() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
@@ -4085,6 +4116,27 @@ fn build_mul_mod_divisible_const_module() -> (Vec<u32>, u32) {
     b.ret().expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), rem)
+}
+
+fn build_mul_div_non_divisible_ratio_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![int]);
+    let _ = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let x = b.function_parameter(int).expect("param x");
+    let c5 = b.constant_bit32(int, 5);
+    let c2 = b.constant_bit32(int, 2);
+    let mul = b.i_mul(int, None, c5, x).expect("mul");
+    let div = b.u_div(int, None, mul, c2).expect("div");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), div)
 }
 
 fn build_zero_factor_add_module() -> (Vec<u32>, u32) {
