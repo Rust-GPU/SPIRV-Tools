@@ -509,6 +509,12 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("bxor-zero-right"; "(bxor ?c ?x)" => {
             BitXorConstSimplify { x: var("?x"), c: var("?c") }
         }),
+        rewrite!("bxor-complement-left"; "(bxor ?x (bnot ?x))" => {
+            BitXorComplement { _x: var("?x") }
+        }),
+        rewrite!("bxor-complement-right"; "(bxor (bnot ?x) ?x)" => {
+            BitXorComplement { _x: var("?x") }
+        }),
         rewrite!("bxor-self"; "(bxor ?x ?x)" => { BitXorSelf { _x: var("?x") } }),
         rewrite!("bnot-const-fold"; "(bnot ?x)" => { BitNotFold { x: var("?x") } }),
         rewrite!("bnot-double"; "(bnot (bnot ?x))" => { BitNotDouble { x: var("?x") } }),
@@ -906,6 +912,9 @@ struct BitAndToUmod {
     c: Var,
 }
 struct BitAndComplement {
+    _x: Var,
+}
+struct BitXorComplement {
     _x: Var,
 }
 struct UModPowerOfTwo {
@@ -2056,10 +2065,7 @@ impl Applier<SpirvLang, ()> for DivPowerOfTwo {
         )));
         if self.signed {
             let sign_shift = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
-                constant
-                    .width_bits()
-                    .saturating_sub(1)
-                    .max(1) as u64,
+                constant.width_bits().saturating_sub(1).max(1) as u64,
                 constant.width_bits(),
             )));
             let sign = egraph.add(SpirvLang::ShrS([subst[self.x], sign_shift]));
@@ -2351,6 +2357,27 @@ impl Applier<SpirvLang, ()> for BitOrComplement {
         };
         let ones = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
             u32::MAX as u64,
+            width,
+        )));
+        egraph.union(eclass, ones);
+        vec![ones]
+    }
+}
+
+impl Applier<SpirvLang, ()> for BitXorComplement {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(width) = width_hint(egraph, eclass, [subst[self._x]]) else {
+            return Vec::new();
+        };
+        let ones = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
+            u64::MAX,
             width,
         )));
         egraph.union(eclass, ones);
@@ -2697,10 +2724,13 @@ impl Applier<SpirvLang, ()> for MulMergeConst {
 }
 
 fn const_value(egraph: &EGraph<SpirvLang, ()>, id: Id) -> Option<ConstValue> {
-    egraph[egraph.find(id)].nodes.iter().find_map(|node| match node {
-        SpirvLang::Const(value) => Some(*value),
-        _ => None,
-    })
+    egraph[egraph.find(id)]
+        .nodes
+        .iter()
+        .find_map(|node| match node {
+            SpirvLang::Const(value) => Some(*value),
+            _ => None,
+        })
 }
 
 fn width_hint(
@@ -3763,11 +3793,11 @@ mod tests {
         // (x << 16) | (x >> 48) with x=0x0123456789ABCDEF => rotate-left by 16 => 0x456789ABCDEF0123
         let expr = RecExpr::from(vec![
             SpirvLang::Const(ConstValue::new_with_width(0x0123_4567_89AB_CDEF, 64)), // 0
-            SpirvLang::Const(ConstValue::new_with_width(16, 64)),                     // 1
-            SpirvLang::Shl([Id::from(0), Id::from(1)]),                               // 2
-            SpirvLang::Const(ConstValue::new_with_width(48, 64)),                     // 3
-            SpirvLang::ShrU([Id::from(0), Id::from(3)]),                              // 4
-            SpirvLang::BitOr([Id::from(2), Id::from(4)]),                             // 5
+            SpirvLang::Const(ConstValue::new_with_width(16, 64)),                    // 1
+            SpirvLang::Shl([Id::from(0), Id::from(1)]),                              // 2
+            SpirvLang::Const(ConstValue::new_with_width(48, 64)),                    // 3
+            SpirvLang::ShrU([Id::from(0), Id::from(3)]),                             // 4
+            SpirvLang::BitOr([Id::from(2), Id::from(4)]),                            // 5
         ]);
         let optimized = optimize_expr(&expr);
         let nodes = optimized.as_ref();

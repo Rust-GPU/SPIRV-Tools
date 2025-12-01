@@ -679,6 +679,60 @@ fn corpus_folds_bxor_constants() {
 }
 
 #[test]
+fn corpus_folds_bxor_with_complement() {
+    let int = 1;
+    let value = inst(
+        Op::Constant,
+        int,
+        1,
+        vec![rspirv::dr::Operand::LiteralBit32(0xA5A5_5A5A)],
+    );
+    let complement = inst(Op::Not, int, 2, vec![rspirv::dr::Operand::IdRef(1)]);
+    let xor = inst(
+        Op::BitwiseXor,
+        int,
+        3,
+        vec![rspirv::dr::Operand::IdRef(1), rspirv::dr::Operand::IdRef(2)],
+    );
+    let optimized = optimize_arith_block(&[value, complement, xor]).expect("optimize");
+    assert_eq!(optimized.len(), 1);
+    let folded = &optimized[0];
+    assert_eq!(folded.class.opcode, Op::Constant);
+    assert_eq!(folded.result_id, Some(3));
+    assert_eq!(
+        folded.operands,
+        vec![rspirv::dr::Operand::LiteralBit32(u32::MAX)]
+    );
+}
+
+#[test]
+fn corpus_folds_bxor_with_complement_commuted() {
+    let int = 1;
+    let value = inst(
+        Op::Constant,
+        int,
+        1,
+        vec![rspirv::dr::Operand::LiteralBit32(0xFFFF_0000)],
+    );
+    let complement = inst(Op::Not, int, 2, vec![rspirv::dr::Operand::IdRef(1)]);
+    let xor = inst(
+        Op::BitwiseXor,
+        int,
+        3,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(1)],
+    );
+    let optimized = optimize_arith_block(&[value, complement, xor]).expect("optimize");
+    assert_eq!(optimized.len(), 1);
+    let folded = &optimized[0];
+    assert_eq!(folded.class.opcode, Op::Constant);
+    assert_eq!(folded.result_id, Some(3));
+    assert_eq!(
+        folded.operands,
+        vec![rspirv::dr::Operand::LiteralBit32(u32::MAX)]
+    );
+}
+
+#[test]
 fn corpus_folds_bnot_constants() {
     let int = 1;
     let c1 = inst(
