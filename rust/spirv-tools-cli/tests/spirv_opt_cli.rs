@@ -2,6 +2,7 @@ use rspirv::binary::{parse_words, Assemble};
 use rspirv::dr::Builder;
 use rspirv::spirv::{AddressingModel, Capability, FunctionControl, MemoryModel, Op};
 use std::io::Write;
+use std::path::PathBuf;
 use std::sync::Mutex;
 
 fn build_const_add_module() -> (Vec<u32>, u32) {
@@ -477,6 +478,81 @@ fn spirv_opt_cli_folds_mul_by_neg_one() {
         }
     }
     assert!(found, "mul by -1 should become negate or folded constant");
+}
+
+fn cpp_opt_bin() -> Option<PathBuf> {
+    if let Ok(path) = std::env::var("SPIRV_CPP_OPT") {
+        let pb = PathBuf::from(path);
+        if pb.is_file() {
+            return Some(pb);
+        }
+    }
+    std::env::var_os("PATH").and_then(|paths| {
+        std::env::split_paths(&paths).find_map(|dir| {
+            let candidate = dir.join("spirv-opt");
+            if candidate.is_file() {
+                Some(candidate)
+            } else {
+                None
+            }
+        })
+    })
+}
+
+fn run_cli_with_path(
+    words: &[u32],
+    extra_args: &[&str],
+    prepend_path: Option<&PathBuf>,
+) -> std::process::Output {
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_spirv-opt"));
+    for arg in extra_args {
+        cmd.arg(arg);
+    }
+    cmd.arg("--")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+    if let Some(path) = prepend_path {
+        if let Some(parent) = path.parent() {
+            let current_path = std::env::var("PATH").unwrap_or_default();
+            let new_path = format!("{}:{}", parent.display(), current_path);
+            cmd.env("PATH", new_path);
+        }
+    }
+    let mut child = cmd.spawn().expect("spawn spirv-opt");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin")
+        .write_all(&words_to_bytes(words))
+        .expect("write module");
+    child.wait_with_output().expect("run spirv-opt")
+}
+
+#[test]
+fn spirv_opt_cli_cpp_mode_matches_rust_output() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+    let (words, _) = build_const_add_module();
+
+    let rust_output = run_cli_with_path(&words, &[], None);
+    assert!(
+        rust_output.status.success(),
+        "rust cli failed: {}",
+        String::from_utf8_lossy(&rust_output.stderr)
+    );
+
+    let cpp_output = run_cli_with_path(&words, &["--cpp"], Some(&cpp_opt));
+    assert!(
+        cpp_output.status.success(),
+        "cpp cli failed: {}",
+        String::from_utf8_lossy(&cpp_output.stderr)
+    );
+
+    assert_eq!(
+        rust_output.stdout, cpp_output.stdout,
+        "Rust optimizer output should match C++ spirv-opt output in CLI mode"
+    );
 }
 
 fn words_to_bytes(words: &[u32]) -> Vec<u8> {
