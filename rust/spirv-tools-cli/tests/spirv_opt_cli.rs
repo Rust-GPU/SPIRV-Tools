@@ -1684,6 +1684,176 @@ fn build_factored_mul_sum_module() -> (Vec<u32>, u32, u32) {
     (b.module().assemble(), add, param)
 }
 
+fn build_factored_mixed_const_difference_mul_module() -> (Vec<u32>, u32, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 1);
+    let func_ty = b.type_function(void, vec![int]);
+    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let x = b.function_parameter(int).expect("x param");
+    b.begin_block(None).expect("block");
+    let c2 = b.constant_bit32(int, 2);
+    let c5 = b.constant_bit32(int, 5);
+    let mul_left = b.i_mul(int, None, c2, x).expect("mul left");
+    let mul_right = b.i_mul(int, None, c5, x).expect("mul right");
+    let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), sub, x)
+}
+
+fn build_factored_mixed_const_difference_mul_commuted_module() -> (Vec<u32>, u32, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 1);
+    let func_ty = b.type_function(void, vec![int]);
+    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let x = b.function_parameter(int).expect("x param");
+    b.begin_block(None).expect("block");
+    let c2 = b.constant_bit32(int, 2);
+    let c5 = b.constant_bit32(int, 5);
+    let mul_left = b.i_mul(int, None, x, c2).expect("mul left commuted");
+    let mul_right = b.i_mul(int, None, c5, x).expect("mul right");
+    let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), sub, x)
+}
+
+fn build_factored_mixed_const_positive_difference_mul_module() -> (Vec<u32>, u32, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 1);
+    let func_ty = b.type_function(void, vec![int]);
+    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let x = b.function_parameter(int).expect("x param");
+    b.begin_block(None).expect("block");
+    let c7 = b.constant_bit32(int, 7);
+    let c2 = b.constant_bit32(int, 2);
+    let mul_left = b.i_mul(int, None, c7, x).expect("mul left");
+    let mul_right = b.i_mul(int, None, c2, x).expect("mul right");
+    let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), sub, x)
+}
+
+fn build_factored_mixed_const_positive_difference_mul_commuted_module() -> (Vec<u32>, u32, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 1);
+    let func_ty = b.type_function(void, vec![int]);
+    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let x = b.function_parameter(int).expect("x param");
+    b.begin_block(None).expect("block");
+    let c7 = b.constant_bit32(int, 7);
+    let c2 = b.constant_bit32(int, 2);
+    let mul_left = b.i_mul(int, None, x, c7).expect("mul left commuted");
+    let mul_right = b.i_mul(int, None, c2, x).expect("mul right");
+    let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), sub, x)
+}
+
+fn build_factored_mixed_const_wrap_negative_difference_mul_module() -> (Vec<u32>, u32, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 1);
+    let func_ty = b.type_function(void, vec![int]);
+    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let x = b.function_parameter(int).expect("x param");
+    b.begin_block(None).expect("block");
+    let high = b.constant_bit32(int, u32::MAX - 1); // -2 in two's complement
+    let c5 = b.constant_bit32(int, 5);
+    let mul_left = b.i_mul(int, None, high, x).expect("mul left");
+    let mul_right = b.i_mul(int, None, c5, x).expect("mul right");
+    let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), sub, x)
+}
+
+fn build_factored_mixed_const_wrap_negative_difference_mul_commuted_module() -> (Vec<u32>, u32, u32)
+{
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 1);
+    let func_ty = b.type_function(void, vec![int]);
+    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let x = b.function_parameter(int).expect("x param");
+    b.begin_block(None).expect("block");
+    let high = b.constant_bit32(int, u32::MAX - 1); // -2 in two's complement
+    let c5 = b.constant_bit32(int, 5);
+    let mul_left = b.i_mul(int, None, x, high).expect("mul left commuted");
+    let mul_right = b.i_mul(int, None, c5, x).expect("mul right");
+    let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), sub, x)
+}
+
+fn build_factored_mixed_const_wrap_positive_difference_mul_module() -> (Vec<u32>, u32, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 1);
+    let func_ty = b.type_function(void, vec![int]);
+    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let x = b.function_parameter(int).expect("x param");
+    b.begin_block(None).expect("block");
+    let neg1 = b.constant_bit32(int, u32::MAX); // -1
+    let neg4 = b.constant_bit32(int, u32::MAX - 3); // -4
+    let mul_left = b.i_mul(int, None, neg1, x).expect("mul left");
+    let mul_right = b.i_mul(int, None, neg4, x).expect("mul right");
+    let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), sub, x)
+}
+
+fn build_factored_mixed_const_wrap_positive_difference_mul_commuted_module() -> (Vec<u32>, u32, u32)
+{
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 1);
+    let func_ty = b.type_function(void, vec![int]);
+    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let x = b.function_parameter(int).expect("x param");
+    b.begin_block(None).expect("block");
+    let neg1 = b.constant_bit32(int, u32::MAX); // -1
+    let neg4 = b.constant_bit32(int, u32::MAX - 3); // -4
+    let mul_left = b.i_mul(int, None, x, neg1).expect("mul left commuted");
+    let mul_right = b.i_mul(int, None, neg4, x).expect("mul right");
+    let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), sub, x)
+}
+
 #[test]
 fn spirv_opt_cli_factors_common_multiplicand() {
     let (words, add_id, param_id) = build_factored_mul_sum_module();
@@ -2767,6 +2937,338 @@ fn spirv_opt_cli_cpp_mode_matches_rust_factored_symbolic_add_output() {
 fn spirv_opt_cli_cpp_mode_matches_rust_factored_symbolic_add_mixed_output() {
     let (words, ..) = build_factored_symbolic_mul_add_mixed_module();
     assert_cpp_cli_matches_rust(&words, "factored symbolic addition with mixed mul order");
+}
+
+#[test]
+fn spirv_opt_cli_cpp_mode_matches_rust_factored_mixed_const_difference_output() {
+    let (words, ..) = build_factored_mixed_const_difference_mul_module();
+    assert_cpp_cli_matches_rust(&words, "factored mixed constant difference");
+}
+
+#[test]
+fn spirv_opt_cli_cpp_mode_matches_rust_factored_mixed_const_difference_commuted_output() {
+    let (words, ..) = build_factored_mixed_const_difference_mul_commuted_module();
+    assert_cpp_cli_matches_rust(
+        &words,
+        "factored mixed constant difference with commuted mul",
+    );
+}
+
+#[test]
+fn spirv_opt_cli_cpp_mode_matches_rust_factored_mixed_const_positive_difference_output() {
+    let (words, ..) = build_factored_mixed_const_positive_difference_mul_module();
+    assert_cpp_cli_matches_rust(&words, "factored mixed positive constant difference");
+}
+
+#[test]
+fn spirv_opt_cli_cpp_mode_matches_rust_factored_mixed_const_positive_difference_commuted_output() {
+    let (words, ..) = build_factored_mixed_const_positive_difference_mul_commuted_module();
+    assert_cpp_cli_matches_rust(
+        &words,
+        "factored mixed positive constant difference with commuted mul",
+    );
+}
+
+#[test]
+fn spirv_opt_cli_cpp_mode_matches_rust_factored_mixed_const_wrap_negative_difference_output() {
+    let (words, ..) = build_factored_mixed_const_wrap_negative_difference_mul_module();
+    assert_cpp_cli_matches_rust(
+        &words,
+        "factored mixed wrapped negative constant difference",
+    );
+}
+
+#[test]
+fn spirv_opt_cli_cpp_mode_matches_rust_factored_mixed_const_wrap_positive_difference_output() {
+    let (words, ..) = build_factored_mixed_const_wrap_positive_difference_mul_module();
+    assert_cpp_cli_matches_rust(
+        &words,
+        "factored mixed wrapped positive constant difference",
+    );
+}
+
+#[test]
+fn spirv_opt_cli_cpp_mode_matches_rust_factored_mixed_const_wrap_positive_difference_commuted_output(
+) {
+    let (words, ..) = build_factored_mixed_const_wrap_positive_difference_mul_commuted_module();
+    assert_cpp_cli_matches_rust(
+        &words,
+        "factored mixed wrapped positive constant difference with commuted mul",
+    );
+}
+
+#[test]
+fn spirv_opt_cli_cpp_mode_matches_rust_factored_mixed_const_wrap_negative_difference_commuted_output(
+) {
+    let (words, ..) = build_factored_mixed_const_wrap_negative_difference_mul_commuted_module();
+    assert_cpp_cli_matches_rust(
+        &words,
+        "factored mixed wrapped negative constant difference with commuted mul",
+    );
+}
+
+#[test]
+fn spirv_opt_cli_factors_mixed_constant_difference_into_single_mul() {
+    let (words, sub_id, param) = build_factored_mixed_const_difference_mul_module();
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_spirv-opt"));
+    cmd.arg("--")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+    let mut child = cmd.spawn().expect("spawn spirv-opt");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin")
+        .write_all(&words_to_bytes(&words))
+        .expect("write module");
+    let output = child.wait_with_output().expect("run spirv-opt");
+    assert!(
+        output.status.success(),
+        "spirv-opt failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let optimized_words = bytes_to_words(&output.stdout);
+
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+
+    let mut mul_count = 0;
+    let mut factored = false;
+    let mut constant = None;
+
+    for inst in module.all_inst_iter() {
+        match inst.class.opcode {
+            Op::IMul => {
+                mul_count += 1;
+                assert_eq!(inst.result_id, Some(sub_id), "mul should replace subtract");
+                let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    continue;
+                };
+                let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
+                    continue;
+                };
+                let uses_param = lhs == param || rhs == param;
+                let const_id = if lhs == param { rhs } else { lhs };
+                constant = Some(const_id);
+                factored = uses_param;
+            }
+            Op::Constant => {
+                if let Some(value) = inst.operands.first().and_then(|op| match op {
+                    rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+                    _ => None,
+                }) {
+                    if Some(inst.result_id.unwrap()) == constant {
+                        // -3 encoded in two's complement for 32-bit signed.
+                        assert_eq!(value, u32::MAX - 2);
+                    }
+                }
+            }
+            Op::ISub => panic!("subtract should fold into a single multiply"),
+            _ => {}
+        }
+    }
+
+    assert_eq!(mul_count, 1, "factoring should leave one multiply");
+    assert!(
+        factored,
+        "mul should reuse the original subtract id with the shared param"
+    );
+    assert!(
+        constant.is_some(),
+        "factored multiply should include the constant difference"
+    );
+}
+
+#[test]
+fn spirv_opt_cli_factors_mixed_constant_difference_commuted_into_single_mul() {
+    let (words, sub_id, param) = build_factored_mixed_const_difference_mul_commuted_module();
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_spirv-opt"));
+    cmd.arg("--")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+    let mut child = cmd.spawn().expect("spawn spirv-opt");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin")
+        .write_all(&words_to_bytes(&words))
+        .expect("write module");
+    let output = child.wait_with_output().expect("run spirv-opt");
+    assert!(
+        output.status.success(),
+        "spirv-opt failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let optimized_words = bytes_to_words(&output.stdout);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+
+    let mut mul_count = 0;
+    let mut factored = false;
+    let mut constant = None;
+
+    for inst in module.all_inst_iter() {
+        match inst.class.opcode {
+            Op::IMul => {
+                mul_count += 1;
+                assert_eq!(inst.result_id, Some(sub_id), "mul should replace subtract");
+                let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    continue;
+                };
+                let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
+                    continue;
+                };
+                let uses_param = lhs == param || rhs == param;
+                let const_id = if lhs == param { rhs } else { lhs };
+                constant = Some(const_id);
+                factored = uses_param;
+            }
+            Op::Constant => {
+                if let Some(value) = inst.operands.first().and_then(|op| match op {
+                    rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+                    _ => None,
+                }) {
+                    if Some(inst.result_id.unwrap()) == constant {
+                        assert_eq!(value, u32::MAX - 2);
+                    }
+                }
+            }
+            Op::ISub => panic!("subtract should fold into a single multiply"),
+            _ => {}
+        }
+    }
+
+    assert_eq!(mul_count, 1, "factoring should leave one multiply");
+    assert!(
+        factored,
+        "mul should reuse the original subtract id with the shared param"
+    );
+    assert!(
+        constant.is_some(),
+        "factored multiply should include the constant difference"
+    );
+}
+
+fn assert_const_difference_factors_to_mul(
+    words: &[u32],
+    expected_result: u32,
+    param: u32,
+    constant_value: u32,
+) {
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_spirv-opt"));
+    cmd.arg("--")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+    let mut child = cmd.spawn().expect("spawn spirv-opt");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin")
+        .write_all(&words_to_bytes(words))
+        .expect("write module");
+    let output = child.wait_with_output().expect("run spirv-opt");
+    assert!(
+        output.status.success(),
+        "spirv-opt failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let optimized_words = bytes_to_words(&output.stdout);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+
+    let mut mul_count = 0;
+    let mut factored = false;
+    let mut constant = None;
+
+    for inst in module.all_inst_iter() {
+        match inst.class.opcode {
+            Op::IMul => {
+                mul_count += 1;
+                assert_eq!(
+                    inst.result_id,
+                    Some(expected_result),
+                    "mul should replace subtract"
+                );
+                let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    continue;
+                };
+                let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
+                    continue;
+                };
+                let uses_param = lhs == param || rhs == param;
+                let const_id = if lhs == param { rhs } else { lhs };
+                constant = Some(const_id);
+                factored = uses_param;
+            }
+            Op::Constant => {
+                if let Some(value) = inst.operands.first().and_then(|op| match op {
+                    rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+                    _ => None,
+                }) {
+                    if Some(inst.result_id.unwrap()) == constant {
+                        assert_eq!(value, constant_value);
+                    }
+                }
+            }
+            Op::ISub => panic!("subtract should fold into a single multiply"),
+            _ => {}
+        }
+    }
+
+    assert_eq!(mul_count, 1, "factoring should leave one multiply");
+    assert!(
+        factored,
+        "mul should reuse the original subtract id with the shared param"
+    );
+    assert!(
+        constant.is_some(),
+        "factored multiply should include the constant difference"
+    );
+}
+
+#[test]
+fn spirv_opt_cli_factors_mixed_positive_constant_difference_into_single_mul() {
+    let (words, sub_id, param) = build_factored_mixed_const_positive_difference_mul_module();
+    assert_const_difference_factors_to_mul(&words, sub_id, param, 5);
+}
+
+#[test]
+fn spirv_opt_cli_factors_mixed_positive_constant_difference_commuted_into_single_mul() {
+    let (words, sub_id, param) =
+        build_factored_mixed_const_positive_difference_mul_commuted_module();
+    assert_const_difference_factors_to_mul(&words, sub_id, param, 5);
+}
+
+#[test]
+fn spirv_opt_cli_factors_mixed_wrap_negative_constant_difference_into_single_mul() {
+    let (words, sub_id, param) = build_factored_mixed_const_wrap_negative_difference_mul_module();
+    assert_const_difference_factors_to_mul(&words, sub_id, param, u32::MAX - 6);
+}
+
+#[test]
+fn spirv_opt_cli_factors_mixed_wrap_negative_constant_difference_commuted_into_single_mul() {
+    let (words, sub_id, param) =
+        build_factored_mixed_const_wrap_negative_difference_mul_commuted_module();
+    assert_const_difference_factors_to_mul(&words, sub_id, param, u32::MAX - 6);
+}
+
+#[test]
+fn spirv_opt_cli_factors_mixed_wrap_positive_constant_difference_into_single_mul() {
+    let (words, sub_id, param) = build_factored_mixed_const_wrap_positive_difference_mul_module();
+    assert_const_difference_factors_to_mul(&words, sub_id, param, 3);
+}
+
+#[test]
+fn spirv_opt_cli_factors_mixed_wrap_positive_constant_difference_commuted_into_single_mul() {
+    let (words, sub_id, param) =
+        build_factored_mixed_const_wrap_positive_difference_mul_commuted_module();
+    assert_const_difference_factors_to_mul(&words, sub_id, param, 3);
 }
 
 #[test]

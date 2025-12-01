@@ -670,6 +670,10 @@ Planned tasks:
   - Added C++ parity coverage for canceling constant ratios inside division chains: `(6*x)/3` (and `(-6*x)/-3`) rewrite to `2*x` without remaining div instructions in both optimizers.
   - Added C++ parity coverage for merging nested constant divisors: `((x/2)/3)` rewrites to `x/6` with a single division in Rust and C++ paths.
   - Added C++ parity coverage for folding `(x*c) % c` to zero when the constant matches the divisor, ensuring remainder elimination aligns across Rust and C++.
+  - Added CLI/FFI (and CLI vs. C++ parity) for factoring mixed-order constant differences: `(2*x)-(5*x)` and `(x*2)-(5*x)` both fold into a single multiply with the shared parameter and wrapped negative constant.
+  - Added CLI/FFI (and CLI vs. C++ parity) for factoring mixed-order positive constant differences: `(7*x)-(2*x)` and `(x*7)-(2*x)` fold into a single multiply with the shared parameter and positive constant.
+  - Added CLI/FFI (and CLI vs. C++ parity) for factoring mixed-order wrapped negative constant differences: `(0xFFFFFFFE*x)-(5*x)` and `(x*0xFFFFFFFE)-(5*x)` fold into a single multiply with the shared parameter and wrapped `-7` constant.
+  - Added CLI/FFI (and CLI vs. C++ parity) for factoring mixed-order wrapped positive constant differences: `(-1*x)-(-4*x)` and `(x*-1)-(x*-4)` fold into a single multiply with the shared parameter and constant `3`.
   - Added C++ parity coverage for folding `(x*c) % k` when `c` is divisible by `k` (e.g., `(x*6)%3 -> 0`), keeping div/rem simplifications aligned between Rust and C++.
   - Added C++ parity coverage for non-divisible constant ratios: `(5*x)/2` remains a division in both optimizers, preventing over-aggressive constant cancellation.
   - Added C++ parity coverage to guard non-divisible mul/mod combinations: `(x*5)%3` stays as a remainder (no fold to zero) in Rust and C++ optimizers.
