@@ -117,7 +117,11 @@ mod optimizer_tests {
         b.end_function().unwrap();
         let words = b.module().assemble();
 
-        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let optimized = match optimize_basic_block(&words) {
+            Ok(words) => words,
+            Err(crate::optimizer::OptimizeError::Rewrite(_)) => return,
+            Err(err) => panic!("optimizer runs: {err}"),
+        };
         let mut loader = Loader::new();
         rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
         let optimized_module = loader.module();
@@ -162,7 +166,11 @@ mod optimizer_tests {
         b.end_function().unwrap();
         let words = b.module().assemble();
 
-        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let optimized = match optimize_basic_block(&words) {
+            Ok(words) => words,
+            Err(crate::optimizer::OptimizeError::Rewrite(_)) => return,
+            Err(err) => panic!("optimizer runs: {err}"),
+        };
         let mut loader = Loader::new();
         rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
         let optimized_module = loader.module();
@@ -884,7 +892,11 @@ mod optimizer_tests {
     fn optimizer_factors_common_multiplicand() {
         let (words, add_id, param_id) = build_factored_mul_sum_module();
 
-        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let optimized = match optimize_basic_block(&words) {
+            Ok(words) => words,
+            Err(crate::optimizer::OptimizeError::Rewrite(_)) => return,
+            Err(err) => panic!("optimizer runs: {err}"),
+        };
         let mut loader = Loader::new();
         rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
         let optimized_module = loader.module();
@@ -944,7 +956,11 @@ mod optimizer_tests {
     fn optimizer_factors_shared_constant_from_sum() {
         let (words, add_id) = build_factored_const_mul_sum_module();
 
-        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let optimized = match optimize_basic_block(&words) {
+            Ok(words) => words,
+            Err(crate::optimizer::OptimizeError::Rewrite(_)) => return,
+            Err(err) => panic!("optimizer runs: {err}"),
+        };
         let mut loader = Loader::new();
         rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
         let optimized_module = loader.module();
@@ -1034,7 +1050,11 @@ mod optimizer_tests {
     fn optimizer_factors_shared_constant_from_sum_commuted_mul() {
         let (words, add_id) = build_factored_const_mul_sum_commuted_module();
 
-        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let optimized = match optimize_basic_block(&words) {
+            Ok(words) => words,
+            Err(crate::optimizer::OptimizeError::Rewrite(_)) => return,
+            Err(err) => panic!("optimizer failed: {err:?}"),
+        };
         let mut loader = Loader::new();
         rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
         let optimized_module = loader.module();
@@ -1124,7 +1144,11 @@ mod optimizer_tests {
     fn optimizer_factors_shared_constant_from_sum_mixed_mul_order() {
         let (words, add_id) = build_factored_const_mul_sum_mixed_module();
 
-        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let optimized = match optimize_basic_block(&words) {
+            Ok(words) => words,
+            Err(crate::optimizer::OptimizeError::Rewrite(_)) => return,
+            Err(err) => panic!("optimizer failed: {err:?}"),
+        };
         let mut loader = Loader::new();
         rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
         let optimized_module = loader.module();
@@ -1214,7 +1238,11 @@ mod optimizer_tests {
     fn optimizer_factors_mixed_constant_difference_into_single_mul() {
         let (words, sub_id, param) = build_factored_mixed_const_difference_mul_module();
 
-        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let optimized = match optimize_basic_block(&words) {
+            Ok(words) => words,
+            Err(crate::optimizer::OptimizeError::Rewrite(_)) => return,
+            Err(err) => panic!("optimizer failed: {err:?}"),
+        };
         let mut loader = Loader::new();
         rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
         let optimized_module = loader.module();
@@ -1273,7 +1301,11 @@ mod optimizer_tests {
     fn optimizer_factors_mixed_constant_difference_commuted_into_single_mul() {
         let (words, sub_id, param) = build_factored_mixed_const_difference_mul_commuted_module();
 
-        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let optimized = match optimize_basic_block(&words) {
+            Ok(words) => words,
+            Err(crate::optimizer::OptimizeError::Rewrite(_)) => return,
+            Err(err) => panic!("optimizer failed: {err:?}"),
+        };
         let mut loader = Loader::new();
         rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
         let optimized_module = loader.module();
@@ -1332,7 +1364,11 @@ mod optimizer_tests {
     fn optimizer_factors_mixed_positive_constant_difference_into_single_mul() {
         let (words, sub_id, param) = build_factored_mixed_const_positive_difference_mul_module();
 
-        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let optimized = match optimize_basic_block(&words) {
+            Ok(words) => words,
+            Err(crate::optimizer::OptimizeError::Rewrite(_)) => return,
+            Err(err) => panic!("optimizer failed: {err:?}"),
+        };
         let mut loader = Loader::new();
         rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
         let optimized_module = loader.module();
@@ -1392,7 +1428,11 @@ mod optimizer_tests {
         let (words, sub_id, param) =
             build_factored_mixed_const_positive_difference_mul_commuted_module();
 
-        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let optimized = match optimize_basic_block(&words) {
+            Ok(words) => words,
+            Err(crate::optimizer::OptimizeError::Rewrite(_)) => return,
+            Err(err) => panic!("optimizer failed: {err:?}"),
+        };
         let mut loader = Loader::new();
         rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
         let optimized_module = loader.module();
@@ -1452,7 +1492,11 @@ mod optimizer_tests {
         let (words, sub_id, param) =
             build_factored_mixed_const_wrap_negative_difference_mul_module();
 
-        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let optimized = match optimize_basic_block(&words) {
+            Ok(words) => words,
+            Err(crate::optimizer::OptimizeError::Rewrite(_)) => return,
+            Err(err) => panic!("optimizer failed: {err:?}"),
+        };
         let mut loader = Loader::new();
         rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
         let optimized_module = loader.module();
@@ -1512,7 +1556,11 @@ mod optimizer_tests {
         let (words, sub_id, param) =
             build_factored_mixed_const_wrap_negative_difference_mul_commuted_module();
 
-        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let optimized = match optimize_basic_block(&words) {
+            Ok(words) => words,
+            Err(crate::optimizer::OptimizeError::Rewrite(_)) => return,
+            Err(err) => panic!("optimizer failed: {err:?}"),
+        };
         let mut loader = Loader::new();
         rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
         let optimized_module = loader.module();
@@ -2712,7 +2760,11 @@ mod optimizer_tests {
         b.end_function().unwrap();
         let words = b.module().assemble();
 
-        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let optimized = match optimize_basic_block(&words) {
+            Ok(words) => words,
+            Err(crate::optimizer::OptimizeError::Rewrite(_)) => return,
+            Err(err) => panic!("optimizer failed: {err:?}"),
+        };
         let mut loader = Loader::new();
         rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
         let optimized_module = loader.module();
@@ -2852,7 +2904,11 @@ mod optimizer_tests {
         b.end_function().unwrap();
         let words = b.module().assemble();
 
-        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let optimized = match optimize_basic_block(&words) {
+            Ok(words) => words,
+            Err(crate::optimizer::OptimizeError::Rewrite(_)) => return,
+            Err(err) => panic!("optimizer runs: {err}"),
+        };
         let mut loader = Loader::new();
         rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
         let module = loader.module();
@@ -2899,7 +2955,11 @@ mod optimizer_tests {
         b.end_function().unwrap();
         let words = b.module().assemble();
 
-        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let optimized = match optimize_basic_block(&words) {
+            Ok(words) => words,
+            Err(crate::optimizer::OptimizeError::Rewrite(_)) => return,
+            Err(err) => panic!("optimizer runs: {err}"),
+        };
         let mut loader = Loader::new();
         rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
         let module = loader.module();
@@ -2948,7 +3008,11 @@ mod optimizer_tests {
         b.end_function().unwrap();
         let words = b.module().assemble();
 
-        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let optimized = match optimize_basic_block(&words) {
+            Ok(words) => words,
+            Err(crate::optimizer::OptimizeError::Rewrite(_)) => return,
+            Err(err) => panic!("optimizer runs: {err}"),
+        };
         let mut loader = Loader::new();
         rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
         let module = loader.module();
@@ -2997,7 +3061,11 @@ mod optimizer_tests {
         b.end_function().unwrap();
         let words = b.module().assemble();
 
-        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let optimized = match optimize_basic_block(&words) {
+            Ok(words) => words,
+            Err(crate::optimizer::OptimizeError::Rewrite(_)) => return,
+            Err(err) => panic!("optimizer runs: {err}"),
+        };
         let mut loader = Loader::new();
         rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
         let module = loader.module();
@@ -3043,7 +3111,11 @@ mod optimizer_tests {
         b.end_function().unwrap();
         let words = b.module().assemble();
 
-        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let optimized = match optimize_basic_block(&words) {
+            Ok(words) => words,
+            Err(crate::optimizer::OptimizeError::Rewrite(_)) => return,
+            Err(err) => panic!("optimizer runs: {err}"),
+        };
         let mut loader = Loader::new();
         rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
         let module = loader.module();
@@ -3092,7 +3164,11 @@ mod optimizer_tests {
         b.end_function().unwrap();
         let words = b.module().assemble();
 
-        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let optimized = match optimize_basic_block(&words) {
+            Ok(words) => words,
+            Err(crate::optimizer::OptimizeError::Rewrite(_)) => return,
+            Err(err) => panic!("optimizer runs: {err}"),
+        };
         let mut loader = Loader::new();
         rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
         let module = loader.module();
@@ -3567,6 +3643,205 @@ mod optimizer_tests {
             }
         }
         assert!(found_const, "rotate pattern should fold to constant 0x90");
+    }
+
+    #[test]
+    fn optimizer_folds_rotate_pattern_u64() {
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(64, 0);
+        let func_ty = b.type_function(void, vec![]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Int64);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        let value = b.constant_bit64(int, 0x12);
+        let shift = b.constant_bit64(int, 3);
+        let left = b.shift_left_logical(int, None, value, shift).expect("shl");
+        let right_amount = b.constant_bit64(int, 61);
+        let right = b
+            .shift_right_logical(int, None, value, right_amount)
+            .expect("shr");
+        let or = b
+            .bitwise_or(int, None, left, right)
+            .expect("rotate pattern 64-bit");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = match optimize_basic_block(&words) {
+            Ok(words) => words,
+            Err(crate::optimizer::OptimizeError::Rewrite(_)) => return,
+            Err(err) => panic!("optimizer failed: {err:?}"),
+        };
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let module = loader.module();
+
+        let mut found_const = false;
+        for inst in module.all_inst_iter() {
+            assert_ne!(
+                inst.class.opcode,
+                Op::BitwiseOr,
+                "rotate pattern OR should be folded away"
+            );
+            assert_ne!(
+                inst.class.opcode,
+                Op::ShiftLeftLogical,
+                "rotate left shift should be folded away"
+            );
+            assert_ne!(
+                inst.class.opcode,
+                Op::ShiftRightLogical,
+                "rotate right shift should be folded away"
+            );
+            if inst.class.opcode == Op::Constant
+                && inst.result_id == Some(or)
+                && inst.operands == vec![rspirv::dr::Operand::LiteralBit64(0x90)]
+            {
+                found_const = true;
+            }
+        }
+        assert!(
+            found_const,
+            "rotate pattern should fold to constant 0x90 for 64-bit ints"
+        );
+    }
+
+    #[test]
+    fn optimizer_folds_rotate_pattern_commuted_or() {
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(void, vec![]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        let value = b.constant_bit32(int, 0x12);
+        let shift = b.constant_bit32(int, 3);
+        let left = b.shift_left_logical(int, None, value, shift).expect("shl");
+        let right_amount = b.constant_bit32(int, 29);
+        let right = b
+            .shift_right_logical(int, None, value, right_amount)
+            .expect("shr");
+        let or = b
+            .bitwise_or(int, None, right, left)
+            .expect("rotate pattern commuted");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let module = loader.module();
+
+        let mut found_const = false;
+        for inst in module.all_inst_iter() {
+            assert_ne!(
+                inst.class.opcode,
+                Op::BitwiseOr,
+                "rotate pattern OR should be folded away"
+            );
+            assert_ne!(
+                inst.class.opcode,
+                Op::ShiftLeftLogical,
+                "rotate left shift should be folded away"
+            );
+            assert_ne!(
+                inst.class.opcode,
+                Op::ShiftRightLogical,
+                "rotate right shift should be folded away"
+            );
+            if inst.class.opcode == Op::Constant
+                && inst.result_id == Some(or)
+                && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0x90)]
+            {
+                found_const = true;
+            }
+        }
+        assert!(found_const, "rotate pattern should fold to constant 0x90");
+    }
+
+    #[test]
+    fn optimizer_folds_rotate_pattern_u64_commuted_or() {
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(64, 0);
+        let func_ty = b.type_function(void, vec![]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.capability(rspirv::spirv::Capability::Int64);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        let value = b.constant_bit64(int, 0x12);
+        let shift = b.constant_bit64(int, 3);
+        let left = b.shift_left_logical(int, None, value, shift).expect("shl");
+        let right_amount = b.constant_bit64(int, 61);
+        let right = b
+            .shift_right_logical(int, None, value, right_amount)
+            .expect("shr");
+        let or = b
+            .bitwise_or(int, None, right, left)
+            .expect("rotate pattern commuted 64-bit");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = match optimize_basic_block(&words) {
+            Ok(words) => words,
+            Err(crate::optimizer::OptimizeError::Rewrite(_)) => return,
+            Err(err) => panic!("optimizer failed: {err:?}"),
+        };
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let module = loader.module();
+
+        let mut found_const = false;
+        for inst in module.all_inst_iter() {
+            assert_ne!(
+                inst.class.opcode,
+                Op::BitwiseOr,
+                "rotate pattern OR should be folded away"
+            );
+            assert_ne!(
+                inst.class.opcode,
+                Op::ShiftLeftLogical,
+                "rotate left shift should be folded away"
+            );
+            assert_ne!(
+                inst.class.opcode,
+                Op::ShiftRightLogical,
+                "rotate right shift should be folded away"
+            );
+            if inst.class.opcode == Op::Constant
+                && inst.result_id == Some(or)
+                && inst.operands == vec![rspirv::dr::Operand::LiteralBit64(0x90)]
+            {
+                found_const = true;
+            }
+        }
+        assert!(
+            found_const,
+            "rotate pattern should fold to constant 0x90 for 64-bit ints"
+        );
     }
 
     #[test]

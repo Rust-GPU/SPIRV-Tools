@@ -98,6 +98,16 @@ Planned tasks:
 - [x] Extend equal-constant difference parity to unsigned ints so zero-folding is covered regardless of integer signedness.
 - [x] Add unsigned constant-difference factoring parity to keep mixed add/sub factorization aligned across signedness.
 - [x] Extend unsigned parity to wrapped positive/negative constant differences (and commuted forms) so wraparound factoring matches C++ outputs.
+- [x] Add parity for commuted rotate patterns so bitwise rotate folding stays aligned across operand orderings.
+- [x] Preserve 64-bit constant encoding when reconstructing optimized blocks (type-aware constant normalization) and extend rotate folding parity tests to 64-bit paths.
+
+## Completed Milestone: Optimizer 64-bit Constant Support
+Close correctness gaps when folding/encoding 64-bit constants through the Rust optimizer and FFI/CLI surfaces.
+
+Tasks for this milestone:
+- [x] Teach the optimizer translator to round-trip `LiteralBit64` operands and track bit widths when rebuilding constants.
+- [x] Ensure reconstructed `OpConstant` instructions are width-correct by normalizing operands against their `OpTypeInt` definitions before reassembly.
+- [x] Extend rotate-folding parity tests to 64-bit arithmetic (including commuted forms) and keep CLI/FFI paths passing with 64-bit literals.
 
 ## Upcoming Milestone: Optimizer Parity vs C++ Arithmetic Pass
 Align the Rust arithmetic optimizer with the legacy C++ arithmetic canonicalization passes.
@@ -158,7 +168,19 @@ Planned tasks:
 - [x] Broaden parity to include unsigned remainder by one (folds to zero) across CLI/FFI vs. C++ outputs.
 - [x] Broaden parity to include signed divide/remainder by one across CLI/FFI vs. C++ outputs.
 - [x] Broaden parity to include rotate-folding patterns across CLI/FFI vs. C++ outputs.
+- [x] Add parity for 64-bit rotate folding (including commuted OR) across CLI/FFI to keep width-agnostic rewrites aligned.
 - [x] Add parity for bitwise all-ones identities (and/or) and xor-to-not lowering across CLI/FFI so C++ outputs stay aligned.
+- Add 64-bit literal support in the Rust optimizer’s rotate rewrite so the new 64-bit parity cases execute fully (drop temporary skip-on-rewrite guard once supported).
+
+## New Milestone: Optimizer 64-bit Constant Support
+Bring the arithmetic/bitwise optimizer up to parity for 64-bit integer literals (rotate, shift/mask) so 64-bit CLI/FFI parity runs without skipping.
+
+Tasks:
+- Extend the optimizer’s constant domain to track bit-width (u32/u64) and surface width through the e-graph rewrite layer.
+- Teach rotate/shift/mask rewrites to honor the operand bit width (32 vs 64) and fold accordingly.
+- Update SPIR-V extraction/reconstruction to emit the correct literal width for optimized constants.
+- Enable the 64-bit rotate parity tests (CLI + FFI) to run without the skip-on-rewrite guard and add any new 64-bit shift/mask parity needed.
+- Keep fuzz/criterion/hyperfine benches green after width support lands; run clippy/rustfmt.
 - [x] Add parity for bitwise zero identities (and/or/xor) across CLI/FFI so identity/absorbing forms stay in lockstep with C++.
 - [x] Add parity for bitwise self identities (and/or => operand, xor => zero) across CLI/FFI to keep id-stable rewrites matched with C++.
 - [x] Add parity for complement identities (x & ~x => 0, x | ~x => all ones) across CLI/FFI, preserving result ids and removing dead nots.

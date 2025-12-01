@@ -121,27 +121,72 @@ pub mod fuzzing {
 
 /// Domain-specific constant value used in the e-graph.
 ///
-/// Keeping this strongly typed lets us define deterministic folding semantics
-/// (wrapping 32-bit arithmetic for now) and makes room for SPIR-V-specific
-/// numeric domains later (e.g., literals with bit-width).
+/// We track the literal bits and the bit width (currently 32 or 64) so
+/// width-sensitive rewrites (e.g., rotates) can fold correctly while keeping
+/// existing 32-bit folds simple.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct ConstValue(u32);
+pub struct ConstValue {
+    value: u64,
+    width: u8,
+}
 
 impl ConstValue {
     /// Constructs a new constant value.
     pub const fn new(value: u32) -> Self {
-        Self(value)
+        Self::new_with_width(value as u64, 32)
+    }
+
+    /// Constructs a new 64-bit constant value.
+    pub const fn new64(value: u64) -> Self {
+        Self::new_with_width(value, 64)
+    }
+
+    /// Constructs a constant with an explicit bit width (masked to that width).
+    pub const fn new_with_width(value: u64, width: u8) -> Self {
+        let mask = if width >= 64 {
+            u64::MAX
+        } else {
+            (1u64 << width) - 1
+        };
+        Self {
+            value: value & mask,
+            width,
+        }
     }
 
     /// Returns the raw 32-bit value.
     pub const fn get(self) -> u32 {
-        self.0
+        (self.value & 0xFFFF_FFFF) as u32
+    }
+
+    /// Returns the raw value masked to its bit width.
+    pub const fn get_u64(self) -> u64 {
+        let mask = if self.width >= 64 {
+            u64::MAX
+        } else {
+            (1u64 << self.width) - 1
+        };
+        self.value & mask
+    }
+
+    /// Returns the bit width.
+    pub const fn width_bits(self) -> u8 {
+        self.width
+    }
+
+    /// Returns a mask for the width.
+    pub const fn mask(self) -> u64 {
+        if self.width >= 64 {
+            u64::MAX
+        } else {
+            (1u64 << self.width) - 1
+        }
     }
 }
 
 impl fmt::Display for ConstValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "{}", self.get())
     }
 }
 
@@ -149,7 +194,7 @@ impl std::str::FromStr for ConstValue {
     type Err = std::num::ParseIntError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.parse::<u32>().map(Self)
+        s.parse::<u32>().map(Self::new)
     }
 }
 
@@ -164,7 +209,7 @@ impl egg::LanguageChildren for ConstValue {
 
     fn from_vec(v: Vec<Id>) -> Self {
         assert!(v.is_empty());
-        ConstValue(0)
+        ConstValue::new(0)
     }
 
     fn as_slice(&self) -> &[Id] {
@@ -2353,13 +2398,21 @@ impl Applier<SpirvLang, ()> for RotatePatternFold {
         let Some(t) = const_value(egraph, subst[self.t]) else {
             return Vec::new();
         };
-        // Only fold when the shifts are complementary (s + t == word size).
-        if (s.get().wrapping_add(t.get())) % 32 != 0 {
+        let width = x.width_bits();
+        if s.width_bits() != width || t.width_bits() != width {
             return Vec::new();
         }
-        let left = x.get().wrapping_shl(s.get() % 32);
-        let right = x.get().wrapping_shr(t.get() % 32);
-        let folded = ConstValue::new(left | right);
+        let width_u64 = width as u64;
+        // Only fold when the shifts are complementary (s + t == word size).
+        if (s.get_u64().wrapping_add(t.get_u64())) % width_u64 != 0 {
+            return Vec::new();
+        }
+        let shl_amt = (s.get_u64() % width_u64) as u32;
+        let shr_amt = (t.get_u64() % width_u64) as u32;
+        let mask = x.mask();
+        let left = (x.get_u64().wrapping_shl(shl_amt)) & mask;
+        let right = (x.get_u64().wrapping_shr(shr_amt)) & mask;
+        let folded = ConstValue::new_with_width(left | right, width);
         let id = egraph.add(SpirvLang::Const(folded));
         egraph.union(eclass, id);
         vec![id]

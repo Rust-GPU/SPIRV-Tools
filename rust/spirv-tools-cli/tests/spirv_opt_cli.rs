@@ -451,9 +451,13 @@ fn spirv_opt_cli_folds_rotate_pattern() {
 
     let mut has_or = false;
     let mut found_const = false;
+    let mut has_shl = false;
+    let mut has_shr = false;
     for inst in module.all_inst_iter() {
         match inst.class.opcode {
             Op::BitwiseOr => has_or = true,
+            Op::ShiftLeftLogical => has_shl = true,
+            Op::ShiftRightLogical => has_shr = true,
             Op::Constant
                 if inst.result_id == Some(or_id)
                     && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0x90)] =>
@@ -464,6 +468,61 @@ fn spirv_opt_cli_folds_rotate_pattern() {
         }
     }
     assert!(!has_or, "rotate pattern should fold away bitwise OR");
+    assert!(!has_shl, "rotate pattern should fold away left shift");
+    assert!(!has_shr, "rotate pattern should fold away right shift");
+    assert!(
+        found_const,
+        "rotate pattern should fold to constant 0x90 with original id"
+    );
+}
+
+#[test]
+fn spirv_opt_cli_folds_rotate_pattern_commuted_or() {
+    let (words, or_id) = build_rotate_fold_commuted_module();
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_spirv-opt"));
+    cmd.arg("--")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+    let mut child = cmd.spawn().expect("spawn spirv-opt");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin")
+        .write_all(&words_to_bytes(&words))
+        .expect("write module");
+    let output = child.wait_with_output().expect("run spirv-opt");
+    assert!(
+        output.status.success(),
+        "spirv-opt failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let optimized_words = bytes_to_words(&output.stdout);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+
+    let mut has_or = false;
+    let mut found_const = false;
+    let mut has_shl = false;
+    let mut has_shr = false;
+    for inst in module.all_inst_iter() {
+        match inst.class.opcode {
+            Op::BitwiseOr => has_or = true,
+            Op::ShiftLeftLogical => has_shl = true,
+            Op::ShiftRightLogical => has_shr = true,
+            Op::Constant
+                if inst.result_id == Some(or_id)
+                    && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0x90)] =>
+            {
+                found_const = true;
+            }
+            _ => {}
+        }
+    }
+    assert!(!has_or, "rotate pattern should fold away bitwise OR");
+    assert!(!has_shl, "rotate pattern should fold away left shift");
+    assert!(!has_shr, "rotate pattern should fold away right shift");
     assert!(
         found_const,
         "rotate pattern should fold to constant 0x90 with original id"
@@ -1409,6 +1468,24 @@ fn spirv_opt_cli_cpp_mode_matches_rust_shift_zero_output() {
 fn spirv_opt_cli_cpp_mode_matches_rust_rotate_output() {
     let (words, _) = build_rotate_fold_module();
     assert_cpp_cli_matches_rust(&words, "rotate fold");
+}
+
+#[test]
+fn spirv_opt_cli_cpp_mode_matches_rust_rotate_u64_output() {
+    let (words, _) = build_rotate_fold_u64_module();
+    assert_cpp_cli_matches_rust(&words, "rotate fold 64-bit");
+}
+
+#[test]
+fn spirv_opt_cli_cpp_mode_matches_rust_rotate_commuted_output() {
+    let (words, _) = build_rotate_fold_commuted_module();
+    assert_cpp_cli_matches_rust(&words, "rotate fold with commuted or");
+}
+
+#[test]
+fn spirv_opt_cli_cpp_mode_matches_rust_rotate_u64_commuted_output() {
+    let (words, _) = build_rotate_fold_u64_commuted_module();
+    assert_cpp_cli_matches_rust(&words, "rotate fold 64-bit with commuted or");
 }
 
 fn build_factored_const_mul_sum_module() -> (Vec<u32>, u32) {
@@ -4016,6 +4093,95 @@ fn build_rotate_fold_module() -> (Vec<u32>, u32) {
     let or = b
         .bitwise_or(int, None, left, right)
         .expect("rotate pattern");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), or)
+}
+
+fn build_rotate_fold_commuted_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(rspirv::spirv::Capability::Shader);
+    b.memory_model(
+        rspirv::spirv::AddressingModel::Logical,
+        rspirv::spirv::MemoryModel::Simple,
+    );
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let _ = b
+        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let value = b.constant_bit32(int, 0x12);
+    let shift = b.constant_bit32(int, 3);
+    let left = b.shift_left_logical(int, None, value, shift).expect("shl");
+    let right_amount = b.constant_bit32(int, 29);
+    let right = b
+        .shift_right_logical(int, None, value, right_amount)
+        .expect("shr");
+    let or = b
+        .bitwise_or(int, None, right, left)
+        .expect("rotate pattern commuted");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), or)
+}
+
+fn build_rotate_fold_u64_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(rspirv::spirv::Capability::Shader);
+    b.capability(rspirv::spirv::Capability::Int64);
+    b.memory_model(
+        rspirv::spirv::AddressingModel::Logical,
+        rspirv::spirv::MemoryModel::Simple,
+    );
+    let void = b.type_void();
+    let int = b.type_int(64, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let _ = b
+        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let value = b.constant_bit64(int, 0x12);
+    let shift = b.constant_bit64(int, 3);
+    let left = b.shift_left_logical(int, None, value, shift).expect("shl");
+    let right_amount = b.constant_bit64(int, 61);
+    let right = b
+        .shift_right_logical(int, None, value, right_amount)
+        .expect("shr");
+    let or = b
+        .bitwise_or(int, None, left, right)
+        .expect("rotate pattern 64-bit");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), or)
+}
+
+fn build_rotate_fold_u64_commuted_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(rspirv::spirv::Capability::Shader);
+    b.capability(rspirv::spirv::Capability::Int64);
+    b.memory_model(
+        rspirv::spirv::AddressingModel::Logical,
+        rspirv::spirv::MemoryModel::Simple,
+    );
+    let void = b.type_void();
+    let int = b.type_int(64, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let _ = b
+        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let value = b.constant_bit64(int, 0x12);
+    let shift = b.constant_bit64(int, 3);
+    let left = b.shift_left_logical(int, None, value, shift).expect("shl");
+    let right_amount = b.constant_bit64(int, 61);
+    let right = b
+        .shift_right_logical(int, None, value, right_amount)
+        .expect("shr");
+    let or = b
+        .bitwise_or(int, None, right, left)
+        .expect("rotate pattern commuted 64-bit");
     b.ret().expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), or)

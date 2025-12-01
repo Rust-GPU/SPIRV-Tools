@@ -101,11 +101,16 @@ pub fn translate_arith(instructions: &[Instruction]) -> Result<TranslatedExpr, T
                     .operands
                     .iter()
                     .find_map(|op| match op {
-                        rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+                        rspirv::dr::Operand::LiteralBit32(v) => {
+                            Some(ConstValue::new_with_width(*v as u64, 32))
+                        }
+                        rspirv::dr::Operand::LiteralBit64(v) => {
+                            Some(ConstValue::new_with_width(*v, 64))
+                        }
                         _ => None,
                     })
                     .ok_or(TranslateError::InvalidConstant { id: result_id })?;
-                expr.add(SpirvLang::Const(ConstValue::new(literal)))
+                expr.add(SpirvLang::Const(literal))
             }
             Op::IAdd => {
                 let mut ops = inst
@@ -363,12 +368,13 @@ pub fn optimize_arith_block(
     for (idx, node) in optimized.as_ref().iter().enumerate() {
         let result_id = assigned_ids[idx];
         let inst = match node {
-            SpirvLang::Const(val) => Instruction::new(
-                Op::Constant,
-                Some(result_type),
-                Some(result_id),
-                vec![rspirv::dr::Operand::LiteralBit32(val.get())],
-            ),
+            SpirvLang::Const(val) => {
+                let operands = match val.width_bits() {
+                    64 => vec![rspirv::dr::Operand::LiteralBit64(val.get_u64())],
+                    _ => vec![rspirv::dr::Operand::LiteralBit32(val.get())],
+                };
+                Instruction::new(Op::Constant, Some(result_type), Some(result_id), operands)
+            }
             SpirvLang::Add([a, b]) => Instruction::new(
                 Op::IAdd,
                 Some(result_type),

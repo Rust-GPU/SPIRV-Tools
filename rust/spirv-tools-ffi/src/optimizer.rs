@@ -1,9 +1,52 @@
 use rspirv::binary::Assemble;
 use rspirv::dr::Instruction;
 use rspirv::spirv::Op;
-use spirv_tools_opt::translate;
-use std::collections::BTreeMap;
+use spirv_tools_opt::{translate, ConstValue};
+use std::collections::{BTreeMap, HashMap};
 use thiserror::Error;
+
+fn type_widths_from_module(module: &rspirv::dr::Module) -> HashMap<u32, u32> {
+    let mut map = HashMap::new();
+    for inst in &module.types_global_values {
+        if inst.class.opcode == Op::TypeInt {
+            if let (Some(result_id), Some(rspirv::dr::Operand::LiteralBit32(width_bits))) =
+                (inst.result_id, inst.operands.get(0))
+            {
+                map.insert(result_id, *width_bits);
+            }
+        }
+    }
+    map
+}
+
+fn normalize_constant_operands(inst: &mut Instruction, type_widths: &HashMap<u32, u32>) {
+    if inst.class.opcode != Op::Constant {
+        return;
+    }
+    let Some(result_type) = inst.result_type else {
+        return;
+    };
+    let Some(width_bits) = type_widths.get(&result_type) else {
+        return;
+    };
+    let value = inst
+        .operands
+        .iter()
+        .find_map(|op| match op {
+            rspirv::dr::Operand::LiteralBit32(v) => Some(*v as u64),
+            rspirv::dr::Operand::LiteralBit64(v) => Some(*v),
+            _ => None,
+        })
+        .unwrap_or(0);
+    let masked = ConstValue::new_with_width(value, (*width_bits).min(64) as u8);
+    let operand = if *width_bits > 32 {
+        rspirv::dr::Operand::LiteralBit64(masked.get_u64())
+    } else {
+        rspirv::dr::Operand::LiteralBit32(masked.get())
+    };
+    inst.operands.clear();
+    inst.operands.push(operand);
+}
 
 /// Errors produced by the arithmetic optimizer.
 #[derive(Debug, Error)]
@@ -25,6 +68,7 @@ pub fn optimize_basic_block(insts: &[u32]) -> Result<Vec<u32>, OptimizeError> {
     rspirv::binary::parse_words(insts, &mut loader)
         .map_err(|e| OptimizeError::Parse(e.to_string()))?;
     let mut module = loader.module();
+    let type_widths = type_widths_from_module(&module);
     let is_arith = |opcode: Op| {
         matches!(
             opcode,
@@ -59,6 +103,9 @@ pub fn optimize_basic_block(insts: &[u32]) -> Result<Vec<u32>, OptimizeError> {
         .filter_map(|inst| inst.result_id.map(|id| (id, inst.clone())))
         .filter(|(_, inst)| inst.class.opcode == Op::Constant)
         .collect();
+    for inst in constant_map.values_mut() {
+        normalize_constant_operands(inst, &type_widths);
+    }
 
     for func in &mut module.functions {
         for block in &mut func.blocks {
@@ -80,7 +127,8 @@ pub fn optimize_basic_block(insts: &[u32]) -> Result<Vec<u32>, OptimizeError> {
                 .map_err(|e| OptimizeError::Rewrite(e.to_string()))?;
 
             let mut optimized_block = Vec::new();
-            for inst in optimized {
+            for mut inst in optimized {
+                normalize_constant_operands(&mut inst, &type_widths);
                 if inst.class.opcode == Op::Constant {
                     if let Some(id) = inst.result_id {
                         constant_map.insert(id, inst);
