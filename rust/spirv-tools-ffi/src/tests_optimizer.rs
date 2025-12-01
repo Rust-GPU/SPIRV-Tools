@@ -228,6 +228,30 @@ mod optimizer_tests {
         (b.module().assemble(), add)
     }
 
+    fn build_factored_const_mul_sum_commuted_module() -> (Vec<u32>, u32) {
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(void, vec![int, int]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        b.begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let lhs = b.function_parameter(int).unwrap();
+        let rhs = b.function_parameter(int).unwrap();
+        b.begin_block(None).unwrap();
+        let c4 = b.constant_bit32(int, 4);
+        let mul_left = b.i_mul(int, None, c4, lhs).expect("mul left");
+        let mul_right = b.i_mul(int, None, c4, rhs).expect("mul right");
+        let add = b.i_add(int, None, mul_left, mul_right).expect("add");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        (b.module().assemble(), add)
+    }
+
     fn build_factored_const_mul_sub_module() -> (Vec<u32>, u32) {
         let mut b = Builder::new();
         let void = b.type_void();
@@ -246,6 +270,30 @@ mod optimizer_tests {
         let c4 = b.constant_bit32(int, 4);
         let mul_left = b.i_mul(int, None, lhs, c4).expect("mul left");
         let mul_right = b.i_mul(int, None, rhs, c4).expect("mul right");
+        let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        (b.module().assemble(), sub)
+    }
+
+    fn build_factored_const_mul_sub_commuted_module() -> (Vec<u32>, u32) {
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(void, vec![int, int]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        b.begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let lhs = b.function_parameter(int).unwrap();
+        let rhs = b.function_parameter(int).unwrap();
+        b.begin_block(None).unwrap();
+        let c4 = b.constant_bit32(int, 4);
+        let mul_left = b.i_mul(int, None, c4, lhs).expect("mul left");
+        let mul_right = b.i_mul(int, None, c4, rhs).expect("mul right");
         let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
         b.ret().unwrap();
         b.end_function().unwrap();
@@ -499,6 +547,96 @@ mod optimizer_tests {
     }
 
     #[test]
+    fn optimizer_factors_shared_constant_from_sum_commuted_mul() {
+        let (words, add_id) = build_factored_const_mul_sum_commuted_module();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let optimized_module = loader.module();
+
+        let mut constants = std::collections::HashMap::new();
+        let mut add_result = None;
+        let mut scaling_count = 0;
+        let mut factored = false;
+
+        for inst in optimized_module.all_inst_iter() {
+            match inst.class.opcode {
+                Op::Constant => {
+                    if let (Some(id), Some(value)) = (
+                        inst.result_id,
+                        inst.operands.first().and_then(|op| match op {
+                            rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+                            _ => None,
+                        }),
+                    ) {
+                        constants.insert(id, value);
+                    }
+                }
+                Op::IAdd => {
+                    add_result = inst.result_id;
+                }
+                Op::IMul => {
+                    scaling_count += 1;
+                    if inst.result_id != Some(add_id) {
+                        continue;
+                    }
+                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                        continue;
+                    };
+                    let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
+                        continue;
+                    };
+                    let Some(add_res_id) = add_result else {
+                        continue;
+                    };
+                    let uses_add = lhs == add_res_id || rhs == add_res_id;
+                    let const_id = if lhs == add_res_id { rhs } else { lhs };
+                    let is_const_four = constants
+                        .get(&const_id)
+                        .copied()
+                        .map(|v| v == 4)
+                        .unwrap_or(false);
+                    factored = uses_add && is_const_four;
+                }
+                Op::ShiftLeftLogical => {
+                    scaling_count += 1;
+                    if inst.result_id != Some(add_id) {
+                        continue;
+                    }
+                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                        continue;
+                    };
+                    let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
+                        continue;
+                    };
+                    let Some(add_res_id) = add_result else {
+                        continue;
+                    };
+                    let uses_add = lhs == add_res_id;
+                    let is_shift_two = constants
+                        .get(&rhs)
+                        .copied()
+                        .map(|v| v == 2)
+                        .unwrap_or(false);
+                    factored = uses_add && is_shift_two;
+                }
+                _ => {}
+            }
+        }
+
+        assert_eq!(
+            scaling_count, 1,
+            "factoring should leave one scaling instruction"
+        );
+        assert!(add_result.is_some(), "addition should remain as inner sum");
+        assert!(
+            factored,
+            "factored multiply should reuse add result when constants lead the multiplies"
+        );
+    }
+
+    #[test]
     fn optimizer_factors_shared_constant_from_sub() {
         let (words, sub_id) = build_factored_const_mul_sub_module();
 
@@ -584,6 +722,97 @@ mod optimizer_tests {
             "factoring should leave a single scaling op"
         );
         assert!(factored, "scaling should reuse the subtract result id");
+    }
+
+    #[test]
+    fn optimizer_factors_shared_constant_from_sub_commuted_mul() {
+        let (words, sub_id) = build_factored_const_mul_sub_commuted_module();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let optimized_module = loader.module();
+
+        let mut constants = std::collections::HashMap::new();
+        let mut sub_count = 0;
+        let mut scaling_count = 0;
+        let mut factored = false;
+        let mut inner_sub = None;
+
+        for inst in optimized_module.all_inst_iter() {
+            match inst.class.opcode {
+                Op::Constant => {
+                    if let (Some(id), Some(value)) = (
+                        inst.result_id,
+                        inst.operands.first().and_then(|op| match op {
+                            rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+                            _ => None,
+                        }),
+                    ) {
+                        constants.insert(id, value);
+                    }
+                }
+                Op::ISub => {
+                    sub_count += 1;
+                    inner_sub = inst.result_id;
+                }
+                Op::IAdd => panic!("addition should be factored into the subtract branch"),
+                Op::IMul => {
+                    scaling_count += 1;
+                    if inst.result_id != Some(sub_id) {
+                        continue;
+                    }
+                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                        continue;
+                    };
+                    let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
+                        continue;
+                    };
+                    let uses_sub = inner_sub.is_some_and(|sid| lhs == sid || rhs == sid);
+                    let const_id = if inner_sub.is_some_and(|sid| lhs == sid) {
+                        rhs
+                    } else {
+                        lhs
+                    };
+                    let is_const_four = constants
+                        .get(&const_id)
+                        .copied()
+                        .map(|v| v == 4)
+                        .unwrap_or(false);
+                    factored = uses_sub && is_const_four;
+                }
+                Op::ShiftLeftLogical => {
+                    scaling_count += 1;
+                    if inst.result_id != Some(sub_id) {
+                        continue;
+                    }
+                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                        continue;
+                    };
+                    let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
+                        continue;
+                    };
+                    let uses_sub = inner_sub.is_some_and(|sid| lhs == sid);
+                    let is_shift_two = constants
+                        .get(&rhs)
+                        .copied()
+                        .map(|v| v == 2)
+                        .unwrap_or(false);
+                    factored = uses_sub && is_shift_two;
+                }
+                _ => {}
+            }
+        }
+
+        assert_eq!(sub_count, 1, "inner subtract should remain");
+        assert_eq!(
+            scaling_count, 1,
+            "factoring should leave a single scaling op"
+        );
+        assert!(
+            factored,
+            "scaling should reuse the subtract result id when constants lead the multiplies"
+        );
     }
 
     #[test]
