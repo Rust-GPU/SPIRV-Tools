@@ -311,4 +311,62 @@ mod tests {
             other => panic!("expected misaligned input error, got {other:?}"),
         }
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn cpp_fallback_reports_failure() {
+        use std::fs;
+        use std::os::unix::fs::PermissionsExt;
+
+        // Build a trivial module.
+        let mut b = Builder::new();
+        b.capability(Capability::Shader);
+        b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(void, vec![]);
+        let _ = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .expect("function");
+        let _ = b.begin_block(None).expect("block");
+        let c2 = b.constant_bit32(int, 2);
+        let c3 = b.constant_bit32(int, 3);
+        let _ = b.i_add(int, None, c2, c3);
+        b.ret().expect("ret");
+        b.end_function().expect("end");
+        let module = b.module().assemble();
+
+        // Create a failing shim executable to stand in for spirv-opt.
+        let mut shim = NamedTempFile::new().expect("temp shim");
+        shim.write_all(b"#!/bin/sh\nexit 17\n").expect("write shim");
+        let mut perms = shim.as_file().metadata().expect("meta").permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(shim.path(), perms).expect("chmod shim");
+
+        let mut temp = NamedTempFile::new().expect("temp file");
+        temp.write_all(&words_to_bytes(&module))
+            .expect("write words");
+
+        let config = OptimizeConfig {
+            input: InputSource::Path(temp.path().to_path_buf()),
+            output: None,
+            rust_arith_pass: false,
+            cpp_opt_path: Some(shim.path().as_os_str().to_os_string()),
+            force_rust_opt: false,
+        };
+        match run_optimize(&config) {
+            Err(OptimizeCliError::CppFailure { status, stderr }) => {
+                assert!(!status.success());
+                assert!(
+                    status.code() == Some(17),
+                    "expected exit code 17, got {status:?}"
+                );
+                assert!(
+                    stderr.is_empty(),
+                    "shim should not produce stderr, got: {stderr}"
+                );
+            }
+            other => panic!("expected cpp failure, got {other:?}"),
+        }
+    }
 }

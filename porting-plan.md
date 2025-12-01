@@ -142,7 +142,7 @@ Planned tasks:
 - Expose the Rust arithmetic optimizer through CLI/FFI entry points with a flag/env toggle and a documented C++ fallback.
 - Add end-to-end CLI/FFI parity tests diffing Rust vs. C++ outputs on the arithmetic corpus (skip cleanly when `spirv-opt` is unavailable). **(basic CLI Rust-vs-C++ parity tests for const add and pow2 umod are in place)**
 - Broaden CLI parity coverage beyond const-add/umod to include identity/neutral rewrites (mul by one/zero, add+negate) and divisible/non-divisible signed remainders so Rust-vs-C++ outputs stay in lockstep when the C++ binary is present.
-- Thread typed error handling (`thiserror`) through the CLI/FFI boundary so optimizer failures surface structured diagnostics.
+- Thread typed error handling (`thiserror`) through the CLI/FFI boundary so optimizer failures surface structured diagnostics. **(CLI now surfaces C++ fallback failures with status/stderr)**
 - Add hyperfine/criterion benches for the CLI path to track Rust vs. passthrough/C++ optimizer performance.
 - Update CLI help/docs to describe optimizer toggles and rollback/roll-forward guidance.
 - Keep clippy/rustfmt/cargo fuzz smoke tests green after wiring the integration.
