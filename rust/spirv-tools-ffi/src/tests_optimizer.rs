@@ -589,6 +589,29 @@ mod optimizer_tests {
         (b.module().assemble(), sub)
     }
 
+    fn build_factored_const_equal_difference_unsigned_mul_module() -> (Vec<u32>, u32) {
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(void, vec![int]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        b.begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let x = b.function_parameter(int).unwrap();
+        b.begin_block(None).unwrap();
+        let c6 = b.constant_bit32(int, 6);
+        let mul_left = b.i_mul(int, None, c6, x).expect("mul left");
+        let mul_right = b.i_mul(int, None, x, c6).expect("mul right commuted");
+        let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        (b.module().assemble(), sub)
+    }
+
     fn build_factored_symbolic_mul_sub_module() -> (Vec<u32>, u32, u32, u32, u32) {
         let mut b = Builder::new();
         let void = b.type_void();
@@ -1578,6 +1601,41 @@ mod optimizer_tests {
     #[test]
     fn optimizer_factors_equal_constant_difference_commuted_into_zero() {
         let (words, sub_id) = build_factored_const_equal_difference_mul_commuted_module();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let optimized_module = loader.module();
+
+        let mut saw_zero = false;
+
+        for inst in optimized_module.all_inst_iter() {
+            match inst.class.opcode {
+                Op::ISub | Op::IMul => panic!("subtract/multiply should fold away"),
+                Op::Constant => {
+                    if inst.result_id == Some(sub_id) {
+                        if let Some(value) = inst.operands.first().and_then(|op| match op {
+                            rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+                            _ => None,
+                        }) {
+                            assert_eq!(value, 0);
+                            saw_zero = true;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        assert!(
+            saw_zero,
+            "subtract id should be replaced by a zero constant after factoring"
+        );
+    }
+
+    #[test]
+    fn optimizer_factors_equal_constant_difference_unsigned_into_zero() {
+        let (words, sub_id) = build_factored_const_equal_difference_unsigned_mul_module();
 
         let optimized = optimize_basic_block(&words).expect("optimizer runs");
         let mut loader = Loader::new();
