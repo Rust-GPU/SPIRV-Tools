@@ -612,6 +612,30 @@ mod optimizer_tests {
         (b.module().assemble(), sub)
     }
 
+    fn build_factored_const_difference_unsigned_mul_module() -> (Vec<u32>, u32, u32) {
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(void, vec![int]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        b.begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let x = b.function_parameter(int).unwrap();
+        b.begin_block(None).unwrap();
+        let c7 = b.constant_bit32(int, 7);
+        let c2 = b.constant_bit32(int, 2);
+        let mul_left = b.i_mul(int, None, c7, x).expect("mul left");
+        let mul_right = b.i_mul(int, None, c2, x).expect("mul right");
+        let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        (b.module().assemble(), sub, x)
+    }
+
     fn build_factored_symbolic_mul_sub_module() -> (Vec<u32>, u32, u32, u32, u32) {
         let mut b = Builder::new();
         let void = b.type_void();
@@ -1665,6 +1689,65 @@ mod optimizer_tests {
         assert!(
             saw_zero,
             "subtract id should be replaced by a zero constant after factoring"
+        );
+    }
+
+    #[test]
+    fn optimizer_factors_unsigned_constant_difference_into_single_mul() {
+        let (words, sub_id, param) = build_factored_const_difference_unsigned_mul_module();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let optimized_module = loader.module();
+
+        let mut mul_count = 0;
+        let mut factored = false;
+        let mut constant = None;
+
+        for inst in optimized_module.all_inst_iter() {
+            match inst.class.opcode {
+                Op::IMul => {
+                    mul_count += 1;
+                    assert_eq!(
+                        inst.result_id,
+                        Some(sub_id),
+                        "mul should replace subtract result"
+                    );
+                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                        continue;
+                    };
+                    let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
+                        continue;
+                    };
+                    let uses_param = lhs == param || rhs == param;
+                    let const_id = if lhs == param { rhs } else { lhs };
+                    constant = Some(const_id);
+                    factored = uses_param;
+                }
+                Op::Constant => {
+                    if let Some(value) = inst.operands.first().and_then(|op| match op {
+                        rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+                        _ => None,
+                    }) {
+                        if Some(inst.result_id.unwrap()) == constant {
+                            assert_eq!(value, 5);
+                        }
+                    }
+                }
+                Op::ISub => panic!("subtract should fold into a single multiply"),
+                _ => {}
+            }
+        }
+
+        assert_eq!(mul_count, 1, "factoring should leave one multiply");
+        assert!(
+            factored,
+            "mul should reuse subtract id with the shared param"
+        );
+        assert!(
+            constant.is_some(),
+            "factored multiply should include the constant difference"
         );
     }
     #[test]

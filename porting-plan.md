@@ -96,6 +96,7 @@ Planned tasks:
 - [x] Broaden CLI/FFI parity to cover wrapped positive constant differences and equal-constant differences that fold to zero so factoring stays aligned with C++ outputs.
 - [x] Add parity for commuted equal-constant differences (x*6)-(6*x) to ensure zero-folding remains stable when multiply operands are swapped.
 - [x] Extend equal-constant difference parity to unsigned ints so zero-folding is covered regardless of integer signedness.
+- [x] Add unsigned constant-difference factoring parity to keep mixed add/sub factorization aligned across signedness.
 
 ## Upcoming Milestone: Optimizer Parity vs C++ Arithmetic Pass
 Align the Rust arithmetic optimizer with the legacy C++ arithmetic canonicalization passes.

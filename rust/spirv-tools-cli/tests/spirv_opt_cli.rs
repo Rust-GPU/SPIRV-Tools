@@ -1914,6 +1914,27 @@ fn build_factored_const_equal_difference_unsigned_mul_module() -> (Vec<u32>, u32
     (b.module().assemble(), sub)
 }
 
+fn build_factored_const_difference_unsigned_mul_module() -> (Vec<u32>, u32, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![int]);
+    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let x = b.function_parameter(int).expect("x param");
+    b.begin_block(None).expect("block");
+    let c7 = b.constant_bit32(int, 7);
+    let c2 = b.constant_bit32(int, 2);
+    let mul_left = b.i_mul(int, None, c7, x).expect("mul left");
+    let mul_right = b.i_mul(int, None, c2, x).expect("mul right");
+    let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), sub, x)
+}
+
 #[test]
 fn spirv_opt_cli_factors_common_multiplicand() {
     let (words, add_id, param_id) = build_factored_mul_sum_module();
@@ -3082,6 +3103,12 @@ fn spirv_opt_cli_cpp_mode_matches_rust_factored_const_equal_difference_unsigned_
 }
 
 #[test]
+fn spirv_opt_cli_cpp_mode_matches_rust_factored_const_difference_unsigned_output() {
+    let (words, ..) = build_factored_const_difference_unsigned_mul_module();
+    assert_cpp_cli_matches_rust(&words, "factored unsigned constant difference");
+}
+
+#[test]
 fn spirv_opt_cli_cpp_mode_matches_rust_factored_mixed_const_wrap_negative_difference_commuted_output(
 ) {
     let (words, ..) = build_factored_mixed_const_wrap_negative_difference_mul_commuted_module();
@@ -3500,6 +3527,12 @@ fn spirv_opt_cli_factors_equal_constant_difference_unsigned_into_zero() {
     }
 
     assert!(saw_zero, "sub id should become a zero constant");
+}
+
+#[test]
+fn spirv_opt_cli_factors_unsigned_constant_difference_into_single_mul() {
+    let (words, sub_id, param) = build_factored_const_difference_unsigned_mul_module();
+    assert_const_difference_factors_to_mul(&words, sub_id, param, 5);
 }
 
 #[test]
