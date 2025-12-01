@@ -1072,7 +1072,7 @@ impl Applier<SpirvLang, ()> for FoldNeg {
         let Some(a) = const_value(egraph, subst[var("a")]) else {
             return Vec::new();
         };
-        let negated = ConstValue::new(a.get().wrapping_neg());
+        let negated = map_const(a, u64::wrapping_neg);
         let id = egraph.add(SpirvLang::Const(negated));
         egraph.union(eclass, id);
         vec![id]
@@ -1094,15 +1094,13 @@ impl Applier<SpirvLang, ()> for FoldDiv {
         let Some(b) = const_value(egraph, subst[var("b")]) else {
             return Vec::new();
         };
-        if b.get() == 0 {
+        if b.get_u64() == 0 {
             return Vec::new();
         }
         let quotient = if self.signed {
-            let lhs = a.get() as i32;
-            let rhs = b.get() as i32;
-            ConstValue::new(lhs.wrapping_div(rhs) as u32)
+            combine_signed_consts(a, b, i128::wrapping_div)
         } else {
-            ConstValue::new(a.get().wrapping_div(b.get()))
+            combine_consts(a, b, u64::wrapping_div)
         };
         let id = egraph.add(SpirvLang::Const(quotient));
         egraph.union(eclass, id);
@@ -1125,15 +1123,13 @@ impl Applier<SpirvLang, ()> for FoldRem {
         let Some(b) = const_value(egraph, subst[var("b")]) else {
             return Vec::new();
         };
-        if b.get() == 0 {
+        if b.get_u64() == 0 {
             return Vec::new();
         }
         let rem = if self.signed {
-            let lhs = a.get() as i32;
-            let rhs = b.get() as i32;
-            ConstValue::new(lhs.wrapping_rem(rhs) as u32)
+            combine_signed_consts(a, b, i128::wrapping_rem)
         } else {
-            ConstValue::new(a.get().wrapping_rem(b.get()))
+            combine_consts(a, b, u64::wrapping_rem)
         };
         let id = egraph.add(SpirvLang::Const(rem));
         egraph.union(eclass, id);
@@ -1328,7 +1324,7 @@ impl Applier<SpirvLang, ()> for AddMergeConst {
         let Some(rhs) = const_value(egraph, subst[self.c2]) else {
             return Vec::new();
         };
-        let merged = ConstValue::new(lhs.get().wrapping_add(rhs.get()));
+        let merged = combine_consts(lhs, rhs, u64::wrapping_add);
         let const_id = egraph.add(SpirvLang::Const(merged));
         let add = egraph.add(SpirvLang::Add([subst[self.base], const_id]));
         egraph.union(eclass, add);
@@ -1351,7 +1347,7 @@ impl Applier<SpirvLang, ()> for AddSubMerge {
         let Some(add_const) = const_value(egraph, subst[self.add_const]) else {
             return Vec::new();
         };
-        let merged = ConstValue::new(add_const.get().wrapping_sub(sub_const.get()));
+        let merged = combine_consts(add_const, sub_const, u64::wrapping_sub);
         let const_id = egraph.add(SpirvLang::Const(merged));
         let add = egraph.add(SpirvLang::Add([subst[self.base], const_id]));
         egraph.union(eclass, add);
@@ -1374,7 +1370,7 @@ impl Applier<SpirvLang, ()> for SubAddConstMerge {
         let Some(c2) = const_value(egraph, subst[self.c2]) else {
             return Vec::new();
         };
-        let merged = ConstValue::new(c1.get().wrapping_sub(c2.get()));
+        let merged = combine_consts(c1, c2, u64::wrapping_sub);
         let const_id = egraph.add(SpirvLang::Const(merged));
         let add = egraph.add(SpirvLang::Add([subst[self.x], const_id]));
         egraph.union(eclass, add);
@@ -1397,7 +1393,7 @@ impl Applier<SpirvLang, ()> for SubChainConstMerge {
         let Some(c2) = const_value(egraph, subst[self.c2]) else {
             return Vec::new();
         };
-        let merged = ConstValue::new(c1.get().wrapping_add(c2.get()));
+        let merged = combine_consts(c1, c2, u64::wrapping_add);
         let const_id = egraph.add(SpirvLang::Const(merged));
         let sub = egraph.add(SpirvLang::Sub([subst[self.x], const_id]));
         egraph.union(eclass, sub);
@@ -1482,7 +1478,7 @@ impl Applier<SpirvLang, ()> for SubConstLhsChain {
         let Some(c2) = const_value(egraph, subst[self.c2]) else {
             return Vec::new();
         };
-        let merged = ConstValue::new(c1.get().wrapping_sub(c2.get()));
+        let merged = combine_consts(c1, c2, u64::wrapping_sub);
         let const_id = egraph.add(SpirvLang::Const(merged));
         let sub = egraph.add(SpirvLang::Sub([const_id, subst[self.x]]));
         egraph.union(eclass, sub);
@@ -1505,7 +1501,7 @@ impl Applier<SpirvLang, ()> for AddSubConstLhs {
         let Some(rhs_const) = const_value(egraph, subst[self.add_const]) else {
             return Vec::new();
         };
-        let merged = ConstValue::new(lhs_const.get().wrapping_add(rhs_const.get()));
+        let merged = combine_consts(lhs_const, rhs_const, u64::wrapping_add);
         let const_id = egraph.add(SpirvLang::Const(merged));
         let sub = egraph.add(SpirvLang::Sub([const_id, subst[self.rhs]]));
         egraph.union(eclass, sub);
@@ -1528,15 +1524,13 @@ impl Applier<SpirvLang, ()> for DivMergeConst {
         let Some(c2) = const_value(egraph, subst[self.c2]) else {
             return Vec::new();
         };
-        if c1.get() == 0 || c2.get() == 0 {
+        if c1.get_u64() == 0 || c2.get_u64() == 0 {
             return Vec::new();
         }
         let merged = if self.signed {
-            let lhs = c1.get() as i32;
-            let rhs = c2.get() as i32;
-            ConstValue::new(lhs.wrapping_mul(rhs) as u32)
+            combine_signed_consts(c1, c2, i128::wrapping_mul)
         } else {
-            ConstValue::new(c1.get().wrapping_mul(c2.get()))
+            combine_consts(c1, c2, u64::wrapping_mul)
         };
         let const_id = egraph.add(SpirvLang::Const(merged));
         let div = if self.signed {
@@ -1564,7 +1558,7 @@ impl Applier<SpirvLang, ()> for AddCommonFactor {
         let Some(c2) = const_value(egraph, subst[self.c2]) else {
             return Vec::new();
         };
-        let merged = ConstValue::new(c1.get().wrapping_add(c2.get()));
+        let merged = combine_consts(c1, c2, u64::wrapping_add);
         let const_id = egraph.add(SpirvLang::Const(merged));
         let mul = egraph.add(SpirvLang::Mul([subst[self.x], const_id]));
         egraph.union(eclass, mul);
@@ -1600,7 +1594,7 @@ impl Applier<SpirvLang, ()> for AddFactorWithOne {
         let Some(c) = const_value(egraph, subst[self.c]) else {
             return Vec::new();
         };
-        let merged = ConstValue::new(c.get().wrapping_add(1));
+        let merged = map_const(c, |v| v.wrapping_add(1));
         let const_id = egraph.add(SpirvLang::Const(merged));
         let mul = egraph.add(SpirvLang::Mul([subst[self.x], const_id]));
         egraph.union(eclass, mul);
@@ -1621,11 +1615,11 @@ impl Applier<SpirvLang, ()> for SubFactorWithOne {
             return Vec::new();
         };
         let merged = if self.lhs_mul {
-            c.get().wrapping_sub(1)
+            map_const(c, |v| v.wrapping_sub(1))
         } else {
-            1u32.wrapping_sub(c.get())
+            ConstValue::new_with_width(1u64.wrapping_sub(c.get_u64()), c.width_bits().max(1))
         };
-        let const_id = egraph.add(SpirvLang::Const(ConstValue::new(merged)));
+        let const_id = egraph.add(SpirvLang::Const(merged));
         let mul = egraph.add(SpirvLang::Mul([subst[self.x], const_id]));
         egraph.union(eclass, mul);
         vec![mul]
@@ -1647,7 +1641,7 @@ impl Applier<SpirvLang, ()> for SubCommonFactor {
         let Some(c2) = const_value(egraph, subst[self.c2]) else {
             return Vec::new();
         };
-        let merged = ConstValue::new(c1.get().wrapping_sub(c2.get()));
+        let merged = combine_consts(c1, c2, u64::wrapping_sub);
         let const_id = egraph.add(SpirvLang::Const(merged));
         let mul = egraph.add(SpirvLang::Mul([subst[self.x], const_id]));
         egraph.union(eclass, mul);
@@ -1683,7 +1677,7 @@ impl Applier<SpirvLang, ()> for CancelMulDiv {
         let Some(constant) = const_value(egraph, subst[self.c]) else {
             return Vec::new();
         };
-        if constant.get() == 0 {
+        if constant.get_u64() == 0 {
             return Vec::new();
         }
         egraph.union(eclass, subst[self.x]);
@@ -1703,7 +1697,7 @@ impl Applier<SpirvLang, ()> for RemMulConstZero {
         let Some(constant) = const_value(egraph, subst[self.c]) else {
             return Vec::new();
         };
-        if constant.get() == 0 {
+        if constant.get_u64() == 0 {
             return Vec::new();
         }
         let zero = egraph.add(SpirvLang::Const(ConstValue::new(0)));
@@ -1725,7 +1719,7 @@ impl Applier<SpirvLang, ()> for NegMulConst {
         let Some(constant) = const_value(egraph, subst[self.c]) else {
             return Vec::new();
         };
-        let negated = ConstValue::new(constant.get().wrapping_neg());
+        let negated = map_const(constant, u64::wrapping_neg);
         let const_id = egraph.add(SpirvLang::Const(negated));
         let mul = egraph.add(SpirvLang::Mul([subst[self.x], const_id]));
         egraph.union(eclass, mul);
@@ -1748,21 +1742,22 @@ impl Applier<SpirvLang, ()> for DivPullConst {
         let Some(c2) = const_value(egraph, subst[self.c2]) else {
             return Vec::new();
         };
-        if c2.get() == 0 {
+        if c2.get_u64() == 0 {
             return Vec::new();
         }
         let ratio = if self.signed {
-            let num = c1.get() as i32;
-            let den = c2.get() as i32;
+            let width = max_width(c1, c2);
+            let num = sign_extend_bits(c1, width);
+            let den = sign_extend_bits(c2, width);
             if den == 0 || num % den != 0 {
                 return Vec::new();
             }
-            ConstValue::new(num.wrapping_div(den) as u32)
+            ConstValue::new_with_width(num.wrapping_div(den) as u64, width)
         } else {
-            if c1.get() % c2.get() != 0 {
+            if c1.get_u64() % c2.get_u64() != 0 {
                 return Vec::new();
             }
-            ConstValue::new(c1.get().wrapping_div(c2.get()))
+            combine_consts(c1, c2, u64::wrapping_div)
         };
         let const_id = egraph.add(SpirvLang::Const(ratio));
         let mul = egraph.add(SpirvLang::Mul([subst[self.x], const_id]));
@@ -1786,7 +1781,7 @@ impl Applier<SpirvLang, ()> for DistConstMulAdd {
         let Some(add_const) = const_value(egraph, subst[self.k]) else {
             return Vec::new();
         };
-        let scaled_const = ConstValue::new(multiplier.get().wrapping_mul(add_const.get()));
+        let scaled_const = combine_consts(multiplier, add_const, u64::wrapping_mul);
         let const_id = egraph.add(SpirvLang::Const(scaled_const));
         let mul = egraph.add(SpirvLang::Mul([subst[self.c], subst[self.x]]));
         let add = egraph.add(SpirvLang::Add([mul, const_id]));
@@ -1810,7 +1805,7 @@ impl Applier<SpirvLang, ()> for DistConstMulSub {
         let Some(sub_const) = const_value(egraph, subst[self.k]) else {
             return Vec::new();
         };
-        let scaled_const = ConstValue::new(multiplier.get().wrapping_mul(sub_const.get()));
+        let scaled_const = combine_consts(multiplier, sub_const, u64::wrapping_mul);
         let const_id = egraph.add(SpirvLang::Const(scaled_const));
         let mul = egraph.add(SpirvLang::Mul([subst[self.c], subst[self.x]]));
         let sub = if self.flipped {
@@ -1838,13 +1833,13 @@ impl Applier<SpirvLang, ()> for FoldAffineConst {
         let Some(const_term) = const_value(egraph, subst[self.k]) else {
             return Vec::new();
         };
-        if const_factor.get() == 0 {
+        if const_factor.get_u64() == 0 {
             return Vec::new();
         }
-        if const_term.get() % const_factor.get() != 0 {
+        if const_term.get_u64() % const_factor.get_u64() != 0 {
             return Vec::new();
         }
-        let scaled = ConstValue::new(const_term.get().wrapping_div(const_factor.get()));
+        let scaled = combine_consts(const_term, const_factor, u64::wrapping_div);
         let const_scaled_id = egraph.add(SpirvLang::Const(scaled));
         let inner = match self.op {
             AffineOp::Add => egraph.add(SpirvLang::Add([subst[self.x], const_scaled_id])),
@@ -1877,20 +1872,31 @@ impl Applier<SpirvLang, ()> for FoldAffineGcd {
         let Some(const_term) = const_value(egraph, subst[self.k]) else {
             return Vec::new();
         };
-        // Only factor when coefficients are non-negative to avoid sign surprises with wrapping.
-        if coeff.get() >> 31 != 0 || const_term.get() >> 31 != 0 {
+        let width = max_width(coeff, const_term);
+        if width > 32 {
             return Vec::new();
         }
-        if coeff.get() == 0 || const_term.get() == 0 {
+        // Only factor when coefficients are non-negative to avoid sign surprises with wrapping.
+        let sign_mask = if width == 0 {
+            return Vec::new();
+        } else {
+            1u64 << (width - 1)
+        };
+        if coeff.get_u64() & sign_mask != 0 || const_term.get_u64() & sign_mask != 0 {
+            return Vec::new();
+        }
+        if coeff.get_u64() == 0 || const_term.get_u64() == 0 {
             return Vec::new();
         }
         let gcd = gcd_u32(coeff.get(), const_term.get());
-        if gcd <= 1 || gcd == coeff.get() {
+        if gcd <= 1 || gcd as u64 == coeff.get_u64() {
             return Vec::new();
         }
-        let scaled_coeff = ConstValue::new(coeff.get() / gcd);
-        let scaled_const = ConstValue::new(const_term.get() / gcd);
-        let gcd_id = egraph.add(SpirvLang::Const(ConstValue::new(gcd)));
+        let scaled_coeff = ConstValue::new_with_width(coeff.get_u64() / gcd as u64, width);
+        let scaled_const = ConstValue::new_with_width(const_term.get_u64() / gcd as u64, width);
+        let gcd_id = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
+            gcd as u64, width,
+        )));
         let scaled_const_id = egraph.add(SpirvLang::Const(scaled_const));
         let scaled_coeff_id = egraph.add(SpirvLang::Const(scaled_coeff));
         let mul_x = egraph.add(SpirvLang::Mul([scaled_coeff_id, subst[self.x]]));
@@ -2434,6 +2440,10 @@ impl Applier<SpirvLang, ()> for MaskThenShift {
         let Some(shift_val) = const_value(egraph, subst[self.shift]) else {
             return Vec::new();
         };
+        let width = max_width(mask_val, shift_val);
+        if width > 32 {
+            return Vec::new();
+        }
         let Some(mask_pow) = is_power_of_two(mask_val.get()) else {
             return Vec::new();
         };
@@ -2441,11 +2451,12 @@ impl Applier<SpirvLang, ()> for MaskThenShift {
             return Vec::new();
         }
         // (x & (2^n - 1)) >> k  =>  (x >> k) & (2^n - 1 >> k)
-        let shr_const = ConstValue::new(shift_val.get());
+        let shr_const = map_const(shift_val, |v| v);
         let shr_const_id = egraph.add(SpirvLang::Const(shr_const));
         let shr = egraph.add(SpirvLang::ShrU([subst[self.x], shr_const_id]));
-        let new_mask = mask_val.get().wrapping_shr(shift_val.get());
-        let mask_id = egraph.add(SpirvLang::Const(ConstValue::new(new_mask)));
+        let new_mask =
+            ConstValue::new_with_width(mask_val.get().wrapping_shr(shift_val.get()) as u64, width);
+        let mask_id = egraph.add(SpirvLang::Const(new_mask));
         let band = egraph.add(SpirvLang::BitAnd([shr, mask_id]));
         egraph.union(eclass, band);
         vec![band]
@@ -2467,17 +2478,22 @@ impl Applier<SpirvLang, ()> for MaskThenShiftSigned {
         let Some(shift_val) = const_value(egraph, subst[self.shift]) else {
             return Vec::new();
         };
+        let width = max_width(mask_val, shift_val);
+        if width > 32 {
+            return Vec::new();
+        }
         let Some(mask_pow) = is_power_of_two(mask_val.get()) else {
             return Vec::new();
         };
         if mask_pow == 0 {
             return Vec::new();
         }
-        let shr_const = ConstValue::new(shift_val.get());
+        let shr_const = map_const(shift_val, |v| v);
         let shr_const_id = egraph.add(SpirvLang::Const(shr_const));
         let shr = egraph.add(SpirvLang::ShrS([subst[self.x], shr_const_id]));
-        let new_mask = mask_val.get().wrapping_shr(shift_val.get());
-        let mask_id = egraph.add(SpirvLang::Const(ConstValue::new(new_mask)));
+        let new_mask =
+            ConstValue::new_with_width(mask_val.get().wrapping_shr(shift_val.get()) as u64, width);
+        let mask_id = egraph.add(SpirvLang::Const(new_mask));
         let band = egraph.add(SpirvLang::BitAnd([shr, mask_id]));
         egraph.union(eclass, band);
         vec![band]
@@ -2499,7 +2515,7 @@ impl Applier<SpirvLang, ()> for MergeShift {
         let Some(b) = const_value(egraph, subst[self.b]) else {
             return Vec::new();
         };
-        let total = ConstValue::new(a.get().wrapping_add(b.get()));
+        let total = combine_consts(a, b, u64::wrapping_add);
         let const_id = egraph.add(SpirvLang::Const(total));
         let merged = match self.kind {
             ShiftKind::Left => egraph.add(SpirvLang::Shl([subst[self.x], const_id])),
@@ -2600,7 +2616,7 @@ impl Applier<SpirvLang, ()> for MulMergeConst {
         let Some(c2) = const_value(egraph, subst[self.c2]) else {
             return Vec::new();
         };
-        let merged = ConstValue::new(c1.get().wrapping_mul(c2.get()));
+        let merged = combine_consts(c1, c2, u64::wrapping_mul);
         let const_id = egraph.add(SpirvLang::Const(merged));
         let mul = egraph.add(SpirvLang::Mul([subst[self.base], const_id]));
         egraph.union(eclass, mul);
@@ -2651,6 +2667,27 @@ fn gcd_u32(mut a: u32, mut b: u32) -> u32 {
         a = tmp;
     }
     a
+}
+
+fn map_const(value: ConstValue, f: impl Fn(u64) -> u64) -> ConstValue {
+    let width = value.width_bits().max(1);
+    ConstValue::new_with_width(f(value.get_u64()), width)
+}
+
+fn sign_extend_bits(value: ConstValue, width: u8) -> i128 {
+    let shift = 128u32.saturating_sub(width as u32);
+    ((value.get_u64() as i128) << shift) >> shift
+}
+
+fn combine_signed_consts(
+    lhs: ConstValue,
+    rhs: ConstValue,
+    f: impl Fn(i128, i128) -> i128,
+) -> ConstValue {
+    let width = max_width(lhs, rhs);
+    let l = sign_extend_bits(lhs, width);
+    let r = sign_extend_bits(rhs, width);
+    ConstValue::new_with_width(f(l, r) as u64, width)
 }
 
 fn is_power_of_two(value: u32) -> Option<u32> {
