@@ -581,10 +581,10 @@ Tasks for this milestone:
 Bring function-body validation in line with the C++ validator so the Rust validator can be enabled by default.
 
 Tasks for this milestone:
-- Validate function definitions: block ordering, structured control flow (merge/continue rules), and minimal well-formedness (single entry, required terminators).
-- Enforce SSA/phi correctness (dominance of defs, matching predecessor counts/types) and type checking for instructions beyond the current structural pass.
-- Detect unreachable basic blocks in functions and report them with typed diagnostics; added regression in Rust validator tests.
-- Enforce structured merge rules: merges must immediately precede their terminators, selection merges pair with conditional/switch terminators, loop merge/continue targets must exist and be distinct, and structured terminators require a selection merge.
+- [x] Validate function definitions: block ordering, structured control flow (merge/continue rules), and minimal well-formedness (single entry, required terminators).
+- [x] Enforce SSA/phi correctness (dominance of defs, matching predecessor counts/types) and type checking for instructions beyond the current structural pass.
+- [x] Detect unreachable basic blocks in functions and report them with typed diagnostics; added regression in Rust validator tests.
+- [x] Enforce structured merge rules: merges must immediately precede their terminators, selection merges pair with conditional/switch terminators, loop merge/continue targets must exist and be distinct, and structured terminators require a selection merge.
 - [x] Enforce structured dominance: selection/loop merge and continue targets must be dominated by their headers, with Rust regressions mirroring the C++ validator.
 - [x] Validate Vulkan resource interface linkage: Uniform/UniformConstant/StorageBuffer/PhysicalStorageBuffer variables require DescriptorSet and Binding decorations, with Rust regressions.
 - [x] Validate interface linkage for variables and descriptor sets/bindings where applicable per environment.
