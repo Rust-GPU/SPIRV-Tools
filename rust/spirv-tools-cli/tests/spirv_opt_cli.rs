@@ -1935,6 +1935,94 @@ fn build_factored_const_difference_unsigned_mul_module() -> (Vec<u32>, u32, u32)
     (b.module().assemble(), sub, x)
 }
 
+fn build_factored_mixed_const_wrap_positive_difference_unsigned_mul_module() -> (Vec<u32>, u32, u32)
+{
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![int]);
+    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let x = b.function_parameter(int).expect("x param");
+    b.begin_block(None).expect("block");
+    let neg1 = b.constant_bit32(int, u32::MAX);
+    let neg4 = b.constant_bit32(int, u32::MAX - 3);
+    let mul_left = b.i_mul(int, None, neg1, x).expect("mul left");
+    let mul_right = b.i_mul(int, None, neg4, x).expect("mul right");
+    let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), sub, x)
+}
+
+fn build_factored_mixed_const_wrap_positive_difference_unsigned_mul_commuted_module(
+) -> (Vec<u32>, u32, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![int]);
+    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let x = b.function_parameter(int).expect("x param");
+    b.begin_block(None).expect("block");
+    let neg1 = b.constant_bit32(int, u32::MAX);
+    let neg4 = b.constant_bit32(int, u32::MAX - 3);
+    let mul_left = b.i_mul(int, None, x, neg1).expect("mul left commuted");
+    let mul_right = b.i_mul(int, None, neg4, x).expect("mul right");
+    let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), sub, x)
+}
+
+fn build_factored_mixed_const_wrap_negative_difference_unsigned_mul_module() -> (Vec<u32>, u32, u32)
+{
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![int]);
+    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let x = b.function_parameter(int).expect("x param");
+    b.begin_block(None).expect("block");
+    let high = b.constant_bit32(int, u32::MAX - 1);
+    let c5 = b.constant_bit32(int, 5);
+    let mul_left = b.i_mul(int, None, high, x).expect("mul left");
+    let mul_right = b.i_mul(int, None, c5, x).expect("mul right");
+    let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), sub, x)
+}
+
+fn build_factored_mixed_const_wrap_negative_difference_unsigned_mul_commuted_module(
+) -> (Vec<u32>, u32, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![int]);
+    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let x = b.function_parameter(int).expect("x param");
+    b.begin_block(None).expect("block");
+    let high = b.constant_bit32(int, u32::MAX - 1);
+    let c5 = b.constant_bit32(int, 5);
+    let mul_left = b.i_mul(int, None, x, high).expect("mul left commuted");
+    let mul_right = b.i_mul(int, None, c5, x).expect("mul right");
+    let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), sub, x)
+}
+
 #[test]
 fn spirv_opt_cli_factors_common_multiplicand() {
     let (words, add_id, param_id) = build_factored_mul_sum_module();
@@ -3109,6 +3197,48 @@ fn spirv_opt_cli_cpp_mode_matches_rust_factored_const_difference_unsigned_output
 }
 
 #[test]
+fn spirv_opt_cli_cpp_mode_matches_rust_factored_mixed_const_wrap_positive_difference_unsigned_output(
+) {
+    let (words, ..) = build_factored_mixed_const_wrap_positive_difference_unsigned_mul_module();
+    assert_cpp_cli_matches_rust(
+        &words,
+        "factored unsigned wrapped positive constant difference",
+    );
+}
+
+#[test]
+fn spirv_opt_cli_cpp_mode_matches_rust_factored_mixed_const_wrap_positive_difference_unsigned_commuted_output(
+) {
+    let (words, ..) =
+        build_factored_mixed_const_wrap_positive_difference_unsigned_mul_commuted_module();
+    assert_cpp_cli_matches_rust(
+        &words,
+        "factored unsigned wrapped positive constant difference with commuted mul",
+    );
+}
+
+#[test]
+fn spirv_opt_cli_cpp_mode_matches_rust_factored_mixed_const_wrap_negative_difference_unsigned_output(
+) {
+    let (words, ..) = build_factored_mixed_const_wrap_negative_difference_unsigned_mul_module();
+    assert_cpp_cli_matches_rust(
+        &words,
+        "factored unsigned wrapped negative constant difference",
+    );
+}
+
+#[test]
+fn spirv_opt_cli_cpp_mode_matches_rust_factored_mixed_const_wrap_negative_difference_unsigned_commuted_output(
+) {
+    let (words, ..) =
+        build_factored_mixed_const_wrap_negative_difference_unsigned_mul_commuted_module();
+    assert_cpp_cli_matches_rust(
+        &words,
+        "factored unsigned wrapped negative constant difference with commuted mul",
+    );
+}
+
+#[test]
 fn spirv_opt_cli_cpp_mode_matches_rust_factored_mixed_const_wrap_negative_difference_commuted_output(
 ) {
     let (words, ..) = build_factored_mixed_const_wrap_negative_difference_mul_commuted_module();
@@ -3533,6 +3663,34 @@ fn spirv_opt_cli_factors_equal_constant_difference_unsigned_into_zero() {
 fn spirv_opt_cli_factors_unsigned_constant_difference_into_single_mul() {
     let (words, sub_id, param) = build_factored_const_difference_unsigned_mul_module();
     assert_const_difference_factors_to_mul(&words, sub_id, param, 5);
+}
+
+#[test]
+fn spirv_opt_cli_factors_unsigned_wrap_negative_constant_difference_into_single_mul() {
+    let (words, sub_id, param) =
+        build_factored_mixed_const_wrap_negative_difference_unsigned_mul_module();
+    assert_const_difference_factors_to_mul(&words, sub_id, param, u32::MAX - 6);
+}
+
+#[test]
+fn spirv_opt_cli_factors_unsigned_wrap_negative_constant_difference_commuted_into_single_mul() {
+    let (words, sub_id, param) =
+        build_factored_mixed_const_wrap_negative_difference_unsigned_mul_commuted_module();
+    assert_const_difference_factors_to_mul(&words, sub_id, param, u32::MAX - 6);
+}
+
+#[test]
+fn spirv_opt_cli_factors_unsigned_wrap_positive_constant_difference_into_single_mul() {
+    let (words, sub_id, param) =
+        build_factored_mixed_const_wrap_positive_difference_unsigned_mul_module();
+    assert_const_difference_factors_to_mul(&words, sub_id, param, 3);
+}
+
+#[test]
+fn spirv_opt_cli_factors_unsigned_wrap_positive_constant_difference_commuted_into_single_mul() {
+    let (words, sub_id, param) =
+        build_factored_mixed_const_wrap_positive_difference_unsigned_mul_commuted_module();
+    assert_const_difference_factors_to_mul(&words, sub_id, param, 3);
 }
 
 #[test]
