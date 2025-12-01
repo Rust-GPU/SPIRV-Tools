@@ -2188,6 +2188,76 @@ pub enum ValidationError {
         /// The duplicate predecessor id.
         incoming: Id,
     },
+    /// A vector shuffle operand is not a vector type.
+    #[error(
+        "vector shuffle in block {block:?} of function {function:?} uses operand {operand} with non-vector type {found:?}"
+    )]
+    VectorShuffleOperandNotVector {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The operand index (0 or 1).
+        operand: u32,
+        /// The non-vector type id.
+        found: TypeId,
+    },
+    /// A vector shuffle operand element types do not match.
+    #[error(
+        "vector shuffle in block {block:?} of function {function:?} uses mismatched component types {first:?} and {second:?}"
+    )]
+    VectorShuffleComponentTypeMismatch {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The first component type.
+        first: TypeId,
+        /// The second component type.
+        second: TypeId,
+    },
+    /// The vector shuffle result type does not match the operands.
+    #[error(
+        "vector shuffle in block {block:?} of function {function:?} expects result type {result_type:?} to match operand component type {component_type:?}"
+    )]
+    VectorShuffleResultTypeMismatch {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The result type.
+        result_type: TypeId,
+        /// The expected component type.
+        component_type: TypeId,
+    },
+    /// The vector shuffle component count does not match the result type.
+    #[error(
+        "vector shuffle in block {block:?} of function {function:?} defines {operand_components} components but result type expects {result_components}"
+    )]
+    VectorShuffleComponentCountMismatch {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// Number of components described by operands.
+        operand_components: u32,
+        /// Number of components in the result vector type.
+        result_components: u32,
+    },
+    /// A vector shuffle index was out of range.
+    #[error(
+        "vector shuffle in block {block:?} of function {function:?} uses component index {value} beyond the available range [0, {max}]"
+    )]
+    VectorShuffleComponentOutOfRange {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The offending index value.
+        value: u32,
+        /// The maximum valid index.
+        max: u32,
+    },
     /// A function references a missing or invalid function type.
     #[error("function {function:?} has an invalid function type {type_id:?}")]
     InvalidFunctionType {
@@ -3283,6 +3353,178 @@ fn validate_functions(
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+                if inst.class.opcode == rspirv::spirv::Op::VectorShuffle {
+                    let Some(block) = &block.label else {
+                        continue;
+                    };
+                    let Some(block_label_id) = block
+                        .result_id
+                        .and_then(|raw| Id::try_from(raw).ok())
+                    else {
+                        continue;
+                    };
+
+                    let Some(result_type_id) = inst
+                        .result_type
+                        .and_then(|raw| TypeId::try_from(raw).ok())
+                    else {
+                        continue;
+                    };
+
+                    let vector_type_info = |ty: TypeId| -> Result<(TypeId, u32), ValidationError> {
+                        let type_inst = ResultId::try_from(u32::from(ty))
+                            .ok()
+                            .and_then(|rid| definitions.get(&rid));
+                        let Some(type_inst) = type_inst else {
+                            return Err(ValidationError::VectorShuffleOperandNotVector {
+                                function: function_id,
+                                block: block_label_id,
+                                operand: 0,
+                                found: ty,
+                            });
+                        };
+                        if type_inst.class.opcode != rspirv::spirv::Op::TypeVector {
+                            return Err(ValidationError::VectorShuffleOperandNotVector {
+                                function: function_id,
+                                block: block_label_id,
+                                operand: 0,
+                                found: ty,
+                            });
+                        }
+                        let (elem, count) = vector_info(type_inst);
+                        match (elem, count) {
+                            (Some(elem), Some(count)) => Ok((elem, count)),
+                            _ => Err(ValidationError::VectorShuffleOperandNotVector {
+                                function: function_id,
+                                block: block_label_id,
+                                operand: 0,
+                                found: ty,
+                            }),
+                        }
+                    };
+
+                    let Some(vec1_id) = inst.operands.get(0).and_then(|op| match op {
+                        rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                        _ => None,
+                    }) else {
+                        continue;
+                    };
+                    let Some(vec2_id) = inst.operands.get(1).and_then(|op| match op {
+                        rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                        _ => None,
+                    }) else {
+                        continue;
+                    };
+                    let Some(vec1_type_id) = result_types.get(&vec1_id).copied() else {
+                        continue;
+                    };
+                    let Some(vec2_type_id) = result_types.get(&vec2_id).copied() else {
+                        continue;
+                    };
+
+                    let (vec1_component, vec1_len) = match vector_type_info(vec1_type_id) {
+                        Ok(info) => info,
+                        Err(mut err) => {
+                            if let ValidationError::VectorShuffleOperandNotVector { ref mut operand, .. } = err {
+                                *operand = 0;
+                            }
+                            return Err(err);
+                        }
+                    };
+                    let (vec2_component, vec2_len) = match vector_type_info(vec2_type_id) {
+                        Ok(info) => info,
+                        Err(mut err) => {
+                            if let ValidationError::VectorShuffleOperandNotVector { ref mut operand, .. } = err {
+                                *operand = 1;
+                            }
+                            return Err(err);
+                        }
+                    };
+
+                    if vec1_component != vec2_component {
+                        return Err(ValidationError::VectorShuffleComponentTypeMismatch {
+                            function: function_id,
+                            block: block_label_id,
+                            first: vec1_component,
+                            second: vec2_component,
+                        });
+                    }
+
+                    let result_vector_inst = ResultId::try_from(u32::from(result_type_id))
+                        .ok()
+                        .and_then(|rid| definitions.get(&rid));
+                    let Some(result_vector_inst) = result_vector_inst else {
+                        continue;
+                    };
+                    if result_vector_inst.class.opcode != rspirv::spirv::Op::TypeVector {
+                        return Err(ValidationError::VectorShuffleResultTypeMismatch {
+                            function: function_id,
+                            block: block_label_id,
+                            result_type: result_type_id,
+                            component_type: vec1_component,
+                        });
+                    }
+                    let (result_component, result_len) = vector_info(result_vector_inst);
+                    let Some(result_component) = result_component else {
+                        return Err(ValidationError::VectorShuffleResultTypeMismatch {
+                            function: function_id,
+                            block: block_label_id,
+                            result_type: result_type_id,
+                            component_type: vec1_component,
+                        });
+                    };
+                    if result_component != vec1_component {
+                        return Err(ValidationError::VectorShuffleResultTypeMismatch {
+                            function: function_id,
+                            block: block_label_id,
+                            result_type: result_type_id,
+                            component_type: vec1_component,
+                        });
+                    }
+
+                    let literal_components: Vec<u32> = inst
+                        .operands
+                        .iter()
+                        .skip(2)
+                        .filter_map(|op| match op {
+                            rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+                            rspirv::dr::Operand::LiteralBit64(v) => u32::try_from(*v).ok(),
+                            _ => None,
+                        })
+                        .collect();
+                    let operand_component_count = literal_components.len() as u32;
+                    let Some(result_component_len) = result_len else {
+                        return Err(ValidationError::VectorShuffleComponentCountMismatch {
+                            function: function_id,
+                            block: block_label_id,
+                            operand_components: operand_component_count,
+                            result_components: 0,
+                        });
+                    };
+                    if operand_component_count != result_component_len {
+                        return Err(ValidationError::VectorShuffleComponentCountMismatch {
+                            function: function_id,
+                            block: block_label_id,
+                            operand_components: operand_component_count,
+                            result_components: result_component_len,
+                        });
+                    }
+
+                    let max_index = vec1_len + vec2_len;
+                    for value in literal_components {
+                        if value == u32::MAX {
+                            continue;
+                        }
+                        if value >= max_index {
+                            return Err(ValidationError::VectorShuffleComponentOutOfRange {
+                                function: function_id,
+                                block: block_label_id,
+                                value,
+                                max: max_index.saturating_sub(1),
+                            });
                         }
                     }
                 }
@@ -21153,6 +21395,183 @@ mod tests {
                 operand_index: 1,
                 expected: TypeId::try_from(int).unwrap(),
                 found: TypeId::try_from(uint).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn vector_shuffle_operands_must_be_vectors() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let vec2 = b.type_vector(int, 2);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let entry = b.begin_block(None).unwrap();
+        let lhs = b.constant_bit32(int, 0);
+        let rhs = b.constant_bit32(int, 1);
+        b.vector_shuffle(vec2, None, lhs, rhs, [0, 1].into_iter())
+            .unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let binary = b.module().assemble();
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("vector shuffle operands must be vectors");
+        assert_eq!(
+            err,
+            ValidationError::VectorShuffleOperandNotVector {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(entry).unwrap(),
+                operand: 0,
+                found: TypeId::try_from(int).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn vector_shuffle_component_types_must_match() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let float = b.type_float(32, None);
+        let v2i = b.type_vector(int, 2);
+        let v2f = b.type_vector(float, 2);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let entry = b.begin_block(None).unwrap();
+        let v2i_id = b.undef(v2i, None);
+        let v2f_id = b.undef(v2f, None);
+        b.vector_shuffle(v2i, None, v2i_id, v2f_id, [0, 1].into_iter())
+            .unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let binary = b.module().assemble();
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("vector shuffle operands must share the same component type");
+        assert_eq!(
+            err,
+            ValidationError::VectorShuffleComponentTypeMismatch {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(entry).unwrap(),
+                first: TypeId::try_from(int).unwrap(),
+                second: TypeId::try_from(float).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn vector_shuffle_result_length_must_match_components() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let v2 = b.type_vector(int, 2);
+        let v3 = b.type_vector(int, 3);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let entry = b.begin_block(None).unwrap();
+        let v2_id = b.undef(v2, None);
+        b.vector_shuffle(v3, None, v2_id, v2_id, [0, 1].into_iter())
+            .unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let binary = b.module().assemble();
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("vector shuffle result length must match literal component count");
+        assert_eq!(
+            err,
+            ValidationError::VectorShuffleComponentCountMismatch {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(entry).unwrap(),
+                operand_components: 2,
+                result_components: 3,
+            }
+        );
+    }
+
+    #[test]
+    fn vector_shuffle_indices_must_be_in_range() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let v2 = b.type_vector(int, 2);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let entry = b.begin_block(None).unwrap();
+        let v2_id = b.undef(v2, None);
+        b.vector_shuffle(v2, None, v2_id, v2_id, [0, 4].into_iter())
+            .unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let binary = b.module().assemble();
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("vector shuffle component indices must be in range or undef");
+        assert_eq!(
+            err,
+            ValidationError::VectorShuffleComponentOutOfRange {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(entry).unwrap(),
+                value: 4,
+                max: 3,
             }
         );
     }
