@@ -1163,10 +1163,15 @@ impl Applier<SpirvLang, ()> for RemOne {
         _pat: Option<&PatternAst<SpirvLang>>,
         _symbol: Symbol,
     ) -> Vec<Id> {
-        if const_value(egraph, subst[self.b]).is_some_and(|c| c.get() == 1) {
-            let id = egraph.add(SpirvLang::Const(ConstValue::new(0)));
-            egraph.union(eclass, id);
-            return vec![id];
+        if let Some(constant) = const_value(egraph, subst[self.b]) {
+            if constant.get() == 1 {
+                let id = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
+                    0,
+                    constant.width_bits(),
+                )));
+                egraph.union(eclass, id);
+                return vec![id];
+            }
         }
         Vec::new()
     }
@@ -1177,11 +1182,14 @@ impl Applier<SpirvLang, ()> for SubSelf {
         &self,
         egraph: &mut EGraph<SpirvLang, ()>,
         eclass: Id,
-        _subst: &Subst,
+        subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
         _symbol: Symbol,
     ) -> Vec<Id> {
-        let const_zero = egraph.add(SpirvLang::Const(ConstValue::new(0)));
+        let Some(width) = width_hint(egraph, eclass, [subst[var("a")]]) else {
+            return Vec::new();
+        };
+        let const_zero = egraph.add(SpirvLang::Const(ConstValue::new_with_width(0, width)));
         egraph.union(eclass, const_zero);
         vec![const_zero]
     }
@@ -1192,11 +1200,14 @@ impl Applier<SpirvLang, ()> for AddNegZero {
         &self,
         egraph: &mut EGraph<SpirvLang, ()>,
         eclass: Id,
-        _subst: &Subst,
+        subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
         _symbol: Symbol,
     ) -> Vec<Id> {
-        let const_zero = egraph.add(SpirvLang::Const(ConstValue::new(0)));
+        let Some(width) = width_hint(egraph, eclass, [subst[var("a")]]) else {
+            return Vec::new();
+        };
+        let const_zero = egraph.add(SpirvLang::Const(ConstValue::new_with_width(0, width)));
         egraph.union(eclass, const_zero);
         vec![const_zero]
     }
@@ -1253,10 +1264,17 @@ impl Applier<SpirvLang, ()> for MulZero {
         _pat: Option<&PatternAst<SpirvLang>>,
         _symbol: Symbol,
     ) -> Vec<Id> {
-        let zero_left = const_value(egraph, subst[self.a]).is_some_and(|c| c.get() == 0);
-        let zero_right = const_value(egraph, subst[self.b]).is_some_and(|c| c.get() == 0);
+        let left_const = const_value(egraph, subst[self.a]);
+        let right_const = const_value(egraph, subst[self.b]);
+        let zero_left = left_const.is_some_and(|c| c.get() == 0);
+        let zero_right = right_const.is_some_and(|c| c.get() == 0);
         if zero_left || zero_right {
-            let id = egraph.add(SpirvLang::Const(ConstValue::new(0)));
+            let width = left_const
+                .or(right_const)
+                .map(|c| c.width_bits())
+                .or_else(|| width_hint(egraph, eclass, [subst[self.a], subst[self.b]]))
+                .unwrap_or(32);
+            let id = egraph.add(SpirvLang::Const(ConstValue::new_with_width(0, width)));
             egraph.union(eclass, id);
             return vec![id];
         }
@@ -1700,7 +1718,10 @@ impl Applier<SpirvLang, ()> for RemMulConstZero {
         if constant.get_u64() == 0 {
             return Vec::new();
         }
-        let zero = egraph.add(SpirvLang::Const(ConstValue::new(0)));
+        let zero = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
+            0,
+            constant.width_bits(),
+        )));
         egraph.union(eclass, zero);
         vec![zero]
     }
@@ -1925,7 +1946,10 @@ impl Applier<SpirvLang, ()> for AddDuplicateToMul {
         _pat: Option<&PatternAst<SpirvLang>>,
         _symbol: Symbol,
     ) -> Vec<Id> {
-        let two = egraph.add(SpirvLang::Const(ConstValue::new(2)));
+        let Some(width) = width_hint(egraph, eclass, [subst[self.x]]) else {
+            return Vec::new();
+        };
+        let two = egraph.add(SpirvLang::Const(ConstValue::new_with_width(2, width)));
         let mul = egraph.add(SpirvLang::Mul([subst[self.x], two]));
         egraph.union(eclass, mul);
         vec![mul]
@@ -1941,7 +1965,10 @@ impl Applier<SpirvLang, ()> for AddTripleToMul {
         _pat: Option<&PatternAst<SpirvLang>>,
         _symbol: Symbol,
     ) -> Vec<Id> {
-        let three = egraph.add(SpirvLang::Const(ConstValue::new(3)));
+        let Some(width) = width_hint(egraph, eclass, [subst[self.x]]) else {
+            return Vec::new();
+        };
+        let three = egraph.add(SpirvLang::Const(ConstValue::new_with_width(3, width)));
         let mul = egraph.add(SpirvLang::Mul([subst[self.x], three]));
         egraph.union(eclass, mul);
         vec![mul]
@@ -1957,7 +1984,10 @@ impl Applier<SpirvLang, ()> for AddQuadrupleToShift {
         _pat: Option<&PatternAst<SpirvLang>>,
         _symbol: Symbol,
     ) -> Vec<Id> {
-        let two = egraph.add(SpirvLang::Const(ConstValue::new(2)));
+        let Some(width) = width_hint(egraph, eclass, [subst[self.x]]) else {
+            return Vec::new();
+        };
+        let two = egraph.add(SpirvLang::Const(ConstValue::new_with_width(2, width)));
         let shl = egraph.add(SpirvLang::Shl([subst[self.x], two]));
         egraph.union(eclass, shl);
         vec![shl]
@@ -1982,7 +2012,10 @@ impl Applier<SpirvLang, ()> for MulPowerOfTwo {
         if shift == 0 {
             return Vec::new();
         }
-        let shift_const = egraph.add(SpirvLang::Const(ConstValue::new(shift)));
+        let shift_const = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
+            shift as u64,
+            constant.width_bits(),
+        )));
         let shl = egraph.add(SpirvLang::Shl([subst[self.x], shift_const]));
         egraph.union(eclass, shl);
         vec![shl]
@@ -2017,12 +2050,24 @@ impl Applier<SpirvLang, ()> for DivPowerOfTwo {
         {
             return Vec::new();
         }
-        let shift_const = egraph.add(SpirvLang::Const(ConstValue::new(shift)));
+        let shift_const = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
+            shift as u64,
+            constant.width_bits(),
+        )));
         if self.signed {
-            let sign_shift = egraph.add(SpirvLang::Const(ConstValue::new(31)));
+            let sign_shift = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
+                constant
+                    .width_bits()
+                    .saturating_sub(1)
+                    .max(1) as u64,
+                constant.width_bits(),
+            )));
             let sign = egraph.add(SpirvLang::ShrS([subst[self.x], sign_shift]));
             let mask_value = (1u32 << shift).wrapping_sub(1);
-            let mask = egraph.add(SpirvLang::Const(ConstValue::new(mask_value)));
+            let mask = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
+                mask_value as u64,
+                constant.width_bits(),
+            )));
             let bias = egraph.add(SpirvLang::BitAnd([sign, mask]));
             let biased = egraph.add(SpirvLang::Add([subst[self.x], bias]));
             let shr = egraph.add(SpirvLang::ShrS([biased, shift_const]));
@@ -2054,7 +2099,10 @@ impl Applier<SpirvLang, ()> for UModPowerOfTwo {
         if shift == 0 {
             return Vec::new();
         }
-        let shift_const = egraph.add(SpirvLang::Const(ConstValue::new(shift)));
+        let shift_const = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
+            shift as u64,
+            constant.width_bits(),
+        )));
         let shr = egraph.add(SpirvLang::ShrU([subst[self.x], shift_const]));
         let shl = egraph.add(SpirvLang::Shl([shr, shift_const]));
         let sub = egraph.add(SpirvLang::Sub([subst[self.x], shl]));
@@ -2150,7 +2198,10 @@ impl Applier<SpirvLang, ()> for BitAndConstSimplify {
             return vec![subst[self.x]];
         }
         if constant.get() == 0 {
-            let zero = egraph.add(SpirvLang::Const(ConstValue::new(0)));
+            let zero = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
+                0,
+                constant.width_bits(),
+            )));
             egraph.union(eclass, zero);
             return vec![zero];
         }
@@ -2177,7 +2228,10 @@ impl Applier<SpirvLang, ()> for BitAndToUmod {
         if shift == 0 {
             return Vec::new();
         }
-        let const_id = egraph.add(SpirvLang::Const(ConstValue::new(mask.wrapping_add(1))));
+        let const_id = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
+            mask.wrapping_add(1) as u64,
+            constant.width_bits(),
+        )));
         let umod = egraph.add(SpirvLang::UMod([subst[self.x], const_id]));
         egraph.union(eclass, umod);
         vec![umod]
@@ -2193,7 +2247,10 @@ impl Applier<SpirvLang, ()> for BitAndComplement {
         _pat: Option<&PatternAst<SpirvLang>>,
         _symbol: Symbol,
     ) -> Vec<Id> {
-        let zero = egraph.add(SpirvLang::Const(ConstValue::new(0)));
+        let Some(width) = width_hint(egraph, eclass, []) else {
+            return Vec::new();
+        };
+        let zero = egraph.add(SpirvLang::Const(ConstValue::new_with_width(0, width)));
         egraph.union(eclass, zero);
         vec![zero]
     }
@@ -2218,7 +2275,10 @@ impl Applier<SpirvLang, ()> for UModPowerOfTwoMask {
             return Vec::new();
         }
         let mask_value = (1u32 << shift).wrapping_sub(1);
-        let mask = egraph.add(SpirvLang::Const(ConstValue::new(mask_value)));
+        let mask = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
+            mask_value as u64,
+            constant.width_bits(),
+        )));
         let band = egraph.add(SpirvLang::BitAnd([subst[self.x], mask]));
         egraph.union(eclass, band);
         vec![band]
@@ -2265,7 +2325,10 @@ impl Applier<SpirvLang, ()> for BitOrConstSimplify {
                 vec![subst[self.x]]
             }
             u32::MAX => {
-                let ones = egraph.add(SpirvLang::Const(ConstValue::new(u32::MAX)));
+                let ones = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
+                    u32::MAX as u64,
+                    c.width_bits(),
+                )));
                 egraph.union(eclass, ones);
                 vec![ones]
             }
@@ -2283,7 +2346,13 @@ impl Applier<SpirvLang, ()> for BitOrComplement {
         _pat: Option<&PatternAst<SpirvLang>>,
         _symbol: Symbol,
     ) -> Vec<Id> {
-        let ones = egraph.add(SpirvLang::Const(ConstValue::new(u32::MAX)));
+        let Some(width) = width_hint(egraph, eclass, []) else {
+            return Vec::new();
+        };
+        let ones = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
+            u32::MAX as u64,
+            width,
+        )));
         egraph.union(eclass, ones);
         vec![ones]
     }
@@ -2347,7 +2416,10 @@ impl Applier<SpirvLang, ()> for BitXorSelf {
         _pat: Option<&PatternAst<SpirvLang>>,
         _symbol: Symbol,
     ) -> Vec<Id> {
-        let zero = egraph.add(SpirvLang::Const(ConstValue::new(0)));
+        let Some(width) = width_hint(egraph, eclass, []) else {
+            return Vec::new();
+        };
+        let zero = egraph.add(SpirvLang::Const(ConstValue::new_with_width(0, width)));
         egraph.union(eclass, zero);
         vec![zero]
     }
@@ -2625,10 +2697,31 @@ impl Applier<SpirvLang, ()> for MulMergeConst {
 }
 
 fn const_value(egraph: &EGraph<SpirvLang, ()>, id: Id) -> Option<ConstValue> {
-    egraph[id].nodes.iter().find_map(|node| match node {
+    egraph[egraph.find(id)].nodes.iter().find_map(|node| match node {
         SpirvLang::Const(value) => Some(*value),
         _ => None,
     })
+}
+
+fn width_hint(
+    egraph: &EGraph<SpirvLang, ()>,
+    eclass: Id,
+    ids: impl IntoIterator<Item = Id>,
+) -> Option<u8> {
+    let width = ids
+        .into_iter()
+        .filter_map(|id| const_value(egraph, id).map(|c| c.width_bits()))
+        .max()
+        .or_else(|| {
+            egraph[egraph.find(eclass)]
+                .nodes
+                .iter()
+                .find_map(|n| match n {
+                    SpirvLang::Const(c) => Some(c.width_bits()),
+                    _ => None,
+                })
+        });
+    width.or(Some(32))
 }
 
 fn pure_const_value(egraph: &EGraph<SpirvLang, ()>, id: Id) -> Option<ConstValue> {
@@ -2813,6 +2906,34 @@ mod tests {
                 (-1i64) as u64,
                 64
             ))])
+        );
+    }
+
+    #[test]
+    fn mul_zero_preserves_width_u64() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new64(0)),
+            SpirvLang::Symbol("x".into()),
+            SpirvLang::Mul([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Const(ConstValue::new_with_width(0, 64))])
+        );
+    }
+
+    #[test]
+    fn bitand_zero_preserves_width_u64() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol("x".into()),
+            SpirvLang::Const(ConstValue::new64(0)),
+            SpirvLang::BitAnd([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Const(ConstValue::new_with_width(0, 64))])
         );
     }
 
