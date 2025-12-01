@@ -152,6 +152,7 @@ Planned tasks:
 - [x] Broaden parity to include unsigned-identity rewrites (e.g., divide-by-one) across CLI/FFI and C++ comparison.
 - [x] Broaden parity to include unsigned remainder by one (folds to zero) across CLI/FFI vs. C++ outputs.
 - [x] Broaden parity to include signed divide/remainder by one across CLI/FFI vs. C++ outputs.
+- [x] Broaden parity to include rotate-folding patterns across CLI/FFI vs. C++ outputs.
 - Keep clippy/rustfmt/cargo fuzz smoke tests green after wiring the integration.
 
 ## Completed Milestone: Validator Default Enablement

@@ -32,7 +32,10 @@ pub fn optimize_basic_block(insts: &[u32]) -> Result<Vec<u32>, OptimizeError> {
                 | Op::IAdd
                 | Op::IMul
                 | Op::ISub
+                | Op::BitwiseOr
+                | Op::BitwiseXor
                 | Op::BitwiseAnd
+                | Op::Not
                 | Op::SNegate
                 | Op::SDiv
                 | Op::UDiv
