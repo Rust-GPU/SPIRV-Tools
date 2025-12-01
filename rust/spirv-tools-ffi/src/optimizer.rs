@@ -3,14 +3,27 @@ use rspirv::dr::Instruction;
 use rspirv::spirv::Op;
 use spirv_tools_opt::translate;
 use std::collections::BTreeMap;
+use thiserror::Error;
+
+/// Errors produced by the arithmetic optimizer.
+#[derive(Debug, Error)]
+pub enum OptimizeError {
+    /// The input failed to parse as SPIR-V.
+    #[error("failed to parse module: {0}")]
+    Parse(String),
+    /// The arithmetic optimizer reported a failure.
+    #[error("optimization failed: {0}")]
+    Rewrite(String),
+}
 
 /// Optimize a sequence of SPIR-V instructions representing an arithmetic basic block.
 ///
 /// The input is expected to be a contiguous list of instructions in module order
 /// (types/globals + block). Non-arithmetic instructions are preserved.
-pub fn optimize_basic_block(insts: &[u32]) -> Result<Vec<u32>, String> {
+pub fn optimize_basic_block(insts: &[u32]) -> Result<Vec<u32>, OptimizeError> {
     let mut loader = rspirv::dr::Loader::new();
-    rspirv::binary::parse_words(insts, &mut loader).map_err(|e| e.to_string())?;
+    rspirv::binary::parse_words(insts, &mut loader)
+        .map_err(|e| OptimizeError::Parse(e.to_string()))?;
     let mut module = loader.module();
     let is_arith = |opcode: Op| {
         matches!(
@@ -60,8 +73,8 @@ pub fn optimize_basic_block(insts: &[u32]) -> Result<Vec<u32>, String> {
             arith_stream.extend(constant_map.values().cloned());
             arith_stream.extend(arithmetic.clone());
 
-            let optimized =
-                translate::optimize_arith_block(&arith_stream).map_err(|e| e.to_string())?;
+            let optimized = translate::optimize_arith_block(&arith_stream)
+                .map_err(|e| OptimizeError::Rewrite(e.to_string()))?;
 
             let mut optimized_block = Vec::new();
             for inst in optimized {

@@ -61,8 +61,17 @@ mod ffi {
     }
 
     #[derive(Debug)]
+    enum OptimizeError {
+        None,
+        Disabled,
+        Parse,
+        Optimize,
+    }
+
+    #[derive(Debug)]
     struct OptimizeResult {
         success: bool,
+        error: OptimizeError,
         message: String,
         words: Vec<u32>,
     }
@@ -157,6 +166,8 @@ mod ffi {
         fn validate_binary(env: u32, words: &[u32]) -> ValidateResult;
     }
 }
+
+pub use ffi::OptimizeError;
 
 /// Returns the human-readable description for a SPIR-V target environment.
 pub fn describe_target_env(env: u32) -> String {
@@ -290,22 +301,32 @@ pub fn optimize_basic_block(words: &[u32]) -> ffi::OptimizeResult {
     if !rust_optimizer_enabled() {
         return ffi::OptimizeResult {
             success: true,
+            error: ffi::OptimizeError::Disabled,
             message: String::new(),
             words: words.to_vec(),
         };
     }
 
-    match optimizer::optimize_basic_block(words) {
+    let parsed = optimizer::optimize_basic_block(words);
+    match parsed {
         Ok(words) => ffi::OptimizeResult {
             success: true,
+            error: ffi::OptimizeError::None,
             message: String::new(),
             words,
         },
-        Err(err) => ffi::OptimizeResult {
-            success: false,
-            message: err.to_string(),
-            words: Vec::new(),
-        },
+        Err(err) => {
+            let kind = match &err {
+                optimizer::OptimizeError::Parse(_) => ffi::OptimizeError::Parse,
+                optimizer::OptimizeError::Rewrite(_) => ffi::OptimizeError::Optimize,
+            };
+            ffi::OptimizeResult {
+                success: false,
+                error: kind,
+                message: err.to_string(),
+                words: Vec::new(),
+            }
+        }
     }
 }
 

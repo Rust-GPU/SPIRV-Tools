@@ -805,6 +805,7 @@ dependencies = [
  "rspirv",
  "spirv-tools-core",
  "spirv-tools-opt",
+ "thiserror",
 ]
 
 [[package]]

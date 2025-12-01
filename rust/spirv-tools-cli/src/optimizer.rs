@@ -1,6 +1,7 @@
 use crate::assembly::words_to_bytes;
 use crate::disassemble::InputSource;
 use spirv_tools_ffi::optimize_basic_block;
+use spirv_tools_ffi::OptimizeError as FfiOptimizeError;
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
@@ -18,6 +19,9 @@ pub enum OptimizeCliError {
     /// The Rust optimizer reported an error.
     #[error("optimization failed: {0}")]
     Optimize(String),
+    /// The optimizer could not parse the input module.
+    #[error("failed to parse SPIR-V module: {0}")]
+    Parse(String),
     /// The C++ spirv-opt fallback failed with status/stderr.
     #[error("cpp spirv-opt failed with status {status}: {stderr}")]
     CppFailure {
@@ -68,7 +72,15 @@ pub fn run_optimize(config: &OptimizeConfig) -> Result<Vec<u32>, OptimizeCliErro
         if result.success {
             return Ok(result.words);
         } else {
-            return Err(OptimizeCliError::Optimize(result.message));
+            return Err(match result.error {
+                FfiOptimizeError::Parse => OptimizeCliError::Parse(result.message),
+                FfiOptimizeError::Optimize => OptimizeCliError::Optimize(result.message),
+                // Disabled is unexpected when rust_arith_pass is true, but fall back to passthrough.
+                FfiOptimizeError::Disabled | FfiOptimizeError::None => {
+                    OptimizeCliError::Optimize(result.message)
+                }
+                _ => OptimizeCliError::Optimize(result.message),
+            });
         }
     }
 
@@ -309,6 +321,24 @@ mod tests {
         match run_optimize(&config) {
             Err(OptimizeCliError::MisalignedInput) => {}
             other => panic!("expected misaligned input error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn reports_parse_error() {
+        let temp = NamedTempFile::new().expect("temp file");
+        // Four bytes is a single word but not a valid SPIR-V header.
+        std::fs::write(temp.path(), [0u8, 0, 0, 0]).expect("write bytes");
+        let config = OptimizeConfig {
+            input: InputSource::Path(temp.path().to_path_buf()),
+            output: None,
+            rust_arith_pass: true,
+            cpp_opt_path: None,
+            force_rust_opt: false,
+        };
+        match run_optimize(&config) {
+            Err(OptimizeCliError::Parse(_)) => {}
+            other => panic!("expected parse error, got {other:?}"),
         }
     }
 
