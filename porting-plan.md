@@ -606,7 +606,7 @@ Run the full C++ validation suites with the Rust path forced on, close remaining
 
 Tasks for this milestone:
 - [x] Force-enable the Rust validator across CLI/FFI parity runs and record any mismatches against the C++ validator. (ctest suite passes with the Rust validator forced on)
-- Add a feature flag/CLI toggle to make the Rust validator the default path once parity is complete and document the fallback.
+- [x] Add a feature flag/CLI toggle to make the Rust validator the default path once parity is complete and document the fallback.
 - Close any remaining decoration/env-specific placement quirks (BuiltIn allowlists, interpolation/barycentric rules) with Rust regressions.
 - Keep the plan updated with rollout status and fallbacks, and land a toggle to make the Rust validator the default once parity is demonstrated.
 
