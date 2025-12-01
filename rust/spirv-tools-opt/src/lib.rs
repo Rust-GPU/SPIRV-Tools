@@ -595,6 +595,30 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("add-merge-consts-root-right"; "(+ ?c2 (+ ?c1 ?x))" => {
             AddMergeConst { base: var("?x"), c1: var("?c1"), c2: var("?c2") }
         }),
+        rewrite!("add-factor-const-with-one-left"; "(+ (* ?x ?c) ?x)" => {
+            AddFactorWithOne { x: var("?x"), c: var("?c") }
+        }),
+        rewrite!("add-factor-const-with-one-right"; "(+ ?x (* ?x ?c))" => {
+            AddFactorWithOne { x: var("?x"), c: var("?c") }
+        }),
+        rewrite!("add-factor-const-with-one-mixed-left"; "(+ (* ?c ?x) ?x)" => {
+            AddFactorWithOne { x: var("?x"), c: var("?c") }
+        }),
+        rewrite!("add-factor-const-with-one-mixed-right"; "(+ ?x (* ?c ?x))" => {
+            AddFactorWithOne { x: var("?x"), c: var("?c") }
+        }),
+        rewrite!("sub-factor-const-with-one-left"; "(- (* ?x ?c) ?x)" => {
+            SubFactorWithOne { x: var("?x"), c: var("?c"), lhs_mul: true }
+        }),
+        rewrite!("sub-factor-const-with-one-right"; "(- ?x (* ?x ?c))" => {
+            SubFactorWithOne { x: var("?x"), c: var("?c"), lhs_mul: false }
+        }),
+        rewrite!("sub-factor-const-with-one-mixed-left"; "(- (* ?c ?x) ?x)" => {
+            SubFactorWithOne { x: var("?x"), c: var("?c"), lhs_mul: true }
+        }),
+        rewrite!("sub-factor-const-with-one-mixed-right"; "(- ?x (* ?c ?x))" => {
+            SubFactorWithOne { x: var("?x"), c: var("?c"), lhs_mul: false }
+        }),
         rewrite!("add-sub-merge-consts"; "(+ (- ?x ?c1) ?c2)" => {
             AddSubMerge { base: var("?x"), sub_const: var("?c1"), add_const: var("?c2") }
         }),
@@ -680,6 +704,15 @@ struct AddSubMerge {
     base: Var,
     sub_const: Var,
     add_const: Var,
+}
+struct AddFactorWithOne {
+    x: Var,
+    c: Var,
+}
+struct SubFactorWithOne {
+    x: Var,
+    c: Var,
+    lhs_mul: bool,
 }
 struct SubAddConstMerge {
     x: Var,
@@ -1495,6 +1528,50 @@ impl Applier<SpirvLang, ()> for AddCommonFactorGeneral {
     ) -> Vec<Id> {
         let add = egraph.add(SpirvLang::Add([subst[self.y], subst[self.z]]));
         let mul = egraph.add(SpirvLang::Mul([subst[self.x], add]));
+        egraph.union(eclass, mul);
+        vec![mul]
+    }
+}
+
+impl Applier<SpirvLang, ()> for AddFactorWithOne {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(c) = const_value(egraph, subst[self.c]) else {
+            return Vec::new();
+        };
+        let merged = ConstValue::new(c.get().wrapping_add(1));
+        let const_id = egraph.add(SpirvLang::Const(merged));
+        let mul = egraph.add(SpirvLang::Mul([subst[self.x], const_id]));
+        egraph.union(eclass, mul);
+        vec![mul]
+    }
+}
+
+impl Applier<SpirvLang, ()> for SubFactorWithOne {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(c) = const_value(egraph, subst[self.c]) else {
+            return Vec::new();
+        };
+        let merged = if self.lhs_mul {
+            c.get().wrapping_sub(1)
+        } else {
+            1u32.wrapping_sub(c.get())
+        };
+        let const_id = egraph.add(SpirvLang::Const(ConstValue::new(merged)));
+        let mul = egraph.add(SpirvLang::Mul([subst[self.x], const_id]));
         egraph.union(eclass, mul);
         vec![mul]
     }
@@ -4020,6 +4097,50 @@ mod tests {
                     && matches!(lhs_node, SpirvLang::Const(c) if c.get() == 18 / 6),
             "inner sub should be x - (18/6), got lhs={lhs_node:?} rhs={rhs_node:?}"
         );
+    }
+
+    #[test]
+    fn factors_add_with_implicit_unit_coefficient() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Const(ConstValue::new(2)),       // 1
+            SpirvLang::Mul([Id::from(0), Id::from(1)]), // 2 = 2x
+            SpirvLang::Add([Id::from(2), Id::from(0)]), // 3 = 2x + x
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::Mul([lhs, rhs])) = nodes.last() else {
+            panic!("expected mul root, got {:?}", nodes.last());
+        };
+        let (sym_node, const_node) = match (&nodes[usize::from(*lhs)], &nodes[usize::from(*rhs)]) {
+            (SpirvLang::Symbol(sym), SpirvLang::Const(c)) => (sym, c),
+            (SpirvLang::Const(c), SpirvLang::Symbol(sym)) => (sym, c),
+            other => panic!("unexpected operands after factoring implicit unit: {other:?}"),
+        };
+        assert_eq!(sym_node, &Symbol::from("x"));
+        assert_eq!(const_node.get(), 3);
+    }
+
+    #[test]
+    fn factors_sub_with_implicit_unit_coefficient() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Const(ConstValue::new(7)),       // 1
+            SpirvLang::Mul([Id::from(0), Id::from(1)]), // 2 = 7x
+            SpirvLang::Sub([Id::from(2), Id::from(0)]), // 3 = 7x - x
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::Mul([lhs, rhs])) = nodes.last() else {
+            panic!("expected mul root, got {:?}", nodes.last());
+        };
+        let (sym_node, const_node) = match (&nodes[usize::from(*lhs)], &nodes[usize::from(*rhs)]) {
+            (SpirvLang::Symbol(sym), SpirvLang::Const(c)) => (sym, c),
+            (SpirvLang::Const(c), SpirvLang::Symbol(sym)) => (sym, c),
+            other => panic!("unexpected operands after factoring implicit unit in sub: {other:?}"),
+        };
+        assert_eq!(sym_node, &Symbol::from("x"));
+        assert_eq!(const_node.get(), 6);
     }
 
     #[test]
