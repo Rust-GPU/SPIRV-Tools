@@ -3737,6 +3737,50 @@ mod tests {
     }
 
     #[test]
+    fn folds_const_rotate_left_width32() {
+        // (x << 8) | (x >> 24) with x=0x12345678 => rotate-left by 8 => 0x34567812
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new(0x1234_5678)), // 0
+            SpirvLang::Const(ConstValue::new(8)),           // 1
+            SpirvLang::Shl([Id::from(0), Id::from(1)]),     // 2
+            SpirvLang::Const(ConstValue::new(24)),          // 3
+            SpirvLang::ShrU([Id::from(0), Id::from(3)]),    // 4
+            SpirvLang::BitOr([Id::from(2), Id::from(4)]),   // 5
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        assert_eq!(nodes.len(), 1, "expected constant fold");
+        if let SpirvLang::Const(c) = nodes[0] {
+            assert_eq!(c.get(), 0x3456_7812);
+            assert_eq!(c.width_bits(), 32);
+        } else {
+            panic!("expected constant; got {optimized:?}");
+        }
+    }
+
+    #[test]
+    fn folds_const_rotate_left_width64() {
+        // (x << 16) | (x >> 48) with x=0x0123456789ABCDEF => rotate-left by 16 => 0x456789ABCDEF0123
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new_with_width(0x0123_4567_89AB_CDEF, 64)), // 0
+            SpirvLang::Const(ConstValue::new_with_width(16, 64)),                     // 1
+            SpirvLang::Shl([Id::from(0), Id::from(1)]),                               // 2
+            SpirvLang::Const(ConstValue::new_with_width(48, 64)),                     // 3
+            SpirvLang::ShrU([Id::from(0), Id::from(3)]),                              // 4
+            SpirvLang::BitOr([Id::from(2), Id::from(4)]),                             // 5
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        assert_eq!(nodes.len(), 1, "expected constant fold");
+        if let SpirvLang::Const(c) = nodes[0] {
+            assert_eq!(c.get_u64(), 0x4567_89AB_CDEF_0123);
+            assert_eq!(c.width_bits(), 64);
+        } else {
+            panic!("expected constant; got {optimized:?}");
+        }
+    }
+
+    #[test]
     fn rewrites_arithmetic_shift_right_zero_offset_identity() {
         let expr = RecExpr::from(vec![
             SpirvLang::Symbol(Symbol::from("x")),        // 0
