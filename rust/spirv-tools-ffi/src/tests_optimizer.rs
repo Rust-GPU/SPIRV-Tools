@@ -24,6 +24,18 @@ mod optimizer_tests {
     }
 
     #[test]
+    fn optimizer_reports_parse_error() {
+        let _guard = OptimizerEnvGuard::new();
+        let invalid_words = vec![0u32]; // not a valid module header
+        let result = optimize_wrapped_block(&invalid_words);
+        assert!(!result.success);
+        assert!(matches!(
+            result.error,
+            crate::OptimizeError::Parse | crate::OptimizeError::Optimize
+        ));
+    }
+
+    #[test]
     fn optimizer_basic_block_pass_through_non_arith() {
         let mut b = Builder::new();
         let void = b.type_void();
