@@ -151,6 +151,7 @@ Planned tasks:
 - Expand parity coverage to include shift-by-zero elimination and keep FFI parity aligned with CLI coverage. **(CLI + FFI tests cover shift-by-zero folding with id stability)**
 - [x] Broaden parity to include unsigned-identity rewrites (e.g., divide-by-one) across CLI/FFI and C++ comparison.
 - [x] Broaden parity to include unsigned remainder by one (folds to zero) across CLI/FFI vs. C++ outputs.
+- [x] Broaden parity to include signed divide/remainder by one across CLI/FFI vs. C++ outputs.
 - Keep clippy/rustfmt/cargo fuzz smoke tests green after wiring the integration.
 
 ## Completed Milestone: Validator Default Enablement
