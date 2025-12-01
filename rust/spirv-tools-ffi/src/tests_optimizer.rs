@@ -180,6 +180,90 @@ mod optimizer_tests {
         assert!(found_zero, "sub should fold to constant zero");
     }
 
+    fn build_factored_mul_sum_module() -> (Vec<u32>, u32, u32) {
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(void, vec![int]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        b.begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let param = b.function_parameter(int).unwrap();
+        b.begin_block(None).unwrap();
+        let c2 = b.constant_bit32(int, 2);
+        let c3 = b.constant_bit32(int, 3);
+        let mul_left = b.i_mul(int, None, param, c2).expect("mul left");
+        let mul_right = b.i_mul(int, None, param, c3).expect("mul right");
+        let add = b.i_add(int, None, mul_left, mul_right).expect("add");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        (b.module().assemble(), add, param)
+    }
+
+    #[test]
+    fn optimizer_factors_common_multiplicand() {
+        let (words, add_id, param_id) = build_factored_mul_sum_module();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let optimized_module = loader.module();
+
+        let mut constants = std::collections::HashMap::new();
+        let mut mul_count = 0;
+        let mut add_present = false;
+        let mut factored = false;
+
+        for inst in optimized_module.all_inst_iter() {
+            match inst.class.opcode {
+                Op::Constant => {
+                    if let (Some(id), Some(value)) = (
+                        inst.result_id,
+                        inst.operands.first().and_then(|op| match op {
+                            rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+                            _ => None,
+                        }),
+                    ) {
+                        constants.insert(id, value);
+                    }
+                }
+                Op::IMul => {
+                    mul_count += 1;
+                    if inst.result_id != Some(add_id) {
+                        continue;
+                    }
+                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                        continue;
+                    };
+                    let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
+                        continue;
+                    };
+                    let uses_param = lhs == param_id || rhs == param_id;
+                    let const_id = if lhs == param_id { rhs } else { lhs };
+                    let is_const_five = constants
+                        .get(&const_id)
+                        .copied()
+                        .map(|v| v == 5)
+                        .unwrap_or(false);
+                    factored = uses_param && is_const_five;
+                }
+                Op::IAdd => add_present = true,
+                _ => {}
+            }
+        }
+
+        assert_eq!(mul_count, 1, "factoring should leave one multiply");
+        assert!(
+            factored,
+            "factored multiply should reuse add id and use 5 * param"
+        );
+        assert!(!add_present, "addition should be removed after factoring");
+    }
+
     #[test]
     fn optimizer_folds_mul_by_zero() {
         let mut b = Builder::new();
@@ -361,7 +445,10 @@ mod optimizer_tests {
                 saw_const = true;
             }
         }
-        assert!(saw_const, "and with all ones should keep the original value");
+        assert!(
+            saw_const,
+            "and with all ones should keep the original value"
+        );
     }
 
     #[test]
@@ -449,8 +536,7 @@ mod optimizer_tests {
                 Op::Not if inst.result_id == Some(bxor) => saw_not = true,
                 Op::Constant
                     if inst.result_id == Some(bxor)
-                        && inst.operands
-                            == vec![rspirv::dr::Operand::LiteralBit32(expected)] =>
+                        && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(expected)] =>
                 {
                     saw_const = true;
                 }
@@ -787,7 +873,10 @@ mod optimizer_tests {
                 saw_const = true;
             }
         }
-        assert!(saw_const, "and with complement should fold to zero with same id");
+        assert!(
+            saw_const,
+            "and with complement should fold to zero with same id"
+        );
     }
 
     #[test]
@@ -839,7 +928,6 @@ mod optimizer_tests {
             "or with complement should fold to all ones with same id"
         );
     }
-
 
     #[test]
     fn optimizer_factors_linear_combination_into_single_mul() {
@@ -964,9 +1052,7 @@ mod optimizer_tests {
         let _ = b.begin_block(None).unwrap();
         let c4 = b.constant_bit32(int, 4);
         let zero = b.constant_bit32(int, 0);
-        let shl = b
-            .shift_left_logical(int, None, c4, zero)
-            .expect("shift id");
+        let shl = b.shift_left_logical(int, None, c4, zero).expect("shift id");
         b.ret().unwrap();
         b.end_function().unwrap();
         let words = b.module().assemble();
@@ -1013,9 +1099,7 @@ mod optimizer_tests {
         let _ = b.begin_block(None).unwrap();
         let value = b.constant_bit32(int, 0x12);
         let shift = b.constant_bit32(int, 3);
-        let left = b
-            .shift_left_logical(int, None, value, shift)
-            .expect("shl");
+        let left = b.shift_left_logical(int, None, value, shift).expect("shl");
         let right_amount = b.constant_bit32(int, 29);
         let right = b
             .shift_right_logical(int, None, value, right_amount)

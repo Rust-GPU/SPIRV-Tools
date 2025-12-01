@@ -3,7 +3,7 @@ use egg::{Id, RecExpr};
 use rspirv::dr::Instruction;
 use rspirv::spirv::Op;
 use rspirv::spirv::Word;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 
 /// Errors surfaced when translating SPIR-V into optimizer expressions.
@@ -38,6 +38,27 @@ pub struct TranslatedExpr {
     pub original_ids: Vec<Option<Word>>,
 }
 
+fn intern_operand(
+    operand_id: Word,
+    ids: &mut HashMap<Word, Id>,
+    expr: &mut RecExpr<SpirvLang>,
+    node_to_id: &mut Vec<Option<Word>>,
+) -> Id {
+    if let Some(existing) = ids.get(&operand_id) {
+        return *existing;
+    }
+    let sym = expr.add(SpirvLang::Symbol(egg::Symbol::from(format!(
+        "id{operand_id}"
+    ))));
+    ids.insert(operand_id, sym);
+    node_to_id.push(Some(operand_id));
+    sym
+}
+
+fn symbol_id(sym: &egg::Symbol) -> Option<Word> {
+    sym.as_str().strip_prefix("id")?.parse().ok()
+}
+
 /// Translate a sequence of arithmetic instructions into an e-graph expression.
 ///
 /// Supported ops:
@@ -54,6 +75,20 @@ pub fn translate_arith(instructions: &[Instruction]) -> Result<TranslatedExpr, T
     let mut root_type = None;
     let mut root_id = None;
     let mut node_to_id = Vec::new();
+
+    let defined_ids: HashSet<Word> = instructions
+        .iter()
+        .filter_map(|inst| inst.result_id)
+        .collect();
+    for inst in instructions {
+        for operand in inst.operands.iter().filter_map(|op| op.id_ref_any()) {
+            if !defined_ids.contains(&operand) && !ids.contains_key(&operand) {
+                let sym = expr.add(SpirvLang::Symbol(egg::Symbol::from(format!("id{operand}"))));
+                ids.insert(operand, sym);
+                node_to_id.push(Some(operand));
+            }
+        }
+    }
 
     for inst in instructions {
         let opcode = inst.class.opcode;
@@ -73,129 +108,76 @@ pub fn translate_arith(instructions: &[Instruction]) -> Result<TranslatedExpr, T
                 expr.add(SpirvLang::Const(ConstValue::new(literal)))
             }
             Op::IAdd => {
-                let mut ops = inst.operands.iter().filter_map(|op| match op {
-                    rspirv::dr::Operand::IdRef(id) => Some(*id),
-                    _ => None,
-                });
-                let lhs = ops.next().and_then(|id| ids.get(&id).copied()).ok_or(
-                    TranslateError::UnknownOperand {
-                        id: inst
-                            .operands
-                            .first()
-                            .and_then(|op| op.id_ref_any())
-                            .unwrap_or(0),
-                        opcode,
-                    },
-                )?;
-                let rhs = ops.next().and_then(|id| ids.get(&id).copied()).ok_or(
-                    TranslateError::UnknownOperand {
-                        id: inst
-                            .operands
-                            .get(1)
-                            .and_then(|op| op.id_ref_any())
-                            .unwrap_or(0),
-                        opcode,
-                    },
-                )?;
+                let mut ops = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .peekable();
+                let lhs_id = ops
+                    .next()
+                    .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
+                let rhs_id = ops
+                    .next()
+                    .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
+                let lhs = intern_operand(lhs_id, &mut ids, &mut expr, &mut node_to_id);
+                let rhs = intern_operand(rhs_id, &mut ids, &mut expr, &mut node_to_id);
                 expr.add(SpirvLang::Add([lhs, rhs]))
             }
             Op::IMul => {
-                let mut ops = inst.operands.iter().filter_map(|op| match op {
-                    rspirv::dr::Operand::IdRef(id) => Some(*id),
-                    _ => None,
-                });
-                let lhs = ops.next().and_then(|id| ids.get(&id).copied()).ok_or(
-                    TranslateError::UnknownOperand {
-                        id: inst
-                            .operands
-                            .first()
-                            .and_then(|op| op.id_ref_any())
-                            .unwrap_or(0),
-                        opcode,
-                    },
-                )?;
-                let rhs = ops.next().and_then(|id| ids.get(&id).copied()).ok_or(
-                    TranslateError::UnknownOperand {
-                        id: inst
-                            .operands
-                            .get(1)
-                            .and_then(|op| op.id_ref_any())
-                            .unwrap_or(0),
-                        opcode,
-                    },
-                )?;
+                let mut ops = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .peekable();
+                let lhs_id = ops
+                    .next()
+                    .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
+                let rhs_id = ops
+                    .next()
+                    .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
+                let lhs = intern_operand(lhs_id, &mut ids, &mut expr, &mut node_to_id);
+                let rhs = intern_operand(rhs_id, &mut ids, &mut expr, &mut node_to_id);
                 expr.add(SpirvLang::Mul([lhs, rhs]))
             }
             Op::ISub => {
-                let mut ops = inst.operands.iter().filter_map(|op| match op {
-                    rspirv::dr::Operand::IdRef(id) => Some(*id),
-                    _ => None,
-                });
-                let lhs = ops.next().and_then(|id| ids.get(&id).copied()).ok_or(
-                    TranslateError::UnknownOperand {
-                        id: inst
-                            .operands
-                            .first()
-                            .and_then(|op| op.id_ref_any())
-                            .unwrap_or(0),
-                        opcode,
-                    },
-                )?;
-                let rhs = ops.next().and_then(|id| ids.get(&id).copied()).ok_or(
-                    TranslateError::UnknownOperand {
-                        id: inst
-                            .operands
-                            .get(1)
-                            .and_then(|op| op.id_ref_any())
-                            .unwrap_or(0),
-                        opcode,
-                    },
-                )?;
+                let mut ops = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .peekable();
+                let lhs_id = ops
+                    .next()
+                    .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
+                let rhs_id = ops
+                    .next()
+                    .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
+                let lhs = intern_operand(lhs_id, &mut ids, &mut expr, &mut node_to_id);
+                let rhs = intern_operand(rhs_id, &mut ids, &mut expr, &mut node_to_id);
                 expr.add(SpirvLang::Sub([lhs, rhs]))
             }
             Op::SNegate => {
                 let operand = inst
                     .operands
                     .iter()
-                    .find_map(|op| match op {
-                        rspirv::dr::Operand::IdRef(id) => Some(*id),
-                        _ => None,
-                    })
+                    .find_map(|op| op.id_ref_any())
                     .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
-                let id = ids
-                    .get(&operand)
-                    .copied()
-                    .ok_or(TranslateError::UnknownOperand {
-                        id: operand,
-                        opcode,
-                    })?;
+                let id = intern_operand(operand, &mut ids, &mut expr, &mut node_to_id);
                 expr.add(SpirvLang::Neg(id))
             }
             Op::SDiv | Op::UDiv => {
-                let mut ops = inst.operands.iter().filter_map(|op| match op {
-                    rspirv::dr::Operand::IdRef(id) => Some(*id),
-                    _ => None,
-                });
-                let lhs = ops.next().and_then(|id| ids.get(&id).copied()).ok_or(
-                    TranslateError::UnknownOperand {
-                        id: inst
-                            .operands
-                            .first()
-                            .and_then(|op| op.id_ref_any())
-                            .unwrap_or(0),
-                        opcode,
-                    },
-                )?;
-                let rhs = ops.next().and_then(|id| ids.get(&id).copied()).ok_or(
-                    TranslateError::UnknownOperand {
-                        id: inst
-                            .operands
-                            .get(1)
-                            .and_then(|op| op.id_ref_any())
-                            .unwrap_or(0),
-                        opcode,
-                    },
-                )?;
+                let mut ops = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .peekable();
+                let lhs_id = ops
+                    .next()
+                    .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
+                let rhs_id = ops
+                    .next()
+                    .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
+                let lhs = intern_operand(lhs_id, &mut ids, &mut expr, &mut node_to_id);
+                let rhs = intern_operand(rhs_id, &mut ids, &mut expr, &mut node_to_id);
                 let node = if opcode == Op::SDiv {
                     SpirvLang::SDiv([lhs, rhs])
                 } else {
@@ -204,57 +186,35 @@ pub fn translate_arith(instructions: &[Instruction]) -> Result<TranslatedExpr, T
                 expr.add(node)
             }
             Op::BitwiseAnd => {
-                let mut ops = inst.operands.iter().filter_map(|op| match op {
-                    rspirv::dr::Operand::IdRef(id) => Some(*id),
-                    _ => None,
-                });
-                let lhs = ops.next().and_then(|id| ids.get(&id).copied()).ok_or(
-                    TranslateError::UnknownOperand {
-                        id: inst
-                            .operands
-                            .first()
-                            .and_then(|op| op.id_ref_any())
-                            .unwrap_or(0),
-                        opcode,
-                    },
-                )?;
-                let rhs = ops.next().and_then(|id| ids.get(&id).copied()).ok_or(
-                    TranslateError::UnknownOperand {
-                        id: inst
-                            .operands
-                            .get(1)
-                            .and_then(|op| op.id_ref_any())
-                            .unwrap_or(0),
-                        opcode,
-                    },
-                )?;
+                let mut ops = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .peekable();
+                let lhs_id = ops
+                    .next()
+                    .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
+                let rhs_id = ops
+                    .next()
+                    .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
+                let lhs = intern_operand(lhs_id, &mut ids, &mut expr, &mut node_to_id);
+                let rhs = intern_operand(rhs_id, &mut ids, &mut expr, &mut node_to_id);
                 expr.add(SpirvLang::BitAnd([lhs, rhs]))
             }
             Op::SRem | Op::UMod => {
-                let mut ops = inst.operands.iter().filter_map(|op| match op {
-                    rspirv::dr::Operand::IdRef(id) => Some(*id),
-                    _ => None,
-                });
-                let lhs = ops.next().and_then(|id| ids.get(&id).copied()).ok_or(
-                    TranslateError::UnknownOperand {
-                        id: inst
-                            .operands
-                            .first()
-                            .and_then(|op| op.id_ref_any())
-                            .unwrap_or(0),
-                        opcode,
-                    },
-                )?;
-                let rhs = ops.next().and_then(|id| ids.get(&id).copied()).ok_or(
-                    TranslateError::UnknownOperand {
-                        id: inst
-                            .operands
-                            .get(1)
-                            .and_then(|op| op.id_ref_any())
-                            .unwrap_or(0),
-                        opcode,
-                    },
-                )?;
+                let mut ops = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .peekable();
+                let lhs_id = ops
+                    .next()
+                    .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
+                let rhs_id = ops
+                    .next()
+                    .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
+                let lhs = intern_operand(lhs_id, &mut ids, &mut expr, &mut node_to_id);
+                let rhs = intern_operand(rhs_id, &mut ids, &mut expr, &mut node_to_id);
                 let node = if opcode == Op::SRem {
                     SpirvLang::SRem([lhs, rhs])
                 } else {
@@ -263,30 +223,19 @@ pub fn translate_arith(instructions: &[Instruction]) -> Result<TranslatedExpr, T
                 expr.add(node)
             }
             Op::ShiftLeftLogical | Op::ShiftRightLogical | Op::ShiftRightArithmetic => {
-                let mut ops = inst.operands.iter().filter_map(|op| match op {
-                    rspirv::dr::Operand::IdRef(id) => Some(*id),
-                    _ => None,
-                });
-                let lhs = ops.next().and_then(|id| ids.get(&id).copied()).ok_or(
-                    TranslateError::UnknownOperand {
-                        id: inst
-                            .operands
-                            .first()
-                            .and_then(|op| op.id_ref_any())
-                            .unwrap_or(0),
-                        opcode,
-                    },
-                )?;
-                let rhs = ops.next().and_then(|id| ids.get(&id).copied()).ok_or(
-                    TranslateError::UnknownOperand {
-                        id: inst
-                            .operands
-                            .get(1)
-                            .and_then(|op| op.id_ref_any())
-                            .unwrap_or(0),
-                        opcode,
-                    },
-                )?;
+                let mut ops = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .peekable();
+                let lhs_id = ops
+                    .next()
+                    .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
+                let rhs_id = ops
+                    .next()
+                    .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
+                let lhs = intern_operand(lhs_id, &mut ids, &mut expr, &mut node_to_id);
+                let rhs = intern_operand(rhs_id, &mut ids, &mut expr, &mut node_to_id);
                 let node = match opcode {
                     Op::ShiftLeftLogical => SpirvLang::Shl([lhs, rhs]),
                     Op::ShiftRightLogical => SpirvLang::ShrU([lhs, rhs]),
@@ -295,30 +244,19 @@ pub fn translate_arith(instructions: &[Instruction]) -> Result<TranslatedExpr, T
                 expr.add(node)
             }
             Op::BitwiseOr | Op::BitwiseXor => {
-                let mut ops = inst.operands.iter().filter_map(|op| match op {
-                    rspirv::dr::Operand::IdRef(id) => Some(*id),
-                    _ => None,
-                });
-                let lhs = ops.next().and_then(|id| ids.get(&id).copied()).ok_or(
-                    TranslateError::UnknownOperand {
-                        id: inst
-                            .operands
-                            .first()
-                            .and_then(|op| op.id_ref_any())
-                            .unwrap_or(0),
-                        opcode,
-                    },
-                )?;
-                let rhs = ops.next().and_then(|id| ids.get(&id).copied()).ok_or(
-                    TranslateError::UnknownOperand {
-                        id: inst
-                            .operands
-                            .get(1)
-                            .and_then(|op| op.id_ref_any())
-                            .unwrap_or(0),
-                        opcode,
-                    },
-                )?;
+                let mut ops = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .peekable();
+                let lhs_id = ops
+                    .next()
+                    .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
+                let rhs_id = ops
+                    .next()
+                    .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
+                let lhs = intern_operand(lhs_id, &mut ids, &mut expr, &mut node_to_id);
+                let rhs = intern_operand(rhs_id, &mut ids, &mut expr, &mut node_to_id);
                 let node = if opcode == Op::BitwiseOr {
                     SpirvLang::BitOr([lhs, rhs])
                 } else {
@@ -330,18 +268,9 @@ pub fn translate_arith(instructions: &[Instruction]) -> Result<TranslatedExpr, T
                 let operand = inst
                     .operands
                     .iter()
-                    .find_map(|op| match op {
-                        rspirv::dr::Operand::IdRef(id) => Some(*id),
-                        _ => None,
-                    })
+                    .find_map(|op| op.id_ref_any())
                     .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
-                let id = ids
-                    .get(&operand)
-                    .copied()
-                    .ok_or(TranslateError::UnknownOperand {
-                        id: operand,
-                        opcode,
-                    })?;
+                let id = intern_operand(operand, &mut ids, &mut expr, &mut node_to_id);
                 expr.add(SpirvLang::BitNot(id))
             }
             other => return Err(TranslateError::UnsupportedOp(other)),
@@ -400,6 +329,15 @@ pub fn optimize_arith_block(
         .collect();
     available_ids.sort_unstable();
     available_ids.dedup();
+    let reserved_symbol_ids: HashSet<_> = optimized
+        .as_ref()
+        .iter()
+        .filter_map(|node| match node {
+            SpirvLang::Symbol(sym) => symbol_id(sym),
+            _ => None,
+        })
+        .collect();
+    available_ids.retain(|id| !reserved_symbol_ids.contains(id));
     let mut assigned_ids = Vec::with_capacity(optimized.as_ref().len());
     let mut pool_iter = available_ids.into_iter();
     for (idx, node) in optimized.as_ref().iter().enumerate() {
@@ -407,6 +345,12 @@ pub fn optimize_arith_block(
         if is_root {
             assigned_ids.push(root_id);
             continue;
+        }
+        if let SpirvLang::Symbol(sym) = node {
+            if let Some(id) = symbol_id(sym) {
+                assigned_ids.push(id);
+                continue;
+            }
         }
         let next_id = pool_iter
             .next()
