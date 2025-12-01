@@ -636,6 +636,7 @@ Planned tasks:
   - Added C++ parity coverage for mixed-constant factoring with commuted multiplicands: `(2*x)+(x*3)` => `5*x` and `(2*x)-(x*3)` => wrapped `-1 * x`, exercising both positive and wrapping-negative constant combinations.
   - Added C++ parity coverage for mixed-constant factoring with positive difference: `(3*x)-(2*x)` => `1*x`, ensuring non-wrapping constant differences are simplified in both optimizers.
   - Added C++ parity coverage for zero-factor cancellation: `(0*x)+(0*y)` and `(0*x)-(0*y)` both fold to zero in Rust and C++ optimizers.
+  - Added C++ parity coverage for canceling constant ratios inside division chains: `(6*x)/3` rewrites to `2*x` without remaining div instructions in both optimizers.
   - Added an FFI regression for affine GCD subtraction folding (`(14*2)-21 -> 7`) to keep the bridge aligned with the Rust optimizer behavior.
    - Added a short `cargo fuzz` smoke script (`scripts/fuzz-smoke.sh`) to keep the arithmetic optimizer fuzz target exercised with a bounded run.
   - Added an FFI regression for factoring linear combinations into a single constant result, ensuring the C bridge exercises the optimizer path.
