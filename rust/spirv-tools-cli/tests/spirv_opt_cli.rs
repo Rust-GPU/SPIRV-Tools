@@ -528,58 +528,71 @@ fn run_cli_with_path(
     child.wait_with_output().expect("run spirv-opt")
 }
 
-#[test]
-fn spirv_opt_cli_cpp_mode_matches_rust_output() {
+fn assert_cpp_cli_matches_rust(words: &[u32], label: &str) {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
     };
-    let (words, _) = build_const_add_module();
 
-    let rust_output = run_cli_with_path(&words, &[], None);
+    let rust_output = run_cli_with_path(words, &[], None);
     assert!(
         rust_output.status.success(),
-        "rust cli failed: {}",
+        "rust cli ({label}) failed: {}",
         String::from_utf8_lossy(&rust_output.stderr)
     );
 
-    let cpp_output = run_cli_with_path(&words, &["--cpp"], Some(&cpp_opt));
+    let cpp_output = run_cli_with_path(words, &["--cpp"], Some(&cpp_opt));
     assert!(
         cpp_output.status.success(),
-        "cpp cli failed: {}",
+        "cpp cli ({label}) failed: {}",
         String::from_utf8_lossy(&cpp_output.stderr)
     );
 
     assert_eq!(
         rust_output.stdout, cpp_output.stdout,
-        "Rust optimizer output should match C++ spirv-opt output in CLI mode"
+        "Rust optimizer output should match C++ spirv-opt output ({label})"
     );
 }
 
 #[test]
+fn spirv_opt_cli_cpp_mode_matches_rust_output() {
+    let (words, _) = build_const_add_module();
+    assert_cpp_cli_matches_rust(&words, "const add fold");
+}
+
+#[test]
 fn spirv_opt_cli_cpp_mode_matches_rust_umod_pow2_output() {
-    let Some(cpp_opt) = cpp_opt_bin() else {
-        return;
-    };
     let (words, _) = build_umod_pow2_module();
+    assert_cpp_cli_matches_rust(&words, "pow2 umod to mask");
+}
 
-    let rust_output = run_cli_with_path(&words, &[], None);
-    assert!(
-        rust_output.status.success(),
-        "rust cli failed: {}",
-        String::from_utf8_lossy(&rust_output.stderr)
-    );
+#[test]
+fn spirv_opt_cli_cpp_mode_matches_rust_mul_by_one_output() {
+    let (words, _) = build_mul_one_module();
+    assert_cpp_cli_matches_rust(&words, "mul by one");
+}
 
-    let cpp_output = run_cli_with_path(&words, &["--cpp"], Some(&cpp_opt));
-    assert!(
-        cpp_output.status.success(),
-        "cpp cli failed: {}",
-        String::from_utf8_lossy(&cpp_output.stderr)
-    );
+#[test]
+fn spirv_opt_cli_cpp_mode_matches_rust_mul_by_zero_output() {
+    let (words, _) = build_mul_zero_module();
+    assert_cpp_cli_matches_rust(&words, "mul by zero");
+}
 
-    assert_eq!(
-        rust_output.stdout, cpp_output.stdout,
-        "Rust optimizer output should match C++ spirv-opt output for pow2 umod"
-    );
+#[test]
+fn spirv_opt_cli_cpp_mode_matches_rust_add_negate_output() {
+    let (words, _) = build_add_negate_module();
+    assert_cpp_cli_matches_rust(&words, "add + negate");
+}
+
+#[test]
+fn spirv_opt_cli_cpp_mode_matches_rust_srem_divisible_output() {
+    let (words, _) = build_srem_divisible_module();
+    assert_cpp_cli_matches_rust(&words, "srem divisible");
+}
+
+#[test]
+fn spirv_opt_cli_cpp_mode_matches_rust_srem_non_divisible_output() {
+    let (words, _) = build_srem_non_divisible_module();
+    assert_cpp_cli_matches_rust(&words, "srem non-divisible");
 }
 
 fn words_to_bytes(words: &[u32]) -> Vec<u8> {
@@ -661,6 +674,76 @@ fn build_mul_neg_one_module() -> (Vec<u32>, u32) {
     b.ret().expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), mul)
+}
+
+fn build_mul_zero_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(rspirv::spirv::Capability::Shader);
+    b.memory_model(
+        rspirv::spirv::AddressingModel::Logical,
+        rspirv::spirv::MemoryModel::Simple,
+    );
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let _ = b
+        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let c4 = b.constant_bit32(int, 4);
+    let c0 = b.constant_bit32(int, 0);
+    let mul = b.i_mul(int, None, c4, c0).expect("mul id");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), mul)
+}
+
+fn build_srem_divisible_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(rspirv::spirv::Capability::Shader);
+    b.memory_model(
+        rspirv::spirv::AddressingModel::Logical,
+        rspirv::spirv::MemoryModel::Simple,
+    );
+    let void = b.type_void();
+    let int = b.type_int(32, 1);
+    let func_ty = b.type_function(void, vec![int]);
+    let _ = b
+        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("function");
+    let param = b.function_parameter(int).expect("function parameter");
+    let _ = b.begin_block(None).expect("block");
+    let c6 = b.constant_bit32(int, 6);
+    let c3 = b.constant_bit32(int, 3);
+    let mul = b.i_mul(int, None, param, c6).expect("mul");
+    let rem = b.s_rem(int, None, mul, c3).expect("srem");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), rem)
+}
+
+fn build_srem_non_divisible_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(rspirv::spirv::Capability::Shader);
+    b.memory_model(
+        rspirv::spirv::AddressingModel::Logical,
+        rspirv::spirv::MemoryModel::Simple,
+    );
+    let void = b.type_void();
+    let int = b.type_int(32, 1);
+    let func_ty = b.type_function(void, vec![int]);
+    let _ = b
+        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("function");
+    let param = b.function_parameter(int).expect("function parameter");
+    let _ = b.begin_block(None).expect("block");
+    let c5 = b.constant_bit32(int, 5);
+    let c3 = b.constant_bit32(int, 3);
+    let mul = b.i_mul(int, None, param, c5).expect("mul");
+    let rem = b.s_rem(int, None, mul, c3).expect("srem");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), rem)
 }
 
 fn build_div_rem_neg_shift_module() -> (Vec<u32>, u32, u32, u32, u32, u32) {
