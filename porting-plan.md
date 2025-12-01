@@ -684,6 +684,7 @@ Planned tasks:
 - Add fuzzing harnesses using `cargo fuzz` + `arbitrary` to stress rewrites and round-trip assembly/disassembly.
 - Establish benchmarks with `criterion` (and `hyperfine` for CLI) to track regressions against the C++ optimizer.
 - Port representative optimizer passes and their C++ tests into Rust unit/integration tests to validate e-graph results.
+ - [x] Keep arithmetic/bitwise constant folding width-aware (tracks `OpTypeInt` bit widths) and add 64-bit regression coverage for folds and shifts.
   - Added C++ parity coverage for shared-addend cancellation with symbolic terms, ensuring `(x+5)-(x+2)` folds identically in Rust and C++ paths.
   - Added C++ parity coverage for shared-addend cancellation that simplifies to zero: `(x+7)-(x+7)` -> `0` in both Rust and C++ optimizers.
   - Added C++ parity coverage for factoring a symbolic multiplier across subtracted constants: `(x*5)-(x*2)` => `3*x`, confirming the e-graph factoring rewrites match spirv-opt.

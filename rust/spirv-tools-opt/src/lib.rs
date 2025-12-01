@@ -1009,7 +1009,7 @@ impl Applier<SpirvLang, ()> for FoldAdd {
         let Some(b) = const_value(egraph, subst[var("b")]) else {
             return Vec::new();
         };
-        let sum = ConstValue::new(a.get().wrapping_add(b.get()));
+        let sum = combine_consts(a, b, u64::wrapping_add);
         let id = egraph.add(SpirvLang::Const(sum));
         egraph.union(eclass, id);
         vec![id]
@@ -1031,7 +1031,7 @@ impl Applier<SpirvLang, ()> for FoldMul {
         let Some(b) = const_value(egraph, subst[var("b")]) else {
             return Vec::new();
         };
-        let product = ConstValue::new(a.get().wrapping_mul(b.get()));
+        let product = combine_consts(a, b, u64::wrapping_mul);
         let id = egraph.add(SpirvLang::Const(product));
         egraph.union(eclass, id);
         vec![id]
@@ -1053,7 +1053,7 @@ impl Applier<SpirvLang, ()> for FoldSub {
         let Some(b) = const_value(egraph, subst[var("b")]) else {
             return Vec::new();
         };
-        let diff = ConstValue::new(a.get().wrapping_sub(b.get()));
+        let diff = combine_consts(a, b, u64::wrapping_sub);
         let id = egraph.add(SpirvLang::Const(diff));
         egraph.union(eclass, id);
         vec![id]
@@ -2120,8 +2120,8 @@ impl Applier<SpirvLang, ()> for BitAndFold {
         let Some(rhs) = const_value(egraph, subst[self.b]) else {
             return Vec::new();
         };
-        let folded = lhs.get() & rhs.get();
-        let const_id = egraph.add(SpirvLang::Const(ConstValue::new(folded)));
+        let folded = combine_consts(lhs, rhs, |x, y| x & y);
+        let const_id = egraph.add(SpirvLang::Const(folded));
         egraph.union(eclass, const_id);
         vec![const_id]
     }
@@ -2234,7 +2234,7 @@ impl Applier<SpirvLang, ()> for BitOrFold {
         let Some(b) = const_value(egraph, subst[self.b]) else {
             return Vec::new();
         };
-        let folded = ConstValue::new(a.get() | b.get());
+        let folded = combine_consts(a, b, |x, y| x | y);
         let id = egraph.add(SpirvLang::Const(folded));
         egraph.union(eclass, id);
         vec![id]
@@ -2298,7 +2298,7 @@ impl Applier<SpirvLang, ()> for BitXorFold {
         let Some(b) = const_value(egraph, subst[self.b]) else {
             return Vec::new();
         };
-        let folded = ConstValue::new(a.get() ^ b.get());
+        let folded = combine_consts(a, b, |x, y| x ^ y);
         let id = egraph.add(SpirvLang::Const(folded));
         egraph.union(eclass, id);
         vec![id]
@@ -2359,7 +2359,7 @@ impl Applier<SpirvLang, ()> for BitNotFold {
         let Some(x) = const_value(egraph, subst[self.x]) else {
             return Vec::new();
         };
-        let folded = ConstValue::new(!x.get());
+        let folded = ConstValue::new_with_width(!x.get_u64(), x.width_bits());
         let id = egraph.add(SpirvLang::Const(folded));
         egraph.union(eclass, id);
         vec![id]
@@ -2635,6 +2635,15 @@ fn pure_const_value(egraph: &EGraph<SpirvLang, ()>, id: Id) -> Option<ConstValue
     }
 }
 
+fn max_width(lhs: ConstValue, rhs: ConstValue) -> u8 {
+    lhs.width_bits().max(rhs.width_bits()).max(1)
+}
+
+fn combine_consts(lhs: ConstValue, rhs: ConstValue, f: impl Fn(u64, u64) -> u64) -> ConstValue {
+    let width = max_width(lhs, rhs);
+    ConstValue::new_with_width(f(lhs.get_u64(), rhs.get_u64()), width)
+}
+
 fn gcd_u32(mut a: u32, mut b: u32) -> u32 {
     while b != 0 {
         let tmp = b;
@@ -2691,6 +2700,20 @@ mod tests {
         assert_eq!(
             optimized,
             RecExpr::from(vec![SpirvLang::Const(ConstValue::new(5))])
+        );
+    }
+
+    #[test]
+    fn folds_addition_u64() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new64(2)),
+            SpirvLang::Const(ConstValue::new64(3)),
+            SpirvLang::Add([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Const(ConstValue::new_with_width(5, 64))])
         );
     }
 
