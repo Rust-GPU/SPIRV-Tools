@@ -1814,6 +1814,174 @@ pub enum ValidationError {
         /// The found operand type.
         found: TypeId,
     },
+    /// An access chain base is not a pointer type.
+    #[error(
+        "instruction {instruction:?} in block {block:?} of function {function:?} requires a pointer base (found {base_type:?})"
+    )]
+    AccessChainBaseNotPointer {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode.
+        instruction: rspirv::spirv::Op,
+        /// The non-pointer base type.
+        base_type: TypeId,
+    },
+    /// An access chain result type is not a pointer.
+    #[error(
+        "instruction {instruction:?} in block {block:?} of function {function:?} requires a pointer result type (found {result_type:?})"
+    )]
+    AccessChainResultTypeNotPointer {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode.
+        instruction: rspirv::spirv::Op,
+        /// The non-pointer result type.
+        result_type: TypeId,
+    },
+    /// An access chain index must be an integer scalar type.
+    #[error(
+        "instruction {instruction:?} in block {block:?} of function {function:?} expects operand {operand_index} to be an integer scalar index but found type {found:?}"
+    )]
+    AccessChainIndexTypeInvalid {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode.
+        instruction: rspirv::spirv::Op,
+        /// The zero-based operand index for the index.
+        operand_index: usize,
+        /// The type of the offending operand.
+        found: TypeId,
+    },
+    /// An access chain struct index must be a literal and within bounds.
+    #[error(
+        "instruction {instruction:?} in block {block:?} of function {function:?} indexes struct type {composite_type:?} with invalid index {index} (bound {bound})"
+    )]
+    AccessChainStructIndexOutOfBounds {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode.
+        instruction: rspirv::spirv::Op,
+        /// The struct type being indexed.
+        composite_type: TypeId,
+        /// The provided index value.
+        index: u32,
+        /// The member bound.
+        bound: u32,
+    },
+    /// A struct index was not a literal number.
+    #[error(
+        "instruction {instruction:?} in block {block:?} of function {function:?} requires a literal struct index for composite type {composite_type:?}"
+    )]
+    AccessChainStructIndexNotLiteral {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode.
+        instruction: rspirv::spirv::Op,
+        /// The struct type being indexed.
+        composite_type: TypeId,
+    },
+    /// An access chain targeted a non-composite type.
+    #[error(
+        "instruction {instruction:?} in block {block:?} of function {function:?} cannot index non-composite type {composite_type:?}"
+    )]
+    AccessChainNonCompositeTarget {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode.
+        instruction: rspirv::spirv::Op,
+        /// The non-composite type.
+        composite_type: TypeId,
+    },
+    /// An access chain result type does not match the computed target type.
+    #[error(
+        "instruction {instruction:?} in block {block:?} of function {function:?} expects result pointer to {expected:?} but found {found:?}"
+    )]
+    AccessChainResultTypeMismatch {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode.
+        instruction: rspirv::spirv::Op,
+        /// The expected pointee type.
+        expected: TypeId,
+        /// The found pointee type.
+        found: TypeId,
+    },
+    /// An access chain result storage class must match the base pointer storage class.
+    #[error(
+        "instruction {instruction:?} in block {block:?} of function {function:?} has result storage class {result_storage_class:?} but base uses {base_storage_class:?}"
+    )]
+    AccessChainStorageClassMismatch {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode.
+        instruction: rspirv::spirv::Op,
+        /// Base storage class.
+        base_storage_class: rspirv::spirv::StorageClass,
+        /// Result storage class.
+        result_storage_class: rspirv::spirv::StorageClass,
+    },
+    /// A composite instruction requires at least one index operand.
+    #[error(
+        "instruction {instruction:?} in block {block:?} of function {function:?} requires at least one index"
+    )]
+    CompositeInstructionMissingIndexes {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode.
+        instruction: rspirv::spirv::Op,
+    },
+    /// A composite operand is not a composite type.
+    #[error(
+        "instruction {instruction:?} in block {block:?} of function {function:?} requires a composite operand (found {composite_type:?})"
+    )]
+    CompositeOperandNotComposite {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode.
+        instruction: rspirv::spirv::Op,
+        /// The non-composite operand type.
+        composite_type: TypeId,
+    },
+    /// A composite index is out of bounds for the chosen member.
+    #[error(
+        "instruction {instruction:?} in block {block:?} of function {function:?} indexes beyond composite type {composite_type:?} at position {index_position} (index {index}, bound {bound})"
+    )]
+    CompositeIndexOutOfBounds {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode.
+        instruction: rspirv::spirv::Op,
+        /// The composite type being indexed.
+        composite_type: TypeId,
+        /// The zero-based index position within the instruction.
+        index_position: usize,
+        /// The index value that was out of bounds.
+        index: u32,
+        /// The bound for that position.
+        bound: u32,
+    },
     /// A phi incoming value's type does not match the phi's result type.
     #[error("phi in block {block:?} of function {function:?} expects type {expected:?} but incoming value {incoming:?} has type {found:?}")]
     PhiIncomingTypeMismatch {
@@ -3137,11 +3305,10 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
             }
         }
 
-        for (function, header, kind, target) in
-            recorded_merges
-                .iter()
-                .copied()
-                .filter(|(func, _, _, _)| *func == function_id)
+        for (function, header, kind, target) in recorded_merges
+            .iter()
+            .copied()
+            .filter(|(func, _, _, _)| *func == function_id)
         {
             let Some(target_doms) = dominators.get(&target) else {
                 continue;
@@ -3243,6 +3410,571 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                         }
                     }
                     continue;
+                }
+
+                match inst.class.opcode {
+                    rspirv::spirv::Op::AccessChain
+                    | rspirv::spirv::Op::InBoundsAccessChain
+                    | rspirv::spirv::Op::PtrAccessChain
+                    | rspirv::spirv::Op::InBoundsPtrAccessChain
+                    | rspirv::spirv::Op::UntypedPtrAccessChainKHR
+                    | rspirv::spirv::Op::UntypedInBoundsPtrAccessChainKHR => {
+                        let Some(rspirv::dr::Operand::IdRef(base_raw)) = inst.operands.first()
+                        else {
+                            continue;
+                        };
+                        let Some(base_id) = ResultId::try_from(*base_raw).ok() else {
+                            continue;
+                        };
+                        let Some(base_type) = result_types.get(&base_id).copied() else {
+                            continue;
+                        };
+                        let Some(base_ptr_inst) = type_instruction(base_type, &definitions) else {
+                            continue;
+                        };
+                        let (base_storage_class, mut current_type) =
+                            match base_ptr_inst.class.opcode {
+                                rspirv::spirv::Op::TypePointer
+                                | rspirv::spirv::Op::TypeUntypedPointerKHR => {
+                                    let storage = base_ptr_inst
+                                        .operands
+                                        .first()
+                                        .and_then(|op| match op {
+                                            rspirv::dr::Operand::StorageClass(sc) => Some(*sc),
+                                            _ => None,
+                                        })
+                                        .unwrap_or(rspirv::spirv::StorageClass::Function);
+                                    let pointee = base_ptr_inst
+                                        .operands
+                                        .get(1)
+                                        .and_then(|op| match op {
+                                            rspirv::dr::Operand::IdRef(raw) => {
+                                                TypeId::try_from(*raw).ok()
+                                            }
+                                            _ => None,
+                                        })
+                                        .ok_or(ValidationError::AccessChainBaseNotPointer {
+                                            function: function_id,
+                                            block: block_label_id,
+                                            instruction: inst.class.opcode,
+                                            base_type,
+                                        })?;
+                                    (storage, pointee)
+                                }
+                                _ => {
+                                    return Err(ValidationError::AccessChainBaseNotPointer {
+                                        function: function_id,
+                                        block: block_label_id,
+                                        instruction: inst.class.opcode,
+                                        base_type,
+                                    })
+                                }
+                            };
+
+                        // All index operands must be integer scalars when they are ids.
+                        for (operand_index, operand) in inst.operands.iter().enumerate().skip(1) {
+                            if let rspirv::dr::Operand::IdRef(raw) = operand {
+                                let Some(index_id) = ResultId::try_from(*raw).ok() else {
+                                    continue;
+                                };
+                                let Some(index_type) = result_types.get(&index_id).copied() else {
+                                    continue;
+                                };
+                                let Some(index_type_inst) =
+                                    type_instruction(index_type, &definitions)
+                                else {
+                                    continue;
+                                };
+                                let is_int_scalar = matches!(
+                                    index_type_inst.class.opcode,
+                                    rspirv::spirv::Op::TypeInt
+                                );
+                                if !is_int_scalar {
+                                    return Err(ValidationError::AccessChainIndexTypeInvalid {
+                                        function: function_id,
+                                        block: block_label_id,
+                                        instruction: inst.class.opcode,
+                                        operand_index,
+                                        found: index_type,
+                                    });
+                                }
+                            }
+                        }
+
+                        for (operand_index, operand) in inst.operands.iter().enumerate().skip(1) {
+                            let (literal_index, _is_literal_operand) = match operand {
+                                rspirv::dr::Operand::LiteralBit32(v) => (Some(*v), true),
+                                rspirv::dr::Operand::LiteralBit64(v) => (Some(*v as u32), true),
+                                rspirv::dr::Operand::IdRef(raw) => {
+                                    let const_inst = ResultId::try_from(*raw)
+                                        .ok()
+                                        .and_then(|rid| definitions.get(&rid));
+                                    let value =
+                                        const_inst.and_then(|inst| match inst.class.opcode {
+                                            rspirv::spirv::Op::Constant => {
+                                                inst.operands.first().and_then(|op| match op {
+                                                    rspirv::dr::Operand::LiteralBit32(v) => {
+                                                        Some(*v)
+                                                    }
+                                                    rspirv::dr::Operand::LiteralBit64(v) => {
+                                                        Some(*v as u32)
+                                                    }
+                                                    _ => None,
+                                                })
+                                            }
+                                            _ => None,
+                                        });
+                                    (value, false)
+                                }
+                                _ => (None, false),
+                            };
+                            let Some(current_inst) = type_instruction(current_type, &definitions)
+                            else {
+                                return Err(ValidationError::AccessChainNonCompositeTarget {
+                                    function: function_id,
+                                    block: block_label_id,
+                                    instruction: inst.class.opcode,
+                                    composite_type: current_type,
+                                });
+                            };
+                            match current_inst.class.opcode {
+                                rspirv::spirv::Op::TypeStruct => {
+                                    let Some(index_val) = literal_index else {
+                                        return Err(
+                                            ValidationError::AccessChainStructIndexNotLiteral {
+                                                function: function_id,
+                                                block: block_label_id,
+                                                instruction: inst.class.opcode,
+                                                composite_type: current_type,
+                                            },
+                                        );
+                                    };
+                                    let bound = current_inst.operands.len() as u32;
+                                    if index_val >= bound {
+                                        return Err(
+                                            ValidationError::AccessChainStructIndexOutOfBounds {
+                                                function: function_id,
+                                                block: block_label_id,
+                                                instruction: inst.class.opcode,
+                                                composite_type: current_type,
+                                                index: index_val,
+                                                bound,
+                                            },
+                                        );
+                                    }
+                                    let member_type = current_inst
+                                        .operands
+                                        .get(index_val as usize)
+                                        .and_then(|op| match op {
+                                            rspirv::dr::Operand::IdRef(raw) => {
+                                                TypeId::try_from(*raw).ok()
+                                            }
+                                            _ => None,
+                                        });
+                                    current_type = member_type.ok_or(
+                                        ValidationError::AccessChainNonCompositeTarget {
+                                            function: function_id,
+                                            block: block_label_id,
+                                            instruction: inst.class.opcode,
+                                            composite_type: current_type,
+                                        },
+                                    )?;
+                                }
+                                rspirv::spirv::Op::TypeArray
+                                | rspirv::spirv::Op::TypeRuntimeArray => {
+                                    let element_type =
+                                        current_inst.operands.first().and_then(|op| match op {
+                                            rspirv::dr::Operand::IdRef(raw) => {
+                                                TypeId::try_from(*raw).ok()
+                                            }
+                                            _ => None,
+                                        });
+                                    if let (Some(len), Some(idx)) =
+                                        (array_length(current_inst, &definitions), literal_index)
+                                    {
+                                        if idx >= len {
+                                            return Err(
+                                                ValidationError::AccessChainStructIndexOutOfBounds {
+                                                    function: function_id,
+                                                    block: block_label_id,
+                                                    instruction: inst.class.opcode,
+                                                    composite_type: current_type,
+                                                    index: idx,
+                                                    bound: len,
+                                                },
+                                            );
+                                        }
+                                    }
+                                    current_type = element_type.ok_or(
+                                        ValidationError::AccessChainNonCompositeTarget {
+                                            function: function_id,
+                                            block: block_label_id,
+                                            instruction: inst.class.opcode,
+                                            composite_type: current_type,
+                                        },
+                                    )?;
+                                }
+                                rspirv::spirv::Op::TypeVector => {
+                                    let element_type =
+                                        current_inst.operands.first().and_then(|op| match op {
+                                            rspirv::dr::Operand::IdRef(raw) => {
+                                                TypeId::try_from(*raw).ok()
+                                            }
+                                            _ => None,
+                                        });
+                                    if let (Some(idx), Some(bound)) = (
+                                        literal_index,
+                                        current_inst.operands.get(1).and_then(|op| match op {
+                                            rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+                                            _ => None,
+                                        }),
+                                    ) {
+                                        if idx >= bound {
+                                            return Err(
+                                                ValidationError::AccessChainStructIndexOutOfBounds {
+                                                    function: function_id,
+                                                    block: block_label_id,
+                                                    instruction: inst.class.opcode,
+                                                    composite_type: current_type,
+                                                    index: idx,
+                                                    bound,
+                                                },
+                                            );
+                                        }
+                                    }
+                                    current_type = element_type.ok_or(
+                                        ValidationError::AccessChainNonCompositeTarget {
+                                            function: function_id,
+                                            block: block_label_id,
+                                            instruction: inst.class.opcode,
+                                            composite_type: current_type,
+                                        },
+                                    )?;
+                                }
+                                rspirv::spirv::Op::TypeMatrix => {
+                                    let column_type =
+                                        current_inst.operands.first().and_then(|op| match op {
+                                            rspirv::dr::Operand::IdRef(raw) => {
+                                                TypeId::try_from(*raw).ok()
+                                            }
+                                            _ => None,
+                                        });
+                                    if let (Some(idx), Some(bound)) = (
+                                        literal_index,
+                                        current_inst.operands.get(1).and_then(|op| match op {
+                                            rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+                                            _ => None,
+                                        }),
+                                    ) {
+                                        if idx >= bound {
+                                            return Err(
+                                                ValidationError::AccessChainStructIndexOutOfBounds {
+                                                    function: function_id,
+                                                    block: block_label_id,
+                                                    instruction: inst.class.opcode,
+                                                    composite_type: current_type,
+                                                    index: idx,
+                                                    bound,
+                                                },
+                                            );
+                                        }
+                                    }
+                                    current_type = column_type.ok_or(
+                                        ValidationError::AccessChainNonCompositeTarget {
+                                            function: function_id,
+                                            block: block_label_id,
+                                            instruction: inst.class.opcode,
+                                            composite_type: current_type,
+                                        },
+                                    )?;
+                                }
+                                rspirv::spirv::Op::TypePointer => {
+                                    let pointee =
+                                        current_inst.operands.get(1).and_then(|op| match op {
+                                            rspirv::dr::Operand::IdRef(raw) => {
+                                                TypeId::try_from(*raw).ok()
+                                            }
+                                            _ => None,
+                                        });
+                                    current_type = pointee.ok_or(
+                                        ValidationError::AccessChainNonCompositeTarget {
+                                            function: function_id,
+                                            block: block_label_id,
+                                            instruction: inst.class.opcode,
+                                            composite_type: current_type,
+                                        },
+                                    )?;
+                                }
+                                _ => {
+                                    return Err(ValidationError::AccessChainNonCompositeTarget {
+                                        function: function_id,
+                                        block: block_label_id,
+                                        instruction: inst.class.opcode,
+                                        composite_type: current_type,
+                                    });
+                                }
+                            }
+                            // Subsequent indexes apply to the new composite type.
+                            let _ = operand_index;
+                        }
+
+                        let Some(result_type) = result_type else {
+                            continue;
+                        };
+                        let Some(result_inst) = type_instruction(result_type, &definitions) else {
+                            continue;
+                        };
+                        let (result_storage, result_pointee) = match result_inst.class.opcode {
+                            rspirv::spirv::Op::TypePointer
+                            | rspirv::spirv::Op::TypeUntypedPointerKHR => {
+                                let storage =
+                                    result_inst.operands.first().and_then(|op| match op {
+                                        rspirv::dr::Operand::StorageClass(sc) => Some(*sc),
+                                        _ => None,
+                                    });
+                                let pointee = result_inst.operands.get(1).and_then(|op| match op {
+                                    rspirv::dr::Operand::IdRef(raw) => TypeId::try_from(*raw).ok(),
+                                    _ => None,
+                                });
+                                let (storage, pointee) = match (storage, pointee) {
+                                    (Some(storage), Some(pointee)) => (storage, pointee),
+                                    _ => {
+                                        return Err(
+                                            ValidationError::AccessChainResultTypeNotPointer {
+                                                function: function_id,
+                                                block: block_label_id,
+                                                instruction: inst.class.opcode,
+                                                result_type,
+                                            },
+                                        )
+                                    }
+                                };
+                                (storage, pointee)
+                            }
+                            _ => {
+                                return Err(ValidationError::AccessChainResultTypeNotPointer {
+                                    function: function_id,
+                                    block: block_label_id,
+                                    instruction: inst.class.opcode,
+                                    result_type,
+                                })
+                            }
+                        };
+
+                        if base_storage_class != result_storage {
+                            return Err(ValidationError::AccessChainStorageClassMismatch {
+                                function: function_id,
+                                block: block_label_id,
+                                instruction: inst.class.opcode,
+                                base_storage_class,
+                                result_storage_class: result_storage,
+                            });
+                        }
+                        if current_type != result_pointee {
+                            return Err(ValidationError::AccessChainResultTypeMismatch {
+                                function: function_id,
+                                block: block_label_id,
+                                instruction: inst.class.opcode,
+                                expected: current_type,
+                                found: result_pointee,
+                            });
+                        }
+                    }
+                    rspirv::spirv::Op::CopyObject => {
+                        if let (Some(result_type), Some(rspirv::dr::Operand::IdRef(source_raw))) =
+                            (result_type, inst.operands.first())
+                        {
+                            if let Ok(source_id) = ResultId::try_from(*source_raw) {
+                                if let Some(source_type) = result_types.get(&source_id).copied() {
+                                    if source_type != result_type {
+                                        return Err(
+                                            ValidationError::InstructionResultTypeMismatch {
+                                                function: function_id,
+                                                block: block_label_id,
+                                                instruction: inst.class.opcode,
+                                                expected: source_type,
+                                                found: result_type,
+                                            },
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    rspirv::spirv::Op::Load => {
+                        if let (Some(result_type), Some(rspirv::dr::Operand::IdRef(ptr_raw))) =
+                            (result_type, inst.operands.first())
+                        {
+                            if let Ok(ptr_id) = ResultId::try_from(*ptr_raw) {
+                                if let Some(ptr_inst) = definitions.get(&ptr_id) {
+                                    if let Some(ptr_type_raw) = ptr_inst.result_type {
+                                        if let Ok(ptr_type) = TypeId::try_from(ptr_type_raw) {
+                                            if let Some(ptr_type_inst) =
+                                                type_instruction(ptr_type, &definitions)
+                                            {
+                                                if ptr_type_inst.class.opcode
+                                                    == rspirv::spirv::Op::TypePointer
+                                                {
+                                                    if let Some(pointee) =
+                                                        ptr_type_inst.operands.get(1)
+                                                    {
+                                                        if let rspirv::dr::Operand::IdRef(
+                                                            pointee_raw,
+                                                        ) = pointee
+                                                        {
+                                                            if let Ok(pointee_type) =
+                                                                TypeId::try_from(*pointee_raw)
+                                                            {
+                                                                if pointee_type != result_type {
+                                                                    return Err(
+                                                                        ValidationError::InstructionResultTypeMismatch {
+                                                                            function: function_id,
+                                                                            block: block_label_id,
+                                                                            instruction: inst.class.opcode,
+                                                                            expected: pointee_type,
+                                                                            found: result_type,
+                                                                        },
+                                                                    );
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    rspirv::spirv::Op::CompositeExtract | rspirv::spirv::Op::CompositeInsert => {
+                        let index_start = if inst.class.opcode == rspirv::spirv::Op::CompositeInsert
+                        {
+                            2
+                        } else {
+                            1
+                        };
+                        let literal_indexes: Option<Vec<u32>> = inst
+                            .operands
+                            .iter()
+                            .skip(index_start)
+                            .map(|op| match op {
+                                rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+                                rspirv::dr::Operand::LiteralBit64(v) => Some(*v as u32),
+                                _ => None,
+                            })
+                            .collect();
+                        if literal_indexes.is_none() {
+                            return Err(ValidationError::CompositeInstructionMissingIndexes {
+                                function: function_id,
+                                block: block_label_id,
+                                instruction: inst.class.opcode,
+                            });
+                        }
+                        let literal_indexes = literal_indexes.unwrap();
+                        if literal_indexes.is_empty() {
+                            return Err(ValidationError::CompositeInstructionMissingIndexes {
+                                function: function_id,
+                                block: block_label_id,
+                                instruction: inst.class.opcode,
+                            });
+                        }
+                        let composite_operand = inst
+                            .operands
+                            .get(if inst.class.opcode == rspirv::spirv::Op::CompositeInsert {
+                                1
+                            } else {
+                                0
+                            })
+                            .and_then(|op| match op {
+                                rspirv::dr::Operand::IdRef(raw) => ResultId::try_from(*raw).ok(),
+                                _ => None,
+                            });
+                        if let (Some(result_type), Some(composite_id)) =
+                            (result_type, composite_operand)
+                        {
+                            if let Some(composite_type) = result_types.get(&composite_id).copied() {
+                                let component_type = composite_member_type(
+                                    composite_type,
+                                    &literal_indexes,
+                                    &definitions,
+                                )
+                                .map_err(|err| match err {
+                                    CompositeWalkError::NotComposite => {
+                                        ValidationError::CompositeOperandNotComposite {
+                                            function: function_id,
+                                            block: block_label_id,
+                                            instruction: inst.class.opcode,
+                                            composite_type,
+                                        }
+                                    }
+                                    CompositeWalkError::OutOfBounds {
+                                        composite_type,
+                                        index_position,
+                                        index,
+                                        bound,
+                                    } => ValidationError::CompositeIndexOutOfBounds {
+                                        function: function_id,
+                                        block: block_label_id,
+                                        instruction: inst.class.opcode,
+                                        composite_type,
+                                        index_position,
+                                        index,
+                                        bound,
+                                    },
+                                })?;
+
+                                if inst.class.opcode == rspirv::spirv::Op::CompositeExtract {
+                                    if component_type != result_type {
+                                        return Err(
+                                            ValidationError::InstructionResultTypeMismatch {
+                                                function: function_id,
+                                                block: block_label_id,
+                                                instruction: inst.class.opcode,
+                                                expected: component_type,
+                                                found: result_type,
+                                            },
+                                        );
+                                    }
+                                } else {
+                                    if composite_type != result_type {
+                                        return Err(
+                                            ValidationError::InstructionResultTypeMismatch {
+                                                function: function_id,
+                                                block: block_label_id,
+                                                instruction: inst.class.opcode,
+                                                expected: composite_type,
+                                                found: result_type,
+                                            },
+                                        );
+                                    }
+                                    let object_type = inst
+                                        .operands
+                                        .first()
+                                        .and_then(|op| match op {
+                                            rspirv::dr::Operand::IdRef(raw) => {
+                                                ResultId::try_from(*raw).ok()
+                                            }
+                                            _ => None,
+                                        })
+                                        .and_then(|rid| result_types.get(&rid).copied());
+                                    if let Some(object_type) = object_type {
+                                        if object_type != component_type {
+                                            return Err(ValidationError::OperandTypeMismatch {
+                                                function: function_id,
+                                                block: block_label_id,
+                                                instruction: inst.class.opcode,
+                                                operand_index: 0,
+                                                expected: component_type,
+                                                found: object_type,
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
                 }
 
                 // Result-type expectations for logical/bitwise/shift ops.
@@ -3639,6 +4371,111 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
         }
     }
     Ok(())
+}
+
+#[derive(Debug)]
+enum CompositeWalkError {
+    NotComposite,
+    OutOfBounds {
+        composite_type: TypeId,
+        index_position: usize,
+        index: u32,
+        bound: u32,
+    },
+}
+
+fn type_instruction<'a>(
+    type_id: TypeId,
+    definitions: &'a HashMap<ResultId, rspirv::dr::Instruction>,
+) -> Option<&'a rspirv::dr::Instruction> {
+    let result_id = ResultId::try_from(u32::from(type_id)).ok()?;
+    definitions.get(&result_id)
+}
+
+fn composite_member_type(
+    composite_type: TypeId,
+    indexes: &[u32],
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+) -> Result<TypeId, CompositeWalkError> {
+    if indexes.is_empty() {
+        return Err(CompositeWalkError::NotComposite);
+    }
+    let mut current_type = composite_type;
+    for (position, &index) in indexes.iter().enumerate() {
+        let Some(inst) = type_instruction(current_type, definitions) else {
+            return Err(CompositeWalkError::NotComposite);
+        };
+        match inst.class.opcode {
+            rspirv::spirv::Op::TypeVector | rspirv::spirv::Op::TypeMatrix => {
+                let element_type = inst
+                    .operands
+                    .first()
+                    .and_then(|op| match op {
+                        rspirv::dr::Operand::IdRef(raw) => TypeId::try_from(*raw).ok(),
+                        _ => None,
+                    })
+                    .ok_or(CompositeWalkError::NotComposite)?;
+                let bound = inst
+                    .operands
+                    .get(1)
+                    .and_then(|op| match op {
+                        rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+                        _ => None,
+                    })
+                    .unwrap_or(0);
+                if bound != 0 && index >= bound {
+                    return Err(CompositeWalkError::OutOfBounds {
+                        composite_type: current_type,
+                        index_position: position,
+                        index,
+                        bound,
+                    });
+                }
+                current_type = element_type;
+            }
+            rspirv::spirv::Op::TypeArray | rspirv::spirv::Op::TypeRuntimeArray => {
+                let element_type = inst
+                    .operands
+                    .first()
+                    .and_then(|op| match op {
+                        rspirv::dr::Operand::IdRef(raw) => TypeId::try_from(*raw).ok(),
+                        _ => None,
+                    })
+                    .ok_or(CompositeWalkError::NotComposite)?;
+                if inst.class.opcode == rspirv::spirv::Op::TypeArray {
+                    if let Some(bound) = array_length(inst, definitions) {
+                        if index >= bound {
+                            return Err(CompositeWalkError::OutOfBounds {
+                                composite_type: current_type,
+                                index_position: position,
+                                index,
+                                bound,
+                            });
+                        }
+                    }
+                }
+                current_type = element_type;
+            }
+            rspirv::spirv::Op::TypeStruct => {
+                let bound = inst.operands.len() as u32;
+                if index >= bound {
+                    return Err(CompositeWalkError::OutOfBounds {
+                        composite_type: current_type,
+                        index_position: position,
+                        index,
+                        bound,
+                    });
+                }
+                let member_type = inst.operands.get(index as usize).and_then(|op| match op {
+                    rspirv::dr::Operand::IdRef(raw) => TypeId::try_from(*raw).ok(),
+                    _ => None,
+                });
+                current_type = member_type.ok_or(CompositeWalkError::NotComposite)?;
+            }
+            _ => return Err(CompositeWalkError::NotComposite),
+        }
+    }
+    Ok(current_type)
 }
 
 fn constant_u32_from_defs(
@@ -7118,10 +7955,7 @@ fn enforce_descriptor_storage_classes(module: &Module) -> Result<(), ValidationE
     Ok(())
 }
 
-fn enforce_descriptor_requirements(
-    module: &Module,
-    env: TargetEnv,
-) -> Result<(), ValidationError> {
+fn enforce_descriptor_requirements(module: &Module, env: TargetEnv) -> Result<(), ValidationError> {
     use rspirv::spirv::Decoration;
 
     if !is_vulkan_env(env) {
@@ -7168,10 +8002,7 @@ fn enforce_descriptor_requirements(
         ) {
             continue;
         }
-        let decos = decoration_lookup
-            .get(&rid)
-            .cloned()
-            .unwrap_or_default();
+        let decos = decoration_lookup.get(&rid).cloned().unwrap_or_default();
         if decos.iter().any(|d| *d == Decoration::BuiltIn) {
             continue;
         }
@@ -8945,8 +9776,8 @@ fn validate_entry_point_interface_storage_classes(
                 _ => continue,
             };
             if let Ok(id) = ResultId::try_from(interface_id) {
-                    if let Some(inst) = definitions.get(&id) {
-                        if let Some(rspirv::dr::Operand::StorageClass(storage)) = inst.operands.first()
+                if let Some(inst) = definitions.get(&id) {
+                    if let Some(rspirv::dr::Operand::StorageClass(storage)) = inst.operands.first()
                     {
                         if !seen_interface_ids.insert(id.into()) {
                             return Err(ValidationError::DuplicateEntryPointInterface {
@@ -8954,9 +9785,9 @@ fn validate_entry_point_interface_storage_classes(
                                 interface: id.into(),
                             });
                         }
-                        let has_patch = decoration_lookup
-                            .get(&id)
-                            .map_or(false, |decs| decs.contains(&rspirv::spirv::Decoration::Patch));
+                        let has_patch = decoration_lookup.get(&id).map_or(false, |decs| {
+                            decs.contains(&rspirv::spirv::Decoration::Patch)
+                        });
                         let storage_allowed = matches!(
                             *storage,
                             rspirv::spirv::StorageClass::Input
@@ -20392,12 +21223,16 @@ mod tests {
             "%void = OpTypeVoid",
             "%fn = OpTypeFunction %void",
             "%u32 = OpTypeInt 32 0",
-            "%ptr = OpTypePointer Function %u32",
+            "%two = OpConstant %u32 2",
+            "%inner = OpTypeArray %u32 %two",
+            "%outer = OpTypeArray %inner %two",
+            "%ptr_outer = OpTypePointer Function %outer",
+            "%elem_ptr = OpTypePointer Function %u32",
             "%zero = OpConstant %u32 0",
             "%main = OpFunction %void None %fn",
             "%entry = OpLabel",
-            "%var = OpVariable %ptr Function",
-            "%ac = OpAccessChain %ptr %var %zero %zero",
+            "%var = OpVariable %ptr_outer Function",
+            "%ac = OpAccessChain %elem_ptr %var %zero %zero",
             "OpReturn",
             "OpFunctionEnd",
         ]
@@ -20417,6 +21252,550 @@ mod tests {
                 limit: 1,
                 found: 2
             }
+        );
+    }
+
+    #[test]
+    fn access_chain_base_must_be_pointer() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u32 = OpTypeInt 32 0",
+            "%ptr = OpTypePointer Function %u32",
+            "%zero = OpConstant %u32 0",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            // Base operand is %zero, which is not a pointer.
+            "%ac = OpAccessChain %ptr %zero %zero",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("access chain base must be a pointer");
+        assert!(matches!(
+            err,
+            ValidationError::AccessChainBaseNotPointer {
+                instruction: rspirv::spirv::Op::AccessChain,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn access_chain_requires_composite_targets() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u32 = OpTypeInt 32 0",
+            "%ptr_u32 = OpTypePointer Function %u32",
+            "%zero = OpConstant %u32 0",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "%var = OpVariable %ptr_u32 Function",
+            // %var points to a scalar; indexing into it is invalid.
+            "%ac = OpAccessChain %ptr_u32 %var %zero",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("access chain must target composite types");
+        assert!(matches!(
+            err,
+            ValidationError::AccessChainNonCompositeTarget {
+                instruction: rspirv::spirv::Op::AccessChain,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn access_chain_indexes_must_be_integer_scalars() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u32 = OpTypeInt 32 0",
+            "%f32 = OpTypeFloat 32",
+            "%len = OpConstant %u32 4",
+            "%array = OpTypeArray %u32 %len",
+            "%ptr_array = OpTypePointer Function %array",
+            "%ptr_u32 = OpTypePointer Function %u32",
+            "%fzero = OpConstant %f32 0",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "%var = OpVariable %ptr_array Function",
+            // Index operand uses a float constant.
+            "%ac = OpAccessChain %ptr_u32 %var %fzero",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("access chain indexes must be integer scalars");
+        assert!(matches!(
+            err,
+            ValidationError::AccessChainIndexTypeInvalid {
+                instruction: rspirv::spirv::Op::AccessChain,
+                operand_index: 1,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn access_chain_struct_index_must_be_literal() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%u32 = OpTypeInt 32 0",
+            "%fn = OpTypeFunction %void",
+            "%struct = OpTypeStruct %u32",
+            "%ptr_struct = OpTypePointer Function %struct",
+            "%ptr_u32 = OpTypePointer Function %u32",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "%var = OpVariable %ptr_struct Function",
+            "%idx_var = OpVariable %ptr_u32 Function",
+            "%idx = OpLoad %u32 %idx_var",
+            // Struct index is provided via an id that is not a literal constant.
+            "%ac = OpAccessChain %ptr_u32 %var %idx",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("struct indexes must be literals");
+        assert!(
+            matches!(
+                err,
+                ValidationError::AccessChainStructIndexNotLiteral {
+                    instruction: rspirv::spirv::Op::AccessChain,
+                    ..
+                }
+            ),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn access_chain_struct_index_must_be_in_bounds() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u32 = OpTypeInt 32 0",
+            "%struct = OpTypeStruct %u32",
+            "%ptr_struct = OpTypePointer Function %struct",
+            "%ptr_u32 = OpTypePointer Function %u32",
+            "%one = OpConstant %u32 1",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "%var = OpVariable %ptr_struct Function",
+            // Struct has one member; index 1 is out of bounds.
+            "%ac = OpAccessChain %ptr_u32 %var %one",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("struct index must be within bounds");
+        assert!(matches!(
+            err,
+            ValidationError::AccessChainStructIndexOutOfBounds {
+                instruction: rspirv::spirv::Op::AccessChain,
+                index: 1,
+                bound: 1,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn access_chain_result_pointer_must_match_target_type() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u32 = OpTypeInt 32 0",
+            "%f32 = OpTypeFloat 32",
+            "%two = OpConstant %u32 2",
+            "%inner = OpTypeArray %u32 %two",
+            "%outer = OpTypeArray %inner %two",
+            "%ptr_array = OpTypePointer Function %outer",
+            "%ptr_u32 = OpTypePointer Function %u32",
+            "%ptr_f32 = OpTypePointer Function %f32",
+            "%zero = OpConstant %u32 0",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "%var = OpVariable %ptr_array Function",
+            // Result type claims to point to %f32, but the chain resolves to %u32.
+            "%ac = OpAccessChain %ptr_f32 %var %zero %zero",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("result pointer must match computed target type");
+        assert!(
+            matches!(
+                err,
+                ValidationError::AccessChainResultTypeMismatch {
+                    instruction: rspirv::spirv::Op::AccessChain,
+                    ..
+                }
+            ),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn access_chain_storage_class_must_match_base() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u32 = OpTypeInt 32 0",
+            "%two = OpConstant %u32 2",
+            "%inner = OpTypeArray %u32 %two",
+            "%outer = OpTypeArray %inner %two",
+            "%ptr_function_array = OpTypePointer Function %outer",
+            "%ptr_uniform = OpTypePointer Uniform %u32",
+            "%elem_ptr_function = OpTypePointer Function %u32",
+            "%zero = OpConstant %u32 0",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "%var = OpVariable %ptr_function_array Function",
+            // Result uses a different storage class than the base pointer.
+            "%ac = OpAccessChain %ptr_uniform %var %zero %zero",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("result storage class must match base pointer storage class");
+        assert!(
+            matches!(
+                err,
+                ValidationError::AccessChainStorageClassMismatch {
+                    instruction: rspirv::spirv::Op::AccessChain,
+                    ..
+                }
+            ),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn ptr_access_chain_indexes_must_be_integer_scalars() {
+        use rspirv::{
+            binary::Assemble,
+            dr::{Builder, InsertPoint, Operand},
+            spirv::{Capability, FunctionControl, MemoryModel, Op, StorageClass},
+        };
+
+        let mut b = Builder::new();
+        b.capability(Capability::Addresses);
+        b.capability(Capability::Shader);
+        b.capability(Capability::PhysicalStorageBufferAddresses);
+        b.capability(Capability::Kernel);
+        b.capability(Capability::VariablePointersStorageBuffer);
+        b.capability(Capability::VariablePointers);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Physical64,
+            MemoryModel::OpenCL,
+        );
+
+        let void = b.type_void();
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let u32 = b.type_int(32, 0);
+        let f32 = b.type_float(32, None);
+        let len = b.constant_bit32(u32, 4);
+        let array = b.type_array(u32, len);
+        let ptr_array = b.type_pointer(None, StorageClass::Function, array);
+        let ptr_u32 = b.type_pointer(None, StorageClass::Function, u32);
+        let fzero = b.constant_bit32(f32, 0);
+
+        b.begin_function(void, None, FunctionControl::NONE, fn_ty)
+            .unwrap();
+        b.begin_block(None).unwrap();
+        let var = b.variable(ptr_array, None, StorageClass::Function, None);
+        let result_id = b.id();
+        b.insert_into_block(
+            InsertPoint::End,
+            rspirv::dr::Instruction::new(
+                Op::PtrAccessChain,
+                Some(ptr_u32),
+                Some(result_id),
+                vec![Operand::IdRef(var), Operand::IdRef(fzero)],
+            ),
+        )
+        .unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let binary = b.module().assemble();
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("ptr access chain indexes must be integer scalars");
+        assert!(
+            matches!(
+                err,
+                ValidationError::AccessChainIndexTypeInvalid {
+                    instruction: rspirv::spirv::Op::PtrAccessChain,
+                    operand_index: 1,
+                    ..
+                }
+            ),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn ptr_access_chain_struct_index_must_be_literal() {
+        use rspirv::{
+            binary::Assemble,
+            dr::{Builder, InsertPoint, Operand},
+            spirv::{Capability, FunctionControl, MemoryModel, Op, StorageClass},
+        };
+
+        let mut b = Builder::new();
+        b.capability(Capability::Addresses);
+        b.capability(Capability::Shader);
+        b.capability(Capability::PhysicalStorageBufferAddresses);
+        b.capability(Capability::Kernel);
+        b.capability(Capability::VariablePointersStorageBuffer);
+        b.capability(Capability::VariablePointers);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Physical64,
+            MemoryModel::OpenCL,
+        );
+
+        let void = b.type_void();
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let u32 = b.type_int(32, 0);
+        let struct_ty = b.type_struct([u32]);
+        let ptr_struct = b.type_pointer(None, StorageClass::Function, struct_ty);
+        let ptr_u32 = b.type_pointer(None, StorageClass::Function, u32);
+
+        b.begin_function(void, None, FunctionControl::NONE, fn_ty)
+            .unwrap();
+        b.begin_block(None).unwrap();
+        let var = b.variable(ptr_struct, None, StorageClass::Function, None);
+        let idx_var = b.variable(ptr_u32, None, StorageClass::Function, None);
+
+        let loaded_idx = b.id();
+        b.insert_into_block(
+            InsertPoint::End,
+            rspirv::dr::Instruction::new(
+                Op::Load,
+                Some(u32),
+                Some(loaded_idx),
+                vec![Operand::IdRef(idx_var)],
+            ),
+        )
+        .unwrap();
+
+        let ac_id = b.id();
+        b.insert_into_block(
+            InsertPoint::End,
+            rspirv::dr::Instruction::new(
+                Op::PtrAccessChain,
+                Some(ptr_u32),
+                Some(ac_id),
+                vec![Operand::IdRef(var), Operand::IdRef(loaded_idx)],
+            ),
+        )
+        .unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let binary = b.module().assemble();
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("ptr struct indexes must be literals");
+        assert!(
+            matches!(
+                err,
+                ValidationError::AccessChainStructIndexNotLiteral {
+                    instruction: rspirv::spirv::Op::PtrAccessChain,
+                    ..
+                }
+            ),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn ptr_access_chain_result_pointer_must_match_target_type() {
+        use rspirv::{
+            binary::Assemble,
+            dr::{Builder, InsertPoint, Operand},
+            spirv::{Capability, FunctionControl, MemoryModel, Op, StorageClass},
+        };
+
+        let mut b = Builder::new();
+        b.capability(Capability::Addresses);
+        b.capability(Capability::Shader);
+        b.capability(Capability::PhysicalStorageBufferAddresses);
+        b.capability(Capability::Kernel);
+        b.capability(Capability::VariablePointersStorageBuffer);
+        b.capability(Capability::VariablePointers);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Physical64,
+            MemoryModel::OpenCL,
+        );
+
+        let void = b.type_void();
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let u32 = b.type_int(32, 0);
+        let f32 = b.type_float(32, None);
+        let len = b.constant_bit32(u32, 4);
+        let array = b.type_array(u32, len);
+        let ptr_array = b.type_pointer(None, StorageClass::Function, array);
+        let ptr_f32 = b.type_pointer(None, StorageClass::Function, f32);
+        let zero = b.constant_bit32(u32, 0);
+
+        b.begin_function(void, None, FunctionControl::NONE, fn_ty)
+            .unwrap();
+        b.begin_block(None).unwrap();
+        let var = b.variable(ptr_array, None, StorageClass::Function, None);
+        let ac_id = b.id();
+        b.insert_into_block(
+            InsertPoint::End,
+            rspirv::dr::Instruction::new(
+                Op::PtrAccessChain,
+                Some(ptr_f32),
+                Some(ac_id),
+                vec![Operand::IdRef(var), Operand::IdRef(zero)],
+            ),
+        )
+        .unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let binary = b.module().assemble();
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("ptr access chain result pointer must match target type");
+        assert!(
+            matches!(
+                err,
+                ValidationError::AccessChainResultTypeMismatch {
+                    instruction: rspirv::spirv::Op::PtrAccessChain,
+                    ..
+                }
+            ),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn ptr_access_chain_storage_class_must_match_base() {
+        use rspirv::{
+            binary::Assemble,
+            dr::{Builder, InsertPoint, Operand},
+            spirv::{Capability, FunctionControl, MemoryModel, Op, StorageClass},
+        };
+
+        let mut b = Builder::new();
+        b.capability(Capability::Addresses);
+        b.capability(Capability::Shader);
+        b.capability(Capability::PhysicalStorageBufferAddresses);
+        b.capability(Capability::Kernel);
+        b.capability(Capability::VariablePointersStorageBuffer);
+        b.capability(Capability::VariablePointers);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Physical64,
+            MemoryModel::OpenCL,
+        );
+
+        let void = b.type_void();
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let u32 = b.type_int(32, 0);
+        let len = b.constant_bit32(u32, 4);
+        let array = b.type_array(u32, len);
+        let ptr_array = b.type_pointer(None, StorageClass::Function, array);
+        let ptr_u32_workgroup = b.type_pointer(None, StorageClass::Workgroup, u32);
+        let zero = b.constant_bit32(u32, 0);
+
+        b.begin_function(void, None, FunctionControl::NONE, fn_ty)
+            .unwrap();
+        b.begin_block(None).unwrap();
+        let var = b.variable(ptr_array, None, StorageClass::Function, None);
+        let ac_id = b.id();
+        b.insert_into_block(
+            InsertPoint::End,
+            rspirv::dr::Instruction::new(
+                Op::PtrAccessChain,
+                Some(ptr_u32_workgroup),
+                Some(ac_id),
+                vec![Operand::IdRef(var), Operand::IdRef(zero)],
+            ),
+        )
+        .unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let binary = b.module().assemble();
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("ptr access chain storage class must match base");
+        assert!(
+            matches!(
+                err,
+                ValidationError::AccessChainStorageClassMismatch {
+                    instruction: rspirv::spirv::Op::PtrAccessChain,
+                    ..
+                }
+            ),
+            "unexpected error: {err:?}"
         );
     }
 
@@ -29844,12 +31223,7 @@ mod tests {
         let err = MaybeValidModule::Text(&text)
             .validate(TargetEnv::Vulkan1_2)
             .unwrap_err();
-        assert_eq!(
-            err,
-            ValidationError::ComponentOutOfRange {
-                component: 5
-            }
-        );
+        assert_eq!(err, ValidationError::ComponentOutOfRange { component: 5 });
     }
 
     #[test]
@@ -33240,6 +34614,265 @@ OpFunctionEnd
 "#;
         assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
             .expect("StoragePushConstant8 should allow 8-bit push constants");
+    }
+
+    #[test]
+    fn composite_extract_result_type_must_match_component() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let uint = b.type_int(32, 0);
+        let vec_ty = b.type_vector(int, 2);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let header = b.begin_block(None).unwrap();
+        let composite = b.undef(vec_ty, None);
+        b.composite_extract(uint, None, composite, [0]).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let words = b.module().assemble();
+        let err = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("composite extract result type must match component type");
+        assert_eq!(
+            err,
+            ValidationError::InstructionResultTypeMismatch {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(header).unwrap(),
+                instruction: rspirv::spirv::Op::CompositeExtract,
+                expected: TypeId::try_from(int).unwrap(),
+                found: TypeId::try_from(uint).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn composite_extract_indexes_are_checked() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let vec_ty = b.type_vector(int, 2);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let header = b.begin_block(None).unwrap();
+        let zero = b.constant_bit32(int, 0);
+        let composite = b.constant_composite(vec_ty, [zero, zero]);
+        b.composite_extract(int, None, composite, [3]).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let words = b.module().assemble();
+        let err = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("composite extract indexes must be in range");
+        assert_eq!(
+            err,
+            ValidationError::CompositeIndexOutOfBounds {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(header).unwrap(),
+                instruction: rspirv::spirv::Op::CompositeExtract,
+                composite_type: TypeId::try_from(vec_ty).unwrap(),
+                index_position: 0,
+                index: 3,
+                bound: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn composite_insert_requires_component_type() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let uint = b.type_int(32, 0);
+        let vec_ty = b.type_vector(int, 2);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let header = b.begin_block(None).unwrap();
+        let object = b.constant_bit32(uint, 1);
+        let zero = b.constant_bit32(int, 0);
+        let composite = b.constant_composite(vec_ty, [zero, zero]);
+        b.composite_insert(vec_ty, None, object, composite, [0])
+            .unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let words = b.module().assemble();
+        let err = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("composite insert requires component type to match object");
+        assert_eq!(
+            err,
+            ValidationError::OperandTypeMismatch {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(header).unwrap(),
+                instruction: rspirv::spirv::Op::CompositeInsert,
+                operand_index: 0,
+                expected: TypeId::try_from(int).unwrap(),
+                found: TypeId::try_from(uint).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn composite_insert_result_type_matches_composite() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let vec2 = b.type_vector(int, 2);
+        let vec3 = b.type_vector(int, 3);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let header = b.begin_block(None).unwrap();
+        let zero = b.constant_bit32(int, 0);
+        let composite = b.constant_composite(vec2, [zero, zero]);
+        b.composite_insert(vec3, None, zero, composite, [1])
+            .unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let words = b.module().assemble();
+        let err = words
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("composite insert result type must match composite operand type");
+        assert_eq!(
+            err,
+            ValidationError::InstructionResultTypeMismatch {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(header).unwrap(),
+                instruction: rspirv::spirv::Op::CompositeInsert,
+                expected: TypeId::try_from(vec2).unwrap(),
+                found: TypeId::try_from(vec3).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn copy_object_result_type_matches_operand() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let float = b.type_float(32, None);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let header = b.begin_block(None).unwrap();
+        let value = b.constant_bit32(int, 0);
+        b.copy_object(float, None, value).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let binary = b.module().assemble();
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("copy object result type must match operand type");
+        assert_eq!(
+            err,
+            ValidationError::InstructionResultTypeMismatch {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(header).unwrap(),
+                instruction: rspirv::spirv::Op::CopyObject,
+                expected: TypeId::try_from(int).unwrap(),
+                found: TypeId::try_from(float).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn load_result_type_matches_pointer_pointee() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%1 = OpTypeVoid",
+            "%2 = OpTypeFunction %1",
+            "%3 = OpTypeInt 32 0",
+            "%4 = OpTypeFloat 32",
+            "%5 = OpTypePointer Function %3",
+            "%6 = OpFunction %1 None %2",
+            "%7 = OpLabel",
+            "%8 = OpVariable %5 Function",
+            "%9 = OpLoad %4 %8",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("load result type must match pointer pointee type");
+        assert_eq!(
+            err,
+            ValidationError::InstructionResultTypeMismatch {
+                function: Id::try_from(6).unwrap(),
+                block: Id::try_from(7).unwrap(),
+                instruction: rspirv::spirv::Op::Load,
+                expected: TypeId::try_from(3).unwrap(),
+                found: TypeId::try_from(4).unwrap(),
+            }
+        );
     }
 
     #[test]

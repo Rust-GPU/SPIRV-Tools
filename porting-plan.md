@@ -162,6 +162,8 @@ Planned tasks:
 - Deepen SSA/type checking inside functions to mirror any remaining C++ parity gaps (e.g., composite extracts/inserts, pointer ops) with Rust regressions.
 - Add more function-body structural checks where C++ still leads (remaining unreachable-block or phi-shape edge cases) and port associated tests.
 - Keep the Rust-forced corpus/ctest runner (`scripts/run-rust-validator-corpus.sh`) in the loop after structural updates.
+- ✅ Enforce composite extract/insert indexing and component/result type matching plus `OpCopyObject`/`OpLoad` pointee checks with Rust regressions.
+- ✅ Enforce access-chain pointer/composite traversal (base/result pointers, storage-class alignment, integer indices, literal/bounds-checked struct indices, composite member stepping) with Rust regression coverage.
 
 ## Completed Milestone: Layout Ordering Parity
 Match the C++ validator’s capability/extension/import ordering and annotation placement rules in the Rust validator.
