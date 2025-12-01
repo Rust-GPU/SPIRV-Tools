@@ -67,6 +67,36 @@ TEST(RustOptimizerBridge, ReportsDisabledKind) {
   EXPECT_THAT(result.words, ::testing::ElementsAreArray(spirv));
 }
 
+TEST(RustOptimizerBridge, OverrideTogglesOptimizer) {
+  spvtools::ffi::clear_rust_optimizer_override();
+  SetEnv("SPIRV_TOOLS_DISABLE_RUST_OPT", nullptr);
+
+  const uint32_t spirv[] = {
+      0x07230203, 0x00010100, 0x00000000, 0x00000001, 0x00000000,
+      0x00020011, 0x00000001, 0x0003000E, 0x00000000, 0x00000001,
+      0x0004002B, 0x00000006, 0x00000009, 0x00000002, 0x0004002B,
+      0x00000006, 0x0000000A, 0x00000003, 0x00050080, 0x00000006,
+      0x0000000B, 0x00000009, 0x0000000A, 0x000100FD};
+
+  // Force disable via override.
+  spvtools::ffi::set_rust_optimizer_override(false);
+  ::rust::Slice<const uint32_t> words_disabled(spirv,
+                                               sizeof(spirv) / sizeof(uint32_t));
+  const auto disabled = spvtools::ffi::optimize_basic_block(words_disabled);
+  EXPECT_TRUE(disabled.success);
+  EXPECT_EQ(spvtools::ffi::OptimizeError::Disabled, disabled.error);
+
+  // Force enable even if the disable env remains set.
+  spvtools::ffi::set_rust_optimizer_override(true);
+  ::rust::Slice<const uint32_t> words_enabled(spirv,
+                                              sizeof(spirv) / sizeof(uint32_t));
+  const auto enabled = spvtools::ffi::optimize_basic_block(words_enabled);
+  EXPECT_TRUE(enabled.success);
+  EXPECT_EQ(spvtools::ffi::OptimizeError::None, enabled.error);
+  spvtools::ffi::clear_rust_optimizer_override();
+  SetEnv("SPIRV_TOOLS_DISABLE_RUST_OPT", nullptr);
+}
+
 #else
 TEST(RustOptimizerBridge, SkipWithoutRustTarget) { GTEST_SKIP(); }
 #endif  // SPIRV_RUST_TARGET_ENV
