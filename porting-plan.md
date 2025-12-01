@@ -156,6 +156,7 @@ Planned tasks:
 - [x] Add parity for bitwise all-ones identities (and/or) and xor-to-not lowering across CLI/FFI so C++ outputs stay aligned.
 - [x] Add parity for bitwise zero identities (and/or/xor) across CLI/FFI so identity/absorbing forms stay in lockstep with C++.
 - [x] Add parity for bitwise self identities (and/or => operand, xor => zero) across CLI/FFI to keep id-stable rewrites matched with C++.
+- [x] Add parity for complement identities (x & ~x => 0, x | ~x => all ones) across CLI/FFI, preserving result ids and removing dead nots.
 - Keep clippy/rustfmt/cargo fuzz smoke tests green after wiring the integration.
 
 ## Completed Milestone: Validator Default Enablement

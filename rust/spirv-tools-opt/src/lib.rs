@@ -426,6 +426,8 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("band-one-right"; "(band ?c ?x)" => {
             BitAndConstSimplify { x: var("?x"), c: var("?c") }
         }),
+        rewrite!("band-complement-left"; "(band ?x (bnot ?x))" => { BitAndComplement { _x: var("?x") } }),
+        rewrite!("band-complement-right"; "(band (bnot ?x) ?x)" => { BitAndComplement { _x: var("?x") } }),
         rewrite!("band-mask-to-umod"; "(band ?x ?c)" => {
             BitAndToUmod { x: var("?x"), c: var("?c") }
         }),
@@ -450,6 +452,8 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("bor-zero-right"; "(bor ?c ?x)" => {
             BitOrConstSimplify { x: var("?x"), c: var("?c") }
         }),
+        rewrite!("bor-complement-left"; "(bor ?x (bnot ?x))" => { BitOrComplement { _x: var("?x") } }),
+        rewrite!("bor-complement-right"; "(bor (bnot ?x) ?x)" => { BitOrComplement { _x: var("?x") } }),
         rewrite!("bor-self"; "(bor ?x ?x)" => "?x"),
         rewrite!("bxor-comm"; "(bxor ?a ?b)" => "(bxor ?b ?a)"),
         rewrite!("bxor-assoc"; "(bxor ?a (bxor ?b ?c))" => "(bxor (bxor ?a ?b) ?c)"),
@@ -856,6 +860,9 @@ struct BitAndToUmod {
     x: Var,
     c: Var,
 }
+struct BitAndComplement {
+    _x: Var,
+}
 struct UModPowerOfTwo {
     x: Var,
     c: Var,
@@ -871,6 +878,9 @@ struct BitOrFold {
 struct BitOrConstSimplify {
     x: Var,
     c: Var,
+}
+struct BitOrComplement {
+    _x: Var,
 }
 struct BitXorFold {
     a: Var,
@@ -2123,6 +2133,21 @@ impl Applier<SpirvLang, ()> for BitAndToUmod {
     }
 }
 
+impl Applier<SpirvLang, ()> for BitAndComplement {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        _subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let zero = egraph.add(SpirvLang::Const(ConstValue::new(0)));
+        egraph.union(eclass, zero);
+        vec![zero]
+    }
+}
+
 impl Applier<SpirvLang, ()> for UModPowerOfTwoMask {
     fn apply_one(
         &self,
@@ -2195,6 +2220,21 @@ impl Applier<SpirvLang, ()> for BitOrConstSimplify {
             }
             _ => Vec::new(),
         }
+    }
+}
+
+impl Applier<SpirvLang, ()> for BitOrComplement {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        _subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let ones = egraph.add(SpirvLang::Const(ConstValue::new(u32::MAX)));
+        egraph.union(eclass, ones);
+        vec![ones]
     }
 }
 
@@ -2720,6 +2760,20 @@ mod tests {
     }
 
     #[test]
+    fn bitand_complement_simplifies_to_zero() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),
+            SpirvLang::BitNot(Id::from(0)),
+            SpirvLang::BitAnd([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Const(ConstValue::new(0))])
+        );
+    }
+
+    #[test]
     fn band_mask_prefers_umod_pow2() {
         let expr = RecExpr::from(vec![
             SpirvLang::Symbol(Symbol::from("x")),
@@ -2739,6 +2793,20 @@ mod tests {
         assert!(
             has_umod,
             "expected x & (2^n-1) to become x % 2^n; got {optimized:?}"
+        );
+    }
+
+    #[test]
+    fn bitor_complement_simplifies_to_all_ones() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),
+            SpirvLang::BitNot(Id::from(0)),
+            SpirvLang::BitOr([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Const(ConstValue::new(u32::MAX))])
         );
     }
 

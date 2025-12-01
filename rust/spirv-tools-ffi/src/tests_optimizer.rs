@@ -743,6 +743,103 @@ mod optimizer_tests {
         assert!(saw_const, "xor with self should fold to zero with same id");
     }
 
+    #[test]
+    fn optimizer_folds_bitand_complement() {
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(void, vec![]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        let lhs = b.constant_bit32(int, 2);
+        let rhs = b.constant_bit32(int, 3);
+        let value = b.i_add(int, None, lhs, rhs).expect("value");
+        let not_value = b.not(int, None, value).expect("not");
+        let band = b.bitwise_and(int, None, value, not_value).expect("and");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let module = loader.module();
+
+        let mut saw_const = false;
+        for inst in module.all_inst_iter() {
+            assert_ne!(
+                inst.class.opcode,
+                Op::BitwiseAnd,
+                "and with complement should be eliminated"
+            );
+            assert_ne!(inst.class.opcode, Op::Not, "dead not should be removed");
+            if inst.class.opcode == Op::Constant
+                && inst.result_id == Some(band)
+                && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0)]
+            {
+                saw_const = true;
+            }
+        }
+        assert!(saw_const, "and with complement should fold to zero with same id");
+    }
+
+    #[test]
+    fn optimizer_folds_bitor_complement() {
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(void, vec![]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        let lhs = b.constant_bit32(int, 11);
+        let rhs = b.constant_bit32(int, 5);
+        let value = b.i_add(int, None, lhs, rhs).expect("value");
+        let not_value = b.not(int, None, value).expect("not");
+        let bor = b.bitwise_or(int, None, value, not_value).expect("or");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let module = loader.module();
+
+        let mut saw_const = false;
+        for inst in module.all_inst_iter() {
+            assert_ne!(
+                inst.class.opcode,
+                Op::BitwiseOr,
+                "or with complement should be eliminated"
+            );
+            assert_ne!(inst.class.opcode, Op::Not, "dead not should be removed");
+            if inst.class.opcode == Op::Constant
+                && inst.result_id == Some(bor)
+                && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(u32::MAX)]
+            {
+                saw_const = true;
+            }
+        }
+        assert!(
+            saw_const,
+            "or with complement should fold to all ones with same id"
+        );
+    }
+
 
     #[test]
     fn optimizer_factors_linear_combination_into_single_mul() {
