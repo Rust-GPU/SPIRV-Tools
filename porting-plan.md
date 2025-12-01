@@ -166,6 +166,7 @@ Planned tasks:
 - ✅ Enforce access-chain pointer/composite traversal (base/result pointers, storage-class alignment, integer indices, literal/bounds-checked struct indices, composite member stepping) with Rust regression coverage.
 - ✅ Cover `OpPtrAccessChain` and `OpInBoundsPtrAccessChain` with pointer-specific validation (integer indices, literal struct indices, result type/storage-class alignment) using builder-based modules.
 - ✅ Validate pointer comparisons (`OpPtrEqual`/`OpPtrNotEqual`) require boolean results and pointer operands with matching pointer types (typed and untyped pointer support).
+- ✅ Validate dynamic vector extracts/inserts: operand must be a vector, result/component types must align, and indices must be integer scalars (builder-based regressions).
 
 ## Completed Milestone: Layout Ordering Parity
 Match the C++ validator’s capability/extension/import ordering and annotation placement rules in the Rust validator.

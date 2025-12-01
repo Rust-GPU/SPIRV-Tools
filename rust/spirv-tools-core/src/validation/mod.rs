@@ -2258,6 +2258,38 @@ pub enum ValidationError {
         /// The maximum valid index.
         max: u32,
     },
+    /// A vector operation operand is not a vector type.
+    #[error(
+        "instruction {instruction:?} in block {block:?} of function {function:?} uses operand {operand} with non-vector type {found:?}"
+    )]
+    VectorOperandNotVector {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode.
+        instruction: rspirv::spirv::Op,
+        /// The operand index (zero-based).
+        operand: u32,
+        /// The non-vector type.
+        found: TypeId,
+    },
+    /// A vector operation uses an index with a non-integer type.
+    #[error(
+        "instruction {instruction:?} in block {block:?} of function {function:?} expects operand {operand_index} to be an integer scalar index but found type {found:?}"
+    )]
+    VectorIndexTypeInvalid {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode.
+        instruction: rspirv::spirv::Op,
+        /// The index operand position (zero-based).
+        operand_index: usize,
+        /// The offending type.
+        found: TypeId,
+    },
     /// A function references a missing or invalid function type.
     #[error("function {function:?} has an invalid function type {type_id:?}")]
     InvalidFunctionType {
@@ -3354,6 +3386,234 @@ fn validate_functions(
                                 }
                             }
                         }
+                    }
+                }
+                if inst.class.opcode == rspirv::spirv::Op::VectorExtractDynamic {
+                    let Some(block) = &block.label else {
+                        continue;
+                    };
+                    let Some(block_label_id) = block
+                        .result_id
+                        .and_then(|raw| Id::try_from(raw).ok())
+                    else {
+                        continue;
+                    };
+                    let Some(result_type_id) = inst
+                        .result_type
+                        .and_then(|raw| TypeId::try_from(raw).ok())
+                    else {
+                        continue;
+                    };
+
+                    let vector_operand = inst
+                        .operands
+                        .get(0)
+                        .and_then(|op| match op {
+                            rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                            _ => None,
+                        });
+                    let Some(vector_operand) = vector_operand else {
+                        continue;
+                    };
+                    let Some(vector_type_id) = result_types.get(&vector_operand).copied() else {
+                        continue;
+                    };
+
+                    let Some(vector_type_inst) = ResultId::try_from(u32::from(vector_type_id))
+                        .ok()
+                        .and_then(|rid| definitions.get(&rid))
+                    else {
+                        return Err(ValidationError::VectorOperandNotVector {
+                            function: function_id,
+                            block: block_label_id,
+                            instruction: inst.class.opcode,
+                            operand: 0,
+                            found: vector_type_id,
+                        });
+                    };
+                    if vector_type_inst.class.opcode != rspirv::spirv::Op::TypeVector {
+                        return Err(ValidationError::VectorOperandNotVector {
+                            function: function_id,
+                            block: block_label_id,
+                            instruction: inst.class.opcode,
+                            operand: 0,
+                            found: vector_type_id,
+                        });
+                    }
+                    let (component_type, _) = vector_info(vector_type_inst);
+                    let Some(component_type) = component_type else {
+                        return Err(ValidationError::VectorOperandNotVector {
+                            function: function_id,
+                            block: block_label_id,
+                            instruction: inst.class.opcode,
+                            operand: 0,
+                            found: vector_type_id,
+                        });
+                    };
+
+                    if component_type != result_type_id {
+                        return Err(ValidationError::InstructionResultTypeMismatch {
+                            function: function_id,
+                            block: block_label_id,
+                            instruction: inst.class.opcode,
+                            expected: component_type,
+                            found: result_type_id,
+                        });
+                    }
+
+                    let index_operand = inst
+                        .operands
+                        .get(1)
+                        .and_then(|op| match op {
+                            rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                            _ => None,
+                        });
+                    let Some(index_operand) = index_operand else {
+                        continue;
+                    };
+                    let Some(index_type_id) = result_types.get(&index_operand).copied() else {
+                        continue;
+                    };
+                    let Some(index_type_inst) = ResultId::try_from(u32::from(index_type_id))
+                        .ok()
+                        .and_then(|rid| definitions.get(&rid))
+                    else {
+                        continue;
+                    };
+                    if index_type_inst.class.opcode != rspirv::spirv::Op::TypeInt {
+                        return Err(ValidationError::VectorIndexTypeInvalid {
+                            function: function_id,
+                            block: block_label_id,
+                            instruction: inst.class.opcode,
+                            operand_index: 1,
+                            found: index_type_id,
+                        });
+                    }
+                }
+                if inst.class.opcode == rspirv::spirv::Op::VectorInsertDynamic {
+                    let Some(block) = &block.label else {
+                        continue;
+                    };
+                    let Some(block_label_id) = block
+                        .result_id
+                        .and_then(|raw| Id::try_from(raw).ok())
+                    else {
+                        continue;
+                    };
+                    let Some(result_type_id) = inst
+                        .result_type
+                        .and_then(|raw| TypeId::try_from(raw).ok())
+                    else {
+                        continue;
+                    };
+
+                    let vector_operand = inst
+                        .operands
+                        .get(0)
+                        .and_then(|op| match op {
+                            rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                            _ => None,
+                        });
+                    let Some(vector_operand) = vector_operand else {
+                        continue;
+                    };
+                    let Some(vector_type_id) = result_types.get(&vector_operand).copied() else {
+                        continue;
+                    };
+                    let Some(vector_type_inst) = ResultId::try_from(u32::from(vector_type_id))
+                        .ok()
+                        .and_then(|rid| definitions.get(&rid))
+                    else {
+                        return Err(ValidationError::VectorOperandNotVector {
+                            function: function_id,
+                            block: block_label_id,
+                            instruction: inst.class.opcode,
+                            operand: 0,
+                            found: vector_type_id,
+                        });
+                    };
+                    if vector_type_inst.class.opcode != rspirv::spirv::Op::TypeVector {
+                        return Err(ValidationError::VectorOperandNotVector {
+                            function: function_id,
+                            block: block_label_id,
+                            instruction: inst.class.opcode,
+                            operand: 0,
+                            found: vector_type_id,
+                        });
+                    }
+                    let (component_type, _) = vector_info(vector_type_inst);
+                    let Some(component_type) = component_type else {
+                        return Err(ValidationError::VectorOperandNotVector {
+                            function: function_id,
+                            block: block_label_id,
+                            instruction: inst.class.opcode,
+                            operand: 0,
+                            found: vector_type_id,
+                        });
+                    };
+
+                    if result_type_id != vector_type_id {
+                        return Err(ValidationError::InstructionResultTypeMismatch {
+                            function: function_id,
+                            block: block_label_id,
+                            instruction: inst.class.opcode,
+                            expected: vector_type_id,
+                            found: result_type_id,
+                        });
+                    }
+
+                    let component_operand = inst
+                        .operands
+                        .get(1)
+                        .and_then(|op| match op {
+                            rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                            _ => None,
+                        });
+                    let Some(component_operand) = component_operand else {
+                        continue;
+                    };
+                    let Some(component_operand_type) = result_types.get(&component_operand).copied()
+                    else {
+                        continue;
+                    };
+                    if component_operand_type != component_type {
+                        return Err(ValidationError::OperandTypeMismatch {
+                            function: function_id,
+                            block: block_label_id,
+                            instruction: inst.class.opcode,
+                            operand_index: 1,
+                            expected: component_type,
+                            found: component_operand_type,
+                        });
+                    }
+
+                    let index_operand = inst
+                        .operands
+                        .get(2)
+                        .and_then(|op| match op {
+                            rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                            _ => None,
+                        });
+                    let Some(index_operand) = index_operand else {
+                        continue;
+                    };
+                    let Some(index_type_id) = result_types.get(&index_operand).copied() else {
+                        continue;
+                    };
+                    let Some(index_type_inst) = ResultId::try_from(u32::from(index_type_id))
+                        .ok()
+                        .and_then(|rid| definitions.get(&rid))
+                    else {
+                        continue;
+                    };
+                    if index_type_inst.class.opcode != rspirv::spirv::Op::TypeInt {
+                        return Err(ValidationError::VectorIndexTypeInvalid {
+                            function: function_id,
+                            block: block_label_id,
+                            instruction: inst.class.opcode,
+                            operand_index: 2,
+                            found: index_type_id,
+                        });
                     }
                 }
                 if inst.class.opcode == rspirv::spirv::Op::VectorShuffle {
@@ -21572,6 +21832,276 @@ mod tests {
                 block: Id::try_from(entry).unwrap(),
                 value: 4,
                 max: 3,
+            }
+        );
+    }
+
+    #[test]
+    fn vector_extract_dynamic_operand_must_be_vector() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let _vec2 = b.type_vector(int, 2);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let entry = b.begin_block(None).unwrap();
+        let scalar = b.constant_bit32(int, 1);
+        let index = b.constant_bit32(int, 0);
+        b.vector_extract_dynamic(int, None, scalar, index).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let binary = b.module().assemble();
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("vector extract dynamic requires a vector operand");
+        assert_eq!(
+            err,
+            ValidationError::VectorOperandNotVector {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(entry).unwrap(),
+                instruction: rspirv::spirv::Op::VectorExtractDynamic,
+                operand: 0,
+                found: TypeId::try_from(int).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn vector_extract_dynamic_result_type_must_match_component() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let float = b.type_float(32, None);
+        let vec2 = b.type_vector(int, 2);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let entry = b.begin_block(None).unwrap();
+        let vector = b.undef(vec2, None);
+        let index = b.constant_bit32(int, 0);
+        b.vector_extract_dynamic(float, None, vector, index).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let binary = b.module().assemble();
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("vector extract dynamic result type must match component type");
+        assert_eq!(
+            err,
+            ValidationError::InstructionResultTypeMismatch {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(entry).unwrap(),
+                instruction: rspirv::spirv::Op::VectorExtractDynamic,
+                expected: TypeId::try_from(int).unwrap(),
+                found: TypeId::try_from(float).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn vector_extract_dynamic_index_must_be_integer() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let float = b.type_float(32, None);
+        let vec2 = b.type_vector(int, 2);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let entry = b.begin_block(None).unwrap();
+        let vector = b.undef(vec2, None);
+        let index = b.constant_bit32(float, 0.0f32.to_bits());
+        b.vector_extract_dynamic(int, None, vector, index).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let binary = b.module().assemble();
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("vector extract dynamic index must be an integer scalar");
+        assert_eq!(
+            err,
+            ValidationError::VectorIndexTypeInvalid {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(entry).unwrap(),
+                instruction: rspirv::spirv::Op::VectorExtractDynamic,
+                operand_index: 1,
+                found: TypeId::try_from(float).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn vector_insert_dynamic_result_type_must_match_vector() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let vec2 = b.type_vector(int, 2);
+        let vec3 = b.type_vector(int, 3);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let entry = b.begin_block(None).unwrap();
+        let vector = b.undef(vec2, None);
+        let value = b.constant_bit32(int, 1);
+        let index = b.constant_bit32(int, 0);
+        b.vector_insert_dynamic(vec3, None, vector, value, index)
+            .unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let binary = b.module().assemble();
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("vector insert dynamic result type must match vector operand type");
+        assert_eq!(
+            err,
+            ValidationError::InstructionResultTypeMismatch {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(entry).unwrap(),
+                instruction: rspirv::spirv::Op::VectorInsertDynamic,
+                expected: TypeId::try_from(vec2).unwrap(),
+                found: TypeId::try_from(vec3).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn vector_insert_dynamic_component_type_must_match_vector() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let float = b.type_float(32, None);
+        let vec2 = b.type_vector(int, 2);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let entry = b.begin_block(None).unwrap();
+        let vector = b.undef(vec2, None);
+        let value = b.constant_bit32(float, 1.0f32.to_bits());
+        let index = b.constant_bit32(int, 0);
+        b.vector_insert_dynamic(vec2, None, vector, value, index)
+            .unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let binary = b.module().assemble();
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("vector insert dynamic component type must match vector component");
+        assert_eq!(
+            err,
+            ValidationError::OperandTypeMismatch {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(entry).unwrap(),
+                instruction: rspirv::spirv::Op::VectorInsertDynamic,
+                operand_index: 1,
+                expected: TypeId::try_from(int).unwrap(),
+                found: TypeId::try_from(float).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn vector_insert_dynamic_index_must_be_integer() {
+        use rspirv::{binary::Assemble, dr::Builder};
+
+        let mut b = Builder::new();
+        b.set_version(1, 6);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::GLSL450,
+        );
+
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let float = b.type_float(32, None);
+        let vec2 = b.type_vector(int, 2);
+        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+        let main = b
+            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let entry = b.begin_block(None).unwrap();
+        let vector = b.undef(vec2, None);
+        let value = b.constant_bit32(int, 1);
+        let index = b.constant_bit32(float, 0.0f32.to_bits());
+        b.vector_insert_dynamic(vec2, None, vector, value, index)
+            .unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let binary = b.module().assemble();
+        let err = binary
+            .as_slice()
+            .validate(TargetEnv::Universal1_6)
+            .expect_err("vector insert dynamic index must be an integer scalar");
+        assert_eq!(
+            err,
+            ValidationError::VectorIndexTypeInvalid {
+                function: Id::try_from(main).unwrap(),
+                block: Id::try_from(entry).unwrap(),
+                instruction: rspirv::spirv::Op::VectorInsertDynamic,
+                operand_index: 2,
+                found: TypeId::try_from(float).unwrap(),
             }
         );
     }
