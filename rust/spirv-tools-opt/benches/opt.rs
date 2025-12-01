@@ -28,6 +28,7 @@ fn dense_expr(depth: usize) -> RecExpr<SpirvLang> {
 fn bench_optimize(c: &mut Criterion) {
     let expr_small = dense_expr(8);
     let expr_medium = dense_expr(32);
+    let expr_affine = affine_expr();
     let block_fold = spirv_block_add_zero();
     let block_medium = arith_block(32);
 
@@ -37,6 +38,10 @@ fn bench_optimize(c: &mut Criterion) {
 
     c.bench_function("optimize medium expr", |b| {
         b.iter(|| optimize_expr(black_box(&expr_medium)))
+    });
+
+    c.bench_function("optimize affine expr", |b| {
+        b.iter(|| optimize_expr(black_box(&expr_affine)))
     });
 
     c.bench_function("optimize arithmetic block", |b| {
@@ -129,3 +134,21 @@ fn arith_block(depth: usize) -> Vec<rspirv::dr::Instruction> {
 
 criterion_group!(benches, bench_optimize);
 criterion_main!(benches);
+
+fn affine_expr() -> RecExpr<SpirvLang> {
+    // (2*x) + (x*3) -> affine mixed-constant pattern
+    let mut nodes = Vec::new();
+    let x = Id::from(0);
+    nodes.push(SpirvLang::Symbol("x".into()));
+    nodes.push(SpirvLang::Const(ConstValue::new(2)));
+    nodes.push(SpirvLang::Const(ConstValue::new(3)));
+
+    let mul1 = SpirvLang::Mul([Id::from(1), x]);
+    nodes.push(mul1);
+    let mul2 = SpirvLang::Mul([x, Id::from(2)]);
+    nodes.push(mul2);
+    let add = SpirvLang::Add([Id::from(3), Id::from(4)]);
+    nodes.push(add);
+
+    RecExpr::from(nodes)
+}

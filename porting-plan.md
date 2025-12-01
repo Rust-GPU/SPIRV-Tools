@@ -620,6 +620,7 @@ Planned tasks:
 - [x] Extend optimizer rewrites to simplify algebraic identities (add zero, multiply by one/zero) with regression tests.
 - [x] Translate a subset of SPIR-V arithmetic (OpConstant/OpIAdd/OpIMul/OpISub/OpSNegate/OpSDiv/OpUDiv/OpSRem/OpUMod) into e-graph expressions and collapse reducible blocks back to constants with round-trip tests.
 - [x] Add divide/remainder/negation language support with folding guards (division-by-zero preserved) and block-level regressions.
+- Add rewrite coverage for mixed add/mul trees that combine constants and symbols (affine-like patterns) and refresh fuzz/criterion baselines to guard throughput.
 - Model optimizer IR and rewrites in Rust with `egg`, keeping transformations zero-cost and type-safe.
 - Expose optimizer controls through FFI/CLI compatible with the existing C API and binaries.
 - Add fuzzing harnesses using `cargo fuzz` + `arbitrary` to stress rewrites and round-trip assembly/disassembly.
