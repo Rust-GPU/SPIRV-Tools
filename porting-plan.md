@@ -144,8 +144,8 @@ Planned tasks:
 - Broaden CLI parity coverage beyond const-add/umod to include identity/neutral rewrites (mul by one/zero, add+negate) and divisible/non-divisible signed remainders so Rust-vs-C++ outputs stay in lockstep when the C++ binary is present.
 - Thread typed error handling (`thiserror`) through the CLI/FFI boundary so optimizer failures surface structured diagnostics. **(CLI now surfaces C++ fallback failures with status/stderr)**
 - Document CLI optimizer toggles/envs for roll-forward/rollback and point users at the C++ fallback doc. **(see `docs/optimizer-cli-toggle.md`)**
-- Add hyperfine/criterion benches for the CLI path to track Rust vs. passthrough/C++ optimizer performance.
-- Update CLI help/docs to describe optimizer toggles and rollback/roll-forward guidance.
+- Add hyperfine/criterion benches for the CLI path to track Rust vs. passthrough/C++ optimizer performance. **(hyperfine-opt.sh benchmarks Rust/passthrough/C++ paths)**
+- Update CLI help/docs to describe optimizer toggles and rollback/roll-forward guidance. **(`spirv-opt --help` now lists flags/env; docs updated)**
 - Keep clippy/rustfmt/cargo fuzz smoke tests green after wiring the integration.
 
 ## Completed Milestone: Validator Default Enablement

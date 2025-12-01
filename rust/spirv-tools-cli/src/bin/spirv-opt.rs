@@ -6,7 +6,14 @@ use spirv_tools_cli::optimizer::{run_optimize, write_output, OptimizeCliError, O
 
 /// SPIR-V optimizer (Rust arithmetic pass).
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[command(
+    author,
+    version,
+    about = "SPIR-V arithmetic optimizer (Rust path by default)",
+    long_about = "SPIR-V arithmetic optimizer (Rust path by default).\n\n\
+Flags:\n  --passthrough       Skip optimization and echo the input module.\n  --cpp               Run the C++ spirv-opt instead of the Rust path (looks in PATH).\n  --force-rust        Run the Rust optimizer even if SPIRV_TOOLS_DISABLE_RUST_OPT=1 is set.\n\n\
+Env:\n  SPIRV_TOOLS_DISABLE_RUST_OPT=1  Disable Rust optimizer unless --force-rust is set.\n  SPIRV_CPP_OPT=/path/to/spirv-opt  Optional override for the C++ binary."
+)]
 struct Args {
     /// Input SPIR-V binary; reads stdin when omitted.
     input: Option<PathBuf>,
