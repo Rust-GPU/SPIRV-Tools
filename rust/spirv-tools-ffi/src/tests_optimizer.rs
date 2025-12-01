@@ -649,6 +649,48 @@ mod optimizer_tests {
     }
 
     #[test]
+    fn optimizer_folds_sdiv_by_one() {
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let func_ty = b.type_function(void, vec![]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        let c9 = b.constant_bit32(int, 9);
+        let c1 = b.constant_bit32(int, 1);
+        let div = b.s_div(int, None, c9, c1).expect("sdiv");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let module = loader.module();
+
+        let mut found_const = false;
+        for inst in module.all_inst_iter() {
+            if inst.class.opcode == Op::SDiv {
+                panic!("sdiv by one should be folded away");
+            }
+            if inst.class.opcode == Op::Constant
+                && inst.result_id == Some(div)
+                && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(9)]
+            {
+                found_const = true;
+            }
+        }
+        assert!(found_const, "sdiv by one should fold to the original value");
+    }
+
+    #[test]
     fn optimizer_folds_urem_by_one() {
         let mut b = Builder::new();
         let void = b.type_void();
@@ -688,6 +730,48 @@ mod optimizer_tests {
             }
         }
         assert!(found_const, "urem by one should fold to zero");
+    }
+
+    #[test]
+    fn optimizer_folds_srem_by_one() {
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 1);
+        let func_ty = b.type_function(void, vec![]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        let c9 = b.constant_bit32(int, 9);
+        let c1 = b.constant_bit32(int, 1);
+        let rem = b.s_rem(int, None, c9, c1).expect("srem");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let module = loader.module();
+
+        let mut found_const = false;
+        for inst in module.all_inst_iter() {
+            if inst.class.opcode == Op::SRem {
+                panic!("srem by one should be folded away");
+            }
+            if inst.class.opcode == Op::Constant
+                && inst.result_id == Some(rem)
+                && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0)]
+            {
+                found_const = true;
+            }
+        }
+        assert!(found_const, "srem by one should fold to zero");
     }
 
     #[test]
