@@ -158,7 +158,7 @@ Planned tasks:
 - [x] Reject conditional capability/extension instructions that appear after functions (layout out-of-order regressions).
 - [x] Add Patch vs. non-Patch spill overlap regressions (domains remain separate; Patch overlaps still conflict).
 
-## Active Milestone: SSA & Type Validation Hardening
+## Completed Milestone: SSA & Type Validation Hardening
 - Deepen SSA/type checking inside functions to mirror any remaining C++ parity gaps (e.g., composite extracts/inserts, pointer ops) with Rust regressions.
 - Add more function-body structural checks where C++ still leads (remaining unreachable-block or phi-shape edge cases) and port associated tests.
 - Keep the Rust-forced corpus/ctest runner (`scripts/run-rust-validator-corpus.sh`) in the loop after structural updates.
