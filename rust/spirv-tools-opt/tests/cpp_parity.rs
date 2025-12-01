@@ -2040,6 +2040,47 @@ fn rust_and_cpp_merge_nested_const_divisors() {
 }
 
 #[test]
+fn rust_and_cpp_fold_mul_mod_same_const_to_zero() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+
+    let (module_words, result_id) = build_mul_mod_same_const_module();
+    let rust_insts = extract_simple_block(&module_words);
+    let rust_optimized =
+        spirv_tools_opt::translate::optimize_arith_block(&rust_insts).expect("rust optimizer");
+    let rust_const_zero = rust_optimized.iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(result_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0)]
+    });
+    let rust_has_mod = rust_optimized
+        .iter()
+        .any(|inst| matches!(inst.class.opcode, Op::UMod | Op::SRem | Op::UMod));
+    assert!(
+        rust_const_zero && !rust_has_mod,
+        "rust optimizer should fold (x*5) % 5 to zero"
+    );
+
+    let cpp_words = run_cpp_opt(&cpp_opt, &module_words);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&cpp_words, &mut loader).expect("parse cpp optimized");
+    let module = loader.module();
+    let cpp_const_zero = module.all_inst_iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(result_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0)]
+    });
+    let cpp_has_mod = module
+        .all_inst_iter()
+        .any(|inst| matches!(inst.class.opcode, Op::UMod | Op::SRem | Op::UMod));
+    assert!(
+        cpp_const_zero && !cpp_has_mod,
+        "C++ spirv-opt should fold (x*5) % 5 to zero"
+    );
+}
+
+#[test]
 fn rust_and_cpp_fold_zero_factor_add() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
@@ -3962,6 +4003,26 @@ fn build_nested_const_div_merge_module() -> (Vec<u32>, u32, u32) {
     b.ret().expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), div2, x)
+}
+
+fn build_mul_mod_same_const_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![int]);
+    let _ = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let x = b.function_parameter(int).expect("param x");
+    let c5 = b.constant_bit32(int, 5);
+    let mul = b.i_mul(int, None, x, c5).expect("mul");
+    let rem = b.u_mod(int, None, mul, c5).expect("rem");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), rem)
 }
 
 fn build_zero_factor_add_module() -> (Vec<u32>, u32) {
