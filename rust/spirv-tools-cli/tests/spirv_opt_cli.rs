@@ -1874,6 +1874,26 @@ fn build_factored_const_equal_difference_mul_module() -> (Vec<u32>, u32) {
     (b.module().assemble(), sub)
 }
 
+fn build_factored_const_equal_difference_mul_commuted_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 1);
+    let func_ty = b.type_function(void, vec![int]);
+    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let x = b.function_parameter(int).expect("x param");
+    b.begin_block(None).expect("block");
+    let c6 = b.constant_bit32(int, 6);
+    let mul_left = b.i_mul(int, None, x, c6).expect("mul left commuted");
+    let mul_right = b.i_mul(int, None, c6, x).expect("mul right");
+    let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), sub)
+}
+
 #[test]
 fn spirv_opt_cli_factors_common_multiplicand() {
     let (words, add_id, param_id) = build_factored_mul_sum_module();
@@ -3024,6 +3044,15 @@ fn spirv_opt_cli_cpp_mode_matches_rust_factored_const_equal_difference_output() 
 }
 
 #[test]
+fn spirv_opt_cli_cpp_mode_matches_rust_factored_const_equal_difference_commuted_output() {
+    let (words, ..) = build_factored_const_equal_difference_mul_commuted_module();
+    assert_cpp_cli_matches_rust(
+        &words,
+        "factored equal constant difference to zero with commuted mul",
+    );
+}
+
+#[test]
 fn spirv_opt_cli_cpp_mode_matches_rust_factored_mixed_const_wrap_negative_difference_commuted_output(
 ) {
     let (words, ..) = build_factored_mixed_const_wrap_negative_difference_mul_commuted_module();
@@ -3300,6 +3329,55 @@ fn spirv_opt_cli_factors_mixed_wrap_positive_constant_difference_commuted_into_s
 #[test]
 fn spirv_opt_cli_factors_equal_constant_difference_into_zero() {
     let (words, sub_id) = build_factored_const_equal_difference_mul_module();
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_spirv-opt"));
+    cmd.arg("--")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+    let mut child = cmd.spawn().expect("spawn spirv-opt");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin")
+        .write_all(&words_to_bytes(&words))
+        .expect("write module");
+    let output = child.wait_with_output().expect("run spirv-opt");
+    assert!(
+        output.status.success(),
+        "spirv-opt failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let optimized_words = bytes_to_words(&output.stdout);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+
+    let mut saw_zero = false;
+
+    for inst in module.all_inst_iter() {
+        match inst.class.opcode {
+            Op::ISub | Op::IMul => panic!("subtract/multiply should fold away"),
+            Op::Constant => {
+                if inst.result_id == Some(sub_id) {
+                    if let Some(value) = inst.operands.first().and_then(|op| match op {
+                        rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+                        _ => None,
+                    }) {
+                        assert_eq!(value, 0);
+                        saw_zero = true;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    assert!(saw_zero, "sub id should become a zero constant");
+}
+
+#[test]
+fn spirv_opt_cli_factors_equal_constant_difference_commuted_into_zero() {
+    let (words, sub_id) = build_factored_const_equal_difference_mul_commuted_module();
     let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_spirv-opt"));
     cmd.arg("--")
         .stdin(std::process::Stdio::piped())
