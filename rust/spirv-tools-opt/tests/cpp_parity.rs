@@ -3574,6 +3574,83 @@ fn rust_and_cpp_fold_mul_by_neg_one() {
     assert!(!cpp_has_mul, "C++ spirv-opt should remove mul instruction");
 }
 
+#[test]
+fn rust_and_cpp_fold_udiv_by_one() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+
+    let (module_words, div_id) = build_udiv_one_module();
+    let rust_insts = extract_arith_insts(&module_words);
+    let rust_optimized =
+        spirv_tools_opt::translate::optimize_arith_block(&rust_insts).expect("rust optimizer");
+    let rust_const = rust_optimized.iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(div_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(9)]
+    });
+    let rust_has_div = rust_optimized
+        .iter()
+        .any(|inst| inst.class.opcode == Op::UDiv && inst.result_id == Some(div_id));
+    assert!(
+        rust_const,
+        "rust optimizer should fold udiv by one to original value"
+    );
+    assert!(!rust_has_div, "rust optimizer should remove UDiv");
+
+    let optimized_cpp = run_cpp_opt_module(&module_words, &cpp_opt);
+    let cpp_const = optimized_cpp.all_inst_iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(div_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(9)]
+    });
+    let cpp_has_div = optimized_cpp
+        .all_inst_iter()
+        .any(|inst| inst.class.opcode == Op::UDiv && inst.result_id == Some(div_id));
+    assert!(
+        cpp_const,
+        "C++ spirv-opt should fold udiv by one to original value with same id"
+    );
+    assert!(!cpp_has_div, "C++ spirv-opt should remove UDiv");
+}
+
+#[test]
+fn rust_and_cpp_fold_urem_by_one() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+
+    let (module_words, rem_id) = build_urem_one_module();
+    let rust_insts = extract_arith_insts(&module_words);
+    let rust_optimized =
+        spirv_tools_opt::translate::optimize_arith_block(&rust_insts).expect("rust optimizer");
+    let rust_const = rust_optimized.iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(rem_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0)]
+    });
+    let rust_has_rem = rust_optimized
+        .iter()
+        .any(|inst| inst.class.opcode == Op::UMod && inst.result_id == Some(rem_id));
+    assert!(rust_const, "rust optimizer should fold urem by one to zero");
+    assert!(!rust_has_rem, "rust optimizer should remove UMod");
+
+    let optimized_cpp = run_cpp_opt_module(&module_words, &cpp_opt);
+    let cpp_const = optimized_cpp.all_inst_iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(rem_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0)]
+    });
+    let cpp_has_rem = optimized_cpp
+        .all_inst_iter()
+        .any(|inst| inst.class.opcode == Op::UMod && inst.result_id == Some(rem_id));
+    assert!(
+        cpp_const,
+        "C++ spirv-opt should fold urem by one to zero with same id"
+    );
+    assert!(!cpp_has_rem, "C++ spirv-opt should remove UMod");
+}
+
 fn build_const_add_module() -> (Vec<u32>, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
@@ -5188,6 +5265,44 @@ fn build_mul_neg_one_module() -> (Vec<u32>, u32) {
     b.ret().expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), mul)
+}
+
+fn build_udiv_one_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let _func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let c9 = b.constant_bit32(int, 9);
+    let c1 = b.constant_bit32(int, 1);
+    let div = b.u_div(int, None, c9, c1).expect("div");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), div)
+}
+
+fn build_urem_one_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let _func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let c9 = b.constant_bit32(int, 9);
+    let c1 = b.constant_bit32(int, 1);
+    let rem = b.u_mod(int, None, c9, c1).expect("rem");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), rem)
 }
 
 fn is_const_five(inst: &rspirv::dr::Instruction) -> bool {
