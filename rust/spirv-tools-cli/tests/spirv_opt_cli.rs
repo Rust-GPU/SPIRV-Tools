@@ -613,6 +613,12 @@ fn spirv_opt_cli_cpp_mode_matches_rust_pow2_mul_output() {
     assert_cpp_cli_matches_rust(&words, "mul by power-of-two");
 }
 
+#[test]
+fn spirv_opt_cli_cpp_mode_matches_rust_pow2_div_output() {
+    let (words, _) = build_div_pow2_module();
+    assert_cpp_cli_matches_rust(&words, "div by power-of-two");
+}
+
 fn words_to_bytes(words: &[u32]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(words.len() * 4);
     for word in words {
@@ -829,4 +835,23 @@ fn build_mul_pow2_module() -> (Vec<u32>, u32) {
     b.ret().expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), mul)
+}
+
+fn build_div_pow2_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![int]);
+    let _ = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let param = b.function_parameter(int).expect("param");
+    let _ = b.begin_block(None).expect("block");
+    let c8 = b.constant_bit32(int, 8);
+    let div = b.u_div(int, None, param, c8).expect("div");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), div)
 }
