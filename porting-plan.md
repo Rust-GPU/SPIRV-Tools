@@ -641,6 +641,7 @@ Planned tasks:
   - Added C++ parity coverage for folding `(x*c) % c` to zero when the constant matches the divisor, ensuring remainder elimination aligns across Rust and C++.
   - Added C++ parity coverage for folding `(x*c) % k` when `c` is divisible by `k` (e.g., `(x*6)%3 -> 0`), keeping div/rem simplifications aligned between Rust and C++.
   - Added C++ parity coverage for non-divisible constant ratios: `(5*x)/2` remains a division in both optimizers, preventing over-aggressive constant cancellation.
+  - Added C++ parity coverage to guard non-divisible mul/mod combinations: `(x*5)%3` stays as a remainder (no fold to zero) in Rust and C++ optimizers.
   - Added an FFI regression for affine GCD subtraction folding (`(14*2)-21 -> 7`) to keep the bridge aligned with the Rust optimizer behavior.
    - Added a short `cargo fuzz` smoke script (`scripts/fuzz-smoke.sh`) to keep the arithmetic optimizer fuzz target exercised with a bounded run.
   - Added an FFI regression for factoring linear combinations into a single constant result, ensuring the C bridge exercises the optimizer path.
