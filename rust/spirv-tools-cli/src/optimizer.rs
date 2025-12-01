@@ -18,6 +18,14 @@ pub enum OptimizeCliError {
     /// The Rust optimizer reported an error.
     #[error("optimization failed: {0}")]
     Optimize(String),
+    /// The C++ spirv-opt fallback failed with status/stderr.
+    #[error("cpp spirv-opt failed with status {status}: {stderr}")]
+    CppFailure {
+        /// Exit status returned by the C++ optimizer.
+        status: std::process::ExitStatus,
+        /// Stderr from the failing C++ optimizer process.
+        stderr: String,
+    },
 }
 
 /// Configuration for the optimizer CLI.
@@ -111,10 +119,10 @@ fn run_cpp_opt(path: &std::ffi::OsStr, words: &[u32]) -> Result<Vec<u32>, Optimi
 
     let output = child.wait_with_output().map_err(OptimizeCliError::Input)?;
     if !output.status.success() {
-        return Err(OptimizeCliError::Optimize(format!(
-            "spirv-opt exited with status {code}",
-            code = output.status
-        )));
+        return Err(OptimizeCliError::CppFailure {
+            status: output.status,
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        });
     }
     bytes_to_words(&output.stdout)
 }
