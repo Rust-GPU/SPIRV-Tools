@@ -104,6 +104,7 @@ Planned tasks:
   - Added parity for distributing constant multiplication over addition and subtraction.
   - Added parity for affine GCD folding on constant add/sub cases.
   - Added parity for signed remainder folding/preservation across sign permutations (`(x*6)%3=>0`, `(x*5)%3` preserved, `(x*-6)%3=>0`, `(x*-5)%3` preserved, `(x*6)%(-3)=>0`, `(x*5)%(-3)` preserved).
+  - Added parity for mixed-sign constant-division folding/preservation (`(-6*x)/3` and `(6*x)/-3` fold to `-2*x`; non-divisible mixed-sign ratios are preserved).
 - Extend e-graph rewrites to cover distributivity/simplification cases present in the C++ optimizer while keeping cost-based stability.
 - Add a benchmark harness that runs both Rust and C++ optimizers via hyperfine for the arithmetic corpus to track performance deltas.
 - Add a parity runner in CI that exercises `SPIRV_CPP_OPT` when available to keep regressions visible.
