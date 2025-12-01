@@ -321,6 +321,150 @@ mod optimizer_tests {
     }
 
     #[test]
+    fn optimizer_simplifies_bitand_all_ones() {
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(void, vec![]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        let value = b.constant_bit32(int, 0x1234_5678);
+        let ones = b.constant_bit32(int, u32::MAX);
+        let band = b.bitwise_and(int, None, value, ones).expect("band id");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let module = loader.module();
+
+        let mut saw_const = false;
+        for inst in module.all_inst_iter() {
+            assert_ne!(
+                inst.class.opcode,
+                Op::BitwiseAnd,
+                "and with all ones should be eliminated"
+            );
+            if inst.class.opcode == Op::Constant
+                && inst.result_id == Some(band)
+                && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0x1234_5678)]
+            {
+                saw_const = true;
+            }
+        }
+        assert!(saw_const, "and with all ones should keep the original value");
+    }
+
+    #[test]
+    fn optimizer_simplifies_bitor_all_ones() {
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(void, vec![]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        let value = b.constant_bit32(int, 0xBEEF_CAFE);
+        let ones = b.constant_bit32(int, u32::MAX);
+        let bor = b.bitwise_or(int, None, value, ones).expect("bor id");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let module = loader.module();
+
+        let mut saw_const = false;
+        for inst in module.all_inst_iter() {
+            assert_ne!(
+                inst.class.opcode,
+                Op::BitwiseOr,
+                "or with all ones should be eliminated"
+            );
+            if inst.class.opcode == Op::Constant
+                && inst.result_id == Some(bor)
+                && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(u32::MAX)]
+            {
+                saw_const = true;
+            }
+        }
+        assert!(
+            saw_const,
+            "or with all ones should fold to an all-ones constant"
+        );
+    }
+
+    #[test]
+    fn optimizer_rewrites_bitxor_all_ones_to_not() {
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(void, vec![]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        let lhs = b.constant_bit32(int, 5);
+        let rhs = b.constant_bit32(int, 6);
+        let input = b.i_add(int, None, lhs, rhs).expect("value");
+        let ones = b.constant_bit32(int, u32::MAX);
+        let bxor = b.bitwise_xor(int, None, input, ones).expect("xor id");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let module = loader.module();
+
+        let expected = !11u32;
+        let mut saw_not = false;
+        let mut saw_const = false;
+        for inst in module.all_inst_iter() {
+            match inst.class.opcode {
+                Op::BitwiseXor => panic!("xor with all ones should be rewritten"),
+                Op::Not if inst.result_id == Some(bxor) => saw_not = true,
+                Op::Constant
+                    if inst.result_id == Some(bxor)
+                        && inst.operands
+                            == vec![rspirv::dr::Operand::LiteralBit32(expected)] =>
+                {
+                    saw_const = true;
+                }
+                _ => {}
+            }
+        }
+        assert!(
+            saw_not || saw_const,
+            "xor with all ones should lower to a bitwise not (or folded constant) with the same id"
+        );
+    }
+
+
+    #[test]
     fn optimizer_factors_linear_combination_into_single_mul() {
         let mut b = Builder::new();
         let void = b.type_void();

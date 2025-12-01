@@ -2183,11 +2183,18 @@ impl Applier<SpirvLang, ()> for BitOrConstSimplify {
         let Some(c) = const_value(egraph, subst[self.c]) else {
             return Vec::new();
         };
-        if c.get() != 0 {
-            return Vec::new();
+        match c.get() {
+            0 => {
+                egraph.union(eclass, subst[self.x]);
+                vec![subst[self.x]]
+            }
+            u32::MAX => {
+                let ones = egraph.add(SpirvLang::Const(ConstValue::new(u32::MAX)));
+                egraph.union(eclass, ones);
+                vec![ones]
+            }
+            _ => Vec::new(),
         }
-        egraph.union(eclass, subst[self.x]);
-        vec![subst[self.x]]
     }
 }
 
@@ -2225,11 +2232,18 @@ impl Applier<SpirvLang, ()> for BitXorConstSimplify {
         let Some(c) = const_value(egraph, subst[self.c]) else {
             return Vec::new();
         };
-        if c.get() != 0 {
-            return Vec::new();
+        match c.get() {
+            0 => {
+                egraph.union(eclass, subst[self.x]);
+                vec![subst[self.x]]
+            }
+            u32::MAX => {
+                let bnot = egraph.add(SpirvLang::BitNot(subst[self.x]));
+                egraph.union(eclass, bnot);
+                vec![bnot]
+            }
+            _ => Vec::new(),
         }
-        egraph.union(eclass, subst[self.x]);
-        vec![subst[self.x]]
     }
 }
 
