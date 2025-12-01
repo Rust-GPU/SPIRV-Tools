@@ -5,14 +5,20 @@ mod optimizer_tests {
     use rspirv::binary::Assemble;
     use rspirv::dr::{Builder, Loader};
     use rspirv::spirv::{FunctionControl, Op};
+    use std::sync::{Mutex, MutexGuard};
 
-    struct OptimizerEnvGuard;
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct OptimizerEnvGuard {
+        _lock: MutexGuard<'static, ()>,
+    }
 
     impl OptimizerEnvGuard {
         fn new() -> Self {
+            let lock = ENV_LOCK.lock().expect("env mutex poisoned");
             crate::clear_rust_optimizer_override();
             std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
-            Self
+            Self { _lock: lock }
         }
     }
 
@@ -417,6 +423,55 @@ mod optimizer_tests {
         assert_eq!(
             passthrough.words, words,
             "disable flag should skip optimization"
+        );
+    }
+
+    #[test]
+    fn optimizer_eliminates_shift_by_zero() {
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(void, vec![]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        let c4 = b.constant_bit32(int, 4);
+        let zero = b.constant_bit32(int, 0);
+        let shl = b
+            .shift_left_logical(int, None, c4, zero)
+            .expect("shift id");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let module = loader.module();
+
+        let mut found_const = false;
+        for inst in module.all_inst_iter() {
+            assert_ne!(
+                inst.class.opcode,
+                Op::ShiftLeftLogical,
+                "shift by zero should be removed"
+            );
+            if inst.class.opcode == Op::Constant
+                && inst.result_id == Some(shl)
+                && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(4)]
+            {
+                found_const = true;
+            }
+        }
+        assert!(
+            found_const,
+            "shift by zero should reuse original id as constant"
         );
     }
 
