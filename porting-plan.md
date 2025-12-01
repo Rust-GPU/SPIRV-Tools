@@ -107,7 +107,8 @@ Close correctness gaps when folding/encoding 64-bit constants through the Rust o
 Tasks for this milestone:
 - [x] Teach the optimizer translator to round-trip `LiteralBit64` operands and track bit widths when rebuilding constants.
 - [x] Ensure reconstructed `OpConstant` instructions are width-correct by normalizing operands against their `OpTypeInt` definitions before reassembly.
-- [x] Extend rotate-folding parity tests to 64-bit arithmetic (including commuted forms) and keep CLI/FFI paths passing with 64-bit literals.
+ - [x] Extend rotate-folding parity tests to 64-bit arithmetic (including commuted forms) and keep CLI/FFI paths passing with 64-bit literals.
+  - [x] Keep constant folding width-aware for signed div/rem and add 64-bit negative-dividend/reg divisor coverage to the unit suite.
 
 ## Upcoming Milestone: Optimizer Parity vs C++ Arithmetic Pass
 Align the Rust arithmetic optimizer with the legacy C++ arithmetic canonicalization passes.
