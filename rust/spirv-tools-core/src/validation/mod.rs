@@ -3327,7 +3327,7 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
             match ty_inst.class.opcode {
                 rspirv::spirv::Op::TypeInt => ty_inst
                     .operands
-                    .get(0)
+                    .first()
                     .and_then(|op| match op {
                         rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
                         _ => None,
@@ -3340,12 +3340,10 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                     });
                     let elem_inst = elem_ty.and_then(|rid| definitions.get(&rid));
                     let width = elem_inst.and_then(|inst| match inst.class.opcode {
-                        rspirv::spirv::Op::TypeInt => {
-                            inst.operands.get(0).and_then(|op| match op {
-                                rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
-                                _ => None,
-                            })
-                        }
+                        rspirv::spirv::Op::TypeInt => inst.operands.first().and_then(|op| match op {
+                            rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+                            _ => None,
+                        }),
                         _ => None,
                     });
                     let count = ty_inst.operands.get(1).and_then(|op| match op {
@@ -3815,27 +3813,24 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                                                 if ptr_type_inst.class.opcode
                                                     == rspirv::spirv::Op::TypePointer
                                                 {
-                                                    if let Some(pointee) =
+                                                    if let Some(rspirv::dr::Operand::IdRef(
+                                                        pointee_raw,
+                                                    )) =
                                                         ptr_type_inst.operands.get(1)
                                                     {
-                                                        if let rspirv::dr::Operand::IdRef(
-                                                            pointee_raw,
-                                                        ) = pointee
+                                                        if let Ok(pointee_type) =
+                                                            TypeId::try_from(*pointee_raw)
                                                         {
-                                                            if let Ok(pointee_type) =
-                                                                TypeId::try_from(*pointee_raw)
-                                                            {
-                                                                if pointee_type != result_type {
-                                                                    return Err(
-                                                                        ValidationError::InstructionResultTypeMismatch {
-                                                                            function: function_id,
-                                                                            block: block_label_id,
-                                                                            instruction: inst.class.opcode,
-                                                                            expected: pointee_type,
-                                                                            found: result_type,
-                                                                        },
-                                                                    );
-                                                                }
+                                                            if pointee_type != result_type {
+                                                                return Err(
+                                                                    ValidationError::InstructionResultTypeMismatch {
+                                                                        function: function_id,
+                                                                        block: block_label_id,
+                                                                        instruction: inst.class.opcode,
+                                                                        expected: pointee_type,
+                                                                        found: result_type,
+                                                                    },
+                                                                );
                                                             }
                                                         }
                                                     }
@@ -4008,7 +4003,7 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                             | rspirv::spirv::Op::BitwiseXor
                             | rspirv::spirv::Op::Not
                     ) {
-                        let ok = result_type_inst.map_or(false, |ty| match ty.class.opcode {
+                        let ok = result_type_inst.is_some_and(|ty| match ty.class.opcode {
                             rspirv::spirv::Op::TypeInt => true,
                             rspirv::spirv::Op::TypeVector => {
                                 let Some(rspirv::dr::Operand::IdRef(elem)) = ty.operands.first()
@@ -4066,7 +4061,7 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                             | rspirv::spirv::Op::FUnordGreaterThanEqual
                     );
                     if int_cmp || float_cmp {
-                        let op_type = inst.operands.get(0).and_then(|op| match op {
+                        let op_type = inst.operands.first().and_then(|op| match op {
                             rspirv::dr::Operand::IdRef(raw) => ResultId::try_from(*raw).ok(),
                             _ => None,
                         });
@@ -4113,7 +4108,7 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
 
                         // Result type must be bool or vector<bool> matching operand count.
                         let result_ok =
-                            result_type_inst.map_or(false, |ty| match ty.class.opcode {
+                            result_type_inst.is_some_and(|ty| match ty.class.opcode {
                                 rspirv::spirv::Op::TypeBool => component_count == Some(1),
                                 rspirv::spirv::Op::TypeVector => {
                                     let count = ty.operands.get(1).and_then(|op| match op {
@@ -4262,7 +4257,7 @@ fn validate_functions(module: &Module) -> Result<(), ValidationError> {
                                                 .ok()
                                                 .and_then(|rid| definitions.get(&rid));
                                         let Some((op_components, op_width)) =
-                                            op_inst.and_then(|i| integer_shape(i))
+                                            op_inst.and_then(integer_shape)
                                         else {
                                             return Err(ValidationError::OperandTypeMismatch {
                                                 function: function_id,
@@ -4384,10 +4379,10 @@ enum CompositeWalkError {
     },
 }
 
-fn type_instruction<'a>(
+fn type_instruction(
     type_id: TypeId,
-    definitions: &'a HashMap<ResultId, rspirv::dr::Instruction>,
-) -> Option<&'a rspirv::dr::Instruction> {
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+) -> Option<&rspirv::dr::Instruction> {
     let result_id = ResultId::try_from(u32::from(type_id)).ok()?;
     definitions.get(&result_id)
 }
@@ -8003,7 +7998,7 @@ fn enforce_descriptor_requirements(module: &Module, env: TargetEnv) -> Result<()
             continue;
         }
         let decos = decoration_lookup.get(&rid).cloned().unwrap_or_default();
-        if decos.iter().any(|d| *d == Decoration::BuiltIn) {
+        if decos.contains(&Decoration::BuiltIn) {
             continue;
         }
         let has_descriptor_set = decos.contains(&Decoration::DescriptorSet);
@@ -9785,9 +9780,9 @@ fn validate_entry_point_interface_storage_classes(
                                 interface: id.into(),
                             });
                         }
-                        let has_patch = decoration_lookup.get(&id).map_or(false, |decs| {
-                            decs.contains(&rspirv::spirv::Decoration::Patch)
-                        });
+                        let has_patch = decoration_lookup
+                            .get(&id)
+                            .is_some_and(|decs| decs.contains(&rspirv::spirv::Decoration::Patch));
                         let storage_allowed = matches!(
                             *storage,
                             rspirv::spirv::StorageClass::Input
@@ -10521,7 +10516,7 @@ mod tests {
         let mut idx = 5; // skip header
         while idx < words.len() {
             let wc = (words[idx] >> 16) as usize;
-            let op = (words[idx] & 0xffff) as u32;
+            let op = words[idx] & 0xffff;
             if op == opcode as u32 {
                 let inst: Vec<u32> = words.drain(idx..idx + wc).collect();
                 words.extend(inst);
