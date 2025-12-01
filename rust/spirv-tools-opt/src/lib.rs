@@ -2526,8 +2526,9 @@ impl Applier<SpirvLang, ()> for ShlFoldConst {
         let Some(rhs) = pure_const_value(egraph, subst[self.b]) else {
             return Vec::new();
         };
-        let amount = rhs.get() & 31;
-        let folded = ConstValue::new(lhs.get().wrapping_shl(amount));
+        let width = lhs.width_bits().max(rhs.width_bits()).max(1);
+        let amount = (rhs.get_u64() % width as u64) as u32;
+        let folded = ConstValue::new_with_width(lhs.get_u64().wrapping_shl(amount), width);
         let id = egraph.add(SpirvLang::Const(folded));
         egraph.union(eclass, id);
         vec![id]
@@ -2549,8 +2550,9 @@ impl Applier<SpirvLang, ()> for ShrUFoldConst {
         let Some(rhs) = pure_const_value(egraph, subst[self.b]) else {
             return Vec::new();
         };
-        let amount = rhs.get() & 31;
-        let folded = ConstValue::new(lhs.get().wrapping_shr(amount));
+        let width = lhs.width_bits().max(rhs.width_bits()).max(1);
+        let amount = (rhs.get_u64() % width as u64) as u32;
+        let folded = ConstValue::new_with_width(lhs.get_u64().wrapping_shr(amount), width);
         let id = egraph.add(SpirvLang::Const(folded));
         egraph.union(eclass, id);
         vec![id]
@@ -2572,8 +2574,11 @@ impl Applier<SpirvLang, ()> for ShrSFoldConst {
         let Some(rhs) = pure_const_value(egraph, subst[self.b]) else {
             return Vec::new();
         };
-        let amount = rhs.get() & 31;
-        let folded = ConstValue::new((lhs.get() as i32).wrapping_shr(amount) as u32);
+        let width = lhs.width_bits().max(rhs.width_bits()).max(1);
+        let amount = (rhs.get_u64() % width as u64) as u32;
+        let shift_for_sign = 64 - width.min(64) as i32;
+        let signed = ((lhs.get_u64() << shift_for_sign) as i64).wrapping_shr(shift_for_sign as u32);
+        let folded = ConstValue::new_with_width((signed >> amount) as u64, width);
         let id = egraph.add(SpirvLang::Const(folded));
         egraph.union(eclass, id);
         vec![id]
@@ -3500,6 +3505,30 @@ mod tests {
                     SpirvLang::ShrS([Id::from(0), Id::from(1)]),    // 2 = arithmetic right shift
                 ]),
                 ConstValue::new(0xC000_0000),
+            ),
+            (
+                RecExpr::from(vec![
+                    SpirvLang::Const(ConstValue::new64(3)),     // 0
+                    SpirvLang::Const(ConstValue::new64(1)),     // 1
+                    SpirvLang::Shl([Id::from(0), Id::from(1)]), // 2 = 3 << 1 (u64)
+                ]),
+                ConstValue::new_with_width(6, 64),
+            ),
+            (
+                RecExpr::from(vec![
+                    SpirvLang::Const(ConstValue::new64(4)),      // 0
+                    SpirvLang::Const(ConstValue::new64(1)),      // 1
+                    SpirvLang::ShrU([Id::from(0), Id::from(1)]), // 2 = 4 >> 1 (u64)
+                ]),
+                ConstValue::new_with_width(2, 64),
+            ),
+            (
+                RecExpr::from(vec![
+                    SpirvLang::Const(ConstValue::new64(0x8000_0000_0000_0000)), // 0
+                    SpirvLang::Const(ConstValue::new64(1)),                     // 1
+                    SpirvLang::ShrS([Id::from(0), Id::from(1)]), // arithmetic right shift
+                ]),
+                ConstValue::new_with_width(0xC000_0000_0000_0000, 64),
             ),
         ];
 
