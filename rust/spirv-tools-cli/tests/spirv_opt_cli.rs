@@ -1474,6 +1474,69 @@ fn build_factored_symbolic_mul_sub_module() -> (Vec<u32>, u32, u32, u32, u32) {
     (b.module().assemble(), sub, base, lhs, rhs)
 }
 
+fn build_factored_symbolic_mul_add_module() -> (Vec<u32>, u32, u32, u32, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![int, int, int]);
+    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let base = b.function_parameter(int).expect("base param");
+    let lhs = b.function_parameter(int).expect("lhs param");
+    let rhs = b.function_parameter(int).expect("rhs param");
+    b.begin_block(None).expect("block");
+    let mul_left = b.i_mul(int, None, base, lhs).expect("mul left");
+    let mul_right = b.i_mul(int, None, base, rhs).expect("mul right");
+    let add = b.i_add(int, None, mul_left, mul_right).expect("add");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), add, base, lhs, rhs)
+}
+
+fn build_factored_symbolic_mul_sub_commuted_module() -> (Vec<u32>, u32, u32, u32, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![int, int, int]);
+    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let base = b.function_parameter(int).expect("base param");
+    let lhs = b.function_parameter(int).expect("lhs param");
+    let rhs = b.function_parameter(int).expect("rhs param");
+    b.begin_block(None).expect("block");
+    let mul_left = b.i_mul(int, None, lhs, base).expect("mul left");
+    let mul_right = b.i_mul(int, None, rhs, base).expect("mul right");
+    let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), sub, base, lhs, rhs)
+}
+
+fn build_factored_symbolic_mul_add_commuted_module() -> (Vec<u32>, u32, u32, u32, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![int, int, int]);
+    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let base = b.function_parameter(int).expect("base param");
+    let lhs = b.function_parameter(int).expect("lhs param");
+    let rhs = b.function_parameter(int).expect("rhs param");
+    b.begin_block(None).expect("block");
+    let mul_left = b.i_mul(int, None, lhs, base).expect("mul left");
+    let mul_right = b.i_mul(int, None, rhs, base).expect("mul right");
+    let add = b.i_add(int, None, mul_left, mul_right).expect("add");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), add, base, lhs, rhs)
+}
+
 fn build_factored_mul_sum_module() -> (Vec<u32>, u32, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
@@ -1884,6 +1947,240 @@ fn spirv_opt_cli_factors_symbolic_multiplicand_from_sub() {
 fn spirv_opt_cli_cpp_mode_matches_rust_factored_symbolic_sub_output() {
     let (words, ..) = build_factored_symbolic_mul_sub_module();
     assert_cpp_cli_matches_rust(&words, "factored symbolic subtract");
+}
+
+#[test]
+fn spirv_opt_cli_factors_symbolic_multiplicand_from_sub_commuted_mul() {
+    let (words, sub_id, base, lhs, rhs) = build_factored_symbolic_mul_sub_commuted_module();
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_spirv-opt"));
+    cmd.arg("--")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+    let mut child = cmd.spawn().expect("spawn spirv-opt");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin")
+        .write_all(&words_to_bytes(&words))
+        .expect("write module");
+    let output = child.wait_with_output().expect("run spirv-opt");
+    assert!(
+        output.status.success(),
+        "spirv-opt failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let optimized_words = bytes_to_words(&output.stdout);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+
+    let mut mul_count = 0;
+    let mut sub_seen = false;
+    let mut factored = false;
+    let mut diff_id = None;
+
+    for inst in module.all_inst_iter() {
+        match inst.class.opcode {
+            Op::ISub => {
+                diff_id = inst.result_id;
+                let Some(lhs_id) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    continue;
+                };
+                let Some(rhs_id) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
+                    continue;
+                };
+                if (lhs_id == lhs && rhs_id == rhs) || (lhs_id == rhs && rhs_id == lhs) {
+                    sub_seen = true;
+                }
+            }
+            Op::IMul => {
+                mul_count += 1;
+                if inst.result_id != Some(sub_id) {
+                    continue;
+                }
+                let Some(lhs_id) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    continue;
+                };
+                let Some(rhs_id) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
+                    continue;
+                };
+                let uses_base = lhs_id == base || rhs_id == base;
+                let diff_operand = if lhs_id == base { rhs_id } else { lhs_id };
+                factored = uses_base && diff_id == Some(diff_operand);
+            }
+            Op::IAdd => panic!("addition should not remain in subtract factoring"),
+            _ => {}
+        }
+    }
+
+    assert_eq!(mul_count, 1, "factoring should leave one multiply");
+    assert!(sub_seen, "inner subtraction should remain");
+    assert!(
+        factored,
+        "mul should reuse sub id and keep base as a multiplicand regardless of order"
+    );
+}
+
+#[test]
+fn spirv_opt_cli_cpp_mode_matches_rust_factored_symbolic_sub_commuted_output() {
+    let (words, ..) = build_factored_symbolic_mul_sub_commuted_module();
+    assert_cpp_cli_matches_rust(&words, "factored symbolic subtract with commuted mul");
+}
+
+#[test]
+fn spirv_opt_cli_factors_symbolic_multiplicand_from_add() {
+    let (words, add_id, base, lhs, rhs) = build_factored_symbolic_mul_add_module();
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_spirv-opt"));
+    cmd.arg("--")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+    let mut child = cmd.spawn().expect("spawn spirv-opt");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin")
+        .write_all(&words_to_bytes(&words))
+        .expect("write module");
+    let output = child.wait_with_output().expect("run spirv-opt");
+    assert!(
+        output.status.success(),
+        "spirv-opt failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let optimized_words = bytes_to_words(&output.stdout);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+
+    let mut mul_count = 0;
+    let mut add_seen = false;
+    let mut factored = false;
+    let mut sum_id = None;
+
+    for inst in module.all_inst_iter() {
+        match inst.class.opcode {
+            Op::IAdd => {
+                sum_id = inst.result_id;
+                let Some(lhs_id) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    continue;
+                };
+                let Some(rhs_id) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
+                    continue;
+                };
+                if (lhs_id == lhs && rhs_id == rhs) || (lhs_id == rhs && rhs_id == lhs) {
+                    add_seen = true;
+                }
+            }
+            Op::IMul => {
+                mul_count += 1;
+                if inst.result_id != Some(add_id) {
+                    continue;
+                }
+                let Some(lhs_id) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    continue;
+                };
+                let Some(rhs_id) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
+                    continue;
+                };
+                let uses_base = lhs_id == base || rhs_id == base;
+                let sum_operand = if lhs_id == base { rhs_id } else { lhs_id };
+                factored = uses_base && sum_id == Some(sum_operand);
+            }
+            Op::ISub => panic!("subtraction should not remain in addition factoring"),
+            _ => {}
+        }
+    }
+
+    assert_eq!(mul_count, 1, "factoring should leave one multiply");
+    assert!(add_seen, "inner addition should remain");
+    assert!(factored, "mul should reuse add id and use base*sum");
+}
+
+#[test]
+fn spirv_opt_cli_cpp_mode_matches_rust_factored_symbolic_add_output() {
+    let (words, ..) = build_factored_symbolic_mul_add_module();
+    assert_cpp_cli_matches_rust(&words, "factored symbolic addition");
+}
+
+#[test]
+fn spirv_opt_cli_factors_symbolic_multiplicand_from_add_commuted_mul() {
+    let (words, add_id, base, lhs, rhs) = build_factored_symbolic_mul_add_commuted_module();
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_spirv-opt"));
+    cmd.arg("--")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+    let mut child = cmd.spawn().expect("spawn spirv-opt");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin")
+        .write_all(&words_to_bytes(&words))
+        .expect("write module");
+    let output = child.wait_with_output().expect("run spirv-opt");
+    assert!(
+        output.status.success(),
+        "spirv-opt failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let optimized_words = bytes_to_words(&output.stdout);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+
+    let mut mul_count = 0;
+    let mut add_seen = false;
+    let mut factored = false;
+    let mut sum_id = None;
+
+    for inst in module.all_inst_iter() {
+        match inst.class.opcode {
+            Op::IAdd => {
+                sum_id = inst.result_id;
+                let Some(lhs_id) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    continue;
+                };
+                let Some(rhs_id) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
+                    continue;
+                };
+                if (lhs_id == lhs && rhs_id == rhs) || (lhs_id == rhs && rhs_id == lhs) {
+                    add_seen = true;
+                }
+            }
+            Op::IMul => {
+                mul_count += 1;
+                if inst.result_id != Some(add_id) {
+                    continue;
+                }
+                let Some(lhs_id) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    continue;
+                };
+                let Some(rhs_id) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
+                    continue;
+                };
+                let uses_base = lhs_id == base || rhs_id == base;
+                let sum_operand = if lhs_id == base { rhs_id } else { lhs_id };
+                factored = uses_base && sum_id == Some(sum_operand);
+            }
+            Op::ISub => panic!("subtraction should not remain in addition factoring"),
+            _ => {}
+        }
+    }
+
+    assert_eq!(mul_count, 1, "factoring should leave one multiply");
+    assert!(add_seen, "inner addition should remain");
+    assert!(
+        factored,
+        "mul should reuse add id and keep base as a multiplicand regardless of order"
+    );
+}
+
+#[test]
+fn spirv_opt_cli_cpp_mode_matches_rust_factored_symbolic_add_commuted_output() {
+    let (words, ..) = build_factored_symbolic_mul_add_commuted_module();
+    assert_cpp_cli_matches_rust(&words, "factored symbolic addition with commuted mul");
 }
 
 fn words_to_bytes(words: &[u32]) -> Vec<u8> {

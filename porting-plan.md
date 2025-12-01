@@ -160,6 +160,7 @@ Planned tasks:
 - [x] Add parity for factoring a shared multiplicand with summed constant coefficients (x*2 + x*3 => x*5) across CLI/FFI and C++ outputs.
 - [x] Add parity for factoring a shared constant across distinct multiplicands (x*4 + y*4 => (x+y)*4) across CLI/FFI and C++ outputs.
 - [x] Add parity for factoring a shared symbolic multiplicand across subtraction (a*b - a*c => a*(b-c)) across CLI/FFI and C++ outputs.
+- [x] Add parity for factoring a shared symbolic multiplicand when multiply operands are commuted (b*a ± c*a) across CLI/FFI and C++ outputs.
 - Keep clippy/rustfmt/cargo fuzz smoke tests green after wiring the integration.
 
 ## Completed Milestone: Validator Default Enablement
