@@ -735,6 +735,7 @@ Planned tasks:
 - Added CLI parity check for unsigned mod-by-power-of-two rewrites to keep mask-based strength reductions aligned with C++ spirv-opt.
 - Added CLI parity check for signed div-by-power-of-two rewrites to keep biased shift-based strength reductions aligned with C++ spirv-opt.
 - Added CLI parity check for signed mod-by-power-of-two rewrites to keep mask-based strength reductions aligned with C++ spirv-opt.
+- Added CLI parity checks for 64-bit signed div/mod-by-power-of-two rewrites to keep wide biased shift and mask reductions aligned with C++ spirv-opt.
 - Added validator regression ensuring `OpSelectionMerge` still sits immediately before `OpSwitch`, matching structured control flow placement rules from the C++ validator.
   - Added validator regression ensuring `OpLoopMerge` remains immediately before its terminator (no intervening instructions) to mirror the C++ structured control-flow checks.
   - Added validator regression ensuring loop headers cannot terminate with `OpSwitch` after `OpLoopMerge`, keeping terminator constraints aligned with the C++ validator.
