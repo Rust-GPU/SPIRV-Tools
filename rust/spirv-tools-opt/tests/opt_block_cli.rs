@@ -74,6 +74,29 @@ fn build_mul_identity_module() -> (Vec<u32>, u32) {
     (b.module().assemble(), sum)
 }
 
+fn build_mul_identity_module_s32() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 1);
+    let func_ty = b.type_function(void, vec![]);
+    let _func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let _ = b.begin_block(None).unwrap();
+    let c4 = b.constant_bit32(int, 4);
+    let c5 = b.constant_bit32(int, 5);
+    let c0 = b.constant_bit32(int, 0);
+    let c1 = b.constant_bit32(int, 1);
+    let left = b.i_mul(int, None, c4, c1).expect("mul by one s32");
+    let right = b.i_mul(int, None, c5, c0).expect("mul by zero s32");
+    let sum = b.i_add(int, None, left, right).expect("add folded terms s32");
+    b.ret().unwrap();
+    b.end_function().unwrap();
+    (b.module().assemble(), sum)
+}
+
 fn build_mul_identity_module_s64() -> (Vec<u32>, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
@@ -719,6 +742,63 @@ fn cli_opt_block_matches_cpp_mul_identities() {
     assert!(
         !has_op(&cpp_words, Op::IMul) && !has_op(&cpp_words, Op::IAdd),
         "C++ output should remove mul/add after folding"
+    );
+}
+
+#[test]
+fn cli_opt_block_matches_cpp_mul_identities_s32() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+    let _guard = ENV_GUARD.lock().unwrap();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let (words, sum_id) = build_mul_identity_module_s32();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let rust_output = dir.path().join("rust_output.spv");
+    let cpp_output = dir.path().join("cpp_output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let rust_status = Command::new(exe)
+        .arg(&input)
+        .arg(&rust_output)
+        .status()
+        .expect("run opt_block");
+    assert!(
+        rust_status.success(),
+        "opt_block should succeed for mul identities s32"
+    );
+
+    let cpp_status = Command::new(&cpp_opt)
+        .arg(&input)
+        .arg("-o")
+        .arg(&cpp_output)
+        .status()
+        .expect("run C++ spirv-opt");
+    assert!(
+        cpp_status.success(),
+        "spirv-opt should succeed for mul identities s32"
+    );
+
+    let rust_words = bytes_to_words(&std::fs::read(&rust_output).expect("read rust output"));
+    let cpp_words = bytes_to_words(&std::fs::read(&cpp_output).expect("read cpp output"));
+
+    let rust_const = find_const_value(&rust_words, sum_id);
+    let cpp_const = find_const_value(&cpp_words, sum_id);
+    assert_eq!(
+        rust_const, cpp_const,
+        "Rust CLI and C++ spirv-opt should fold mul identities the same way (s32)"
+    );
+    assert_eq!(rust_const, Some(4), "mul identities should fold to 4 (s32)");
+    assert_eq!(cpp_const, Some(4), "mul identities should fold to 4 (s32)");
+    assert!(
+        !has_op(&rust_words, Op::IMul) && !has_op(&rust_words, Op::IAdd),
+        "Rust output should remove mul/add after folding (s32)"
+    );
+    assert!(
+        !has_op(&cpp_words, Op::IMul) && !has_op(&cpp_words, Op::IAdd),
+        "C++ output should remove mul/add after folding (s32)"
     );
 }
 
