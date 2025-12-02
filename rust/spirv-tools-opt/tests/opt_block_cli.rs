@@ -94,6 +94,25 @@ fn build_div_rem_identity_module() -> (Vec<u32>, (u32, u32)) {
     (b.module().assemble(), (div, rem))
 }
 
+fn build_mul_pow2_module() -> (Vec<u32>, (u32, u32)) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(int, vec![int]);
+    let _func = b
+        .begin_function(int, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let param = b.function_parameter(int).unwrap();
+    let _ = b.begin_block(None).unwrap();
+    let c8 = b.constant_bit32(int, 8);
+    let c3 = b.constant_bit32(int, 3);
+    let mul = b.i_mul(int, None, param, c8).expect("mul pow2");
+    b.ret_value(mul).unwrap();
+    b.end_function().unwrap();
+    (b.module().assemble(), (mul, c3))
+}
+
 #[test]
 fn cli_opt_block_folds_arithmetic() {
     let _guard = ENV_GUARD.lock().unwrap();
@@ -427,6 +446,71 @@ fn cli_opt_block_matches_cpp_div_rem_identities() {
         !has_op(&cpp_words, Op::UDiv) && !has_op(&cpp_words, Op::UMod),
         "C++ output should remove div/rem after folding"
     );
+}
+
+#[test]
+fn cli_opt_block_matches_cpp_mul_pow2_rewrite() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+    let _guard = ENV_GUARD.lock().unwrap();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let (words, (_mul_id, shift_const_id)) = build_mul_pow2_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let rust_output = dir.path().join("rust_output.spv");
+    let cpp_output = dir.path().join("cpp_output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let rust_status = Command::new(exe)
+        .arg(&input)
+        .arg(&rust_output)
+        .status()
+        .expect("run opt_block");
+    assert!(
+        rust_status.success(),
+        "opt_block should succeed for pow2 rewrite"
+    );
+
+    let cpp_status = Command::new(&cpp_opt)
+        .arg(&input)
+        .arg("-o")
+        .arg(&cpp_output)
+        .status()
+        .expect("run C++ spirv-opt");
+    assert!(
+        cpp_status.success(),
+        "spirv-opt should succeed for pow2 rewrite"
+    );
+
+    let rust_words = bytes_to_words(&std::fs::read(&rust_output).expect("read rust output"));
+    let cpp_words = bytes_to_words(&std::fs::read(&cpp_output).expect("read cpp output"));
+
+    assert!(
+        !has_op(&rust_words, Op::IMul),
+        "Rust output should remove mul after rewrite"
+    );
+    assert!(
+        has_op(&rust_words, Op::ShiftLeftLogical),
+        "Rust output should include shift after rewrite"
+    );
+    assert!(
+        !has_op(&cpp_words, Op::IMul),
+        "C++ output should remove mul after rewrite"
+    );
+    assert!(
+        has_op(&cpp_words, Op::ShiftLeftLogical),
+        "C++ output should include shift after rewrite"
+    );
+
+    let rust_shift = find_const_value(&rust_words, shift_const_id);
+    let cpp_shift = find_const_value(&cpp_words, shift_const_id);
+    assert_eq!(
+        rust_shift, cpp_shift,
+        "Rust CLI and C++ spirv-opt should agree on shift amount"
+    );
+    assert_eq!(rust_shift, Some(3), "pow2 rewrite should shift by 3");
 }
 
 static ENV_GUARD: Mutex<()> = Mutex::new(());
