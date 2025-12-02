@@ -134,6 +134,26 @@ fn build_signed_div_rem_identity_module() -> (Vec<u32>, (u32, u32)) {
     (b.module().assemble(), (div, rem))
 }
 
+fn build_signed_div_rem_identity_module_u64() -> (Vec<u32>, (u32, u32)) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(64, 1);
+    let func_ty = b.type_function(void, vec![]);
+    let _func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let _ = b.begin_block(None).unwrap();
+    let c42 = b.constant_bit64(int, 42);
+    let c1 = b.constant_bit64(int, 1);
+    let div = b.s_div(int, None, c42, c1).expect("sdiv by one s64");
+    let rem = b.s_rem(int, None, c42, c1).expect("srem by one s64");
+    b.ret().unwrap();
+    b.end_function().unwrap();
+    (b.module().assemble(), (div, rem))
+}
+
 fn build_mul_pow2_module() -> (Vec<u32>, (u32, u32)) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
@@ -839,6 +859,70 @@ fn cli_opt_block_matches_cpp_signed_div_rem_identities() {
     assert!(
         !has_op(&cpp_words, Op::SDiv) && !has_op(&cpp_words, Op::SRem),
         "C++ output should remove sdiv/srem after folding"
+    );
+}
+
+#[test]
+fn cli_opt_block_matches_cpp_signed_div_rem_identities_u64() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+    let _guard = ENV_GUARD.lock().unwrap();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let (words, (div_id, rem_id)) = build_signed_div_rem_identity_module_u64();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let rust_output = dir.path().join("rust_output.spv");
+    let cpp_output = dir.path().join("cpp_output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let rust_status = Command::new(exe)
+        .arg(&input)
+        .arg(&rust_output)
+        .status()
+        .expect("run opt_block");
+    assert!(
+        rust_status.success(),
+        "opt_block should succeed for signed div/rem identities u64"
+    );
+
+    let cpp_status = Command::new(&cpp_opt)
+        .arg(&input)
+        .arg("-o")
+        .arg(&cpp_output)
+        .status()
+        .expect("run C++ spirv-opt");
+    assert!(
+        cpp_status.success(),
+        "spirv-opt should succeed for signed div/rem identity folding u64"
+    );
+
+    let rust_words = bytes_to_words(&std::fs::read(&rust_output).expect("read rust output"));
+    let cpp_words = bytes_to_words(&std::fs::read(&cpp_output).expect("read cpp output"));
+
+    let rust_div = find_const_value(&rust_words, div_id);
+    let rust_rem = find_const_value(&rust_words, rem_id);
+    let cpp_div = find_const_value(&cpp_words, div_id);
+    let cpp_rem = find_const_value(&cpp_words, rem_id);
+
+    assert_eq!(
+        rust_div, cpp_div,
+        "Rust CLI and C++ spirv-opt should fold signed div-by-one the same way (s64)"
+    );
+    assert_eq!(rust_div, Some(42), "signed div-by-one should fold to the original value (s64)");
+    assert_eq!(
+        rust_rem, cpp_rem,
+        "Rust CLI and C++ spirv-opt should fold signed rem-by-one the same way (s64)"
+    );
+    assert_eq!(rust_rem, Some(0), "signed rem-by-one should fold to zero (s64)");
+    assert!(
+        !has_op(&rust_words, Op::SDiv) && !has_op(&rust_words, Op::SRem),
+        "Rust output should remove sdiv/srem after folding (s64)"
+    );
+    assert!(
+        !has_op(&cpp_words, Op::SDiv) && !has_op(&cpp_words, Op::SRem),
+        "C++ output should remove sdiv/srem after folding (s64)"
     );
 }
 

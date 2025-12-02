@@ -741,6 +741,7 @@ Planned tasks:
 - Added CLI parity check for 64-bit unsigned div/rem-by-one identities to keep Rust `opt_block` aligned with C++ spirv-opt for unsigned identity folds.
 - Added CLI parity checks for 64-bit mul-by-power-of-two and mul-by-neg-one rewrites to keep wide shift/negate strength reductions aligned with C++ spirv-opt.
 - Added CLI parity check for signed 64-bit mul-by-power-of-two rewrites to keep wide shift-based strength reductions aligned with C++ spirv-opt for signed integers.
+- Added CLI parity check for signed 64-bit div/rem-by-one identities to keep Rust `opt_block` aligned with C++ spirv-opt for wide signed identity folds.
 - Added validator regression ensuring `OpSelectionMerge` still sits immediately before `OpSwitch`, matching structured control flow placement rules from the C++ validator.
   - Added validator regression ensuring `OpLoopMerge` remains immediately before its terminator (no intervening instructions) to mirror the C++ structured control-flow checks.
   - Added validator regression ensuring loop headers cannot terminate with `OpSwitch` after `OpLoopMerge`, keeping terminator constraints aligned with the C++ validator.
