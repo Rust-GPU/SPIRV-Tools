@@ -798,6 +798,31 @@ fn rust_and_cpp_arith_outputs_match_rotate_fold_commuted() {
 }
 
 #[test]
+fn rust_and_cpp_arith_outputs_match_rotate_fold_signed() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+    let module_words = build_rotate_fold_signed_module();
+    let rust_sig = arith_signature(
+        &spirv_tools_opt::translate::optimize_arith_block(&extract_arith_insts(&module_words))
+            .expect("rust optimize"),
+    );
+    let optimized_cpp = run_cpp_opt_module(&module_words, &cpp_opt);
+    let cpp_arith: Vec<_> = optimized_cpp
+        .types_global_values
+        .iter()
+        .chain(optimized_cpp.functions[0].blocks[0].instructions.iter())
+        .filter(|inst| is_arith_opcode(inst.class.opcode))
+        .cloned()
+        .collect();
+    let cpp_sig = arith_signature(&cpp_arith);
+    assert_eq!(
+        rust_sig, cpp_sig,
+        "Rust vs C++ arithmetic output mismatch for signed rotate folding"
+    );
+}
+
+#[test]
 fn rust_and_cpp_arith_outputs_match_rotate_fold_u64() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
@@ -844,6 +869,31 @@ fn rust_and_cpp_arith_outputs_match_rotate_fold_u64_commuted() {
     assert_eq!(
         rust_sig, cpp_sig,
         "Rust vs C++ arithmetic output mismatch for 64-bit rotate folding (commuted)"
+    );
+}
+
+#[test]
+fn rust_and_cpp_arith_outputs_match_rotate_fold_signed_u64() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+    let module_words = build_rotate_fold_signed_u64_module();
+    let rust_sig = arith_signature(
+        &spirv_tools_opt::translate::optimize_arith_block(&extract_arith_insts(&module_words))
+            .expect("rust optimize"),
+    );
+    let optimized_cpp = run_cpp_opt_module(&module_words, &cpp_opt);
+    let cpp_arith: Vec<_> = optimized_cpp
+        .types_global_values
+        .iter()
+        .chain(optimized_cpp.functions[0].blocks[0].instructions.iter())
+        .filter(|inst| is_arith_opcode(inst.class.opcode))
+        .cloned()
+        .collect();
+    let cpp_sig = arith_signature(&cpp_arith);
+    assert_eq!(
+        rust_sig, cpp_sig,
+        "Rust vs C++ arithmetic output mismatch for signed 64-bit rotate folding"
     );
 }
 
@@ -4438,6 +4488,32 @@ fn build_rotate_fold_commuted_module() -> Vec<u32> {
     b.module().assemble()
 }
 
+fn build_rotate_fold_signed_module() -> Vec<u32> {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 1); // signed
+    let func_ty = b.type_function(void, vec![]);
+    let _ = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let value = b.constant_bit32(int, 0x12);
+    let shift = b.constant_bit32(int, 3);
+    let left = b.shift_left_logical(int, None, value, shift).expect("shl");
+    let right_amount = b.constant_bit32(int, 29);
+    let right = b
+        .shift_right_logical(int, None, value, right_amount)
+        .expect("shr");
+    let _ = b
+        .bitwise_or(int, None, left, right)
+        .expect("rotate pattern");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    b.module().assemble()
+}
+
 fn build_rotate_fold_u64_module() -> Vec<u32> {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
@@ -4485,6 +4561,32 @@ fn build_rotate_fold_u64_commuted_module() -> Vec<u32> {
     let _ = b
         .bitwise_or(int, None, right, left)
         .expect("rotate pattern commuted");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    b.module().assemble()
+}
+
+fn build_rotate_fold_signed_u64_module() -> Vec<u32> {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(64, 1); // signed
+    let func_ty = b.type_function(void, vec![]);
+    let _ = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let value = b.constant_bit64(int, 0x0123456789ABCDEF);
+    let shift = b.constant_bit64(int, 16);
+    let left = b.shift_left_logical(int, None, value, shift).expect("shl");
+    let right_amount = b.constant_bit64(int, 48);
+    let right = b
+        .shift_right_logical(int, None, value, right_amount)
+        .expect("shr");
+    let _ = b
+        .bitwise_or(int, None, left, right)
+        .expect("rotate pattern");
     b.ret().expect("ret");
     b.end_function().expect("end");
     b.module().assemble()
