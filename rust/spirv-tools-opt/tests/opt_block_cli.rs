@@ -252,6 +252,24 @@ fn build_mul_neg_one_module() -> (Vec<u32>, u32) {
     (b.module().assemble(), mul)
 }
 
+fn build_mul_neg_one_module_s64() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let int = b.type_int(64, 1);
+    let func_ty = b.type_function(int, vec![int]);
+    let _func = b
+        .begin_function(int, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let param = b.function_parameter(int).unwrap();
+    let _ = b.begin_block(None).unwrap();
+    let c_neg_one = b.constant_bit64(int, u64::MAX);
+    let mul = b.i_mul(int, None, param, c_neg_one).expect("mul -1 s64");
+    b.ret_value(mul).unwrap();
+    b.end_function().unwrap();
+    (b.module().assemble(), mul)
+}
+
 fn build_mul_neg_one_module_u64() -> (Vec<u32>, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
@@ -1205,6 +1223,72 @@ fn cli_opt_block_matches_cpp_mul_neg_one_rewrite() {
     assert!(
         module_has_result(&cpp_words, mul_id),
         "C++ output should keep the result id alive after rewrite"
+    );
+}
+
+#[test]
+fn cli_opt_block_matches_cpp_mul_neg_one_rewrite_s64() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+    let _guard = ENV_GUARD.lock().unwrap();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let (words, mul_id) = build_mul_neg_one_module_s64();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let rust_output = dir.path().join("rust_output.spv");
+    let cpp_output = dir.path().join("cpp_output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let rust_status = Command::new(exe)
+        .arg(&input)
+        .arg(&rust_output)
+        .status()
+        .expect("run opt_block");
+    assert!(
+        rust_status.success(),
+        "opt_block should succeed for mul-by-neg-one rewrite s64"
+    );
+
+    let cpp_status = Command::new(&cpp_opt)
+        .arg(&input)
+        .arg("-o")
+        .arg(&cpp_output)
+        .status()
+        .expect("run C++ spirv-opt");
+    assert!(
+        cpp_status.success(),
+        "spirv-opt should succeed for mul-by-neg-one rewrite s64"
+    );
+
+    let rust_words = bytes_to_words(&std::fs::read(&rust_output).expect("read rust output"));
+    let cpp_words = bytes_to_words(&std::fs::read(&cpp_output).expect("read cpp output"));
+
+    assert!(
+        !has_op(&rust_words, Op::IMul),
+        "Rust output should remove mul after rewrite (s64)"
+    );
+    assert!(
+        has_op(&rust_words, Op::SNegate),
+        "Rust output should include negate after rewrite (s64)"
+    );
+    assert!(
+        !has_op(&cpp_words, Op::IMul),
+        "C++ output should remove mul after rewrite (s64)"
+    );
+    assert!(
+        has_op(&cpp_words, Op::SNegate),
+        "C++ output should include negate after rewrite (s64)"
+    );
+
+    assert!(
+        module_has_result(&rust_words, mul_id),
+        "Rust output should keep the result id alive after rewrite (s64)"
+    );
+    assert!(
+        module_has_result(&cpp_words, mul_id),
+        "C++ output should keep the result id alive after rewrite (s64)"
     );
 }
 
