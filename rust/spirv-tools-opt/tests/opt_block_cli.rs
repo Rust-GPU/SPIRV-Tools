@@ -6,6 +6,30 @@ use rspirv::spirv::{AddressingModel, Capability, FunctionControl, MemoryModel, O
 use std::sync::Mutex;
 use tempfile::tempdir;
 
+fn cpp_opt_bin() -> Option<String> {
+    if let Ok(path) = std::env::var("SPIRV_CPP_OPT") {
+        if !path.is_empty() {
+            return Some(path);
+        }
+    }
+    let from_path = std::env::var_os("PATH").and_then(|paths| {
+        std::env::split_paths(&paths).find_map(|dir| {
+            let candidate = dir.join("spirv-opt");
+            if candidate.is_file() {
+                Some(candidate)
+            } else {
+                None
+            }
+        })
+    });
+    if from_path.is_none() {
+        eprintln!(
+            "SPIRV_CPP_OPT not set and spirv-opt not found on PATH; skipping C++ parity check"
+        );
+    }
+    from_path.map(|p| p.to_string_lossy().into_owned())
+}
+
 fn build_sample_module() -> (Vec<u32>, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
@@ -25,6 +49,29 @@ fn build_sample_module() -> (Vec<u32>, u32) {
     b.ret().unwrap();
     b.end_function().unwrap();
     (b.module().assemble(), sub)
+}
+
+fn build_mul_identity_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let _func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let _ = b.begin_block(None).unwrap();
+    let c4 = b.constant_bit32(int, 4);
+    let c5 = b.constant_bit32(int, 5);
+    let c0 = b.constant_bit32(int, 0);
+    let c1 = b.constant_bit32(int, 1);
+    let left = b.i_mul(int, None, c4, c1).expect("mul by one");
+    let right = b.i_mul(int, None, c5, c0).expect("mul by zero");
+    let sum = b.i_add(int, None, left, right).expect("add folded terms");
+    b.ret().unwrap();
+    b.end_function().unwrap();
+    (b.module().assemble(), sum)
 }
 
 #[test]
@@ -234,6 +281,66 @@ fn cli_opt_block_rejects_unaligned_input() {
     );
 }
 
+#[test]
+fn cli_opt_block_matches_cpp_mul_identities() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+    let _guard = ENV_GUARD.lock().unwrap();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let (words, sum_id) = build_mul_identity_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let rust_output = dir.path().join("rust_output.spv");
+    let cpp_output = dir.path().join("cpp_output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let rust_status = Command::new(exe)
+        .arg(&input)
+        .arg(&rust_output)
+        .status()
+        .expect("run opt_block");
+    assert!(
+        rust_status.success(),
+        "opt_block should succeed for identities"
+    );
+
+    let cpp_status = Command::new(&cpp_opt)
+        .arg(&input)
+        .arg("-o")
+        .arg(&cpp_output)
+        .status()
+        .expect("run C++ spirv-opt");
+    assert!(
+        cpp_status.success(),
+        "spirv-opt should succeed for identity folding"
+    );
+
+    let rust_words = bytes_to_words(&std::fs::read(&rust_output).expect("read rust output"));
+    let cpp_words = bytes_to_words(&std::fs::read(&cpp_output).expect("read cpp output"));
+
+    let rust_const = find_const_value(&rust_words, sum_id);
+    let cpp_const = find_const_value(&cpp_words, sum_id);
+    assert_eq!(
+        rust_const, cpp_const,
+        "Rust CLI and C++ spirv-opt should fold mul identities the same way"
+    );
+    assert_eq!(
+        rust_const,
+        Some(4),
+        "mul-by-one/zero identities should fold to constant 4"
+    );
+    assert!(
+        !has_op(&rust_words, Op::IMul) && !has_op(&rust_words, Op::IAdd),
+        "Rust output should remove mul/add after folding"
+    );
+    assert!(
+        !has_op(&cpp_words, Op::IMul) && !has_op(&cpp_words, Op::IAdd),
+        "C++ output should remove mul/add after folding"
+    );
+}
+
 static ENV_GUARD: Mutex<()> = Mutex::new(());
 
 fn words_to_bytes(words: &[u32]) -> Vec<u8> {
@@ -253,4 +360,31 @@ fn bytes_to_words(bytes: &[u8]) -> Vec<u32> {
             u32::from_le_bytes(arr)
         })
         .collect()
+}
+
+fn find_const_value(words: &[u32], target_id: u32) -> Option<u32> {
+    let mut loader = Loader::new();
+    rspirv::binary::parse_words(words, &mut loader).expect("parse module");
+    let module = loader.module();
+    let result = module.all_inst_iter().find_map(|inst| {
+        if inst.class.opcode == Op::Constant && inst.result_id == Some(target_id) {
+            match inst.operands.as_slice() {
+                [rspirv::dr::Operand::LiteralBit32(v)] => Some(*v),
+                _ => None,
+            }
+        } else {
+            None
+        }
+    });
+    result
+}
+
+fn has_op(words: &[u32], op: Op) -> bool {
+    let mut loader = Loader::new();
+    rspirv::binary::parse_words(words, &mut loader).expect("parse module");
+    let module = loader.module();
+    let present = module
+        .all_inst_iter()
+        .any(|inst| inst.class.opcode == op);
+    present
 }

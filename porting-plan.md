@@ -727,6 +727,7 @@ Planned tasks:
 - Added Rust-vs-C++ parity for signed rotate folding (32-bit and 64-bit) to keep bit-rotation rewrites consistent across signed integer types.
 - Added Rust-vs-C++ parity for commuted signed rotate folding (32-bit and 64-bit) to keep operand-order invariants aligned for signed paths.
 - Added Rust-vs-C++ parity for commuted 32-bit rotate folding to keep operand-order invariants aligned.
+- Added CLI parity check for mul-by-one/zero identities to keep `opt_block` output aligned with C++ spirv-opt when folding neutral/absorbing factors.
 - Added validator regression ensuring `OpSelectionMerge` still sits immediately before `OpSwitch`, matching structured control flow placement rules from the C++ validator.
   - Added validator regression ensuring `OpLoopMerge` remains immediately before its terminator (no intervening instructions) to mirror the C++ structured control-flow checks.
   - Added validator regression ensuring loop headers cannot terminate with `OpSwitch` after `OpLoopMerge`, keeping terminator constraints aligned with the C++ validator.
