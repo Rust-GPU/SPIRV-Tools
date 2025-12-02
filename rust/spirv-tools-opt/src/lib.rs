@@ -2015,10 +2015,10 @@ impl Applier<SpirvLang, ()> for MulPowerOfTwo {
         let Some(constant) = const_value(egraph, subst[self.c]) else {
             return Vec::new();
         };
-        let Some(shift) = is_power_of_two(constant.get()) else {
+        let Some(shift) = is_power_of_two(constant.get_u64()) else {
             return Vec::new();
         };
-        if shift == 0 {
+        if shift == 0 || shift >= 64 {
             return Vec::new();
         }
         let shift_const = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
@@ -2043,10 +2043,10 @@ impl Applier<SpirvLang, ()> for DivPowerOfTwo {
         let Some(constant) = const_value(egraph, subst[self.c]) else {
             return Vec::new();
         };
-        let Some(shift) = is_power_of_two(constant.get()) else {
+        let Some(shift) = is_power_of_two(constant.get_u64()) else {
             return Vec::new();
         };
-        if shift == 0 {
+        if shift == 0 || shift >= 64 {
             return Vec::new();
         }
         if !has_symbol(egraph, subst[self.x]) {
@@ -2069,7 +2069,7 @@ impl Applier<SpirvLang, ()> for DivPowerOfTwo {
                 constant.width_bits(),
             )));
             let sign = egraph.add(SpirvLang::ShrS([subst[self.x], sign_shift]));
-            let mask_value = (1u32 << shift).wrapping_sub(1);
+            let mask_value = ((1u128 << shift) - 1) as u64;
             let mask = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
                 mask_value as u64,
                 constant.width_bits(),
@@ -2099,10 +2099,10 @@ impl Applier<SpirvLang, ()> for UModPowerOfTwo {
         let Some(constant) = const_value(egraph, subst[self.c]) else {
             return Vec::new();
         };
-        let Some(shift) = is_power_of_two(constant.get()) else {
+        let Some(shift) = is_power_of_two(constant.get_u64()) else {
             return Vec::new();
         };
-        if shift == 0 {
+        if shift == 0 || shift >= 64 {
             return Vec::new();
         }
         let shift_const = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
@@ -2199,11 +2199,11 @@ impl Applier<SpirvLang, ()> for BitAndConstSimplify {
         let Some(constant) = const_value(egraph, subst[self.c]) else {
             return Vec::new();
         };
-        if constant.get() == u32::MAX {
+        if constant.get_u64() == constant.mask() {
             egraph.union(eclass, subst[self.x]);
             return vec![subst[self.x]];
         }
-        if constant.get() == 0 {
+        if constant.get_u64() == 0 {
             let zero = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
                 0,
                 constant.width_bits(),
@@ -2227,15 +2227,15 @@ impl Applier<SpirvLang, ()> for BitAndToUmod {
         let Some(constant) = const_value(egraph, subst[self.c]) else {
             return Vec::new();
         };
-        let mask = constant.get();
+        let mask = constant.get_u64();
         let Some(shift) = is_power_of_two(mask.wrapping_add(1)) else {
             return Vec::new();
         };
-        if shift == 0 {
+        if shift == 0 || shift >= 64 {
             return Vec::new();
         }
         let const_id = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
-            mask.wrapping_add(1) as u64,
+            mask.wrapping_add(1),
             constant.width_bits(),
         )));
         let umod = egraph.add(SpirvLang::UMod([subst[self.x], const_id]));
@@ -2274,13 +2274,13 @@ impl Applier<SpirvLang, ()> for UModPowerOfTwoMask {
         let Some(constant) = const_value(egraph, subst[self.c]) else {
             return Vec::new();
         };
-        let Some(shift) = is_power_of_two(constant.get()) else {
+        let Some(shift) = is_power_of_two(constant.get_u64()) else {
             return Vec::new();
         };
-        if shift == 0 {
+        if shift == 0 || shift >= 64 {
             return Vec::new();
         }
-        let mask_value = (1u32 << shift).wrapping_sub(1);
+        let mask_value = (1u128 << shift) - 1;
         let mask = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
             mask_value as u64,
             constant.width_bits(),
@@ -2325,14 +2325,14 @@ impl Applier<SpirvLang, ()> for BitOrConstSimplify {
         let Some(c) = const_value(egraph, subst[self.c]) else {
             return Vec::new();
         };
-        match c.get() {
+        match c.get_u64() {
             0 => {
                 egraph.union(eclass, subst[self.x]);
                 vec![subst[self.x]]
             }
-            u32::MAX => {
+            v if v == c.mask() => {
                 let ones = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
-                    u32::MAX as u64,
+                    c.mask(),
                     c.width_bits(),
                 )));
                 egraph.union(eclass, ones);
@@ -2356,7 +2356,7 @@ impl Applier<SpirvLang, ()> for BitOrComplement {
             return Vec::new();
         };
         let ones = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
-            u32::MAX as u64,
+            u64::MAX,
             width,
         )));
         egraph.union(eclass, ones);
@@ -2543,7 +2543,7 @@ impl Applier<SpirvLang, ()> for MaskThenShift {
         if width > 32 {
             return Vec::new();
         }
-        let Some(mask_pow) = is_power_of_two(mask_val.get()) else {
+        let Some(mask_pow) = is_power_of_two(mask_val.get_u64()) else {
             return Vec::new();
         };
         if mask_pow == 0 {
@@ -2554,7 +2554,7 @@ impl Applier<SpirvLang, ()> for MaskThenShift {
         let shr_const_id = egraph.add(SpirvLang::Const(shr_const));
         let shr = egraph.add(SpirvLang::ShrU([subst[self.x], shr_const_id]));
         let new_mask =
-            ConstValue::new_with_width(mask_val.get().wrapping_shr(shift_val.get()) as u64, width);
+            ConstValue::new_with_width(mask_val.get_u64().wrapping_shr(shift_val.get()), width);
         let mask_id = egraph.add(SpirvLang::Const(new_mask));
         let band = egraph.add(SpirvLang::BitAnd([shr, mask_id]));
         egraph.union(eclass, band);
@@ -2581,7 +2581,7 @@ impl Applier<SpirvLang, ()> for MaskThenShiftSigned {
         if width > 32 {
             return Vec::new();
         }
-        let Some(mask_pow) = is_power_of_two(mask_val.get()) else {
+        let Some(mask_pow) = is_power_of_two(mask_val.get_u64()) else {
             return Vec::new();
         };
         if mask_pow == 0 {
@@ -2591,7 +2591,7 @@ impl Applier<SpirvLang, ()> for MaskThenShiftSigned {
         let shr_const_id = egraph.add(SpirvLang::Const(shr_const));
         let shr = egraph.add(SpirvLang::ShrS([subst[self.x], shr_const_id]));
         let new_mask =
-            ConstValue::new_with_width(mask_val.get().wrapping_shr(shift_val.get()) as u64, width);
+            ConstValue::new_with_width(mask_val.get_u64().wrapping_shr(shift_val.get()), width);
         let mask_id = egraph.add(SpirvLang::Const(new_mask));
         let band = egraph.add(SpirvLang::BitAnd([shr, mask_id]));
         egraph.union(eclass, band);
@@ -2813,7 +2813,7 @@ fn combine_signed_consts(
     ConstValue::new_with_width(f(l, r) as u64, width)
 }
 
-fn is_power_of_two(value: u32) -> Option<u32> {
+fn is_power_of_two(value: u64) -> Option<u32> {
     if value == 0 || value.count_ones() != 1 {
         return None;
     }
@@ -3951,6 +3951,38 @@ mod tests {
     }
 
     #[test]
+    fn bitwise_const_simplify_respects_width() {
+        // x & all_ones (64-bit) => x
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),                       // 0
+            SpirvLang::Const(ConstValue::new_with_width(u64::MAX, 64)), // 1
+            SpirvLang::BitAnd([Id::from(0), Id::from(1)]),              // 2
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let class = runner.egraph.find(runner.roots[0]);
+        let nodes = &runner.egraph[class].nodes;
+        let has_symbol = nodes
+            .iter()
+            .any(|n| matches!(n, SpirvLang::Symbol(sym) if *sym == Symbol::from("x")));
+        assert!(has_symbol, "expected x & all_ones to reduce to x");
+
+        // x | all_ones (64-bit) => all_ones (width preserved)
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),                       // 0
+            SpirvLang::Const(ConstValue::new_with_width(u64::MAX, 64)), // 1
+            SpirvLang::BitOr([Id::from(0), Id::from(1)]),               // 2
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Const(ConstValue::new_with_width(
+                u64::MAX,
+                64
+            ))])
+        );
+    }
+
+    #[test]
     fn rewrites_udiv_power_of_two_into_shift() {
         let expr = RecExpr::from(vec![
             SpirvLang::Symbol(Symbol::from("x")),        // 0
@@ -4016,6 +4048,56 @@ mod tests {
         assert!(
             found_shr,
             "expected signed div by power of two to rewrite into biased shift"
+        );
+    }
+
+    #[test]
+    fn rewrites_large_sdiv_power_of_two_with_wide_mask() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Const(ConstValue::new_with_width(
+                1u64 << 33, // 2^33
+                64,
+            )), // 1
+            SpirvLang::SDiv([Id::from(0), Id::from(1)]), // 2 = x / 2^33
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let class = runner.egraph.find(runner.roots[0]);
+        let nodes = &runner.egraph[class].nodes;
+        let mask_value = (1u128 << 33) - 1;
+        let found_shr = nodes.iter().any(|node| {
+            if let SpirvLang::ShrS([lhs, rhs]) = node {
+                let rhs_is_shift = const_value(&runner.egraph, *rhs)
+                    .is_some_and(|val| val.get() == 33 && val.width_bits() == 64);
+                if !rhs_is_shift {
+                    return false;
+                }
+                let add_eclass = runner.egraph.find(*lhs);
+                let add_nodes = &runner.egraph[add_eclass].nodes;
+                let has_mask = add_nodes.iter().any(|candidate| {
+                    if let SpirvLang::Add([_, band]) = candidate {
+                        let band_eclass = runner.egraph.find(*band);
+                        runner.egraph[band_eclass].nodes.iter().any(|band_node| {
+                            if let SpirvLang::BitAnd([_, mask]) = band_node {
+                                const_value(&runner.egraph, *mask).is_some_and(|val| {
+                                    val.get_u64() == mask_value as u64 && val.width_bits() == 64
+                                })
+                            } else {
+                                false
+                            }
+                        })
+                    } else {
+                        false
+                    }
+                });
+                rhs_is_shift && has_mask
+            } else {
+                false
+            }
+        });
+        assert!(
+            found_shr,
+            "expected signed div by large power of two to rewrite into biased shift with wide mask"
         );
     }
 
