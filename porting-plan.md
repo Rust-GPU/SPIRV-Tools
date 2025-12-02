@@ -725,6 +725,7 @@ Planned tasks:
 - Added Rust-vs-C++ parity for 64-bit mask+shift (logical and signed) cases and enabled rewrites up to 64 bits.
 - Added Rust-vs-C++ parity for 64-bit rotate folding (including commuted patterns) to keep width-aware rewrites aligned.
 - Added Rust-vs-C++ parity for signed rotate folding (32-bit and 64-bit) to keep bit-rotation rewrites consistent across signed integer types.
+- Added Rust-vs-C++ parity for commuted signed rotate folding (32-bit and 64-bit) to keep operand-order invariants aligned for signed paths.
 - Added Rust-vs-C++ parity for commuted 32-bit rotate folding to keep operand-order invariants aligned.
 - Added validator regression ensuring `OpSelectionMerge` still sits immediately before `OpSwitch`, matching structured control flow placement rules from the C++ validator.
   - Added validator regression ensuring `OpLoopMerge` remains immediately before its terminator (no intervening instructions) to mirror the C++ structured control-flow checks.
