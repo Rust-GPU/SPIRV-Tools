@@ -1473,6 +1473,12 @@ fn find_const_value(words: &[u32], target_id: u32) -> Option<u32> {
         if inst.class.opcode == Op::Constant && inst.result_id == Some(target_id) {
             match inst.operands.as_slice() {
                 [rspirv::dr::Operand::LiteralBit32(v)] => Some(*v),
+                [rspirv::dr::Operand::LiteralBit64(v)] if (*v >> 32) == 0 => Some(*v as u32),
+                [rspirv::dr::Operand::LiteralBit32(lo), rspirv::dr::Operand::LiteralBit32(hi)]
+                    if *hi == 0 =>
+                {
+                    Some(*lo)
+                }
                 _ => None,
             }
         } else {
@@ -1495,8 +1501,18 @@ fn has_const_literal(words: &[u32], value: u32) -> bool {
     rspirv::binary::parse_words(words, &mut loader).expect("parse module");
     let module = loader.module();
     let present = module.all_inst_iter().any(|inst| {
-        inst.class.opcode == Op::Constant
-            && matches!(inst.operands.as_slice(), [rspirv::dr::Operand::LiteralBit32(v)] if *v == value)
+        if inst.class.opcode == Op::Constant {
+            match inst.operands.as_slice() {
+                [rspirv::dr::Operand::LiteralBit32(v)] => *v == value,
+                [rspirv::dr::Operand::LiteralBit64(v)] => (*v as u32) == value && (*v >> 32) == 0,
+                [rspirv::dr::Operand::LiteralBit32(lo), rspirv::dr::Operand::LiteralBit32(hi)] => {
+                    *lo == value && *hi == 0
+                }
+                _ => false,
+            }
+        } else {
+            false
+        }
     });
     present
 }
@@ -1511,6 +1527,12 @@ fn const_literals(words: &[u32]) -> std::collections::BTreeSet<u32> {
             if inst.class.opcode == Op::Constant {
                 match inst.operands.as_slice() {
                     [rspirv::dr::Operand::LiteralBit32(v)] => Some(*v),
+                    [rspirv::dr::Operand::LiteralBit64(v)] if (*v >> 32) == 0 => Some(*v as u32),
+                    [rspirv::dr::Operand::LiteralBit32(lo), rspirv::dr::Operand::LiteralBit32(hi)]
+                        if *hi == 0 =>
+                    {
+                        Some(*lo)
+                    }
                     _ => None,
                 }
             } else {
