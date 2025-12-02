@@ -731,6 +731,7 @@ Planned tasks:
 - Added CLI parity check for div/rem-by-one identities to keep `opt_block` output aligned with C++ spirv-opt when folding identity/remainder eliminations.
 - Added CLI parity check for mul-by-power-of-two rewrites to keep `opt_block` shift-based strength reductions aligned with C++ spirv-opt.
 - Added CLI parity check for mul-by-neg-one rewrites to keep `opt_block` negate-based strength reductions aligned with C++ spirv-opt.
+- Added CLI parity check for unsigned div-by-power-of-two rewrites to keep shift-based strength reductions aligned with C++ spirv-opt.
 - Added validator regression ensuring `OpSelectionMerge` still sits immediately before `OpSwitch`, matching structured control flow placement rules from the C++ validator.
   - Added validator regression ensuring `OpLoopMerge` remains immediately before its terminator (no intervening instructions) to mirror the C++ structured control-flow checks.
   - Added validator regression ensuring loop headers cannot terminate with `OpSwitch` after `OpLoopMerge`, keeping terminator constraints aligned with the C++ validator.

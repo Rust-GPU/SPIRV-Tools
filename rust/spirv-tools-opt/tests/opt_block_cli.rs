@@ -131,6 +131,24 @@ fn build_mul_neg_one_module() -> (Vec<u32>, u32) {
     (b.module().assemble(), mul)
 }
 
+fn build_udiv_pow2_module() -> Vec<u32> {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(int, vec![int]);
+    let _func = b
+        .begin_function(int, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let param = b.function_parameter(int).unwrap();
+    let _ = b.begin_block(None).unwrap();
+    let c8 = b.constant_bit32(int, 8);
+    let div = b.u_div(int, None, param, c8).expect("udiv pow2");
+    b.ret_value(div).unwrap();
+    b.end_function().unwrap();
+    b.module().assemble()
+}
+
 #[test]
 fn cli_opt_block_folds_arithmetic() {
     let _guard = ENV_GUARD.lock().unwrap();
@@ -598,6 +616,71 @@ fn cli_opt_block_matches_cpp_mul_neg_one_rewrite() {
     );
 }
 
+#[test]
+fn cli_opt_block_matches_cpp_udiv_pow2_rewrite() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+    let _guard = ENV_GUARD.lock().unwrap();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let words = build_udiv_pow2_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let rust_output = dir.path().join("rust_output.spv");
+    let cpp_output = dir.path().join("cpp_output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let rust_status = Command::new(exe)
+        .arg(&input)
+        .arg(&rust_output)
+        .status()
+        .expect("run opt_block");
+    assert!(
+        rust_status.success(),
+        "opt_block should succeed for udiv pow2 rewrite"
+    );
+
+    let cpp_status = Command::new(&cpp_opt)
+        .arg(&input)
+        .arg("-o")
+        .arg(&cpp_output)
+        .status()
+        .expect("run C++ spirv-opt");
+    assert!(
+        cpp_status.success(),
+        "spirv-opt should succeed for udiv pow2 rewrite"
+    );
+
+    let rust_words = bytes_to_words(&std::fs::read(&rust_output).expect("read rust output"));
+    let cpp_words = bytes_to_words(&std::fs::read(&cpp_output).expect("read cpp output"));
+
+    assert!(
+        !has_op(&rust_words, Op::UDiv),
+        "Rust output should remove udiv after rewrite"
+    );
+    assert!(
+        has_op(&rust_words, Op::ShiftRightLogical),
+        "Rust output should include logical shift after rewrite"
+    );
+    assert!(
+        has_const_literal(&rust_words, 3),
+        "Rust output should include shift amount 3"
+    );
+    assert!(
+        !has_op(&cpp_words, Op::UDiv),
+        "C++ output should remove udiv after rewrite"
+    );
+    assert!(
+        has_op(&cpp_words, Op::ShiftRightLogical),
+        "C++ output should include logical shift after rewrite"
+    );
+    assert!(
+        has_const_literal(&cpp_words, 3),
+        "C++ output should include shift amount 3"
+    );
+}
+
 static ENV_GUARD: Mutex<()> = Mutex::new(());
 
 fn words_to_bytes(words: &[u32]) -> Vec<u8> {
@@ -641,6 +724,17 @@ fn has_op(words: &[u32], op: Op) -> bool {
     rspirv::binary::parse_words(words, &mut loader).expect("parse module");
     let module = loader.module();
     let present = module.all_inst_iter().any(|inst| inst.class.opcode == op);
+    present
+}
+
+fn has_const_literal(words: &[u32], value: u32) -> bool {
+    let mut loader = Loader::new();
+    rspirv::binary::parse_words(words, &mut loader).expect("parse module");
+    let module = loader.module();
+    let present = module.all_inst_iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && matches!(inst.operands.as_slice(), [rspirv::dr::Operand::LiteralBit32(v)] if *v == value)
+    });
     present
 }
 
