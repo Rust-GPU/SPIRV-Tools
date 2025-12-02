@@ -167,6 +167,24 @@ fn build_umod_pow2_module() -> Vec<u32> {
     b.module().assemble()
 }
 
+fn build_sdiv_pow2_module() -> Vec<u32> {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let int = b.type_int(32, 1);
+    let func_ty = b.type_function(int, vec![int]);
+    let _func = b
+        .begin_function(int, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let param = b.function_parameter(int).unwrap();
+    let _ = b.begin_block(None).unwrap();
+    let c8 = b.constant_bit32(int, 8);
+    let div = b.s_div(int, None, param, c8).expect("sdiv pow2");
+    b.ret_value(div).unwrap();
+    b.end_function().unwrap();
+    b.module().assemble()
+}
+
 #[test]
 fn cli_opt_block_folds_arithmetic() {
     let _guard = ENV_GUARD.lock().unwrap();
@@ -761,6 +779,79 @@ fn cli_opt_block_matches_cpp_umod_pow2_rewrite() {
     assert!(
         has_const_literal(&cpp_words, 7),
         "C++ output should include mask literal 7"
+    );
+}
+
+#[test]
+fn cli_opt_block_matches_cpp_sdiv_pow2_rewrite() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+    let _guard = ENV_GUARD.lock().unwrap();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let words = build_sdiv_pow2_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let rust_output = dir.path().join("rust_output.spv");
+    let cpp_output = dir.path().join("cpp_output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let rust_status = Command::new(exe)
+        .arg(&input)
+        .arg(&rust_output)
+        .status()
+        .expect("run opt_block");
+    assert!(
+        rust_status.success(),
+        "opt_block should succeed for sdiv pow2 rewrite"
+    );
+
+    let cpp_status = Command::new(&cpp_opt)
+        .arg(&input)
+        .arg("-o")
+        .arg(&cpp_output)
+        .status()
+        .expect("run C++ spirv-opt");
+    assert!(
+        cpp_status.success(),
+        "spirv-opt should succeed for sdiv pow2 rewrite"
+    );
+
+    let rust_words = bytes_to_words(&std::fs::read(&rust_output).expect("read rust output"));
+    let cpp_words = bytes_to_words(&std::fs::read(&cpp_output).expect("read cpp output"));
+
+    assert!(
+        !has_op(&rust_words, Op::SDiv),
+        "Rust output should remove sdiv after rewrite"
+    );
+    assert!(
+        has_op(&rust_words, Op::ShiftRightArithmetic),
+        "Rust output should include arithmetic shift after rewrite"
+    );
+    assert!(
+        has_const_literal(&rust_words, 3),
+        "Rust output should include shift amount 3"
+    );
+    assert!(
+        has_const_literal(&rust_words, 7),
+        "Rust output should include bias mask 7"
+    );
+    assert!(
+        !has_op(&cpp_words, Op::SDiv),
+        "C++ output should remove sdiv after rewrite"
+    );
+    assert!(
+        has_op(&cpp_words, Op::ShiftRightArithmetic),
+        "C++ output should include arithmetic shift after rewrite"
+    );
+    assert!(
+        has_const_literal(&cpp_words, 3),
+        "C++ output should include shift amount 3"
+    );
+    assert!(
+        has_const_literal(&cpp_words, 7),
+        "C++ output should include bias mask 7"
     );
 }
 
