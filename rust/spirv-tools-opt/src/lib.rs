@@ -2545,7 +2545,7 @@ impl Applier<SpirvLang, ()> for MaskThenShift {
             return Vec::new();
         };
         let width = max_width(mask_val, shift_val);
-        if width > 32 {
+        if width > 64 {
             return Vec::new();
         }
         if shift_val.get() >= u32::from(width) {
@@ -2586,7 +2586,7 @@ impl Applier<SpirvLang, ()> for MaskThenShiftSigned {
             return Vec::new();
         };
         let width = max_width(mask_val, shift_val);
-        if width > 32 {
+        if width > 64 {
             return Vec::new();
         }
         if shift_val.get() >= u32::from(width) {
