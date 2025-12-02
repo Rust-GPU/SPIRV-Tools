@@ -2548,6 +2548,9 @@ impl Applier<SpirvLang, ()> for MaskThenShift {
         if width > 32 {
             return Vec::new();
         }
+        if shift_val.get() >= u32::from(width) {
+            return Vec::new();
+        }
         let Some(mask_pow) = is_power_of_two(mask_val.get_u64()) else {
             return Vec::new();
         };
@@ -2584,6 +2587,9 @@ impl Applier<SpirvLang, ()> for MaskThenShiftSigned {
         };
         let width = max_width(mask_val, shift_val);
         if width > 32 {
+            return Vec::new();
+        }
+        if shift_val.get() >= u32::from(width) {
             return Vec::new();
         }
         let Some(mask_pow) = is_power_of_two(mask_val.get_u64()) else {
@@ -4277,6 +4283,34 @@ mod tests {
         assert!(
             found_umod,
             "expected bitwise mask to rewrite into modulo by power of two"
+        );
+    }
+
+    #[test]
+    fn skips_mask_then_shift_when_shift_meets_width() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),          // 0
+            SpirvLang::Const(ConstValue::new(7)),          // 1 = 2^3 - 1
+            SpirvLang::BitAnd([Id::from(0), Id::from(1)]), // 2 = x & 7
+            SpirvLang::Const(ConstValue::new(32)),         // 3 = shift amount
+            SpirvLang::ShrU([Id::from(2), Id::from(3)]),   // 4 = (x & 7) >> 32
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let mut found_zero_mask = false;
+        for class in runner.egraph.classes() {
+            for node in &class.nodes {
+                if let SpirvLang::BitAnd([_, rhs]) = node {
+                    if const_value(&runner.egraph, *rhs)
+                        .is_some_and(|c| c.get_u64() == 0 && c.width_bits() == 32)
+                    {
+                        found_zero_mask = true;
+                    }
+                }
+            }
+        }
+        assert!(
+            !found_zero_mask,
+            "width-sized shifts should not rewrite mask into zero"
         );
     }
 
