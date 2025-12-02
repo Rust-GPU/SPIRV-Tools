@@ -113,6 +113,24 @@ fn build_mul_pow2_module() -> (Vec<u32>, (u32, u32)) {
     (b.module().assemble(), (mul, c3))
 }
 
+fn build_mul_neg_one_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let int = b.type_int(32, 1);
+    let func_ty = b.type_function(int, vec![int]);
+    let _func = b
+        .begin_function(int, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let param = b.function_parameter(int).unwrap();
+    let _ = b.begin_block(None).unwrap();
+    let c_neg_one = b.constant_bit32(int, 0xFFFF_FFFF);
+    let mul = b.i_mul(int, None, param, c_neg_one).expect("mul -1");
+    b.ret_value(mul).unwrap();
+    b.end_function().unwrap();
+    (b.module().assemble(), mul)
+}
+
 #[test]
 fn cli_opt_block_folds_arithmetic() {
     let _guard = ENV_GUARD.lock().unwrap();
@@ -513,6 +531,73 @@ fn cli_opt_block_matches_cpp_mul_pow2_rewrite() {
     assert_eq!(rust_shift, Some(3), "pow2 rewrite should shift by 3");
 }
 
+#[test]
+fn cli_opt_block_matches_cpp_mul_neg_one_rewrite() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+    let _guard = ENV_GUARD.lock().unwrap();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let (words, mul_id) = build_mul_neg_one_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let rust_output = dir.path().join("rust_output.spv");
+    let cpp_output = dir.path().join("cpp_output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let rust_status = Command::new(exe)
+        .arg(&input)
+        .arg(&rust_output)
+        .status()
+        .expect("run opt_block");
+    assert!(
+        rust_status.success(),
+        "opt_block should succeed for mul-by-neg-one rewrite"
+    );
+
+    let cpp_status = Command::new(&cpp_opt)
+        .arg(&input)
+        .arg("-o")
+        .arg(&cpp_output)
+        .status()
+        .expect("run C++ spirv-opt");
+    assert!(
+        cpp_status.success(),
+        "spirv-opt should succeed for mul-by-neg-one rewrite"
+    );
+
+    let rust_words = bytes_to_words(&std::fs::read(&rust_output).expect("read rust output"));
+    let cpp_words = bytes_to_words(&std::fs::read(&cpp_output).expect("read cpp output"));
+
+    assert!(
+        !has_op(&rust_words, Op::IMul),
+        "Rust output should remove mul after rewrite"
+    );
+    assert!(
+        has_op(&rust_words, Op::SNegate),
+        "Rust output should include negate after rewrite"
+    );
+    assert!(
+        !has_op(&cpp_words, Op::IMul),
+        "C++ output should remove mul after rewrite"
+    );
+    assert!(
+        has_op(&cpp_words, Op::SNegate),
+        "C++ output should include negate after rewrite"
+    );
+
+    // Ensure the result id still maps to the rewritten value by confirming the instruction exists.
+    assert!(
+        module_has_result(&rust_words, mul_id),
+        "Rust output should keep the result id alive after rewrite"
+    );
+    assert!(
+        module_has_result(&cpp_words, mul_id),
+        "C++ output should keep the result id alive after rewrite"
+    );
+}
+
 static ENV_GUARD: Mutex<()> = Mutex::new(());
 
 fn words_to_bytes(words: &[u32]) -> Vec<u8> {
@@ -556,5 +641,15 @@ fn has_op(words: &[u32], op: Op) -> bool {
     rspirv::binary::parse_words(words, &mut loader).expect("parse module");
     let module = loader.module();
     let present = module.all_inst_iter().any(|inst| inst.class.opcode == op);
+    present
+}
+
+fn module_has_result(words: &[u32], result_id: u32) -> bool {
+    let mut loader = Loader::new();
+    rspirv::binary::parse_words(words, &mut loader).expect("parse module");
+    let module = loader.module();
+    let present = module
+        .all_inst_iter()
+        .any(|inst| inst.result_id == Some(result_id));
     present
 }
