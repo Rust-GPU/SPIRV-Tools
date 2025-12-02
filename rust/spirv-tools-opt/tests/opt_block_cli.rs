@@ -187,6 +187,42 @@ fn build_umod_pow2_module() -> Vec<u32> {
     b.module().assemble()
 }
 
+fn build_udiv_pow2_module_u64() -> Vec<u32> {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let int = b.type_int(64, 0);
+    let func_ty = b.type_function(int, vec![int]);
+    let _func = b
+        .begin_function(int, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let param = b.function_parameter(int).unwrap();
+    let _ = b.begin_block(None).unwrap();
+    let c8 = b.constant_bit64(int, 8);
+    let div = b.u_div(int, None, param, c8).expect("udiv pow2 u64");
+    b.ret_value(div).unwrap();
+    b.end_function().unwrap();
+    b.module().assemble()
+}
+
+fn build_umod_pow2_module_u64() -> Vec<u32> {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let int = b.type_int(64, 0);
+    let func_ty = b.type_function(int, vec![int]);
+    let _func = b
+        .begin_function(int, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let param = b.function_parameter(int).unwrap();
+    let _ = b.begin_block(None).unwrap();
+    let c8 = b.constant_bit64(int, 8);
+    let rem = b.u_mod(int, None, param, c8).expect("umod pow2 u64");
+    b.ret_value(rem).unwrap();
+    b.end_function().unwrap();
+    b.module().assemble()
+}
+
 fn build_sdiv_pow2_module() -> Vec<u32> {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
@@ -893,6 +929,136 @@ fn cli_opt_block_matches_cpp_umod_pow2_rewrite() {
     assert!(
         cpp_status.success(),
         "spirv-opt should succeed for umod pow2 rewrite"
+    );
+
+    let rust_words = bytes_to_words(&std::fs::read(&rust_output).expect("read rust output"));
+    let cpp_words = bytes_to_words(&std::fs::read(&cpp_output).expect("read cpp output"));
+
+    assert!(
+        !has_op(&rust_words, Op::UMod),
+        "Rust output should remove umod after rewrite"
+    );
+    assert!(
+        has_op(&rust_words, Op::BitwiseAnd),
+        "Rust output should include mask after rewrite"
+    );
+    assert!(
+        has_const_literal(&rust_words, 7),
+        "Rust output should include mask literal 7"
+    );
+    assert!(
+        !has_op(&cpp_words, Op::UMod),
+        "C++ output should remove umod after rewrite"
+    );
+    assert!(
+        has_op(&cpp_words, Op::BitwiseAnd),
+        "C++ output should include mask after rewrite"
+    );
+    assert!(
+        has_const_literal(&cpp_words, 7),
+        "C++ output should include mask literal 7"
+    );
+}
+
+#[test]
+fn cli_opt_block_matches_cpp_udiv_pow2_rewrite_u64() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+    let _guard = ENV_GUARD.lock().unwrap();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let words = build_udiv_pow2_module_u64();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let rust_output = dir.path().join("rust_output.spv");
+    let cpp_output = dir.path().join("cpp_output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let rust_status = Command::new(exe)
+        .arg(&input)
+        .arg(&rust_output)
+        .status()
+        .expect("run opt_block");
+    assert!(
+        rust_status.success(),
+        "opt_block should succeed for udiv pow2 rewrite u64"
+    );
+
+    let cpp_status = Command::new(&cpp_opt)
+        .arg(&input)
+        .arg("-o")
+        .arg(&cpp_output)
+        .status()
+        .expect("run C++ spirv-opt");
+    assert!(
+        cpp_status.success(),
+        "spirv-opt should succeed for udiv pow2 rewrite u64"
+    );
+
+    let rust_words = bytes_to_words(&std::fs::read(&rust_output).expect("read rust output"));
+    let cpp_words = bytes_to_words(&std::fs::read(&cpp_output).expect("read cpp output"));
+
+    assert!(
+        !has_op(&rust_words, Op::UDiv),
+        "Rust output should remove udiv after rewrite"
+    );
+    assert!(
+        has_op(&rust_words, Op::ShiftRightLogical),
+        "Rust output should include logical shift after rewrite"
+    );
+    assert!(
+        has_const_literal(&rust_words, 3),
+        "Rust output should include shift amount 3"
+    );
+    assert!(
+        !has_op(&cpp_words, Op::UDiv),
+        "C++ output should remove udiv after rewrite"
+    );
+    assert!(
+        has_op(&cpp_words, Op::ShiftRightLogical),
+        "C++ output should include logical shift after rewrite"
+    );
+    assert!(
+        has_const_literal(&cpp_words, 3),
+        "C++ output should include shift amount 3"
+    );
+}
+
+#[test]
+fn cli_opt_block_matches_cpp_umod_pow2_rewrite_u64() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+    let _guard = ENV_GUARD.lock().unwrap();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let words = build_umod_pow2_module_u64();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let rust_output = dir.path().join("rust_output.spv");
+    let cpp_output = dir.path().join("cpp_output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let rust_status = Command::new(exe)
+        .arg(&input)
+        .arg(&rust_output)
+        .status()
+        .expect("run opt_block");
+    assert!(
+        rust_status.success(),
+        "opt_block should succeed for umod pow2 rewrite u64"
+    );
+
+    let cpp_status = Command::new(&cpp_opt)
+        .arg(&input)
+        .arg("-o")
+        .arg(&cpp_output)
+        .status()
+        .expect("run C++ spirv-opt");
+    assert!(
+        cpp_status.success(),
+        "spirv-opt should succeed for umod pow2 rewrite u64"
     );
 
     let rust_words = bytes_to_words(&std::fs::read(&rust_output).expect("read rust output"));
