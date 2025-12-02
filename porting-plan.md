@@ -723,6 +723,7 @@ Planned tasks:
 - Hardened power-of-two shift/mask rewrites to stay width-safe (u64 inputs, guarded shifts, u128 mask math) with unit and C++ parity coverage for large constants.
 - Added Rust-vs-C++ parity for width-sized mask+shift (logical and signed) cases to ensure guarded rewrites never zero the mask.
 - Added Rust-vs-C++ parity for 64-bit mask+shift (logical and signed) cases and enabled rewrites up to 64 bits.
+- Added Rust-vs-C++ parity for 64-bit rotate folding to keep width-aware patterns aligned.
 - Added validator regression ensuring `OpSelectionMerge` still sits immediately before `OpSwitch`, matching structured control flow placement rules from the C++ validator.
   - Added validator regression ensuring `OpLoopMerge` remains immediately before its terminator (no intervening instructions) to mirror the C++ structured control-flow checks.
   - Added validator regression ensuring loop headers cannot terminate with `OpSwitch` after `OpLoopMerge`, keeping terminator constraints aligned with the C++ validator.
