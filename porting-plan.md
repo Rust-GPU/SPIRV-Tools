@@ -154,6 +154,7 @@ Planned tasks:
 - Extend the parity corpus and CLI harness to cover new cases; ensure parity continues to gate CI when `spirv-opt` is available.
 - Keep fuzz/criterion/hyperfine benches up to date to guard rewrite performance/regressions.
 - Add rotate-left/right support in the optimizer (where enabled) with parity coverage and rewrites, staying within SPIR-V capability limits. (basic rotate folding via shifted-or patterns is in place with complementary-shift guard; expand patterns and coverage)
+- [x] Guard power-of-two mask-to-mod/shift rewrites when the implied shift equals the bit width so we never generate width-sized shifts or zero divisors.
 
 ## Upcoming Milestone: Optimizer CLI/FFI Integration
 - Expose the Rust arithmetic optimizer through CLI/FFI entry points with a flag/env toggle and a documented C++ fallback.

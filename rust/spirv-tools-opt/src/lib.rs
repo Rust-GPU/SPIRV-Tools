@@ -2018,7 +2018,8 @@ impl Applier<SpirvLang, ()> for MulPowerOfTwo {
         let Some(shift) = is_power_of_two(constant.get_u64()) else {
             return Vec::new();
         };
-        if shift == 0 || shift >= 64 {
+        let width = u32::from(constant.width_bits());
+        if shift == 0 || shift >= width {
             return Vec::new();
         }
         let shift_const = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
@@ -2046,7 +2047,8 @@ impl Applier<SpirvLang, ()> for DivPowerOfTwo {
         let Some(shift) = is_power_of_two(constant.get_u64()) else {
             return Vec::new();
         };
-        if shift == 0 || shift >= 64 {
+        let width = u32::from(constant.width_bits());
+        if shift == 0 || shift >= width {
             return Vec::new();
         }
         if !has_symbol(egraph, subst[self.x]) {
@@ -2102,7 +2104,8 @@ impl Applier<SpirvLang, ()> for UModPowerOfTwo {
         let Some(shift) = is_power_of_two(constant.get_u64()) else {
             return Vec::new();
         };
-        if shift == 0 || shift >= 64 {
+        let width = u32::from(constant.width_bits());
+        if shift == 0 || shift >= width {
             return Vec::new();
         }
         let shift_const = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
@@ -2231,7 +2234,8 @@ impl Applier<SpirvLang, ()> for BitAndToUmod {
         let Some(shift) = is_power_of_two(mask.wrapping_add(1)) else {
             return Vec::new();
         };
-        if shift == 0 || shift >= 64 {
+        let width = u32::from(constant.width_bits());
+        if shift == 0 || shift >= width {
             return Vec::new();
         }
         let const_id = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
@@ -2277,7 +2281,8 @@ impl Applier<SpirvLang, ()> for UModPowerOfTwoMask {
         let Some(shift) = is_power_of_two(constant.get_u64()) else {
             return Vec::new();
         };
-        if shift == 0 || shift >= 64 {
+        let width = u32::from(constant.width_bits());
+        if shift == 0 || shift >= width {
             return Vec::new();
         }
         let mask_value = (1u128 << shift) - 1;
@@ -4272,6 +4277,26 @@ mod tests {
         assert!(
             found_umod,
             "expected bitwise mask to rewrite into modulo by power of two"
+        );
+    }
+
+    #[test]
+    fn preserves_full_mask_band_without_umod_rewrite() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),                     // 0
+            SpirvLang::Const(ConstValue::new_with_width(0xFFFF, 16)), // 1 = all ones in 16 bits
+            SpirvLang::BitAnd([Id::from(0), Id::from(1)]),            // 2 = x & 0xFFFF
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let class = runner.egraph.find(runner.roots[0]);
+        let nodes = &runner.egraph[class].nodes;
+        assert!(
+            nodes.iter().any(|n| matches!(n, SpirvLang::BitAnd(_))),
+            "bitand with full mask should remain available"
+        );
+        assert!(
+            nodes.iter().all(|n| !matches!(n, SpirvLang::UMod(_))),
+            "full-mask bitand must not rewrite into modulo with width-sized shift"
         );
     }
 
