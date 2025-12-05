@@ -313,6 +313,75 @@ fn spirv_dis_outputs_match_cpp() {
     }
 }
 
+#[test]
+fn spirv_text_round_trip_matches_cpp() {
+    let Some(cpp_as) = find_cpp_tool("SPIRV_CPP_AS", "spirv-as") else {
+        eprintln!("SPIRV_CPP_AS not set and spirv-as not found on PATH; skipping parity");
+        return;
+    };
+    let Some(cpp_dis) = find_cpp_tool("SPIRV_CPP_DIS", "spirv-dis") else {
+        eprintln!("SPIRV_CPP_DIS not set and spirv-dis not found on PATH; skipping parity");
+        return;
+    };
+
+    for module in disassembly_corpus() {
+        let dir = tempdir().expect("temp dir");
+        let asm_path = dir.path().join("module.spvasm");
+        fs::write(&asm_path, module).expect("write asm");
+        let rust_bin = dir.path().join("rust.spv");
+        let cpp_bin = dir.path().join("cpp.spv");
+
+        let rust_status = Command::new(env!("CARGO_BIN_EXE_spirv-as"))
+            .arg(&asm_path)
+            .arg("-o")
+            .arg(&rust_bin)
+            .status()
+            .expect("run rust spirv-as");
+        assert!(
+            rust_status.success(),
+            "rust spirv-as failed: {rust_status:?} for module:\n{module}"
+        );
+
+        let cpp_status = Command::new(&cpp_as)
+            .arg(&asm_path)
+            .arg("-o")
+            .arg(&cpp_bin)
+            .status()
+            .expect("run cpp spirv-as");
+        assert!(
+            cpp_status.success(),
+            "cpp spirv-as failed: {cpp_status:?} for module:\n{module}"
+        );
+
+        let rust_dis = Command::new(env!("CARGO_BIN_EXE_spirv-dis"))
+            .arg(&rust_bin)
+            .output()
+            .expect("run rust spirv-dis");
+        assert!(
+            rust_dis.status.success(),
+            "rust spirv-dis failed: {:?} for module:\n{module}",
+            rust_dis.status
+        );
+
+        let cpp_dis_out = Command::new(&cpp_dis)
+            .arg(&cpp_bin)
+            .output()
+            .expect("run cpp spirv-dis");
+        assert!(
+            cpp_dis_out.status.success(),
+            "cpp spirv-dis failed: {:?} for module:\n{module}",
+            cpp_dis_out.status
+        );
+
+        let rust_text = String::from_utf8_lossy(&rust_dis.stdout).trim().to_owned();
+        let cpp_text = String::from_utf8_lossy(&cpp_dis_out.stdout).trim().to_owned();
+        assert_eq!(
+            rust_text, cpp_text,
+            "Rust round-trip text differed from C++ for module:\n{module}"
+        );
+    }
+}
+
 fn normalize_text(text: &str) -> Vec<u32> {
     assemble_text(text).expect("assemble disassembled text")
 }
