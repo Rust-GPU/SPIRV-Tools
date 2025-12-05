@@ -614,3 +614,108 @@ fn spirv_objdump_source_stdout_matches_cpp() {
         "spirv-objdump --source outputs differed"
     );
 }
+
+#[test]
+fn spirv_objdump_source_outdir_matches_cpp() {
+    let Some(cpp_tool) = find_cpp_tool("SPIRV_CPP_OBJDUMP", "spirv-objdump") else {
+        eprintln!("SPIRV_CPP_OBJDUMP not set and spirv-objdump not found on PATH; skipping parity");
+        return;
+    };
+    let dir = tempdir().expect("temp dir");
+    let outdir = dir.path().join("out");
+    let bin_path = dir.path().join("module.spv");
+    write_source_module(&bin_path);
+
+    let rust = Command::new(rust_bin("spirv-objdump"))
+        .arg("--source")
+        .arg("--outdir")
+        .arg(&outdir)
+        .arg("--force")
+        .arg(&bin_path)
+        .output()
+        .expect("run rust spirv-objdump --source --outdir");
+    let cpp = Command::new(&cpp_tool)
+        .arg("--source")
+        .arg("--outdir")
+        .arg(&outdir)
+        .arg("--force")
+        .arg(&bin_path)
+        .output()
+        .expect("run cpp spirv-objdump --source --outdir");
+
+    assert!(rust.status.success(), "rust spirv-objdump failed");
+    assert!(cpp.status.success(), "cpp spirv-objdump failed");
+
+    let rust_stdout = String::from_utf8_lossy(&rust.stdout);
+    let cpp_stdout = String::from_utf8_lossy(&cpp.stdout);
+    assert_eq!(
+        rust_stdout, cpp_stdout,
+        "spirv-objdump --source --outdir outputs differed"
+    );
+
+    let exported = outdir.join("main.hlsl");
+    let contents = fs::read_to_string(&exported).expect("read exported source");
+    assert!(
+        contents.contains("void main() {}"),
+        "exported source missing body: {contents}"
+    );
+    assert!(
+        contents.contains("tail"),
+        "exported source missing continued text: {contents}"
+    );
+}
+
+#[test]
+fn spirv_objdump_source_ignores_empty_like_cpp() {
+    let Some(cpp_tool) = find_cpp_tool("SPIRV_CPP_OBJDUMP", "spirv-objdump") else {
+        eprintln!("SPIRV_CPP_OBJDUMP not set and spirv-objdump not found on PATH; skipping parity");
+        return;
+    };
+    let dir = tempdir().expect("temp dir");
+    let bin_path = dir.path().join("module.spv");
+
+    // Build a module with a source filename but no literal payload.
+    let mut b = Builder::new();
+    b.capability(spirv::Capability::Shader);
+    b.memory_model(spirv::AddressingModel::Logical, spirv::MemoryModel::GLSL450);
+    let file_id = b.string("empty.hlsl");
+    b.source(
+        spirv::SourceLanguage::GLSL,
+        450,
+        Some(file_id),
+        None::<String>,
+    );
+    let void = b.type_void();
+    let fn_ty = b.type_function(void, vec![void]);
+    let func = b
+        .begin_function(void, None, spirv::FunctionControl::NONE, fn_ty)
+        .expect("begin function");
+    b.begin_block(None).expect("entry block");
+    b.ret().expect("ret");
+    b.end_function().expect("end fn");
+    b.entry_point(spirv::ExecutionModel::Fragment, func, "main", &[]);
+    let words = b.module().assemble();
+    fs::write(&bin_path, &words_to_bytes(&words)).expect("write module");
+
+    let rust = Command::new(rust_bin("spirv-objdump"))
+        .arg("--source")
+        .arg("--list")
+        .arg(&bin_path)
+        .output()
+        .expect("run rust spirv-objdump --source --list");
+    let cpp = Command::new(&cpp_tool)
+        .arg("--source")
+        .arg("--list")
+        .arg(&bin_path)
+        .output()
+        .expect("run cpp spirv-objdump --source --list");
+
+    assert!(rust.status.success(), "rust spirv-objdump failed");
+    assert!(cpp.status.success(), "cpp spirv-objdump failed");
+    let rust_stdout = String::from_utf8_lossy(&rust.stdout);
+    let cpp_stdout = String::from_utf8_lossy(&cpp.stdout);
+    assert_eq!(
+        rust_stdout, cpp_stdout,
+        "spirv-objdump --source --list for empty source differed"
+    );
+}
