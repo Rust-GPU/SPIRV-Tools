@@ -780,7 +780,7 @@ Tasks for this milestone:
 - Expand validator corpus runs to cover the full C++ test corpus with the Rust path forced on (reuse `scripts/run-rust-validator-corpus.sh`).
 - Add missing CLI parity tests for optimizer strength reductions still uncovered (see TODO above) and track any remaining gaps.
 - Ensure FFI surfaces expose the same toggles/defaults as the CLI for all tools (optimizer, assembler, disassembler, validator) with regression tests.
-- Add CLI exit-code/stdout/stderr/help parity harnesses for `spirv-reduce`, `spirv-fuzz`, `spirv-cfg`, and `spirv-lint` (mirror the help/version/error cases already covered for as/dis/val/opt; skip cleanly when C++ binaries are absent).
+- [x] Add CLI exit-code/stdout/stderr/help parity harnesses for `spirv-reduce`, `spirv-fuzz`, `spirv-cfg`, and `spirv-lint` (mirror the help/version/error cases already covered for as/dis/val/opt; skip cleanly when C++ binaries are absent). **(script: `scripts/run-tool-cli-parity.sh`)**
 - Add reducer/fuzzer corpus parity harnesses (CLI + library) that compare Rust vs. C++ outputs/diagnostics and ensure env flags pick the Rust path without altering existing CI by default.
 - Audit `spirv-as`/`spirv-dis`/`spirv-val`/`spirv-opt` help text and flag handling so Rust-backed binaries present the same UX (flags, exit codes, stderr shapes); add doc/tests.
 - Add library-level parity tests for the assembler/disassembler/optimizer entry points via the FFI to ensure drop-in embedding behavior matches the C++ API (including error codes and message callbacks).
