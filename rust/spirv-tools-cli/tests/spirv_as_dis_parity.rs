@@ -90,6 +90,10 @@ OpFunctionEnd
 "#
 }
 
+fn assembly_corpus() -> Vec<&'static str> {
+    disassembly_corpus()
+}
+
 #[test]
 fn spirv_as_matches_cpp_binary_output() {
     let Some(cpp_as) = find_cpp_tool("SPIRV_CPP_AS", "spirv-as") else {
@@ -97,37 +101,42 @@ fn spirv_as_matches_cpp_binary_output() {
         return;
     };
 
-    let dir = tempdir().expect("temp dir");
-    let asm_path = dir.path().join("module.spvasm");
-    fs::write(&asm_path, simple_module()).expect("write asm");
-    let rust_bin = dir.path().join("rust.spv");
-    let cpp_bin = dir.path().join("cpp.spv");
+    for module in assembly_corpus() {
+        let dir = tempdir().expect("temp dir");
+        let asm_path = dir.path().join("module.spvasm");
+        fs::write(&asm_path, module).expect("write asm");
+        let rust_bin = dir.path().join("rust.spv");
+        let cpp_bin = dir.path().join("cpp.spv");
 
-    let rust_status = Command::new(env!("CARGO_BIN_EXE_spirv-as"))
-        .arg(&asm_path)
-        .arg("-o")
-        .arg(&rust_bin)
-        .status()
-        .expect("run rust spirv-as");
-    assert!(
-        rust_status.success(),
-        "rust spirv-as failed: {rust_status:?}"
-    );
+        let rust_status = Command::new(env!("CARGO_BIN_EXE_spirv-as"))
+            .arg(&asm_path)
+            .arg("-o")
+            .arg(&rust_bin)
+            .status()
+            .expect("run rust spirv-as");
+        assert!(
+            rust_status.success(),
+            "rust spirv-as failed: {rust_status:?} for module:\n{module}"
+        );
 
-    let cpp_status = Command::new(&cpp_as)
-        .arg(&asm_path)
-        .arg("-o")
-        .arg(&cpp_bin)
-        .status()
-        .expect("run cpp spirv-as");
-    assert!(cpp_status.success(), "cpp spirv-as failed: {cpp_status:?}");
+        let cpp_status = Command::new(&cpp_as)
+            .arg(&asm_path)
+            .arg("-o")
+            .arg(&cpp_bin)
+            .status()
+            .expect("run cpp spirv-as");
+        assert!(
+            cpp_status.success(),
+            "cpp spirv-as failed: {cpp_status:?} for module:\n{module}"
+        );
 
-    let rust_bytes = fs::read(&rust_bin).expect("read rust binary");
-    let cpp_bytes = fs::read(&cpp_bin).expect("read cpp binary");
-    assert_eq!(
-        rust_bytes, cpp_bytes,
-        "Rust spirv-as output differed from C++ output"
-    );
+        let rust_bytes = fs::read(&rust_bin).expect("read rust binary");
+        let cpp_bytes = fs::read(&cpp_bin).expect("read cpp binary");
+        assert_eq!(
+            rust_bytes, cpp_bytes,
+            "Rust spirv-as output differed from C++ output for module:\n{module}"
+        );
+    }
 }
 
 fn module_with_numeric_ids() -> &'static str {
