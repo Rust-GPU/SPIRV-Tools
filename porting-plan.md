@@ -748,6 +748,7 @@ Planned tasks:
 - Added CLI parity check for signed 32-bit mul-by-one/zero identities to keep Rust `opt_block` aligned with C++ spirv-opt for signed neutral/absorbing factors.
 - Added CLI parity check for signed 32-bit mul-by-power-of-two rewrites to keep shift-based strength reductions aligned with C++ spirv-opt for signed integers.
 - Added CI optimizer smoke job (builds C++ `spirv-opt`, runs fuzz smoke + Rust/C++ parity, optional hyperfine) to keep Rust optimizer parity and perf guardrails on every PR.
+- TODO: Audit remaining C++ `opt_block` strength-reduction cases (e.g., unsigned/signed mul-by-neg-one for 32-bit, any mask/shift rewrites not yet mirrored) and add matching CLI parity tests to keep coverage complete across widths/signedness.
 - Added validator regression ensuring `OpSelectionMerge` still sits immediately before `OpSwitch`, matching structured control flow placement rules from the C++ validator.
   - Added validator regression ensuring `OpLoopMerge` remains immediately before its terminator (no intervening instructions) to mirror the C++ structured control-flow checks.
   - Added validator regression ensuring loop headers cannot terminate with `OpSwitch` after `OpLoopMerge`, keeping terminator constraints aligned with the C++ validator.
