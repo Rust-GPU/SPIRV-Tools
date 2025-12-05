@@ -901,6 +901,7 @@ Tasks for this milestone:
 - [x] Add CLI parity for `spirv-objdump` (help/version, invalid/valid binaries) vs C++; mirror coverage for any remaining objdump-specific flags/diagnostics.
 - [x] Add CLI parity for `spirv-size` (help/version, invalid-input exits, simple success stats) and ship a Rust binary as the drop-in replacement.
 - [x] Implement `spirv-objdump` source extraction and entry-point listing in Rust with unit coverage for list/outdir/overwrite cases.
+- [x] Add parity coverage for `spirv-objdump` source/list/outdir flows and keep compiler-cmd failure parity until implemented.
 
 ## Upcoming Milestone: CLI/FFI Parity Hardening
 Harden success-path and FFI parity once the basic parity sweep is in place.
