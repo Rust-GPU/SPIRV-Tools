@@ -899,6 +899,7 @@ Tasks for this milestone:
 - [ ] Enumerate remaining per-tool deltas (CLI + FFI) and turn them into tracked tests/tasks until closed; keep a ledger of skips and why.
 - [ ] Add a consolidated local parity runner (not wired to CI) that exercises the above matrices when C++ tools are available and reports mismatches.
 - [x] Add CLI parity for `spirv-objdump` (help/version, invalid/valid binaries) vs C++; mirror coverage for any remaining objdump-specific flags/diagnostics.
+- [x] Add CLI parity for `spirv-size` (help/version, invalid-input exits, simple success stats) and ship a Rust binary as the drop-in replacement.
 
 ## Upcoming Milestone: CLI/FFI Parity Hardening
 Harden success-path and FFI parity once the basic parity sweep is in place.

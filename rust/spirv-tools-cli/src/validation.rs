@@ -120,7 +120,7 @@ mod tests {
             "OpFunctionEnd",
         ]
         .join("\n");
-        let binary = assemble_text(text).expect("assemble text");
+        let binary = assemble_text(&text).expect("assemble text");
         let mut file = NamedTempFile::new().expect("temp file");
         file.write_all(&words_to_bytes(&binary)).expect("write");
         let config = ValidateConfig {
@@ -146,7 +146,7 @@ mod tests {
             "OpExecutionMode %main LocalSize 1 1 1",
         ]
         .join("\n");
-        let binary = assemble_text(text).expect("assemble text");
+        let binary = assemble_text(&text).expect("assemble text");
         let mut file = NamedTempFile::new().expect("temp file");
         file.write_all(&words_to_bytes(&binary)).expect("write");
         let config = ValidateConfig {
@@ -168,7 +168,7 @@ mod tests {
     fn validation_reports_failure() {
         // Invalid module: missing OpMemoryModel.
         let text = "%void = OpTypeVoid";
-        let binary = assemble_text(text).expect("assemble text");
+        let binary = assemble_text(&text).expect("assemble text");
         let mut file = NamedTempFile::new().expect("temp file");
         file.write_all(&words_to_bytes(&binary)).expect("write");
         let config = ValidateConfig {
@@ -196,7 +196,7 @@ mod tests {
             "OpFunctionEnd",
         ]
         .join("\n");
-        let binary = assemble_text(text).expect("assemble text");
+        let binary = assemble_text(&text).expect("assemble text");
         let mut file = NamedTempFile::new().expect("temp file");
         file.write_all(&words_to_bytes(&binary)).expect("write");
         let config = ValidateConfig {

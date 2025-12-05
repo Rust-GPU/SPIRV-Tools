@@ -34,3 +34,11 @@ path = "src/bin/spirv-val.rs"
 [[bin]]
 name = "spirv-opt"
 path = "src/bin/spirv-opt.rs"
+
+[[bin]]
+name = "spirv-objdump"
+path = "src/bin/spirv-objdump.rs"
+
+[[bin]]
+name = "spirv-size"
+path = "src/bin/spirv-size.rs"

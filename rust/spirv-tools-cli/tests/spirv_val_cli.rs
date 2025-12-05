@@ -105,7 +105,7 @@ fn spirv_val_cli_rust_validator_reports_layout_error() {
         "OpFunctionEnd",
     ]
     .join("\n");
-    let words = assemble_text(text).expect("assemble text");
+    let words = assemble_text(&text).expect("assemble text");
     let misordered = reorder_extension_to_end(words);
     let bytes = words_to_bytes(&misordered);
     let mut file = NamedTempFile::new().expect("temp file");

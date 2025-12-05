@@ -280,6 +280,38 @@ fn spirv_size_help_and_version_match_cpp() {
 }
 
 #[test]
+fn spirv_objdump_reports_errors_like_cpp() {
+    let Some(cpp_tool) = find_cpp_tool("SPIRV_CPP_OBJDUMP", "spirv-objdump") else {
+        eprintln!("SPIRV_CPP_OBJDUMP not set and spirv-objdump not found on PATH; skipping parity");
+        return;
+    };
+    let rust_bin = rust_bin("spirv-objdump");
+    let (_dir, bad_path) = write_invalid_spirv();
+
+    assert_error_parity(
+        Command::new(&rust_bin).arg(&bad_path),
+        Command::new(&cpp_tool).arg(&bad_path),
+        "spirv-objdump",
+    );
+}
+
+#[test]
+fn spirv_size_reports_errors_like_cpp() {
+    let Some(cpp_tool) = find_cpp_tool("SPIRV_CPP_SIZE", "spirv-size") else {
+        eprintln!("SPIRV_CPP_SIZE not set and spirv-size not found on PATH; skipping parity");
+        return;
+    };
+    let rust_bin = rust_bin("spirv-size");
+    let (_dir, bad_path) = write_invalid_spirv();
+
+    assert_error_parity(
+        Command::new(&rust_bin).arg(&bad_path),
+        Command::new(&cpp_tool).arg(&bad_path),
+        "spirv-size",
+    );
+}
+
+#[test]
 fn spirv_reduce_reports_errors_like_cpp() {
     let Some(cpp_tool) = find_cpp_tool("SPIRV_CPP_REDUCE", "spirv-reduce") else {
         eprintln!("SPIRV_CPP_REDUCE not set and spirv-reduce not found on PATH; skipping parity");
@@ -430,33 +462,59 @@ fn spirv_lint_matches_cpp_output() {
 }
 
 #[test]
-fn spirv_objdump_reports_errors_like_cpp() {
+fn spirv_objdump_matches_cpp_output() {
     let Some(cpp_tool) = find_cpp_tool("SPIRV_CPP_OBJDUMP", "spirv-objdump") else {
         eprintln!("SPIRV_CPP_OBJDUMP not set and spirv-objdump not found on PATH; skipping parity");
         return;
     };
-    let rust_bin = rust_bin("spirv-objdump");
-    let (_dir, bad_path) = write_invalid_spirv();
+    let dir = tempdir().expect("temp dir");
+    let bin_path = dir.path().join("module.spv");
+    assemble_with_rust_as(&bin_path);
 
-    assert_error_parity(
-        Command::new(&rust_bin).arg(&bad_path),
-        Command::new(&cpp_tool).arg(&bad_path),
-        "spirv-objdump",
+    let rust = Command::new(rust_bin("spirv-objdump"))
+        .arg(&bin_path)
+        .output()
+        .expect("run rust spirv-objdump");
+    let cpp = Command::new(&cpp_tool)
+        .arg(&bin_path)
+        .output()
+        .expect("run cpp spirv-objdump");
+
+    assert!(rust.status.success(), "rust spirv-objdump failed");
+    assert!(cpp.status.success(), "cpp spirv-objdump failed");
+    let rust_stdout = String::from_utf8_lossy(&rust.stdout);
+    let cpp_stdout = String::from_utf8_lossy(&cpp.stdout);
+    assert_eq!(
+        rust_stdout, cpp_stdout,
+        "spirv-objdump outputs differed between rust and cpp"
     );
 }
 
 #[test]
-fn spirv_size_reports_errors_like_cpp() {
+fn spirv_size_matches_cpp_output() {
     let Some(cpp_tool) = find_cpp_tool("SPIRV_CPP_SIZE", "spirv-size") else {
         eprintln!("SPIRV_CPP_SIZE not set and spirv-size not found on PATH; skipping parity");
         return;
     };
-    let rust_bin = rust_bin("spirv-size");
-    let (_dir, bad_path) = write_invalid_spirv();
+    let dir = tempdir().expect("temp dir");
+    let bin_path = dir.path().join("module.spv");
+    assemble_with_rust_as(&bin_path);
 
-    assert_error_parity(
-        Command::new(&rust_bin).arg(&bad_path),
-        Command::new(&cpp_tool).arg(&bad_path),
-        "spirv-size",
+    let rust = Command::new(rust_bin("spirv-size"))
+        .arg(&bin_path)
+        .output()
+        .expect("run rust spirv-size");
+    let cpp = Command::new(&cpp_tool)
+        .arg(&bin_path)
+        .output()
+        .expect("run cpp spirv-size");
+
+    assert!(rust.status.success(), "rust spirv-size failed");
+    assert!(cpp.status.success(), "cpp spirv-size failed");
+    let rust_stdout = String::from_utf8_lossy(&rust.stdout);
+    let cpp_stdout = String::from_utf8_lossy(&cpp.stdout);
+    assert_eq!(
+        rust_stdout, cpp_stdout,
+        "spirv-size outputs differed between rust and cpp"
     );
 }
