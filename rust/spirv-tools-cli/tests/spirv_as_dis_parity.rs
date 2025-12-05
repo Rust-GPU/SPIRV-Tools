@@ -68,6 +68,60 @@ fn spirv_as_matches_cpp_binary_output() {
     );
 }
 
+fn module_with_numeric_ids() -> &'static str {
+    r#"
+; Expect numeric ids to be preserved when requested
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %1 "main"
+%2 = OpTypeVoid
+%3 = OpTypeFunction %2
+%1 = OpFunction %2 None %3
+%4 = OpLabel
+OpReturn
+OpFunctionEnd
+"#
+}
+
+#[test]
+fn spirv_as_preserves_numeric_ids_like_cpp() {
+    let Some(cpp_as) = find_cpp_tool("SPIRV_CPP_AS", "spirv-as") else {
+        eprintln!("SPIRV_CPP_AS not set and spirv-as not found on PATH; skipping parity");
+        return;
+    };
+
+    let dir = tempdir().expect("temp dir");
+    let asm_path = dir.path().join("module_ids.spvasm");
+    fs::write(&asm_path, module_with_numeric_ids()).expect("write asm");
+    let rust_bin = dir.path().join("rust_ids.spv");
+    let cpp_bin = dir.path().join("cpp_ids.spv");
+
+    let rust_status = Command::new(env!("CARGO_BIN_EXE_spirv-as"))
+        .arg(&asm_path)
+        .arg("--preserve-numeric-ids")
+        .arg("-o")
+        .arg(&rust_bin)
+        .status()
+        .expect("run rust spirv-as");
+    assert!(rust_status.success(), "rust spirv-as failed: {rust_status:?}");
+
+    let cpp_status = Command::new(&cpp_as)
+        .arg(&asm_path)
+        .arg("--preserve-numeric-ids")
+        .arg("-o")
+        .arg(&cpp_bin)
+        .status()
+        .expect("run cpp spirv-as");
+    assert!(cpp_status.success(), "cpp spirv-as failed: {cpp_status:?}");
+
+    let rust_bytes = fs::read(&rust_bin).expect("read rust binary");
+    let cpp_bytes = fs::read(&cpp_bin).expect("read cpp binary");
+    assert_eq!(
+        rust_bytes, cpp_bytes,
+        "Rust spirv-as preserve-numeric-ids output differed from C++ output"
+    );
+}
+
 fn normalize_text(text: &str) -> Vec<u32> {
     assemble_text(text).expect("assemble disassembled text")
 }
