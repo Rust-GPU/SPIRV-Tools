@@ -38,9 +38,7 @@ fi
 echo "[optimizer-smoke] running hyperfine benchmarks (if available)..."
 if command -v hyperfine >/dev/null 2>&1; then
   if [[ -x "${ROOT}/scripts/hyperfine-opt.sh" ]]; then
-    RUNS="${HYPERFINE_RUNS:-3}"
-    WARMUP="${HYPERFINE_WARMUP:-1}"
-    (cd "${ROOT}" && bash "${ROOT}/scripts/hyperfine-opt.sh" --runs "${RUNS}" --warmup "${WARMUP}" || true)
+    (cd "${ROOT}" && bash "${ROOT}/scripts/hyperfine-opt.sh" --runs 3 --warmup 1 || true)
   else
     echo "[optimizer-smoke] hyperfine-opt.sh not found; skipping"
   fi
