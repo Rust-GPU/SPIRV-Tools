@@ -253,43 +253,37 @@ fn help_has_binary_name(output: &str, binary: &str) -> bool {
     output.contains(binary)
 }
 
-#[test]
-fn spirv_as_help_and_version_match_cpp() {
-    let Some(cpp_as) = find_cpp_tool("SPIRV_CPP_AS", "spirv-as") else {
-        eprintln!("SPIRV_CPP_AS not set and spirv-as not found on PATH; skipping parity");
-        return;
-    };
-
-    let rust_help = Command::new(env!("CARGO_BIN_EXE_spirv-as"))
+fn help_and_version_parity(rust_bin: &str, cpp_bin: &PathBuf, name: &str) {
+    let rust_help = Command::new(rust_bin)
         .arg("--help")
         .output()
-        .expect("run rust spirv-as --help");
-    let cpp_help = Command::new(&cpp_as)
+        .expect("run rust --help");
+    let cpp_help = Command::new(cpp_bin)
         .arg("--help")
         .output()
-        .expect("run cpp spirv-as --help");
+        .expect("run cpp --help");
 
     assert!(rust_help.status.success());
     assert!(cpp_help.status.success());
     let rust_help_out = String::from_utf8_lossy(&rust_help.stdout);
     let cpp_help_out = String::from_utf8_lossy(&cpp_help.stdout);
     assert!(
-        help_has_binary_name(&rust_help_out, "spirv-as"),
+        help_has_binary_name(&rust_help_out, name),
         "rust --help did not mention binary name"
     );
     assert!(
-        help_has_binary_name(&cpp_help_out, "spirv-as"),
+        help_has_binary_name(&cpp_help_out, name),
         "cpp --help did not mention binary name"
     );
 
-    let rust_version = Command::new(env!("CARGO_BIN_EXE_spirv-as"))
+    let rust_version = Command::new(rust_bin)
         .arg("--version")
         .output()
-        .expect("run rust spirv-as --version");
-    let cpp_version = Command::new(&cpp_as)
+        .expect("run rust --version");
+    let cpp_version = Command::new(cpp_bin)
         .arg("--version")
         .output()
-        .expect("run cpp spirv-as --version");
+        .expect("run cpp --version");
 
     assert!(rust_version.status.success());
     assert!(cpp_version.status.success());
@@ -306,53 +300,41 @@ fn spirv_as_help_and_version_match_cpp() {
 }
 
 #[test]
+fn spirv_as_help_and_version_match_cpp() {
+    let Some(cpp_as) = find_cpp_tool("SPIRV_CPP_AS", "spirv-as") else {
+        eprintln!("SPIRV_CPP_AS not set and spirv-as not found on PATH; skipping parity");
+        return;
+    };
+
+    help_and_version_parity(env!("CARGO_BIN_EXE_spirv-as"), &cpp_as, "spirv-as");
+}
+
+#[test]
 fn spirv_dis_help_and_version_match_cpp() {
     let Some(cpp_dis) = find_cpp_tool("SPIRV_CPP_DIS", "spirv-dis") else {
         eprintln!("SPIRV_CPP_DIS not set and spirv-dis not found on PATH; skipping parity");
         return;
     };
 
-    let rust_help = Command::new(env!("CARGO_BIN_EXE_spirv-dis"))
-        .arg("--help")
-        .output()
-        .expect("run rust spirv-dis --help");
-    let cpp_help = Command::new(&cpp_dis)
-        .arg("--help")
-        .output()
-        .expect("run cpp spirv-dis --help");
+    help_and_version_parity(env!("CARGO_BIN_EXE_spirv-dis"), &cpp_dis, "spirv-dis");
+}
 
-    assert!(rust_help.status.success());
-    assert!(cpp_help.status.success());
-    let rust_help_out = String::from_utf8_lossy(&rust_help.stdout);
-    let cpp_help_out = String::from_utf8_lossy(&cpp_help.stdout);
-    assert!(
-        help_has_binary_name(&rust_help_out, "spirv-dis"),
-        "rust --help did not mention binary name"
-    );
-    assert!(
-        help_has_binary_name(&cpp_help_out, "spirv-dis"),
-        "cpp --help did not mention binary name"
-    );
+#[test]
+fn spirv_val_help_and_version_match_cpp() {
+    let Some(cpp_val) = find_cpp_tool("SPIRV_CPP_VAL", "spirv-val") else {
+        eprintln!("SPIRV_CPP_VAL not set and spirv-val not found on PATH; skipping parity");
+        return;
+    };
 
-    let rust_version = Command::new(env!("CARGO_BIN_EXE_spirv-dis"))
-        .arg("--version")
-        .output()
-        .expect("run rust spirv-dis --version");
-    let cpp_version = Command::new(&cpp_dis)
-        .arg("--version")
-        .output()
-        .expect("run cpp spirv-dis --version");
+    help_and_version_parity(env!("CARGO_BIN_EXE_spirv-val"), &cpp_val, "spirv-val");
+}
 
-    assert!(rust_version.status.success());
-    assert!(cpp_version.status.success());
-    let rust_version_out = String::from_utf8_lossy(&rust_version.stdout);
-    let cpp_version_out = String::from_utf8_lossy(&cpp_version.stdout);
-    assert!(
-        rust_version_out.contains("SPIRV-Tools"),
-        "rust version missing SPIRV-Tools tag: {rust_version_out}"
-    );
-    assert!(
-        cpp_version_out.contains("SPIRV-Tools"),
-        "cpp version missing SPIRV-Tools tag: {cpp_version_out}"
-    );
+#[test]
+fn spirv_opt_help_and_version_match_cpp() {
+    let Some(cpp_opt) = find_cpp_tool("SPIRV_CPP_OPT", "spirv-opt") else {
+        eprintln!("SPIRV_CPP_OPT not set and spirv-opt not found on PATH; skipping parity");
+        return;
+    };
+
+    help_and_version_parity(env!("CARGO_BIN_EXE_spirv-opt"), &cpp_opt, "spirv-opt");
 }
