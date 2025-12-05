@@ -719,3 +719,49 @@ fn spirv_objdump_source_ignores_empty_like_cpp() {
         "spirv-objdump --source --list for empty source differed"
     );
 }
+
+#[test]
+fn spirv_objdump_compiler_cmd_matches_cpp_failure() {
+    let Some(cpp_tool) = find_cpp_tool("SPIRV_CPP_OBJDUMP", "spirv-objdump") else {
+        eprintln!("SPIRV_CPP_OBJDUMP not set and spirv-objdump not found on PATH; skipping parity");
+        return;
+    };
+    let dir = tempdir().expect("temp dir");
+    let bin_path = dir.path().join("module.spv");
+    write_source_module(&bin_path);
+
+    let rust = Command::new(rust_bin("spirv-objdump"))
+        .arg("--compiler-cmd")
+        .arg(&bin_path)
+        .output()
+        .expect("run rust spirv-objdump --compiler-cmd");
+    let cpp = Command::new(&cpp_tool)
+        .arg("--compiler-cmd")
+        .arg(&bin_path)
+        .output()
+        .expect("run cpp spirv-objdump --compiler-cmd");
+
+    assert!(
+        !rust.status.success(),
+        "rust spirv-objdump should fail for compiler-cmd"
+    );
+    assert!(
+        !cpp.status.success(),
+        "cpp spirv-objdump should fail for compiler-cmd"
+    );
+    assert_eq!(
+        rust.status.code(),
+        cpp.status.code(),
+        "compiler-cmd exit codes should match"
+    );
+    let rust_err = String::from_utf8_lossy(&rust.stderr);
+    let cpp_err = String::from_utf8_lossy(&cpp.stderr);
+    assert!(
+        rust_err.to_lowercase().contains("unimplemented"),
+        "expected rust stderr to mention unimplemented: {rust_err}"
+    );
+    assert!(
+        cpp_err.to_lowercase().contains("unimplemented"),
+        "expected cpp stderr to mention unimplemented: {cpp_err}"
+    );
+}
