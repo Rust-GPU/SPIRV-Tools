@@ -198,6 +198,16 @@ Tasks:
 ## Completed Milestone: Validator Default Enablement
 Flip the Rust validator on by default across CLI/FFI while keeping an escape hatch.
 
+## Upcoming Milestone: CLI/FFI Tool Parity
+Ensure every CLI tool and FFI entry point is a drop-in replacement with matching exit codes, stdout/stderr, and corpus behavior relative to C++.
+
+Planned tasks:
+- Add CLI/FFI corpus parity runners for assembler/disassembler (text↔binary round-trips, error diagnostics) that compare Rust vs. C++ outputs/exit codes and skip cleanly when C++ binaries are absent.
+- Add parity harnesses for the remaining tools (`spirv-reduce`, `spirv-fuzz`, `spirv-cfg`, `spirv-lint`) covering help/version, error exits, stdout/stderr ordering, and representative corpora; wire optional runners (not enabled by default CI yet).
+- Add library-level parity tests for assembler/disassembler/optimizer/reducer/fuzzer FFI APIs to verify return codes, message callbacks, and error payloads align with the C API.
+- Extend CLI parity tests to check exit-code and stderr/stdout parity across all binaries for invalid inputs and flag misuse.
+- Keep the optional corpus runners documented and ready for targeted CI once parity is demonstrated (no new long-running CI by default).
+
 Planned tasks:
 - [x] Add a rollout flag/env to enable the Rust validator by default in CLI/FFI with a clear C++ fallback (default now on in CMake/Bazel via `SPIRV_PREFER_RUST_VALIDATOR_DEFAULT=1`).
 - [x] Wire the validator toggle through CMake/Bazel build glue so downstreams inherit the default.
