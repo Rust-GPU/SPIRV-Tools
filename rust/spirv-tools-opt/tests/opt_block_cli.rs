@@ -210,6 +210,25 @@ fn build_band_complement_u64_module() -> (Vec<u32>, (u32, u32)) {
     (b.module().assemble(), (band, int))
 }
 
+fn build_band_all_ones_u32_module() -> (Vec<u32>, u32, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let _func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let _ = b.begin_block(None).unwrap();
+    let x = b.constant_bit32(int, 0x1234_5678);
+    let mask = b.constant_bit32(int, u32::MAX);
+    let band = b.bitwise_and(int, None, x, mask).expect("band");
+    b.ret().unwrap();
+    b.end_function().unwrap();
+    (b.module().assemble(), band, int)
+}
+
 fn build_band_all_ones_u64_module() -> (Vec<u32>, u32, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
@@ -229,6 +248,25 @@ fn build_band_all_ones_u64_module() -> (Vec<u32>, u32, u32) {
     (b.module().assemble(), band, int)
 }
 
+fn build_bor_zero_u32_module() -> (Vec<u32>, u32, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let _func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let _ = b.begin_block(None).unwrap();
+    let x = b.constant_bit32(int, 0x89AB_CDEF);
+    let zero = b.constant_bit32(int, 0);
+    let bor = b.bitwise_or(int, None, x, zero).expect("bor");
+    b.ret().unwrap();
+    b.end_function().unwrap();
+    (b.module().assemble(), bor, int)
+}
+
 fn build_bor_zero_u64_module() -> (Vec<u32>, u32, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
@@ -246,6 +284,24 @@ fn build_bor_zero_u64_module() -> (Vec<u32>, u32, u32) {
     b.ret().unwrap();
     b.end_function().unwrap();
     (b.module().assemble(), bor, int)
+}
+
+fn build_bxor_self_u32_module() -> (Vec<u32>, u32, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let _func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let _ = b.begin_block(None).unwrap();
+    let x = b.constant_bit32(int, 0xCAFEBABE);
+    let bxor = b.bitwise_xor(int, None, x, x).expect("bxor self");
+    b.ret().unwrap();
+    b.end_function().unwrap();
+    (b.module().assemble(), bxor, int)
 }
 
 fn build_bxor_self_u64_module() -> (Vec<u32>, u32, u32) {
@@ -917,6 +973,59 @@ fn cli_opt_block_matches_cpp_band_complement_u64() {
 }
 
 #[test]
+fn cli_opt_block_matches_cpp_band_all_ones_u32() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+    let _guard = ENV_GUARD.lock().unwrap();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let (words, band_id, int_ty) = build_band_all_ones_u32_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let rust_output = dir.path().join("rust_output.spv");
+    let cpp_output = dir.path().join("cpp_output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let rust_status = Command::new(exe)
+        .arg(&input)
+        .arg(&rust_output)
+        .status()
+        .expect("run opt_block");
+    assert!(rust_status.success(), "opt_block should succeed");
+
+    let cpp_status = Command::new(&cpp_opt)
+        .arg(&input)
+        .arg("-o")
+        .arg(&cpp_output)
+        .arg("-O")
+        .status()
+        .expect("run spirv-opt");
+    assert!(cpp_status.success(), "spirv-opt should succeed");
+
+    let rust_sig = arith_signature(&bytes_to_words(&std::fs::read(&rust_output).unwrap()));
+    let cpp_sig = arith_signature(&bytes_to_words(&std::fs::read(&cpp_output).unwrap()));
+    assert_eq!(
+        rust_sig, cpp_sig,
+        "Rust vs C++ mismatch for band all-ones u32 fold"
+    );
+
+    let mut loader = Loader::new();
+    rspirv::binary::parse_words(&bytes_to_words(&std::fs::read(&rust_output).unwrap()), &mut loader)
+        .expect("parse optimized");
+    let module = loader.module();
+    let folded = module.all_inst_iter().find(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(band_id)
+            && inst.result_type == Some(int_ty)
+    });
+    assert!(
+        folded.is_some(),
+        "Rust output should fold band with all ones to the input"
+    );
+}
+
+#[test]
 fn cli_opt_block_matches_cpp_band_all_ones_u64() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
@@ -973,6 +1082,53 @@ fn cli_opt_block_matches_cpp_band_all_ones_u64() {
 }
 
 #[test]
+fn cli_opt_block_matches_cpp_bor_zero_u32() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+    let _guard = ENV_GUARD.lock().unwrap();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let (words, bor_id, int_ty) = build_bor_zero_u32_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let rust_output = dir.path().join("rust_output.spv");
+    let cpp_output = dir.path().join("cpp_output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let rust_status = Command::new(exe)
+        .arg(&input)
+        .arg(&rust_output)
+        .status()
+        .expect("run opt_block");
+    assert!(rust_status.success(), "opt_block should succeed");
+
+    let cpp_status = Command::new(&cpp_opt)
+        .arg(&input)
+        .arg("-o")
+        .arg(&cpp_output)
+        .arg("-O")
+        .status()
+        .expect("run spirv-opt");
+    assert!(cpp_status.success(), "spirv-opt should succeed");
+
+    let rust_sig = arith_signature(&bytes_to_words(&std::fs::read(&rust_output).unwrap()));
+    let cpp_sig = arith_signature(&bytes_to_words(&std::fs::read(&cpp_output).unwrap()));
+    assert_eq!(rust_sig, cpp_sig, "Rust vs C++ mismatch for bor zero u32");
+
+    let mut loader = Loader::new();
+    rspirv::binary::parse_words(&bytes_to_words(&std::fs::read(&rust_output).unwrap()), &mut loader)
+        .expect("parse optimized");
+    let module = loader.module();
+    let folded = module.all_inst_iter().find(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(bor_id)
+            && inst.result_type == Some(int_ty)
+    });
+    assert!(folded.is_some(), "Rust output should fold bor zero to operand");
+}
+
+#[test]
 fn cli_opt_block_matches_cpp_bor_zero_u64() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
@@ -1023,6 +1179,53 @@ fn cli_opt_block_matches_cpp_bor_zero_u64() {
         folded.is_some(),
         "Rust output should fold bor zero to operand"
     );
+}
+
+#[test]
+fn cli_opt_block_matches_cpp_bxor_self_u32() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+    let _guard = ENV_GUARD.lock().unwrap();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let (words, bxor_id, int_ty) = build_bxor_self_u32_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let rust_output = dir.path().join("rust_output.spv");
+    let cpp_output = dir.path().join("cpp_output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let rust_status = Command::new(exe)
+        .arg(&input)
+        .arg(&rust_output)
+        .status()
+        .expect("run opt_block");
+    assert!(rust_status.success(), "opt_block should succeed");
+
+    let cpp_status = Command::new(&cpp_opt)
+        .arg(&input)
+        .arg("-o")
+        .arg(&cpp_output)
+        .arg("-O")
+        .status()
+        .expect("run spirv-opt");
+    assert!(cpp_status.success(), "spirv-opt should succeed");
+
+    let rust_sig = arith_signature(&bytes_to_words(&std::fs::read(&rust_output).unwrap()));
+    let cpp_sig = arith_signature(&bytes_to_words(&std::fs::read(&cpp_output).unwrap()));
+    assert_eq!(rust_sig, cpp_sig, "Rust vs C++ mismatch for bxor self u32");
+
+    let mut loader = Loader::new();
+    rspirv::binary::parse_words(&bytes_to_words(&std::fs::read(&rust_output).unwrap()), &mut loader)
+        .expect("parse optimized");
+    let module = loader.module();
+    let folded = module.all_inst_iter().find(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(bxor_id)
+            && inst.result_type == Some(int_ty)
+    });
+    assert!(folded.is_some(), "Rust output should fold bxor self to zero");
 }
 
 #[test]
