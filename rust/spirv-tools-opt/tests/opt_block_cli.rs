@@ -210,6 +210,55 @@ fn build_band_complement_u64_module() -> (Vec<u32>, (u32, u32)) {
     (b.module().assemble(), (band, int))
 }
 
+fn arith_signature(words: &[u32]) -> Vec<(Op, Vec<String>)> {
+    let mut loader = Loader::new();
+    rspirv::binary::parse_words(words, &mut loader).expect("parse module");
+    let module = loader.module();
+    let is_arith = |opcode: Op| {
+        matches!(
+            opcode,
+            Op::Constant
+                | Op::IAdd
+                | Op::IMul
+                | Op::ISub
+                | Op::BitwiseOr
+                | Op::BitwiseXor
+                | Op::BitwiseAnd
+                | Op::Not
+                | Op::SNegate
+                | Op::SDiv
+                | Op::UDiv
+                | Op::SRem
+                | Op::UMod
+                | Op::ShiftLeftLogical
+                | Op::ShiftRightLogical
+                | Op::ShiftRightArithmetic
+        )
+    };
+    let mut sig: Vec<_> = module
+        .types_global_values
+        .iter()
+        .chain(
+            module
+                .functions
+                .iter()
+                .flat_map(|func| func.blocks.iter().flat_map(|blk| blk.instructions.iter())),
+        )
+        .filter(|inst| is_arith(inst.class.opcode))
+        .map(|inst| {
+            (
+                inst.class.opcode,
+                inst.operands
+                    .iter()
+                    .map(|op| format!("{op:?}"))
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect();
+    sig.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+    sig
+}
+
 fn build_signed_div_rem_identity_module() -> (Vec<u32>, (u32, u32)) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
@@ -770,6 +819,45 @@ fn cli_opt_block_folds_complement_with_width_awareness() {
         .all_inst_iter()
         .any(|inst| inst.class.opcode == Op::BitwiseAnd && inst.result_id == Some(band_id));
     assert!(!has_band, "bitwise and should be removed after folding");
+}
+
+#[test]
+fn cli_opt_block_matches_cpp_band_complement_u64() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+    let _guard = ENV_GUARD.lock().unwrap();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let (words, _) = build_band_complement_u64_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let rust_output = dir.path().join("rust_output.spv");
+    let cpp_output = dir.path().join("cpp_output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let rust_status = Command::new(exe)
+        .arg(&input)
+        .arg(&rust_output)
+        .status()
+        .expect("run opt_block");
+    assert!(rust_status.success(), "opt_block should succeed");
+
+    let cpp_status = Command::new(&cpp_opt)
+        .arg(&input)
+        .arg("-o")
+        .arg(&cpp_output)
+        .arg("-O")
+        .status()
+        .expect("run spirv-opt");
+    assert!(cpp_status.success(), "spirv-opt should succeed");
+
+    let rust_sig = arith_signature(&bytes_to_words(&std::fs::read(&rust_output).unwrap()));
+    let cpp_sig = arith_signature(&bytes_to_words(&std::fs::read(&cpp_output).unwrap()));
+    assert_eq!(
+        rust_sig, cpp_sig,
+        "Rust vs C++ mismatch for band complement u64 fold"
+    );
 }
 
 #[test]
