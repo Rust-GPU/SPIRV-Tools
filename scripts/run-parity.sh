@@ -14,7 +14,7 @@
 # limitations under the License.
 set -euo pipefail
 
-# Aggregate parity runner: validator corpus + optimizer parity.
+# Aggregate parity runner: validator corpus + optimizer parity + asm/dis parity.
 # Usage: scripts/run-parity.sh /path/to/build-tests [workspace-root]
 
 build_dir="${1:-build-tests}"
@@ -25,3 +25,6 @@ scripts/run-rust-validator-corpus.sh "${build_dir}"
 
 echo "Running optimizer Rust vs. C++ parity..."
 scripts/run-opt-parity.sh "${workspace}"
+
+echo "Running assembler/disassembler Rust vs. C++ parity..."
+scripts/run-asm-dis-parity.sh "${workspace}"
