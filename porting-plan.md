@@ -760,7 +760,7 @@ Planned tasks:
 Align the Rust assembler/disassembler/validator/optimizer binaries with the C++ corpora and CLI behaviors.
 
 Tasks for this milestone:
-- Add Rust-vs-C++ corpus runners for assembler/disassembler similar to `run-opt-parity.sh`, covering text↔binary round-trips and CLI flags (env/force-rust toggles).
+- Add Rust-vs-C++ corpus runners for assembler/disassembler similar to `run-opt-parity.sh`, covering text↔binary round-trips and CLI flags (env/force-rust toggles). **(in place: `scripts/run-asm-dis-parity.sh` runs Rust vs. C++ on `.spvasm` corpora and checks disassembly round-trips)**
 - Expand validator corpus runs to cover the full C++ test corpus with the Rust path forced on (reuse `scripts/run-rust-validator-corpus.sh`).
 - Add missing CLI parity tests for optimizer strength reductions still uncovered (see TODO above) and track any remaining gaps.
 - Ensure FFI surfaces expose the same toggles/defaults as the CLI for all tools (optimizer, assembler, disassembler, validator) with regression tests.
