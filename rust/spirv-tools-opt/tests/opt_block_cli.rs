@@ -189,6 +189,27 @@ fn build_udiv_rem_identity_module_u64() -> (Vec<u32>, (u32, u32)) {
     (b.module().assemble(), (div, rem))
 }
 
+fn build_band_complement_u64_module() -> (Vec<u32>, (u32, u32)) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(64, 0);
+    let func_ty = b.type_function(void, vec![int]);
+    let _func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let param = b.function_parameter(int).expect("param");
+    let _ = b.begin_block(None).unwrap();
+    let not_param = b.not(int, None, param).expect("not param");
+    let band = b
+        .bitwise_and(int, None, param, not_param)
+        .expect("bitwise and");
+    b.ret().unwrap();
+    b.end_function().unwrap();
+    (b.module().assemble(), (band, int))
+}
+
 fn build_signed_div_rem_identity_module() -> (Vec<u32>, (u32, u32)) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
@@ -708,6 +729,47 @@ fn cli_opt_block_rejects_unaligned_input() {
         !output.exists(),
         "output should not be produced when input is invalid"
     );
+}
+
+#[test]
+fn cli_opt_block_folds_complement_with_width_awareness() {
+    let _guard = ENV_GUARD.lock().unwrap();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let (words, (band_id, int_ty)) = build_band_complement_u64_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let output = dir.path().join("output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let status = Command::new(exe)
+        .arg(&input)
+        .arg(&output)
+        .status()
+        .expect("run opt_block");
+    assert!(status.success(), "opt_block should fold complement");
+
+    let optimized_bytes = std::fs::read(&output).expect("read output");
+    let optimized_words = bytes_to_words(&optimized_bytes);
+    let mut loader = Loader::new();
+    rspirv::binary::parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+
+    let folded = module.all_inst_iter().find(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(band_id)
+            && inst.result_type == Some(int_ty)
+    });
+    assert!(folded.is_some(), "band result should fold to a constant");
+    assert_eq!(
+        folded.unwrap().operands,
+        vec![rspirv::dr::Operand::LiteralBit64(0)],
+        "folded constant should use 64-bit encoding"
+    );
+    let has_band = module
+        .all_inst_iter()
+        .any(|inst| inst.class.opcode == Op::BitwiseAnd && inst.result_id == Some(band_id));
+    assert!(!has_band, "bitwise and should be removed after folding");
 }
 
 #[test]

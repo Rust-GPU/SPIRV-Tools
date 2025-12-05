@@ -181,7 +181,7 @@ Tasks:
 - [x] Extend the optimizer’s constant domain to track bit-width (u32/u64) and surface width through the e-graph rewrite layer. (symbol width hints threaded from type ints/operand ids; width-aware width_hint now walks the e-graph)
 - [x] Teach rotate/shift/mask rewrites to honor the operand bit width (32 vs 64) and fold accordingly. (width inference no longer defaults to 32-bit for typed but non-constant operands)
 - [x] Update SPIR-V extraction/reconstruction to emit the correct literal width for optimized constants. (translation accepts type-width context; CLI/FFI pass module-derived widths so reconstructed constants choose 32/64-bit operands correctly)
-- Enable the 64-bit rotate parity tests (CLI + FFI) to run without the skip-on-rewrite guard and add any new 64-bit shift/mask parity needed.
+- [x] Enable the 64-bit rotate parity tests (CLI + FFI) to run without the skip-on-rewrite guard and add any new 64-bit shift/mask parity needed. (rotate parity suites enabled; bitwise complements now width-aware through CLI/FFI with a CLI regression covering 64-bit `x & ~x`)
 - Keep fuzz/criterion/hyperfine benches green after width support lands; run clippy/rustfmt.
 - [x] Add parity for bitwise zero identities (and/or/xor) across CLI/FFI so identity/absorbing forms stay in lockstep with C++.
 - [x] Add parity for bitwise self identities (and/or => operand, xor => zero) across CLI/FFI to keep id-stable rewrites matched with C++.
