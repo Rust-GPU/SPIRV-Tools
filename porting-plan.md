@@ -782,6 +782,13 @@ Tasks for this milestone:
 - Add CLI/FFI parity for tool exit codes and stderr/stdout ordering across all binaries, including help/version output parity.
 - Add corpus runners (skip by default) for reduce/fuzz/cfg tools mirroring the C++ regression corpora and document how to invoke them locally.
 - Wire the corpus runners into optional CI smoke scripts (not enabled by default yet) so parity checks can be invoked locally or in targeted jobs.
+- Add a parity gaps ledger and close them:
+  - ✅ CLI sanity: help/version and invalid-input exit-code parity now covered for `spirv-reduce`, `spirv-fuzz`, `spirv-cfg`, and `spirv-lint` (skips when C++ binaries are absent).
+  - CLI gaps: `spirv-reduce`, `spirv-fuzz`, `spirv-cfg`, and `spirv-lint` need Rust-vs-C++ exit-code/stdout/stderr/help/flag parity; add harnesses mirroring the help/version/error cases already covered for as/dis/val/opt.
+  - Corpus gaps: assembler/disassembler corpus run should cover error cases and round-trip text↔binary; add reducers/fuzzers corpora runners that diff outputs/diagnostics against C++.
+  - FFI gaps: align all exposed C API surfaces (assembler/disassembler/optimizer/reducer/fuzzer) on return codes, message callback ordering, and error payloads; add regression tests that compare Rust FFI results to the C++ bridge.
+  - Env/flag parity: ensure CLI env toggles (`SPIRV_TOOLS_FORCE_RUST_*`/`DISABLE_RUST_*`) and flag aliases match the C++ UX across every tool, with integration tests.
+  - Packaging/build gaps: verify the Rust-backed binaries and libs are produced with the same names/paths as C++ artifacts (static/shared as applicable) and document how to swap them in downstream builds without extra CI steps.
 
 ## Upcoming Milestone: Optimizer FFI/CLI Integration
 Expose the Rust optimizer through the existing C/C++ surfaces and provide CLI benchmarking.
