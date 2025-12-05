@@ -28,3 +28,6 @@ scripts/run-opt-parity.sh "${workspace}"
 
 echo "Running assembler/disassembler Rust vs. C++ parity..."
 scripts/run-asm-dis-parity.sh "${workspace}"
+
+echo "Running tool CLI parity (reduce/fuzz/cfg/lint)..."
+scripts/run-tool-cli-parity.sh "${workspace}"
