@@ -91,7 +91,9 @@ fn build_mul_identity_module_s32() -> (Vec<u32>, u32) {
     let c1 = b.constant_bit32(int, 1);
     let left = b.i_mul(int, None, c4, c1).expect("mul by one s32");
     let right = b.i_mul(int, None, c5, c0).expect("mul by zero s32");
-    let sum = b.i_add(int, None, left, right).expect("add folded terms s32");
+    let sum = b
+        .i_add(int, None, left, right)
+        .expect("add folded terms s32");
     b.ret().unwrap();
     b.end_function().unwrap();
     (b.module().assemble(), sum)
@@ -114,7 +116,9 @@ fn build_mul_identity_module_s64() -> (Vec<u32>, u32) {
     let c1 = b.constant_bit64(int, 1);
     let left = b.i_mul(int, None, c4, c1).expect("mul by one s64");
     let right = b.i_mul(int, None, c5, c0).expect("mul by zero s64");
-    let sum = b.i_add(int, None, left, right).expect("add folded terms s64");
+    let sum = b
+        .i_add(int, None, left, right)
+        .expect("add folded terms s64");
     b.ret().unwrap();
     b.end_function().unwrap();
     (b.module().assemble(), sum)
@@ -137,7 +141,9 @@ fn build_mul_identity_module_u64() -> (Vec<u32>, u32) {
     let c1 = b.constant_bit64(int, 1);
     let left = b.i_mul(int, None, c4, c1).expect("mul by one u64");
     let right = b.i_mul(int, None, c5, c0).expect("mul by zero u64");
-    let sum = b.i_add(int, None, left, right).expect("add folded terms u64");
+    let sum = b
+        .i_add(int, None, left, right)
+        .expect("add folded terms u64");
     b.ret().unwrap();
     b.end_function().unwrap();
     (b.module().assemble(), sum)
@@ -933,11 +939,7 @@ fn cli_opt_block_matches_cpp_mul_identities_u64() {
         rust_const, cpp_const,
         "Rust CLI and C++ spirv-opt should fold mul identities the same way (u64)"
     );
-    assert_eq!(
-        rust_const,
-        Some(4),
-        "mul identities should fold to 4 (u64)"
-    );
+    assert_eq!(rust_const, Some(4), "mul identities should fold to 4 (u64)");
     assert_eq!(cpp_const, Some(4), "mul identities should fold to 4 (u64)");
 }
 
@@ -1193,12 +1195,20 @@ fn cli_opt_block_matches_cpp_signed_div_rem_identities_u64() {
         rust_div, cpp_div,
         "Rust CLI and C++ spirv-opt should fold signed div-by-one the same way (s64)"
     );
-    assert_eq!(rust_div, Some(42), "signed div-by-one should fold to the original value (s64)");
+    assert_eq!(
+        rust_div,
+        Some(42),
+        "signed div-by-one should fold to the original value (s64)"
+    );
     assert_eq!(
         rust_rem, cpp_rem,
         "Rust CLI and C++ spirv-opt should fold signed rem-by-one the same way (s64)"
     );
-    assert_eq!(rust_rem, Some(0), "signed rem-by-one should fold to zero (s64)");
+    assert_eq!(
+        rust_rem,
+        Some(0),
+        "signed rem-by-one should fold to zero (s64)"
+    );
     assert!(
         !has_op(&rust_words, Op::SDiv) && !has_op(&rust_words, Op::SRem),
         "Rust output should remove sdiv/srem after folding (s64)"

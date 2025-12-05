@@ -207,6 +207,12 @@ Planned tasks:
 - Add library-level parity tests for assembler/disassembler/optimizer/reducer/fuzzer FFI APIs to verify return codes, message callbacks, and error payloads align with the C API.
 - Extend CLI parity tests to check exit-code and stderr/stdout parity across all binaries for invalid inputs and flag misuse.
 - Keep the optional corpus runners documented and ready for targeted CI once parity is demonstrated (no new long-running CI by default).
+- Parity gaps to close:
+  - [ ] Library-level diagnostics parity for assembler/disassembler error paths (invalid UTF-8, malformed binaries) and confirmation that the C++ fallback path is exercised when rust overrides are disabled.
+  - [ ] CLI parity runners for assembler/disassembler/optimizer/reducer/fuzzer that diff Rust vs. C++ stdout/stderr/exit codes on bad input (beyond help/version).
+  - [ ] Reducer/fuzzer corpus parity and smoke suites that mirror the legacy C++ tool behavior when invoked through `spirv-reduce`/`spirv-fuzz` binaries.
+  - [ ] FFI parity checks for message-consumer callbacks across assembler/disassembler/validator/optimizer/reducer/fuzzer so diagnostics routing matches the C API.
+  - [ ] Round-trip parity (text↔binary↔text) across CLI and FFI with numeric-id preservation and diagnostics capture to guard against drift from the C++ tools.
 
 Planned tasks:
 - [x] Add a rollout flag/env to enable the Rust validator by default in CLI/FFI with a clear C++ fallback (default now on in CMake/Bazel via `SPIRV_PREFER_RUST_VALIDATOR_DEFAULT=1`).

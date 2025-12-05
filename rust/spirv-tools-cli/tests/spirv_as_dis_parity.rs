@@ -50,7 +50,10 @@ fn spirv_as_matches_cpp_binary_output() {
         .arg(&rust_bin)
         .status()
         .expect("run rust spirv-as");
-    assert!(rust_status.success(), "rust spirv-as failed: {rust_status:?}");
+    assert!(
+        rust_status.success(),
+        "rust spirv-as failed: {rust_status:?}"
+    );
 
     let cpp_status = Command::new(&cpp_as)
         .arg(&asm_path)
@@ -103,7 +106,10 @@ fn spirv_as_preserves_numeric_ids_like_cpp() {
         .arg(&rust_bin)
         .status()
         .expect("run rust spirv-as");
-    assert!(rust_status.success(), "rust spirv-as failed: {rust_status:?}");
+    assert!(
+        rust_status.success(),
+        "rust spirv-as failed: {rust_status:?}"
+    );
 
     let cpp_status = Command::new(&cpp_as)
         .arg(&asm_path)
@@ -131,7 +137,11 @@ fn spirv_as_reports_errors_like_cpp() {
 
     let dir = tempdir().expect("temp dir");
     let bad_path = dir.path().join("invalid.spvasm");
-    fs::write(&bad_path, "%void = OpTypeVoid\nOpEntryPoint Vertex %main \"main\"").expect("write asm");
+    fs::write(
+        &bad_path,
+        "%void = OpTypeVoid\nOpEntryPoint Vertex %main \"main\"",
+    )
+    .expect("write asm");
 
     let rust = Command::new(env!("CARGO_BIN_EXE_spirv-as"))
         .arg(&bad_path)
