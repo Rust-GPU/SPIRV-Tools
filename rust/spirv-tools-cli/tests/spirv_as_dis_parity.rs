@@ -25,6 +25,57 @@ fn words_to_bytes(words: &[u32]) -> Vec<u8> {
     bytes
 }
 
+fn disassembly_corpus() -> Vec<&'static str> {
+    vec![
+        simple_module(),
+        r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main"
+OpExecutionMode %main LocalSize 1 2 3
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#,
+        r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %out
+OpExecutionMode %main OriginUpperLeft
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%float = OpTypeFloat 32
+%ptr_out = OpTypePointer Output %float
+%out = OpVariable %ptr_out Output
+%const = OpConstant %float 1.0
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpStore %out %const
+OpReturn
+OpFunctionEnd
+"#,
+        r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %vmain "vmain"
+OpEntryPoint Fragment %fmain "fmain"
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%vmain = OpFunction %void None %fn
+%ventry = OpLabel
+OpReturn
+OpFunctionEnd
+%fmain = OpFunction %void None %fn
+%fentry = OpLabel
+OpReturn
+OpFunctionEnd
+"#,
+    ]
+}
+
 fn simple_module() -> &'static str {
     r#"
 OpCapability Shader
@@ -218,29 +269,39 @@ fn spirv_dis_outputs_match_cpp() {
         return;
     };
 
-    let dir = tempdir().expect("temp dir");
-    let bin_path = dir.path().join("module.spv");
-    let binary = assemble_text(simple_module()).expect("assemble simple module");
-    fs::write(&bin_path, words_to_bytes(&binary)).expect("write binary");
+    for module in disassembly_corpus() {
+        let dir = tempdir().expect("temp dir");
+        let bin_path = dir.path().join("module.spv");
+        let binary = assemble_text(module).expect("assemble module");
+        fs::write(&bin_path, words_to_bytes(&binary)).expect("write binary");
 
-    let rust = Command::new(env!("CARGO_BIN_EXE_spirv-dis"))
-        .arg(&bin_path)
-        .output()
-        .expect("run rust spirv-dis");
-    assert!(rust.status.success(), "rust spirv-dis failed: {:?}", rust.status);
+        let rust = Command::new(env!("CARGO_BIN_EXE_spirv-dis"))
+            .arg(&bin_path)
+            .output()
+            .expect("run rust spirv-dis");
+        assert!(
+            rust.status.success(),
+            "rust spirv-dis failed: {:?}",
+            rust.status
+        );
 
-    let cpp = Command::new(&cpp_dis)
-        .arg(&bin_path)
-        .output()
-        .expect("run cpp spirv-dis");
-    assert!(cpp.status.success(), "cpp spirv-dis failed: {:?}", cpp.status);
+        let cpp = Command::new(&cpp_dis)
+            .arg(&bin_path)
+            .output()
+            .expect("run cpp spirv-dis");
+        assert!(
+            cpp.status.success(),
+            "cpp spirv-dis failed: {:?}",
+            cpp.status
+        );
 
-    let rust_text = String::from_utf8_lossy(&rust.stdout).trim().to_owned();
-    let cpp_text = String::from_utf8_lossy(&cpp.stdout).trim().to_owned();
-    assert_eq!(
-        rust_text, cpp_text,
-        "Rust spirv-dis output differed from C++ output"
-    );
+        let rust_text = String::from_utf8_lossy(&rust.stdout).trim().to_owned();
+        let cpp_text = String::from_utf8_lossy(&cpp.stdout).trim().to_owned();
+        assert_eq!(
+            rust_text, cpp_text,
+            "Rust spirv-dis output differed from C++ output for module:\n{module}"
+        );
+    }
 }
 
 fn normalize_text(text: &str) -> Vec<u32> {
