@@ -1011,8 +1011,11 @@ fn cli_opt_block_matches_cpp_band_all_ones_u32() {
     );
 
     let mut loader = Loader::new();
-    rspirv::binary::parse_words(&bytes_to_words(&std::fs::read(&rust_output).unwrap()), &mut loader)
-        .expect("parse optimized");
+    rspirv::binary::parse_words(
+        &bytes_to_words(&std::fs::read(&rust_output).unwrap()),
+        &mut loader,
+    )
+    .expect("parse optimized");
     let module = loader.module();
     let folded = module.all_inst_iter().find(|inst| {
         inst.class.opcode == Op::Constant
@@ -1117,15 +1120,21 @@ fn cli_opt_block_matches_cpp_bor_zero_u32() {
     assert_eq!(rust_sig, cpp_sig, "Rust vs C++ mismatch for bor zero u32");
 
     let mut loader = Loader::new();
-    rspirv::binary::parse_words(&bytes_to_words(&std::fs::read(&rust_output).unwrap()), &mut loader)
-        .expect("parse optimized");
+    rspirv::binary::parse_words(
+        &bytes_to_words(&std::fs::read(&rust_output).unwrap()),
+        &mut loader,
+    )
+    .expect("parse optimized");
     let module = loader.module();
     let folded = module.all_inst_iter().find(|inst| {
         inst.class.opcode == Op::Constant
             && inst.result_id == Some(bor_id)
             && inst.result_type == Some(int_ty)
     });
-    assert!(folded.is_some(), "Rust output should fold bor zero to operand");
+    assert!(
+        folded.is_some(),
+        "Rust output should fold bor zero to operand"
+    );
 }
 
 #[test]
@@ -1217,15 +1226,21 @@ fn cli_opt_block_matches_cpp_bxor_self_u32() {
     assert_eq!(rust_sig, cpp_sig, "Rust vs C++ mismatch for bxor self u32");
 
     let mut loader = Loader::new();
-    rspirv::binary::parse_words(&bytes_to_words(&std::fs::read(&rust_output).unwrap()), &mut loader)
-        .expect("parse optimized");
+    rspirv::binary::parse_words(
+        &bytes_to_words(&std::fs::read(&rust_output).unwrap()),
+        &mut loader,
+    )
+    .expect("parse optimized");
     let module = loader.module();
     let folded = module.all_inst_iter().find(|inst| {
         inst.class.opcode == Op::Constant
             && inst.result_id == Some(bxor_id)
             && inst.result_type == Some(int_ty)
     });
-    assert!(folded.is_some(), "Rust output should fold bxor self to zero");
+    assert!(
+        folded.is_some(),
+        "Rust output should fold bxor self to zero"
+    );
 }
 
 #[test]

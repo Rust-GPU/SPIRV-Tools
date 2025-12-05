@@ -266,6 +266,146 @@ mod optimizer_tests {
     }
 
     #[test]
+    fn optimizer_folds_band_all_ones_u32() {
+        let _guard = OptimizerEnvGuard::new();
+
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(void, vec![]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        let value = b.constant_bit32(int, 0xDEAD_BEEF);
+        let mask = b.constant_bit32(int, u32::MAX);
+        let band = b.bitwise_and(int, None, value, mask).expect("band");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let module = loader.module();
+        let folded = module.all_inst_iter().find(|inst| {
+            inst.class.opcode == Op::Constant
+                && inst.result_id == Some(band)
+                && inst.result_type == Some(int)
+        });
+        assert!(folded.is_some(), "band with all ones should fold to value");
+        assert_eq!(
+            folded.unwrap().operands,
+            vec![rspirv::dr::Operand::LiteralBit32(0xDEAD_BEEF)],
+            "folded constant should retain 32-bit value"
+        );
+        assert!(
+            !module
+                .all_inst_iter()
+                .any(|inst| inst.class.opcode == Op::BitwiseAnd && inst.result_id == Some(band)),
+            "bitwise and should be removed after folding"
+        );
+    }
+
+    #[test]
+    fn optimizer_folds_bor_zero_u32() {
+        let _guard = OptimizerEnvGuard::new();
+
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(void, vec![]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        let value = b.constant_bit32(int, 0xBEEF_CAFE);
+        let zero = b.constant_bit32(int, 0);
+        let bor = b.bitwise_or(int, None, value, zero).expect("bor");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let module = loader.module();
+        let folded = module.all_inst_iter().find(|inst| {
+            inst.class.opcode == Op::Constant
+                && inst.result_id == Some(bor)
+                && inst.result_type == Some(int)
+        });
+        assert!(folded.is_some(), "bor zero should fold to operand");
+        assert_eq!(
+            folded.unwrap().operands,
+            vec![rspirv::dr::Operand::LiteralBit32(0xBEEF_CAFE)],
+            "folded constant should retain 32-bit operand"
+        );
+        assert!(
+            !module
+                .all_inst_iter()
+                .any(|inst| inst.class.opcode == Op::BitwiseOr && inst.result_id == Some(bor)),
+            "bitwise or should be removed after folding"
+        );
+    }
+
+    #[test]
+    fn optimizer_folds_bxor_self_u32() {
+        let _guard = OptimizerEnvGuard::new();
+
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(void, vec![]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        let value = b.constant_bit32(int, 0x0BAD_F00D);
+        let bxor = b.bitwise_xor(int, None, value, value).expect("bxor self");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let module = loader.module();
+        let folded = module.all_inst_iter().find(|inst| {
+            inst.class.opcode == Op::Constant
+                && inst.result_id == Some(bxor)
+                && inst.result_type == Some(int)
+        });
+        assert!(folded.is_some(), "bxor self should fold to zero");
+        assert_eq!(
+            folded.unwrap().operands,
+            vec![rspirv::dr::Operand::LiteralBit32(0)],
+            "folded constant should be zero with 32-bit encoding"
+        );
+        assert!(
+            !module
+                .all_inst_iter()
+                .any(|inst| inst.class.opcode == Op::BitwiseXor && inst.result_id == Some(bxor)),
+            "bitwise xor should be removed after folding"
+        );
+    }
+
+    #[test]
     fn optimizer_basic_block_pass_through_non_arith() {
         let mut b = Builder::new();
         let void = b.type_void();
