@@ -179,6 +179,7 @@ fn run_source_dump(
 
     if let Some(dir) = &options.output_dir {
         fs::create_dir_all(dir)?;
+        let mut exported = String::new();
         for src in &sources {
             let out_path = dir.join(&src.name);
             if out_path.exists() && !options.overwrite {
@@ -186,14 +187,29 @@ fn run_source_dump(
                     out_path.to_string_lossy().into_owned(),
                 ));
             }
+            if src.contents.is_empty() {
+                exported.push_str(&format!(
+                    "Ignoring source for {}: no code source in debug infos.\n",
+                    src.name
+                ));
+                continue;
+            }
             fs::write(&out_path, &src.contents)?;
+            exported.push_str(&format!("Exporting {}\n", out_path.display()));
         }
-        return Ok(String::new());
+        return Ok(exported);
     }
 
     // Default: emit to stdout with filename markers.
     let mut out = String::new();
     for src in &sources {
+        if src.contents.is_empty() {
+            out.push_str(&format!(
+                "Ignoring source for {}: no code source in debug infos.\n",
+                src.name
+            ));
+            continue;
+        }
         out.push_str(&src.name);
         out.push_str(":\n");
         out.push_str(&src.contents);
@@ -441,13 +457,15 @@ mod tests {
     ) -> Vec<u32> {
         let mut builder = Builder::new();
         builder.capability(spirv::Capability::Shader);
-        builder.memory_model(
-            spirv::AddressingModel::Logical,
-            spirv::MemoryModel::GLSL450,
-        );
+        builder.memory_model(spirv::AddressingModel::Logical, spirv::MemoryModel::GLSL450);
 
         let file_id = builder.string(filename);
-        builder.source(spirv::SourceLanguage::GLSL, 450, Some(file_id), Some(contents));
+        builder.source(
+            spirv::SourceLanguage::GLSL,
+            450,
+            Some(file_id),
+            Some(contents),
+        );
         if let Some(tail) = continued {
             builder.source_continued(tail);
         }
