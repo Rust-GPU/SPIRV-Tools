@@ -543,6 +543,36 @@ fn spirv_objdump_help_and_version_match_cpp() {
 }
 
 #[test]
+fn spirv_objdump_disassembly_matches_cpp() {
+    let Some(cpp_objdump) = find_cpp_tool("SPIRV_CPP_OBJDUMP", "spirv-objdump") else {
+        eprintln!("SPIRV_CPP_OBJDUMP not set and spirv-objdump not found on PATH; skipping parity");
+        return;
+    };
+
+    let words = assemble_text(simple_module()).expect("assemble simple module");
+    let bytes = words_to_bytes(&words);
+    let dir = tempdir().expect("temp dir");
+    let module_path = dir.path().join("module.spv");
+    fs::write(&module_path, &bytes).expect("write module");
+
+    let rust = Command::new(env!("CARGO_BIN_EXE_spirv-objdump"))
+        .arg(&module_path)
+        .output()
+        .expect("run rust spirv-objdump");
+    let cpp = Command::new(&cpp_objdump)
+        .arg(&module_path)
+        .output()
+        .expect("run cpp spirv-objdump");
+
+    assert!(rust.status.success(), "rust spirv-objdump failed: {:?}", rust.status);
+    assert!(cpp.status.success(), "cpp spirv-objdump failed: {:?}", cpp.status);
+
+    let rust_out = String::from_utf8_lossy(&rust.stdout);
+    let cpp_out = String::from_utf8_lossy(&cpp.stdout);
+    assert_eq!(rust_out, cpp_out, "spirv-objdump outputs differed");
+}
+
+#[test]
 fn spirv_val_reports_errors_like_cpp() {
     let Some(cpp_val) = find_cpp_tool("SPIRV_CPP_VAL", "spirv-val") else {
         eprintln!("SPIRV_CPP_VAL not set and spirv-val not found on PATH; skipping parity");
