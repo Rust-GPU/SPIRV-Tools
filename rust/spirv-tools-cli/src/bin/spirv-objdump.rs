@@ -17,7 +17,7 @@ use std::io::IsTerminal;
 )]
 struct Args {
     /// Input SPIR-V binary. Use '-' to read from stdin.
-    #[arg(value_name = "INPUT")]
+    #[arg(value_name = "INPUT", default_value = "-")]
     input: PathBuf,
 
     /// Extract embedded source files from debug info instead of disassembling.
