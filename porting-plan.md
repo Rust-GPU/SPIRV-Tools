@@ -820,6 +820,7 @@ Tasks for this milestone:
 - Add CLI tests for failure/diagnostic paths (bad inputs, unsupported flags) to keep exit codes/stdout/stderr aligned across Rust/C++.
 - Add FFI-level parity tests for reducer/fuzzer entry points (return codes, diagnostics, message-callback ordering) against the C++ bridge.
 - Wire corpus runners into optional parity aggregates (not default CI yet) and document how to invoke them locally.
+- Define the corpus/interestingness harness requirements up front (deterministic interestingness scripts for reduce; deterministic fuzzer seeds or recorded transformation streams) so Rust vs. C++ diffs are stable and reproducible.
 
 ## Upcoming Milestone: CLI/UX & Packaging Parity
 Keep the Rust-backed binaries/libs interchangeable with the C++ ones across flags, env toggles, and packaging outputs.
