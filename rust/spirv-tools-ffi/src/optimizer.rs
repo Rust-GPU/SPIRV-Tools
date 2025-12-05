@@ -2,7 +2,6 @@ use rspirv::binary::Assemble;
 use rspirv::dr::Instruction;
 use rspirv::spirv::Op;
 use spirv_tools_opt::{
-    translate,
     translate::{optimize_arith_block_with_types, type_widths_from_module},
     ConstValue,
 };
