@@ -210,9 +210,12 @@ Planned tasks:
 - Parity gaps to close:
   - [ ] Library-level diagnostics parity for assembler/disassembler error paths (invalid UTF-8, malformed binaries) and confirmation that the C++ fallback path is exercised when rust overrides are disabled.
   - [ ] CLI parity runners for assembler/disassembler/optimizer/reducer/fuzzer that diff Rust vs. C++ stdout/stderr/exit codes on bad input (beyond help/version).
-  - [ ] Reducer/fuzzer corpus parity and smoke suites that mirror the legacy C++ tool behavior when invoked through `spirv-reduce`/`spirv-fuzz` binaries.
-  - [ ] FFI parity checks for message-consumer callbacks across assembler/disassembler/validator/optimizer/reducer/fuzzer so diagnostics routing matches the C API.
-  - [ ] Round-trip parity (text↔binary↔text) across CLI and FFI with numeric-id preservation and diagnostics capture to guard against drift from the C++ tools.
+- [ ] Reducer/fuzzer corpus parity and smoke suites that mirror the legacy C++ tool behavior when invoked through `spirv-reduce`/`spirv-fuzz` binaries.
+- [ ] FFI parity checks for message-consumer callbacks across assembler/disassembler/validator/optimizer/reducer/fuzzer so diagnostics routing matches the C API.
+- [ ] Round-trip parity (text↔binary↔text) across CLI and FFI with numeric-id preservation and diagnostics capture to guard against drift from the C++ tools.
+- [x] Provide an opt-in assembler/disassembler error corpus runner (`scripts/run-asm-dis-parity.sh --include-errors`) that compares Rust vs. C++ exit codes/stderr for `.spvasm` files under `test/asm_dis_error_corpus` and skips cleanly when absent.
+- [ ] CLI/FFI parity matrix for all tools (as/dis/val/opt/reduce/fuzz/objdump) that exercises success/error paths, compares stdout/stderr/exit codes, and asserts option/help/diagnostics behavior matches the C++ binaries/FFI.
+- [ ] Reducer/fuzzer FFI surface parity: ensure the Rust reducer/fuzzer expose the same callback wiring, option structs, and diagnostic flows as `libspirv`, with integration tests that diff outputs against C++ for good/error inputs.
 
 Planned tasks:
 - [x] Add a rollout flag/env to enable the Rust validator by default in CLI/FFI with a clear C++ fallback (default now on in CMake/Bazel via `SPIRV_PREFER_RUST_VALIDATOR_DEFAULT=1`).
