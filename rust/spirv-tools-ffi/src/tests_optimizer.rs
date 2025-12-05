@@ -74,6 +74,55 @@ mod optimizer_tests {
     }
 
     #[test]
+    fn optimizer_folds_bitand_complement_width_aware() {
+        let _guard = OptimizerEnvGuard::new();
+
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(64, 0);
+        let func_ty = b.type_function(void, vec![int]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let param = b.function_parameter(int).expect("param");
+        let _ = b.begin_block(None).unwrap();
+        let not_param = b.not(int, None, param).expect("not param");
+        let band = b.bitwise_and(int, None, param, not_param).expect("band id");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let module = loader.module();
+
+        let folded = module.all_inst_iter().find(|inst| {
+            inst.class.opcode == Op::Constant
+                && inst.result_id == Some(band)
+                && inst.result_type == Some(int)
+        });
+        assert!(folded.is_some(), "band should fold to a constant");
+        assert_eq!(
+            folded.unwrap().operands,
+            vec![rspirv::dr::Operand::LiteralBit64(0)],
+            "folded constant should use 64-bit encoding"
+        );
+        let has_band = module
+            .all_inst_iter()
+            .any(|inst| inst.class.opcode == Op::BitwiseAnd && inst.result_id == Some(band));
+        assert!(
+            !has_band,
+            "bitwise and should be removed once complement fold fires"
+        );
+    }
+
+    #[test]
     fn optimizer_basic_block_pass_through_non_arith() {
         let mut b = Builder::new();
         let void = b.type_void();
