@@ -830,6 +830,14 @@ Tasks for this milestone:
 - Add a reduce/fuzz malformed-input CLI parity check (and mirror in FFI) so diagnostic shapes stay aligned beyond missing-input cases.
 - Verify packaging/build outputs produce the same binary/lib names and install paths as the C++ build (static/shared as applicable) and document swap-in guidance for downstreams.
 
+## Upcoming Milestone: Assembler/Disassembler Error Corpus
+Broaden CLI/FFI parity for asm/dis to include diagnostic/error paths in addition to round-trips.
+
+Tasks for this milestone:
+- Add `.spvasm` error fixtures (e.g., invalid opcodes, malformed operands, bad section ordering) and diff Rust vs. C++ CLI outputs/exit codes on those cases (skip cleanly if C++ tools are absent).
+- Add FFI tests that compare assembler/disassembler return codes, diagnostics, and message callback ordering for the same error fixtures, ensuring parity with the C++ bridge.
+- Wire the error corpus into `scripts/run-asm-dis-parity.sh` (optional flag) and document how to invoke it locally without lengthening default parity runs.
+
 ## Upcoming Milestone: Optimizer FFI/CLI Integration
 Expose the Rust optimizer through the existing C/C++ surfaces and provide CLI benchmarking.
 
