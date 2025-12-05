@@ -769,6 +769,8 @@ Tasks for this milestone:
 - Add library-level parity tests for the assembler/disassembler/optimizer entry points via the FFI to ensure drop-in embedding behavior matches the C++ API (including error codes and message callbacks).
 - Add parity coverage (CLI + FFI) for the remaining tools (`spirv-reduce`, `spirv-fuzz`, `spirv-cfg`/`spirv-lint`) so flags/exit codes/diagnostics match the C++ binaries.
 - Add C API/FFI parity tests for disassembler error paths (diagnostic content and failure codes) against the C++ fallback once the bridge is exposed.
+- Add CLI/FFI parity for tool exit codes and stderr/stdout ordering across all binaries, including help/version output parity.
+- Add corpus runners (skip by default) for reduce/fuzz/cfg tools mirroring the C++ regression corpora and document how to invoke them locally.
 - Wire the corpus runners into optional CI smoke scripts (not enabled by default yet) so parity checks can be invoked locally or in targeted jobs.
 
 ## Upcoming Milestone: Optimizer FFI/CLI Integration
