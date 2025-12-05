@@ -908,6 +908,45 @@ OpFunctionEnd"#;
     }
 
     #[test]
+    fn rust_and_cpp_assembler_match_with_override() {
+        use spirv_tools_core::assembly::TextToBinaryOptions;
+
+        let env = TargetEnv::Universal1_3.to_raw();
+        let pointer = NonNull::<c_void>::dangling().as_ptr() as usize;
+        let handle = create_context(env, pointer);
+        assert_ne!(handle, 0);
+
+        let text = br#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main"
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+
+        set_rust_text_assembler_override(true);
+        let rust_result = try_assemble_text(handle, text, TextToBinaryOptions::PRESERVE_NUMERIC_IDS.bits());
+        assert!(rust_result.success, "rust assembler failed");
+        clear_rust_text_assembler_override();
+
+        set_rust_text_assembler_override(false);
+        let cpp_result = try_assemble_text(handle, text, TextToBinaryOptions::PRESERVE_NUMERIC_IDS.bits());
+        assert!(cpp_result.success, "cpp assembler path failed");
+        clear_rust_text_assembler_override();
+
+        assert_eq!(
+            rust_result.binary, cpp_result.binary,
+            "Rust assembler output differed from C++ assembler output"
+        );
+
+        unsafe { destroy_context(handle) };
+    }
+
+    #[test]
     fn rust_validator_handles_valid_and_invalid_modules() {
         let text = r#"
 OpCapability Shader
@@ -1132,6 +1171,41 @@ OpFunctionEnd\n",
             !result.diagnostics.is_empty(),
             "failing disassembly should surface diagnostics"
         );
+
+        unsafe { destroy_context(handle) };
+    }
+
+    #[test]
+    fn rust_disassembler_error_messages_match_core_path() {
+        // Rust disassembler diagnostics should mirror the direct core path for invalid binaries.
+        let env = TargetEnv::Universal1_0.to_raw();
+        let pointer = NonNull::<c_void>::dangling().as_ptr() as usize;
+        let handle = create_context(env, pointer);
+        assert_ne!(handle, 0);
+
+        let invalid_binary = vec![0x0723_0203u32];
+
+        let ffi_result =
+            try_disassemble_binary(handle, &invalid_binary, BinaryToTextOptions::NONE.bits());
+        assert!(!ffi_result.success);
+
+        let expected = disassemble_binary(&invalid_binary, BinaryToTextOptions::NONE)
+            .expect_err("expected parse failure from core disassembler");
+        let expected_messages: Vec<String> = match expected {
+            DisassemblyError::Parse { diagnostics, .. } => diagnostics
+                .into_iter()
+                .map(|d| d.message().to_string())
+                .collect(),
+            DisassemblyError::Unsupported(_) => panic!("expected parse diagnostics"),
+        };
+
+        let ffi_messages: Vec<&str> = ffi_result
+            .diagnostics
+            .iter()
+            .map(|d| d.message.as_str())
+            .collect();
+
+        assert_eq!(ffi_messages, expected_messages);
 
         unsafe { destroy_context(handle) };
     }
