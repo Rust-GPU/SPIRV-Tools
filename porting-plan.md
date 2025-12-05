@@ -798,6 +798,15 @@ Tasks for this milestone:
   - Env/flag parity: ensure CLI env toggles (`SPIRV_TOOLS_FORCE_RUST_*`/`DISABLE_RUST_*`) and flag aliases match the C++ UX across every tool, with integration tests.
   - Packaging/build gaps: verify the Rust-backed binaries and libs are produced with the same names/paths as C++ artifacts (static/shared as applicable) and document how to swap them in downstream builds without extra CI steps.
 
+## Upcoming Milestone: Reducer/Fuzzer Corpus Parity
+Add corpus-based parity for reduce/fuzz tools and their FFI surfaces.
+
+Tasks for this milestone:
+- Add corpus runners for `spirv-reduce` and `spirv-fuzz` that diff Rust vs. C++ outputs/diagnostics on known corpora, skipping cleanly when C++ binaries are absent.
+- Add CLI tests for failure/diagnostic paths (bad inputs, unsupported flags) to keep exit codes/stdout/stderr aligned across Rust/C++.
+- Add FFI-level parity tests for reducer/fuzzer entry points (return codes, diagnostics, message-callback ordering) against the C++ bridge.
+- Wire corpus runners into optional parity aggregates (not default CI yet) and document how to invoke them locally.
+
 ## Upcoming Milestone: Optimizer FFI/CLI Integration
 Expose the Rust optimizer through the existing C/C++ surfaces and provide CLI benchmarking.
 
