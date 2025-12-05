@@ -210,6 +210,27 @@ fn build_band_complement_u64_module() -> (Vec<u32>, (u32, u32)) {
     (b.module().assemble(), (band, int))
 }
 
+fn build_band_complement_u32_module() -> (Vec<u32>, (u32, u32)) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![int]);
+    let _func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let param = b.function_parameter(int).expect("param");
+    let _ = b.begin_block(None).unwrap();
+    let not_param = b.not(int, None, param).expect("not param");
+    let band = b
+        .bitwise_and(int, None, param, not_param)
+        .expect("bitwise and");
+    b.ret().unwrap();
+    b.end_function().unwrap();
+    (b.module().assemble(), (band, int))
+}
+
 fn build_band_all_ones_u32_module() -> (Vec<u32>, u32, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
@@ -969,6 +990,62 @@ fn cli_opt_block_matches_cpp_band_complement_u64() {
     assert_eq!(
         rust_sig, cpp_sig,
         "Rust vs C++ mismatch for band complement u64 fold"
+    );
+}
+
+#[test]
+fn cli_opt_block_matches_cpp_band_complement_u32() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+    let _guard = ENV_GUARD.lock().unwrap();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let (words, (band_id, int_ty)) = build_band_complement_u32_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let rust_output = dir.path().join("rust_output.spv");
+    let cpp_output = dir.path().join("cpp_output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let rust_status = Command::new(exe)
+        .arg(&input)
+        .arg(&rust_output)
+        .status()
+        .expect("run opt_block");
+    assert!(rust_status.success(), "opt_block should succeed");
+
+    let cpp_status = Command::new(&cpp_opt)
+        .arg(&input)
+        .arg("-o")
+        .arg(&cpp_output)
+        .arg("-O")
+        .status()
+        .expect("run spirv-opt");
+    assert!(cpp_status.success(), "spirv-opt should succeed");
+
+    let rust_sig = arith_signature(&bytes_to_words(&std::fs::read(&rust_output).unwrap()));
+    let cpp_sig = arith_signature(&bytes_to_words(&std::fs::read(&cpp_output).unwrap()));
+    assert_eq!(
+        rust_sig, cpp_sig,
+        "Rust vs C++ mismatch for band complement u32 fold"
+    );
+
+    let mut loader = Loader::new();
+    rspirv::binary::parse_words(
+        &bytes_to_words(&std::fs::read(&rust_output).unwrap()),
+        &mut loader,
+    )
+    .expect("parse optimized");
+    let module = loader.module();
+    let folded = module.all_inst_iter().find(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(band_id)
+            && inst.result_type == Some(int_ty)
+    });
+    assert!(
+        folded.is_some(),
+        "Rust output should fold complement to constant"
     );
 }
 
