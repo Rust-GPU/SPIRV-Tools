@@ -122,6 +122,41 @@ fn spirv_as_preserves_numeric_ids_like_cpp() {
     );
 }
 
+#[test]
+fn spirv_as_reports_errors_like_cpp() {
+    let Some(cpp_as) = find_cpp_tool("SPIRV_CPP_AS", "spirv-as") else {
+        eprintln!("SPIRV_CPP_AS not set and spirv-as not found on PATH; skipping parity");
+        return;
+    };
+
+    let dir = tempdir().expect("temp dir");
+    let bad_path = dir.path().join("invalid.spvasm");
+    fs::write(&bad_path, "%void = OpTypeVoid\nOpEntryPoint Vertex %main \"main\"").expect("write asm");
+
+    let rust = Command::new(env!("CARGO_BIN_EXE_spirv-as"))
+        .arg(&bad_path)
+        .output()
+        .expect("run rust spirv-as");
+    let cpp = Command::new(&cpp_as)
+        .arg(&bad_path)
+        .output()
+        .expect("run cpp spirv-as");
+
+    assert!(
+        !rust.status.success(),
+        "expected rust spirv-as to fail on invalid module"
+    );
+    assert!(
+        !cpp.status.success(),
+        "expected cpp spirv-as to fail on invalid module"
+    );
+    assert_eq!(
+        rust.status.code(),
+        cpp.status.code(),
+        "error exit codes should match between rust and cpp spirv-as"
+    );
+}
+
 fn normalize_text(text: &str) -> Vec<u32> {
     assemble_text(text).expect("assemble disassembled text")
 }
