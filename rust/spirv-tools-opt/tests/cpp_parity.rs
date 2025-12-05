@@ -948,6 +948,31 @@ fn rust_and_cpp_arith_outputs_match_rotate_fold_signed_u64_commuted() {
 }
 
 #[test]
+fn rust_and_cpp_arith_outputs_match_band_complement_fold_u64() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+    let module_words = build_band_complement_fold_u64_module();
+    let rust_sig = arith_signature(
+        &spirv_tools_opt::translate::optimize_arith_block(&extract_arith_insts(&module_words))
+            .expect("rust optimize"),
+    );
+    let optimized_cpp = run_cpp_opt_module(&module_words, &cpp_opt);
+    let cpp_arith: Vec<_> = optimized_cpp
+        .types_global_values
+        .iter()
+        .chain(optimized_cpp.functions[0].blocks[0].instructions.iter())
+        .filter(|inst| is_arith_opcode(inst.class.opcode))
+        .cloned()
+        .collect();
+    let cpp_sig = arith_signature(&cpp_arith);
+    assert_eq!(
+        rust_sig, cpp_sig,
+        "Rust vs C++ arithmetic output mismatch for 64-bit band complement folding"
+    );
+}
+
+#[test]
 fn rust_and_cpp_fold_add_zero() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
@@ -4461,6 +4486,25 @@ fn build_bxor_complement_fold_module() -> Vec<u32> {
     let _ = b
         .bitwise_xor(int, None, notx, x)
         .expect("xor complement commuted");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    b.module().assemble()
+}
+
+fn build_band_complement_fold_u64_module() -> Vec<u32> {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(64, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let _ = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let x = b.constant_bit64(int, 0xFFFF_FFFF_FFFFu64);
+    let notx = b.not(int, None, x).expect("not x");
+    let _ = b.bitwise_and(int, None, x, notx).expect("band complement");
     b.ret().expect("ret");
     b.end_function().expect("end");
     b.module().assemble()

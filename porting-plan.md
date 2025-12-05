@@ -186,6 +186,7 @@ Tasks:
 - [x] Add parity for bitwise zero identities (and/or/xor) across CLI/FFI so identity/absorbing forms stay in lockstep with C++.
 - [x] Add parity for bitwise self identities (and/or => operand, xor => zero) across CLI/FFI to keep id-stable rewrites matched with C++.
 - [x] Add parity for complement identities (x & ~x => 0, x | ~x => all ones) across CLI/FFI, preserving result ids and removing dead nots.
+- [x] Add C++ parity coverage for 64-bit complement folding (`x & ~x`) so CLI/FFI/optimizer stay aligned on width-aware bitwise rewrites.
 - [x] Add parity for factoring a shared multiplicand with summed constant coefficients (x*2 + x*3 => x*5) across CLI/FFI and C++ outputs.
 - [x] Add parity for factoring a shared constant across distinct multiplicands (x*4 + y*4 => (x+y)*4) across CLI/FFI and C++ outputs.
 - [x] Add parity for factoring a shared symbolic multiplicand across subtraction (a*b - a*c => a*(b-c)) across CLI/FFI and C++ outputs.
