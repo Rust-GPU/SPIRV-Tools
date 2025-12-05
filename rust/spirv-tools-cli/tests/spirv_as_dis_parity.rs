@@ -17,6 +17,14 @@ fn find_cpp_tool(env_var: &str, binary: &str) -> Option<PathBuf> {
     which::which(binary).ok()
 }
 
+fn words_to_bytes(words: &[u32]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(words.len() * 4);
+    for word in words {
+        bytes.extend_from_slice(&word.to_le_bytes());
+    }
+    bytes
+}
+
 fn simple_module() -> &'static str {
     r#"
 OpCapability Shader
@@ -200,6 +208,38 @@ fn spirv_dis_reports_errors_like_cpp() {
         rust.status.code(),
         cpp.status.code(),
         "error exit codes should match between rust and cpp spirv-dis"
+    );
+}
+
+#[test]
+fn spirv_dis_outputs_match_cpp() {
+    let Some(cpp_dis) = find_cpp_tool("SPIRV_CPP_DIS", "spirv-dis") else {
+        eprintln!("SPIRV_CPP_DIS not set and spirv-dis not found on PATH; skipping parity");
+        return;
+    };
+
+    let dir = tempdir().expect("temp dir");
+    let bin_path = dir.path().join("module.spv");
+    let binary = assemble_text(simple_module()).expect("assemble simple module");
+    fs::write(&bin_path, words_to_bytes(&binary)).expect("write binary");
+
+    let rust = Command::new(env!("CARGO_BIN_EXE_spirv-dis"))
+        .arg(&bin_path)
+        .output()
+        .expect("run rust spirv-dis");
+    assert!(rust.status.success(), "rust spirv-dis failed: {:?}", rust.status);
+
+    let cpp = Command::new(&cpp_dis)
+        .arg(&bin_path)
+        .output()
+        .expect("run cpp spirv-dis");
+    assert!(cpp.status.success(), "cpp spirv-dis failed: {:?}", cpp.status);
+
+    let rust_text = String::from_utf8_lossy(&rust.stdout).trim().to_owned();
+    let cpp_text = String::from_utf8_lossy(&cpp.stdout).trim().to_owned();
+    assert_eq!(
+        rust_text, cpp_text,
+        "Rust spirv-dis output differed from C++ output"
     );
 }
 
