@@ -2,7 +2,7 @@ use clap::Parser;
 use rspirv::binary::{parse_words, Assemble};
 use rspirv::dr::Instruction;
 use rspirv::spirv::Op;
-use spirv_tools_opt::translate;
+use spirv_tools_opt::translate::{optimize_arith_block_with_types, type_widths_from_module};
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;
@@ -102,6 +102,7 @@ fn optimize_module(
     let mut loader = rspirv::dr::Loader::new();
     parse_words(words, &mut loader)?;
     let mut module = loader.module();
+    let type_widths = type_widths_from_module(&module);
 
     let non_constant_globals: Vec<Instruction> = module
         .types_global_values
@@ -132,8 +133,8 @@ fn optimize_module(
             arith_stream.extend(constant_map.values().cloned());
             arith_stream.extend(arithmetic.clone());
 
-            let optimized =
-                translate::optimize_arith_block(&arith_stream).map_err(|e| format!("{e}"))?;
+            let optimized = optimize_arith_block_with_types(&arith_stream, &type_widths)
+                .map_err(|e| format!("{e}"))?;
 
             let mut optimized_block = Vec::new();
             for inst in optimized {

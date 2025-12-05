@@ -118,7 +118,8 @@ mod tests {
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let binary = assemble_text(text).expect("assemble text");
         let mut file = NamedTempFile::new().expect("temp file");
         file.write_all(&words_to_bytes(&binary)).expect("write");
@@ -143,7 +144,8 @@ mod tests {
             "OpReturn",
             "OpFunctionEnd",
             "OpExecutionMode %main LocalSize 1 1 1",
-        ].join("\n");
+        ]
+        .join("\n");
         let binary = assemble_text(text).expect("assemble text");
         let mut file = NamedTempFile::new().expect("temp file");
         file.write_all(&words_to_bytes(&binary)).expect("write");
@@ -192,7 +194,8 @@ mod tests {
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let binary = assemble_text(text).expect("assemble text");
         let mut file = NamedTempFile::new().expect("temp file");
         file.write_all(&words_to_bytes(&binary)).expect("write");

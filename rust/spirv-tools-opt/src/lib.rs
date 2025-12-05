@@ -9,7 +9,12 @@ use egg::{
     define_language, rewrite, Applier, EGraph, Id, Language, PatternAst, RecExpr, Rewrite, Runner,
     Subst, Symbol, Var,
 };
-use std::{fmt, str::FromStr};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    fmt,
+    str::FromStr,
+};
 
 pub mod translate;
 
@@ -246,6 +251,23 @@ define_language! {
     }
 }
 
+thread_local! {
+    static SYMBOL_WIDTH_HINTS: RefCell<HashMap<Symbol, u8>> = RefCell::new(HashMap::new());
+}
+
+fn with_symbol_widths<R>(hints: &HashMap<Symbol, u8>, f: impl FnOnce() -> R) -> R {
+    SYMBOL_WIDTH_HINTS.with(|cell| {
+        let previous = cell.replace(hints.clone());
+        let result = f();
+        cell.replace(previous);
+        result
+    })
+}
+
+fn symbol_width(sym: &Symbol) -> Option<u8> {
+    SYMBOL_WIDTH_HINTS.with(|cell| cell.borrow().get(sym).copied())
+}
+
 /// Lightweight cost function favoring folded constants and shallower trees.
 struct ExprCost;
 
@@ -288,7 +310,7 @@ pub fn optimize_expr(expr: &RecExpr<SpirvLang>) -> RecExpr<SpirvLang> {
 
 /// Optimize the root of a translated SPIR-V arithmetic expression.
 pub fn optimize_translated(expr: &crate::translate::TranslatedExpr) -> RecExpr<SpirvLang> {
-    optimize_expr(&expr.expr)
+    with_symbol_widths(&expr.symbol_widths, || optimize_expr(&expr.expr))
 }
 
 fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
@@ -2253,11 +2275,11 @@ impl Applier<SpirvLang, ()> for BitAndComplement {
         &self,
         egraph: &mut EGraph<SpirvLang, ()>,
         eclass: Id,
-        _subst: &Subst,
+        subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
         _symbol: Symbol,
     ) -> Vec<Id> {
-        let Some(width) = width_hint(egraph, eclass, []) else {
+        let Some(width) = width_hint(egraph, eclass, [subst[self._x]]) else {
             return Vec::new();
         };
         let zero = egraph.add(SpirvLang::Const(ConstValue::new_with_width(0, width)));
@@ -2353,11 +2375,11 @@ impl Applier<SpirvLang, ()> for BitOrComplement {
         &self,
         egraph: &mut EGraph<SpirvLang, ()>,
         eclass: Id,
-        _subst: &Subst,
+        subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
         _symbol: Symbol,
     ) -> Vec<Id> {
-        let Some(width) = width_hint(egraph, eclass, []) else {
+        let Some(width) = width_hint(egraph, eclass, [subst[self._x]]) else {
             return Vec::new();
         };
         let ones = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
@@ -2444,11 +2466,11 @@ impl Applier<SpirvLang, ()> for BitXorSelf {
         &self,
         egraph: &mut EGraph<SpirvLang, ()>,
         eclass: Id,
-        _subst: &Subst,
+        subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
         _symbol: Symbol,
     ) -> Vec<Id> {
-        let Some(width) = width_hint(egraph, eclass, []) else {
+        let Some(width) = width_hint(egraph, eclass, [subst[self._x]]) else {
             return Vec::new();
         };
         let zero = egraph.add(SpirvLang::Const(ConstValue::new_with_width(0, width)));
@@ -2744,24 +2766,57 @@ fn const_value(egraph: &EGraph<SpirvLang, ()>, id: Id) -> Option<ConstValue> {
         })
 }
 
+fn width_from_eclass(
+    egraph: &EGraph<SpirvLang, ()>,
+    id: Id,
+    visited: &mut HashSet<Id>,
+) -> Option<u8> {
+    let class = egraph.find(id);
+    if !visited.insert(class) {
+        return None;
+    }
+    let mut width: Option<u8> = None;
+    for node in &egraph[class].nodes {
+        let candidate = match node {
+            SpirvLang::Const(c) => Some(c.width_bits()),
+            SpirvLang::Symbol(sym) => symbol_width(sym),
+            _ => node
+                .children()
+                .iter()
+                .filter_map(|child| width_from_eclass(egraph, *child, visited))
+                .max(),
+        };
+        if let Some(bits) = candidate {
+            width = Some(match width {
+                Some(current) => current.max(bits),
+                None => bits,
+            });
+        }
+    }
+    width
+}
+
 fn width_hint(
     egraph: &EGraph<SpirvLang, ()>,
     eclass: Id,
     ids: impl IntoIterator<Item = Id>,
 ) -> Option<u8> {
-    let width = ids
-        .into_iter()
-        .filter_map(|id| const_value(egraph, id).map(|c| c.width_bits()))
-        .max()
-        .or_else(|| {
-            egraph[egraph.find(eclass)]
-                .nodes
-                .iter()
-                .find_map(|n| match n {
-                    SpirvLang::Const(c) => Some(c.width_bits()),
-                    _ => None,
-                })
+    let mut visited = HashSet::new();
+    let mut width: Option<u8> = None;
+    for id in ids {
+        if let Some(bits) = width_from_eclass(egraph, id, &mut visited) {
+            width = Some(match width {
+                Some(current) => current.max(bits),
+                None => bits,
+            });
+        }
+    }
+    if let Some(bits) = width_from_eclass(egraph, eclass, &mut visited) {
+        width = Some(match width {
+            Some(current) => current.max(bits),
+            None => bits,
         });
+    }
     width.or(Some(32))
 }
 
@@ -2855,10 +2910,11 @@ fn is_const_zero(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) ->
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::translate::optimize_arith_block;
+    use crate::translate::{optimize_arith_block, optimize_arith_block_with_types};
     use arbitrary::Unstructured;
     use pretty_assertions::assert_eq;
     use rspirv::dr::{Builder, Instruction};
+    use std::collections::HashMap;
 
     #[test]
     fn folds_addition() {
@@ -3131,6 +3187,46 @@ mod tests {
         } else {
             panic!("expected constant; got {optimized:?}");
         }
+    }
+
+    #[test]
+    fn bitand_complement_respects_type_width_hint() {
+        use rspirv::dr::Operand;
+
+        let type_int64 = Instruction::new(
+            rspirv::spirv::Op::TypeInt,
+            None,
+            Some(1),
+            vec![Operand::LiteralBit32(64), Operand::LiteralBit32(0)],
+        );
+        let imul = Instruction::new(
+            rspirv::spirv::Op::IMul,
+            Some(1),
+            Some(2),
+            vec![Operand::IdRef(3), Operand::IdRef(4)],
+        );
+        let not_inst = Instruction::new(
+            rspirv::spirv::Op::Not,
+            Some(1),
+            Some(5),
+            vec![Operand::IdRef(2)],
+        );
+        let band = Instruction::new(
+            rspirv::spirv::Op::BitwiseAnd,
+            Some(1),
+            Some(6),
+            vec![Operand::IdRef(2), Operand::IdRef(5)],
+        );
+        let type_widths = HashMap::from([(1u32, 64u32)]);
+        let optimized =
+            optimize_arith_block_with_types(&[type_int64, imul, not_inst, band], &type_widths)
+                .expect("optimize");
+        assert_eq!(optimized.len(), 1);
+        let inst = &optimized[0];
+        assert_eq!(inst.class.opcode, rspirv::spirv::Op::Constant);
+        assert_eq!(inst.result_type, Some(1));
+        assert_eq!(inst.result_id, Some(6));
+        assert_eq!(inst.operands, vec![Operand::LiteralBit64(0)]);
     }
 
     #[test]

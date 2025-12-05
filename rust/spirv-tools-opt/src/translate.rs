@@ -1,5 +1,5 @@
 use crate::{ConstValue, SpirvLang};
-use egg::{Id, RecExpr};
+use egg::{Id, RecExpr, Symbol};
 use rspirv::dr::Instruction;
 use rspirv::spirv::Op;
 use rspirv::spirv::Word;
@@ -23,6 +23,26 @@ pub enum TranslateError {
     InvalidConstant { id: u32 },
 }
 
+/// Extract integer type widths from a parsed module.
+pub fn type_widths_from_module(module: &rspirv::dr::Module) -> HashMap<Word, u32> {
+    module
+        .types_global_values
+        .iter()
+        .filter_map(|inst| {
+            (inst.class.opcode == Op::TypeInt)
+                .then(|| {
+                    inst.result_id.and_then(|id| {
+                        inst.operands.get(0).and_then(|op| match op {
+                            rspirv::dr::Operand::LiteralBit32(bits) => Some((id, *bits)),
+                            _ => None,
+                        })
+                    })
+                })
+                .flatten()
+        })
+        .collect()
+}
+
 /// The result of translating a linear block of arithmetic SPIR-V instructions.
 #[derive(Debug, PartialEq, Eq)]
 pub struct TranslatedExpr {
@@ -36,6 +56,8 @@ pub struct TranslatedExpr {
     pub result_id: Option<Word>,
     /// Mapping from expression node index to original result ids (when available).
     pub original_ids: Vec<Option<Word>>,
+    /// Width hints for symbolic operands derived from type information.
+    pub symbol_widths: HashMap<Symbol, u8>,
 }
 
 fn intern_operand(
@@ -43,20 +65,28 @@ fn intern_operand(
     ids: &mut HashMap<Word, Id>,
     expr: &mut RecExpr<SpirvLang>,
     node_to_id: &mut Vec<Option<Word>>,
+    symbol_widths: &mut HashMap<Symbol, u8>,
+    id_widths: &HashMap<Word, u8>,
 ) -> Id {
     if let Some(existing) = ids.get(&operand_id) {
         return *existing;
     }
-    let sym = expr.add(SpirvLang::Symbol(egg::Symbol::from(format!(
-        "id{operand_id}"
-    ))));
-    ids.insert(operand_id, sym);
+    let sym = make_symbol(operand_id);
+    let sym_id = expr.add(SpirvLang::Symbol(sym));
+    if let Some(width) = id_widths.get(&operand_id) {
+        symbol_widths.insert(sym, *width);
+    }
+    ids.insert(operand_id, sym_id);
     node_to_id.push(Some(operand_id));
-    sym
+    sym_id
 }
 
 fn symbol_id(sym: &egg::Symbol) -> Option<Word> {
     sym.as_str().strip_prefix("id")?.parse().ok()
+}
+
+fn make_symbol(id: Word) -> Symbol {
+    Symbol::from(format!("id{id}"))
 }
 
 /// Translate a sequence of arithmetic instructions into an e-graph expression.
@@ -69,12 +99,60 @@ fn symbol_id(sym: &egg::Symbol) -> Option<Word> {
 /// operands are defined before use. Type declarations are ignored; only value
 /// instructions are expected.
 pub fn translate_arith(instructions: &[Instruction]) -> Result<TranslatedExpr, TranslateError> {
+    translate_arith_with_types(instructions, &HashMap::new())
+}
+
+pub fn translate_arith_with_types(
+    instructions: &[Instruction],
+    type_widths: &HashMap<Word, u32>,
+) -> Result<TranslatedExpr, TranslateError> {
     let mut expr = RecExpr::default();
     let mut ids: HashMap<Word, Id> = HashMap::new();
     let mut root = None;
     let mut root_type = None;
     let mut root_id = None;
     let mut node_to_id = Vec::new();
+    let mut symbol_widths: HashMap<Symbol, u8> = HashMap::new();
+
+    let mut type_widths: HashMap<Word, u32> = type_widths.clone();
+    for inst in instructions {
+        if inst.class.opcode == Op::TypeInt {
+            if let (Some(result_id), Some(rspirv::dr::Operand::LiteralBit32(bits))) =
+                (inst.result_id, inst.operands.get(0))
+            {
+                type_widths.entry(result_id).or_insert(*bits);
+            }
+        }
+    }
+
+    let mut id_widths: HashMap<Word, u8> = HashMap::new();
+    for inst in instructions {
+        let Some(result_id) = inst.result_id else {
+            continue;
+        };
+        if inst.class.opcode == Op::TypeInt {
+            continue;
+        }
+        let literal_width = if inst.class.opcode == Op::Constant {
+            inst.operands.iter().find_map(|op| match op {
+                rspirv::dr::Operand::LiteralBit64(_) => Some(64),
+                rspirv::dr::Operand::LiteralBit32(_) => Some(32),
+                _ => None,
+            })
+        } else {
+            None
+        };
+        let width_bits = inst
+            .result_type
+            .and_then(|ty| type_widths.get(&ty).copied())
+            .or(literal_width)
+            .unwrap_or(32);
+        let width = width_bits.min(64) as u8;
+        id_widths.entry(result_id).or_insert(width);
+        for operand in inst.operands.iter().filter_map(|op| op.id_ref_any()) {
+            id_widths.entry(operand).or_insert(width);
+        }
+    }
 
     let defined_ids: HashSet<Word> = instructions
         .iter()
@@ -83,34 +161,40 @@ pub fn translate_arith(instructions: &[Instruction]) -> Result<TranslatedExpr, T
     for inst in instructions {
         for operand in inst.operands.iter().filter_map(|op| op.id_ref_any()) {
             if !defined_ids.contains(&operand) && !ids.contains_key(&operand) {
-                let sym = expr.add(SpirvLang::Symbol(egg::Symbol::from(format!("id{operand}"))));
-                ids.insert(operand, sym);
-                node_to_id.push(Some(operand));
+                let _ = intern_operand(
+                    operand,
+                    &mut ids,
+                    &mut expr,
+                    &mut node_to_id,
+                    &mut symbol_widths,
+                    &id_widths,
+                );
             }
         }
     }
 
     for inst in instructions {
         let opcode = inst.class.opcode;
+        if opcode == Op::TypeInt {
+            continue;
+        }
         let result_id = inst
             .result_id
             .ok_or(TranslateError::MissingResultId(opcode))?;
+        let result_width = id_widths.get(&result_id).copied();
         let node_id = match opcode {
             Op::Constant => {
-                let literal = inst
+                let (value, literal_width) = inst
                     .operands
                     .iter()
                     .find_map(|op| match op {
-                        rspirv::dr::Operand::LiteralBit32(v) => {
-                            Some(ConstValue::new_with_width(*v as u64, 32))
-                        }
-                        rspirv::dr::Operand::LiteralBit64(v) => {
-                            Some(ConstValue::new_with_width(*v, 64))
-                        }
+                        rspirv::dr::Operand::LiteralBit32(v) => Some((*v as u64, 32u8)),
+                        rspirv::dr::Operand::LiteralBit64(v) => Some((*v, 64u8)),
                         _ => None,
                     })
                     .ok_or(TranslateError::InvalidConstant { id: result_id })?;
-                expr.add(SpirvLang::Const(literal))
+                let width = result_width.unwrap_or(literal_width);
+                expr.add(SpirvLang::Const(ConstValue::new_with_width(value, width)))
             }
             Op::IAdd => {
                 let mut ops = inst
@@ -124,8 +208,22 @@ pub fn translate_arith(instructions: &[Instruction]) -> Result<TranslatedExpr, T
                 let rhs_id = ops
                     .next()
                     .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
-                let lhs = intern_operand(lhs_id, &mut ids, &mut expr, &mut node_to_id);
-                let rhs = intern_operand(rhs_id, &mut ids, &mut expr, &mut node_to_id);
+                let lhs = intern_operand(
+                    lhs_id,
+                    &mut ids,
+                    &mut expr,
+                    &mut node_to_id,
+                    &mut symbol_widths,
+                    &id_widths,
+                );
+                let rhs = intern_operand(
+                    rhs_id,
+                    &mut ids,
+                    &mut expr,
+                    &mut node_to_id,
+                    &mut symbol_widths,
+                    &id_widths,
+                );
                 expr.add(SpirvLang::Add([lhs, rhs]))
             }
             Op::IMul => {
@@ -140,8 +238,22 @@ pub fn translate_arith(instructions: &[Instruction]) -> Result<TranslatedExpr, T
                 let rhs_id = ops
                     .next()
                     .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
-                let lhs = intern_operand(lhs_id, &mut ids, &mut expr, &mut node_to_id);
-                let rhs = intern_operand(rhs_id, &mut ids, &mut expr, &mut node_to_id);
+                let lhs = intern_operand(
+                    lhs_id,
+                    &mut ids,
+                    &mut expr,
+                    &mut node_to_id,
+                    &mut symbol_widths,
+                    &id_widths,
+                );
+                let rhs = intern_operand(
+                    rhs_id,
+                    &mut ids,
+                    &mut expr,
+                    &mut node_to_id,
+                    &mut symbol_widths,
+                    &id_widths,
+                );
                 expr.add(SpirvLang::Mul([lhs, rhs]))
             }
             Op::ISub => {
@@ -156,8 +268,22 @@ pub fn translate_arith(instructions: &[Instruction]) -> Result<TranslatedExpr, T
                 let rhs_id = ops
                     .next()
                     .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
-                let lhs = intern_operand(lhs_id, &mut ids, &mut expr, &mut node_to_id);
-                let rhs = intern_operand(rhs_id, &mut ids, &mut expr, &mut node_to_id);
+                let lhs = intern_operand(
+                    lhs_id,
+                    &mut ids,
+                    &mut expr,
+                    &mut node_to_id,
+                    &mut symbol_widths,
+                    &id_widths,
+                );
+                let rhs = intern_operand(
+                    rhs_id,
+                    &mut ids,
+                    &mut expr,
+                    &mut node_to_id,
+                    &mut symbol_widths,
+                    &id_widths,
+                );
                 expr.add(SpirvLang::Sub([lhs, rhs]))
             }
             Op::SNegate => {
@@ -166,7 +292,14 @@ pub fn translate_arith(instructions: &[Instruction]) -> Result<TranslatedExpr, T
                     .iter()
                     .find_map(|op| op.id_ref_any())
                     .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
-                let id = intern_operand(operand, &mut ids, &mut expr, &mut node_to_id);
+                let id = intern_operand(
+                    operand,
+                    &mut ids,
+                    &mut expr,
+                    &mut node_to_id,
+                    &mut symbol_widths,
+                    &id_widths,
+                );
                 expr.add(SpirvLang::Neg(id))
             }
             Op::SDiv | Op::UDiv => {
@@ -181,8 +314,22 @@ pub fn translate_arith(instructions: &[Instruction]) -> Result<TranslatedExpr, T
                 let rhs_id = ops
                     .next()
                     .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
-                let lhs = intern_operand(lhs_id, &mut ids, &mut expr, &mut node_to_id);
-                let rhs = intern_operand(rhs_id, &mut ids, &mut expr, &mut node_to_id);
+                let lhs = intern_operand(
+                    lhs_id,
+                    &mut ids,
+                    &mut expr,
+                    &mut node_to_id,
+                    &mut symbol_widths,
+                    &id_widths,
+                );
+                let rhs = intern_operand(
+                    rhs_id,
+                    &mut ids,
+                    &mut expr,
+                    &mut node_to_id,
+                    &mut symbol_widths,
+                    &id_widths,
+                );
                 let node = if opcode == Op::SDiv {
                     SpirvLang::SDiv([lhs, rhs])
                 } else {
@@ -202,8 +349,22 @@ pub fn translate_arith(instructions: &[Instruction]) -> Result<TranslatedExpr, T
                 let rhs_id = ops
                     .next()
                     .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
-                let lhs = intern_operand(lhs_id, &mut ids, &mut expr, &mut node_to_id);
-                let rhs = intern_operand(rhs_id, &mut ids, &mut expr, &mut node_to_id);
+                let lhs = intern_operand(
+                    lhs_id,
+                    &mut ids,
+                    &mut expr,
+                    &mut node_to_id,
+                    &mut symbol_widths,
+                    &id_widths,
+                );
+                let rhs = intern_operand(
+                    rhs_id,
+                    &mut ids,
+                    &mut expr,
+                    &mut node_to_id,
+                    &mut symbol_widths,
+                    &id_widths,
+                );
                 expr.add(SpirvLang::BitAnd([lhs, rhs]))
             }
             Op::SRem | Op::UMod => {
@@ -218,8 +379,22 @@ pub fn translate_arith(instructions: &[Instruction]) -> Result<TranslatedExpr, T
                 let rhs_id = ops
                     .next()
                     .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
-                let lhs = intern_operand(lhs_id, &mut ids, &mut expr, &mut node_to_id);
-                let rhs = intern_operand(rhs_id, &mut ids, &mut expr, &mut node_to_id);
+                let lhs = intern_operand(
+                    lhs_id,
+                    &mut ids,
+                    &mut expr,
+                    &mut node_to_id,
+                    &mut symbol_widths,
+                    &id_widths,
+                );
+                let rhs = intern_operand(
+                    rhs_id,
+                    &mut ids,
+                    &mut expr,
+                    &mut node_to_id,
+                    &mut symbol_widths,
+                    &id_widths,
+                );
                 let node = if opcode == Op::SRem {
                     SpirvLang::SRem([lhs, rhs])
                 } else {
@@ -239,8 +414,22 @@ pub fn translate_arith(instructions: &[Instruction]) -> Result<TranslatedExpr, T
                 let rhs_id = ops
                     .next()
                     .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
-                let lhs = intern_operand(lhs_id, &mut ids, &mut expr, &mut node_to_id);
-                let rhs = intern_operand(rhs_id, &mut ids, &mut expr, &mut node_to_id);
+                let lhs = intern_operand(
+                    lhs_id,
+                    &mut ids,
+                    &mut expr,
+                    &mut node_to_id,
+                    &mut symbol_widths,
+                    &id_widths,
+                );
+                let rhs = intern_operand(
+                    rhs_id,
+                    &mut ids,
+                    &mut expr,
+                    &mut node_to_id,
+                    &mut symbol_widths,
+                    &id_widths,
+                );
                 let node = match opcode {
                     Op::ShiftLeftLogical => SpirvLang::Shl([lhs, rhs]),
                     Op::ShiftRightLogical => SpirvLang::ShrU([lhs, rhs]),
@@ -260,8 +449,22 @@ pub fn translate_arith(instructions: &[Instruction]) -> Result<TranslatedExpr, T
                 let rhs_id = ops
                     .next()
                     .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
-                let lhs = intern_operand(lhs_id, &mut ids, &mut expr, &mut node_to_id);
-                let rhs = intern_operand(rhs_id, &mut ids, &mut expr, &mut node_to_id);
+                let lhs = intern_operand(
+                    lhs_id,
+                    &mut ids,
+                    &mut expr,
+                    &mut node_to_id,
+                    &mut symbol_widths,
+                    &id_widths,
+                );
+                let rhs = intern_operand(
+                    rhs_id,
+                    &mut ids,
+                    &mut expr,
+                    &mut node_to_id,
+                    &mut symbol_widths,
+                    &id_widths,
+                );
                 let node = if opcode == Op::BitwiseOr {
                     SpirvLang::BitOr([lhs, rhs])
                 } else {
@@ -275,7 +478,14 @@ pub fn translate_arith(instructions: &[Instruction]) -> Result<TranslatedExpr, T
                     .iter()
                     .find_map(|op| op.id_ref_any())
                     .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
-                let id = intern_operand(operand, &mut ids, &mut expr, &mut node_to_id);
+                let id = intern_operand(
+                    operand,
+                    &mut ids,
+                    &mut expr,
+                    &mut node_to_id,
+                    &mut symbol_widths,
+                    &id_widths,
+                );
                 expr.add(SpirvLang::BitNot(id))
             }
             other => return Err(TranslateError::UnsupportedOp(other)),
@@ -294,6 +504,7 @@ pub fn translate_arith(instructions: &[Instruction]) -> Result<TranslatedExpr, T
         result_type: root_type,
         result_id: root_id,
         original_ids: node_to_id,
+        symbol_widths,
     })
 }
 
@@ -302,7 +513,14 @@ pub fn translate_arith(instructions: &[Instruction]) -> Result<TranslatedExpr, T
 pub fn optimize_arith_block(
     instructions: &[Instruction],
 ) -> Result<Vec<Instruction>, TranslateError> {
-    let translated = translate_arith(instructions)?;
+    optimize_arith_block_with_types(instructions, &HashMap::new())
+}
+
+pub fn optimize_arith_block_with_types(
+    instructions: &[Instruction],
+    type_widths: &HashMap<Word, u32>,
+) -> Result<Vec<Instruction>, TranslateError> {
+    let translated = translate_arith_with_types(instructions, type_widths)?;
     let optimized = crate::optimize_translated(&translated);
     if optimized == translated.expr {
         return Ok(instructions.to_vec());

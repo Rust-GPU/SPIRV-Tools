@@ -103,7 +103,8 @@ fn spirv_val_cli_rust_validator_reports_layout_error() {
         "%entry = OpLabel",
         "OpReturn",
         "OpFunctionEnd",
-    ].join("\n");
+    ]
+    .join("\n");
     let words = assemble_text(text).expect("assemble text");
     let misordered = reorder_extension_to_end(words);
     let bytes = words_to_bytes(&misordered);

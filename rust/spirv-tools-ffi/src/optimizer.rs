@@ -1,23 +1,13 @@
 use rspirv::binary::Assemble;
 use rspirv::dr::Instruction;
 use rspirv::spirv::Op;
-use spirv_tools_opt::{translate, ConstValue};
+use spirv_tools_opt::{
+    translate,
+    translate::{optimize_arith_block_with_types, type_widths_from_module},
+    ConstValue,
+};
 use std::collections::{BTreeMap, HashMap};
 use thiserror::Error;
-
-fn type_widths_from_module(module: &rspirv::dr::Module) -> HashMap<u32, u32> {
-    let mut map = HashMap::new();
-    for inst in &module.types_global_values {
-        if inst.class.opcode == Op::TypeInt {
-            if let (Some(result_id), Some(rspirv::dr::Operand::LiteralBit32(width_bits))) =
-                (inst.result_id, inst.operands.get(0))
-            {
-                map.insert(result_id, *width_bits);
-            }
-        }
-    }
-    map
-}
 
 fn normalize_constant_operands(inst: &mut Instruction, type_widths: &HashMap<u32, u32>) {
     if inst.class.opcode != Op::Constant {
@@ -123,7 +113,7 @@ pub fn optimize_basic_block(insts: &[u32]) -> Result<Vec<u32>, OptimizeError> {
             arith_stream.extend(constant_map.values().cloned());
             arith_stream.extend(arithmetic.clone());
 
-            let optimized = translate::optimize_arith_block(&arith_stream)
+            let optimized = optimize_arith_block_with_types(&arith_stream, &type_widths)
                 .map_err(|e| OptimizeError::Rewrite(e.to_string()))?;
 
             let mut optimized_block = Vec::new();

@@ -374,7 +374,9 @@ fn spirv_text_round_trip_matches_cpp() {
         );
 
         let rust_text = String::from_utf8_lossy(&rust_dis.stdout).trim().to_owned();
-        let cpp_text = String::from_utf8_lossy(&cpp_dis_out.stdout).trim().to_owned();
+        let cpp_text = String::from_utf8_lossy(&cpp_dis_out.stdout)
+            .trim()
+            .to_owned();
         assert_eq!(
             rust_text, cpp_text,
             "Rust round-trip text differed from C++ for module:\n{module}"
@@ -530,8 +532,16 @@ fn spirv_disassembles_like_cpp() {
         .output()
         .expect("run cpp spirv-dis");
 
-    assert!(rust.status.success(), "rust spirv-dis failed: {:?}", rust.status);
-    assert!(cpp.status.success(), "cpp spirv-dis failed: {:?}", cpp.status);
+    assert!(
+        rust.status.success(),
+        "rust spirv-dis failed: {:?}",
+        rust.status
+    );
+    assert!(
+        cpp.status.success(),
+        "cpp spirv-dis failed: {:?}",
+        cpp.status
+    );
 
     let rust_out = String::from_utf8_lossy(&rust.stdout);
     let cpp_out = String::from_utf8_lossy(&cpp.stdout);
@@ -560,8 +570,16 @@ fn spirv_size_reports_same_stats_as_cpp() {
         .output()
         .expect("run cpp spirv-size");
 
-    assert!(rust.status.success(), "rust spirv-size failed: {:?}", rust.status);
-    assert!(cpp.status.success(), "cpp spirv-size failed: {:?}", cpp.status);
+    assert!(
+        rust.status.success(),
+        "rust spirv-size failed: {:?}",
+        rust.status
+    );
+    assert!(
+        cpp.status.success(),
+        "cpp spirv-size failed: {:?}",
+        cpp.status
+    );
 
     let rust_out = String::from_utf8_lossy(&rust.stdout);
     let cpp_out = String::from_utf8_lossy(&cpp.stdout);
@@ -624,8 +642,16 @@ fn spirv_objdump_disassembly_matches_cpp() {
         .output()
         .expect("run cpp spirv-objdump");
 
-    assert!(rust.status.success(), "rust spirv-objdump failed: {:?}", rust.status);
-    assert!(cpp.status.success(), "cpp spirv-objdump failed: {:?}", cpp.status);
+    assert!(
+        rust.status.success(),
+        "rust spirv-objdump failed: {:?}",
+        rust.status
+    );
+    assert!(
+        cpp.status.success(),
+        "cpp spirv-objdump failed: {:?}",
+        cpp.status
+    );
 
     let rust_out = String::from_utf8_lossy(&rust.stdout);
     let cpp_out = String::from_utf8_lossy(&cpp.stdout);

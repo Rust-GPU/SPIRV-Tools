@@ -1007,7 +1007,8 @@ OpFunctionEnd\n";
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let binary = assemble_text_with_env(text, TargetEnv::Universal1_6).unwrap();
         let options = default_validator_options();
         let ok =
@@ -1036,7 +1037,8 @@ OpFunctionEnd\n";
             "OpReturn",
             "OpFunctionEnd",
             "OpExecutionMode %main LocalSize 1 1 1",
-        ].join("\n");
+        ]
+        .join("\n");
         let binary = assemble_text_with_env(text, TargetEnv::Universal1_6).expect("assemble");
 
         let mut options = default_validator_options();
@@ -1074,7 +1076,8 @@ OpFunctionEnd\n";
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let binary =
             assemble_text_with_options(text, TargetEnv::Universal1_6, TextToBinaryOptions::NONE)
                 .expect("assemble");
@@ -1111,7 +1114,8 @@ OpFunctionEnd\n";
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let mut words =
             assemble_text_with_options(text, TargetEnv::Vulkan1_2, TextToBinaryOptions::NONE)
                 .expect("assemble");

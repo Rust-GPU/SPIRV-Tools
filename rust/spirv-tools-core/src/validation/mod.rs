@@ -33600,7 +33600,8 @@ mod tests {
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let words = assemble_text(text).expect("assemble text");
         let reordered = reorder_opcode_to_end(words, rspirv::spirv::Op::Capability);
         let err = validate_module(&reordered, TargetEnv::Vulkan1_2).unwrap_err();
@@ -33891,7 +33892,8 @@ mod tests {
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let error = assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
             .expect_err("expected missing capability");
         assert_eq!(
@@ -33922,7 +33924,8 @@ mod tests {
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let error = assemble_and_validate(text).expect_err("expected missing block decoration");
         assert_eq!(
             error,
@@ -33953,7 +33956,8 @@ mod tests {
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         assemble_and_validate(text)
             .expect("BufferBlock + StorageBuffer16BitAccess should satisfy uniform 16-bit");
     }
@@ -33975,7 +33979,8 @@ mod tests {
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let error = assemble_and_validate(text).expect_err("expected storage class rejection");
         assert_eq!(
             error,
@@ -34012,7 +34017,8 @@ mod tests {
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let error = assemble_and_validate(text).expect_err("expected missing capability");
         assert_eq!(
             error,
@@ -34051,7 +34057,8 @@ mod tests {
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
             .expect("StorageBuffer8BitAccess should allow 8-bit storage buffer");
     }
@@ -34074,7 +34081,8 @@ mod tests {
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_4)
             .expect_err("BufferBlock should be disallowed after SPIR-V 1.3");
         assert_eq!(
@@ -34105,7 +34113,8 @@ mod tests {
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_3)
             .expect_err("BufferBlock should not apply to push constants");
         assert_eq!(
@@ -34135,7 +34144,8 @@ mod tests {
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
             .expect_err("Block should not apply to input variables");
         assert_eq!(
@@ -34164,7 +34174,8 @@ mod tests {
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
             .expect_err("descriptor decorations on Input should be rejected");
         assert_eq!(
@@ -34192,7 +34203,8 @@ mod tests {
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
             .expect_err("descriptor decorations on PushConstant should be rejected");
         assert_eq!(
@@ -34219,7 +34231,8 @@ mod tests {
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
             .expect_err("Uniform variables require DescriptorSet in Vulkan");
         assert!(matches!(
@@ -34244,7 +34257,8 @@ mod tests {
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
             .expect_err("Uniform variables require Binding in Vulkan");
         assert!(matches!(
@@ -34269,7 +34283,8 @@ mod tests {
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
             .expect_err("Location should be rejected on Uniform storage");
         assert_eq!(
@@ -34296,7 +34311,8 @@ mod tests {
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
             .expect_err("Location should be rejected on PushConstant storage");
         assert_eq!(
@@ -34323,7 +34339,8 @@ mod tests {
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
             .expect_err("Flat on Uniform should be rejected");
         assert_eq!(
@@ -34406,7 +34423,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
             .expect("interpolation decorations should be accepted on Input/Output");
     }
@@ -34541,7 +34559,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
             .expect_err("interpolation decorations require a Fragment entry point");
         assert_eq!(
@@ -34570,7 +34589,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
             .expect_err("Location must not be used with BuiltIn");
         assert_eq!(err, ValidationError::LocationConflictsWithBuiltIn);
@@ -34593,7 +34613,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
             .expect_err("BuiltIn Position should not be allowed on Uniform");
         assert_eq!(
@@ -34648,7 +34669,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
             .expect_err("FragCoord requires a Fragment entry point");
         assert_eq!(
@@ -34676,7 +34698,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
             .expect("fragment-only BuiltIns should be accepted for fragment entry points");
     }
@@ -34701,7 +34724,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
             .expect_err("BaryCoord requires a Fragment entry point");
         assert_eq!(
@@ -34733,7 +34757,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
             .expect("barycentric BuiltIns should be accepted for fragment entry points");
     }
@@ -34759,7 +34784,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
             .expect_err("ray built-ins require ray tracing execution models");
         assert!(matches!(
@@ -34810,7 +34836,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
             .expect_err("VertexId is not allowed in Vulkan");
         assert_eq!(
@@ -34841,7 +34868,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
             .expect_err("fragment shading rate built-ins are Vulkan-only");
         assert_eq!(
@@ -34871,7 +34899,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
             .expect_err("primitive shading rate built-ins are Vulkan-only");
         assert_eq!(
@@ -34903,7 +34932,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
             .expect_err("mesh built-ins are Vulkan-only");
         assert_eq!(
@@ -34931,7 +34961,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
             .expect_err("InstanceId is not allowed in Vulkan");
         assert_eq!(
@@ -34960,7 +34991,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
             .expect_err("workgroup built-ins require compute entry points");
         assert_eq!(
@@ -35530,7 +35562,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
             .expect_err("VertexIndex/InstanceIndex require vertex execution model");
         assert!(matches!(
@@ -35631,7 +35664,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
             .expect_err("ViewIndex requires MultiView capability");
         assert!(
@@ -35664,7 +35698,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
             .expect_err("DeviceIndex requires DeviceGroup capability");
         assert!(
@@ -35905,7 +35940,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
             .expect_err("shading rate built-ins require fragment entry points");
         assert!(matches!(
@@ -36321,7 +36357,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
             .expect_err("mesh built-ins require mesh execution models");
         assert!(matches!(
@@ -36396,7 +36433,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
             .expect_err("WorkDim is a Kernel-only built-in");
         assert!(
@@ -36449,7 +36487,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
             .expect("Kernel execution model should allow compute built-ins");
     }
@@ -36471,7 +36510,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
             .expect_err("Kernel-only built-ins require Kernel capability");
         assert!(
@@ -36528,7 +36568,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
             .expect_err("barycentric built-ins must target Input storage");
         assert_eq!(
@@ -36591,7 +36632,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
             .expect("UniformAndStorageBuffer8BitAccess with Block should allow uniform 8-bit");
     }
@@ -36614,7 +36656,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let error = assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
             .expect_err("expected uniform constant rejection");
         assert_eq!(
@@ -36644,7 +36687,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let error = assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
             .expect_err("expected disallowed input");
         assert_eq!(
@@ -36675,7 +36719,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         assemble_and_validate_with_env(text, TargetEnv::Universal1_3)
             .expect("StorageInputOutput16 should allow 16-bit input");
     }
@@ -36699,7 +36744,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         assemble_and_validate_with_env(text, TargetEnv::Universal1_3)
             .expect("StorageInputOutput16 should allow 16-bit output");
     }
@@ -36730,7 +36776,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         assemble_and_validate_with_env(text, TargetEnv::Universal1_3)
             .expect("StorageBuffer16BitAccess should allow 16-bit storage buffer");
     }
@@ -36754,7 +36801,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         assemble_and_validate_with_env(text, TargetEnv::Universal1_3)
             .expect("StoragePushConstant16 should allow 16-bit push constants");
     }
@@ -36777,7 +36825,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let error = assemble_and_validate_with_env(text, TargetEnv::Universal1_4)
             .expect_err("expected workgroup capability");
         assert_eq!(
@@ -36811,7 +36860,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         assemble_and_validate_with_env(text, TargetEnv::Universal1_4)
             .expect_err("extension gate should reject workgroup layout without allowed env");
 
@@ -36840,7 +36890,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         assemble_and_validate_with_env(text, TargetEnv::Vulkan1_1Spirv1_4)
             .expect("WorkgroupMemoryExplicitLayout8BitAccessKHR should allow 8-bit workgroup");
     }
@@ -36863,7 +36914,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         let error = assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
             .expect_err("expected push constant capability");
         assert_eq!(
@@ -36895,7 +36947,8 @@ OpFunctionEnd
             "%entry = OpLabel",
             "OpReturn",
             "OpFunctionEnd",
-        ].join("\n");
+        ]
+        .join("\n");
         assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
             .expect("StoragePushConstant8 should allow 8-bit push constants");
     }

@@ -4,7 +4,8 @@ use std::ffi::CString;
 use std::ptr;
 
 use spirv_tools_ffi::{
-    assemble, disassemble, AssemblerOptions, DisassemblerOptions, MessageConsumer, Result as FfiResult,
+    assemble, disassemble, AssemblerOptions, DisassemblerOptions, MessageConsumer,
+    Result as FfiResult,
 };
 
 fn simple_module_lines() -> [&'static str; 9] {
@@ -39,11 +40,15 @@ fn assemble_then_disassemble_round_trip_matches_original() {
     let assembled: FfiResult<Vec<u32>> = assemble(&c_text, &mut asm_opts, suppress_messages());
     let words = assembled.expect("assemble");
 
-    let disassembled = disassemble(&words, &mut dis_opts, suppress_messages())
-        .expect("disassemble");
+    let disassembled =
+        disassemble(&words, &mut dis_opts, suppress_messages()).expect("disassemble");
     let round_trip = disassembled.to_string_lossy();
 
-    assert_eq!(text.trim(), round_trip.trim(), "FFI asm/dis round trip differed");
+    assert_eq!(
+        text.trim(),
+        round_trip.trim(),
+        "FFI asm/dis round trip differed"
+    );
 }
 
 #[test]
@@ -54,7 +59,10 @@ fn assembler_rejects_invalid_text_like_cpp() {
     let mut asm_opts = AssemblerOptions::default();
 
     let result = assemble(&c_text, &mut asm_opts, suppress_messages());
-    assert!(result.is_err(), "expected assembler to fail on invalid text");
+    assert!(
+        result.is_err(),
+        "expected assembler to fail on invalid text"
+    );
 }
 
 #[test]
@@ -64,5 +72,8 @@ fn disassembler_rejects_invalid_binary_like_cpp() {
     let mut dis_opts = DisassemblerOptions::default();
 
     let result = disassemble(&invalid_words, &mut dis_opts, suppress_messages());
-    assert!(result.is_err(), "expected disassembler to fail on invalid binary");
+    assert!(
+        result.is_err(),
+        "expected disassembler to fail on invalid binary"
+    );
 }

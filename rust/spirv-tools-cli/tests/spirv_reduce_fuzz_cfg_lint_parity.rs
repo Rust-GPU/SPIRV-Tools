@@ -138,8 +138,16 @@ fn spirv_reduce_matches_cpp_output() {
         .output()
         .expect("run cpp spirv-reduce");
 
-    assert!(rust.status.success(), "rust spirv-reduce failed: {:?}", rust.status);
-    assert!(cpp.status.success(), "cpp spirv-reduce failed: {:?}", cpp.status);
+    assert!(
+        rust.status.success(),
+        "rust spirv-reduce failed: {:?}",
+        rust.status
+    );
+    assert!(
+        cpp.status.success(),
+        "cpp spirv-reduce failed: {:?}",
+        cpp.status
+    );
 
     let rust_bytes = fs::read(&rust_out).expect("read rust reduce output");
     let cpp_bytes = fs::read(&cpp_out).expect("read cpp reduce output");
@@ -172,8 +180,16 @@ fn spirv_fuzz_matches_cpp_output() {
         .output()
         .expect("run cpp spirv-fuzz");
 
-    assert!(rust.status.success(), "rust spirv-fuzz failed: {:?}", rust.status);
-    assert!(cpp.status.success(), "cpp spirv-fuzz failed: {:?}", cpp.status);
+    assert!(
+        rust.status.success(),
+        "rust spirv-fuzz failed: {:?}",
+        rust.status
+    );
+    assert!(
+        cpp.status.success(),
+        "cpp spirv-fuzz failed: {:?}",
+        cpp.status
+    );
 
     let rust_bytes = fs::read(&rust_out).expect("read rust fuzz output");
     let cpp_bytes = fs::read(&cpp_out).expect("read cpp fuzz output");
@@ -346,8 +362,16 @@ fn spirv_cfg_matches_cpp_output() {
         .output()
         .expect("run cpp spirv-cfg");
 
-    assert!(rust.status.success(), "rust spirv-cfg failed: {:?}", rust.status);
-    assert!(cpp.status.success(), "cpp spirv-cfg failed: {:?}", cpp.status);
+    assert!(
+        rust.status.success(),
+        "rust spirv-cfg failed: {:?}",
+        rust.status
+    );
+    assert!(
+        cpp.status.success(),
+        "cpp spirv-cfg failed: {:?}",
+        cpp.status
+    );
 
     let rust_out = String::from_utf8_lossy(&rust.stdout);
     let cpp_out = String::from_utf8_lossy(&cpp.stdout);
@@ -389,8 +413,16 @@ fn spirv_lint_matches_cpp_output() {
         .output()
         .expect("run cpp spirv-lint");
 
-    assert!(rust.status.success(), "rust spirv-lint failed: {:?}", rust.status);
-    assert!(cpp.status.success(), "cpp spirv-lint failed: {:?}", cpp.status);
+    assert!(
+        rust.status.success(),
+        "rust spirv-lint failed: {:?}",
+        rust.status
+    );
+    assert!(
+        cpp.status.success(),
+        "cpp spirv-lint failed: {:?}",
+        cpp.status
+    );
 
     let rust_out = String::from_utf8_lossy(&rust.stdout);
     let cpp_out = String::from_utf8_lossy(&cpp.stdout);
