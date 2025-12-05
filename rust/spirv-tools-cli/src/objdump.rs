@@ -16,6 +16,8 @@ pub struct ObjdumpConfig {
     pub input: InputSource,
     /// Which operation to perform.
     pub mode: ObjdumpMode,
+    /// Enable enhanced behaviors beyond the legacy C++ tool (e.g., compiler-cmd).
+    pub enable_extras: bool,
 }
 
 impl Default for ObjdumpConfig {
@@ -23,6 +25,7 @@ impl Default for ObjdumpConfig {
         Self {
             input: InputSource::default(),
             mode: ObjdumpMode::Disassemble(DisassembleOptions::default()),
+            enable_extras: false,
         }
     }
 }
@@ -139,6 +142,9 @@ pub enum ObjdumpCliError {
     /// Attempted to overwrite an existing file without --force.
     #[error("refusing to overwrite existing file {0} (use --force)")]
     OverwriteDenied(String),
+    /// Missing compiler command payload.
+    #[error("no compiler command recorded in module")]
+    MissingCompilerCommand,
     /// Disassembly failed.
     #[error(transparent)]
     Disassemble(#[from] DisassembleCliError),
@@ -156,7 +162,7 @@ pub fn run_objdump(config: &ObjdumpConfig) -> Result<String, ObjdumpCliError> {
         }
         ObjdumpMode::Source(options) => run_source_dump(config, options),
         ObjdumpMode::EntrypointOnly => run_entrypoint_dump(config),
-        ObjdumpMode::CompilerCommand => Err(ObjdumpCliError::Unimplemented("compiler command")),
+        ObjdumpMode::CompilerCommand => run_compiler_cmd_dump(config),
     }
 }
 
@@ -237,6 +243,19 @@ fn run_entrypoint_dump(config: &ObjdumpConfig) -> Result<String, ObjdumpCliError
     } else {
         format!("{listing}\n")
     })
+}
+
+fn run_compiler_cmd_dump(config: &ObjdumpConfig) -> Result<String, ObjdumpCliError> {
+    if !config.enable_extras {
+        return Err(ObjdumpCliError::Unimplemented("compiler command"));
+    }
+    let words = read_words(&config.input)?;
+    let commands = extract_compiler_commands(&words)?;
+    if commands.is_empty() {
+        return Err(ObjdumpCliError::MissingCompilerCommand);
+    }
+    let joined = commands.join("\n");
+    Ok(format!("{joined}\n"))
 }
 
 fn read_words(input: &InputSource) -> Result<Vec<u32>, ObjdumpCliError> {
@@ -331,6 +350,25 @@ fn extract_sources(words: &[u32]) -> Result<Vec<SourceFile>, ObjdumpCliError> {
     Ok(extracted)
 }
 
+fn extract_compiler_commands(words: &[u32]) -> Result<Vec<String>, ObjdumpCliError> {
+    let module = load_words(words)?;
+    let mut commands = Vec::new();
+    for inst in &module.debug_module_processed {
+        let mut parts = Vec::new();
+        for op in &inst.operands {
+            if let rspirv::dr::Operand::LiteralString(text) = op {
+                if !text.is_empty() {
+                    parts.push(text.clone());
+                }
+            }
+        }
+        if !parts.is_empty() {
+            commands.push(parts.join(" "));
+        }
+    }
+    Ok(commands)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -364,6 +402,7 @@ mod tests {
         let config = ObjdumpConfig {
             input: InputSource::Path(temp.path().to_path_buf()),
             mode: ObjdumpMode::Disassemble(DisassembleOptions::default()),
+            enable_extras: false,
         };
         let output = run_objdump(&config).expect("disassemble");
         assert!(
@@ -394,6 +433,7 @@ mod tests {
         let listing = run_objdump(&ObjdumpConfig {
             input: InputSource::Path(file.path().to_path_buf()),
             mode: ObjdumpMode::EntrypointOnly,
+            enable_extras: false,
         })
         .expect("list entrypoints");
 
@@ -414,6 +454,7 @@ mod tests {
                 output_dir: None,
                 overwrite: false,
             }),
+            enable_extras: false,
         })
         .expect("extract sources");
 
@@ -435,6 +476,7 @@ mod tests {
                 output_dir: Some(outdir.path().to_path_buf()),
                 overwrite: false,
             }),
+            enable_extras: false,
         };
         run_objdump(&config).expect("write sources");
 
@@ -481,5 +523,76 @@ mod tests {
         builder.entry_point(spirv::ExecutionModel::Fragment, func_id, "main", &[]);
 
         builder.module().assemble()
+    }
+
+    #[test]
+    fn compiler_cmd_unimplemented_without_extras() {
+        let words = build_module_with_compiler_cmd();
+        let mut file = NamedTempFile::new().expect("temp file");
+        file.write_all(&words_to_bytes(&words))
+            .expect("write module");
+
+        let err = run_objdump(&ObjdumpConfig {
+            input: InputSource::Path(file.path().to_path_buf()),
+            mode: ObjdumpMode::CompilerCommand,
+            enable_extras: false,
+        })
+        .expect_err("expected compiler-cmd to be unimplemented without extras");
+        assert!(matches!(err, ObjdumpCliError::Unimplemented(_)));
+    }
+
+    #[test]
+    fn compiler_cmd_extracts_with_extras_enabled() {
+        let words = build_module_with_compiler_cmd();
+        let mut file = NamedTempFile::new().expect("temp file");
+        file.write_all(&words_to_bytes(&words))
+            .expect("write module");
+
+        let output = run_objdump(&ObjdumpConfig {
+            input: InputSource::Path(file.path().to_path_buf()),
+            mode: ObjdumpMode::CompilerCommand,
+            enable_extras: true,
+        })
+        .expect("extract compiler command");
+
+        assert!(
+            output.contains("glslc") && output.contains("--target-env=vulkan1.3"),
+            "unexpected compiler cmd output: {output}"
+        );
+    }
+
+    #[test]
+    fn compiler_cmd_reports_missing_when_absent() {
+        let words = build_module_with_source("main.hlsl", "void main() {}", None);
+        let mut file = NamedTempFile::new().expect("temp file");
+        file.write_all(&words_to_bytes(&words))
+            .expect("write module");
+
+        let err = run_objdump(&ObjdumpConfig {
+            input: InputSource::Path(file.path().to_path_buf()),
+            mode: ObjdumpMode::CompilerCommand,
+            enable_extras: true,
+        })
+        .expect_err("expected missing compiler command");
+        assert!(matches!(err, ObjdumpCliError::MissingCompilerCommand));
+    }
+
+    fn build_module_with_compiler_cmd() -> Vec<u32> {
+        let mut b = Builder::new();
+        b.capability(spirv::Capability::Shader);
+        b.memory_model(spirv::AddressingModel::Logical, spirv::MemoryModel::GLSL450);
+        b.module_processed("glslc -O --target-env=vulkan1.3 shader.glsl");
+        b.module_processed("secondary pass");
+
+        let void = b.type_void();
+        let fn_ty = b.type_function(void, vec![void]);
+        let func_id = b
+            .begin_function(void, None, spirv::FunctionControl::NONE, fn_ty)
+            .expect("begin function");
+        b.begin_block(None).expect("entry block");
+        b.ret().expect("ret");
+        b.end_function().expect("end function");
+        b.entry_point(spirv::ExecutionModel::Fragment, func_id, "main", &[]);
+        b.module().assemble()
     }
 }

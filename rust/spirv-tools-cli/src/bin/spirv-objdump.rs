@@ -94,7 +94,12 @@ fn main() {
     };
 
     let mode = select_mode(&args);
-    let config = ObjdumpConfig { input, mode };
+    let enable_extras = std::env::var_os("SPIRV_TOOLS_ENABLE_COMPILER_CMD").is_some();
+    let config = ObjdumpConfig {
+        input,
+        mode,
+        enable_extras,
+    };
 
     match run_objdump(&config) {
         Ok(text) => {
