@@ -123,10 +123,15 @@ fi
 
 failures=0
 missing="definitely-not-present.spv"
+malformed_bin="$(mktemp)"
+printf '\x03\x02\x23\x07garbage' >"${malformed_bin}"
 
 for tool in "${!cpp_paths[@]}"; do
   echo "Checking CLI error parity for ${tool}"
   if ! run_case "${tool}" "missing-input" "${missing}"; then
+    failures=$((failures + 1))
+  fi
+  if ! run_case "${tool}" "malformed-input" "${malformed_bin}"; then
     failures=$((failures + 1))
   fi
 done
@@ -137,3 +142,5 @@ if [[ ${failures} -ne 0 ]]; then
 fi
 
 echo "CLI error parity passed for ${#cpp_paths[@]} tool(s)."
+
+rm -f "${malformed_bin}"

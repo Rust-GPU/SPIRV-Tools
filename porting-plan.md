@@ -797,7 +797,7 @@ Tasks for this milestone:
   - CLI gaps: `spirv-reduce`, `spirv-fuzz`, `spirv-cfg`, and `spirv-lint` need Rust-vs-C++ exit-code/stdout/stderr/help/flag parity; add harnesses mirroring the help/version/error cases already covered for as/dis/val/opt.
   - Corpus gaps: assembler/disassembler corpus run should cover error cases and round-trip text↔binary; add reducers/fuzzers corpora runners that diff outputs/diagnostics against C++.
   - FFI gaps: align all exposed C API surfaces (assembler/disassembler/optimizer/reducer/fuzzer) on return codes, message callback ordering, and error payloads; add regression tests that compare Rust FFI results to the C++ bridge.
-  - Tool gaps: expand reduce/fuzz CLI parity beyond missing-input to malformed-input/error-path cases and mirror the expectations in FFI tests.
+  - Tool gaps: expand reduce/fuzz CLI parity beyond missing-input to malformed-input/error-path cases and mirror the expectations in FFI tests. **(malformed-input covered via `scripts/run-reduce-fuzz-cli-parity.sh`)**
   - Optimizer gaps: cover any remaining strength-reduction/bitwise cases (signed/unsigned mul-by-neg-one, edge-case mask/shift rewrites) in CLI/FFI parity harnesses so outputs stay aligned with C++ across widths/signedness.
 - Env/flag parity: ensure CLI env toggles (`SPIRV_TOOLS_FORCE_RUST_*`/`DISABLE_RUST_*`) and flag aliases match the C++ UX across every tool, with integration tests.
 - Packaging/build gaps: verify the Rust-backed binaries and libs are produced with the same names/paths as C++ artifacts (static/shared as applicable) and document how to swap them in downstream builds without extra CI steps.
