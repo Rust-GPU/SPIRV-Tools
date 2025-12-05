@@ -108,17 +108,17 @@ mod tests {
 
     #[test]
     fn validation_success() {
-        let text = r#"
-OpCapability Shader
-OpMemoryModel Logical Simple
-OpEntryPoint Vertex %main "main"
-%void = OpTypeVoid
-%void_fn = OpTypeFunction %void
-%main = OpFunction %void None %void_fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical Simple",
+            "OpEntryPoint Vertex %main \"main\"",
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %void_fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let binary = assemble_text(text).expect("assemble text");
         let mut file = NamedTempFile::new().expect("temp file");
         file.write_all(&words_to_bytes(&binary)).expect("write");
@@ -132,18 +132,18 @@ OpFunctionEnd
     #[test]
     fn validation_errors_include_friendly_names() {
         // ExecutionMode without an entry point should surface the function's friendly name.
-        let text = r#"
-OpCapability Shader
-OpMemoryModel Logical GLSL450
-OpName %main "friendly_main"
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-OpExecutionMode %main LocalSize 1 1 1
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpName %main \"friendly_main\"",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+            "OpExecutionMode %main LocalSize 1 1 1",
+        ].join("\n");
         let binary = assemble_text(text).expect("assemble text");
         let mut file = NamedTempFile::new().expect("temp file");
         file.write_all(&words_to_bytes(&binary)).expect("write");
@@ -182,17 +182,17 @@ OpExecutionMode %main LocalSize 1 1 1
 
     #[test]
     fn validation_reuses_cache_for_repeated_inputs() {
-        let text = r#"
-OpCapability Shader
-OpMemoryModel Logical Simple
-OpEntryPoint Vertex %main "main"
-%void = OpTypeVoid
-%void_fn = OpTypeFunction %void
-%main = OpFunction %void None %void_fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical Simple",
+            "OpEntryPoint Vertex %main \"main\"",
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %void_fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let binary = assemble_text(text).expect("assemble text");
         let mut file = NamedTempFile::new().expect("temp file");
         file.write_all(&words_to_bytes(&binary)).expect("write");

@@ -904,31 +904,25 @@ OpFunctionEnd\n";
             "OpFunctionEnd",
         ]
         .join("\n");
-
         let result = try_assemble_text(handle, text.as_bytes(), TextToBinaryOptions::NONE.bits());
         assert!(result.success, "rust assembler failed via context handle");
-
         let disassembly =
             disassemble_binary(&result.binary, BinaryToTextOptions::NONE).expect("disassemble");
         assert!(
             disassembly.contains("OpLabel") && disassembly.contains("OpReturn"),
             "function body was stripped via context assembly: {disassembly}"
         );
-
         unsafe { destroy_context(handle) };
         clear_rust_text_assembler_override();
     }
-
     #[test]
     fn rust_assembler_rejects_invalid_text_with_override() {
         use spirv_tools_core::assembly::TextToBinaryOptions;
-
         set_rust_text_assembler_override(true);
         let env = TargetEnv::Universal1_0.to_raw();
         let pointer = NonNull::<c_void>::dangling().as_ptr() as usize;
         let handle = create_context(env, pointer);
         assert_ne!(handle, 0);
-
         // Non-UTF8 payload should fail and produce no binary output.
         let invalid_bytes = [0xFF, 0xFE, 0xFD];
         let result = try_assemble_text(handle, &invalid_bytes, TextToBinaryOptions::NONE.bits());
@@ -940,11 +934,9 @@ OpFunctionEnd\n";
             result.binary.is_empty(),
             "binary should be empty on failure"
         );
-
         unsafe { destroy_context(handle) };
         clear_rust_text_assembler_override();
     }
-
     #[test]
     fn disassembler_reports_diagnostics_for_invalid_binary() {
         // Invalid magic number should surface a parse diagnostic.
@@ -955,16 +947,13 @@ OpFunctionEnd\n";
             "expected diagnostics for invalid binary"
         );
     }
-
     #[test]
     fn rust_and_cpp_assembler_match_with_override() {
         use spirv_tools_core::assembly::TextToBinaryOptions;
-
         let env = TargetEnv::Universal1_3.to_raw();
         let pointer = NonNull::<c_void>::dangling().as_ptr() as usize;
         let handle = create_context(env, pointer);
         assert_ne!(handle, 0);
-
         let text = [
             "OpCapability Shader",
             "OpMemoryModel Logical GLSL450",
@@ -979,7 +968,6 @@ OpFunctionEnd\n";
         ]
         .join("\n");
         let text_bytes = text.as_bytes();
-
         set_rust_text_assembler_override(true);
         let rust_result = try_assemble_text(
             handle,
@@ -988,7 +976,6 @@ OpFunctionEnd\n";
         );
         assert!(rust_result.success, "rust assembler failed");
         clear_rust_text_assembler_override();
-
         set_rust_text_assembler_override(false);
         let cpp_result = try_assemble_text(
             handle,
@@ -1002,28 +989,25 @@ OpFunctionEnd\n";
             return;
         }
         clear_rust_text_assembler_override();
-
         assert_eq!(
             rust_result.binary, cpp_result.binary,
             "Rust assembler output differed from C++ assembler output"
         );
-
         unsafe { destroy_context(handle) };
     }
-
     #[test]
     fn rust_validator_handles_valid_and_invalid_modules() {
-        let text = r#"
-OpCapability Shader
-OpMemoryModel Logical GLSL450
-OpEntryPoint GLCompute %main "main"
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint GLCompute %main \"main\"",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let binary = assemble_text_with_env(text, TargetEnv::Universal1_6).unwrap();
         let options = default_validator_options();
         let ok =
@@ -1041,18 +1025,18 @@ OpFunctionEnd
 
     #[test]
     fn rust_validator_formats_errors_with_friendly_names() {
-        let text = r#"
-OpCapability Shader
-OpMemoryModel Logical GLSL450
-OpName %main "ffi_friendly"
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-OpExecutionMode %main LocalSize 1 1 1
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpName %main \"ffi_friendly\"",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+            "OpExecutionMode %main LocalSize 1 1 1",
+        ].join("\n");
         let binary = assemble_text_with_env(text, TargetEnv::Universal1_6).expect("assemble");
 
         let mut options = default_validator_options();
@@ -1081,16 +1065,16 @@ OpExecutionMode %main LocalSize 1 1 1
         clear_rust_validator_override();
         LAST_VALIDATION_PATH.store(0, Ordering::Relaxed);
 
-        let text = r#"
-OpCapability Shader
-OpMemoryModel Logical GLSL450
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let binary =
             assemble_text_with_options(text, TargetEnv::Universal1_6, TextToBinaryOptions::NONE)
                 .expect("assemble");
@@ -1117,17 +1101,17 @@ OpFunctionEnd
     fn rust_validator_reports_layout_errors() {
         clear_rust_validator_override();
         set_rust_validator_override(true);
-        let text = r#"
-OpCapability Shader
-OpExtension "SPV_KHR_shader_clock"
-OpMemoryModel Logical GLSL450
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpExtension \"SPV_KHR_shader_clock\"",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let mut words =
             assemble_text_with_options(text, TargetEnv::Vulkan1_2, TextToBinaryOptions::NONE)
                 .expect("assemble");

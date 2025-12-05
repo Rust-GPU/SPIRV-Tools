@@ -93,17 +93,17 @@ fn spirv_val_cli_rust_validator_reports_layout_error() {
         return;
     }
 
-    let text = r#"
-OpCapability Shader
-OpExtension "SPV_KHR_shader_clock"
-OpMemoryModel Logical GLSL450
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+    let text = [
+        "OpCapability Shader",
+        "OpExtension \"SPV_KHR_shader_clock\"",
+        "OpMemoryModel Logical GLSL450",
+        "%void = OpTypeVoid",
+        "%fn = OpTypeFunction %void",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ].join("\n");
     let words = assemble_text(text).expect("assemble text");
     let misordered = reorder_extension_to_end(words);
     let bytes = words_to_bytes(&misordered);

@@ -12109,7 +12109,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn validate_module_requires_memory_model() {
         let text = [
@@ -12130,7 +12129,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn operand_requires_capability_from_grammar() {
         let text = [
@@ -12160,7 +12158,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn operand_requires_extension_from_grammar() {
         let text = [
@@ -12187,13 +12184,11 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_extension_rejected_when_disallowed() {
         use rspirv::binary::Assemble;
         use rspirv::dr::Instruction;
         use rspirv::spirv::{AddressingModel, Capability, MemoryModel, Op};
-
         let mut module = rspirv::dr::Module::new();
         module.capabilities.push(Instruction::new(
             Op::Capability,
@@ -12247,7 +12242,6 @@ mod tests {
         func.blocks.push(block);
         func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
         module.functions.push(func);
-
         let binary = module.assemble();
         let error = validate_module(&binary, TargetEnv::WebGpu0).unwrap_err();
         assert_eq!(
@@ -12258,7 +12252,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_extension_after_functions_rejected_for_ordering() {
         // Hand-rolled module: capability + memory model, then types/functions,
@@ -12296,7 +12289,6 @@ mod tests {
             0x63617274, // "trac"
             0x00676e69, // "ing\0"
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -12305,7 +12297,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn ext_inst_import_requires_memory_model() {
         // OpExtInstImport before OpMemoryModel should be reported as a memory-model ordering violation.
@@ -12327,7 +12318,6 @@ mod tests {
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(error, ValidationError::MissingMemoryModel);
     }
-
     #[test]
     fn conditional_extension_must_precede_types_and_globals() {
         let binary = vec![
@@ -12360,7 +12350,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_capability_must_precede_types_and_globals() {
         let binary = vec![
@@ -12388,7 +12377,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn capability_after_annotations_is_rejected() {
         // Place a capability after a decorate (Annotations section) to trigger a layout error.
@@ -12418,7 +12406,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn extension_after_functions_is_rejected() {
         // Emit a minimal function, then relocate the extension to appear after functions to trigger a layout error.
@@ -12450,7 +12437,6 @@ mod tests {
         let (start, len) = ext_slice.expect("extension instruction present");
         let extension: Vec<u32> = words.drain(start..start + len).collect();
         words.extend(extension);
-
         let error = validate_module(&words, TargetEnv::Vulkan1_2).unwrap_err();
         assert_eq!(
             error,
@@ -12459,7 +12445,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_capability_after_functions_is_rejected() {
         // Place OpConditionalCapabilityINTEL after the function to trigger layout ordering error.
@@ -12500,7 +12485,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_extension_after_functions_is_rejected() {
         // Place OpConditionalExtensionINTEL after the function to trigger layout ordering error.
@@ -12546,7 +12530,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn extension_after_annotations_is_rejected() {
         let binary = vec![
@@ -12584,7 +12567,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn extension_after_ext_inst_import_is_rejected() {
         let clock_ext = [
@@ -12632,7 +12614,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn extension_after_execution_mode_is_rejected() {
         let text = [
@@ -12666,7 +12647,6 @@ mod tests {
         let (start, len) = slice.expect("extension present");
         let ext: Vec<u32> = words.drain(start..start + len).collect();
         words.extend(ext);
-
         let error = validate_module(&words, TargetEnv::Vulkan1_2).unwrap_err();
         assert_eq!(
             error,
@@ -12675,7 +12655,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn extension_inside_function_is_rejected() {
         let binary = vec![
@@ -12712,7 +12691,6 @@ mod tests {
             op(1, Op::Return as u16),
             op(1, Op::FunctionEnd as u16),
         ];
-
         let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
         assert_eq!(
             error,
@@ -12721,7 +12699,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn capability_after_extension_is_rejected() {
         let binary = vec![
@@ -12741,7 +12718,6 @@ mod tests {
             op(2, Op::Capability as u16),
             Capability::Shader as u32,
         ];
-
         let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
         assert_eq!(
             error,
@@ -12750,7 +12726,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn extension_after_memory_model_is_rejected() {
         let clock_ext = [
@@ -12775,7 +12750,6 @@ mod tests {
             clock_ext[4],
             clock_ext[5],
         ];
-
         let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
         assert_eq!(
             error,
@@ -12784,7 +12758,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn names_section_must_follow_debug_section() {
         // OpName (Names section) precedes OpSource (Debug section), which should trigger an ordering error.
@@ -12812,7 +12785,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn annotations_must_follow_names() {
         // OpDecorate (Annotations) placed before OpName (Names) should trigger ordering diagnostics.
@@ -12840,11 +12812,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn decorations_cannot_follow_functions() {
         use rspirv::{binary::Assemble, dr::Builder, spirv::Decoration, spirv::Op};
-
         let mut builder = Builder::new();
         builder.set_version(1, 0);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -12860,12 +12830,10 @@ mod tests {
         builder.begin_block(None).unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let mut words = builder.module().assemble();
         words.push(op(3, Op::Decorate as u16));
         words.push(fn_id);
         words.push(Decoration::RelaxedPrecision as u32);
-
         let error = words
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -12877,7 +12845,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn decorations_cannot_follow_types_and_globals() {
         // Annotations must appear before the types-and-globals section.
@@ -12906,7 +12873,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn decoration_group_cannot_follow_types_and_globals() {
         // Annotation section opcodes such as OpDecorationGroup must appear before the types/globals section.
@@ -12934,7 +12900,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn group_decorate_cannot_follow_types_and_globals() {
         // OpGroupDecorate must remain in the annotations section; it is invalid after types/globals.
@@ -12965,7 +12930,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn group_member_decorate_cannot_follow_types_and_globals() {
         // OpGroupMemberDecorate must also stay in the annotations section before types/globals.
@@ -12997,7 +12961,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn decorate_id_cannot_follow_types_and_globals() {
         // OpDecorateId belongs to the annotations section; placing it after globals is invalid.
@@ -13041,7 +13004,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn decorate_string_cannot_follow_types_and_globals() {
         // OpDecorateString must appear in the annotations section before types/globals.
@@ -13081,7 +13043,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn member_decorate_string_cannot_follow_types_and_globals() {
         // OpMemberDecorateString also belongs to the annotations section and must not follow types/globals.
@@ -13117,7 +13078,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn decorations_must_follow_entry_points() {
         // Annotations must not precede the entry-point section.
@@ -13163,7 +13123,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn extensions_cannot_follow_entry_points() {
         // OpExtension must appear before the entry-point section.
@@ -13214,7 +13173,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn decorations_cannot_appear_inside_functions() {
         // Hand-built binary with a decoration inside the function body to ensure layout checking
@@ -13248,7 +13206,6 @@ mod tests {
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -13257,7 +13214,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn decorations_cannot_precede_memory_model() {
         // Missing OpMemoryModel with a decoration recorded before any other violation should
@@ -13276,7 +13232,6 @@ mod tests {
             op(2, 19), // OpTypeVoid %1 (appears after the decoration but still before memory model)
             1,
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -13285,7 +13240,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn member_decorations_cannot_appear_inside_functions() {
         // MemberDecorate belongs to the annotations section; placing it inside a function should
@@ -13327,7 +13281,6 @@ mod tests {
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -13336,7 +13289,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn member_decorate_cannot_follow_functions() {
         // MemberDecorate must appear in the annotations section; placing it after functions should
@@ -13378,7 +13330,6 @@ mod tests {
             0,
             rspirv::spirv::Decoration::RowMajor as u32,
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -13387,7 +13338,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn decoration_group_cannot_appear_inside_functions() {
         // OpDecorationGroup belongs to the annotations section; ensure it is rejected when placed
@@ -13420,7 +13370,6 @@ mod tests {
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -13429,7 +13378,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn decoration_group_cannot_follow_functions() {
         // OpDecorationGroup must appear in the annotations section before functions.
@@ -13461,7 +13409,6 @@ mod tests {
             op(2, 73),  // OpDecorationGroup %5 (after functions -> error)
             5,
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -13470,7 +13417,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn group_decorate_cannot_follow_functions() {
         // OpGroupDecorate must stay in the annotations section; placing it after functions should
@@ -13506,7 +13452,6 @@ mod tests {
             1,
             4,
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -13515,7 +13460,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn group_decorate_cannot_appear_inside_functions() {
         // OpGroupDecorate is an annotation and must not appear in the function section.
@@ -13550,7 +13494,6 @@ mod tests {
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -13559,7 +13502,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn group_member_decorate_cannot_follow_functions() {
         // OpGroupMemberDecorate must remain in the annotations section; placing it after functions
@@ -13603,7 +13545,6 @@ mod tests {
             2,
             0,
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -13612,7 +13553,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn member_names_cannot_appear_inside_functions() {
         // OpMemberName belongs to the names section; placing it inside a function should be
@@ -13654,7 +13594,6 @@ mod tests {
             op(1, 253),  // OpReturn
             op(1, 56),   // OpFunctionEnd
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -13663,7 +13602,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn decorate_string_cannot_appear_inside_functions() {
         // OpDecorateString is an annotation and must not appear in a function body.
@@ -13710,7 +13648,6 @@ mod tests {
             op(1, 253),  // OpReturn
             op(1, 56),   // OpFunctionEnd
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -13719,7 +13656,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn decorate_string_cannot_follow_functions() {
         // OpDecorateString must appear in the annotations section before functions.
@@ -13766,7 +13702,6 @@ mod tests {
             rspirv::spirv::Decoration::UserSemantic as u32,
             0x006f_6f66, // "foo"
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -13775,7 +13710,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn decorate_id_cannot_appear_inside_functions() {
         // OpDecorateId is an annotation and must not appear in the function section.
@@ -13826,7 +13760,6 @@ mod tests {
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -13835,7 +13768,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn decorate_id_cannot_follow_functions() {
         // OpDecorateId must remain in the annotations section ahead of functions.
@@ -13886,7 +13818,6 @@ mod tests {
             rspirv::spirv::Decoration::AlignmentId as u32,
             3,
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -13895,7 +13826,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn member_decorate_string_cannot_follow_functions() {
         // OpMemberDecorateString is an annotation and must appear before functions.
@@ -13937,7 +13867,6 @@ mod tests {
             rspirv::spirv::Decoration::UserSemantic as u32,
             0x006f_6f66, // "foo"
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -13946,7 +13875,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn group_member_decorate_cannot_appear_inside_functions() {
         // OpGroupMemberDecorate is an annotation and must not appear in the function section.
@@ -13989,7 +13917,6 @@ mod tests {
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -13998,7 +13925,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn capability_cannot_appear_inside_functions() {
         // Capabilities belong to the module header; placing one in the function section should
@@ -14031,7 +13957,6 @@ mod tests {
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -14040,7 +13965,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn extension_cannot_appear_inside_functions() {
         // Extensions belong to the early module sections; reject an extension in the function body.
@@ -14078,7 +14002,6 @@ mod tests {
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
-
         let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
         assert_eq!(
             error,
@@ -14087,7 +14010,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn extension_cannot_follow_functions() {
         // Extensions must appear before functions; placing one after functions should be rejected.
@@ -14125,7 +14047,6 @@ mod tests {
             0x6972_7473,
             0x0000_676e,
         ];
-
         let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
         assert_eq!(
             error,
@@ -14134,7 +14055,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn source_cannot_appear_inside_functions() {
         // Debug/Source instructions must not appear inside function bodies.
@@ -14167,7 +14087,6 @@ mod tests {
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -14176,7 +14095,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn source_cannot_follow_functions() {
         // Debug/Source instructions must stay in the debug section before functions.
@@ -14209,7 +14127,6 @@ mod tests {
             rspirv::spirv::SourceLanguage::GLSL as u32,
             450,
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -14218,7 +14135,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn source_extension_cannot_appear_inside_functions() {
         // OpSourceExtension must remain in the Debug1 section, not inside functions.
@@ -14250,7 +14166,6 @@ mod tests {
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -14259,7 +14174,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn source_extension_cannot_follow_functions() {
         // OpSourceExtension belongs to Debug1 and must appear before functions.
@@ -14291,7 +14205,6 @@ mod tests {
             op(2, 4),   // OpSourceExtension "ext" (after functions -> error)
             0x0074_7865,
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -14300,7 +14213,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn source_continued_cannot_appear_inside_functions() {
         // OpSourceContinued must remain in the Debug1 section, not inside functions.
@@ -14332,7 +14244,6 @@ mod tests {
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -14341,7 +14252,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn source_continued_cannot_follow_functions() {
         // OpSourceContinued belongs to Debug1 and must appear before functions.
@@ -14373,7 +14283,6 @@ mod tests {
             op(2, 2),   // OpSourceContinued "c" (after functions -> error)
             0x0000_0063,
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -14382,7 +14291,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn memory_model_cannot_appear_inside_functions() {
         // OpMemoryModel must appear before functions; reject it inside a function body.
@@ -14412,11 +14320,9 @@ mod tests {
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(error, ValidationError::FunctionBeforeMemoryModel);
     }
-
     #[test]
     fn ext_inst_import_cannot_appear_inside_functions() {
         // Imported instruction sets must be declared before functions; reject occurrences in the
@@ -14450,7 +14356,6 @@ mod tests {
             op(1, 253),  // OpReturn
             op(1, 56),   // OpFunctionEnd
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -14459,7 +14364,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn ext_inst_import_cannot_follow_functions() {
         // Imported instruction sets must precede functions; reject when placed after function
@@ -14493,7 +14397,6 @@ mod tests {
             5,
             0x0000_0047, // "G"
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -14502,7 +14405,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn ext_inst_import_cannot_follow_types_and_globals() {
         // Imported instruction sets must appear before the types-and-globals section.
@@ -14535,7 +14437,6 @@ mod tests {
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6)
             .expect_err("OpExtInstImport must precede types/globals");
         assert_eq!(
@@ -14545,7 +14446,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn member_decorate_string_cannot_appear_inside_functions() {
         // OpMemberDecorateString must stay in the annotations section; placing it inside a
@@ -14588,7 +14488,6 @@ mod tests {
             op(1, 253),  // OpReturn
             op(1, 56),   // OpFunctionEnd
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -14597,7 +14496,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn member_name_cannot_follow_functions() {
         // OpMemberName must remain in the names section; placing it after functions should be
@@ -14639,7 +14537,6 @@ mod tests {
             0,
             0x0000_0066, // "f"
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -14648,7 +14545,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn debug_names_cannot_appear_inside_functions() {
         // Hand-built binary with OpName in the function section to ensure it is rejected.
@@ -14681,7 +14577,6 @@ mod tests {
             op(1, 253),  // OpReturn
             op(1, 56),   // OpFunctionEnd
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -14690,7 +14585,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn execution_mode_must_follow_entry_point() {
         let binary = vec![
@@ -14721,7 +14615,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn capability_cannot_follow_entry_points() {
         // Capabilities must be declared before entry points.
@@ -14766,7 +14659,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn ext_inst_import_cannot_follow_entry_points() {
         // Imported instruction sets must appear before entry points.
@@ -14815,7 +14707,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn memory_model_cannot_follow_entry_points() {
         // OpMemoryModel must be declared before the entry-point section.
@@ -14858,7 +14749,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn entry_points_must_precede_debug_names() {
         // OpEntryPoint must appear before the debug/names sections.
@@ -14905,7 +14795,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn execution_modes_must_precede_debug_names() {
         // OpExecutionMode must appear before the debug/names sections.
@@ -14955,7 +14844,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn entry_points_must_precede_debug_instructions() {
         // Debug/source instructions must not appear before entry points.
@@ -15001,7 +14889,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn execution_modes_must_precede_debug_instructions() {
         // Debug/source instructions must not appear before execution modes.
@@ -15050,7 +14937,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn entry_points_cannot_follow_types_and_globals() {
         // Types/globals belong after entry points.
@@ -15093,7 +14979,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn execution_modes_cannot_follow_annotations() {
         // Execution modes must appear before the annotations section.
@@ -15142,7 +15027,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn execution_modes_cannot_follow_types_and_globals() {
         // Execution modes must appear before the types/globals section.
@@ -15188,7 +15072,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn execution_modes_cannot_follow_functions() {
         // Execution modes must appear before function bodies.
@@ -15234,7 +15117,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn capability_cannot_follow_execution_modes() {
         // Capabilities must precede the execution-mode section.
@@ -15282,7 +15164,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn extension_cannot_follow_execution_modes() {
         // Extensions must precede the execution-mode section.
@@ -15336,7 +15217,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn ext_inst_import_cannot_follow_execution_modes() {
         // Imported instruction sets must precede the execution-mode section.
@@ -15388,7 +15268,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_extension_cannot_follow_execution_modes() {
         // Conditional extensions must precede the execution-mode section.
@@ -15437,7 +15316,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_capability_cannot_follow_execution_modes() {
         // Conditional capabilities must also precede execution modes.
@@ -15486,7 +15364,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn entry_points_cannot_follow_annotations() {
         // Entry points must appear before the annotations section.
@@ -15532,7 +15409,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn entry_points_cannot_follow_functions() {
         // Entry points cannot trail function definitions.
@@ -15575,7 +15451,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_capability_cannot_follow_entry_points() {
         // Conditional capabilities must also be declared before entry points.
@@ -15621,7 +15496,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_extension_cannot_follow_entry_points() {
         // Conditional extensions must be declared before entry points.
@@ -15667,7 +15541,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn sampler_image_address_mode_must_precede_entry_points() {
         // The text assembler rejects this ordering, so keep a hand-crafted binary with
@@ -15722,7 +15595,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn sampler_image_address_mode_is_required_when_bindless_capability_declared() {
         // BindlessTextureNV requires a single SamplerImageAddressingModeNV declaration.
@@ -15741,20 +15613,17 @@ mod tests {
         ]
         .join("\n");
         let expected = ValidationError::MissingSamplerImageAddressingMode;
-
         let text_error = text
             .as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect_err("sampler image address mode is required for bindless capability");
         assert_eq!(text_error, expected);
-
         let binary = assemble_text(&text).expect("assemble");
         let binary_error = MaybeValidModule::Binary(&binary)
             .validate(TargetEnv::Vulkan1_2)
             .expect_err("binary should also require sampler image address mode");
         assert_eq!(binary_error, expected);
     }
-
     #[test]
     fn sampler_image_address_mode_rejects_invalid_bit_width() {
         // The assembler enforces valid bit widths, so use a hand-built binary with an invalid value.
@@ -15804,7 +15673,6 @@ mod tests {
         let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
         assert_eq!(error, expected);
     }
-
     #[test]
     fn sampler_image_address_mode_rejects_duplicates() {
         // Keep two declarations in the binary to bypass assembler canonicalization.
@@ -15855,7 +15723,6 @@ mod tests {
         let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
         assert_eq!(error, ValidationError::DuplicateSamplerImageAddressingMode);
     }
-
     #[test]
     fn validate_module_detects_duplicate_result_ids() {
         let text = [
@@ -15885,7 +15752,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn validate_module_accepts_valid_binary() {
         let text = [
@@ -15903,7 +15769,6 @@ mod tests {
             .validate(TargetEnv::Universal1_6)
             .expect("valid module");
     }
-
     #[test]
     fn validated_module_exposes_module_version() {
         use super::effective_spirv_version;
@@ -15929,7 +15794,6 @@ mod tests {
             effective_spirv_version(TargetEnv::Universal1_6, SpirvVersion::new(1, 5))
         );
     }
-
     #[test]
     fn effective_version_reflects_env_clamp_on_valid_module() {
         use rspirv::{binary::Assemble, dr::Builder};
@@ -15960,7 +15824,6 @@ mod tests {
             TargetEnv::Vulkan1_0.spirv_version()
         );
     }
-
     #[test]
     fn validate_module_checks_operand_ids_against_bound() {
         let text = [
@@ -15988,7 +15851,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn validate_module_rejects_memory_model_after_function() {
         // The assembler canonicalizes layout, so build a binary with OpMemoryModel placed after the
@@ -16022,7 +15884,6 @@ mod tests {
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(error, ValidationError::FunctionBeforeMemoryModel);
     }
-
     #[test]
     fn validate_module_rejects_duplicate_memory_model() {
         // The text path drops duplicate memory models, so keep a hand-built binary to assert the
@@ -16050,7 +15911,6 @@ mod tests {
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(error, ValidationError::DuplicateMemoryModel);
     }
-
     #[test]
     fn function_requires_entry_label() {
         let binary = vec![
@@ -16092,7 +15952,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn function_declarations_must_precede_definitions() {
         let text = [
@@ -16111,7 +15970,6 @@ mod tests {
         let result = MaybeValidModule::Text(&text).validate(TargetEnv::Universal1_6);
         assert!(result.is_ok(), "unexpected validation error: {result:?}");
     }
-
     #[test]
     fn function_declaration_after_definition_is_rejected() {
         let text = [
@@ -16137,7 +15995,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn phi_requires_incoming_block_to_exist() {
         // Function has a single predecessor for %merge; the phi references a missing block id.
@@ -16195,7 +16052,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn phi_incoming_block_must_be_predecessor() {
         // %merge only has predecessor %6, but the phi lists %8 which does not branch to it.
@@ -16254,7 +16110,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn phi_incoming_value_type_must_match_result_type() {
         // The phi expects %int but the incoming value is a %float constant.
@@ -16316,7 +16171,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn function_call_target_must_be_function() {
         let binary = vec![
@@ -16363,7 +16217,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn function_call_argument_count_must_match() {
         use rspirv::{binary::Assemble, dr::Builder};
@@ -16378,7 +16231,6 @@ mod tests {
         let int = builder.type_int(32, 0);
         let callee_ty = builder.type_function(int, [int]);
         let main_ty = builder.type_function(void, std::iter::empty::<u32>());
-
         let callee = builder
             .begin_function(int, None, rspirv::spirv::FunctionControl::NONE, callee_ty)
             .unwrap();
@@ -16386,7 +16238,6 @@ mod tests {
         builder.begin_block(None).unwrap();
         builder.ret_value(param).unwrap();
         builder.end_function().unwrap();
-
         let main = builder
             .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, main_ty)
             .unwrap();
@@ -16396,7 +16247,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -16411,7 +16261,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn function_call_argument_types_must_match() {
         use rspirv::{binary::Assemble, dr::Builder};
@@ -16427,7 +16276,6 @@ mod tests {
         let float = builder.type_float(32, None);
         let callee_ty = builder.type_function(int, [int]);
         let main_ty = builder.type_function(void, std::iter::empty::<u32>());
-
         let callee = builder
             .begin_function(int, None, rspirv::spirv::FunctionControl::NONE, callee_ty)
             .unwrap();
@@ -16435,7 +16283,6 @@ mod tests {
         builder.begin_block(None).unwrap();
         builder.ret_value(param).unwrap();
         builder.end_function().unwrap();
-
         let main = builder
             .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, main_ty)
             .unwrap();
@@ -16446,7 +16293,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -16464,7 +16310,6 @@ mod tests {
         // ensure entry used to silence warnings
         let _ = entry;
     }
-
     #[test]
     fn function_call_result_type_must_match() {
         use rspirv::{binary::Assemble, dr::Builder};
@@ -16480,7 +16325,6 @@ mod tests {
         let float = builder.type_float(32, None);
         let callee_ty = builder.type_function(int, std::iter::empty::<u32>());
         let main_ty = builder.type_function(void, std::iter::empty::<u32>());
-
         let callee = builder
             .begin_function(int, None, rspirv::spirv::FunctionControl::NONE, callee_ty)
             .unwrap();
@@ -16488,7 +16332,6 @@ mod tests {
         let zero = builder.constant_bit32(int, 0);
         builder.ret_value(zero).unwrap();
         builder.end_function().unwrap();
-
         let main = builder
             .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, main_ty)
             .unwrap();
@@ -16498,7 +16341,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -16513,7 +16355,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn value_defined_in_another_function_is_rejected() {
         let text = [
@@ -16545,7 +16386,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn function_variable_storage_must_be_function_class() {
         let binary = vec![
@@ -16592,7 +16432,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn function_variable_must_be_in_entry_block() {
         // Function-scope variable appears in the second block.
@@ -16643,7 +16482,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn phi_cannot_duplicate_predecessor() {
         // %merge has only predecessor %6, but the phi lists %6 twice.
@@ -16701,7 +16539,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn function_type_must_be_type_function() {
         let binary = vec![
@@ -16740,7 +16577,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn function_return_type_must_match_function_type() {
         let binary = vec![
@@ -16783,7 +16619,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn function_parameter_count_must_match_function_type() {
         let binary = vec![
@@ -16827,7 +16662,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn function_parameter_types_must_match_function_type() {
         let binary = vec![
@@ -16878,7 +16712,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn type_function_requires_type_operands() {
         // The function type references a non-type operand as its parameter.
@@ -16916,7 +16749,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn type_function_parameters_cannot_be_void() {
         let binary = vec![
@@ -16946,7 +16778,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn type_function_return_must_be_type() {
         // Return type id does not reference a type instruction.
@@ -16981,7 +16812,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn block_requires_terminator() {
         // A block must end with a terminator instruction.
@@ -17020,7 +16850,6 @@ mod tests {
             panic!("expected parse error, got {error:?}");
         }
     }
-
     #[test]
     fn block_cannot_have_instructions_after_terminator() {
         // A terminator must end the block; trailing instructions are invalid.
@@ -17061,7 +16890,6 @@ mod tests {
             panic!("expected parse error, got {error:?}");
         }
     }
-
     #[test]
     fn branch_requires_existing_target() {
         let binary = vec![
@@ -17100,7 +16928,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn switch_requires_existing_targets() {
         let binary = vec![
@@ -17147,7 +16974,6 @@ mod tests {
             panic!("expected parse error, got {error:?}");
         }
     }
-
     #[test]
     fn entry_block_cannot_have_predecessors() {
         let binary = vec![
@@ -17190,11 +17016,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn unreachable_block_is_rejected() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 6);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -17202,20 +17026,16 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let fn_ty = builder.type_function(void, std::iter::empty::<u32>());
-
         let function_id = builder
             .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
             .unwrap();
         let _entry = builder.begin_block(None).unwrap();
         builder.ret().unwrap();
-
         let unreachable = builder.begin_block(None).unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -17229,7 +17049,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn capability_must_appear_before_types() {
         // The assembler reorders sections, so preserve the out-of-order capability via binary.
@@ -17255,7 +17074,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn capability_cannot_follow_memory_model() {
         // Capabilities must be declared before the memory model section.
@@ -17279,7 +17097,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn extension_must_precede_types_and_globals() {
         // Keep the extension misordered in binary form; the assembler canonicalizes this section.
@@ -17313,7 +17130,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn extension_cannot_follow_memory_model() {
         // Extensions must appear before the memory model section.
@@ -17343,7 +17159,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn capability_cannot_follow_extension_section() {
         // Extensions must precede additional capabilities; a capability after an extension is out of order.
@@ -17375,7 +17190,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn capability_cannot_follow_debug_names() {
         // Once debug names begin, capabilities are no longer allowed.
@@ -17404,7 +17218,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn capability_cannot_follow_annotations() {
         // Capabilities must be declared before annotations.
@@ -17432,7 +17245,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_capability_cannot_follow_debug_names() {
         // OpConditionalCapabilityINTEL (capabilities section) cannot be placed after debug names.
@@ -17460,7 +17272,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_capability_cannot_follow_annotations() {
         // Conditional capabilities must be declared before annotations.
@@ -17489,7 +17300,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_capability_cannot_follow_extensions() {
         // Conditional capabilities must appear before the extensions/imports sections.
@@ -17516,7 +17326,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_capability_cannot_follow_ext_inst_import() {
         // Conditional capabilities must precede extension imports.
@@ -17544,7 +17353,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_capability_cannot_follow_memory_model() {
         // Conditional capabilities must be declared before the memory model.
@@ -17569,7 +17377,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_capability_cannot_appear_inside_functions() {
         // Conditional capabilities belong to the capabilities section, not inside functions.
@@ -17602,7 +17409,6 @@ mod tests {
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -17611,7 +17417,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_capability_cannot_follow_functions() {
         // Conditional capabilities must appear before functions.
@@ -17644,7 +17449,6 @@ mod tests {
             1,
             rspirv::spirv::Capability::Shader as u32,
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -17653,7 +17457,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn duplicate_conditional_capability_is_rejected() {
         // Duplicate conditional capabilities should be rejected just like regular capabilities.
@@ -17675,7 +17478,6 @@ mod tests {
             0,
             1,
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -17684,7 +17486,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn extension_cannot_follow_debug_names() {
         // Extensions must appear before debug/names/annotations sections.
@@ -17719,7 +17520,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_extension_cannot_follow_debug_names() {
         // OpConditionalExtensionINTEL must appear before debug/names/annotations sections.
@@ -17754,7 +17554,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_extension_cannot_appear_inside_functions() {
         // Conditional extensions belong to the extensions section, not inside functions.
@@ -17792,7 +17591,6 @@ mod tests {
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
-
         let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
         assert_eq!(
             error,
@@ -17801,7 +17599,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_extension_cannot_follow_functions() {
         // Conditional extensions must appear before functions.
@@ -17839,7 +17636,6 @@ mod tests {
             EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[5],
             EXT_SPV_GOOGLE_DECORATE_STRING_WORDS[6],
         ];
-
         let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
         assert_eq!(
             error,
@@ -17848,7 +17644,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_extension_cannot_follow_annotations() {
         // OpConditionalExtensionINTEL (extensions section) must not appear after annotations.
@@ -17882,7 +17677,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_extension_cannot_follow_ext_inst_import() {
         // Conditional extensions must precede imported instruction sets.
@@ -17920,7 +17714,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_extension_cannot_follow_memory_model() {
         // Conditional extensions must appear before the memory model.
@@ -17952,7 +17745,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn extension_cannot_follow_annotations() {
         // Extensions must appear before annotations.
@@ -17986,7 +17778,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn extension_cannot_follow_ext_inst_import() {
         // Extensions must appear before imports; a later extension is out of order.
@@ -18021,7 +17812,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn names_cannot_follow_annotations() {
         // Names/debug instructions must precede annotations.
@@ -18053,7 +17843,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn capability_cannot_follow_ext_inst_import() {
         // Capabilities must precede extension imports.
@@ -18080,7 +17869,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn ext_inst_import_cannot_follow_debug_names() {
         // OpExtInstImport belongs to the extensions/imports section and cannot follow debug names.
@@ -18110,7 +17898,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn ext_inst_import_cannot_follow_annotations() {
         // OpExtInstImport must precede the annotations section.
@@ -18139,7 +17926,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn debug_instructions_cannot_follow_annotations() {
         // OpSource (debug) must not appear after the annotations section.
@@ -18169,7 +17955,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn string_cannot_follow_annotations() {
         // OpString (debug) must not appear after the annotations section.
@@ -18198,7 +17983,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn string_cannot_follow_names() {
         // Debug1 instructions (OpString) must precede the Names section.
@@ -18228,7 +18012,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn source_extension_cannot_follow_annotations() {
         // OpSourceExtension (debug) must not appear after the annotations section.
@@ -18257,7 +18040,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn source_continued_cannot_follow_annotations() {
         // OpSourceContinued (debug) must not appear after the annotations section.
@@ -18289,7 +18071,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn module_processed_must_precede_annotations() {
         // OpModuleProcessed belongs to the debug section and must precede annotations.
@@ -18320,7 +18101,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn module_processed_must_follow_names() {
         // OpModuleProcessed (Debug3) must appear after the Names section.
@@ -18349,7 +18129,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn module_processed_must_precede_types_and_globals() {
         let binary = vec![
@@ -18376,7 +18155,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn ext_inst_import_must_precede_types_and_globals() {
         // Place OpExtInstImport after a type to trigger layout ordering.
@@ -18408,7 +18186,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn ext_inst_import_cannot_follow_memory_model() {
         // The assembler canonicalizes layout, so construct the binary manually to keep
@@ -18439,7 +18216,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn validate_module_rejects_duplicate_capability() {
         // The assembler deduplicates capabilities; construct the binary manually to keep both.
@@ -18465,7 +18241,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn vulkan_rejects_kernel_capability() {
         let text = [
@@ -18491,7 +18266,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn vulkan_rejects_opencl_only_capabilities() {
         let text = [
@@ -18517,7 +18291,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn vulkan_1_0_rejects_group_non_uniform() {
         let text = [
@@ -18544,7 +18317,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn vulkan_1_1_allows_group_non_uniform() {
         let text = [
@@ -18565,7 +18337,6 @@ mod tests {
             .expect("Vulkan 1.1 allows GroupNonUniform");
         assert_eq!(module.env(), TargetEnv::Vulkan1_1);
     }
-
     #[test]
     fn vulkan_1_0_rejects_vulkan_memory_model() {
         let text = [
@@ -18592,7 +18363,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn vulkan_1_2_allows_physical_storage_buffer_addresses() {
         let text = [
@@ -18613,7 +18383,6 @@ mod tests {
             .expect("PhysicalStorageBufferAddresses is optional in Vulkan 1.2");
         assert_eq!(module.env(), TargetEnv::Vulkan1_2);
     }
-
     #[test]
     fn opencl_allows_optional_float64() {
         let text = [
@@ -18633,7 +18402,6 @@ mod tests {
             .validate(TargetEnv::OpenCl1_2)
             .expect("Float64 is optional in OpenCL 1.2");
     }
-
     #[test]
     fn opencl_embedded_allows_optional_float64() {
         let text = [
@@ -18653,7 +18421,6 @@ mod tests {
             .validate(TargetEnv::OpenClEmbedded1_2)
             .expect("Float64 is optional in OpenCL 1.2 embedded");
     }
-
     #[test]
     fn webgpu_rejects_non_shader_capabilities() {
         let text = [
@@ -18679,7 +18446,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn opencl_rejects_shader_capability() {
         let text = [
@@ -18705,7 +18471,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn opencl_rejects_vulkan_specific_extension() {
         let text = [
@@ -18732,7 +18497,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn opencl_rejects_nv_vendor_extension() {
         // OpenCL should reject NV vendor extensions.
@@ -18766,7 +18530,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn universal_rejects_nv_vendor_extension() {
         let ext_words = [
@@ -18799,7 +18562,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn universal_rejects_nv_shader_invocation_reorder() {
         let text = [
@@ -18823,7 +18585,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn universal_rejects_nv_cluster_acceleration_structure() {
         let text = [
@@ -18847,7 +18608,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn universal_rejects_qcom_image_processing2() {
         let text = [
@@ -18871,7 +18631,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn vulkan_accepts_nv_vendor_extension() {
         let ext_words = [
@@ -18900,7 +18659,6 @@ mod tests {
             .expect("NV vendor extension should be allowed for Vulkan");
         assert_eq!(validated.env(), TargetEnv::Vulkan1_2);
     }
-
     #[test]
     fn vulkan_accepts_google_vendor_extension() {
         let ext_words = [
@@ -18931,7 +18689,6 @@ mod tests {
             .expect("Google vendor extension should be allowed for Vulkan");
         assert_eq!(validated.env(), TargetEnv::Vulkan1_2);
     }
-
     #[test]
     fn vulkan_rejects_intel_vendor_extension() {
         let intel_function_variants_ext = [
@@ -18968,7 +18725,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn qcom_extension_requires_vulkan_environment() {
         let text = [
@@ -18994,14 +18750,12 @@ mod tests {
                 env: TargetEnv::Universal1_6
             }
         );
-
         let validated = text
             .as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("QCOM extension should be accepted for Vulkan");
         assert_eq!(validated.env(), TargetEnv::Vulkan1_2);
     }
-
     #[test]
     fn qcom_image_processing_requires_spirv_1_4() {
         let text = [
@@ -19028,12 +18782,10 @@ mod tests {
                 target_version: TargetEnv::Vulkan1_0.spirv_version(),
             }
         );
-
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("extension should be accepted with SPIR-V 1.4+");
     }
-
     #[test]
     fn universal_rejects_vulkan_specific_extension() {
         let text = [
@@ -19060,7 +18812,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn vulkan_memory_model_extension_requires_spirv_1_3() {
         let text = [
@@ -19087,13 +18838,11 @@ mod tests {
                 target_version: TargetEnv::Vulkan1_0.spirv_version(),
             }
         );
-
         // A newer environment should accept the extension.
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("extension should be accepted with SPIR-V 1.4+");
     }
-
     #[test]
     fn qcom_cooperative_matrix_conversion_requires_spirv_1_3() {
         let text = [
@@ -19120,12 +18869,10 @@ mod tests {
                 target_version: TargetEnv::Vulkan1_0.spirv_version(),
             }
         );
-
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("extension should be accepted with SPIR-V 1.3+");
     }
-
     #[test]
     fn ray_tracing_extensions_require_spirv_1_4() {
         for ext in &[
@@ -19157,13 +18904,11 @@ mod tests {
                     target_version: TargetEnv::Vulkan1_0.spirv_version(),
                 }
             );
-
             text.as_str()
                 .validate(TargetEnv::Vulkan1_2)
                 .expect("extension should be accepted with SPIR-V 1.4+");
         }
     }
-
     #[test]
     fn capability_requires_declared_vendor_extension() {
         let text = [
@@ -19188,7 +18933,6 @@ mod tests {
                 required_extension: "SPV_NV_ray_tracing".to_string()
             }
         );
-
         let with_extension = [
             "OpCapability Shader",
             "OpCapability RayTracingNV",
@@ -19207,7 +18951,6 @@ mod tests {
             .validate(TargetEnv::Vulkan1_2)
             .expect("Vendor capability should be allowed with its extension declared");
     }
-
     #[test]
     fn vendor_capability_requiring_disallowed_extension_reports_env_error() {
         let text = [
@@ -19222,7 +18965,6 @@ mod tests {
             "OpFunctionEnd",
         ]
         .join("\n");
-
         for env in [
             TargetEnv::Universal1_6,
             TargetEnv::OpenCl2_2,
@@ -19240,7 +18982,6 @@ mod tests {
             );
         }
     }
-
     #[test]
     fn cooperative_matrix_nv_capability_rejected_outside_vulkan() {
         let text = [
@@ -19256,7 +18997,6 @@ mod tests {
             "OpFunctionEnd",
         ]
         .join("\n");
-
         for env in [
             TargetEnv::Universal1_6,
             TargetEnv::OpenCl2_2,
@@ -19273,12 +19013,10 @@ mod tests {
                 }
             );
         }
-
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("CooperativeMatrixNV should be accepted for Vulkan targets");
     }
-
     #[test]
     fn tile_shading_capability_rejected_outside_vulkan() {
         let text = [
@@ -19294,7 +19032,6 @@ mod tests {
             "OpFunctionEnd",
         ]
         .join("\n");
-
         for env in [
             TargetEnv::Universal1_6,
             TargetEnv::OpenCl2_2,
@@ -19312,12 +19049,10 @@ mod tests {
                 }
             );
         }
-
         text.as_str()
             .validate(TargetEnv::Vulkan1_4)
             .expect("TileShadingQCOM should be accepted for Vulkan targets");
     }
-
     #[test]
     fn ray_tracing_capability_rejected_outside_vulkan_even_with_extension() {
         let text = [
@@ -19333,7 +19068,6 @@ mod tests {
             "OpFunctionEnd",
         ]
         .join("\n");
-
         for env in [
             TargetEnv::Universal1_6,
             TargetEnv::OpenCl2_2,
@@ -19351,12 +19085,10 @@ mod tests {
                 }
             );
         }
-
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("RayTracingKHR should be accepted for Vulkan targets");
     }
-
     #[test]
     fn mesh_shading_nv_capability_rejected_outside_vulkan_even_with_extension() {
         let text = [
@@ -19372,7 +19104,6 @@ mod tests {
             "OpFunctionEnd",
         ]
         .join("\n");
-
         for env in [
             TargetEnv::Universal1_6,
             TargetEnv::OpenCl2_2,
@@ -19390,12 +19121,10 @@ mod tests {
                 }
             );
         }
-
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("MeshShadingNV should be accepted for Vulkan targets");
     }
-
     #[test]
     fn mesh_shading_ext_capability_rejected_outside_vulkan_even_with_extension() {
         let text = [
@@ -19411,7 +19140,6 @@ mod tests {
             "OpFunctionEnd",
         ]
         .join("\n");
-
         for env in [
             TargetEnv::Universal1_6,
             TargetEnv::OpenCl2_2,
@@ -19429,12 +19157,10 @@ mod tests {
                 }
             );
         }
-
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("MeshShadingEXT should be accepted for Vulkan targets");
     }
-
     #[test]
     fn cooperative_matrix_khr_capability_rejected_outside_vulkan_even_with_extension() {
         let text = [
@@ -19450,7 +19176,6 @@ mod tests {
             "OpFunctionEnd",
         ]
         .join("\n");
-
         for env in [
             TargetEnv::Universal1_6,
             TargetEnv::OpenCl2_2,
@@ -19467,12 +19192,10 @@ mod tests {
                 }
             );
         }
-
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("CooperativeMatrixKHR should be accepted for Vulkan targets");
     }
-
     #[test]
     fn ray_tracing_motion_blur_capability_rejected_outside_vulkan_even_with_extension() {
         let text = [
@@ -19490,7 +19213,6 @@ mod tests {
             "OpFunctionEnd",
         ]
         .join("\n");
-
         for env in [
             TargetEnv::Universal1_6,
             TargetEnv::OpenCl2_2,
@@ -19514,12 +19236,10 @@ mod tests {
                 other => panic!("unexpected error: {other:?}"),
             }
         }
-
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("RayTracingMotionBlurNV should be accepted for Vulkan targets");
     }
-
     #[test]
     fn ray_tracing_displacement_micromap_capability_rejected_outside_vulkan_even_with_extension() {
         let text = [
@@ -19539,7 +19259,6 @@ mod tests {
             "OpFunctionEnd",
         ]
         .join("\n");
-
         for env in [
             TargetEnv::Universal1_6,
             TargetEnv::OpenCl2_2,
@@ -19564,12 +19283,10 @@ mod tests {
                 other => panic!("unexpected error: {other:?}"),
             }
         }
-
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("RayTracingDisplacementMicromapNV should be accepted for Vulkan targets");
     }
-
     #[test]
     fn ray_tracing_linear_swept_spheres_capability_rejected_outside_vulkan_even_with_extension() {
         let text = [
@@ -19587,7 +19304,6 @@ mod tests {
             "OpFunctionEnd",
         ]
         .join("\n");
-
         for env in [
             TargetEnv::Universal1_6,
             TargetEnv::OpenCl2_2,
@@ -19611,12 +19327,10 @@ mod tests {
                 other => panic!("unexpected error: {other:?}"),
             }
         }
-
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("RayTracingLinearSweptSpheresGeometryNV should be accepted for Vulkan targets");
     }
-
     #[test]
     fn ray_tracing_opacity_micromap_capability_rejected_outside_vulkan_even_with_extension() {
         let text = [
@@ -19634,7 +19348,6 @@ mod tests {
             "OpFunctionEnd",
         ]
         .join("\n");
-
         for env in [
             TargetEnv::Universal1_6,
             TargetEnv::OpenCl2_2,
@@ -19658,12 +19371,10 @@ mod tests {
                 other => panic!("unexpected error: {other:?}"),
             }
         }
-
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("RayTracingOpacityMicromapEXT should be accepted for Vulkan targets");
     }
-
     #[test]
     fn shader_invocation_reorder_capability_rejected_outside_vulkan_even_with_extension() {
         let text = [
@@ -19681,7 +19392,6 @@ mod tests {
             "OpFunctionEnd",
         ]
         .join("\n");
-
         for env in [
             TargetEnv::Universal1_6,
             TargetEnv::OpenCl2_2,
@@ -19705,12 +19415,10 @@ mod tests {
                 other => panic!("unexpected error: {other:?}"),
             }
         }
-
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("ShaderInvocationReorderNV should be accepted for Vulkan targets");
     }
-
     #[test]
     fn cluster_acceleration_capability_rejected_outside_vulkan_even_with_extension() {
         let text = [
@@ -19728,7 +19436,6 @@ mod tests {
             "OpFunctionEnd",
         ]
         .join("\n");
-
         for env in [
             TargetEnv::Universal1_6,
             TargetEnv::OpenCl2_2,
@@ -19752,12 +19459,10 @@ mod tests {
                 other => panic!("unexpected error: {other:?}"),
             }
         }
-
         text.as_str().validate(TargetEnv::Vulkan1_2).expect(
             "RayTracingClusterAccelerationStructureNV should be accepted for Vulkan targets",
         );
     }
-
     #[test]
     fn shader_sm_builtins_capability_rejected_outside_vulkan_even_with_extension() {
         let text = [
@@ -19773,7 +19478,6 @@ mod tests {
             "OpFunctionEnd",
         ]
         .join("\n");
-
         for env in [
             TargetEnv::Universal1_6,
             TargetEnv::OpenCl2_2,
@@ -19790,12 +19494,10 @@ mod tests {
                 }
             );
         }
-
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("ShaderSMBuiltinsNV should be accepted for Vulkan targets");
     }
-
     #[test]
     fn fragment_shader_interlock_capability_rejected_outside_vulkan_even_with_extension() {
         let text = [
@@ -19811,7 +19513,6 @@ mod tests {
             "OpFunctionEnd",
         ]
         .join("\n");
-
         for env in [
             TargetEnv::Universal1_6,
             TargetEnv::OpenCl2_2,
@@ -19828,12 +19529,10 @@ mod tests {
                 }
             );
         }
-
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("FragmentShaderPixelInterlockEXT should be accepted for Vulkan targets");
     }
-
     #[test]
     fn image_footprint_capability_rejected_outside_vulkan_even_with_extension() {
         let text = [
@@ -19849,7 +19548,6 @@ mod tests {
             "OpFunctionEnd",
         ]
         .join("\n");
-
         for env in [
             TargetEnv::Universal1_6,
             TargetEnv::OpenCl2_2,
@@ -19867,12 +19565,10 @@ mod tests {
                 }
             );
         }
-
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("ImageFootprintNV should be accepted for Vulkan targets");
     }
-
     #[test]
     fn shader_atomic_float_add_capability_rejected_outside_vulkan_even_with_extension() {
         let text = [
@@ -19888,7 +19584,6 @@ mod tests {
             "OpFunctionEnd",
         ]
         .join("\n");
-
         for env in [
             TargetEnv::Universal1_6,
             TargetEnv::OpenCl2_2,
@@ -19905,12 +19600,10 @@ mod tests {
                 }
             );
         }
-
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("AtomicFloat32AddEXT should be accepted for Vulkan targets");
     }
-
     #[test]
     fn fragment_shading_rate_capability_rejected_outside_vulkan_even_with_extension() {
         let text = [
@@ -19926,7 +19619,6 @@ mod tests {
             "OpFunctionEnd",
         ]
         .join("\n");
-
         for env in [
             TargetEnv::Universal1_6,
             TargetEnv::OpenCl2_2,
@@ -19943,12 +19635,10 @@ mod tests {
                 }
             );
         }
-
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("FragmentShadingRateKHR should be accepted for Vulkan targets");
     }
-
     #[test]
     fn fragment_invocation_density_capability_rejected_outside_vulkan_even_with_extension() {
         let text = [
@@ -19965,7 +19655,6 @@ mod tests {
             "OpFunctionEnd",
         ]
         .join("\n");
-
         for env in [
             TargetEnv::Universal1_6,
             TargetEnv::OpenCl2_2,
@@ -19989,12 +19678,10 @@ mod tests {
                 other => panic!("unexpected error: {other:?}"),
             }
         }
-
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("FragmentDensityEXT should be accepted for Vulkan targets");
     }
-
     #[test]
     fn descriptor_indexing_extension_requires_spirv_1_5() {
         let text = [
@@ -20021,12 +19708,10 @@ mod tests {
                 target_version: TargetEnv::Vulkan1_0.spirv_version(),
             }
         );
-
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("extension should be accepted with SPIR-V 1.5+");
     }
-
     #[test]
     fn nv_shader_invocation_reorder_requires_spirv_1_4() {
         let text = [
@@ -20053,12 +19738,10 @@ mod tests {
                 target_version: TargetEnv::Vulkan1_1.spirv_version(),
             }
         );
-
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("extension should be accepted with SPIR-V 1.3+");
     }
-
     #[test]
     fn ext_shader_invocation_reorder_requires_spirv_1_4() {
         let text = [
@@ -20085,12 +19768,10 @@ mod tests {
                 target_version: TargetEnv::Vulkan1_1.spirv_version(),
             }
         );
-
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("extension should be accepted with SPIR-V 1.4+");
     }
-
     #[test]
     fn extension_version_check_respects_module_version() {
         use rspirv::{binary::Assemble, dr::Builder};
@@ -20124,7 +19805,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn extension_version_clamps_to_env_when_module_is_newer() {
         use rspirv::{binary::Assemble, dr::Builder};
@@ -20158,7 +19838,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn fragment_shader_interlock_extension_requires_spirv_1_4() {
         let text = [
@@ -20185,12 +19864,10 @@ mod tests {
                 target_version: TargetEnv::Vulkan1_0.spirv_version(),
             }
         );
-
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("extension should be accepted with SPIR-V 1.4+");
     }
-
     #[test]
     fn fragment_invocation_density_extension_requires_spirv_1_5() {
         let text = [
@@ -20217,12 +19894,10 @@ mod tests {
                 target_version: TargetEnv::Vulkan1_0.spirv_version(),
             }
         );
-
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("extension should be accepted with SPIR-V 1.5+");
     }
-
     #[test]
     fn physical_storage_buffer_extension_requires_spirv_1_4() {
         let text = [
@@ -20249,12 +19924,10 @@ mod tests {
                 target_version: TargetEnv::Vulkan1_0.spirv_version(),
             }
         );
-
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("extension should be accepted with SPIR-V 1.4+");
     }
-
     #[test]
     fn storage_buffer_storage_class_extension_requires_spirv_1_3() {
         let text = [
@@ -20296,12 +19969,10 @@ mod tests {
             }
             other => panic!("unexpected error: {other:?}"),
         }
-
         text.as_str()
             .validate(TargetEnv::Universal1_6)
             .expect("extension should be accepted with SPIR-V 1.3+");
     }
-
     #[test]
     fn variable_pointers_extension_requires_spirv_1_3() {
         let text = [
@@ -20328,12 +19999,10 @@ mod tests {
                 target_version: SpirvVersion::new(1, 2),
             }
         );
-
         text.as_str()
             .validate(TargetEnv::Universal1_6)
             .expect("extension should be accepted with SPIR-V 1.3+");
     }
-
     #[test]
     fn shader_clock_extension_requires_spirv_1_3() {
         let text = [
@@ -20364,12 +20033,10 @@ mod tests {
             }
             other => panic!("unexpected error: {other:?}"),
         }
-
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("extension should be accepted with SPIR-V 1.3+");
     }
-
     #[test]
     fn device_group_extension_requires_spirv_1_3() {
         let text = [
@@ -20396,12 +20063,10 @@ mod tests {
                 target_version: TargetEnv::Vulkan1_0.spirv_version(),
             }
         );
-
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("extension should be accepted with SPIR-V 1.3+");
     }
-
     #[test]
     fn maximal_reconvergence_extension_rejected_outside_vulkan() {
         let text = [
@@ -20428,7 +20093,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn ray_cull_mask_extension_rejected_outside_vulkan() {
         let text = [
@@ -20455,7 +20119,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn non_opencl_env_rejects_opencl_extension() {
         let text = [
@@ -20482,7 +20145,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn vulkan_allows_optional_geometry_capability() {
         let text = [
@@ -20503,7 +20165,6 @@ mod tests {
             .expect("optional Vulkan capability should be permitted");
         assert_eq!(module.env(), TargetEnv::Vulkan1_0);
     }
-
     #[test]
     fn opencl_requires_image_basic_for_image_capabilities() {
         let text = [
@@ -20537,7 +20198,6 @@ mod tests {
             }
             other => panic!("unexpected error: {other:?}"),
         }
-
         let text_with_basic = [
             "OpCapability Kernel",
             "OpCapability Addresses",
@@ -20558,7 +20218,6 @@ mod tests {
             .validate(TargetEnv::OpenCl2_0)
             .expect("ImageBasic enables other image capabilities");
     }
-
     #[test]
     fn opencl_embedded_rejects_int64_capability() {
         let text = [
@@ -20585,7 +20244,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn valid_module_cache_reuses_entries() {
         let text = [
@@ -20613,11 +20271,9 @@ mod tests {
             "cached entries should reuse the same allocation"
         );
     }
-
     #[test]
     fn valid_module_cache_accounts_for_options() {
         use crate::validation::ValidationOptions;
-
         let text = [
             "OpCapability Shader",
             "OpMemoryModel Logical GLSL450",
@@ -20631,7 +20287,6 @@ mod tests {
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
         let mut cache = ValidModuleCache::default();
-
         let first = cache
             .validate_words_with_options(
                 &binary,
@@ -20639,28 +20294,23 @@ mod tests {
                 ValidationOptions::default(),
             )
             .expect("first validation");
-
         let mut relaxed = ValidationOptions {
             relax_struct_store: true,
             ..ValidationOptions::default()
         };
         relaxed.limits.insert(7, 42);
-
         let second = cache
             .validate_words_with_options(&binary, TargetEnv::Universal1_6, relaxed)
             .expect("validation with options");
-
         assert_ne!(
             Arc::as_ptr(&first),
             Arc::as_ptr(&second),
             "options should participate in the cache key"
         );
     }
-
     #[test]
     fn global_variable_limit_enforced() {
         use crate::validation::{ValidationOptions, LIMIT_MAX_GLOBAL_VARIABLES};
-
         let text = [
             "OpCapability Shader",
             "OpMemoryModel Logical GLSL450",
@@ -20678,7 +20328,6 @@ mod tests {
         let binary = assemble_text(&text).expect("assemble");
         let mut options = ValidationOptions::default();
         options.limits.insert(LIMIT_MAX_GLOBAL_VARIABLES, 1);
-
         let err = binary
             .as_slice()
             .validate_with_options(TargetEnv::Universal1_6, options)
@@ -20692,11 +20341,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn local_variable_limit_enforced() {
         use crate::validation::{ValidationOptions, LIMIT_MAX_LOCAL_VARIABLES};
-
         let text = [
             "OpCapability Shader",
             "OpMemoryModel Logical GLSL450",
@@ -20714,7 +20361,6 @@ mod tests {
         let binary = assemble_text(&text).expect("assemble");
         let mut options = ValidationOptions::default();
         options.limits.insert(LIMIT_MAX_LOCAL_VARIABLES, 1);
-
         let err = binary
             .as_slice()
             .validate_with_options(TargetEnv::Universal1_6, options)
@@ -20728,11 +20374,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn control_flow_depth_limit_enforced() {
         use crate::validation::{ValidationOptions, LIMIT_MAX_CONTROL_FLOW_NESTING_DEPTH};
-
         let text = [
             "OpCapability Shader",
             "OpMemoryModel Logical GLSL450",
@@ -20755,7 +20399,6 @@ mod tests {
         options
             .limits
             .insert(LIMIT_MAX_CONTROL_FLOW_NESTING_DEPTH, 0);
-
         let err = binary
             .as_slice()
             .validate_with_options(TargetEnv::Universal1_6, options)
@@ -20769,7 +20412,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn selection_merge_requires_conditional_terminator() {
         let text = [
@@ -20787,7 +20429,6 @@ mod tests {
         ]
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -20801,7 +20442,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn merge_must_immediately_precede_terminator() {
         let text = [
@@ -20824,7 +20464,6 @@ mod tests {
         ]
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -20837,11 +20476,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn selection_merge_must_precede_switch() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -20849,7 +20486,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::Simple,
         );
-
         let void = b.type_void();
         let int = b.type_int(32, 0);
         let fn_ty = b.type_function(void, std::iter::empty::<u32>());
@@ -20871,9 +20507,7 @@ mod tests {
         b.begin_block(Some(merge_label)).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let words = b.module().assemble();
-
         let err = words
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -20886,11 +20520,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn loop_merge_must_precede_branch() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -20898,7 +20530,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::Simple,
         );
-
         let void = b.type_void();
         let fn_ty = b.type_function(void, std::iter::empty::<u32>());
         let main = b
@@ -20916,11 +20547,9 @@ mod tests {
         .unwrap();
         b.nop().unwrap(); // placement violation
         b.branch(merge).unwrap();
-
         b.begin_block(Some(merge)).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let words = b.module().assemble();
         let err = words
             .as_slice()
@@ -20934,11 +20563,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn loop_merge_cannot_terminate_with_switch() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -20946,7 +20573,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::Simple,
         );
-
         let void = b.type_void();
         let int = b.type_int(32, 0);
         let fn_ty = b.type_function(void, std::iter::empty::<u32>());
@@ -20970,14 +20596,11 @@ mod tests {
             vec![(rspirv::dr::Operand::LiteralBit32(0), cont)],
         )
         .unwrap();
-
         b.begin_block(Some(cont)).unwrap();
         b.branch(merge).unwrap();
-
         b.begin_block(Some(merge)).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let words = b.module().assemble();
         let err = words
             .as_slice()
@@ -20992,11 +20615,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn loop_merge_cannot_be_followed_by_return() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -21004,7 +20625,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::Simple,
         );
-
         let void = b.type_void();
         let fn_ty = b.type_function(void, std::iter::empty::<u32>());
         let main = b
@@ -21023,7 +20643,6 @@ mod tests {
         // Invalid terminator after loop merge.
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let words = b.module().assemble();
         let err = words
             .as_slice()
@@ -21038,11 +20657,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn loop_merge_cannot_be_followed_by_unreachable() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -21050,7 +20667,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::Simple,
         );
-
         let void = b.type_void();
         let fn_ty = b.type_function(void, std::iter::empty::<u32>());
         let main = b
@@ -21069,7 +20685,6 @@ mod tests {
         // Invalid terminator after loop merge.
         b.unreachable().unwrap();
         b.end_function().unwrap();
-
         let words = b.module().assemble();
         let err = words
             .as_slice()
@@ -21084,11 +20699,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn selection_merge_target_must_be_dominated_by_header() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -21096,7 +20709,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::Simple,
         );
-
         let void = b.type_void();
         let bool = b.type_bool();
         let fn_ty = b.type_function(void, std::iter::empty::<u32>());
@@ -21111,17 +20723,14 @@ mod tests {
             .unwrap();
         b.branch_conditional(cond, header, merge, std::iter::empty())
             .unwrap();
-
         b.begin_block(Some(header)).unwrap();
         b.selection_merge(merge, rspirv::spirv::SelectionControl::NONE)
             .unwrap();
         b.branch_conditional(cond, merge, merge, std::iter::empty())
             .unwrap();
-
         b.begin_block(Some(merge)).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let words = b.module().assemble();
         let err = words
             .as_slice()
@@ -21137,11 +20746,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn loop_merge_target_must_be_dominated_by_header() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -21149,7 +20756,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::Simple,
         );
-
         let void = b.type_void();
         let bool = b.type_bool();
         let fn_ty = b.type_function(void, std::iter::empty::<u32>());
@@ -21165,7 +20771,6 @@ mod tests {
             .unwrap();
         b.branch_conditional(cond, header, merge, std::iter::empty())
             .unwrap();
-
         b.begin_block(Some(header)).unwrap();
         b.loop_merge(
             merge,
@@ -21176,14 +20781,11 @@ mod tests {
         .unwrap();
         b.branch_conditional(cond, merge, cont, std::iter::empty())
             .unwrap();
-
         b.begin_block(Some(cont)).unwrap();
         b.branch(header).unwrap();
-
         b.begin_block(Some(merge)).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let words = b.module().assemble();
         let err = words
             .as_slice()
@@ -21199,11 +20801,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn loop_continue_target_must_be_dominated_by_header() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -21211,7 +20811,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::Simple,
         );
-
         let void = b.type_void();
         let bool = b.type_bool();
         let fn_ty = b.type_function(void, std::iter::empty::<u32>());
@@ -21227,7 +20826,6 @@ mod tests {
             .unwrap();
         b.branch_conditional(cond, header, cont, std::iter::empty())
             .unwrap();
-
         b.begin_block(Some(header)).unwrap();
         b.loop_merge(
             merge,
@@ -21238,14 +20836,11 @@ mod tests {
         .unwrap();
         b.branch_conditional(cond, merge, cont, std::iter::empty())
             .unwrap();
-
         b.begin_block(Some(cont)).unwrap();
         b.branch(header).unwrap();
-
         b.begin_block(Some(merge)).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let words = b.module().assemble();
         let err = words
             .as_slice()
@@ -21261,11 +20856,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn loop_merge_cannot_be_followed_by_return_value() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -21273,7 +20866,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::Simple,
         );
-
         let int = b.type_int(32, 1);
         let fn_ty = b.type_function(int, std::iter::empty::<u32>());
         let main = b
@@ -21293,7 +20885,6 @@ mod tests {
         let zero = b.constant_bit32(int, 0);
         b.ret_value(zero).unwrap();
         b.end_function().unwrap();
-
         let words = b.module().assemble();
         let err = words
             .as_slice()
@@ -21308,11 +20899,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn loop_merge_cannot_be_followed_by_kill() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -21320,7 +20909,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::Simple,
         );
-
         let void = b.type_void();
         let fn_ty = b.type_function(void, std::iter::empty::<u32>());
         let main = b
@@ -21339,7 +20927,6 @@ mod tests {
         // Invalid terminator after loop merge.
         b.kill().unwrap();
         b.end_function().unwrap();
-
         let words = b.module().assemble();
         let err = words
             .as_slice()
@@ -21354,11 +20941,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn selection_merge_target_must_exist() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -21366,7 +20951,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::Simple,
         );
-
         let void = b.type_void();
         let bool_ty = b.type_bool();
         let fn_ty = b.type_function(void, std::iter::empty::<u32>());
@@ -21383,7 +20967,6 @@ mod tests {
         b.begin_block(Some(merge_label)).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let words = b.module().assemble();
         let err = words
             .as_slice()
@@ -21399,11 +20982,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn loop_merge_targets_must_exist() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -21411,7 +20992,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::Simple,
         );
-
         let void = b.type_void();
         let bool_ty = b.type_bool();
         let fn_ty = b.type_function(void, std::iter::empty::<u32>());
@@ -21430,12 +21010,9 @@ mod tests {
         )
         .unwrap();
         b.branch(body).unwrap();
-
         b.begin_block(Some(body)).unwrap();
         b.branch(header).unwrap();
-
         b.end_function().unwrap();
-
         let words = b.module().assemble();
         let err = words
             .as_slice()
@@ -21451,11 +21028,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn loop_continue_target_must_exist() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -21463,7 +21038,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::Simple,
         );
-
         let void = b.type_void();
         let bool_ty = b.type_bool();
         let fn_ty = b.type_function(void, std::iter::empty::<u32>());
@@ -21482,15 +21056,11 @@ mod tests {
         )
         .unwrap();
         b.branch(body).unwrap();
-
         b.begin_block(Some(body)).unwrap();
         b.branch(merge).unwrap();
-
         b.begin_block(Some(merge)).unwrap();
         b.ret().unwrap();
-
         b.end_function().unwrap();
-
         let words = b.module().assemble();
         let err = words
             .as_slice()
@@ -21506,7 +21076,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn loop_merge_targets_must_be_distinct_and_exist() {
         let text = [
@@ -21525,7 +21094,6 @@ mod tests {
         ]
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -21539,7 +21107,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn selection_merge_target_cannot_be_header() {
         let text = [
@@ -21558,7 +21125,6 @@ mod tests {
         ]
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -21573,7 +21139,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn loop_merge_targets_cannot_be_header() {
         let text = [
@@ -21590,7 +21155,6 @@ mod tests {
         ]
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -21605,7 +21169,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn value_use_must_be_dominated_by_definition() {
         let text = [
@@ -21633,14 +21196,12 @@ mod tests {
         ]
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
             .expect_err("value defined in else does not dominate merge");
         assert!(matches!(err, ValidationError::ValueNotDominated { .. }));
     }
-
     #[test]
     fn phi_incoming_must_be_dominated_along_edge() {
         let text = [
@@ -21667,7 +21228,6 @@ mod tests {
         ]
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -21677,7 +21237,6 @@ mod tests {
             other => panic!("unexpected error: {:?}", other),
         }
     }
-
     #[test]
     fn phi_must_list_all_predecessors() {
         let text = [
@@ -21705,7 +21264,6 @@ mod tests {
         ]
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -21720,7 +21278,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn phi_incoming_types_must_match_result_type() {
         let text = [
@@ -21748,7 +21305,6 @@ mod tests {
         ]
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -21764,7 +21320,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn phi_cannot_have_extra_predecessors() {
         let text = [
@@ -21792,7 +21347,6 @@ mod tests {
         ]
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -21806,7 +21360,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn unreachable_definition_cannot_be_used_in_reachable_block() {
         let text = [
@@ -21826,7 +21379,6 @@ mod tests {
         ]
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -21839,7 +21391,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn value_must_dominate_non_phi_uses() {
         let text = [
@@ -21867,7 +21418,6 @@ mod tests {
         ]
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -21881,11 +21431,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn integer_add_operands_must_match_result_type() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -21894,7 +21442,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let int = b.type_int(32, 1);
         let float = b.type_float(32, None);
@@ -21908,7 +21455,6 @@ mod tests {
         b.i_add(int, None, fconst, iconst).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let words = b.module().assemble();
         let err = words
             .as_slice()
@@ -21926,11 +21472,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn bitwise_operands_must_match_result_type() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -21939,7 +21483,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let int = b.type_int(32, 0);
         let bool_ty = b.type_bool();
@@ -21953,7 +21496,6 @@ mod tests {
         b.bitwise_and(int, None, bool_const, iconst).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let words = b.module().assemble();
         let err = words
             .as_slice()
@@ -21971,11 +21513,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn logical_ops_require_bool_types() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -21984,7 +21524,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let int = b.type_int(32, 0);
         let fn_ty = b.type_function(void, std::iter::empty::<u32>());
@@ -21996,7 +21535,6 @@ mod tests {
         b.logical_and(int, None, iconst, iconst).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let words = b.module().assemble();
         let err = words
             .as_slice()
@@ -22013,11 +21551,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn shift_operands_must_match_result_type() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -22026,7 +21562,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let int = b.type_int(32, 0);
         let float = b.type_float(32, None);
@@ -22041,7 +21576,6 @@ mod tests {
         b.shift_left_logical(int, None, f, i).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let words = b.module().assemble();
         let err = words
             .as_slice()
@@ -22059,11 +21593,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn shift_count_must_match_component_width() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -22072,7 +21604,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let int32 = b.type_int(32, 0);
         let int16 = b.type_int(16, 0);
@@ -22086,7 +21617,6 @@ mod tests {
         b.shift_left_logical(int32, None, lhs, count).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let words = b.module().assemble();
         let err = words
             .as_slice()
@@ -22104,11 +21634,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn shift_count_vector_shape_must_match_value() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -22117,7 +21645,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let int = b.type_int(32, 0);
         let vec_ty = b.type_vector(int, 2);
@@ -22133,7 +21660,6 @@ mod tests {
             .unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let words = b.module().assemble();
         let err = words
             .as_slice()
@@ -22151,11 +21677,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn bitwise_ops_require_integer_types() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -22164,7 +21688,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let float = b.type_float(32, None);
         let fn_ty = b.type_function(void, std::iter::empty::<u32>());
@@ -22176,7 +21699,6 @@ mod tests {
         b.bitwise_or(float, None, fconst, fconst).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let words = b.module().assemble();
         let err = words
             .as_slice()
@@ -22193,11 +21715,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn logical_ops_reject_non_bool_result_type() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -22206,7 +21726,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let bool_ty = b.type_bool();
         let int = b.type_int(32, 0);
@@ -22219,9 +21738,7 @@ mod tests {
         b.logical_not(int, None, t).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -22237,11 +21754,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn integer_compare_requires_bool_result_and_matching_operands() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -22250,7 +21765,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let int = b.type_int(32, 1);
         let float = b.type_float(32, None);
@@ -22265,7 +21779,6 @@ mod tests {
         b.i_equal(int, None, iconst, fconst).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let words = b.module().assemble();
         let err = words
             .as_slice()
@@ -22287,11 +21800,9 @@ mod tests {
         // ensure header is used
         let _ = header;
     }
-
     #[test]
     fn vector_compare_requires_vector_bool_result() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -22300,7 +21811,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let float = b.type_float(32, None);
         let vec2 = b.type_vector(float, 2);
@@ -22317,7 +21827,6 @@ mod tests {
         b.f_ord_equal(bool_ty, None, vec_a, vec_b).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let words = b.module().assemble();
         let err = words
             .as_slice()
@@ -22334,11 +21843,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn compare_operands_must_match_each_other() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -22347,7 +21854,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let bool_ty = b.type_bool();
         let int32 = b.type_int(32, 1);
@@ -22362,7 +21868,6 @@ mod tests {
         b.i_equal(bool_ty, None, lhs, rhs).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let words = b.module().assemble();
         let err = words
             .as_slice()
@@ -22380,11 +21885,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn compare_operands_cannot_mix_signed_and_unsigned_ints() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -22393,7 +21896,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let bool_ty = b.type_bool();
         let int = b.type_int(32, 1);
@@ -22408,7 +21910,6 @@ mod tests {
         b.i_equal(bool_ty, None, lhs, rhs).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let words = b.module().assemble();
         let err = words
             .as_slice()
@@ -22426,11 +21927,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn vector_shuffle_operands_must_be_vectors() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -22439,7 +21938,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let int = b.type_int(32, 1);
         let vec2 = b.type_vector(int, 2);
@@ -22454,9 +21952,7 @@ mod tests {
             .unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -22471,11 +21967,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn vector_shuffle_component_types_must_match() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -22484,7 +21978,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let int = b.type_int(32, 1);
         let float = b.type_float(32, None);
@@ -22501,9 +21994,7 @@ mod tests {
             .unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -22518,11 +22009,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn vector_shuffle_result_length_must_match_components() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -22531,7 +22020,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let int = b.type_int(32, 1);
         let v2 = b.type_vector(int, 2);
@@ -22546,9 +22034,7 @@ mod tests {
             .unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -22563,11 +22049,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn vector_shuffle_indices_must_be_in_range() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -22576,7 +22060,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let int = b.type_int(32, 1);
         let v2 = b.type_vector(int, 2);
@@ -22590,9 +22073,7 @@ mod tests {
             .unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -22607,11 +22088,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn vector_extract_dynamic_operand_must_be_vector() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -22620,7 +22099,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let int = b.type_int(32, 1);
         let _vec2 = b.type_vector(int, 2);
@@ -22634,7 +22112,6 @@ mod tests {
         b.vector_extract_dynamic(int, None, scalar, index).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
         let err = binary
             .as_slice()
@@ -22651,11 +22128,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn vector_extract_dynamic_result_type_must_match_component() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -22664,7 +22139,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let int = b.type_int(32, 1);
         let float = b.type_float(32, None);
@@ -22680,7 +22154,6 @@ mod tests {
             .unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
         let err = binary
             .as_slice()
@@ -22697,11 +22170,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn vector_extract_dynamic_index_must_be_integer() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -22710,7 +22181,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let int = b.type_int(32, 1);
         let float = b.type_float(32, None);
@@ -22725,7 +22195,6 @@ mod tests {
         b.vector_extract_dynamic(int, None, vector, index).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
         let err = binary
             .as_slice()
@@ -22742,11 +22211,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn vector_insert_dynamic_result_type_must_match_vector() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -22755,7 +22222,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let int = b.type_int(32, 1);
         let vec2 = b.type_vector(int, 2);
@@ -22772,7 +22238,6 @@ mod tests {
             .unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
         let err = binary
             .as_slice()
@@ -22789,11 +22254,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn vector_insert_dynamic_component_type_must_match_vector() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -22802,7 +22265,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let int = b.type_int(32, 1);
         let float = b.type_float(32, None);
@@ -22819,7 +22281,6 @@ mod tests {
             .unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
         let err = binary
             .as_slice()
@@ -22837,11 +22298,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn vector_insert_dynamic_index_must_be_integer() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -22850,7 +22309,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let int = b.type_int(32, 1);
         let float = b.type_float(32, None);
@@ -22867,7 +22325,6 @@ mod tests {
             .unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
         let err = binary
             .as_slice()
@@ -22884,11 +22341,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn vector_times_scalar_scalar_type_must_match_component() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -22897,7 +22352,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let int = b.type_int(32, 1);
         let float = b.type_float(32, None);
@@ -22912,7 +22366,6 @@ mod tests {
         b.vector_times_scalar(vec2, None, vector, scalar).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
         let err = binary
             .as_slice()
@@ -22929,11 +22382,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn vector_times_scalar_result_type_must_match_vector() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -22942,7 +22393,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let int = b.type_int(32, 1);
         let float = b.type_float(32, None);
@@ -22958,7 +22408,6 @@ mod tests {
         b.vector_times_scalar(v2f, None, vector, scalar).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
         let err = binary
             .as_slice()
@@ -22975,11 +22424,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn matrix_times_vector_component_type_must_match() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -22988,7 +22435,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let int = b.type_int(32, 1);
         let float = b.type_float(32, None);
@@ -23005,7 +22451,6 @@ mod tests {
         b.matrix_times_vector(vec2, None, matrix, vector).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
         let err = binary
             .as_slice()
@@ -23021,11 +22466,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn matrix_times_vector_dimensions_must_match() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -23034,7 +22477,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let int = b.type_int(32, 1);
         let vec2 = b.type_vector(int, 2);
@@ -23049,7 +22491,6 @@ mod tests {
         b.matrix_times_vector(vec2, None, matrix, vector).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
         let err = binary
             .as_slice()
@@ -23067,11 +22508,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn matrix_times_vector_result_type_must_match_column() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -23080,7 +22519,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let int = b.type_int(32, 1);
         let vec2 = b.type_vector(int, 2);
@@ -23096,7 +22534,6 @@ mod tests {
         b.matrix_times_vector(vec3, None, matrix, vector).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
         let err = binary
             .as_slice()
@@ -23113,11 +22550,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn vector_times_matrix_component_type_must_match() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -23126,7 +22561,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let int = b.type_int(32, 1);
         let float = b.type_float(32, None);
@@ -23144,7 +22578,6 @@ mod tests {
         b.vector_times_matrix(vec3, None, vector, matrix).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
         let err = binary
             .as_slice()
@@ -23160,11 +22593,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn vector_times_matrix_dimensions_must_match() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -23173,7 +22604,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let int = b.type_int(32, 1);
         let vec3 = b.type_vector(int, 3);
@@ -23189,7 +22619,6 @@ mod tests {
         b.vector_times_matrix(vec3, None, vector, matrix).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
         let err = binary
             .as_slice()
@@ -23205,11 +22634,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn vector_times_matrix_result_dimensions_must_match_columns() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -23218,7 +22645,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let int = b.type_int(32, 1);
         let vec2 = b.type_vector(int, 2);
@@ -23234,7 +22660,6 @@ mod tests {
         b.vector_times_matrix(vec4, None, vector, matrix).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
         let err = binary
             .as_slice()
@@ -23250,11 +22675,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn vector_times_matrix_result_component_type_must_match() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -23263,7 +22686,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let int = b.type_int(32, 1);
         let float = b.type_float(32, None);
@@ -23280,7 +22702,6 @@ mod tests {
         b.vector_times_matrix(vec3f, None, vector, matrix).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
         let err = binary
             .as_slice()
@@ -23296,11 +22717,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn matrix_times_matrix_dimensions_must_match() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -23309,7 +22728,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let int = b.type_int(32, 1);
         let vec2 = b.type_vector(int, 2);
@@ -23325,7 +22743,6 @@ mod tests {
         b.matrix_times_matrix(mat2x3, None, left, right).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
         let err = binary
             .as_slice()
@@ -23341,11 +22758,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn matrix_times_matrix_component_types_must_match() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -23354,7 +22769,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let int = b.type_int(32, 1);
         let float = b.type_float(32, None);
@@ -23372,7 +22786,6 @@ mod tests {
         b.matrix_times_matrix(mat2x2i, None, left, right).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
         let err = binary
             .as_slice()
@@ -23388,11 +22801,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn matrix_times_matrix_result_shape_must_match_operands() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -23401,7 +22812,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let int = b.type_int(32, 1);
         let vec2 = b.type_vector(int, 2);
@@ -23419,7 +22829,6 @@ mod tests {
         b.matrix_times_matrix(mat3x3, None, left, right).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
         let err = binary
             .as_slice()
@@ -23437,11 +22846,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn matrix_times_matrix_result_component_type_must_match_operands() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
@@ -23450,7 +22857,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let int = b.type_int(32, 1);
         let float = b.type_float(32, None);
@@ -23470,7 +22876,6 @@ mod tests {
         b.matrix_times_matrix(mat2x2f, None, left, right).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
         let err = binary
             .as_slice()
@@ -23488,7 +22893,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn unreachable_definition_used_in_entry_is_rejected() {
         let text = [
@@ -23508,7 +22912,6 @@ mod tests {
         ]
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -23521,7 +22924,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn operand_id_must_be_defined_globally() {
         let text = [
@@ -23537,7 +22939,6 @@ mod tests {
         ]
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -23547,7 +22948,6 @@ mod tests {
             ValidationError::UndefinedId { function: None, .. }
         ));
     }
-
     #[test]
     fn operand_id_must_be_defined_in_function_scope() {
         let text = [
@@ -23566,7 +22966,6 @@ mod tests {
         ]
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -23579,7 +22978,6 @@ mod tests {
             }
         ));
     }
-
     #[test]
     fn result_type_must_be_type_opcode() {
         let text = [
@@ -23597,7 +22995,6 @@ mod tests {
         ]
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -23610,7 +23007,6 @@ mod tests {
             }
         ));
     }
-
     #[test]
     fn branch_conditional_requires_selection_merge() {
         let text = [
@@ -23627,7 +23023,6 @@ mod tests {
         ]
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -23641,7 +23036,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn switch_requires_selection_merge() {
         let binary = vec![
@@ -23693,7 +23087,6 @@ mod tests {
             op(1, rspirv::spirv::Op::Return as u16),
             op(1, rspirv::spirv::Op::FunctionEnd as u16),
         ];
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -23707,7 +23100,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn phi_must_precede_non_phi_in_block() {
         let binary = vec![
@@ -23775,11 +23167,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn access_chain_index_limit_enforced() {
         use crate::validation::{ValidationOptions, LIMIT_MAX_ACCESS_CHAIN_INDEXES};
-
         let text = [
             "OpCapability Shader",
             "OpMemoryModel Logical GLSL450",
@@ -23803,7 +23193,6 @@ mod tests {
         let binary = assemble_text(&text).expect("assemble");
         let mut options = ValidationOptions::default();
         options.limits.insert(LIMIT_MAX_ACCESS_CHAIN_INDEXES, 1);
-
         let err = binary
             .as_slice()
             .validate_with_options(TargetEnv::Universal1_6, options)
@@ -23817,7 +23206,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn access_chain_base_must_be_pointer() {
         let text = [
@@ -23837,7 +23225,6 @@ mod tests {
         ]
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -23850,7 +23237,6 @@ mod tests {
             }
         ));
     }
-
     #[test]
     fn access_chain_requires_composite_targets() {
         let text = [
@@ -23871,7 +23257,6 @@ mod tests {
         ]
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -23884,7 +23269,6 @@ mod tests {
             }
         ));
     }
-
     #[test]
     fn access_chain_indexes_must_be_integer_scalars() {
         let text = [
@@ -23909,7 +23293,6 @@ mod tests {
         ]
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -23923,7 +23306,6 @@ mod tests {
             }
         ));
     }
-
     #[test]
     fn access_chain_struct_index_must_be_literal() {
         let text = [
@@ -23947,7 +23329,6 @@ mod tests {
         ]
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -23963,7 +23344,6 @@ mod tests {
             "unexpected error: {err:?}"
         );
     }
-
     #[test]
     fn access_chain_struct_index_must_be_in_bounds() {
         let text = [
@@ -23986,7 +23366,6 @@ mod tests {
         ]
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -24001,7 +23380,6 @@ mod tests {
             }
         ));
     }
-
     #[test]
     fn access_chain_result_pointer_must_match_target_type() {
         let text = [
@@ -24028,7 +23406,6 @@ mod tests {
         ]
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -24044,7 +23421,6 @@ mod tests {
             "unexpected error: {err:?}"
         );
     }
-
     #[test]
     fn access_chain_storage_class_must_match_base() {
         let text = [
@@ -24070,7 +23446,6 @@ mod tests {
         ]
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -24086,7 +23461,6 @@ mod tests {
             "unexpected error: {err:?}"
         );
     }
-
     #[test]
     fn ptr_access_chain_indexes_must_be_integer_scalars() {
         use rspirv::{
@@ -24094,7 +23468,6 @@ mod tests {
             dr::{Builder, InsertPoint, Operand},
             spirv::{Capability, FunctionControl, MemoryModel, Op},
         };
-
         let mut b = Builder::new();
         b.capability(Capability::Addresses);
         b.capability(Capability::Shader);
@@ -24106,7 +23479,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Physical64,
             MemoryModel::OpenCL,
         );
-
         let void = b.type_void();
         let fn_ty = b.type_function(void, std::iter::empty::<u32>());
         let u32 = b.type_int(32, 0);
@@ -24116,7 +23488,6 @@ mod tests {
         let ptr_array = b.type_pointer(None, StorageClass::Function, array);
         let ptr_u32 = b.type_pointer(None, StorageClass::Function, u32);
         let fzero = b.constant_bit32(f32, 0);
-
         b.begin_function(void, None, FunctionControl::NONE, fn_ty)
             .unwrap();
         b.begin_block(None).unwrap();
@@ -24134,9 +23505,7 @@ mod tests {
         .unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -24153,7 +23522,6 @@ mod tests {
             "unexpected error: {err:?}"
         );
     }
-
     #[test]
     fn ptr_access_chain_struct_index_must_be_literal() {
         use rspirv::{
@@ -24161,7 +23529,6 @@ mod tests {
             dr::{Builder, InsertPoint, Operand},
             spirv::{Capability, FunctionControl, MemoryModel, Op},
         };
-
         let mut b = Builder::new();
         b.capability(Capability::Addresses);
         b.capability(Capability::Shader);
@@ -24173,20 +23540,17 @@ mod tests {
             rspirv::spirv::AddressingModel::Physical64,
             MemoryModel::OpenCL,
         );
-
         let void = b.type_void();
         let fn_ty = b.type_function(void, std::iter::empty::<u32>());
         let u32 = b.type_int(32, 0);
         let struct_ty = b.type_struct([u32]);
         let ptr_struct = b.type_pointer(None, StorageClass::Function, struct_ty);
         let ptr_u32 = b.type_pointer(None, StorageClass::Function, u32);
-
         b.begin_function(void, None, FunctionControl::NONE, fn_ty)
             .unwrap();
         b.begin_block(None).unwrap();
         let var = b.variable(ptr_struct, None, StorageClass::Function, None);
         let idx_var = b.variable(ptr_u32, None, StorageClass::Function, None);
-
         let loaded_idx = b.id();
         b.insert_into_block(
             InsertPoint::End,
@@ -24198,7 +23562,6 @@ mod tests {
             ),
         )
         .unwrap();
-
         let ac_id = b.id();
         b.insert_into_block(
             InsertPoint::End,
@@ -24212,9 +23575,7 @@ mod tests {
         .unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -24230,7 +23591,6 @@ mod tests {
             "unexpected error: {err:?}"
         );
     }
-
     #[test]
     fn ptr_access_chain_result_pointer_must_match_target_type() {
         use rspirv::{
@@ -24238,7 +23598,6 @@ mod tests {
             dr::{Builder, InsertPoint, Operand},
             spirv::{Capability, FunctionControl, MemoryModel, Op},
         };
-
         let mut b = Builder::new();
         b.capability(Capability::Addresses);
         b.capability(Capability::Shader);
@@ -24250,7 +23609,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Physical64,
             MemoryModel::OpenCL,
         );
-
         let void = b.type_void();
         let fn_ty = b.type_function(void, std::iter::empty::<u32>());
         let u32 = b.type_int(32, 0);
@@ -24260,7 +23618,6 @@ mod tests {
         let ptr_array = b.type_pointer(None, StorageClass::Function, array);
         let ptr_f32 = b.type_pointer(None, StorageClass::Function, f32);
         let zero = b.constant_bit32(u32, 0);
-
         b.begin_function(void, None, FunctionControl::NONE, fn_ty)
             .unwrap();
         b.begin_block(None).unwrap();
@@ -24278,9 +23635,7 @@ mod tests {
         .unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -24296,7 +23651,6 @@ mod tests {
             "unexpected error: {err:?}"
         );
     }
-
     #[test]
     fn ptr_access_chain_storage_class_must_match_base() {
         use rspirv::{
@@ -24304,7 +23658,6 @@ mod tests {
             dr::{Builder, InsertPoint, Operand},
             spirv::{Capability, FunctionControl, MemoryModel, Op},
         };
-
         let mut b = Builder::new();
         b.capability(Capability::Addresses);
         b.capability(Capability::Shader);
@@ -24316,7 +23669,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Physical64,
             MemoryModel::OpenCL,
         );
-
         let void = b.type_void();
         let fn_ty = b.type_function(void, std::iter::empty::<u32>());
         let u32 = b.type_int(32, 0);
@@ -24325,7 +23677,6 @@ mod tests {
         let ptr_array = b.type_pointer(None, StorageClass::Function, array);
         let ptr_u32_workgroup = b.type_pointer(None, StorageClass::Workgroup, u32);
         let zero = b.constant_bit32(u32, 0);
-
         b.begin_function(void, None, FunctionControl::NONE, fn_ty)
             .unwrap();
         b.begin_block(None).unwrap();
@@ -24343,9 +23694,7 @@ mod tests {
         .unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -24361,7 +23710,6 @@ mod tests {
             "unexpected error: {err:?}"
         );
     }
-
     #[test]
     fn inbounds_ptr_access_chain_indexes_must_be_integer_scalars() {
         use rspirv::{
@@ -24369,7 +23717,6 @@ mod tests {
             dr::{Builder, InsertPoint, Operand},
             spirv::{Capability, FunctionControl, MemoryModel, Op},
         };
-
         let mut b = Builder::new();
         b.capability(Capability::Addresses);
         b.capability(Capability::Shader);
@@ -24381,7 +23728,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Physical64,
             MemoryModel::OpenCL,
         );
-
         let void = b.type_void();
         let fn_ty = b.type_function(void, std::iter::empty::<u32>());
         let u32 = b.type_int(32, 0);
@@ -24391,7 +23737,6 @@ mod tests {
         let ptr_array = b.type_pointer(None, StorageClass::Function, array);
         let ptr_u32 = b.type_pointer(None, StorageClass::Function, u32);
         let fzero = b.constant_bit32(f32, 0);
-
         b.begin_function(void, None, FunctionControl::NONE, fn_ty)
             .unwrap();
         b.begin_block(None).unwrap();
@@ -24409,9 +23754,7 @@ mod tests {
         .unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -24428,7 +23771,6 @@ mod tests {
             "unexpected error: {err:?}"
         );
     }
-
     #[test]
     fn inbounds_ptr_access_chain_struct_index_must_be_literal() {
         use rspirv::{
@@ -24436,7 +23778,6 @@ mod tests {
             dr::{Builder, InsertPoint, Operand},
             spirv::{Capability, FunctionControl, MemoryModel, Op},
         };
-
         let mut b = Builder::new();
         b.capability(Capability::Addresses);
         b.capability(Capability::Shader);
@@ -24448,20 +23789,17 @@ mod tests {
             rspirv::spirv::AddressingModel::Physical64,
             MemoryModel::OpenCL,
         );
-
         let void = b.type_void();
         let fn_ty = b.type_function(void, std::iter::empty::<u32>());
         let u32 = b.type_int(32, 0);
         let struct_ty = b.type_struct([u32]);
         let ptr_struct = b.type_pointer(None, StorageClass::Function, struct_ty);
         let ptr_u32 = b.type_pointer(None, StorageClass::Function, u32);
-
         b.begin_function(void, None, FunctionControl::NONE, fn_ty)
             .unwrap();
         b.begin_block(None).unwrap();
         let var = b.variable(ptr_struct, None, StorageClass::Function, None);
         let idx_var = b.variable(ptr_u32, None, StorageClass::Function, None);
-
         let loaded_idx = b.id();
         b.insert_into_block(
             InsertPoint::End,
@@ -24473,7 +23811,6 @@ mod tests {
             ),
         )
         .unwrap();
-
         let ac_id = b.id();
         b.insert_into_block(
             InsertPoint::End,
@@ -24487,9 +23824,7 @@ mod tests {
         .unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -24505,7 +23840,6 @@ mod tests {
             "unexpected error: {err:?}"
         );
     }
-
     #[test]
     fn inbounds_ptr_access_chain_result_pointer_must_match_target_type() {
         use rspirv::{
@@ -24513,7 +23847,6 @@ mod tests {
             dr::{Builder, InsertPoint, Operand},
             spirv::{Capability, FunctionControl, MemoryModel, Op},
         };
-
         let mut b = Builder::new();
         b.capability(Capability::Addresses);
         b.capability(Capability::Shader);
@@ -24525,7 +23858,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Physical64,
             MemoryModel::OpenCL,
         );
-
         let void = b.type_void();
         let fn_ty = b.type_function(void, std::iter::empty::<u32>());
         let u32 = b.type_int(32, 0);
@@ -24535,7 +23867,6 @@ mod tests {
         let ptr_array = b.type_pointer(None, StorageClass::Function, array);
         let ptr_f32 = b.type_pointer(None, StorageClass::Function, f32);
         let zero = b.constant_bit32(u32, 0);
-
         b.begin_function(void, None, FunctionControl::NONE, fn_ty)
             .unwrap();
         b.begin_block(None).unwrap();
@@ -24553,9 +23884,7 @@ mod tests {
         .unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -24571,7 +23900,6 @@ mod tests {
             "unexpected error: {err:?}"
         );
     }
-
     #[test]
     fn inbounds_ptr_access_chain_storage_class_must_match_base() {
         use rspirv::{
@@ -24579,7 +23907,6 @@ mod tests {
             dr::{Builder, InsertPoint, Operand},
             spirv::{Capability, FunctionControl, MemoryModel, Op},
         };
-
         let mut b = Builder::new();
         b.capability(Capability::Addresses);
         b.capability(Capability::Shader);
@@ -24591,7 +23918,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Physical64,
             MemoryModel::OpenCL,
         );
-
         let void = b.type_void();
         let fn_ty = b.type_function(void, std::iter::empty::<u32>());
         let u32 = b.type_int(32, 0);
@@ -24600,7 +23926,6 @@ mod tests {
         let ptr_array = b.type_pointer(None, StorageClass::Function, array);
         let ptr_u32_workgroup = b.type_pointer(None, StorageClass::Workgroup, u32);
         let zero = b.constant_bit32(u32, 0);
-
         b.begin_function(void, None, FunctionControl::NONE, fn_ty)
             .unwrap();
         b.begin_block(None).unwrap();
@@ -24618,9 +23943,7 @@ mod tests {
         .unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -24636,7 +23959,6 @@ mod tests {
             "unexpected error: {err:?}"
         );
     }
-
     #[test]
     fn ptr_equal_result_type_must_be_bool() {
         use rspirv::{
@@ -24644,7 +23966,6 @@ mod tests {
             dr::{Builder, InsertPoint, Operand},
             spirv::{Capability, FunctionControl, MemoryModel, Op},
         };
-
         let mut b = Builder::new();
         b.capability(Capability::Addresses);
         b.capability(Capability::Shader);
@@ -24656,12 +23977,10 @@ mod tests {
             rspirv::spirv::AddressingModel::Physical64,
             MemoryModel::OpenCL,
         );
-
         let void = b.type_void();
         let fn_ty = b.type_function(void, std::iter::empty::<u32>());
         let u32 = b.type_int(32, 0);
         let ptr_u32 = b.type_pointer(None, StorageClass::Function, u32);
-
         let _main = b
             .begin_function(void, None, FunctionControl::NONE, fn_ty)
             .unwrap();
@@ -24681,7 +24000,6 @@ mod tests {
         .unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
         let err = binary
             .as_slice()
@@ -24698,7 +24016,6 @@ mod tests {
             "unexpected error: {err:?}"
         );
     }
-
     #[test]
     fn ptr_equal_requires_variable_pointers_storage_buffer_capability() {
         use rspirv::{
@@ -24706,7 +24023,6 @@ mod tests {
             dr::{Builder, InsertPoint, Operand},
             spirv::{Capability, FunctionControl, MemoryModel, Op},
         };
-
         let mut b = Builder::new();
         b.capability(Capability::Shader);
         b.extension("SPV_KHR_variable_pointers");
@@ -24716,14 +24032,12 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let fn_ty = b.type_function(void, std::iter::empty::<u32>());
         let bool_ty = b.type_bool();
         let int_ty = b.type_int(32, 0);
         let ptr_int = b.type_pointer(None, StorageClass::StorageBuffer, int_ty);
         let ptr_val = b.undef(ptr_int, None);
-
         let func = b
             .begin_function(void, None, FunctionControl::NONE, fn_ty)
             .unwrap();
@@ -24741,7 +24055,6 @@ mod tests {
         .unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let err = b
             .module()
             .assemble()
@@ -24758,7 +24071,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn ptr_equal_operands_must_be_pointers() {
         use rspirv::{
@@ -24766,7 +24078,6 @@ mod tests {
             dr::{Builder, InsertPoint, Operand},
             spirv::{Capability, FunctionControl, MemoryModel, Op},
         };
-
         let mut b = Builder::new();
         b.capability(Capability::Addresses);
         b.capability(Capability::Shader);
@@ -24778,14 +24089,12 @@ mod tests {
             rspirv::spirv::AddressingModel::Physical64,
             MemoryModel::OpenCL,
         );
-
         let void = b.type_void();
         let fn_ty = b.type_function(void, std::iter::empty::<u32>());
         let u32 = b.type_int(32, 0);
         let bool_ty = b.type_bool();
         let ptr_u32 = b.type_pointer(None, StorageClass::Function, u32);
         let zero = b.constant_bit32(u32, 0);
-
         let main = b
             .begin_function(void, None, FunctionControl::NONE, fn_ty)
             .unwrap();
@@ -24804,7 +24113,6 @@ mod tests {
         .unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
         let err = binary
             .as_slice()
@@ -24821,7 +24129,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn ptr_equal_operands_must_match_pointer_types() {
         use rspirv::{
@@ -24829,7 +24136,6 @@ mod tests {
             dr::{Builder, InsertPoint, Operand},
             spirv::{Capability, FunctionControl, MemoryModel, Op},
         };
-
         let mut b = Builder::new();
         b.capability(Capability::Addresses);
         b.capability(Capability::Shader);
@@ -24841,7 +24147,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Physical64,
             MemoryModel::OpenCL,
         );
-
         let void = b.type_void();
         let fn_ty = b.type_function(void, std::iter::empty::<u32>());
         let u32 = b.type_int(32, 0);
@@ -24849,7 +24154,6 @@ mod tests {
         let bool_ty = b.type_bool();
         let ptr_u32 = b.type_pointer(None, StorageClass::Function, u32);
         let ptr_f32 = b.type_pointer(None, StorageClass::Function, f32);
-
         let main = b
             .begin_function(void, None, FunctionControl::NONE, fn_ty)
             .unwrap();
@@ -24869,7 +24173,6 @@ mod tests {
         .unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
         let err = binary
             .as_slice()
@@ -24887,7 +24190,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn ptr_diff_operands_must_match_pointer_types() {
         use rspirv::{
@@ -24895,7 +24197,6 @@ mod tests {
             dr::{Builder, InsertPoint, Operand},
             spirv::{Capability, FunctionControl, MemoryModel, Op},
         };
-
         let mut b = Builder::new();
         b.capability(Capability::Addresses);
         b.capability(Capability::Kernel);
@@ -24908,7 +24209,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let fn_ty = b.type_function(void, std::iter::empty::<u32>());
         let int_ty = b.type_int(32, 0);
@@ -24917,7 +24217,6 @@ mod tests {
         let ptr_float = b.type_pointer(None, StorageClass::StorageBuffer, float_ty);
         let undef_int_ptr = b.undef(ptr_int, None);
         let undef_float_ptr = b.undef(ptr_float, None);
-
         let main = b
             .begin_function(void, None, FunctionControl::NONE, fn_ty)
             .unwrap();
@@ -24938,7 +24237,6 @@ mod tests {
         .unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let err = b
             .module()
             .assemble()
@@ -24956,7 +24254,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn ptr_equal_allows_untyped_pointer_mismatch_with_matching_storage_class() {
         use rspirv::{
@@ -24964,7 +24261,6 @@ mod tests {
             dr::{Builder, InsertPoint, Operand},
             spirv::{Capability, FunctionControl, MemoryModel, Op},
         };
-
         let mut b = Builder::new();
         b.capability(Capability::Shader);
         b.capability(Capability::VariablePointers);
@@ -24977,7 +24273,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             MemoryModel::GLSL450,
         );
-
         let ptr1 = b.id();
         b.module_mut()
             .types_global_values
@@ -24996,11 +24291,9 @@ mod tests {
                 Some(ptr2),
                 vec![Operand::StorageClass(StorageClass::StorageBuffer)],
             ));
-
         let void = b.type_void();
         let bool_ty = b.type_bool();
         let fn_ty = b.type_function(void, [ptr1, ptr2]);
-
         let _func = b
             .begin_function(void, None, FunctionControl::NONE, fn_ty)
             .unwrap();
@@ -25020,13 +24313,11 @@ mod tests {
         .unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         b.module()
             .assemble()
             .validate(TargetEnv::Vulkan1_3)
             .expect("untyped pointers with matching storage class should be allowed");
     }
-
     #[test]
     fn ptr_equal_untyped_pointer_storage_classes_must_match() {
         use rspirv::{
@@ -25034,7 +24325,6 @@ mod tests {
             dr::{Builder, InsertPoint, Operand},
             spirv::{Capability, FunctionControl, MemoryModel, Op},
         };
-
         let mut b = Builder::new();
         b.capability(Capability::Shader);
         b.capability(Capability::VariablePointers);
@@ -25047,7 +24337,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             MemoryModel::GLSL450,
         );
-
         let ptr1 = b.id();
         b.module_mut()
             .types_global_values
@@ -25066,11 +24355,9 @@ mod tests {
                 Some(ptr2),
                 vec![Operand::StorageClass(StorageClass::Workgroup)],
             ));
-
         let void = b.type_void();
         let bool_ty = b.type_bool();
         let fn_ty = b.type_function(void, [ptr1, ptr2]);
-
         let _func = b
             .begin_function(void, None, FunctionControl::NONE, fn_ty)
             .unwrap();
@@ -25090,7 +24377,6 @@ mod tests {
         .unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let err = b
             .module()
             .assemble()
@@ -25107,7 +24393,6 @@ mod tests {
             "unexpected error: {err:?}"
         );
     }
-
     #[test]
     fn ptr_diff_result_type_must_be_integer() {
         use rspirv::{
@@ -25115,7 +24400,6 @@ mod tests {
             dr::{Builder, InsertPoint, Operand},
             spirv::{Capability, FunctionControl, MemoryModel, Op},
         };
-
         let mut b = Builder::new();
         b.capability(Capability::Addresses);
         b.capability(Capability::Kernel);
@@ -25129,14 +24413,12 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let fn_ty = b.type_function(void, std::iter::empty::<u32>());
         let bool_ty = b.type_bool();
         let int_ty = b.type_int(32, 0);
         let ptr_int = b.type_pointer(None, StorageClass::StorageBuffer, int_ty);
         let ptr_val = b.undef(ptr_int, None);
-
         let func = b
             .begin_function(void, None, FunctionControl::NONE, fn_ty)
             .unwrap();
@@ -25155,7 +24437,6 @@ mod tests {
         .unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
         let err = binary
             .as_slice()
@@ -25172,7 +24453,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn ptr_diff_operands_must_be_pointers() {
         use rspirv::{
@@ -25180,7 +24460,6 @@ mod tests {
             dr::{Builder, InsertPoint, Operand},
             spirv::{Capability, FunctionControl, MemoryModel, Op},
         };
-
         let mut b = Builder::new();
         b.capability(Capability::Addresses);
         b.capability(Capability::Kernel);
@@ -25194,12 +24473,10 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let fn_ty = b.type_function(void, std::iter::empty::<u32>());
         let int_ty = b.type_int(32, 0);
         let zero = b.constant_bit32(int_ty, 0);
-
         let func = b
             .begin_function(void, None, FunctionControl::NONE, fn_ty)
             .unwrap();
@@ -25217,7 +24494,6 @@ mod tests {
         .unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
         let err = binary
             .as_slice()
@@ -25234,7 +24510,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn ptr_diff_storage_class_must_be_allowed() {
         use rspirv::{
@@ -25242,7 +24517,6 @@ mod tests {
             dr::{Builder, InsertPoint, Operand},
             spirv::{Capability, FunctionControl, MemoryModel, Op, StorageClass},
         };
-
         let mut b = Builder::new();
         b.capability(Capability::Addresses);
         b.capability(Capability::Kernel);
@@ -25256,12 +24530,10 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let fn_ty = b.type_function(void, std::iter::empty::<u32>());
         let int_ty = b.type_int(32, 0);
         let ptr_int = b.type_pointer(None, StorageClass::Function, int_ty);
-
         let func = b
             .begin_function(void, None, FunctionControl::NONE, fn_ty)
             .unwrap();
@@ -25280,7 +24552,6 @@ mod tests {
         .unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
         let err = binary
             .as_slice()
@@ -25296,7 +24567,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn ptr_diff_workgroup_requires_variable_pointers_capability() {
         use rspirv::{
@@ -25304,7 +24574,6 @@ mod tests {
             dr::{Builder, InsertPoint, Operand},
             spirv::{Capability, FunctionControl, MemoryModel, Op, StorageClass},
         };
-
         let mut b = Builder::new();
         b.capability(Capability::Addresses);
         b.capability(Capability::Kernel);
@@ -25317,13 +24586,11 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             MemoryModel::GLSL450,
         );
-
         let void = b.type_void();
         let fn_ty = b.type_function(void, std::iter::empty::<u32>());
         let int_ty = b.type_int(32, 0);
         let ptr_int = b.type_pointer(None, StorageClass::Workgroup, int_ty);
         let ptr_val = b.undef(ptr_int, None);
-
         let _func = b
             .begin_function(void, None, FunctionControl::NONE, fn_ty)
             .unwrap();
@@ -25341,7 +24608,6 @@ mod tests {
         .unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         let binary = b.module().assemble();
         let err = binary
             .as_slice()
@@ -25355,7 +24621,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn ptr_diff_allows_untyped_pointer_storage_buffer() {
         use rspirv::{
@@ -25363,7 +24628,6 @@ mod tests {
             dr::{Builder, InsertPoint, Operand},
             spirv::{Capability, FunctionControl, MemoryModel, Op, StorageClass},
         };
-
         let mut b = Builder::new();
         b.capability(Capability::Shader);
         b.capability(Capability::PhysicalStorageBufferAddresses);
@@ -25378,7 +24642,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             MemoryModel::GLSL450,
         );
-
         let ptr = b.id();
         b.module_mut()
             .types_global_values
@@ -25391,7 +24654,6 @@ mod tests {
         let void = b.type_void();
         let int_ty = b.type_int(32, 0);
         let fn_ty = b.type_function(void, [ptr, ptr]);
-
         let _func = b
             .begin_function(void, None, FunctionControl::NONE, fn_ty)
             .unwrap();
@@ -25411,17 +24673,14 @@ mod tests {
         .unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
-
         b.module()
             .assemble()
             .validate(TargetEnv::Vulkan1_3)
             .expect("untyped pointer comparisons should succeed");
     }
-
     #[test]
     fn struct_depth_limit_enforced() {
         use crate::validation::{ValidationOptions, LIMIT_MAX_STRUCT_DEPTH};
-
         let text = [
             "OpCapability Shader",
             "OpMemoryModel Logical GLSL450",
@@ -25439,7 +24698,6 @@ mod tests {
         let binary = assemble_text(&text).expect("assemble");
         let mut options = ValidationOptions::default();
         options.limits.insert(LIMIT_MAX_STRUCT_DEPTH, 1);
-
         let err = binary
             .as_slice()
             .validate_with_options(TargetEnv::Universal1_6, options)
@@ -25453,11 +24711,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn friendly_names_table_captures_op_name() {
         use crate::validation::ValidationOptions;
-
         let text = [
             "OpCapability Shader",
             "OpMemoryModel Logical GLSL450",
@@ -25475,7 +24731,6 @@ mod tests {
             use_friendly_names: true,
             ..ValidationOptions::default()
         };
-
         let module = binary
             .as_slice()
             .validate_with_options(TargetEnv::Universal1_6, options)
@@ -25492,11 +24747,9 @@ mod tests {
             .expect("function should have a result id");
         assert_eq!(names.id(function_id), Some("friendly"));
     }
-
     #[test]
     fn friendly_names_table_captures_member_name() {
         use crate::validation::ValidationOptions;
-
         let text = [
             "OpCapability Shader",
             "OpMemoryModel Logical GLSL450",
@@ -25517,7 +24770,6 @@ mod tests {
             use_friendly_names: true,
             ..ValidationOptions::default()
         };
-
         let module = binary
             .as_slice()
             .validate_with_options(TargetEnv::Universal1_6, options)
@@ -25535,14 +24787,12 @@ mod tests {
         assert_eq!(names.id(struct_id), Some("Struct"));
         assert_eq!(names.member(struct_id, MemberIndex(1)), Some("member"));
     }
-
     #[test]
     fn localsizeid_disallowed_without_option_in_older_vulkan() {
         use crate::validation::ValidationOptions;
         use rspirv::binary::Assemble;
         use rspirv::dr::Builder;
         use rspirv::spirv::{ExecutionMode, ExecutionModel, FunctionControl};
-
         let mut builder = Builder::new();
         builder.set_version(1, 6);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -25550,26 +24800,22 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let fn_ty = builder.type_function(void, []);
         let uint = builder.type_int(32, 0);
         let local_size = builder.constant_bit32(uint, 1);
-
         let entry_point = builder
             .begin_function(void, None, FunctionControl::NONE, fn_ty)
             .unwrap();
         builder.begin_block(None).unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         builder.entry_point(ExecutionModel::GLCompute, entry_point, "main", []);
         builder.execution_mode_id(
             entry_point,
             ExecutionMode::LocalSizeId,
             [local_size, local_size, local_size],
         );
-
         let words = builder.module().assemble();
         let err = words
             .as_slice()
@@ -25582,14 +24828,12 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn localsizeid_allowed_with_option() {
         use crate::validation::ValidationOptions;
         use rspirv::binary::Assemble;
         use rspirv::dr::Builder;
         use rspirv::spirv::{ExecutionMode, ExecutionModel, FunctionControl};
-
         let mut builder = Builder::new();
         builder.set_version(1, 6);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -25597,26 +24841,22 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let fn_ty = builder.type_function(void, []);
         let uint = builder.type_int(32, 0);
         let local_size = builder.constant_bit32(uint, 1);
-
         let entry_point = builder
             .begin_function(void, None, FunctionControl::NONE, fn_ty)
             .unwrap();
         builder.begin_block(None).unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         builder.entry_point(ExecutionModel::GLCompute, entry_point, "main", []);
         builder.execution_mode_id(
             entry_point,
             ExecutionMode::LocalSizeId,
             [local_size, local_size, local_size],
         );
-
         let words = builder.module().assemble();
         let options = ValidationOptions {
             allow_localsizeid: true,
@@ -25627,7 +24867,6 @@ mod tests {
             .validate_with_options(TargetEnv::Vulkan1_1, options)
             .expect("LocalSizeId should be allowed when option is enabled");
     }
-
     #[test]
     fn offset_texture_operand_disallowed_by_default_in_vulkan() {
         use crate::validation::ValidationOptions;
@@ -25637,13 +24876,11 @@ mod tests {
             AddressingModel, Capability, Dim, ExecutionModel, FunctionControl, ImageFormat,
             ImageOperands, MemoryModel,
         };
-
         let mut builder = Builder::new();
         builder.set_version(1, 6);
         builder.capability(Capability::Shader);
         builder.capability(Capability::ImageGatherExtended);
         builder.memory_model(AddressingModel::Logical, MemoryModel::GLSL450);
-
         let void = builder.type_void();
         let float = builder.type_float(32, None);
         let v2float = builder.type_vector(float, 2);
@@ -25655,7 +24892,6 @@ mod tests {
         let image = builder.type_image(float, Dim::Dim2D, 0, 0, 0, 1, ImageFormat::Unknown, None);
         let sampled_image = builder.type_sampled_image(image);
         let fn_ty = builder.type_function(void, [sampled_image, v2float]);
-
         let entry = builder
             .begin_function(void, None, FunctionControl::NONE, fn_ty)
             .unwrap();
@@ -25678,7 +24914,6 @@ mod tests {
         builder.ret().unwrap();
         builder.end_function().unwrap();
         builder.entry_point(ExecutionModel::Fragment, entry, "main", []);
-
         let binary = builder.module().assemble();
         let err = binary
             .as_slice()
@@ -25691,7 +24926,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn offset_texture_operand_allowed_with_option() {
         use crate::validation::ValidationOptions;
@@ -25701,13 +24935,11 @@ mod tests {
             AddressingModel, Capability, Dim, ExecutionModel, FunctionControl, ImageFormat,
             ImageOperands, MemoryModel,
         };
-
         let mut builder = Builder::new();
         builder.set_version(1, 6);
         builder.capability(Capability::Shader);
         builder.capability(Capability::ImageGatherExtended);
         builder.memory_model(AddressingModel::Logical, MemoryModel::GLSL450);
-
         let void = builder.type_void();
         let float = builder.type_float(32, None);
         let v2float = builder.type_vector(float, 2);
@@ -25719,7 +24951,6 @@ mod tests {
         let image = builder.type_image(float, Dim::Dim2D, 0, 0, 0, 1, ImageFormat::Unknown, None);
         let sampled_image = builder.type_sampled_image(image);
         let fn_ty = builder.type_function(void, [sampled_image, v2float]);
-
         let entry = builder
             .begin_function(void, None, FunctionControl::NONE, fn_ty)
             .unwrap();
@@ -25742,7 +24973,6 @@ mod tests {
         builder.ret().unwrap();
         builder.end_function().unwrap();
         builder.entry_point(ExecutionModel::Fragment, entry, "main", []);
-
         let binary = builder.module().assemble();
         let options = ValidationOptions {
             allow_offset_texture_operand: true,
@@ -25753,7 +24983,6 @@ mod tests {
             .validate_with_options(TargetEnv::Vulkan1_2, options)
             .expect("Offset operand should be allowed when option is enabled");
     }
-
     #[test]
     fn offset_texture_operand_allowed_before_hlsl_legalization() {
         use crate::validation::ValidationOptions;
@@ -25763,13 +24992,11 @@ mod tests {
             AddressingModel, Capability, Dim, ExecutionModel, FunctionControl, ImageFormat,
             ImageOperands, MemoryModel,
         };
-
         let mut builder = Builder::new();
         builder.set_version(1, 6);
         builder.capability(Capability::Shader);
         builder.capability(Capability::ImageGatherExtended);
         builder.memory_model(AddressingModel::Logical, MemoryModel::GLSL450);
-
         let void = builder.type_void();
         let float = builder.type_float(32, None);
         let v2float = builder.type_vector(float, 2);
@@ -25781,7 +25008,6 @@ mod tests {
         let image = builder.type_image(float, Dim::Dim2D, 0, 0, 0, 1, ImageFormat::Unknown, None);
         let sampled_image = builder.type_sampled_image(image);
         let fn_ty = builder.type_function(void, [sampled_image, v2float]);
-
         let entry = builder
             .begin_function(void, None, FunctionControl::NONE, fn_ty)
             .unwrap();
@@ -25804,7 +25030,6 @@ mod tests {
         builder.ret().unwrap();
         builder.end_function().unwrap();
         builder.entry_point(ExecutionModel::Fragment, entry, "main", []);
-
         let binary = builder.module().assemble();
         let options = ValidationOptions {
             before_hlsl_legalization: true,
@@ -25815,20 +25040,17 @@ mod tests {
             .validate_with_options(TargetEnv::Vulkan1_2, options)
             .expect("Offset operand should be allowed when using the pre-HLSL legalization option");
     }
-
     #[test]
     fn bitwise_ops_require_32bit_in_vulkan_by_default() {
         use crate::validation::ValidationOptions;
         use rspirv::binary::Assemble;
         use rspirv::dr::Builder;
         use rspirv::spirv::{AddressingModel, Capability, FunctionControl, MemoryModel};
-
         let mut builder = Builder::new();
         builder.set_version(1, 6);
         builder.capability(Capability::Shader);
         builder.capability(Capability::Int64);
         builder.memory_model(AddressingModel::Logical, MemoryModel::GLSL450);
-
         let u64 = builder.type_int(64, 0);
         let fn_ty = builder.type_function(u64, [u64, u64]);
         builder
@@ -25840,7 +25062,6 @@ mod tests {
         let or = builder.bitwise_or(u64, None, a, b).unwrap();
         builder.ret_value(or).unwrap();
         builder.end_function().unwrap();
-
         let binary = builder.module().assemble();
         let err = binary
             .as_slice()
@@ -25854,20 +25075,17 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn bitwise_ops_allow_non_32bit_when_option_enabled() {
         use crate::validation::ValidationOptions;
         use rspirv::binary::Assemble;
         use rspirv::dr::Builder;
         use rspirv::spirv::{AddressingModel, Capability, FunctionControl, MemoryModel};
-
         let mut builder = Builder::new();
         builder.set_version(1, 6);
         builder.capability(Capability::Shader);
         builder.capability(Capability::Int64);
         builder.memory_model(AddressingModel::Logical, MemoryModel::GLSL450);
-
         let u64 = builder.type_int(64, 0);
         let fn_ty = builder.type_function(u64, [u64, u64]);
         builder
@@ -25879,7 +25097,6 @@ mod tests {
         let or = builder.bitwise_or(u64, None, a, b).unwrap();
         builder.ret_value(or).unwrap();
         builder.end_function().unwrap();
-
         let binary = builder.module().assemble();
         let options = ValidationOptions {
             allow_vulkan_32_bit_bitwise: true,
@@ -25890,11 +25107,9 @@ mod tests {
             .validate_with_options(TargetEnv::Vulkan1_1, options)
             .expect("64-bit bitwise ops should be allowed when option is enabled");
     }
-
     #[test]
     fn friendly_name_helpers_format_ids_and_members() {
         use crate::validation::ValidationOptions;
-
         let text = [
             "OpCapability Shader",
             "OpMemoryModel Logical GLSL450",
@@ -25921,7 +25136,6 @@ mod tests {
             .validate_with_options(TargetEnv::Universal1_6, options)
             .expect("validation should succeed");
         let names = module.friendly_names().expect("friendly names present");
-
         let (&named_func_id, _) = names
             .id_names()
             .iter()
@@ -25932,7 +25146,6 @@ mod tests {
             formatted_func.contains("(friendly)"),
             "expected friendly suffix, got {formatted_func}"
         );
-
         let (&struct_id, _) = names
             .id_names()
             .iter()
@@ -25944,11 +25157,9 @@ mod tests {
             "expected member friendly suffix, got {formatted_member}"
         );
     }
-
     #[test]
     fn format_validation_error_uses_friendly_names_when_available() {
         use std::iter::FromIterator;
-
         let id = 42;
         let names = FriendlyNames::from_parts(
             HashMap::from_iter([(id, "named_func".to_string())]),
@@ -25962,18 +25173,15 @@ mod tests {
             rendered.contains("named_func"),
             "expected friendly name in rendered error, got {rendered}"
         );
-
         let fallback = format_validation_error(&error, None);
         assert!(
             !fallback.contains("named_func"),
             "fallback should omit friendly name"
         );
     }
-
     #[test]
     fn format_validation_error_from_words_parses_names() {
         use crate::validation::ValidationOptions;
-
         let text = [
             "OpCapability Shader",
             "OpMemoryModel Logical GLSL450",
@@ -25987,7 +25195,6 @@ mod tests {
             "OpFunctionEnd",
         ]
         .join("\n");
-
         let binary = assemble_text(&text).expect("assemble");
         let options = ValidationOptions::default();
         let error = binary
@@ -26000,11 +25207,9 @@ mod tests {
             "expected rendered error to include friendly name, got {rendered}"
         );
     }
-
     #[test]
     fn layout_relaxation_flags_are_accepted() {
         use crate::validation::ValidationOptions;
-
         let text = [
             "OpCapability Shader",
             "OpMemoryModel Logical GLSL450",
@@ -26027,13 +25232,11 @@ mod tests {
             skip_block_layout: true,
             ..ValidationOptions::default()
         };
-
         binary
             .as_slice()
             .validate_with_options(TargetEnv::Universal1_6, options)
             .expect("layout relaxation flags should be accepted");
     }
-
     #[test]
     fn skip_block_layout_does_not_bypass_global_layout_ordering() {
         // skip_block_layout only affects block layout checks, not module section ordering.
@@ -26057,9 +25260,7 @@ mod tests {
             0,
             1,
         ];
-
         use crate::validation::ValidationOptions;
-
         let err = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert!(matches!(
             err,
@@ -26067,7 +25268,6 @@ mod tests {
                 opcode: rspirv::spirv::Op::ExtInstImport
             }
         ));
-
         let options = ValidationOptions {
             skip_block_layout: true,
             ..ValidationOptions::default()
@@ -26081,7 +25281,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn logical_pointer_disallows_pointee_storage_class_without_relaxation() {
         let text = [
@@ -26109,7 +25308,6 @@ mod tests {
         } else {
             panic!("unexpected error: {err:?}");
         }
-
         let options = ValidationOptions {
             relax_logical_pointer: true,
             ..ValidationOptions::default()
@@ -26119,7 +25317,6 @@ mod tests {
             .validate_with_options(TargetEnv::Universal1_6, options)
             .expect("relax_logical_pointer should permit pointer-to-pointer");
     }
-
     #[test]
     fn logical_pointer_requires_variable_pointer_capabilities() {
         let text = [
@@ -26137,7 +25334,6 @@ mod tests {
         ]
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -26150,7 +25346,6 @@ mod tests {
         } else {
             panic!("unexpected error: {err:?}");
         }
-
         let with_capability = [
             "OpCapability Shader",
             "OpCapability VectorComputeINTEL",
@@ -26172,7 +25367,6 @@ mod tests {
             .validate(TargetEnv::Universal1_6)
             .expect("declaring capability should permit pointer-to-pointer");
     }
-
     #[test]
     fn logical_pointer_rejects_non_function_or_private_storage_class() {
         let text = [
@@ -26187,7 +25381,6 @@ mod tests {
             "%var = OpVariable %ptr_sb_ptr StorageBuffer",
         ]
         .join("\n");
-
         let binary = assemble_text(&text).expect("assemble");
         let err = binary
             .as_slice()
@@ -26211,7 +25404,6 @@ mod tests {
             "expected storage-class diagnostic, got {err:?}"
         );
     }
-
     #[test]
     fn friendly_names_populated_on_valid_module() {
         let text = [
@@ -26223,7 +25415,6 @@ mod tests {
             "%struct = OpTypeStruct %void",
         ]
         .join("\n");
-
         let binary = assemble_text(&text).expect("assemble");
         let valid = binary
             .as_slice()
@@ -26235,7 +25426,6 @@ mod tests {
                 },
             )
             .expect("validation should succeed");
-
         let names = valid
             .friendly_names()
             .expect("friendly names should be populated when enabled");
@@ -26253,7 +25443,6 @@ mod tests {
             "member names should be recorded"
         );
     }
-
     #[test]
     fn friendly_names_disabled_when_option_off() {
         let text = [
@@ -26264,7 +25453,6 @@ mod tests {
             "%struct = OpTypeStruct %void",
         ]
         .join("\n");
-
         let binary = assemble_text(&text).expect("assemble");
         let valid = binary
             .as_slice()
@@ -26281,11 +25469,9 @@ mod tests {
             "friendly names should be omitted when disabled"
         );
     }
-
     #[test]
     fn relax_struct_store_allows_layout_compatible_structs() {
         use rspirv::{binary::Assemble, dr::Instruction, dr::Module, dr::ModuleHeader};
-
         fn inst(
             opcode: rspirv::spirv::Op,
             result_type: Option<u32>,
@@ -26294,7 +25480,6 @@ mod tests {
         ) -> Instruction {
             Instruction::new(opcode, result_type, result_id, operands)
         }
-
         let mut module = Module::new();
         module.header = Some(ModuleHeader::new(11));
         module.capabilities.push(inst(
@@ -26353,7 +25538,6 @@ mod tests {
                 vec![rspirv::dr::Operand::IdRef(1)],
             ),
         ]);
-
         module.functions.push(rspirv::dr::Function {
             def: Some(inst(
                 rspirv::spirv::Op::Function,
@@ -26391,7 +25575,6 @@ mod tests {
                 ],
             }],
         });
-
         module.entry_points.push(inst(
             rspirv::spirv::Op::EntryPoint,
             None,
@@ -26402,14 +25585,12 @@ mod tests {
                 rspirv::dr::Operand::LiteralString("main".to_string()),
             ],
         ));
-
         let binary = module.assemble();
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
             .expect_err("struct store types should mismatch by default");
         assert!(matches!(err, ValidationError::StoreTypeMismatch { .. }));
-
         let options = ValidationOptions {
             relax_struct_store: true,
             ..ValidationOptions::default()
@@ -26419,11 +25600,9 @@ mod tests {
             .validate_with_options(TargetEnv::Universal1_6, options)
             .expect("relax_struct_store should permit layout-compatible structs");
     }
-
     #[test]
     fn relax_struct_store_rejects_mismatched_array_lengths() {
         use rspirv::{binary::Assemble, dr::Instruction, dr::Module, dr::ModuleHeader};
-
         fn inst(
             opcode: rspirv::spirv::Op,
             result_type: Option<u32>,
@@ -26432,7 +25611,6 @@ mod tests {
         ) -> Instruction {
             Instruction::new(opcode, result_type, result_id, operands)
         }
-
         let mut module = Module::new();
         module.header = Some(ModuleHeader::new(21));
         module.capabilities.push(inst(
@@ -26516,7 +25694,6 @@ mod tests {
             ),
             inst(rspirv::spirv::Op::TypeVoid, None, Some(20), vec![]),
         ]);
-
         module.functions.push(rspirv::dr::Function {
             def: Some(inst(
                 rspirv::spirv::Op::Function,
@@ -26554,7 +25731,6 @@ mod tests {
                 ],
             }],
         });
-
         module.entry_points.push(inst(
             rspirv::spirv::Op::EntryPoint,
             None,
@@ -26565,9 +25741,7 @@ mod tests {
                 rspirv::dr::Operand::LiteralString("main".to_string()),
             ],
         ));
-
         let binary = module.assemble();
-
         // Relaxation should still reject mismatched array lengths.
         let options = ValidationOptions {
             relax_struct_store: true,
@@ -26582,11 +25756,9 @@ mod tests {
             panic!("unexpected error: {err:?}");
         }
     }
-
     #[test]
     fn relax_struct_store_rejects_mismatched_array_stride() {
         use rspirv::{binary::Assemble, dr::Instruction, dr::Module, dr::ModuleHeader};
-
         fn inst(
             opcode: rspirv::spirv::Op,
             result_type: Option<u32>,
@@ -26595,7 +25767,6 @@ mod tests {
         ) -> Instruction {
             Instruction::new(opcode, result_type, result_id, operands)
         }
-
         let mut module = Module::new();
         module.header = Some(ModuleHeader::new(15));
         module.capabilities.push(inst(
@@ -26694,7 +25865,6 @@ mod tests {
                 ],
             ),
         ]);
-
         module.functions.push(rspirv::dr::Function {
             def: Some(inst(
                 rspirv::spirv::Op::Function,
@@ -26732,7 +25902,6 @@ mod tests {
                 ],
             }],
         });
-
         module.entry_points.push(inst(
             rspirv::spirv::Op::EntryPoint,
             None,
@@ -26743,7 +25912,6 @@ mod tests {
                 rspirv::dr::Operand::LiteralString("main".to_string()),
             ],
         ));
-
         // Stride metadata must be respected when comparing array layouts.
         let definitions = collect_result_instructions(&module);
         assert_eq!(
@@ -26773,7 +25941,6 @@ mod tests {
             matches!(err, Err(ValidationError::StoreTypeMismatch { .. })),
             "layout mismatch should be rejected even under relax_struct_store"
         );
-
         let binary = module.assemble();
         let parsed = parse_module(binary.as_slice())
             .expect("assembled module should round-trip through parser");
@@ -26816,7 +25983,6 @@ mod tests {
             .validate_with_options(TargetEnv::Universal1_6, options)
             .expect_err("array stride mismatch should still fail without layout relaxation");
         assert!(matches!(err, ValidationError::StoreTypeMismatch { .. }));
-
         let relaxed = ValidationOptions {
             relax_struct_store: true,
             relax_block_layout: true,
@@ -26827,11 +25993,9 @@ mod tests {
             .validate_with_options(TargetEnv::Universal1_6, relaxed)
             .expect("layout relaxation should bypass array stride mismatch");
     }
-
     #[test]
     fn relax_struct_store_with_layout_relaxation_accepts_incompatible_structs() {
         use rspirv::{binary::Assemble, dr::Instruction, dr::Module, dr::ModuleHeader};
-
         fn inst(
             opcode: rspirv::spirv::Op,
             result_type: Option<u32>,
@@ -26840,7 +26004,6 @@ mod tests {
         ) -> Instruction {
             Instruction::new(opcode, result_type, result_id, operands)
         }
-
         // S0 has two members, S1 has one; store should pass when both relax_struct_store
         // and a block-layout relaxation flag are set.
         let mut module = Module::new();
@@ -26901,7 +26064,6 @@ mod tests {
                 vec![rspirv::dr::Operand::IdRef(1)],
             ),
         ]);
-
         module.functions.push(rspirv::dr::Function {
             def: Some(inst(
                 rspirv::spirv::Op::Function,
@@ -26939,7 +26101,6 @@ mod tests {
                 ],
             }],
         });
-
         module.entry_points.push(inst(
             rspirv::spirv::Op::EntryPoint,
             None,
@@ -26950,7 +26111,6 @@ mod tests {
                 rspirv::dr::Operand::LiteralString("main".to_string()),
             ],
         ));
-
         let binary = module.assemble();
         let options = ValidationOptions {
             relax_struct_store: true,
@@ -26962,11 +26122,9 @@ mod tests {
             .validate_with_options(TargetEnv::Universal1_6, options)
             .expect("relax_struct_store with layout relaxation should allow mismatched structs");
     }
-
     #[test]
     fn block_layout_requires_member_offsets() {
         use rspirv::{binary::Assemble, dr::Instruction, dr::Module, dr::ModuleHeader};
-
         fn inst(
             opcode: rspirv::spirv::Op,
             result_type: Option<u32>,
@@ -26975,7 +26133,6 @@ mod tests {
         ) -> Instruction {
             Instruction::new(opcode, result_type, result_id, operands)
         }
-
         fn make_block_struct(member_offsets: Option<Vec<u32>>) -> Vec<u32> {
             let mut module = Module::new();
             module.header = Some(ModuleHeader::new(8));
@@ -27040,7 +26197,6 @@ mod tests {
             }
             module.assemble()
         }
-
         let binary = make_block_struct(None);
         let err = binary
             .as_slice()
@@ -27057,7 +26213,6 @@ mod tests {
             }
             other => panic!("unexpected error: {other:?}"),
         }
-
         let relax_options = ValidationOptions {
             relax_block_layout: true,
             ..ValidationOptions::default()
@@ -27067,7 +26222,6 @@ mod tests {
             .validate_with_options(TargetEnv::Universal1_6, relax_options)
             .expect_err("relax_block_layout should still require offsets");
         assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
-
         let options = ValidationOptions {
             skip_block_layout: true,
             ..ValidationOptions::default()
@@ -27077,11 +26231,9 @@ mod tests {
             .validate_with_options(TargetEnv::Universal1_6, options)
             .expect("skip_block_layout should skip member offset enforcement");
     }
-
     #[test]
     fn block_layout_rejects_overlapping_offsets() {
         use rspirv::{binary::Assemble, dr::Instruction, dr::Module, dr::ModuleHeader};
-
         fn inst(
             opcode: rspirv::spirv::Op,
             result_type: Option<u32>,
@@ -27090,7 +26242,6 @@ mod tests {
         ) -> Instruction {
             Instruction::new(opcode, result_type, result_id, operands)
         }
-
         let mut module = Module::new();
         module.header = Some(ModuleHeader::new(8));
         module.capabilities.push(inst(
@@ -27161,7 +26312,6 @@ mod tests {
                 ],
             ),
         ]);
-
         let binary = module.assemble();
         let err = binary
             .as_slice()
@@ -27178,7 +26328,6 @@ mod tests {
             }
             other => panic!("unexpected error: {other:?}"),
         }
-
         let relax_options = ValidationOptions {
             relax_block_layout: true,
             ..ValidationOptions::default()
@@ -27188,7 +26337,6 @@ mod tests {
             .validate_with_options(TargetEnv::Universal1_6, relax_options)
             .expect_err("relax_block_layout should still enforce overlap constraints");
         assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
-
         let options = ValidationOptions {
             skip_block_layout: true,
             ..ValidationOptions::default()
@@ -27198,7 +26346,6 @@ mod tests {
             .validate_with_options(TargetEnv::Universal1_6, options)
             .expect("skip_block_layout should skip overlap checks");
     }
-
     #[test]
     fn relax_block_layout_allows_scalar_vector_alignment() {
         let text = [
@@ -27221,7 +26368,6 @@ mod tests {
         } else {
             panic!("unexpected error: {err:?}");
         }
-
         let relax = ValidationOptions {
             relax_block_layout: true,
             ..ValidationOptions::default()
@@ -27229,7 +26375,6 @@ mod tests {
         text.as_str()
             .validate_with_options(TargetEnv::Universal1_6, relax)
             .expect("relax_block_layout should permit scalar-aligned vectors");
-
         let scalar = ValidationOptions {
             scalar_block_layout: true,
             ..ValidationOptions::default()
@@ -27238,7 +26383,6 @@ mod tests {
             .validate_with_options(TargetEnv::Universal1_6, scalar)
             .expect("scalar_block_layout should permit scalar alignment for vectors");
     }
-
     #[test]
     fn uniform_buffer_standard_layout_allows_scalar_vector_alignment() {
         let text = [
@@ -27260,7 +26404,6 @@ mod tests {
             .validate_with_options(TargetEnv::Universal1_6, relax)
             .expect("uniform_buffer_standard_layout should permit scalar-aligned vectors");
     }
-
     #[test]
     fn workgroup_scalar_block_layout_uses_scalar_alignment() {
         let text = [
@@ -27282,7 +26425,6 @@ mod tests {
             .validate_with_options(TargetEnv::Universal1_6, relax)
             .expect("workgroup_scalar_block_layout should permit scalar alignment for vectors");
     }
-
     #[test]
     fn array_stride_must_align_to_element() {
         let text = [
@@ -27304,7 +26446,6 @@ mod tests {
             .expect_err("array stride not aligned to element size should fail");
         assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
     }
-
     #[test]
     fn vector_straddle_rejected_under_relax() {
         let text = [
@@ -27324,7 +26465,6 @@ mod tests {
             .validate(TargetEnv::Universal1_6)
             .expect_err("misaligned vector should fail");
         assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
-
         let relax = ValidationOptions {
             relax_block_layout: true,
             ..ValidationOptions::default()
@@ -27335,7 +26475,6 @@ mod tests {
             .expect_err("relaxed layout still rejects improper vector straddle");
         assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
     }
-
     #[test]
     fn matrix_stride_alignment_and_size() {
         use crate::validation::{
@@ -27362,7 +26501,6 @@ mod tests {
         let err = enforce_block_layout_rules(&module, &definitions, &ValidationOptions::default())
             .expect_err("matrix stride smaller than column size should fail");
         assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
-
         let aligned = [
             "OpCapability Shader",
             "OpCapability Float64",
@@ -27384,11 +26522,9 @@ mod tests {
         enforce_block_layout_rules(&aligned_module, &definitions, &ValidationOptions::default())
             .expect("aligned matrix stride should pass");
     }
-
     #[test]
     fn runtime_array_must_be_last_member() {
         use rspirv::{binary::Assemble, dr::Instruction, dr::Module, dr::ModuleHeader};
-
         fn inst(
             opcode: rspirv::spirv::Op,
             result_type: Option<u32>,
@@ -27397,7 +26533,6 @@ mod tests {
         ) -> Instruction {
             Instruction::new(opcode, result_type, result_id, operands)
         }
-
         let mut module = Module::new();
         module.header = Some(ModuleHeader::new(8));
         module.capabilities.push(inst(
@@ -27498,14 +26633,12 @@ mod tests {
                 ],
             ),
         ]);
-
         let binary = module.assemble();
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
             .expect_err("runtime array must be the final member");
         assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
-
         let skip = ValidationOptions {
             skip_block_layout: true,
             ..ValidationOptions::default()
@@ -27515,14 +26648,12 @@ mod tests {
             .validate_with_options(TargetEnv::Universal1_6, skip)
             .expect("skip_block_layout should bypass runtime array placement rule");
     }
-
     #[test]
     fn switch_branch_limit_enforced() {
         use crate::validation::{
             enforce_switch_branch_limit, ValidationOptions, LIMIT_MAX_SWITCH_BRANCHES,
         };
         use rspirv::dr::{Instruction, Module, Operand};
-
         // Build a minimal module with an OpSwitch that exceeds the configured limit.
         let switch_inst = Instruction::new(
             rspirv::spirv::Op::Switch,
@@ -27562,10 +26693,8 @@ mod tests {
             types_global_values: Vec::new(),
             functions: vec![function],
         };
-
         let mut options = ValidationOptions::default();
         options.limits.insert(LIMIT_MAX_SWITCH_BRANCHES, 2);
-
         let err = enforce_switch_branch_limit(&module, &options)
             .expect_err("switch branch limit should be enforced");
         assert_eq!(
@@ -27577,11 +26706,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn id_bound_limit_is_enforced() {
         use crate::validation::{ValidationOptions, LIMIT_MAX_ID_BOUND};
-
         let text = [
             "OpCapability Shader",
             "OpMemoryModel Logical GLSL450",
@@ -27596,7 +26723,6 @@ mod tests {
         let binary = assemble_text(&text).expect("assemble");
         let mut options = ValidationOptions::default();
         options.limits.insert(LIMIT_MAX_ID_BOUND, 3);
-
         let err = binary
             .as_slice()
             .validate_with_options(TargetEnv::Universal1_6, options)
@@ -27609,7 +26735,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn execution_mode_requires_entry_point() {
         let text = [
@@ -27635,7 +26760,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn execution_mode_must_target_entry_point_function() {
         let text = [
@@ -27665,7 +26789,6 @@ mod tests {
                 if function == Id::try_from(4).unwrap()
         ));
     }
-
     #[test]
     fn execution_mode_accepts_entry_point() {
         let text = [
@@ -27685,7 +26808,6 @@ mod tests {
             .validate(TargetEnv::Universal1_6)
             .expect("execution mode targets entry point");
     }
-
     #[test]
     fn conditional_entry_point_must_precede_debug_names() {
         let intel_function_variants_ext = [
@@ -27737,7 +26859,6 @@ mod tests {
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -27746,7 +26867,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_entry_point_cannot_follow_functions() {
         let intel_function_variants_ext = [
@@ -27794,7 +26914,6 @@ mod tests {
             0x6e69_616d,
             0,
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -27803,7 +26922,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_entry_point_must_reference_function() {
         let intel_function_variants_ext = [
@@ -27856,7 +26974,6 @@ mod tests {
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -27866,7 +26983,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_entry_point_cannot_follow_annotations() {
         let intel_function_variants_ext = [
@@ -27916,7 +27032,6 @@ mod tests {
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -27925,7 +27040,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_entry_point_cannot_follow_execution_modes() {
         let binary = vec![
@@ -27952,7 +27066,6 @@ mod tests {
             0x6e69_616d, // "main"
             0,
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -27961,7 +27074,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn extension_before_capability_is_rejected() {
         let binary = vec![
@@ -27989,7 +27101,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn spec_conditional_capability_requires_extension() {
         let text = [
@@ -28011,7 +27122,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn function_variants_capability_requires_spec_conditional() {
         let text = [
@@ -28034,7 +27144,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn function_variants_capability_accepts_extension_and_dependency() {
         let text = [
@@ -28050,7 +27159,6 @@ mod tests {
             "FunctionVariantsINTEL should be accepted with required extension and capability",
         );
     }
-
     #[test]
     fn function_variants_extension_rejected_for_vulkan() {
         let text = [
@@ -28078,12 +27186,10 @@ mod tests {
                 env: TargetEnv::Vulkan1_2
             }
         );
-
         text.as_str()
             .validate(TargetEnv::Universal1_6)
             .expect("Universal environment should accept vendor extensions");
     }
-
     #[test]
     fn conditional_entry_point_accepts_execution_modes() {
         let intel_function_variants_ext = [
@@ -28139,13 +27245,11 @@ mod tests {
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
-
         binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
             .expect("conditional entry points should participate in execution-mode validation");
     }
-
     #[test]
     fn capability_requiring_extension_must_declare_it() {
         let text = [
@@ -28171,7 +27275,6 @@ mod tests {
                 required_extension: "SPV_KHR_ray_tracing".to_string()
             }
         );
-
         let text_with_extension = [
             "OpCapability Shader",
             "OpCapability RayTracingKHR",
@@ -28191,7 +27294,6 @@ mod tests {
             .expect("extension present should allow capability");
         assert_eq!(validated.header().schema(), Schema::ZERO);
     }
-
     #[test]
     fn cooperative_matrix_capability_requires_extension() {
         let text = [
@@ -28217,7 +27319,6 @@ mod tests {
                 required_extension: "SPV_NV_cooperative_matrix".to_string()
             }
         );
-
         let with_extension = [
             "OpCapability Shader",
             "OpCapability CooperativeMatrixNV",
@@ -28237,7 +27338,6 @@ mod tests {
             .expect("capability should be accepted with required extension");
         assert_eq!(validated.header().schema(), Schema::ZERO);
     }
-
     #[test]
     fn cooperative_matrix_khr_capability_requires_extension() {
         let text = [
@@ -28263,7 +27363,6 @@ mod tests {
                 required_extension: "SPV_KHR_cooperative_matrix".to_string()
             }
         );
-
         let with_extension = [
             "OpCapability Shader",
             "OpCapability CooperativeMatrixKHR",
@@ -28283,7 +27382,6 @@ mod tests {
             .expect("capability should be accepted with required extension");
         assert_eq!(validated.header().schema(), Schema::ZERO);
     }
-
     #[test]
     fn ray_tracing_motion_blur_capability_requires_extension() {
         let text = [
@@ -28311,7 +27409,6 @@ mod tests {
                 required_extension: "SPV_NV_ray_tracing_motion_blur".to_string()
             }
         );
-
         let with_extension = [
             "OpCapability Shader",
             "OpCapability RayTracingNV",
@@ -28332,7 +27429,6 @@ mod tests {
             .validate(TargetEnv::Vulkan1_2)
             .expect("capability should be accepted with required extensions");
     }
-
     #[test]
     fn ray_tracing_displacement_micromap_capability_requires_extension() {
         let text = [
@@ -28362,7 +27458,6 @@ mod tests {
                 required_extension: "SPV_NV_displacement_micromap".to_string()
             }
         );
-
         let with_extension = [
             "OpCapability Shader",
             "OpCapability RayTracingKHR",
@@ -28385,7 +27480,6 @@ mod tests {
             .validate(TargetEnv::Vulkan1_2)
             .expect("capability should be accepted with required extensions");
     }
-
     #[test]
     fn ray_tracing_linear_swept_spheres_capability_requires_extension() {
         let text = [
@@ -28413,7 +27507,6 @@ mod tests {
                 required_extension: "SPV_NV_linear_swept_spheres".to_string()
             }
         );
-
         let with_extension = [
             "OpCapability Shader",
             "OpCapability RayTracingLinearSweptSpheresGeometryNV",
@@ -28434,7 +27527,6 @@ mod tests {
             .validate(TargetEnv::Vulkan1_2)
             .expect("capability should be accepted with required extensions");
     }
-
     #[test]
     fn ray_tracing_opacity_micromap_capability_requires_extension() {
         let text = [
@@ -28462,7 +27554,6 @@ mod tests {
                 required_extension: "SPV_EXT_opacity_micromap".to_string()
             }
         );
-
         let with_extension = [
             "OpCapability Shader",
             "OpCapability RayTracingKHR",
@@ -28483,47 +27574,38 @@ mod tests {
             .validate(TargetEnv::Vulkan1_2)
             .expect("capability should be accepted with required extensions");
     }
-
     #[test]
     fn shader_clock_extension_is_vulkan_only() {
         assert_vulkan_only_extension("SPV_KHR_shader_clock");
     }
-
     #[test]
     fn fragment_shader_barycentric_extension_is_vulkan_only() {
         assert_vulkan_only_extension("SPV_KHR_fragment_shader_barycentric");
     }
-
     #[test]
     fn qcom_cooperative_matrix_conversion_extension_is_vulkan_only() {
         assert_vulkan_only_extension("SPV_QCOM_cooperative_matrix_conversion");
     }
-
     #[test]
     fn untyped_pointers_extension_is_vulkan_only() {
         assert_vulkan_only_extension("SPV_KHR_untyped_pointers");
     }
-
     #[test]
     fn subgroup_uniform_control_flow_extension_is_vulkan_only() {
         assert_vulkan_only_extension("SPV_KHR_subgroup_uniform_control_flow");
     }
-
     #[test]
     fn nv_fragment_shader_barycentric_extension_is_vulkan_only() {
         assert_vulkan_only_extension("SPV_NV_fragment_shader_barycentric");
     }
-
     #[test]
     fn workgroup_memory_explicit_layout_extension_is_vulkan_only() {
         assert_vulkan_only_extension("SPV_KHR_workgroup_memory_explicit_layout");
     }
-
     #[test]
     fn physical_storage_buffer_extension_is_vulkan_only() {
         assert_vulkan_only_extension("SPV_KHR_physical_storage_buffer");
     }
-
     #[test]
     fn shader_clock_capability_rejected_outside_vulkan_even_with_extension() {
         let text = [
@@ -28539,7 +27621,6 @@ mod tests {
             "OpFunctionEnd",
         ]
         .join("\n");
-
         for env in [
             TargetEnv::Universal1_6,
             TargetEnv::OpenCl2_2,
@@ -28557,12 +27638,10 @@ mod tests {
                 }
             );
         }
-
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("ShaderClockKHR should be accepted for Vulkan targets");
     }
-
     #[test]
     fn tile_shading_capability_requires_extension() {
         let text = [
@@ -28588,7 +27667,6 @@ mod tests {
                 required_extension: "SPV_QCOM_tile_shading".to_string()
             }
         );
-
         let with_extension = [
             "OpCapability Shader",
             "OpCapability TileShadingQCOM",
@@ -28608,7 +27686,6 @@ mod tests {
             .expect("capability should be accepted with required extension");
         assert_eq!(validated.header().schema(), Schema::ZERO);
     }
-
     #[test]
     fn universal_rejects_tile_shading_extension() {
         let text = [
@@ -28635,7 +27712,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn tile_shading_extension_requires_spirv_1_6() {
         let text = [
@@ -28669,12 +27745,10 @@ mod tests {
             }
             other => panic!("unexpected error: {other:?}"),
         }
-
         text.as_str()
             .validate(TargetEnv::Vulkan1_4)
             .expect("extension should be accepted with SPIR-V 1.6+");
     }
-
     fn module_with_extension(extension: &str) -> String {
         module_with_extension_custom(
             extension,
@@ -28682,7 +27756,6 @@ mod tests {
             "OpMemoryModel Logical GLSL450",
         )
     }
-
     fn opencl_module_with_extension(extension: &str) -> String {
         module_with_extension_custom(
             extension,
@@ -28690,7 +27763,6 @@ mod tests {
             "OpMemoryModel Logical OpenCL",
         )
     }
-
     fn module_with_extension_custom(
         extension: &str,
         capability: &str,
@@ -28709,14 +27781,12 @@ mod tests {
         ]
         .join("\n")
     }
-
     #[test]
     fn nvx_extensions_are_vulkan_only() {
         let text = module_with_extension("SPV_NVX_multiview_per_view_attributes");
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("NVX extensions should be accepted for Vulkan targets");
-
         let error = text
             .as_str()
             .validate(TargetEnv::Universal1_6)
@@ -28729,14 +27799,12 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn amdx_extensions_are_vulkan_only() {
         let text = module_with_extension("SPV_AMDX_shader_enqueue");
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("AMDX extensions should be accepted for Vulkan targets");
-
         let error = text
             .as_str()
             .validate(TargetEnv::OpenCl2_2)
@@ -28749,14 +27817,12 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn arm_extensions_are_vulkan_only() {
         let text = module_with_extension("SPV_ARM_graph");
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("ARM extensions should be accepted for Vulkan targets");
-
         let error = text
             .as_str()
             .validate(TargetEnv::Universal1_6)
@@ -28769,7 +27835,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn altera_extensions_reject_vulkan() {
         let text = opencl_module_with_extension("SPV_ALTERA_fpga_memory_attributes");
@@ -28779,7 +27844,6 @@ mod tests {
         text.as_str()
             .validate(TargetEnv::Universal1_5)
             .expect("ALTERA extensions are permitted for universal targets");
-
         let error = text
             .as_str()
             .validate(TargetEnv::Vulkan1_2)
@@ -28792,7 +27856,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn universal_allows_google_and_amd_extensions() {
         let google = module_with_extension("SPV_GOOGLE_decorate_string");
@@ -28800,13 +27863,11 @@ mod tests {
             .as_str()
             .validate(TargetEnv::Universal1_6)
             .expect("GOOGLE extensions should be allowed for universal environments");
-
         let amd = module_with_extension("SPV_AMD_shader_ballot");
         amd.as_str()
             .validate(TargetEnv::Universal1_6)
             .expect("AMD extensions should be allowed for universal environments");
     }
-
     #[test]
     fn opencl_rejects_google_and_amd_vendor_extensions() {
         let google = opencl_module_with_extension("SPV_GOOGLE_decorate_string");
@@ -28821,7 +27882,6 @@ mod tests {
                 env: TargetEnv::OpenCl2_1
             }
         );
-
         let amd = opencl_module_with_extension("SPV_AMD_shader_ballot");
         let error = amd
             .as_str()
@@ -28835,7 +27895,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn opengl_rejects_google_vendor_extension() {
         let text = module_with_extension("SPV_GOOGLE_decorate_string");
@@ -28851,7 +27910,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn opengl_rejects_amd_vendor_extension() {
         let text = module_with_extension("SPV_AMD_shader_trinary_minmax");
@@ -28867,14 +27925,12 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn vulkan_memory_model_extension_is_vulkan_only() {
         let text = module_with_extension("SPV_KHR_vulkan_memory_model");
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("Vulkan memory model should be accepted for Vulkan targets");
-
         let error = text
             .as_str()
             .validate(TargetEnv::Universal1_6)
@@ -28887,7 +27943,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn intel_function_variants_allowed_for_opencl_and_universal_only() {
         let opencl_text = opencl_module_with_extension("SPV_INTEL_function_variants");
@@ -28895,13 +27950,11 @@ mod tests {
             .as_str()
             .validate(TargetEnv::OpenCl2_2)
             .expect("INTEL function variants should be accepted for OpenCL targets");
-
         let universal_text = module_with_extension("SPV_INTEL_function_variants");
         universal_text
             .as_str()
             .validate(TargetEnv::Universal1_6)
             .expect("INTEL function variants should be accepted for universal targets");
-
         for env in [TargetEnv::Vulkan1_2, TargetEnv::OpenGl4_5] {
             let error = universal_text
                 .as_str()
@@ -28916,14 +27969,12 @@ mod tests {
             );
         }
     }
-
     #[test]
     fn mesh_shader_extension_is_vulkan_only() {
         let text = module_with_extension("SPV_EXT_mesh_shader");
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("Mesh shader extension should be accepted for Vulkan targets");
-
         for env in [
             TargetEnv::OpenCl2_2,
             TargetEnv::Universal1_6,
@@ -28942,13 +27993,11 @@ mod tests {
             );
         }
     }
-
     fn assert_vulkan_only_extension(name: &str) {
         let text = module_with_extension(name);
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .unwrap_or_else(|_| panic!("{name} should be accepted for Vulkan targets"));
-
         for env in [
             TargetEnv::OpenCl2_2,
             TargetEnv::Universal1_6,
@@ -28967,49 +28016,40 @@ mod tests {
             );
         }
     }
-
     #[test]
     fn descriptor_indexing_extension_is_vulkan_only() {
         assert_vulkan_only_extension("SPV_EXT_descriptor_indexing");
     }
-
     #[test]
     fn fragment_shader_interlock_is_vulkan_only() {
         assert_vulkan_only_extension("SPV_EXT_fragment_shader_interlock");
     }
-
     #[test]
     fn fragment_invocation_density_is_vulkan_only() {
         assert_vulkan_only_extension("SPV_EXT_fragment_invocation_density");
     }
-
     #[test]
     fn shader_atomic_float_min_max_is_vulkan_only() {
         assert_vulkan_only_extension("SPV_EXT_shader_atomic_float_min_max");
     }
-
     #[test]
     fn shader_invocation_reorder_ext_is_vulkan_only() {
         assert_vulkan_only_extension("SPV_EXT_shader_invocation_reorder");
     }
-
     #[test]
     fn shader_atomic_float_add_is_vulkan_only() {
         assert_vulkan_only_extension("SPV_EXT_shader_atomic_float_add");
     }
-
     #[test]
     fn qcom_image_processing_is_vulkan_only() {
         assert_vulkan_only_extension("SPV_QCOM_image_processing");
     }
-
     #[test]
     fn opencl_environment_accepts_opencl_extension() {
         let text = opencl_module_with_extension("SPV_KHR_opencl_enqueue");
         text.validate(TargetEnv::OpenCl2_2)
             .expect("OpenCL targets should accept OpenCL-specific extensions");
     }
-
     #[test]
     fn validate_module_rejects_duplicate_extension() {
         // Hand-assemble a module with duplicate OpExtension instructions.
@@ -29063,7 +28103,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn validate_module_rejects_duplicate_conditional_extension() {
         // Duplicate OpConditionalExtensionINTEL instructions should be rejected.
@@ -29095,7 +28134,6 @@ mod tests {
             0,
             1,
         ];
-
         let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
         assert_eq!(
             error,
@@ -29104,7 +28142,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_extension_rejected_in_non_vulkan_env() {
         // Vulkan-only conditional extensions must be rejected for non-Vulkan targets.
@@ -29143,7 +28180,6 @@ mod tests {
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -29153,7 +28189,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn entry_point_cannot_precede_memory_model() {
         // Entry points are mode-setting instructions that must follow the memory model.
@@ -29174,7 +28209,6 @@ mod tests {
             0,
             1,
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_5).unwrap_err();
         assert_eq!(
             error,
@@ -29183,7 +28217,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn execution_mode_cannot_precede_memory_model() {
         // Execution modes must follow the memory model stage.
@@ -29205,7 +28238,6 @@ mod tests {
             0,
             1,
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_5).unwrap_err();
         assert_eq!(
             error,
@@ -29214,7 +28246,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_extension_rejected_in_webgpu() {
         // WebGPU forbids all extensions, including conditional ones.
@@ -29252,7 +28283,6 @@ mod tests {
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
-
         let error = validate_module(&binary, TargetEnv::WebGpu0).unwrap_err();
         assert_eq!(
             error,
@@ -29262,7 +28292,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn webgpu_disallows_extensions_for_text_and_binary() {
         let module_text = [
@@ -29277,29 +28306,24 @@ mod tests {
             "OpFunctionEnd",
         ]
         .join("\n");
-
         let expected_error = ValidationError::DisallowedExtension {
             extension: ExtensionName::from("SPV_KHR_ray_tracing"),
             env: TargetEnv::WebGpu0,
         };
-
         let text_error = module_text
             .as_str()
             .validate(TargetEnv::WebGpu0)
             .unwrap_err();
         assert_eq!(text_error, expected_error);
-
         let binary = assemble_text(&module_text).expect("assemble");
         let binary_error = binary.as_slice().validate(TargetEnv::WebGpu0).unwrap_err();
         assert_eq!(binary_error, expected_error);
-
         let validated = binary
             .as_slice()
             .validate(TargetEnv::Vulkan1_2)
             .expect("extension should be accepted for Vulkan environments");
         assert_eq!(validated.header().schema(), Schema::ZERO);
     }
-
     #[test]
     fn extensions_cannot_appear_inside_functions_even_when_layout_skipped() {
         // When layout checks are disabled, function-local extensions remain invalid.
@@ -29310,7 +28334,6 @@ mod tests {
             0x6361_7274, // "trac"
             0x0067_6e69, // "ing\0"
         ];
-
         let binary = vec![
             0x07230203, // magic
             0x00010000, // version
@@ -29343,12 +28366,10 @@ mod tests {
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
-
         let options = ValidationOptions {
             skip_block_layout: true,
             ..ValidationOptions::default()
         };
-
         let error =
             validate_module_with_options(&binary, TargetEnv::Vulkan1_3, options).unwrap_err();
         assert_eq!(
@@ -29358,7 +28379,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn capabilities_cannot_appear_inside_functions_even_when_layout_skipped() {
         // Capabilities must remain in the capabilities section even if block layout checks are
@@ -29389,12 +28409,10 @@ mod tests {
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
-
         let options = ValidationOptions {
             skip_block_layout: true,
             ..ValidationOptions::default()
         };
-
         let error =
             validate_module_with_options(&binary, TargetEnv::Universal1_5, options).unwrap_err();
         assert_eq!(
@@ -29404,7 +28422,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_extension_inside_function_is_rejected_even_when_layout_skipped() {
         // Conditional extensions belong in the extensions section, not inside functions.
@@ -29443,12 +28460,10 @@ mod tests {
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
-
         let options = ValidationOptions {
             skip_block_layout: true,
             ..ValidationOptions::default()
         };
-
         let error =
             validate_module_with_options(&binary, TargetEnv::Universal1_6, options).unwrap_err();
         assert_eq!(
@@ -29458,7 +28473,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_capability_inside_function_is_rejected_even_when_layout_skipped() {
         // Conditional capabilities must also remain in the capability section.
@@ -29489,12 +28503,10 @@ mod tests {
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
-
         let options = ValidationOptions {
             skip_block_layout: true,
             ..ValidationOptions::default()
         };
-
         let error =
             validate_module_with_options(&binary, TargetEnv::Universal1_6, options).unwrap_err();
         assert_eq!(
@@ -29504,7 +28516,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn extinst_import_cannot_appear_after_functions() {
         // OpExtInstImport must precede functions; placing it after a function should trigger a
@@ -29541,7 +28552,6 @@ mod tests {
             0x3035_342e, // ".450"
             0,           // string terminator padding
         ];
-
         let err = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             err,
@@ -29550,7 +28560,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn extension_cannot_appear_after_types() {
         // Extensions belong in the extensions section; placing one after types/globals should
@@ -29578,7 +28587,6 @@ mod tests {
         let (start, len) = ext_slice.expect("extension present");
         let ext_inst: Vec<u32> = words.drain(start..start + len).collect();
         words.extend(ext_inst);
-
         let err = validate_module(&words, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             err,
@@ -29587,7 +28595,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn capability_cannot_appear_after_annotations() {
         // Capabilities must precede debug/names/annotations; relocating a capability past
@@ -29616,7 +28623,6 @@ mod tests {
         let (start, len) = cap_slice.expect("capability present");
         let capability: Vec<u32> = words.drain(start..start + len).collect();
         words.extend(capability);
-
         let err = validate_module(&words, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             err,
@@ -29625,7 +28631,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn decorate_string_cannot_appear_after_functions() {
         // OpDecorateString instructions belong in the annotations section; placing them after
@@ -29660,7 +28665,6 @@ mod tests {
             rspirv::spirv::Decoration::UserSemantic as u32,
             0x006f_6f66, // "foo"
         ];
-
         let err = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             err,
@@ -29669,7 +28673,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_extension_cannot_appear_after_annotations() {
         // Conditional extensions belong in the extensions section; placing them after annotations
@@ -29699,7 +28702,6 @@ mod tests {
             0x6972_7473, // "stri"
             0x0000_676e, // "ng\0"
         ];
-
         let err = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             err,
@@ -29708,7 +28710,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn extension_cannot_appear_after_annotations() {
         // Regular extensions must also precede annotations/names/types/globals.
@@ -29732,7 +28733,6 @@ mod tests {
             0x6972_7473,
             0x0000_676e,
         ]);
-
         let err = validate_module(&words, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             err,
@@ -29741,7 +28741,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_extension_cannot_appear_after_names() {
         // Conditional extensions must not trail the names section.
@@ -29763,7 +28762,6 @@ mod tests {
             0x6972_7473,
             0x0000_676e,
         ]);
-
         let err = validate_module(&words, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             err,
@@ -29772,7 +28770,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn extension_cannot_appear_after_names() {
         // Extensions belong before the names section; placing them after OpName should fail.
@@ -29800,7 +28797,6 @@ mod tests {
         let (start, wc) = ext_slice.expect("extension present");
         let ext: Vec<u32> = words.drain(start..start + wc).collect();
         words.extend(ext);
-
         let err = validate_module(&words, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             err,
@@ -29809,7 +28805,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_extension_cannot_appear_after_debug() {
         // Conditional extensions must not trail debug/source instructions.
@@ -29836,7 +28831,6 @@ mod tests {
             0x6972_7473,
             0x0000_676e,
         ];
-
         let err = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             err,
@@ -29845,7 +28839,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_capability_disallowed_in_env() {
         // Conditional capabilities must still respect the target environment allowlist.
@@ -29876,7 +28869,6 @@ mod tests {
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
-
         let error = validate_module(&binary, TargetEnv::WebGpu0).unwrap_err();
         assert_eq!(
             error,
@@ -29886,7 +28878,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn conditional_capability_requires_extension() {
         // Extension dependencies apply to conditional capabilities.
@@ -29917,7 +28908,6 @@ mod tests {
             op(1, 253), // OpReturn
             op(1, 56),  // OpFunctionEnd
         ];
-
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(
             error,
@@ -29927,7 +28917,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn capability_requires_min_spirv_version() {
         let text = [
@@ -29978,7 +28967,6 @@ mod tests {
             .validate(TargetEnv::Vulkan1_2)
             .expect("succeeds on newer SPIR-V");
     }
-
     #[test]
     fn effective_spirv_version_clamps_to_env() {
         use super::effective_spirv_version;
@@ -29991,7 +28979,6 @@ mod tests {
             SpirvVersion::new(1, 1)
         );
     }
-
     #[test]
     fn capability_version_check_respects_module_version() {
         use rspirv::{binary::Assemble, dr::Builder};
@@ -30039,7 +29026,6 @@ mod tests {
             other => panic!("unexpected error: {other:?}"),
         }
     }
-
     #[test]
     fn capability_version_clamps_to_env_when_module_is_newer() {
         use rspirv::{binary::Assemble, dr::Builder};
@@ -30087,7 +29073,6 @@ mod tests {
             other => panic!("unexpected error {other:?}"),
         }
     }
-
     #[test]
     fn capability_version_clamps_for_binary_modules() {
         // Binary declares SPIR-V 1.6 and RayTracingKHR capability; Vulkan 1.0 should clamp.
@@ -30131,11 +29116,9 @@ mod tests {
             other => panic!("unexpected error {other:?}"),
         }
     }
-
     #[test]
     fn instruction_requires_spirv_version_from_grammar() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 6);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -30152,7 +29135,6 @@ mod tests {
         builder.begin_block(None).unwrap();
         builder.terminate_invocation().unwrap();
         builder.end_function().unwrap();
-
         let module = builder.module();
         assert!(
             module
@@ -30162,7 +29144,6 @@ mod tests {
                     == Some(ExtensionName::from("SPV_KHR_terminate_invocation"))),
             "extension must be declared for opcode that requires it"
         );
-
         let words = module.assemble();
         let error = words
             .as_slice()
@@ -30177,11 +29158,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn memory_model_vulkan_requires_spirv_1_5() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 4);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -30190,7 +29169,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::Vulkan,
         );
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -30206,7 +29184,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn physical_storage_addressing_model_requires_capability() {
         let text = [
@@ -30225,11 +29202,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn memory_access_non_private_pointer_requires_vulkan_memory_model_capability() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 5);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -30239,12 +29214,10 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let int = builder.type_int(32, 1);
         let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::Function, int);
         let fn_ty = builder.type_function(void, std::iter::empty::<u32>());
-
         builder
             .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
             .unwrap();
@@ -30261,7 +29234,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let binary = builder.module().assemble();
         let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
         assert_eq!(
@@ -30273,11 +29245,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn memory_access_non_private_pointer_store_requires_vulkan_memory_model_capability() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 5);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -30286,13 +29256,11 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let int = builder.type_int(32, 1);
         let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::Function, int);
         let fn_ty = builder.type_function(void, std::iter::empty::<u32>());
         let zero = builder.constant_bit32(int, 0);
-
         builder
             .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
             .unwrap();
@@ -30308,7 +29276,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let binary = builder.module().assemble();
         let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
         assert_eq!(
@@ -30320,11 +29287,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn memory_semantics_make_visible_requires_spirv_1_5() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 4);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -30332,14 +29297,12 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let uint = builder.type_int(32, 0);
         let function_type = builder.type_function(void, std::iter::empty::<u32>());
         let workgroup_scope = builder.constant_bit32(uint, rspirv::spirv::Scope::Workgroup as u32);
         let semantics =
             builder.constant_bit32(uint, rspirv::spirv::MemorySemantics::MAKE_VISIBLE.bits());
-
         builder
             .begin_function(
                 void,
@@ -30354,7 +29317,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -30370,11 +29332,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn memory_semantics_make_visible_requires_vulkan_memory_model_capability() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 5);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -30383,14 +29343,12 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let uint = builder.type_int(32, 0);
         let function_type = builder.type_function(void, std::iter::empty::<u32>());
         let workgroup_scope = builder.constant_bit32(uint, rspirv::spirv::Scope::Workgroup as u32);
         let semantics =
             builder.constant_bit32(uint, rspirv::spirv::MemorySemantics::MAKE_VISIBLE.bits());
-
         builder
             .begin_function(
                 void,
@@ -30405,7 +29363,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -30420,11 +29377,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn memory_semantics_make_available_requires_spirv_1_5() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 4);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -30432,14 +29387,12 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let uint = builder.type_int(32, 0);
         let function_type = builder.type_function(void, std::iter::empty::<u32>());
         let workgroup_scope = builder.constant_bit32(uint, rspirv::spirv::Scope::Workgroup as u32);
         let semantics =
             builder.constant_bit32(uint, rspirv::spirv::MemorySemantics::MAKE_AVAILABLE.bits());
-
         builder
             .begin_function(
                 void,
@@ -30454,7 +29407,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -30470,11 +29422,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn memory_semantics_make_available_requires_vulkan_memory_model_capability() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 5);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -30482,14 +29432,12 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let uint = builder.type_int(32, 0);
         let function_type = builder.type_function(void, std::iter::empty::<u32>());
         let workgroup_scope = builder.constant_bit32(uint, rspirv::spirv::Scope::Workgroup as u32);
         let semantics =
             builder.constant_bit32(uint, rspirv::spirv::MemorySemantics::MAKE_AVAILABLE.bits());
-
         builder
             .begin_function(
                 void,
@@ -30504,7 +29452,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -30519,11 +29466,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn queue_family_scope_requires_vulkan_memory_model_capability() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 5);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -30531,14 +29476,12 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let uint = builder.type_int(32, 0);
         let function_type = builder.type_function(void, std::iter::empty::<u32>());
         let queue_scope = builder.constant_bit32(uint, rspirv::spirv::Scope::QueueFamilyKHR as u32);
         let semantics =
             builder.constant_bit32(uint, rspirv::spirv::MemorySemantics::ACQUIRE.bits());
-
         builder
             .begin_function(
                 void,
@@ -30551,7 +29494,6 @@ mod tests {
         builder.memory_barrier(queue_scope, semantics).unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -30566,11 +29508,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn queue_family_scope_allows_vulkan_memory_model_capability() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 5);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -30580,14 +29520,12 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::VulkanKHR,
         );
-
         let void = builder.type_void();
         let uint = builder.type_int(32, 0);
         let function_type = builder.type_function(void, std::iter::empty::<u32>());
         let queue_scope = builder.constant_bit32(uint, rspirv::spirv::Scope::QueueFamilyKHR as u32);
         let semantics =
             builder.constant_bit32(uint, rspirv::spirv::MemorySemantics::ACQUIRE.bits());
-
         builder
             .begin_function(
                 void,
@@ -30600,18 +29538,15 @@ mod tests {
         builder.memory_barrier(queue_scope, semantics).unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         words
             .as_slice()
             .validate(TargetEnv::Vulkan1_2)
             .expect("QueueFamilyKHR scope is allowed with VulkanMemoryModel capability");
     }
-
     #[test]
     fn shader_call_scope_requires_ray_tracing_capability() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 4);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -30620,7 +29555,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let uint = builder.type_int(32, 0);
         let function_type = builder.type_function(void, std::iter::empty::<u32>());
@@ -30628,7 +29562,6 @@ mod tests {
             builder.constant_bit32(uint, rspirv::spirv::Scope::ShaderCallKHR as u32);
         let semantics =
             builder.constant_bit32(uint, rspirv::spirv::MemorySemantics::ACQUIRE.bits());
-
         builder
             .begin_function(
                 void,
@@ -30643,7 +29576,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -30658,11 +29590,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn shader_call_scope_allows_ray_tracing_capability() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 4);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -30672,7 +29602,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let uint = builder.type_int(32, 0);
         let function_type = builder.type_function(void, std::iter::empty::<u32>());
@@ -30680,7 +29609,6 @@ mod tests {
             builder.constant_bit32(uint, rspirv::spirv::Scope::ShaderCallKHR as u32);
         let semantics =
             builder.constant_bit32(uint, rspirv::spirv::MemorySemantics::ACQUIRE.bits());
-
         builder
             .begin_function(
                 void,
@@ -30695,18 +29623,15 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         words
             .as_slice()
             .validate(TargetEnv::Vulkan1_2)
             .expect("ShaderCallKHR scope allowed with RayTracingKHR capability");
     }
-
     #[test]
     fn memory_semantics_volatile_requires_spirv_1_5() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 4);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -30714,14 +29639,12 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let uint = builder.type_int(32, 0);
         let function_type = builder.type_function(void, std::iter::empty::<u32>());
         let workgroup_scope = builder.constant_bit32(uint, rspirv::spirv::Scope::Workgroup as u32);
         let semantics =
             builder.constant_bit32(uint, rspirv::spirv::MemorySemantics::VOLATILE.bits());
-
         builder
             .begin_function(
                 void,
@@ -30736,7 +29659,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -30752,7 +29674,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn decoration_non_uniform_requires_spirv_1_5() {
         let text = [
@@ -30765,7 +29686,6 @@ mod tests {
             "OpDecorate %var NonUniform",
         ]
         .join("\n");
-
         let error = text
             .as_str()
             .validate(TargetEnv::Universal1_4)
@@ -30780,7 +29700,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn decoration_non_uniform_requires_capability() {
         let text = [
@@ -30793,7 +29712,6 @@ mod tests {
             "OpDecorate %var NonUniform",
         ]
         .join("\n");
-
         let error = text
             .as_str()
             .validate(TargetEnv::Universal1_5)
@@ -30807,11 +29725,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn image_operands_make_texel_visible_requires_spirv_1_5() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 4);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -30819,7 +29735,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let int = builder.type_int(32, 0);
         let float = builder.type_float(32, None);
@@ -30847,7 +29762,6 @@ mod tests {
             rspirv::spirv::StorageClass::UniformConstant,
             None,
         );
-
         builder
             .begin_function(
                 void,
@@ -30870,7 +29784,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -30886,11 +29799,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn image_operands_make_texel_visible_requires_vulkan_memory_model_capability() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 5);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -30898,7 +29809,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let int = builder.type_int(32, 0);
         let float = builder.type_float(32, None);
@@ -30926,7 +29836,6 @@ mod tests {
             rspirv::spirv::StorageClass::UniformConstant,
             None,
         );
-
         builder
             .begin_function(
                 void,
@@ -30951,7 +29860,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -30966,11 +29874,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn image_operands_make_texel_visible_allows_vulkan_memory_model_capability() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 5);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -30980,7 +29886,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::VulkanKHR,
         );
-
         let void = builder.type_void();
         let int = builder.type_int(32, 0);
         let float = builder.type_float(32, None);
@@ -31008,7 +29913,6 @@ mod tests {
             rspirv::spirv::StorageClass::UniformConstant,
             None,
         );
-
         builder
             .begin_function(
                 void,
@@ -31033,18 +29937,15 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         words
             .as_slice()
             .validate(TargetEnv::Vulkan1_2)
             .expect("MakeTexelVisible image operand allowed with VulkanMemoryModel capability");
     }
-
     #[test]
     fn image_operands_make_texel_available_requires_vulkan_memory_model_capability() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 5);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -31052,7 +29953,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let int = builder.type_int(32, 0);
         let float = builder.type_float(32, None);
@@ -31080,7 +29980,6 @@ mod tests {
             rspirv::spirv::StorageClass::UniformConstant,
             None,
         );
-
         builder
             .begin_function(
                 void,
@@ -31105,7 +30004,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -31120,11 +30018,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn image_operands_make_texel_available_allows_vulkan_memory_model_capability() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 5);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -31134,7 +30030,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::VulkanKHR,
         );
-
         let void = builder.type_void();
         let int = builder.type_int(32, 0);
         let float = builder.type_float(32, None);
@@ -31162,7 +30057,6 @@ mod tests {
             rspirv::spirv::StorageClass::UniformConstant,
             None,
         );
-
         builder
             .begin_function(
                 void,
@@ -31187,18 +30081,15 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         words
             .as_slice()
             .validate(TargetEnv::Vulkan1_2)
             .expect("MakeTexelAvailable image operand allowed with VulkanMemoryModel capability");
     }
-
     #[test]
     fn image_operands_non_private_texel_requires_vulkan_memory_model_capability() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 5);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -31206,7 +30097,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let int = builder.type_int(32, 0);
         let float = builder.type_float(32, None);
@@ -31234,7 +30124,6 @@ mod tests {
             rspirv::spirv::StorageClass::UniformConstant,
             None,
         );
-
         builder
             .begin_function(
                 void,
@@ -31255,7 +30144,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -31270,11 +30158,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn image_operands_non_private_texel_allows_vulkan_memory_model_capability() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 5);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -31284,7 +30170,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::VulkanKHR,
         );
-
         let void = builder.type_void();
         let int = builder.type_int(32, 0);
         let float = builder.type_float(32, None);
@@ -31312,7 +30197,6 @@ mod tests {
             rspirv::spirv::StorageClass::UniformConstant,
             None,
         );
-
         builder
             .begin_function(
                 void,
@@ -31333,18 +30217,15 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         words
             .as_slice()
             .validate(TargetEnv::Vulkan1_2)
             .expect("NonPrivateTexel image operand allowed with VulkanMemoryModel capability");
     }
-
     #[test]
     fn image_operands_nontemporal_requires_spirv_1_6() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 5);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -31352,7 +30233,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let int = builder.type_int(32, 0);
         let float = builder.type_float(32, None);
@@ -31380,7 +30260,6 @@ mod tests {
             rspirv::spirv::StorageClass::UniformConstant,
             None,
         );
-
         builder
             .begin_function(
                 void,
@@ -31401,7 +30280,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -31417,11 +30295,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn image_operands_make_texel_available_requires_spirv_1_5() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 4);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -31429,7 +30305,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let int = builder.type_int(32, 0);
         let float = builder.type_float(32, None);
@@ -31459,7 +30334,6 @@ mod tests {
         );
         let semantics =
             builder.constant_bit32(int, rspirv::spirv::MemorySemantics::MAKE_AVAILABLE.bits());
-
         builder
             .begin_function(
                 void,
@@ -31480,7 +30354,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -31496,11 +30369,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn image_operands_sign_extend_requires_spirv_1_4() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 3);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -31508,7 +30379,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let int = builder.type_int(32, 0);
         let float = builder.type_float(32, None);
@@ -31536,7 +30406,6 @@ mod tests {
             rspirv::spirv::StorageClass::UniformConstant,
             None,
         );
-
         builder
             .begin_function(
                 void,
@@ -31557,7 +30426,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -31573,11 +30441,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn image_operands_zero_extend_requires_spirv_1_4() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 3);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -31585,7 +30451,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let int = builder.type_int(32, 0);
         let float = builder.type_float(32, None);
@@ -31613,7 +30478,6 @@ mod tests {
             rspirv::spirv::StorageClass::UniformConstant,
             None,
         );
-
         builder
             .begin_function(
                 void,
@@ -31634,7 +30498,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -31650,11 +30513,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn image_operands_non_private_texel_requires_spirv_1_5() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 4);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -31662,7 +30523,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let int = builder.type_int(32, 0);
         let float = builder.type_float(32, None);
@@ -31690,7 +30550,6 @@ mod tests {
             rspirv::spirv::StorageClass::UniformConstant,
             None,
         );
-
         builder
             .begin_function(
                 void,
@@ -31711,7 +30570,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -31727,11 +30585,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn image_operands_volatile_texel_requires_spirv_1_5() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 4);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -31739,7 +30595,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let int = builder.type_int(32, 0);
         let float = builder.type_float(32, None);
@@ -31767,7 +30622,6 @@ mod tests {
             rspirv::spirv::StorageClass::UniformConstant,
             None,
         );
-
         builder
             .begin_function(
                 void,
@@ -31788,7 +30642,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -31804,11 +30657,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn memory_semantics_output_memory_requires_spirv_1_5() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 4);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -31816,14 +30667,12 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let uint = builder.type_int(32, 0);
         let function_type = builder.type_function(void, std::iter::empty::<u32>());
         let workgroup_scope = builder.constant_bit32(uint, rspirv::spirv::Scope::Workgroup as u32);
         let semantics =
             builder.constant_bit32(uint, rspirv::spirv::MemorySemantics::OUTPUT_MEMORY.bits());
-
         builder
             .begin_function(
                 void,
@@ -31838,7 +30687,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -31854,11 +30702,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn memory_access_make_pointer_visible_requires_spirv_1_5() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 4);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -31866,14 +30712,12 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let uint = builder.type_int(32, 0);
         let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::Workgroup, uint);
         let function_type = builder.type_function(void, std::iter::empty::<u32>());
         let value = builder.constant_bit32(uint, 0);
         let var = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
-
         builder
             .begin_function(
                 void,
@@ -31894,7 +30738,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -31910,11 +30753,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn memory_access_make_pointer_visible_requires_vulkan_memory_model_capability() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 5);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -31922,14 +30763,12 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let uint = builder.type_int(32, 0);
         let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::Workgroup, uint);
         let function_type = builder.type_function(void, std::iter::empty::<u32>());
         let value = builder.constant_bit32(uint, 0);
         let var = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
-
         builder
             .begin_function(
                 void,
@@ -31950,7 +30789,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words.as_slice().validate(TargetEnv::Vulkan1_2).expect_err(
             "MakePointerVisible requires VulkanMemoryModel capability when version is satisfied",
@@ -31964,11 +30802,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn memory_access_make_pointer_available_requires_spirv_1_5() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 4);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -31976,14 +30812,12 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let uint = builder.type_int(32, 0);
         let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::Workgroup, uint);
         let function_type = builder.type_function(void, std::iter::empty::<u32>());
         let value = builder.constant_bit32(uint, 0);
         let var = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
-
         builder
             .begin_function(
                 void,
@@ -32004,7 +30838,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -32020,11 +30853,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn memory_access_make_pointer_available_load_requires_spirv_1_5() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 4);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -32032,13 +30863,11 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let uint = builder.type_int(32, 0);
         let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::Workgroup, uint);
         let function_type = builder.type_function(void, std::iter::empty::<u32>());
         let var = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
-
         builder
             .begin_function(
                 void,
@@ -32060,7 +30889,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -32076,11 +30904,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn memory_access_make_pointer_available_requires_vulkan_memory_model_capability() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 5);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -32088,14 +30914,12 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let uint = builder.type_int(32, 0);
         let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::Workgroup, uint);
         let function_type = builder.type_function(void, std::iter::empty::<u32>());
         let value = builder.constant_bit32(uint, 0);
         let var = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
-
         builder
             .begin_function(
                 void,
@@ -32116,7 +30940,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let binary = builder.module().assemble();
         let error = binary.as_slice().validate(TargetEnv::Vulkan1_2).expect_err(
             "MakePointerAvailable requires VulkanMemoryModel capability when version is satisfied",
@@ -32130,11 +30953,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn memory_access_make_pointer_visible_load_requires_spirv_1_5() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 4);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -32142,13 +30963,11 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let uint = builder.type_int(32, 0);
         let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::Workgroup, uint);
         let function_type = builder.type_function(void, std::iter::empty::<u32>());
         let var = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
-
         builder
             .begin_function(
                 void,
@@ -32170,7 +30989,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -32186,11 +31004,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn memory_access_make_pointer_visible_load_requires_vulkan_memory_model_capability() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 5);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -32198,13 +31014,11 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let uint = builder.type_int(32, 0);
         let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::Workgroup, uint);
         let fn_ty = builder.type_function(void, std::iter::empty::<u32>());
         let var = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
-
         builder
             .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
             .unwrap();
@@ -32221,7 +31035,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words.as_slice().validate(TargetEnv::Vulkan1_2).expect_err(
             "MakePointerVisible (load) requires VulkanMemoryModel capability when version is satisfied",
@@ -32235,11 +31048,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn memory_access_make_pointer_available_load_requires_vulkan_memory_model_capability() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 5);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -32247,13 +31058,11 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let uint = builder.type_int(32, 0);
         let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::Workgroup, uint);
         let fn_ty = builder.type_function(void, std::iter::empty::<u32>());
         let var = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
-
         builder
             .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
             .unwrap();
@@ -32270,7 +31079,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -32285,11 +31093,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn memory_access_non_private_pointer_copy_requires_spirv_1_5() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 4);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -32297,14 +31103,12 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let uint = builder.type_int(32, 0);
         let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::Workgroup, uint);
         let fn_ty = builder.type_function(void, std::iter::empty::<u32>());
         let src = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
         let dst = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
-
         builder
             .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
             .unwrap();
@@ -32320,7 +31124,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -32336,11 +31139,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn memory_access_non_private_pointer_copy_requires_vulkan_memory_model_capability() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 5);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -32349,14 +31150,12 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let uint = builder.type_int(32, 0);
         let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::Workgroup, uint);
         let fn_ty = builder.type_function(void, std::iter::empty::<u32>());
         let src = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
         let dst = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
-
         builder
             .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
             .unwrap();
@@ -32372,7 +31171,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -32387,11 +31185,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn memory_access_make_pointer_visible_copy_requires_spirv_1_5() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 4);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -32399,7 +31195,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let uint = builder.type_int(32, 0);
         let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::Workgroup, uint);
@@ -32407,7 +31202,6 @@ mod tests {
         let src = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
         let dst = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
         let scope = builder.constant_bit32(uint, rspirv::spirv::Scope::Workgroup as u32);
-
         builder
             .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
             .unwrap();
@@ -32423,7 +31217,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -32439,11 +31232,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn memory_access_make_pointer_visible_copy_requires_vulkan_memory_model_capability() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 5);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -32452,7 +31243,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let uint = builder.type_int(32, 0);
         let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::Workgroup, uint);
@@ -32460,7 +31250,6 @@ mod tests {
         let src = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
         let dst = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
         let scope = builder.constant_bit32(uint, rspirv::spirv::Scope::Workgroup as u32);
-
         builder
             .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
             .unwrap();
@@ -32476,7 +31265,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words.as_slice().validate(TargetEnv::Vulkan1_2).expect_err(
             "MakePointerVisible copy requires VulkanMemoryModel capability when version is satisfied",
@@ -32490,11 +31278,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn memory_access_make_pointer_available_copy_requires_spirv_1_5() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 4);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -32502,7 +31288,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let uint = builder.type_int(32, 0);
         let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::Workgroup, uint);
@@ -32510,7 +31295,6 @@ mod tests {
         let src = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
         let dst = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
         let scope = builder.constant_bit32(uint, rspirv::spirv::Scope::Workgroup as u32);
-
         builder
             .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
             .unwrap();
@@ -32526,7 +31310,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -32542,11 +31325,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn memory_access_make_pointer_available_copy_requires_vulkan_memory_model_capability() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 5);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -32555,7 +31336,6 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let uint = builder.type_int(32, 0);
         let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::Workgroup, uint);
@@ -32563,7 +31343,6 @@ mod tests {
         let src = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
         let dst = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
         let scope = builder.constant_bit32(uint, rspirv::spirv::Scope::Workgroup as u32);
-
         builder
             .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
             .unwrap();
@@ -32579,7 +31358,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words.as_slice().validate(TargetEnv::Vulkan1_2).expect_err(
             "MakePointerAvailable copy requires VulkanMemoryModel capability when version is satisfied",
@@ -32593,11 +31371,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn memory_access_non_private_pointer_requires_spirv_1_5() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 4);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -32605,14 +31381,12 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let uint = builder.type_int(32, 0);
         let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::Workgroup, uint);
         let function_type = builder.type_function(void, std::iter::empty::<u32>());
         let value = builder.constant_bit32(uint, 0);
         let var = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
-
         builder
             .begin_function(
                 void,
@@ -32632,7 +31406,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -32648,11 +31421,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn memory_access_nontemporal_requires_spirv_1_6() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 5);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -32660,14 +31431,12 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let uint = builder.type_int(32, 0);
         let ptr = builder.type_pointer(None, rspirv::spirv::StorageClass::Workgroup, uint);
         let function_type = builder.type_function(void, std::iter::empty::<u32>());
         let value = builder.constant_bit32(uint, 0);
         let var = builder.variable(ptr, None, rspirv::spirv::StorageClass::Workgroup, None);
-
         builder
             .begin_function(
                 void,
@@ -32687,7 +31456,6 @@ mod tests {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -32703,7 +31471,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn storage_buffer_requires_spirv_1_3() {
         let text = [
@@ -32734,7 +31501,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn loop_control_dependency_length_requires_spirv_1_1() {
         let text = [
@@ -32771,11 +31537,9 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn execution_mode_id_requires_spirv_1_2() {
         use rspirv::{binary::Assemble, dr::Builder};
-
         let mut builder = Builder::new();
         builder.set_version(1, 2);
         builder.capability(rspirv::spirv::Capability::Shader);
@@ -32783,14 +31547,12 @@ mod tests {
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
         );
-
         let void = builder.type_void();
         let uint = builder.type_int(32, 0);
         let function_type = builder.type_function(void, std::iter::empty::<u32>());
         let local_size_x = builder.constant_bit32(uint, 1);
         let local_size_y = builder.constant_bit32(uint, 1);
         let local_size_z = builder.constant_bit32(uint, 1);
-
         let entry_point = builder
             .begin_function(
                 void,
@@ -32802,7 +31564,6 @@ mod tests {
         builder.begin_block(None).unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-
         builder.entry_point(
             rspirv::spirv::ExecutionModel::Vertex,
             entry_point,
@@ -32814,7 +31575,6 @@ mod tests {
             rspirv::spirv::ExecutionMode::LocalSizeId,
             [local_size_x, local_size_y, local_size_z],
         );
-
         let words = builder.module().assemble();
         let error = words
             .as_slice()
@@ -32829,7 +31589,6 @@ mod tests {
             },
         );
     }
-
     #[test]
     fn shader_clock_capability_requires_extension() {
         let text = [
@@ -32855,7 +31614,6 @@ mod tests {
                 required_extension: "SPV_KHR_shader_clock".to_string(),
             }
         );
-
         let with_extension = [
             "OpCapability Shader",
             "OpCapability ShaderClockKHR",
@@ -32874,7 +31632,6 @@ mod tests {
             .validate(TargetEnv::Vulkan1_3)
             .expect("extension declared should satisfy capability");
     }
-
     #[test]
     fn arm_core_builtins_capability_requires_extension() {
         let text = [
@@ -32900,7 +31657,6 @@ mod tests {
                 required_extension: "SPV_ARM_core_builtins".to_string(),
             }
         );
-
         let with_extension = [
             "OpCapability Shader",
             "OpCapability CoreBuiltinsARM",
@@ -32919,7 +31675,6 @@ mod tests {
             .validate(TargetEnv::Vulkan1_2)
             .expect("extension declared should satisfy CoreBuiltinsARM capability");
     }
-
     #[test]
     fn device_group_capability_requires_spirv_1_3() {
         let text = [
@@ -32960,17 +31715,14 @@ mod tests {
             }
             other => panic!("unexpected error: {other:?}"),
         }
-
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("DeviceGroup accepted on SPIR-V 1.3+");
     }
-
     #[test]
     fn device_group_extension_is_vulkan_only() {
         assert_vulkan_only_extension("SPV_KHR_device_group");
     }
-
     #[test]
     fn device_group_capability_rejected_outside_vulkan_even_with_extension() {
         let text = [
@@ -32986,7 +31738,6 @@ mod tests {
             "OpFunctionEnd",
         ]
         .join("\n");
-
         for env in [
             TargetEnv::Universal1_5,
             TargetEnv::OpenCl2_2,
@@ -33004,12 +31755,10 @@ mod tests {
                 }
             );
         }
-
         text.as_str()
             .validate(TargetEnv::Vulkan1_1)
             .expect("DeviceGroup should be accepted for Vulkan targets");
     }
-
     #[test]
     fn variable_pointers_requires_storage_buffer_capability() {
         let text = [
@@ -33036,7 +31785,6 @@ mod tests {
                 capability: rspirv::spirv::Capability::VariablePointers,
             }
         );
-
         let with_dependency = [
             "OpCapability Shader",
             "OpCapability VariablePointersStorageBuffer",
@@ -33056,7 +31804,6 @@ mod tests {
             .validate(TargetEnv::Universal1_6)
             .expect("dependency declared should satisfy requirement");
     }
-
     #[test]
     fn shader_capability_does_not_require_matrix_soft_dependency() {
         let text = [
@@ -33074,7 +31821,6 @@ mod tests {
             .validate(TargetEnv::Universal1_6)
             .expect("Shader should not require Matrix due to soft dependency");
     }
-
     #[test]
     fn image_buffer_requires_sampled_buffer_capability() {
         let text = [
@@ -33100,7 +31846,6 @@ mod tests {
                 capability: rspirv::spirv::Capability::ImageBuffer
             }
         );
-
         let with_dependency = [
             "OpCapability Shader",
             "OpCapability SampledBuffer",
@@ -33119,7 +31864,6 @@ mod tests {
             .validate(TargetEnv::Vulkan1_2)
             .expect("dependency declared should satisfy requirement");
     }
-
     #[test]
     fn sampled_cube_array_requires_shader_capability() {
         let text = [
@@ -33144,7 +31888,6 @@ mod tests {
                 capability: rspirv::spirv::Capability::SampledCubeArray
             }
         );
-
         let with_shader = [
             "OpCapability Shader",
             "OpCapability SampledCubeArray",
@@ -33162,7 +31905,6 @@ mod tests {
             .validate(TargetEnv::Universal1_2)
             .expect("Shader capability declared should satisfy dependency");
     }
-
     #[test]
     fn image_ms_array_requires_shader_capability() {
         let text = [
@@ -33187,7 +31929,6 @@ mod tests {
                 capability: rspirv::spirv::Capability::ImageMSArray
             }
         );
-
         let with_shader = [
             "OpCapability Shader",
             "OpCapability ImageMSArray",
@@ -33205,7 +31946,6 @@ mod tests {
             .validate(TargetEnv::Universal1_2)
             .expect("Shader capability declared should satisfy dependency");
     }
-
     #[test]
     fn ray_tracing_requires_shader_capability() {
         let text = [
@@ -33231,7 +31971,6 @@ mod tests {
                 capability: rspirv::spirv::Capability::RayTracingKHR
             }
         );
-
         let with_shader = [
             "OpCapability Shader",
             "OpCapability RayTracingKHR",
@@ -33250,7 +31989,6 @@ mod tests {
             .validate(TargetEnv::Vulkan1_2)
             .expect("Shader capability declared should satisfy dependency");
     }
-
     #[test]
     fn group_non_uniform_arithmetic_requires_group_non_uniform() {
         let text = [
@@ -33276,7 +32014,6 @@ mod tests {
                 capability: rspirv::spirv::Capability::GroupNonUniformArithmetic
             }
         );
-
         let with_base = [
             "OpCapability Shader",
             "OpCapability GroupNonUniform",
@@ -33295,7 +32032,6 @@ mod tests {
             .validate(TargetEnv::Vulkan1_2)
             .expect("base capability declared should satisfy dependency");
     }
-
     #[test]
     fn device_enqueue_requires_kernel() {
         let text = [
@@ -33321,7 +32057,6 @@ mod tests {
                 capability: rspirv::spirv::Capability::DeviceEnqueue
             }
         );
-
         let with_kernel = [
             "OpCapability Kernel",
             "OpCapability Addresses",
@@ -33340,7 +32075,6 @@ mod tests {
             .validate(TargetEnv::OpenCl2_0)
             .expect("kernel capability enables device enqueue");
     }
-
     #[test]
     fn physical_storage_buffer_capability_requires_spirv_1_4() {
         let text = [
@@ -33394,12 +32128,10 @@ mod tests {
             }
             other => panic!("unexpected error: {other:?}"),
         }
-
         text.as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("succeeds on newer SPIR-V");
     }
-
     #[test]
     fn instruction_requires_capability() {
         use rspirv::{binary::Assemble, dr::Builder};
@@ -33425,7 +32157,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn operand_requires_extension() {
         let text = [
@@ -33456,7 +32187,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn instruction_requires_spirv_version() {
         use rspirv::{binary::Assemble, dr::Builder};
@@ -33498,7 +32228,6 @@ mod tests {
             other => panic!("unexpected error {other:?}"),
         }
     }
-
     #[test]
     fn instruction_version_clamps_to_env_when_module_is_newer() {
         use rspirv::{binary::Assemble, dr::Builder};
@@ -33540,7 +32269,6 @@ mod tests {
             other => panic!("unexpected error {other:?}"),
         }
     }
-
     #[test]
     fn validate_module_rejects_zero_result_id() {
         // The assembler never emits id 0; keep this binary hand-crafted to drive the zero-id path.
@@ -33567,7 +32295,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn validate_module_rejects_zero_operand_id() {
         // Text assembly forbids %0 operands, so build the binary directly to cover the check.
@@ -33597,7 +32324,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn validate_module_rejects_non_zero_schema() {
         let text = [
@@ -33612,7 +32338,6 @@ mod tests {
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(error, ValidationError::InvalidReservedWord { reserved: 1 });
     }
-
     #[test]
     fn member_decorate_requires_struct_target() {
         let text = [
@@ -33635,7 +32360,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn member_decorate_requires_valid_member_index() {
         let text = [
@@ -33658,7 +32382,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn offset_requires_member_decorate() {
         let text = [
@@ -33679,7 +32402,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn matrix_stride_requires_member_decorate() {
         let text = [
@@ -33701,7 +32423,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn row_major_requires_member_decorate() {
         let text = [
@@ -33723,7 +32444,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn col_major_requires_member_decorate() {
         let text = [
@@ -33745,7 +32465,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn group_decorate_requires_declared_group() {
         // The text assembler refuses to emit binaries with invalid decoration groups, so we
@@ -33779,7 +32498,6 @@ mod tests {
             .unwrap_err();
         assert_eq!(error, expected);
     }
-
     #[test]
     fn decorate_requires_declared_target() {
         // The text assembler enforces target existence up front, so use a binary to ensure the
@@ -33807,7 +32525,6 @@ mod tests {
             .unwrap_err();
         assert_eq!(error, expected);
     }
-
     #[test]
     fn group_member_decorate_requires_declared_targets() {
         let binary = vec![
@@ -33841,7 +32558,6 @@ mod tests {
             .unwrap_err();
         assert_eq!(error, expected);
     }
-
     #[test]
     fn group_member_decorate_requires_struct_targets() {
         let binary = vec![
@@ -33883,7 +32599,6 @@ mod tests {
             .unwrap_err();
         assert_eq!(error, expected);
     }
-
     #[test]
     fn spec_id_requires_scalar_specialization_constant() {
         let text = [
@@ -33903,7 +32618,6 @@ mod tests {
             found: rspirv::spirv::Op::Constant,
             expected: DecorationTargetKind::ScalarSpecConstant,
         };
-
         for module in [
             MaybeValidModule::Text(text.as_str()),
             MaybeValidModule::Binary(binary.as_slice()),
@@ -33914,7 +32628,6 @@ mod tests {
             assert_eq!(error, expected);
         }
     }
-
     #[test]
     fn block_requires_struct_type_target() {
         let text = [
@@ -33931,7 +32644,6 @@ mod tests {
             found: rspirv::spirv::Op::TypeInt,
             expected: DecorationTargetKind::StructType,
         };
-
         for module in [
             MaybeValidModule::Text(text.as_str()),
             MaybeValidModule::Binary(binary.as_slice()),
@@ -33942,7 +32654,6 @@ mod tests {
             assert_eq!(error, expected);
         }
     }
-
     #[test]
     fn array_stride_requires_array_or_pointer_target() {
         let text = [
@@ -33959,7 +32670,6 @@ mod tests {
             found: rspirv::spirv::Op::TypeInt,
             expected: DecorationTargetKind::ArrayOrPointerType,
         };
-
         for module in [
             MaybeValidModule::Text(text.as_str()),
             MaybeValidModule::Binary(binary.as_slice()),
@@ -33970,7 +32680,6 @@ mod tests {
             assert_eq!(error, expected);
         }
     }
-
     #[test]
     fn workgroup_size_builtin_requires_constant_when_shader() {
         let text = [
@@ -33990,7 +32699,6 @@ mod tests {
             found: rspirv::spirv::Op::Variable,
             expected: DecorationTargetKind::Constant,
         };
-
         for module in [
             MaybeValidModule::Text(text.as_str()),
             MaybeValidModule::Binary(binary.as_slice()),
@@ -34001,7 +32709,6 @@ mod tests {
             assert_eq!(error, expected);
         }
     }
-
     #[test]
     fn memory_object_decorations_require_memory_objects() {
         let text = [
@@ -34019,7 +32726,6 @@ mod tests {
             found: rspirv::spirv::Op::Constant,
             expected: DecorationTargetKind::MemoryObjectDeclaration,
         };
-
         for module in [
             MaybeValidModule::Text(text.as_str()),
             MaybeValidModule::Binary(binary.as_slice()),
@@ -34030,7 +32736,6 @@ mod tests {
             assert_eq!(error, expected);
         }
     }
-
     #[test]
     fn linkage_attributes_require_function_or_variable() {
         let text = [
@@ -34048,7 +32753,6 @@ mod tests {
             found: rspirv::spirv::Op::TypeInt,
             expected: DecorationTargetKind::FunctionOrVariable,
         };
-
         for module in [
             MaybeValidModule::Text(text.as_str()),
             MaybeValidModule::Binary(binary.as_slice()),
@@ -34059,7 +32763,6 @@ mod tests {
             assert_eq!(error, expected);
         }
     }
-
     #[test]
     fn builtin_requires_variable_or_constant_targets() {
         let text = [
@@ -34081,7 +32784,6 @@ mod tests {
             found: rspirv::spirv::Op::Function,
             expected: DecorationTargetKind::Variable,
         };
-
         for module in [
             MaybeValidModule::Text(text.as_str()),
             MaybeValidModule::Binary(binary.as_slice()),
@@ -34092,7 +32794,6 @@ mod tests {
             assert_eq!(error, expected);
         }
     }
-
     #[test]
     fn entry_point_function_must_reference_function_op() {
         let binary = vec![
@@ -34137,7 +32838,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn entry_point_interfaces_must_reference_variables() {
         let binary = vec![
@@ -34183,7 +32883,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn entry_point_interfaces_cannot_reference_function_variables() {
         let text = [
@@ -34213,7 +32912,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn entry_point_interfaces_must_be_unique() {
         let text = [
@@ -34242,7 +32940,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn duplicate_push_constant_interface_is_rejected_in_vulkan() {
         let text = [
@@ -34275,7 +32972,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn duplicate_push_constant_interface_is_allowed_outside_vulkan() {
         let text = [
@@ -34301,7 +32997,6 @@ mod tests {
             .validate(TargetEnv::Universal1_6)
             .unwrap();
     }
-
     #[test]
     fn duplicate_incoming_callable_data_interface_is_rejected_in_vulkan() {
         let text = [
@@ -34336,7 +33031,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn duplicate_incoming_ray_payload_interface_is_rejected_in_vulkan() {
         let text = [
@@ -34371,7 +33065,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn non_ray_entry_point_rejects_ray_payload_interface() {
         let text = [
@@ -34406,7 +33099,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn non_ray_entry_point_rejects_shader_record_buffer_interface() {
         let text = [
@@ -34440,7 +33132,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn compute_entry_point_rejects_output_interface() {
         let text = [
@@ -34470,7 +33161,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn duplicate_interface_ids_are_rejected_per_entry_point() {
         let text = [
@@ -34499,7 +33189,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn function_scope_interface_is_rejected() {
         let text = [
@@ -34529,7 +33218,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn patch_interface_requires_tessellation_execution_model() {
         let text = [
@@ -34559,7 +33247,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn patch_interface_requires_tessellation_capability() {
         let text = [
@@ -34590,7 +33277,6 @@ mod tests {
             }
         ));
     }
-
     #[test]
     fn duplicate_patch_locations_conflict() {
         let text = [
@@ -34628,7 +33314,6 @@ mod tests {
             }
         ));
     }
-
     #[test]
     fn duplicate_hit_attribute_interface_is_rejected_in_vulkan() {
         let text = [
@@ -34663,7 +33348,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn bfloat16_interface_is_rejected_for_vulkan_input_output() {
         let text = [
@@ -34696,7 +33380,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn duplicate_entry_point_declarations_are_rejected() {
         let text = [
@@ -34723,7 +33406,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn duplicate_input_locations_are_rejected_in_vulkan() {
         let text = [
@@ -34757,7 +33439,6 @@ mod tests {
             }
         ));
     }
-
     #[test]
     fn duplicate_input_locations_are_allowed_outside_vulkan() {
         let text = [
@@ -34782,7 +33463,6 @@ mod tests {
             .validate(TargetEnv::Universal1_6)
             .expect("Location overlap checks are Vulkan-specific");
     }
-
     #[test]
     fn duplicate_patch_locations_are_rejected_in_vulkan() {
         let text = [
@@ -34820,7 +33500,6 @@ mod tests {
             }
         ));
     }
-
     #[test]
     fn component_values_must_be_within_range() {
         let text = [
@@ -34844,7 +33523,6 @@ mod tests {
             .unwrap_err();
         assert_eq!(err, ValidationError::ComponentOutOfRange { component: 5 });
     }
-
     #[test]
     fn component_requires_location() {
         let text = [
@@ -34868,7 +33546,6 @@ mod tests {
             .unwrap_err();
         assert_eq!(err, ValidationError::ComponentMissingLocation);
     }
-
     #[test]
     fn patch_struct_spill_conflicts_with_patch_neighbor() {
         // Patch variable consumes location 0 component 2..3 and spills into location 1 component 0..1.
@@ -34911,20 +33588,19 @@ mod tests {
             }
         ));
     }
-
     #[test]
     fn capabilities_after_functions_are_rejected() {
-        let text = r#"
-OpCapability Shader
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main"
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\"",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let words = assemble_text(text).expect("assemble text");
         let reordered = reorder_opcode_to_end(words, rspirv::spirv::Op::Capability);
         let err = validate_module(&reordered, TargetEnv::Vulkan1_2).unwrap_err();
@@ -34965,7 +33641,6 @@ OpFunctionEnd
             .validate(TargetEnv::Vulkan1_2)
             .expect("Patch and non-Patch locations use separate domains");
     }
-
     #[test]
     fn patch_and_non_patch_locations_separate_even_when_components_spill() {
         let text = [
@@ -34997,7 +33672,6 @@ OpFunctionEnd
             .validate(TargetEnv::Vulkan1_2)
             .expect("Patch and non-Patch domains remain separate even when components spill");
     }
-
     #[test]
     fn non_patch_spill_does_not_conflict_with_patch() {
         // Non-Patch variable spills from location 0 component 2 into location 1 component 0.
@@ -35031,7 +33705,6 @@ OpFunctionEnd
             .validate(TargetEnv::Vulkan1_2)
             .expect("Patch and non-Patch domains are distinct even when non-Patch spills into the next location");
     }
-
     #[test]
     fn geometry_output_vertices_execution_mode_is_accepted() {
         let text = [
@@ -35053,7 +33726,6 @@ OpFunctionEnd
             .validate(TargetEnv::Vulkan1_2)
             .expect("Geometry OutputVertices should not trigger operand capability errors");
     }
-
     #[test]
     fn mesh_output_primitives_execution_mode_is_accepted() {
         let text = [
@@ -35077,7 +33749,6 @@ OpFunctionEnd
             .validate(TargetEnv::Vulkan1_2)
             .expect("Mesh OutputTriangles/OutputVertices/OutputPrimitivesEXT should validate");
     }
-
     #[test]
     fn output_vertices_requires_geometry_or_tess_or_mesh() {
         let text = [
@@ -35105,7 +33776,6 @@ OpFunctionEnd
             }
         ));
     }
-
     #[test]
     fn output_primitives_ext_requires_mesh_execution_model() {
         let text = [
@@ -35136,7 +33806,6 @@ OpFunctionEnd
             }
         ));
     }
-
     #[test]
     fn component_spill_overlaps_across_locations_are_rejected_in_vulkan() {
         // First variable occupies location 0 component 3 and spills into location 1 component 0.
@@ -35176,7 +33845,6 @@ OpFunctionEnd
             }
         );
     }
-
     #[test]
     fn validate_module_reports_missing_memory_model_without_other_globals() {
         // A module that declares only capabilities should still fail for a missing memory model.
@@ -35192,41 +33860,38 @@ OpFunctionEnd
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(error, ValidationError::MissingMemoryModel);
     }
-
     fn assemble_and_validate_with_env(text: &str, env: TargetEnv) -> Result<(), ValidationError> {
         let binary = assemble_text(text).expect("assemble text");
         validate_module(&binary, env)
     }
-
     fn assemble_and_validate(text: &str) -> Result<(), ValidationError> {
         assemble_and_validate_with_env(text, TargetEnv::Universal1_3)
     }
-
     #[test]
     fn storage_buffer_16bit_requires_capability() {
-        let text = r#"
-OpCapability Shader
-OpCapability VariablePointers
-OpCapability VariablePointersStorageBuffer
-OpExtension "SPV_KHR_storage_buffer_storage_class"
-OpExtension "SPV_KHR_variable_pointers"
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpName %main "main"
-OpName %var "var"
-OpDecorate %buf Block
-OpMemberDecorate %buf 0 Offset 0
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u16 = OpTypeInt 16 0
-%buf = OpTypeStruct %u16
-%ptr = OpTypePointer StorageBuffer %buf
-%var = OpVariable %ptr StorageBuffer
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpCapability VariablePointers",
+            "OpCapability VariablePointersStorageBuffer",
+            "OpExtension \"SPV_KHR_storage_buffer_storage_class\"",
+            "OpExtension \"SPV_KHR_variable_pointers\"",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpName %main \"main\"",
+            "OpName %var \"var\"",
+            "OpDecorate %buf Block",
+            "OpMemberDecorate %buf 0 Offset 0",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u16 = OpTypeInt 16 0",
+            "%buf = OpTypeStruct %u16",
+            "%ptr = OpTypePointer StorageBuffer %buf",
+            "%var = OpVariable %ptr StorageBuffer",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let error = assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
             .expect_err("expected missing capability");
         assert_eq!(
@@ -35241,23 +33906,23 @@ OpFunctionEnd
 
     #[test]
     fn uniform_16bit_without_block_is_rejected() {
-        let text = r#"
-OpCapability Shader
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpName %main "main"
-OpName %var "var"
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u16 = OpTypeInt 16 0
-%buf = OpTypeStruct %u16
-%ptr = OpTypePointer Uniform %buf
-%var = OpVariable %ptr Uniform
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpName %main \"main\"",
+            "OpName %var \"var\"",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u16 = OpTypeInt 16 0",
+            "%buf = OpTypeStruct %u16",
+            "%ptr = OpTypePointer Uniform %buf",
+            "%var = OpVariable %ptr Uniform",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let error = assemble_and_validate(text).expect_err("expected missing block decoration");
         assert_eq!(
             error,
@@ -35269,48 +33934,48 @@ OpFunctionEnd
 
     #[test]
     fn uniform_16bit_with_buffer_block_allows_storage_buffer_capability() {
-        let text = r#"
-OpCapability Shader
-OpCapability StorageBuffer16BitAccess
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpName %main "main"
-OpName %var "var"
-OpDecorate %buf BufferBlock
-OpMemberDecorate %buf 0 Offset 0
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u16 = OpTypeInt 16 0
-%buf = OpTypeStruct %u16
-%ptr = OpTypePointer Uniform %buf
-%var = OpVariable %ptr Uniform
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpCapability StorageBuffer16BitAccess",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpName %main \"main\"",
+            "OpName %var \"var\"",
+            "OpDecorate %buf BufferBlock",
+            "OpMemberDecorate %buf 0 Offset 0",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u16 = OpTypeInt 16 0",
+            "%buf = OpTypeStruct %u16",
+            "%ptr = OpTypePointer Uniform %buf",
+            "%var = OpVariable %ptr Uniform",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         assemble_and_validate(text)
             .expect("BufferBlock + StorageBuffer16BitAccess should satisfy uniform 16-bit");
     }
 
     #[test]
     fn uniform_constant_16bit_is_disallowed() {
-        let text = r#"
-OpCapability Shader
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpName %main "main"
-OpName %var "var"
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u16 = OpTypeInt 16 0
-%ptr = OpTypePointer UniformConstant %u16
-%var = OpVariable %ptr UniformConstant
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpName %main \"main\"",
+            "OpName %var \"var\"",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u16 = OpTypeInt 16 0",
+            "%ptr = OpTypePointer UniformConstant %u16",
+            "%var = OpVariable %ptr UniformConstant",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let error = assemble_and_validate(text).expect_err("expected storage class rejection");
         assert_eq!(
             error,
@@ -35323,31 +33988,31 @@ OpFunctionEnd
 
     #[test]
     fn storage_buffer_8bit_requires_capability() {
-        let text = r#"
-OpCapability Shader
-OpCapability Int8
-OpCapability VariablePointers
-OpCapability VariablePointersStorageBuffer
-OpExtension "SPV_KHR_storage_buffer_storage_class"
-OpExtension "SPV_KHR_variable_pointers"
-OpExtension "SPV_KHR_8bit_storage"
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpName %main "main"
-OpName %var "var"
-OpDecorate %buf Block
-OpMemberDecorate %buf 0 Offset 0
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u8 = OpTypeInt 8 0
-%buf = OpTypeStruct %u8
-%ptr = OpTypePointer StorageBuffer %buf
-%var = OpVariable %ptr StorageBuffer
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Int8",
+            "OpCapability VariablePointers",
+            "OpCapability VariablePointersStorageBuffer",
+            "OpExtension \"SPV_KHR_storage_buffer_storage_class\"",
+            "OpExtension \"SPV_KHR_variable_pointers\"",
+            "OpExtension \"SPV_KHR_8bit_storage\"",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpName %main \"main\"",
+            "OpName %var \"var\"",
+            "OpDecorate %buf Block",
+            "OpMemberDecorate %buf 0 Offset 0",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u8 = OpTypeInt 8 0",
+            "%buf = OpTypeStruct %u8",
+            "%ptr = OpTypePointer StorageBuffer %buf",
+            "%var = OpVariable %ptr StorageBuffer",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let error = assemble_and_validate(text).expect_err("expected missing capability");
         assert_eq!(
             error,
@@ -35361,55 +34026,55 @@ OpFunctionEnd
 
     #[test]
     fn storage_buffer_8bit_with_capability_is_allowed() {
-        let text = r#"
-OpCapability Shader
-OpCapability Int8
-OpCapability VariablePointers
-OpCapability VariablePointersStorageBuffer
-OpCapability StorageBuffer8BitAccess
-OpExtension "SPV_KHR_storage_buffer_storage_class"
-OpExtension "SPV_KHR_variable_pointers"
-OpExtension "SPV_KHR_8bit_storage"
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpName %main "main"
-OpName %var "var"
-OpDecorate %buf Block
-OpMemberDecorate %buf 0 Offset 0
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u8 = OpTypeInt 8 0
-%buf = OpTypeStruct %u8
-%ptr = OpTypePointer StorageBuffer %buf
-%var = OpVariable %ptr StorageBuffer
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Int8",
+            "OpCapability VariablePointers",
+            "OpCapability VariablePointersStorageBuffer",
+            "OpCapability StorageBuffer8BitAccess",
+            "OpExtension \"SPV_KHR_storage_buffer_storage_class\"",
+            "OpExtension \"SPV_KHR_variable_pointers\"",
+            "OpExtension \"SPV_KHR_8bit_storage\"",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpName %main \"main\"",
+            "OpName %var \"var\"",
+            "OpDecorate %buf Block",
+            "OpMemberDecorate %buf 0 Offset 0",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u8 = OpTypeInt 8 0",
+            "%buf = OpTypeStruct %u8",
+            "%ptr = OpTypePointer StorageBuffer %buf",
+            "%var = OpVariable %ptr StorageBuffer",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
             .expect("StorageBuffer8BitAccess should allow 8-bit storage buffer");
     }
 
     #[test]
     fn buffer_block_disallowed_after_spirv_1_3() {
-        let text = r#"
-OpCapability Shader
-OpCapability Linkage
-OpMemoryModel Logical GLSL450
-OpDecorate %buf BufferBlock
-OpMemberDecorate %buf 0 Offset 0
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u32 = OpTypeInt 32 0
-%buf = OpTypeStruct %u32
-%ptr = OpTypePointer Uniform %buf
-%var = OpVariable %ptr Uniform
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Linkage",
+            "OpMemoryModel Logical GLSL450",
+            "OpDecorate %buf BufferBlock",
+            "OpMemberDecorate %buf 0 Offset 0",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u32 = OpTypeInt 32 0",
+            "%buf = OpTypeStruct %u32",
+            "%ptr = OpTypePointer Uniform %buf",
+            "%var = OpVariable %ptr Uniform",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_4)
             .expect_err("BufferBlock should be disallowed after SPIR-V 1.3");
         assert_eq!(
@@ -35424,23 +34089,23 @@ OpFunctionEnd
 
     #[test]
     fn buffer_block_cannot_be_used_for_push_constant() {
-        let text = r#"
-OpCapability Shader
-OpCapability Linkage
-OpMemoryModel Logical GLSL450
-OpDecorate %buf BufferBlock
-OpMemberDecorate %buf 0 Offset 0
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u32 = OpTypeInt 32 0
-%buf = OpTypeStruct %u32
-%ptr = OpTypePointer PushConstant %buf
-%var = OpVariable %ptr PushConstant
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Linkage",
+            "OpMemoryModel Logical GLSL450",
+            "OpDecorate %buf BufferBlock",
+            "OpMemberDecorate %buf 0 Offset 0",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u32 = OpTypeInt 32 0",
+            "%buf = OpTypeStruct %u32",
+            "%ptr = OpTypePointer PushConstant %buf",
+            "%var = OpVariable %ptr PushConstant",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_3)
             .expect_err("BufferBlock should not apply to push constants");
         assert_eq!(
@@ -35454,23 +34119,23 @@ OpFunctionEnd
 
     #[test]
     fn block_cannot_be_used_for_input_storage() {
-        let text = r#"
-OpCapability Shader
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpDecorate %buf Block
-OpMemberDecorate %buf 0 Offset 0
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u32 = OpTypeInt 32 0
-%buf = OpTypeStruct %u32
-%ptr = OpTypePointer Input %buf
-%var = OpVariable %ptr Input
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpDecorate %buf Block",
+            "OpMemberDecorate %buf 0 Offset 0",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u32 = OpTypeInt 32 0",
+            "%buf = OpTypeStruct %u32",
+            "%ptr = OpTypePointer Input %buf",
+            "%var = OpVariable %ptr Input",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
             .expect_err("Block should not apply to input variables");
         assert_eq!(
@@ -35484,22 +34149,22 @@ OpFunctionEnd
 
     #[test]
     fn descriptor_on_input_storage_is_rejected() {
-        let text = r#"
-OpCapability Shader
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpDecorate %var Binding 0
-OpDecorate %var DescriptorSet 0
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u32 = OpTypeInt 32 0
-%ptr = OpTypePointer Input %u32
-%var = OpVariable %ptr Input
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpDecorate %var Binding 0",
+            "OpDecorate %var DescriptorSet 0",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u32 = OpTypeInt 32 0",
+            "%ptr = OpTypePointer Input %u32",
+            "%var = OpVariable %ptr Input",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
             .expect_err("descriptor decorations on Input should be rejected");
         assert_eq!(
@@ -35512,22 +34177,22 @@ OpFunctionEnd
 
     #[test]
     fn descriptor_on_push_constant_is_rejected() {
-        let text = r#"
-OpCapability Shader
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpDecorate %var Binding 0
-OpDecorate %var DescriptorSet 0
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u32 = OpTypeInt 32 0
-%ptr = OpTypePointer PushConstant %u32
-%var = OpVariable %ptr PushConstant
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpDecorate %var Binding 0",
+            "OpDecorate %var DescriptorSet 0",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u32 = OpTypeInt 32 0",
+            "%ptr = OpTypePointer PushConstant %u32",
+            "%var = OpVariable %ptr PushConstant",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
             .expect_err("descriptor decorations on PushConstant should be rejected");
         assert_eq!(
@@ -35540,21 +34205,21 @@ OpFunctionEnd
 
     #[test]
     fn resource_variable_requires_descriptor_set_in_vulkan() {
-        let text = r#"
-OpCapability Shader
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpDecorate %var Binding 0
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u32 = OpTypeInt 32 0
-%ptr = OpTypePointer Uniform %u32
-%var = OpVariable %ptr Uniform
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpDecorate %var Binding 0",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u32 = OpTypeInt 32 0",
+            "%ptr = OpTypePointer Uniform %u32",
+            "%var = OpVariable %ptr Uniform",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
             .expect_err("Uniform variables require DescriptorSet in Vulkan");
         assert!(matches!(
@@ -35565,21 +34230,21 @@ OpFunctionEnd
 
     #[test]
     fn resource_variable_requires_binding_in_vulkan() {
-        let text = r#"
-OpCapability Shader
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpDecorate %var DescriptorSet 0
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u32 = OpTypeInt 32 0
-%ptr = OpTypePointer Uniform %u32
-%var = OpVariable %ptr Uniform
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpDecorate %var DescriptorSet 0",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u32 = OpTypeInt 32 0",
+            "%ptr = OpTypePointer Uniform %u32",
+            "%var = OpVariable %ptr Uniform",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
             .expect_err("Uniform variables require Binding in Vulkan");
         assert!(matches!(
@@ -35590,21 +34255,21 @@ OpFunctionEnd
 
     #[test]
     fn location_on_uniform_storage_is_rejected() {
-        let text = r#"
-OpCapability Shader
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpDecorate %var Location 0
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u32 = OpTypeInt 32 0
-%ptr = OpTypePointer Uniform %u32
-%var = OpVariable %ptr Uniform
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpDecorate %var Location 0",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u32 = OpTypeInt 32 0",
+            "%ptr = OpTypePointer Uniform %u32",
+            "%var = OpVariable %ptr Uniform",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
             .expect_err("Location should be rejected on Uniform storage");
         assert_eq!(
@@ -35617,21 +34282,21 @@ OpFunctionEnd
 
     #[test]
     fn location_on_push_constant_is_rejected() {
-        let text = r#"
-OpCapability Shader
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpDecorate %var Location 0
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u32 = OpTypeInt 32 0
-%ptr = OpTypePointer PushConstant %u32
-%var = OpVariable %ptr PushConstant
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpDecorate %var Location 0",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u32 = OpTypeInt 32 0",
+            "%ptr = OpTypePointer PushConstant %u32",
+            "%var = OpVariable %ptr PushConstant",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
             .expect_err("Location should be rejected on PushConstant storage");
         assert_eq!(
@@ -35644,21 +34309,21 @@ OpFunctionEnd
 
     #[test]
     fn interpolation_decorations_require_input_or_output_storage() {
-        let text = r#"
-OpCapability Shader
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpDecorate %var Flat
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%f32 = OpTypeFloat 32
-%ptr = OpTypePointer Uniform %f32
-%var = OpVariable %ptr Uniform
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpDecorate %var Flat",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%f32 = OpTypeFloat 32",
+            "%ptr = OpTypePointer Uniform %f32",
+            "%var = OpVariable %ptr Uniform",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
             .expect_err("Flat on Uniform should be rejected");
         assert_eq!(
@@ -35724,24 +34389,24 @@ OpFunctionEnd
 
     #[test]
     fn interpolation_decorations_allowed_on_input_and_output() {
-        let text = r#"
-OpCapability Shader
-OpMemoryModel Logical GLSL450
-OpEntryPoint Fragment %main "main" %in %out
-OpDecorate %in NoPerspective
-OpDecorate %out Centroid
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%f32 = OpTypeFloat 32
-%ptr_in = OpTypePointer Input %f32
-%ptr_out = OpTypePointer Output %f32
-%in = OpVariable %ptr_in Input
-%out = OpVariable %ptr_out Output
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Fragment %main \"main\" %in %out",
+            "OpDecorate %in NoPerspective",
+            "OpDecorate %out Centroid",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%f32 = OpTypeFloat 32",
+            "%ptr_in = OpTypePointer Input %f32",
+            "%ptr_out = OpTypePointer Output %f32",
+            "%in = OpVariable %ptr_in Input",
+            "%out = OpVariable %ptr_out Output",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
             .expect("interpolation decorations should be accepted on Input/Output");
     }
@@ -35862,21 +34527,21 @@ OpFunctionEnd
 
     #[test]
     fn interpolation_decorations_require_fragment_execution_model() {
-        let text = r#"
-OpCapability Shader
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %in
-OpDecorate %in Flat
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%f32 = OpTypeFloat 32
-%ptr = OpTypePointer Input %f32
-%in = OpVariable %ptr Input
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %in",
+            "OpDecorate %in Flat",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%f32 = OpTypeFloat 32",
+            "%ptr = OpTypePointer Input %f32",
+            "%in = OpVariable %ptr Input",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
             .expect_err("interpolation decorations require a Fragment entry point");
         assert_eq!(
@@ -35889,23 +34554,23 @@ OpFunctionEnd
 
     #[test]
     fn location_conflicts_with_builtin() {
-        let text = r#"
-OpCapability Shader
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpDecorate %var BuiltIn Position
-OpDecorate %var Location 0
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%f32 = OpTypeFloat 32
-%vec4 = OpTypeVector %f32 4
-%ptr = OpTypePointer Output %vec4
-%var = OpVariable %ptr Output
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpDecorate %var BuiltIn Position",
+            "OpDecorate %var Location 0",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%f32 = OpTypeFloat 32",
+            "%vec4 = OpTypeVector %f32 4",
+            "%ptr = OpTypePointer Output %vec4",
+            "%var = OpVariable %ptr Output",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
             .expect_err("Location must not be used with BuiltIn");
         assert_eq!(err, ValidationError::LocationConflictsWithBuiltIn);
@@ -35913,22 +34578,22 @@ OpFunctionEnd
 
     #[test]
     fn builtin_requires_appropriate_storage_class() {
-        let text = r#"
-OpCapability Shader
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpDecorate %var BuiltIn Position
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%f32 = OpTypeFloat 32
-%vec4 = OpTypeVector %f32 4
-%ptr = OpTypePointer Uniform %vec4
-%var = OpVariable %ptr Uniform
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpDecorate %var BuiltIn Position",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%f32 = OpTypeFloat 32",
+            "%vec4 = OpTypeVector %f32 4",
+            "%ptr = OpTypePointer Uniform %vec4",
+            "%var = OpVariable %ptr Uniform",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
             .expect_err("BuiltIn Position should not be allowed on Uniform");
         assert_eq!(
@@ -35968,22 +34633,22 @@ OpFunctionEnd
 
     #[test]
     fn fragment_only_builtin_requires_fragment_entry_model() {
-        let text = r#"
-OpCapability Shader
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpDecorate %var BuiltIn FragCoord
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%f32 = OpTypeFloat 32
-%vec4 = OpTypeVector %f32 4
-%ptr = OpTypePointer Input %vec4
-%var = OpVariable %ptr Input
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpDecorate %var BuiltIn FragCoord",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%f32 = OpTypeFloat 32",
+            "%vec4 = OpTypeVector %f32 4",
+            "%ptr = OpTypePointer Input %vec4",
+            "%var = OpVariable %ptr Input",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
             .expect_err("FragCoord requires a Fragment entry point");
         assert_eq!(
@@ -35996,47 +34661,47 @@ OpFunctionEnd
 
     #[test]
     fn fragment_only_builtin_allows_fragment_entry_model() {
-        let text = r#"
-OpCapability Shader
-OpMemoryModel Logical GLSL450
-OpEntryPoint Fragment %main "main" %var
-OpExecutionMode %main OriginUpperLeft
-OpDecorate %var BuiltIn FragDepth
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%f32 = OpTypeFloat 32
-%ptr = OpTypePointer Output %f32
-%var = OpVariable %ptr Output
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Fragment %main \"main\" %var",
+            "OpExecutionMode %main OriginUpperLeft",
+            "OpDecorate %var BuiltIn FragDepth",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%f32 = OpTypeFloat 32",
+            "%ptr = OpTypePointer Output %f32",
+            "%var = OpVariable %ptr Output",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
             .expect("fragment-only BuiltIns should be accepted for fragment entry points");
     }
 
     #[test]
     fn barycentric_builtin_requires_fragment_entry_model() {
-        let text = r#"
-OpCapability Shader
-OpCapability FragmentBarycentricKHR
-OpExtension "SPV_KHR_fragment_shader_barycentric"
-OpExtension "SPV_NV_fragment_shader_barycentric"
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpDecorate %var BuiltIn BaryCoordKHR
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%f32 = OpTypeFloat 32
-%vec2 = OpTypeVector %f32 2
-%ptr = OpTypePointer Input %vec2
-%var = OpVariable %ptr Input
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpCapability FragmentBarycentricKHR",
+            "OpExtension \"SPV_KHR_fragment_shader_barycentric\"",
+            "OpExtension \"SPV_NV_fragment_shader_barycentric\"",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpDecorate %var BuiltIn BaryCoordKHR",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%f32 = OpTypeFloat 32",
+            "%vec2 = OpTypeVector %f32 2",
+            "%ptr = OpTypePointer Input %vec2",
+            "%var = OpVariable %ptr Input",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
             .expect_err("BaryCoord requires a Fragment entry point");
         assert_eq!(
@@ -36049,52 +34714,52 @@ OpFunctionEnd
 
     #[test]
     fn barycentric_builtin_allows_fragment_entry_model() {
-        let text = r#"
-OpCapability Shader
-OpCapability FragmentBarycentricKHR
-OpExtension "SPV_KHR_fragment_shader_barycentric"
-OpExtension "SPV_NV_fragment_shader_barycentric"
-OpMemoryModel Logical GLSL450
-OpEntryPoint Fragment %main "main" %var
-OpExecutionMode %main OriginUpperLeft
-OpDecorate %var BuiltIn BaryCoordNoPerspKHR
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%f32 = OpTypeFloat 32
-%vec3 = OpTypeVector %f32 3
-%ptr = OpTypePointer Input %vec3
-%var = OpVariable %ptr Input
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpCapability FragmentBarycentricKHR",
+            "OpExtension \"SPV_KHR_fragment_shader_barycentric\"",
+            "OpExtension \"SPV_NV_fragment_shader_barycentric\"",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Fragment %main \"main\" %var",
+            "OpExecutionMode %main OriginUpperLeft",
+            "OpDecorate %var BuiltIn BaryCoordNoPerspKHR",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%f32 = OpTypeFloat 32",
+            "%vec3 = OpTypeVector %f32 3",
+            "%ptr = OpTypePointer Input %vec3",
+            "%var = OpVariable %ptr Input",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
             .expect("barycentric BuiltIns should be accepted for fragment entry points");
     }
 
     #[test]
     fn ray_builtins_require_ray_execution_models() {
-        let text = r#"
-OpCapability Shader
-OpCapability RayTracingKHR
-OpCapability RayTracingNV
-OpExtension "SPV_KHR_ray_tracing"
-OpExtension "SPV_NV_ray_tracing"
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpDecorate %var BuiltIn LaunchIdKHR
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u32 = OpTypeInt 32 0
-%vec3 = OpTypeVector %u32 3
-%ptr = OpTypePointer Input %vec3
-%var = OpVariable %ptr Input
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpCapability RayTracingKHR",
+            "OpCapability RayTracingNV",
+            "OpExtension \"SPV_KHR_ray_tracing\"",
+            "OpExtension \"SPV_NV_ray_tracing\"",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpDecorate %var BuiltIn LaunchIdKHR",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u32 = OpTypeInt 32 0",
+            "%vec3 = OpTypeVector %u32 3",
+            "%ptr = OpTypePointer Input %vec3",
+            "%var = OpVariable %ptr Input",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
             .expect_err("ray built-ins require ray tracing execution models");
         assert!(matches!(
@@ -36131,21 +34796,21 @@ OpFunctionEnd
 
     #[test]
     fn vertex_id_is_disallowed_in_vulkan() {
-        let text = r#"
-OpCapability Shader
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpDecorate %var BuiltIn VertexId
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u32 = OpTypeInt 32 0
-%ptr = OpTypePointer Input %u32
-%var = OpVariable %ptr Input
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpDecorate %var BuiltIn VertexId",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u32 = OpTypeInt 32 0",
+            "%ptr = OpTypePointer Input %u32",
+            "%var = OpVariable %ptr Input",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
             .expect_err("VertexId is not allowed in Vulkan");
         assert_eq!(
@@ -36159,24 +34824,24 @@ OpFunctionEnd
 
     #[test]
     fn shading_rate_builtins_are_vulkan_only() {
-        let text = r#"
-OpCapability Shader
-OpCapability FragmentShadingRateKHR
-OpExtension "SPV_KHR_fragment_shading_rate"
-OpMemoryModel Logical GLSL450
-OpEntryPoint Fragment %main "main" %var
-OpExecutionMode %main OriginUpperLeft
-OpDecorate %var BuiltIn ShadingRateKHR
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u32 = OpTypeInt 32 0
-%ptr = OpTypePointer Input %u32
-%var = OpVariable %ptr Input
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpCapability FragmentShadingRateKHR",
+            "OpExtension \"SPV_KHR_fragment_shading_rate\"",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Fragment %main \"main\" %var",
+            "OpExecutionMode %main OriginUpperLeft",
+            "OpDecorate %var BuiltIn ShadingRateKHR",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u32 = OpTypeInt 32 0",
+            "%ptr = OpTypePointer Input %u32",
+            "%var = OpVariable %ptr Input",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
             .expect_err("fragment shading rate built-ins are Vulkan-only");
         assert_eq!(
@@ -36190,23 +34855,23 @@ OpFunctionEnd
 
     #[test]
     fn primitive_shading_rate_builtin_is_vulkan_only() {
-        let text = r#"
-OpCapability Shader
-OpCapability FragmentShadingRateKHR
-OpExtension "SPV_KHR_fragment_shading_rate"
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpDecorate %var BuiltIn PrimitiveShadingRateKHR
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u32 = OpTypeInt 32 0
-%ptr = OpTypePointer Output %u32
-%var = OpVariable %ptr Output
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpCapability FragmentShadingRateKHR",
+            "OpExtension \"SPV_KHR_fragment_shading_rate\"",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpDecorate %var BuiltIn PrimitiveShadingRateKHR",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u32 = OpTypeInt 32 0",
+            "%ptr = OpTypePointer Output %u32",
+            "%var = OpVariable %ptr Output",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
             .expect_err("primitive shading rate built-ins are Vulkan-only");
         assert_eq!(
@@ -36220,25 +34885,25 @@ OpFunctionEnd
 
     #[test]
     fn mesh_builtins_are_vulkan_only() {
-        let text = r#"
-OpCapability Shader
-OpCapability MeshShadingEXT
-OpExtension "SPV_EXT_mesh_shader"
-OpMemoryModel Logical GLSL450
-OpEntryPoint MeshEXT %main "main" %var
-OpDecorate %var BuiltIn PrimitivePointIndicesEXT
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u32 = OpTypeInt 32 0
-%arr3 = OpTypeArray %u32 %c3
-%c3 = OpConstant %u32 3
-%ptr = OpTypePointer Output %arr3
-%var = OpVariable %ptr Output
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpCapability MeshShadingEXT",
+            "OpExtension \"SPV_EXT_mesh_shader\"",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint MeshEXT %main \"main\" %var",
+            "OpDecorate %var BuiltIn PrimitivePointIndicesEXT",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u32 = OpTypeInt 32 0",
+            "%arr3 = OpTypeArray %u32 %c3",
+            "%c3 = OpConstant %u32 3",
+            "%ptr = OpTypePointer Output %arr3",
+            "%var = OpVariable %ptr Output",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
             .expect_err("mesh built-ins are Vulkan-only");
         assert_eq!(
@@ -36252,21 +34917,21 @@ OpFunctionEnd
 
     #[test]
     fn instance_id_is_disallowed_in_vulkan() {
-        let text = r#"
-OpCapability Shader
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpDecorate %var BuiltIn InstanceId
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u32 = OpTypeInt 32 0
-%ptr = OpTypePointer Input %u32
-%var = OpVariable %ptr Input
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpDecorate %var BuiltIn InstanceId",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u32 = OpTypeInt 32 0",
+            "%ptr = OpTypePointer Input %u32",
+            "%var = OpVariable %ptr Input",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
             .expect_err("InstanceId is not allowed in Vulkan");
         assert_eq!(
@@ -36280,22 +34945,22 @@ OpFunctionEnd
 
     #[test]
     fn compute_workgroup_builtins_require_compute_entry_point() {
-        let text = r#"
-OpCapability Shader
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpDecorate %var BuiltIn GlobalInvocationId
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u32 = OpTypeInt 32 0
-%vec3 = OpTypeVector %u32 3
-%ptr = OpTypePointer Input %vec3
-%var = OpVariable %ptr Input
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpDecorate %var BuiltIn GlobalInvocationId",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u32 = OpTypeInt 32 0",
+            "%vec3 = OpTypeVector %u32 3",
+            "%ptr = OpTypePointer Input %vec3",
+            "%var = OpVariable %ptr Input",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
             .expect_err("workgroup built-ins require compute entry points");
         assert_eq!(
@@ -36848,24 +35513,24 @@ OpFunctionEnd
 
     #[test]
     fn vertex_index_and_instance_index_require_vertex_model() {
-        let text = r#"
-OpCapability Shader
-OpMemoryModel Logical GLSL450
-OpEntryPoint Fragment %main "main" %vid %iid
-OpExecutionMode %main OriginUpperLeft
-OpDecorate %vid BuiltIn VertexIndex
-OpDecorate %iid BuiltIn InstanceIndex
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u32 = OpTypeInt 32 0
-%ptr = OpTypePointer Input %u32
-%vid = OpVariable %ptr Input
-%iid = OpVariable %ptr Input
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Fragment %main \"main\" %vid %iid",
+            "OpExecutionMode %main OriginUpperLeft",
+            "OpDecorate %vid BuiltIn VertexIndex",
+            "OpDecorate %iid BuiltIn InstanceIndex",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u32 = OpTypeInt 32 0",
+            "%ptr = OpTypePointer Input %u32",
+            "%vid = OpVariable %ptr Input",
+            "%iid = OpVariable %ptr Input",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
             .expect_err("VertexIndex/InstanceIndex require vertex execution model");
         assert!(matches!(
@@ -36952,21 +35617,21 @@ OpFunctionEnd
 
     #[test]
     fn view_index_requires_multiview_capability() {
-        let text = r#"
-OpCapability Shader
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpDecorate %var BuiltIn ViewIndex
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u32 = OpTypeInt 32 0
-%ptr = OpTypePointer Input %u32
-%var = OpVariable %ptr Input
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpDecorate %var BuiltIn ViewIndex",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u32 = OpTypeInt 32 0",
+            "%ptr = OpTypePointer Input %u32",
+            "%var = OpVariable %ptr Input",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
             .expect_err("ViewIndex requires MultiView capability");
         assert!(
@@ -36983,23 +35648,23 @@ OpFunctionEnd
 
     #[test]
     fn device_index_requires_device_group_capability() {
-        let text = r#"
-OpCapability Shader
-OpCapability MultiView
-OpExtension "SPV_KHR_multiview"
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpDecorate %var BuiltIn DeviceIndex
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u32 = OpTypeInt 32 0
-%ptr = OpTypePointer Input %u32
-%var = OpVariable %ptr Input
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpCapability MultiView",
+            "OpExtension \"SPV_KHR_multiview\"",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpDecorate %var BuiltIn DeviceIndex",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u32 = OpTypeInt 32 0",
+            "%ptr = OpTypePointer Input %u32",
+            "%var = OpVariable %ptr Input",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
             .expect_err("DeviceIndex requires DeviceGroup capability");
         assert!(
@@ -37224,23 +35889,23 @@ OpFunctionEnd
 
     #[test]
     fn shading_rate_builtins_require_fragment_execution_model() {
-        let text = r#"
-OpCapability Shader
-OpCapability FragmentShadingRateKHR
-OpExtension "SPV_KHR_fragment_shading_rate"
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpDecorate %var BuiltIn ShadingRateKHR
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u32 = OpTypeInt 32 0
-%ptr = OpTypePointer Input %u32
-%var = OpVariable %ptr Input
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpCapability FragmentShadingRateKHR",
+            "OpExtension \"SPV_KHR_fragment_shading_rate\"",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpDecorate %var BuiltIn ShadingRateKHR",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u32 = OpTypeInt 32 0",
+            "%ptr = OpTypePointer Input %u32",
+            "%var = OpVariable %ptr Input",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
             .expect_err("shading rate built-ins require fragment entry points");
         assert!(matches!(
@@ -37637,26 +36302,26 @@ OpFunctionEnd
 
     #[test]
     fn mesh_builtins_require_mesh_execution_models() {
-        let text = r#"
-OpCapability Shader
-OpCapability Geometry
-OpCapability MeshShadingEXT
-OpExtension "SPV_EXT_mesh_shader"
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpDecorate %var BuiltIn PrimitivePointIndicesEXT
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u32 = OpTypeInt 32 0
-%arr = OpTypeArray %u32 %uint_3
-%uint_3 = OpConstant %u32 3
-%ptr = OpTypePointer Output %arr
-%var = OpVariable %ptr Output
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Geometry",
+            "OpCapability MeshShadingEXT",
+            "OpExtension \"SPV_EXT_mesh_shader\"",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpDecorate %var BuiltIn PrimitivePointIndicesEXT",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u32 = OpTypeInt 32 0",
+            "%arr = OpTypeArray %u32 %uint_3",
+            "%uint_3 = OpConstant %u32 3",
+            "%ptr = OpTypePointer Output %arr",
+            "%var = OpVariable %ptr Output",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
             .expect_err("mesh built-ins require mesh execution models");
         assert!(matches!(
@@ -37717,21 +36382,21 @@ OpFunctionEnd
 
     #[test]
     fn kernel_only_builtins_require_kernel_execution_model() {
-        let text = r#"
-OpCapability Shader
-OpMemoryModel Logical GLSL450
-OpEntryPoint GLCompute %main "main" %var
-OpDecorate %var BuiltIn WorkDim
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u32 = OpTypeInt 32 0
-%ptr = OpTypePointer Input %u32
-%var = OpVariable %ptr Input
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint GLCompute %main \"main\" %var",
+            "OpDecorate %var BuiltIn WorkDim",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u32 = OpTypeInt 32 0",
+            "%ptr = OpTypePointer Input %u32",
+            "%var = OpVariable %ptr Input",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
             .expect_err("WorkDim is a Kernel-only built-in");
         assert!(
@@ -37768,45 +36433,45 @@ OpFunctionEnd
 
     #[test]
     fn kernel_execution_model_allows_compute_builtins() {
-        let text = r#"
-OpCapability Addresses
-OpCapability Kernel
-OpMemoryModel Physical32 OpenCL
-OpEntryPoint Kernel %main "main" %var
-OpDecorate %var BuiltIn GlobalInvocationId
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u32 = OpTypeInt 32 0
-%vec3 = OpTypeVector %u32 3
-%ptr = OpTypePointer Input %vec3
-%var = OpVariable %ptr Input
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Addresses",
+            "OpCapability Kernel",
+            "OpMemoryModel Physical32 OpenCL",
+            "OpEntryPoint Kernel %main \"main\" %var",
+            "OpDecorate %var BuiltIn GlobalInvocationId",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u32 = OpTypeInt 32 0",
+            "%vec3 = OpTypeVector %u32 3",
+            "%ptr = OpTypePointer Input %vec3",
+            "%var = OpVariable %ptr Input",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
             .expect("Kernel execution model should allow compute built-ins");
     }
 
     #[test]
     fn kernel_only_builtins_require_kernel_capability() {
-        let text = r#"
-OpCapability Addresses
-OpMemoryModel Physical32 OpenCL
-OpEntryPoint Kernel %main "main" %var
-OpDecorate %var BuiltIn GlobalOffset
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u32 = OpTypeInt 32 0
-%vec3 = OpTypeVector %u32 3
-%ptr = OpTypePointer Input %vec3
-%var = OpVariable %ptr Input
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Addresses",
+            "OpMemoryModel Physical32 OpenCL",
+            "OpEntryPoint Kernel %main \"main\" %var",
+            "OpDecorate %var BuiltIn GlobalOffset",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u32 = OpTypeInt 32 0",
+            "%vec3 = OpTypeVector %u32 3",
+            "%ptr = OpTypePointer Input %vec3",
+            "%var = OpVariable %ptr Input",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
             .expect_err("Kernel-only built-ins require Kernel capability");
         assert!(
@@ -37844,26 +36509,26 @@ OpFunctionEnd
 
     #[test]
     fn barycentric_builtin_requires_input_storage() {
-        let text = r#"
-OpCapability Shader
-OpCapability FragmentBarycentricKHR
-OpExtension "SPV_KHR_fragment_shader_barycentric"
-OpExtension "SPV_NV_fragment_shader_barycentric"
-OpMemoryModel Logical GLSL450
-OpEntryPoint Fragment %main "main" %var
-OpExecutionMode %main OriginUpperLeft
-OpDecorate %var BuiltIn BaryCoordKHR
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%f32 = OpTypeFloat 32
-%vec2 = OpTypeVector %f32 2
-%ptr_out = OpTypePointer Output %vec2
-%var = OpVariable %ptr_out Output
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpCapability FragmentBarycentricKHR",
+            "OpExtension \"SPV_KHR_fragment_shader_barycentric\"",
+            "OpExtension \"SPV_NV_fragment_shader_barycentric\"",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Fragment %main \"main\" %var",
+            "OpExecutionMode %main OriginUpperLeft",
+            "OpDecorate %var BuiltIn BaryCoordKHR",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%f32 = OpTypeFloat 32",
+            "%vec2 = OpTypeVector %f32 2",
+            "%ptr_out = OpTypePointer Output %vec2",
+            "%var = OpVariable %ptr_out Output",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
             .expect_err("barycentric built-ins must target Input storage");
         assert_eq!(
@@ -37900,56 +36565,56 @@ OpFunctionEnd
 
     #[test]
     fn uniform_8bit_with_block_allows_uniform_and_storage_buffer_capability() {
-        let text = r#"
-OpCapability Shader
-OpCapability Int8
-OpCapability VariablePointers
-OpCapability VariablePointersStorageBuffer
-OpCapability UniformAndStorageBuffer8BitAccess
-OpCapability StorageBuffer8BitAccess
-OpExtension "SPV_KHR_storage_buffer_storage_class"
-OpExtension "SPV_KHR_variable_pointers"
-OpExtension "SPV_KHR_8bit_storage"
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpName %main "main"
-OpName %var "var"
-OpDecorate %buf Block
-OpMemberDecorate %buf 0 Offset 0
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u8 = OpTypeInt 8 0
-%buf = OpTypeStruct %u8
-%ptr = OpTypePointer Uniform %buf
-%var = OpVariable %ptr Uniform
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Int8",
+            "OpCapability VariablePointers",
+            "OpCapability VariablePointersStorageBuffer",
+            "OpCapability UniformAndStorageBuffer8BitAccess",
+            "OpCapability StorageBuffer8BitAccess",
+            "OpExtension \"SPV_KHR_storage_buffer_storage_class\"",
+            "OpExtension \"SPV_KHR_variable_pointers\"",
+            "OpExtension \"SPV_KHR_8bit_storage\"",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpName %main \"main\"",
+            "OpName %var \"var\"",
+            "OpDecorate %buf Block",
+            "OpMemberDecorate %buf 0 Offset 0",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u8 = OpTypeInt 8 0",
+            "%buf = OpTypeStruct %u8",
+            "%ptr = OpTypePointer Uniform %buf",
+            "%var = OpVariable %ptr Uniform",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
             .expect("UniformAndStorageBuffer8BitAccess with Block should allow uniform 8-bit");
     }
 
     #[test]
     fn uniform_constant_8bit_is_disallowed() {
-        let text = r#"
-OpCapability Shader
-OpCapability Int8
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpName %main "main"
-OpName %var "var"
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u8 = OpTypeInt 8 0
-%ptr = OpTypePointer UniformConstant %u8
-%var = OpVariable %ptr UniformConstant
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Int8",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpName %main \"main\"",
+            "OpName %var \"var\"",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u8 = OpTypeInt 8 0",
+            "%ptr = OpTypePointer UniformConstant %u8",
+            "%var = OpVariable %ptr UniformConstant",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let error = assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
             .expect_err("expected uniform constant rejection");
         assert_eq!(
@@ -37963,23 +36628,23 @@ OpFunctionEnd
 
     #[test]
     fn input_8bit_is_disallowed() {
-        let text = r#"
-OpCapability Shader
-OpCapability Int8
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpName %main "main"
-OpName %var "var"
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u8 = OpTypeInt 8 0
-%ptr = OpTypePointer Input %u8
-%var = OpVariable %ptr Input
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Int8",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpName %main \"main\"",
+            "OpName %var \"var\"",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u8 = OpTypeInt 8 0",
+            "%ptr = OpTypePointer Input %u8",
+            "%var = OpVariable %ptr Input",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let error = assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
             .expect_err("expected disallowed input");
         assert_eq!(
@@ -37993,126 +36658,126 @@ OpFunctionEnd
 
     #[test]
     fn input_16bit_with_storage_input_output_capability_is_allowed() {
-        let text = r#"
-OpCapability Shader
-OpCapability Int16
-OpCapability StorageInputOutput16
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpName %main "main"
-OpName %var "var"
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u16 = OpTypeInt 16 0
-%ptr = OpTypePointer Input %u16
-%var = OpVariable %ptr Input
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Int16",
+            "OpCapability StorageInputOutput16",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpName %main \"main\"",
+            "OpName %var \"var\"",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u16 = OpTypeInt 16 0",
+            "%ptr = OpTypePointer Input %u16",
+            "%var = OpVariable %ptr Input",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         assemble_and_validate_with_env(text, TargetEnv::Universal1_3)
             .expect("StorageInputOutput16 should allow 16-bit input");
     }
 
     #[test]
     fn output_16bit_with_storage_input_output_capability_is_allowed() {
-        let text = r#"
-OpCapability Shader
-OpCapability Int16
-OpCapability StorageInputOutput16
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpName %main "main"
-OpName %var "var"
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u16 = OpTypeInt 16 0
-%ptr = OpTypePointer Output %u16
-%var = OpVariable %ptr Output
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Int16",
+            "OpCapability StorageInputOutput16",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpName %main \"main\"",
+            "OpName %var \"var\"",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u16 = OpTypeInt 16 0",
+            "%ptr = OpTypePointer Output %u16",
+            "%var = OpVariable %ptr Output",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         assemble_and_validate_with_env(text, TargetEnv::Universal1_3)
             .expect("StorageInputOutput16 should allow 16-bit output");
     }
 
     #[test]
     fn storage_buffer_16bit_with_capability_is_allowed() {
-        let text = r#"
-OpCapability Shader
-OpCapability Int16
-OpCapability VariablePointers
-OpCapability VariablePointersStorageBuffer
-OpCapability StorageBuffer16BitAccess
-OpExtension "SPV_KHR_storage_buffer_storage_class"
-OpExtension "SPV_KHR_variable_pointers"
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpName %main "main"
-OpName %var "var"
-OpDecorate %buf Block
-OpMemberDecorate %buf 0 Offset 0
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u16 = OpTypeInt 16 0
-%buf = OpTypeStruct %u16
-%ptr = OpTypePointer StorageBuffer %buf
-%var = OpVariable %ptr StorageBuffer
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Int16",
+            "OpCapability VariablePointers",
+            "OpCapability VariablePointersStorageBuffer",
+            "OpCapability StorageBuffer16BitAccess",
+            "OpExtension \"SPV_KHR_storage_buffer_storage_class\"",
+            "OpExtension \"SPV_KHR_variable_pointers\"",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpName %main \"main\"",
+            "OpName %var \"var\"",
+            "OpDecorate %buf Block",
+            "OpMemberDecorate %buf 0 Offset 0",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u16 = OpTypeInt 16 0",
+            "%buf = OpTypeStruct %u16",
+            "%ptr = OpTypePointer StorageBuffer %buf",
+            "%var = OpVariable %ptr StorageBuffer",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         assemble_and_validate_with_env(text, TargetEnv::Universal1_3)
             .expect("StorageBuffer16BitAccess should allow 16-bit storage buffer");
     }
 
     #[test]
     fn push_constant_16bit_with_capability_is_allowed() {
-        let text = r#"
-OpCapability Shader
-OpCapability Int16
-OpCapability StoragePushConstant16
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpName %main "main"
-OpName %var "var"
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u16 = OpTypeInt 16 0
-%ptr = OpTypePointer PushConstant %u16
-%var = OpVariable %ptr PushConstant
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Int16",
+            "OpCapability StoragePushConstant16",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpName %main \"main\"",
+            "OpName %var \"var\"",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u16 = OpTypeInt 16 0",
+            "%ptr = OpTypePointer PushConstant %u16",
+            "%var = OpVariable %ptr PushConstant",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         assemble_and_validate_with_env(text, TargetEnv::Universal1_3)
             .expect("StoragePushConstant16 should allow 16-bit push constants");
     }
 
     #[test]
     fn workgroup_16bit_requires_capability() {
-        let text = r#"
-OpCapability Shader
-OpCapability Int16
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpName %main "main"
-OpName %var "var"
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u16 = OpTypeInt 16 0
-%ptr = OpTypePointer Workgroup %u16
-%var = OpVariable %ptr Workgroup
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Int16",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpName %main \"main\"",
+            "OpName %var \"var\"",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u16 = OpTypeInt 16 0",
+            "%ptr = OpTypePointer Workgroup %u16",
+            "%var = OpVariable %ptr Workgroup",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let error = assemble_and_validate_with_env(text, TargetEnv::Universal1_4)
             .expect_err("expected workgroup capability");
         assert_eq!(
@@ -38127,26 +36792,26 @@ OpFunctionEnd
 
     #[test]
     fn workgroup_16bit_with_capability_is_allowed() {
-        let text = r#"
-OpCapability Shader
-OpCapability Int16
-OpCapability WorkgroupMemoryExplicitLayoutKHR
-OpCapability WorkgroupMemoryExplicitLayout16BitAccessKHR
-OpExtension "SPV_KHR_workgroup_memory_explicit_layout"
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpName %main "main"
-OpName %var "var"
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u16 = OpTypeInt 16 0
-%ptr = OpTypePointer Workgroup %u16
-%var = OpVariable %ptr Workgroup
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Int16",
+            "OpCapability WorkgroupMemoryExplicitLayoutKHR",
+            "OpCapability WorkgroupMemoryExplicitLayout16BitAccessKHR",
+            "OpExtension \"SPV_KHR_workgroup_memory_explicit_layout\"",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpName %main \"main\"",
+            "OpName %var \"var\"",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u16 = OpTypeInt 16 0",
+            "%ptr = OpTypePointer Workgroup %u16",
+            "%var = OpVariable %ptr Workgroup",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         assemble_and_validate_with_env(text, TargetEnv::Universal1_4)
             .expect_err("extension gate should reject workgroup layout without allowed env");
 
@@ -38156,49 +36821,49 @@ OpFunctionEnd
 
     #[test]
     fn workgroup_8bit_with_capability_is_allowed() {
-        let text = r#"
-OpCapability Shader
-OpCapability Int8
-OpCapability WorkgroupMemoryExplicitLayoutKHR
-OpCapability WorkgroupMemoryExplicitLayout8BitAccessKHR
-OpExtension "SPV_KHR_workgroup_memory_explicit_layout"
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpName %main "main"
-OpName %var "var"
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u8 = OpTypeInt 8 0
-%ptr = OpTypePointer Workgroup %u8
-%var = OpVariable %ptr Workgroup
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Int8",
+            "OpCapability WorkgroupMemoryExplicitLayoutKHR",
+            "OpCapability WorkgroupMemoryExplicitLayout8BitAccessKHR",
+            "OpExtension \"SPV_KHR_workgroup_memory_explicit_layout\"",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpName %main \"main\"",
+            "OpName %var \"var\"",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u8 = OpTypeInt 8 0",
+            "%ptr = OpTypePointer Workgroup %u8",
+            "%var = OpVariable %ptr Workgroup",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         assemble_and_validate_with_env(text, TargetEnv::Vulkan1_1Spirv1_4)
             .expect("WorkgroupMemoryExplicitLayout8BitAccessKHR should allow 8-bit workgroup");
     }
 
     #[test]
     fn push_constant_8bit_requires_capability() {
-        let text = r#"
-OpCapability Shader
-OpCapability Int8
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpName %main "main"
-OpName %var "var"
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u8 = OpTypeInt 8 0
-%ptr = OpTypePointer PushConstant %u8
-%var = OpVariable %ptr PushConstant
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Int8",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpName %main \"main\"",
+            "OpName %var \"var\"",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u8 = OpTypeInt 8 0",
+            "%ptr = OpTypePointer PushConstant %u8",
+            "%var = OpVariable %ptr PushConstant",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         let error = assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
             .expect_err("expected push constant capability");
         assert_eq!(
@@ -38213,24 +36878,24 @@ OpFunctionEnd
 
     #[test]
     fn push_constant_8bit_with_capability_is_allowed() {
-        let text = r#"
-OpCapability Shader
-OpCapability Int8
-OpCapability StoragePushConstant8
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main" %var
-OpName %main "main"
-OpName %var "var"
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%u8 = OpTypeInt 8 0
-%ptr = OpTypePointer PushConstant %u8
-%var = OpVariable %ptr PushConstant
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Int8",
+            "OpCapability StoragePushConstant8",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpName %main \"main\"",
+            "OpName %var \"var\"",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u8 = OpTypeInt 8 0",
+            "%ptr = OpTypePointer PushConstant %u8",
+            "%var = OpVariable %ptr PushConstant",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ].join("\n");
         assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
             .expect("StoragePushConstant8 should allow 8-bit push constants");
     }
@@ -38477,7 +37142,6 @@ OpFunctionEnd
         ]
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
-
         let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
@@ -38493,7 +37157,6 @@ OpFunctionEnd
             }
         );
     }
-
     #[test]
     fn validatable_trait_covers_text_and_binary() {
         let text = [
@@ -38508,7 +37171,6 @@ OpFunctionEnd
             .validate(TargetEnv::Universal1_6)
             .expect("valid text");
         assert_eq!(valid_text.header().schema(), Schema::ZERO);
-
         let binary = assemble_text(&text).expect("assemble");
         let valid_binary = binary
             .as_slice()
@@ -38519,7 +37181,6 @@ OpFunctionEnd
             DeclaredBound(binary[3])
         );
     }
-
     #[test]
     fn valid_module_shares_words_without_copying() {
         let text = [
@@ -38542,7 +37203,6 @@ OpFunctionEnd
             Arc::as_ptr(&arc_from_valid),
             "validated modules should share backing storage"
         );
-
         let module_words: ModuleWords = ModuleWords::from(arc_from_handle);
         assert_eq!(module_words.as_slice(), binary.as_slice());
     }

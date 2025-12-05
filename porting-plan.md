@@ -874,6 +874,12 @@ Tasks for this milestone:
 - Track a “Rust path by default” toggle and document rollout/rollback procedures for CLI/FFI consumers.
 - Validator clippy is warning-free; ready for full corpus parity runs with the Rust validator forced on (`SPIRV_TOOLS_DISABLE_RUST_VALIDATOR=0`).
 
+## Parity Gaps to Close (Libs + CLI)
+- Mirror the C++ assembler/disassembler corpora in Rust (CLI + FFI) so `spirv-as`/`spirv-dis` byte-for-byte outputs stay aligned across env toggles.
+- Add reducer/fuzzer CLI/FFI parity harnesses (smoke runs only, no new CI matrix yet) and port the core reducer pass set behind the existing flags/envs.
+- Expand CLI help/docs/tests to cover all legacy flags/aliases and env vars (validator/optimizer toggles included) so Rust and C++ CLIs accept the same surface.
+- Run full validator/optimizer/reducer/fuzzer integration suites through the Rust path in a single parity script (manual/local for now) and track any deltas before enabling CI.
+
 ## Upcoming Milestone: SSA & Type Validation Parity
 Mirror the C++ validator’s SSA and type checking inside function bodies.
 
