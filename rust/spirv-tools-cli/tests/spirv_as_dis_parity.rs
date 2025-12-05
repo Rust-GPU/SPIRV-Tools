@@ -338,3 +338,73 @@ fn spirv_opt_help_and_version_match_cpp() {
 
     help_and_version_parity(env!("CARGO_BIN_EXE_spirv-opt"), &cpp_opt, "spirv-opt");
 }
+
+#[test]
+fn spirv_val_reports_errors_like_cpp() {
+    let Some(cpp_val) = find_cpp_tool("SPIRV_CPP_VAL", "spirv-val") else {
+        eprintln!("SPIRV_CPP_VAL not set and spirv-val not found on PATH; skipping parity");
+        return;
+    };
+
+    let dir = tempdir().expect("temp dir");
+    let bad_path = dir.path().join("invalid.spv");
+    fs::write(&bad_path, &[0u8, 1, 2, 3]).expect("write invalid spv");
+
+    let rust = Command::new(env!("CARGO_BIN_EXE_spirv-val"))
+        .arg(&bad_path)
+        .output()
+        .expect("run rust spirv-val");
+    let cpp = Command::new(&cpp_val)
+        .arg(&bad_path)
+        .output()
+        .expect("run cpp spirv-val");
+
+    assert!(
+        !rust.status.success(),
+        "expected rust spirv-val to fail on invalid binary"
+    );
+    assert!(
+        !cpp.status.success(),
+        "expected cpp spirv-val to fail on invalid binary"
+    );
+    assert_eq!(
+        rust.status.code(),
+        cpp.status.code(),
+        "error exit codes should match between rust and cpp spirv-val"
+    );
+}
+
+#[test]
+fn spirv_opt_reports_errors_like_cpp() {
+    let Some(cpp_opt) = find_cpp_tool("SPIRV_CPP_OPT", "spirv-opt") else {
+        eprintln!("SPIRV_CPP_OPT not set and spirv-opt not found on PATH; skipping parity");
+        return;
+    };
+
+    let dir = tempdir().expect("temp dir");
+    let bad_path = dir.path().join("invalid.spv");
+    fs::write(&bad_path, &[0u8, 1, 2, 3]).expect("write invalid spv");
+
+    let rust = Command::new(env!("CARGO_BIN_EXE_spirv-opt"))
+        .arg(&bad_path)
+        .output()
+        .expect("run rust spirv-opt");
+    let cpp = Command::new(&cpp_opt)
+        .arg(&bad_path)
+        .output()
+        .expect("run cpp spirv-opt");
+
+    assert!(
+        !rust.status.success(),
+        "expected rust spirv-opt to fail on invalid binary"
+    );
+    assert!(
+        !cpp.status.success(),
+        "expected cpp spirv-opt to fail on invalid binary"
+    );
+    assert_eq!(
+        rust.status.code(),
+        cpp.status.code(),
+        "error exit codes should match between rust and cpp spirv-opt"
+    );
+}
