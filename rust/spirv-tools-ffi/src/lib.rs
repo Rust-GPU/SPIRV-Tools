@@ -916,25 +916,30 @@ OpFunctionEnd"#;
         let handle = create_context(env, pointer);
         assert_ne!(handle, 0);
 
-        let text = br#"
-OpCapability Shader
-OpMemoryModel Logical GLSL450
-OpEntryPoint Vertex %main "main"
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-"#;
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            r#"OpEntryPoint Vertex %main "main""#,
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+            "",
+        ]
+        .join("\n");
+        let text_bytes = text.as_bytes();
 
         set_rust_text_assembler_override(true);
-        let rust_result = try_assemble_text(handle, text, TextToBinaryOptions::PRESERVE_NUMERIC_IDS.bits());
+        let rust_result =
+            try_assemble_text(handle, text_bytes, TextToBinaryOptions::PRESERVE_NUMERIC_IDS.bits());
         assert!(rust_result.success, "rust assembler failed");
         clear_rust_text_assembler_override();
 
         set_rust_text_assembler_override(false);
-        let cpp_result = try_assemble_text(handle, text, TextToBinaryOptions::PRESERVE_NUMERIC_IDS.bits());
+        let cpp_result =
+            try_assemble_text(handle, text_bytes, TextToBinaryOptions::PRESERVE_NUMERIC_IDS.bits());
         assert!(cpp_result.success, "cpp assembler path failed");
         clear_rust_text_assembler_override();
 
