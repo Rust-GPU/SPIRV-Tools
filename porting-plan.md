@@ -883,6 +883,16 @@ Tasks for this milestone:
 - Expand CLI help/docs/tests to cover all legacy flags/aliases and env vars (validator/optimizer toggles included) so Rust and C++ CLIs accept the same surface.
 - Run full validator/optimizer/reducer/fuzzer integration suites through the Rust path in a single parity script (manual/local for now) and track any deltas before enabling CI.
 
+## Upcoming Milestone: CLI/FFI Parity Sweep
+Lock CLI/FFI behavior across all tools (as/dis/val/opt/reduce/fuzz/objdump) so success/error/help/version/diagnostics match the C++ binaries and C API.
+
+Tasks for this milestone:
+- [ ] CLI assembler/disassembler success corpus parity (text→binary→text) covering preserve-numeric-ids and canonicalization flags; diff stdout/stderr/exit codes vs C++ and skip when tools are absent.
+- [ ] CLI reducer/fuzzer/cfg/lint/objdump success-path parity on a small corpus, diffing outputs/diagnostics and skipping when binaries are absent.
+- [ ] FFI parity harnesses for assembler/disassembler/optimizer/reducer/fuzzer covering success/error paths, exit codes, and message callback ordering vs the C++ bridge.
+- [ ] Enumerate remaining per-tool deltas (CLI + FFI) and turn them into tracked tests/tasks until closed; keep a ledger of skips and why.
+- [ ] Add a consolidated local parity runner (not wired to CI) that exercises the above matrices when C++ tools are available and reports mismatches.
+
 ## Upcoming Milestone: SSA & Type Validation Parity
 Mirror the C++ validator’s SSA and type checking inside function bodies.
 
