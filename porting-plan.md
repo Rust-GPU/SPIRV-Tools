@@ -892,6 +892,7 @@ Tasks for this milestone:
 - [ ] FFI parity harnesses for assembler/disassembler/optimizer/reducer/fuzzer covering success/error paths, exit codes, and message callback ordering vs the C++ bridge.
 - [ ] Enumerate remaining per-tool deltas (CLI + FFI) and turn them into tracked tests/tasks until closed; keep a ledger of skips and why.
 - [ ] Add a consolidated local parity runner (not wired to CI) that exercises the above matrices when C++ tools are available and reports mismatches.
+- [ ] Add CLI parity for `spirv-objdump` (help/version, invalid/valid binaries) vs C++; mirror coverage for any remaining objdump-specific flags/diagnostics.
 
 ## Upcoming Milestone: SSA & Type Validation Parity
 Mirror the C++ validator’s SSA and type checking inside function bodies.
