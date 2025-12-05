@@ -509,6 +509,36 @@ fn spirv_dis_help_and_version_match_cpp() {
 }
 
 #[test]
+fn spirv_disassembles_like_cpp() {
+    let Some(cpp_dis) = find_cpp_tool("SPIRV_CPP_DIS", "spirv-dis") else {
+        eprintln!("SPIRV_CPP_DIS not set and spirv-dis not found on PATH; skipping parity");
+        return;
+    };
+
+    let words = assemble_text(simple_module()).expect("assemble simple module");
+    let bytes = words_to_bytes(&words);
+    let dir = tempdir().expect("temp dir");
+    let bin_path = dir.path().join("module.spv");
+    fs::write(&bin_path, &bytes).expect("write module");
+
+    let rust = Command::new(env!("CARGO_BIN_EXE_spirv-dis"))
+        .arg(&bin_path)
+        .output()
+        .expect("run rust spirv-dis");
+    let cpp = Command::new(&cpp_dis)
+        .arg(&bin_path)
+        .output()
+        .expect("run cpp spirv-dis");
+
+    assert!(rust.status.success(), "rust spirv-dis failed: {:?}", rust.status);
+    assert!(cpp.status.success(), "cpp spirv-dis failed: {:?}", cpp.status);
+
+    let rust_out = String::from_utf8_lossy(&rust.stdout);
+    let cpp_out = String::from_utf8_lossy(&cpp.stdout);
+    assert_eq!(rust_out, cpp_out, "spirv-dis outputs differed");
+}
+
+#[test]
 fn spirv_val_help_and_version_match_cpp() {
     let Some(cpp_val) = find_cpp_tool("SPIRV_CPP_VAL", "spirv-val") else {
         eprintln!("SPIRV_CPP_VAL not set and spirv-val not found on PATH; skipping parity");
