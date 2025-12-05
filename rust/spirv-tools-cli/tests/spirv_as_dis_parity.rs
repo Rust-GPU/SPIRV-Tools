@@ -157,6 +157,42 @@ fn spirv_as_reports_errors_like_cpp() {
     );
 }
 
+#[test]
+fn spirv_dis_reports_errors_like_cpp() {
+    let Some(cpp_dis) = find_cpp_tool("SPIRV_CPP_DIS", "spirv-dis") else {
+        eprintln!("SPIRV_CPP_DIS not set and spirv-dis not found on PATH; skipping parity");
+        return;
+    };
+
+    let dir = tempdir().expect("temp dir");
+    let bad_path = dir.path().join("invalid.spv");
+    // Write an invalid SPIR-V binary (wrong magic).
+    fs::write(&bad_path, &[0u8, 1, 2, 3]).expect("write invalid spv");
+
+    let rust = Command::new(env!("CARGO_BIN_EXE_spirv-dis"))
+        .arg(&bad_path)
+        .output()
+        .expect("run rust spirv-dis");
+    let cpp = Command::new(&cpp_dis)
+        .arg(&bad_path)
+        .output()
+        .expect("run cpp spirv-dis");
+
+    assert!(
+        !rust.status.success(),
+        "expected rust spirv-dis to fail on invalid binary"
+    );
+    assert!(
+        !cpp.status.success(),
+        "expected cpp spirv-dis to fail on invalid binary"
+    );
+    assert_eq!(
+        rust.status.code(),
+        cpp.status.code(),
+        "error exit codes should match between rust and cpp spirv-dis"
+    );
+}
+
 fn normalize_text(text: &str) -> Vec<u32> {
     assemble_text(text).expect("assemble disassembled text")
 }
