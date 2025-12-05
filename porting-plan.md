@@ -756,6 +756,16 @@ Planned tasks:
   - Added validator regressions for missing merge/continue targets (selection/loop merges must reference in-function blocks), matching the C++ structured CFG checks.
   - Added validator regression for missing loop continue targets, ensuring `OpLoopMerge` continue operands reference valid blocks (parity with C++).
 
+## Upcoming Milestone: CLI/Library Corpus Parity Audit
+Align the Rust assembler/disassembler/validator/optimizer binaries with the C++ corpora and CLI behaviors.
+
+Tasks for this milestone:
+- Add Rust-vs-C++ corpus runners for assembler/disassembler similar to `run-opt-parity.sh`, covering text↔binary round-trips and CLI flags (env/force-rust toggles).
+- Expand validator corpus runs to cover the full C++ test corpus with the Rust path forced on (reuse `scripts/run-rust-validator-corpus.sh`).
+- Add missing CLI parity tests for optimizer strength reductions still uncovered (see TODO above) and track any remaining gaps.
+- Ensure FFI surfaces expose the same toggles/defaults as the CLI for all tools (optimizer, assembler, disassembler, validator) with regression tests.
+- Wire the corpus runners into optional CI smoke scripts (not enabled by default yet) so parity checks can be invoked locally or in targeted jobs.
+
 ## Upcoming Milestone: Optimizer FFI/CLI Integration
 Expose the Rust optimizer through the existing C/C++ surfaces and provide CLI benchmarking.
 
