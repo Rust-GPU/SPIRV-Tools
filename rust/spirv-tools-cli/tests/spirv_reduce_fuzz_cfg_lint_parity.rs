@@ -80,6 +80,38 @@ fn write_invalid_spirv() -> (tempfile::TempDir, PathBuf) {
     (dir, bad_path)
 }
 
+fn simple_module_lines() -> [&'static str; 9] {
+    [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint Vertex %main \"main\"",
+        "%void = OpTypeVoid",
+        "%fn = OpTypeFunction %void",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+}
+
+fn simple_module_text() -> String {
+    simple_module_lines().join("\n")
+}
+
+fn assemble_with_rust_as(path: &PathBuf) {
+    let asm = simple_module_text();
+    let dir = path.parent().expect("parent dir");
+    let asm_path = dir.join("module.spvasm");
+    fs::write(&asm_path, asm).expect("write asm");
+    let status = Command::new(rust_bin("spirv-as"))
+        .arg(&asm_path)
+        .arg("-o")
+        .arg(path)
+        .status()
+        .expect("run rust spirv-as");
+    assert!(status.success(), "spirv-as failed: {status:?}");
+}
+
 fn assert_error_parity(rust_cmd: &mut Command, cpp_cmd: &mut Command, label: &str) {
     let rust = rust_cmd.output().expect("run rust tool");
     let cpp = cpp_cmd.output().expect("run cpp tool");
@@ -228,6 +260,33 @@ fn spirv_cfg_reports_errors_like_cpp() {
 }
 
 #[test]
+fn spirv_cfg_matches_cpp_output() {
+    let Some(cpp_tool) = find_cpp_tool("SPIRV_CPP_CFG", "spirv-cfg") else {
+        eprintln!("SPIRV_CPP_CFG not set and spirv-cfg not found on PATH; skipping parity");
+        return;
+    };
+    let dir = tempdir().expect("temp dir");
+    let bin_path = dir.path().join("module.spv");
+    assemble_with_rust_as(&bin_path);
+
+    let rust = Command::new(rust_bin("spirv-cfg"))
+        .arg(&bin_path)
+        .output()
+        .expect("run rust spirv-cfg");
+    let cpp = Command::new(&cpp_tool)
+        .arg(&bin_path)
+        .output()
+        .expect("run cpp spirv-cfg");
+
+    assert!(rust.status.success(), "rust spirv-cfg failed: {:?}", rust.status);
+    assert!(cpp.status.success(), "cpp spirv-cfg failed: {:?}", cpp.status);
+
+    let rust_out = String::from_utf8_lossy(&rust.stdout);
+    let cpp_out = String::from_utf8_lossy(&cpp.stdout);
+    assert_eq!(rust_out, cpp_out, "spirv-cfg outputs differed");
+}
+
+#[test]
 fn spirv_lint_reports_errors_like_cpp() {
     let Some(cpp_tool) = find_cpp_tool("SPIRV_CPP_LINT", "spirv-lint") else {
         eprintln!("SPIRV_CPP_LINT not set and spirv-lint not found on PATH; skipping parity");
@@ -241,6 +300,33 @@ fn spirv_lint_reports_errors_like_cpp() {
         Command::new(&cpp_tool).arg(&bad_path),
         "spirv-lint",
     );
+}
+
+#[test]
+fn spirv_lint_matches_cpp_output() {
+    let Some(cpp_tool) = find_cpp_tool("SPIRV_CPP_LINT", "spirv-lint") else {
+        eprintln!("SPIRV_CPP_LINT not set and spirv-lint not found on PATH; skipping parity");
+        return;
+    };
+    let dir = tempdir().expect("temp dir");
+    let bin_path = dir.path().join("module.spv");
+    assemble_with_rust_as(&bin_path);
+
+    let rust = Command::new(rust_bin("spirv-lint"))
+        .arg(&bin_path)
+        .output()
+        .expect("run rust spirv-lint");
+    let cpp = Command::new(&cpp_tool)
+        .arg(&bin_path)
+        .output()
+        .expect("run cpp spirv-lint");
+
+    assert!(rust.status.success(), "rust spirv-lint failed: {:?}", rust.status);
+    assert!(cpp.status.success(), "cpp spirv-lint failed: {:?}", cpp.status);
+
+    let rust_out = String::from_utf8_lossy(&rust.stdout);
+    let cpp_out = String::from_utf8_lossy(&cpp.stdout);
+    assert_eq!(rust_out, cpp_out, "spirv-lint outputs differed");
 }
 
 #[test]
