@@ -747,7 +747,7 @@ Planned tasks:
 - Added CLI parity check for unsigned 64-bit mul-by-one/zero identities to keep Rust `opt_block` aligned with C++ spirv-opt for wide unsigned neutral/absorbing factors.
 - Added CLI parity check for signed 32-bit mul-by-one/zero identities to keep Rust `opt_block` aligned with C++ spirv-opt for signed neutral/absorbing factors.
 - Added CLI parity check for signed 32-bit mul-by-power-of-two rewrites to keep shift-based strength reductions aligned with C++ spirv-opt for signed integers.
-- Added CI optimizer smoke job (builds C++ `spirv-opt`, runs fuzz smoke + Rust/C++ parity, optional hyperfine) to keep Rust optimizer parity and perf guardrails on every PR.
+- Removed the longer-running optimizer smoke GitHub Actions job for now; keep the script available for local/nightly use once parity/perf stabilizes.
 - TODO: Audit remaining C++ `opt_block` strength-reduction cases (e.g., unsigned/signed mul-by-neg-one for 32-bit, any mask/shift rewrites not yet mirrored) and add matching CLI parity tests to keep coverage complete across widths/signedness.
 - TODO: Audit CLI/tool parity beyond optimizer (assembler/disassembler/validator corpora) and add missing Rust-vs-C++ corpus runs/tests so binaries remain drop-in replacements across all tool surfaces.
 - Added validator regression ensuring `OpSelectionMerge` still sits immediately before `OpSwitch`, matching structured control flow placement rules from the C++ validator.
@@ -767,6 +767,8 @@ Tasks for this milestone:
 - Add reducer/fuzzer corpus parity harnesses (CLI + library) that compare Rust vs. C++ outputs/diagnostics and ensure env flags pick the Rust path without altering existing CI by default.
 - Audit `spirv-as`/`spirv-dis`/`spirv-val`/`spirv-opt` help text and flag handling so Rust-backed binaries present the same UX (flags, exit codes, stderr shapes); add doc/tests.
 - Add library-level parity tests for the assembler/disassembler/optimizer entry points via the FFI to ensure drop-in embedding behavior matches the C++ API (including error codes and message callbacks).
+- Add parity coverage (CLI + FFI) for the remaining tools (`spirv-reduce`, `spirv-fuzz`, `spirv-cfg`/`spirv-lint`) so flags/exit codes/diagnostics match the C++ binaries.
+- Add C API/FFI parity tests for disassembler error paths (diagnostic content and failure codes) against the C++ fallback once the bridge is exposed.
 - Wire the corpus runners into optional CI smoke scripts (not enabled by default yet) so parity checks can be invoked locally or in targeted jobs.
 
 ## Upcoming Milestone: Optimizer FFI/CLI Integration
