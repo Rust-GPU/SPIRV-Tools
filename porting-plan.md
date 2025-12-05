@@ -887,7 +887,7 @@ Tasks for this milestone:
 - Run full validator/optimizer/reducer/fuzzer integration suites through the Rust path in a single parity script (manual/local for now) and track any deltas before enabling CI.
 
 ## Upcoming Milestone: CLI/FFI Parity Sweep
-Lock CLI/FFI behavior across all tools (as/dis/val/opt/reduce/fuzz/objdump) so success/error/help/version/diagnostics match the C++ binaries and C API.
+Lock CLI/FFI behavior across all tools (as/dis/val/opt/reduce/fuzz/objdump/size) so success/error/help/version/diagnostics match the C++ binaries and C API.
 
 Tasks for this milestone:
 - [ ] CLI assembler/disassembler success corpus parity (text→binary→text) covering preserve-numeric-ids and canonicalization flags; diff stdout/stderr/exit codes vs C++ and skip when tools are absent.
@@ -896,6 +896,15 @@ Tasks for this milestone:
 - [ ] Enumerate remaining per-tool deltas (CLI + FFI) and turn them into tracked tests/tasks until closed; keep a ledger of skips and why.
 - [ ] Add a consolidated local parity runner (not wired to CI) that exercises the above matrices when C++ tools are available and reports mismatches.
 - [ ] Add CLI parity for `spirv-objdump` (help/version, invalid/valid binaries) vs C++; mirror coverage for any remaining objdump-specific flags/diagnostics.
+
+## Upcoming Milestone: CLI/FFI Parity Hardening
+Harden success-path and FFI parity once the basic parity sweep is in place.
+
+Tasks for this milestone:
+- Add success-path corpora for `spirv-objdump`/`spirv-size` (formatting/stats) and `spirv-reduce`/`spirv-fuzz`/`spirv-cfg`/`spirv-lint` on small representative modules, diffing outputs vs. C++ when available.
+- Add assembler/disassembler text↔binary↔text corpus parity (id preservation, option flags) and wire it into the consolidated parity runner.
+- Add FFI parity tests for assembler/disassembler/validator/optimizer/reducer/fuzzer/objdump/size covering option defaults, message-consumer routing, error typing/status codes, and round-trip outputs vs. C++.
+- Extend the consolidated parity runner to execute both CLI and FFI corpora and emit a summarized delta report (opt-in; no new CI yet).
 
 ## Upcoming Milestone: SSA & Type Validation Parity
 Mirror the C++ validator’s SSA and type checking inside function bodies.
