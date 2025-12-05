@@ -217,6 +217,13 @@ Planned tasks:
 - [ ] CLI/FFI parity matrix for all tools (as/dis/val/opt/reduce/fuzz/objdump) that exercises success/error paths, compares stdout/stderr/exit codes, and asserts option/help/diagnostics behavior matches the C++ binaries/FFI.
 - [ ] Reducer/fuzzer FFI surface parity: ensure the Rust reducer/fuzzer expose the same callback wiring, option structs, and diagnostic flows as `libspirv`, with integration tests that diff outputs against C++ for good/error inputs.
 - [ ] Enumerate per-tool parity deltas (CLI + FFI) for assembler, disassembler, validator, optimizer, reducer, fuzzer, objdump, and their flags, then track them to closure with small testable tasks (success/error, help/version, diagnostic routing).
+- [ ] Parity gaps inventory (to be driven into tasks):
+  - assembler/disassembler: full success/error corpus diff (text↔binary↔text), diagnostic matching, option/help parity, id preservation checks
+  - validator: CLI/FFI diagnostic routing parity (message consumer) and help/version parity
+  - optimizer: parity beyond arithmetic block pass (other passes routed to C++) and CLI/FFI option/diagnostic equivalence
+  - reducer/fuzzer: CLI/FFI option/diagnostic parity plus success/error corpus diffs mirroring C++ outputs
+  - objdump/tools: CLI option/help/diagnostic parity for objdump/size/related tools
+  - FFI: option struct/defaults parity for all public entry points and consistent error typing across Rust/C++ bridges
 
 Planned tasks:
 - [x] Add a rollout flag/env to enable the Rust validator by default in CLI/FFI with a clear C++ fallback (default now on in CMake/Bazel via `SPIRV_PREFER_RUST_VALIDATOR_DEFAULT=1`).
