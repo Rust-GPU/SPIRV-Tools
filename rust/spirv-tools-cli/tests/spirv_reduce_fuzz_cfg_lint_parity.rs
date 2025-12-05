@@ -140,6 +140,20 @@ fn spirv_lint_help_and_version_match_cpp() {
 }
 
 #[test]
+fn spirv_objdump_help_and_version_match_cpp() {
+    let Some(cpp_tool) = find_cpp_tool("SPIRV_CPP_OBJDUMP", "spirv-objdump") else {
+        eprintln!("SPIRV_CPP_OBJDUMP not set and spirv-objdump not found on PATH; skipping parity");
+        return;
+    };
+    let rust = rust_bin("spirv-objdump");
+    help_and_version_parity(
+        rust.to_str().expect("utf8 path"),
+        &cpp_tool,
+        "spirv-objdump",
+    );
+}
+
+#[test]
 fn spirv_reduce_reports_errors_like_cpp() {
     let Some(cpp_tool) = find_cpp_tool("SPIRV_CPP_REDUCE", "spirv-reduce") else {
         eprintln!("SPIRV_CPP_REDUCE not set and spirv-reduce not found on PATH; skipping parity");
@@ -216,5 +230,21 @@ fn spirv_lint_reports_errors_like_cpp() {
         Command::new(&rust_bin).arg(&bad_path),
         Command::new(&cpp_tool).arg(&bad_path),
         "spirv-lint",
+    );
+}
+
+#[test]
+fn spirv_objdump_reports_errors_like_cpp() {
+    let Some(cpp_tool) = find_cpp_tool("SPIRV_CPP_OBJDUMP", "spirv-objdump") else {
+        eprintln!("SPIRV_CPP_OBJDUMP not set and spirv-objdump not found on PATH; skipping parity");
+        return;
+    };
+    let rust_bin = rust_bin("spirv-objdump");
+    let (_dir, bad_path) = write_invalid_spirv();
+
+    assert_error_parity(
+        Command::new(&rust_bin).arg(&bad_path),
+        Command::new(&cpp_tool).arg(&bad_path),
+        "spirv-objdump",
     );
 }
