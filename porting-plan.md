@@ -136,7 +136,7 @@ Planned tasks:
 - Keep a benchmark guardrail (hyperfine/criterion) in CI or nightly to watch for regressions.
 - [x] Document rollback/roll-forward instructions and env toggles for downstream users.
 - [x] Add a CLI/FFI parity harness to diff Rust vs C++ optimizer outputs on the arithmetic corpus and gate on regressions. (Expanded corpus: const add, mul zero, div/rem, mul by pow2, shift-by-zero elimination)
-  - Parity now runs in `scripts/ci-optimizer-smoke.sh` via `scripts/run-opt-parity.sh` when `spirv-opt` is available.
+  - Parity runner is available locally via `scripts/run-opt-parity.sh` (runs when `spirv-opt` is available); the longer-running CI wrapper has been removed for now to keep the matrix lean.
   - Corpus expanded with shift-chain and mask-to-pow2 cases to mirror C++ output signatures.
   - Added parity coverage for arithmetic shift chains and negation chains.
   - Added parity coverage for mask-then-shift folding (logical shifts) to match C++ outputs.
@@ -763,7 +763,7 @@ Planned tasks:
 - Added CLI parity check for unsigned 64-bit mul-by-one/zero identities to keep Rust `opt_block` aligned with C++ spirv-opt for wide unsigned neutral/absorbing factors.
 - Added CLI parity check for signed 32-bit mul-by-one/zero identities to keep Rust `opt_block` aligned with C++ spirv-opt for signed neutral/absorbing factors.
 - Added CLI parity check for signed 32-bit mul-by-power-of-two rewrites to keep shift-based strength reductions aligned with C++ spirv-opt for signed integers.
-- Removed the longer-running optimizer smoke GitHub Actions job for now; keep the script available for local/nightly use once parity/perf stabilizes.
+- Removed the longer-running optimizer smoke workflow and wrapper script for now to keep CI lean; rely on `run-opt-parity.sh`/hyperfine locally until parity/perf stabilizes.
 - TODO: Audit remaining C++ `opt_block` strength-reduction cases (e.g., unsigned/signed mul-by-neg-one for 32-bit, any mask/shift rewrites not yet mirrored) and add matching CLI parity tests to keep coverage complete across widths/signedness.
 - TODO: Audit CLI/tool parity beyond optimizer (assembler/disassembler/validator corpora) and add missing Rust-vs-C++ corpus runs/tests so binaries remain drop-in replacements across all tool surfaces.
 - Added validator regression ensuring `OpSelectionMerge` still sits immediately before `OpSwitch`, matching structured control flow placement rules from the C++ validator.
@@ -811,10 +811,10 @@ Planned tasks:
 Flip the Rust optimizer on by default across FFI/CLI once parity is proven and guardrails are in place.
 
 Tasks for this milestone:
-- Add CI steps to run the hyperfine and fuzz smoke scripts (`scripts/hyperfine-opt.sh`, `scripts/fuzz-smoke.sh`) to catch perf/correctness regressions.
+- Add (optional) CI steps to run the hyperfine and fuzz smoke scripts (`scripts/hyperfine-opt.sh`, `scripts/fuzz-smoke.sh`) once parity/perf settle.
 - [x] Add runtime toggles (env + FFI override) for the Rust optimizer so CLI/FFI callers can force-enable/disable independently of env defaults, with regression tests guarding the wrappers.
 - [x] Expose a CLI `--force-rust` flag that ignores `SPIRV_TOOLS_DISABLE_RUST_OPT` for benchmarking/rollout control, with an integration test covering env override.
-- [x] Add a CI-friendly optimizer smoke wrapper (`scripts/ci-optimizer-smoke.sh`) that runs fuzz smoke and optional hyperfine benchmarks when available.
+- [ ] Reintroduce a CI-friendly optimizer smoke wrapper once parity/perf settle; previous longer-running nightly wrapper has been removed to avoid extra CI surface.
 - Wire the Rust optimizer through the main CXX bridge behind a feature flag and port representative C++ optimizer tests to the Rust path via that bridge.
 - Add a nightly/longer-running fuzz job (separate from smoke) to stress end-to-end translation + optimization.
 - Track a “Rust path by default” toggle and document rollout/rollback procedures for CLI/FFI consumers.

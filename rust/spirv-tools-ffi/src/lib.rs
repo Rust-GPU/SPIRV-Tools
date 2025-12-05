@@ -878,29 +878,32 @@ OpFunctionEnd\n";
         let handle = create_context(env, pointer);
         assert_ne!(handle, 0);
 
-        let text = r#"OpCapability Shader
-OpCapability Linkage
-OpCapability StorageInputOutput16
-OpExtension "SPV_KHR_16bit_storage"
-OpExtension "SPV_KHR_8bit_storage"
-OpMemoryModel Logical GLSL450
-OpMemberDecorate %half_buffer_block 0 Offset 0
-OpMemberDecorate %short_buffer_block 0 Offset 0
-%void = OpTypeVoid
-%short = OpTypeInt 16 0
-%half = OpTypeFloat 16
-%short4 = OpTypeVector %short 4
-%half4 = OpTypeVector %half 4
-%mat4x4 = OpTypeMatrix %half4 4
-%short_buffer_block = OpTypeStruct %short
-%half_buffer_block = OpTypeStruct %half
-%ptr_type = OpTypePointer Input %short
-%var = OpVariable %ptr_type Input
-%fn = OpTypeFunction %void
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd"#;
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Linkage",
+            "OpCapability StorageInputOutput16",
+            r#"OpExtension "SPV_KHR_16bit_storage""#,
+            r#"OpExtension "SPV_KHR_8bit_storage""#,
+            "OpMemoryModel Logical GLSL450",
+            r#"OpMemberDecorate %half_buffer_block 0 Offset 0"#,
+            r#"OpMemberDecorate %short_buffer_block 0 Offset 0"#,
+            "%void = OpTypeVoid",
+            "%short = OpTypeInt 16 0",
+            "%half = OpTypeFloat 16",
+            "%short4 = OpTypeVector %short 4",
+            "%half4 = OpTypeVector %half 4",
+            "%mat4x4 = OpTypeMatrix %half4 4",
+            "%short_buffer_block = OpTypeStruct %short",
+            "%half_buffer_block = OpTypeStruct %half",
+            "%ptr_type = OpTypePointer Input %short",
+            "%var = OpVariable %ptr_type Input",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
 
         let result = try_assemble_text(handle, text.as_bytes(), TextToBinaryOptions::NONE.bits());
         assert!(result.success, "rust assembler failed via context handle");
