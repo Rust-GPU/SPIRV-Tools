@@ -31,3 +31,6 @@ scripts/run-asm-dis-parity.sh "${workspace}"
 
 echo "Running tool CLI parity (reduce/fuzz/cfg/lint)..."
 scripts/run-tool-cli-parity.sh "${workspace}"
+
+echo "Running reduce/fuzz CLI error parity..."
+scripts/run-reduce-fuzz-cli-parity.sh "${workspace}"
