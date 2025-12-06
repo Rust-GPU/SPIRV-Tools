@@ -112,6 +112,38 @@ fn write_source_module(path: &PathBuf) {
     fs::write(path, &words_to_bytes(&words)).expect("write module");
 }
 
+fn write_module_text(path: &PathBuf, text: &str) {
+    let dir = path.parent().expect("parent dir");
+    let asm_path = dir.join("module_corpus.spvasm");
+    fs::write(&asm_path, text).expect("write asm");
+    let status = Command::new(rust_bin("spirv-as"))
+        .arg(&asm_path)
+        .arg("-o")
+        .arg(path)
+        .status()
+        .expect("run rust spirv-as");
+    assert!(status.success(), "spirv-as failed: {status:?}");
+}
+
+fn corpus_modules() -> Vec<String> {
+    vec![
+        simple_module_text(),
+        [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Fragment %main \"main\"",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpNop",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n"),
+    ]
+}
+
 fn simple_module_lines() -> [&'static str; 9] {
     [
         "OpCapability Shader",
@@ -226,6 +258,100 @@ fn spirv_fuzz_matches_cpp_output() {
     let rust_bytes = fs::read(&rust_out).expect("read rust fuzz output");
     let cpp_bytes = fs::read(&cpp_out).expect("read cpp fuzz output");
     assert_eq!(rust_bytes, cpp_bytes, "spirv-fuzz outputs differed");
+}
+
+#[test]
+fn spirv_reduce_corpus_matches_cpp_output() {
+    let Some(cpp_tool) = find_cpp_tool("SPIRV_CPP_REDUCE", "spirv-reduce") else {
+        eprintln!("SPIRV_CPP_REDUCE not set and spirv-reduce not found on PATH; skipping parity");
+        return;
+    };
+    for (idx, text) in corpus_modules().iter().enumerate() {
+        let dir = tempdir().expect("temp dir");
+        let bin_path = dir.path().join(format!("module_{idx}.spv"));
+        write_module_text(&bin_path, text);
+
+        let rust_out = dir.path().join("rust-out.spv");
+        let cpp_out = dir.path().join("cpp-out.spv");
+
+        let rust = Command::new(rust_bin("spirv-reduce"))
+            .arg(&bin_path)
+            .arg("-o")
+            .arg(&rust_out)
+            .output()
+            .expect("run rust spirv-reduce corpus");
+        let cpp = Command::new(&cpp_tool)
+            .arg(&bin_path)
+            .arg("-o")
+            .arg(&cpp_out)
+            .output()
+            .expect("run cpp spirv-reduce corpus");
+
+        assert!(
+            rust.status.success(),
+            "rust spirv-reduce failed on corpus {idx}: {:?}",
+            rust.status
+        );
+        assert!(
+            cpp.status.success(),
+            "cpp spirv-reduce failed on corpus {idx}: {:?}",
+            cpp.status
+        );
+
+        let rust_bytes = fs::read(&rust_out).expect("read rust reduce output");
+        let cpp_bytes = fs::read(&cpp_out).expect("read cpp reduce output");
+        assert_eq!(
+            rust_bytes, cpp_bytes,
+            "spirv-reduce corpus outputs differed on case {idx}"
+        );
+    }
+}
+
+#[test]
+fn spirv_fuzz_corpus_matches_cpp_output() {
+    let Some(cpp_tool) = find_cpp_tool("SPIRV_CPP_FUZZ", "spirv-fuzz") else {
+        eprintln!("SPIRV_CPP_FUZZ not set and spirv-fuzz not found on PATH; skipping parity");
+        return;
+    };
+    for (idx, text) in corpus_modules().iter().enumerate() {
+        let dir = tempdir().expect("temp dir");
+        let bin_path = dir.path().join(format!("module_{idx}.spv"));
+        write_module_text(&bin_path, text);
+
+        let rust_out = dir.path().join("rust-out.spv");
+        let cpp_out = dir.path().join("cpp-out.spv");
+
+        let rust = Command::new(rust_bin("spirv-fuzz"))
+            .arg(&bin_path)
+            .arg("-o")
+            .arg(&rust_out)
+            .output()
+            .expect("run rust spirv-fuzz corpus");
+        let cpp = Command::new(&cpp_tool)
+            .arg(&bin_path)
+            .arg("-o")
+            .arg(&cpp_out)
+            .output()
+            .expect("run cpp spirv-fuzz corpus");
+
+        assert!(
+            rust.status.success(),
+            "rust spirv-fuzz failed on corpus {idx}: {:?}",
+            rust.status
+        );
+        assert!(
+            cpp.status.success(),
+            "cpp spirv-fuzz failed on corpus {idx}: {:?}",
+            cpp.status
+        );
+
+        let rust_bytes = fs::read(&rust_out).expect("read rust fuzz output");
+        let cpp_bytes = fs::read(&cpp_out).expect("read cpp fuzz output");
+        assert_eq!(
+            rust_bytes, cpp_bytes,
+            "spirv-fuzz corpus outputs differed on case {idx}"
+        );
+    }
 }
 
 fn assert_error_parity(rust_cmd: &mut Command, cpp_cmd: &mut Command, label: &str) {
