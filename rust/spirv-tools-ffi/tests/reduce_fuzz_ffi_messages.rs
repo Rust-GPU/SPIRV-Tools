@@ -10,10 +10,12 @@ fn valid_module() -> Vec<u32> {
     assemble_text(
         "OpCapability Shader\n\
          OpMemoryModel Logical GLSL450\n\
+         %int = OpTypeInt 32 1\n\
          %void = OpTypeVoid\n\
          %fn = OpTypeFunction %void\n\
          %main = OpFunction %void None %fn\n\
          %entry = OpLabel\n\
+         %c = OpConstant %int 1\n\
          OpReturn\n\
          OpFunctionEnd\n",
     )

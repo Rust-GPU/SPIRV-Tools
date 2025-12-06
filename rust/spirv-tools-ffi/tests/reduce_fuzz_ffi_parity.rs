@@ -30,6 +30,18 @@ fn corpus_modules() -> Vec<String> {
             "OpFunctionEnd",
         ]
         .join("\n"),
+        [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint GLCompute %main \"main\"",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n"),
     ]
 }
 
