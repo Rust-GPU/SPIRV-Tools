@@ -77,6 +77,31 @@ mod ffi {
     }
 
     #[derive(Debug)]
+    enum ToolError {
+        None,
+        Disabled,
+        Parse,
+        Reduce,
+        Fuzz,
+    }
+
+    #[derive(Debug)]
+    struct ReduceResult {
+        success: bool,
+        error: ToolError,
+        message: String,
+        words: Vec<u32>,
+    }
+
+    #[derive(Debug)]
+    struct FuzzResult {
+        success: bool,
+        error: ToolError,
+        message: String,
+        words: Vec<u32>,
+    }
+
+    #[derive(Debug)]
     struct ValidatorLimit {
         kind: u32,
         value: u32,
@@ -146,6 +171,8 @@ mod ffi {
             options: &ValidatorOptions,
         ) -> ValidateResult;
         fn optimize_basic_block(words: &[u32]) -> OptimizeResult;
+        fn reduce_module(words: &[u32]) -> ReduceResult;
+        fn fuzz_module(words: &[u32]) -> FuzzResult;
     }
 
     unsafe extern "C++" {
@@ -539,6 +566,33 @@ pub fn set_rust_optimizer_override(enable: bool) {
 pub fn clear_rust_optimizer_override() {
     RUST_OPT_OVERRIDE.store(0, Ordering::Relaxed);
     std::env::remove_var("SPIRV_TOOLS_FORCE_RUST_OPT");
+}
+
+fn disabled_tool_result() -> (ffi::ToolError, String) {
+    (
+        ffi::ToolError::Disabled,
+        "Rust reducer/fuzzer is not yet implemented; C++ bridge wiring is pending".to_string(),
+    )
+}
+
+pub fn reduce_module(words: &[u32]) -> ffi::ReduceResult {
+    let (error, message) = disabled_tool_result();
+    ffi::ReduceResult {
+        success: false,
+        error,
+        message,
+        words: words.to_vec(),
+    }
+}
+
+pub fn fuzz_module(words: &[u32]) -> ffi::FuzzResult {
+    let (error, message) = disabled_tool_result();
+    ffi::FuzzResult {
+        success: false,
+        error,
+        message,
+        words: words.to_vec(),
+    }
 }
 
 pub fn try_assemble_text(context_handle: u64, text: &[u8], options: u32) -> ffi::AssembleResult {
@@ -1285,5 +1339,29 @@ OpFunctionEnd\n",
         assert!(result.success);
         assert!(result.text.contains("OpCapability"));
         assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn reducer_and_fuzzer_ffi_report_disabled() {
+        let binary = assemble_text_with_env(
+            "OpCapability Shader\nOpMemoryModel Logical GLSL450",
+            TargetEnv::Universal1_0,
+        )
+        .expect("assemble");
+        let reduce = reduce_module(&binary);
+        assert!(!reduce.success);
+        assert!(matches!(reduce.error, ffi::ToolError::Disabled));
+        assert!(
+            !reduce.message.is_empty(),
+            "disabled reducer should return a message"
+        );
+
+        let fuzz = fuzz_module(&binary);
+        assert!(!fuzz.success);
+        assert!(matches!(fuzz.error, ffi::ToolError::Disabled));
+        assert!(
+            !fuzz.message.is_empty(),
+            "disabled fuzzer should return a message"
+        );
     }
 }
