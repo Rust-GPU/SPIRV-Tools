@@ -41,9 +41,16 @@ fn main() {
     let core_lib_dir = build_root.join("source");
     let opt_lib_dir = core_lib_dir.join("opt");
     let reduce_lib_dir = core_lib_dir.join("reduce");
+    let fuzz_lib_dir = core_lib_dir.join("fuzz");
     println!("cargo:rustc-link-search=native={}", core_lib_dir.display());
     println!("cargo:rustc-link-search=native={}", opt_lib_dir.display());
     println!("cargo:rustc-link-search=native={}", reduce_lib_dir.display());
+    if fuzz_lib_dir.join("libSPIRV-Tools-fuzz.a").is_file() {
+        println!("cargo:rustc-link-search=native={}", fuzz_lib_dir.display());
+        println!("cargo:rustc-link-lib=static=SPIRV-Tools-fuzz");
+    } else {
+        println!("cargo:warning=SPIRV-Tools fuzz static library not found; fuzz FFI will stay disabled");
+    }
     println!("cargo:rustc-link-lib=static=SPIRV-Tools");
     println!("cargo:rustc-link-lib=static=SPIRV-Tools-opt");
     println!("cargo:rustc-link-lib=static=SPIRV-Tools-reduce");

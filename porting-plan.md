@@ -933,6 +933,7 @@ Tasks:
 - Add CLI/FFI integration tests that exercise the Rust reducer/fuzzer flows end-to-end (success + diagnostics) and assert flag/env toggles choose Rust vs. C++ paths without changing observable output.
 - Add criterion/hyperfine benches plus cargo-fuzz targets for reducer/fuzzer entry points to guard perf/regressions once the Rust paths are functional.
 - Build the SPIRV-Tools fuzz static library (or equivalent bridge) so `fuzz_module` can fall back to the C++ implementation until the Rust pipeline is ported; mirror the reducer fallback wiring already in place.
+- Expose reducer/fuzzer options across the FFI (done) and surface message-consumer callbacks for diagnostics parity with the C API.
 
 ## Upcoming Milestone: CLI/FFI Parity Hardening
 Harden success-path and FFI parity once the basic parity sweep is in place.
