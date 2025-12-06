@@ -943,6 +943,7 @@ Tasks:
 - Wire `fuzz_with_cpp` through the cxx bridge using typed `FuzzOptions`, mapping C API status codes into `FuzzResult`/`ToolError`.
 - Add FFI/CLI success-path parity tests on a small deterministic corpus (skip cleanly if the C++ fuzz binary/lib is unavailable) and verify diagnostic/message-consumer ordering matches C++.
 - Document the build toggle and runtime env/flag required to select the C++ fuzz bridge vs. the Rust path, mirroring reducer toggles.
+- Ensure external dependencies required by `SPIRV_BUILD_FUZZER` (protobuf under `external/`, fuzz headers) are present in the build tree so the fuzz static library can be produced locally.
 
 ## Upcoming Milestone: CLI/FFI Parity Hardening
 Harden success-path and FFI parity once the basic parity sweep is in place.
