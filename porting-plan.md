@@ -905,6 +905,13 @@ Tasks for this milestone:
 - [ ] Document experimental toggles (e.g., `SPIRV_TOOLS_ENABLE_COMPILER_CMD`) and ensure help/docs call out how to enable Rust-only behaviors without breaking C++ parity.
 - [x] Add FFI parity harnesses for assembler/disassembler success/error paths to mirror core behavior (round-trip success plus invalid input diagnostics).
 - [x] Add FFI corpus parity for assembler/validator on simple modules to keep FFI outputs aligned with core paths.
+- [ ] Add reducer/fuzzer CLI/FFI success-path parity on a deterministic corpus, diffing outputs/diagnostics vs. C++ (skip cleanly when tools are absent).
+- [ ] Add reducer/fuzzer FFI harnesses that compare return codes, diagnostics, and message-consumer ordering against the C++ bridge for success/error inputs.
+- [ ] Add reducer/fuzzer cargo-fuzz targets and hyperfine/criterion smoke benches to mirror optimizer coverage and guard regressions.
+- [ ] Validate message-consumer callback ordering/content across assembler/disassembler/validator/optimizer/reducer/fuzzer/objdump/size FFI entry points to match C API expectations.
+- [ ] Promote or clearly document the `--compiler-cmd`/`SPIRV_TOOLS_ENABLE_COMPILER_CMD` toggle, including parity expectations and rollout guidance.
+- [ ] Add a consolidated local parity runner doc for CLI+FFI matrices (asm/dis/val/opt/reduce/fuzz/objdump/size) and note skips/toggles when C++ tools are absent.
+  - Include reducer/fuzzer CLI+FFI parity in the runner once harnesses exist.
 
 ## Upcoming Milestone: Reducer/Fuzzer FFI Parity
 Mirror the C++ reducer/fuzzer FFI surfaces (options, diagnostics, return codes) and align CLI/FFI corpora.
