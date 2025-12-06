@@ -906,6 +906,15 @@ Tasks for this milestone:
 - [x] Add FFI parity harnesses for assembler/disassembler success/error paths to mirror core behavior (round-trip success plus invalid input diagnostics).
 - [x] Add FFI corpus parity for assembler/validator on simple modules to keep FFI outputs aligned with core paths.
 
+## Upcoming Milestone: Reducer/Fuzzer FFI Parity
+Mirror the C++ reducer/fuzzer FFI surfaces (options, diagnostics, return codes) and align CLI/FFI corpora.
+
+Tasks:
+- Add FFI harnesses for reducer/fuzzer entry points (success/error/message routing) that compare outputs/diagnostics against the C++ bridge when available.
+- Build a small deterministic corpus for reduce/fuzz that both CLI and FFI tests can consume; diff outputs against the C++ tools and skip cleanly when absent.
+- Ensure message-consumer callbacks fire in the same order as the C API and that error/status codes are typed and parity-aligned.
+- Add doc/flag coverage for reducer/fuzzer toggles and roll-forward/rollback guidance once parity is confirmed.
+
 ## Upcoming Milestone: CLI/FFI Parity Hardening
 Harden success-path and FFI parity once the basic parity sweep is in place.
 
