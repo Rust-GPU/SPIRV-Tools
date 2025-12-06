@@ -87,7 +87,8 @@ ValidateResult validate_binary(std::uint32_t env,
 }
 
 ReduceResult reduce_with_cpp(std::uint32_t env,
-                             rust::Slice<const std::uint32_t> words) {
+                             rust::Slice<const std::uint32_t> words,
+                             const ReduceOptions& options) {
   ReduceResult result{/*success=*/false,
                       ToolError::Parse,
                       ::rust::String(),
@@ -116,6 +117,10 @@ ReduceResult reduce_with_cpp(std::uint32_t env,
   std::vector<std::uint32_t> input(words.begin(), words.end());
   std::vector<std::uint32_t> reduced;
   spv_reducer_options reducer_options = spvReducerOptionsCreate();
+  spvReducerOptionsSetStepLimit(reducer_options, options.step_limit);
+  spvReducerOptionsSetFailOnValidationError(reducer_options,
+                                            options.fail_on_validation_error);
+  spvReducerOptionsSetTargetFunction(reducer_options, options.target_function);
   const auto status =
       reducer.Run(input, &reduced, reducer_options, validator_options);
   spvReducerOptionsDestroy(reducer_options);
@@ -152,7 +157,8 @@ ReduceResult reduce_with_cpp(std::uint32_t env,
 }
 
 FuzzResult fuzz_with_cpp(std::uint32_t env,
-                         rust::Slice<const std::uint32_t> words) {
+                         rust::Slice<const std::uint32_t> words,
+                         const FuzzOptions&) {
   FuzzResult result{/*success=*/false,
                     ToolError::Disabled,
                     ::rust::String("fuzzer bridge not yet wired to C++"),

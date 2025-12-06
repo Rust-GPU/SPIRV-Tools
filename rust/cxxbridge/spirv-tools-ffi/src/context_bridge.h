@@ -32,6 +32,8 @@ struct AssembleResult;
 struct ValidateResult;
 struct ReduceResult;
 struct FuzzResult;
+struct ReduceOptions;
+struct FuzzOptions;
 
 void dispatch_context_message(std::size_t context_ptr, std::uint32_t level,
                               bool has_source, rust::Str source,
@@ -45,9 +47,11 @@ ValidateResult validate_binary(std::uint32_t env,
                                rust::Slice<const std::uint32_t> words);
 
 ReduceResult reduce_with_cpp(std::uint32_t env,
-                             rust::Slice<const std::uint32_t> words);
+                             rust::Slice<const std::uint32_t> words,
+                             const ReduceOptions& options);
 
 FuzzResult fuzz_with_cpp(std::uint32_t env,
-                         rust::Slice<const std::uint32_t> words);
+                         rust::Slice<const std::uint32_t> words,
+                         const FuzzOptions& options);
 
 }  // namespace spvtools::ffi

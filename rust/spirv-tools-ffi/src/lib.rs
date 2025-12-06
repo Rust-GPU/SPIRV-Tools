@@ -102,6 +102,23 @@ mod ffi {
         words: Vec<u32>,
     }
 
+    #[derive(Debug, Clone, Copy)]
+    struct ReduceOptions {
+        step_limit: u32,
+        fail_on_validation_error: bool,
+        target_function: u32,
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    struct FuzzOptions {
+        random_seed: u32,
+        replay_range: i32,
+        shrinker_step_limit: u32,
+        enable_replay_validation: bool,
+        enable_fuzzer_pass_validation: bool,
+        enable_all_passes: bool,
+    }
+
     #[derive(Debug)]
     struct ValidatorLimit {
         kind: u32,
@@ -159,6 +176,8 @@ mod ffi {
         fn set_rust_optimizer_override(enable: bool);
         fn clear_rust_optimizer_override();
         fn default_validator_options() -> ValidatorOptions;
+        fn default_reduce_options() -> ReduceOptions;
+        fn default_fuzz_options() -> FuzzOptions;
         fn rebind_context(handle: u64, context_ptr: usize);
         fn try_assemble_text(context_handle: u64, text: &[u8], options: u32) -> AssembleResult;
         fn try_disassemble_binary(
@@ -173,7 +192,9 @@ mod ffi {
         ) -> ValidateResult;
         fn optimize_basic_block(words: &[u32]) -> OptimizeResult;
         fn reduce_module(words: &[u32]) -> ReduceResult;
+        fn reduce_module_with_options(words: &[u32], options: &ReduceOptions) -> ReduceResult;
         fn fuzz_module(words: &[u32]) -> FuzzResult;
+        fn fuzz_module_with_options(words: &[u32], options: &FuzzOptions) -> FuzzResult;
     }
 
     unsafe extern "C++" {
@@ -192,8 +213,8 @@ mod ffi {
             options: u32,
         ) -> AssembleResult;
         fn validate_binary(env: u32, words: &[u32]) -> ValidateResult;
-        fn reduce_with_cpp(env: u32, words: &[u32]) -> ReduceResult;
-        fn fuzz_with_cpp(env: u32, words: &[u32]) -> FuzzResult;
+        fn reduce_with_cpp(env: u32, words: &[u32], options: &ReduceOptions) -> ReduceResult;
+        fn fuzz_with_cpp(env: u32, words: &[u32], options: &FuzzOptions) -> FuzzResult;
     }
 }
 
@@ -571,7 +592,33 @@ pub fn clear_rust_optimizer_override() {
     std::env::remove_var("SPIRV_TOOLS_FORCE_RUST_OPT");
 }
 
+pub fn default_reduce_options() -> ffi::ReduceOptions {
+    ffi::ReduceOptions {
+        step_limit: 0,
+        fail_on_validation_error: false,
+        target_function: 0,
+    }
+}
+
+pub fn default_fuzz_options() -> ffi::FuzzOptions {
+    ffi::FuzzOptions {
+        random_seed: 0,
+        replay_range: 0,
+        shrinker_step_limit: 0,
+        enable_replay_validation: false,
+        enable_fuzzer_pass_validation: false,
+        enable_all_passes: false,
+    }
+}
+
 pub fn reduce_module(words: &[u32]) -> ffi::ReduceResult {
+    reduce_module_with_options(words, &default_reduce_options())
+}
+
+pub fn reduce_module_with_options(
+    words: &[u32],
+    options: &ffi::ReduceOptions,
+) -> ffi::ReduceResult {
     if words.is_empty() {
         return ffi::ReduceResult {
             success: false,
@@ -590,7 +637,7 @@ pub fn reduce_module(words: &[u32]) -> ffi::ReduceResult {
         };
     }
 
-    let cpp = ffi::reduce_with_cpp(TargetEnv::Universal1_6.to_raw(), words);
+    let cpp = ffi::reduce_with_cpp(TargetEnv::Universal1_6.to_raw(), words, options);
     if cpp.success {
         cpp
     } else {
@@ -604,6 +651,10 @@ pub fn reduce_module(words: &[u32]) -> ffi::ReduceResult {
 }
 
 pub fn fuzz_module(words: &[u32]) -> ffi::FuzzResult {
+    fuzz_module_with_options(words, &default_fuzz_options())
+}
+
+pub fn fuzz_module_with_options(words: &[u32], options: &ffi::FuzzOptions) -> ffi::FuzzResult {
     if words.is_empty() {
         return ffi::FuzzResult {
             success: false,
@@ -622,7 +673,7 @@ pub fn fuzz_module(words: &[u32]) -> ffi::FuzzResult {
         };
     }
 
-    let cpp = ffi::fuzz_with_cpp(TargetEnv::Universal1_6.to_raw(), words);
+    let cpp = ffi::fuzz_with_cpp(TargetEnv::Universal1_6.to_raw(), words, options);
     if cpp.success {
         return cpp;
     }
@@ -1394,13 +1445,13 @@ OpFunctionEnd\n",
         )
         .expect("assemble");
 
-        let reduce = reduce_module(&binary);
+        let reduce = reduce_module_with_options(&binary, &default_reduce_options());
         assert!(reduce.success);
         assert!(matches!(reduce.error, ffi::ToolError::None));
         assert!(reduce.message.is_empty());
         assert_eq!(reduce.words, binary);
 
-        let fuzz = fuzz_module(&binary);
+        let fuzz = fuzz_module_with_options(&binary, &default_fuzz_options());
         if fuzz.success {
             assert!(matches!(fuzz.error, ffi::ToolError::None));
             assert!(fuzz.message.is_empty());
@@ -1423,7 +1474,7 @@ OpFunctionEnd\n",
     fn reducer_and_fuzzer_report_invalid_input() {
         let invalid = assemble_text("OpCapability Shader").expect("assemble invalid-ish");
 
-        let reduce = reduce_module(&invalid);
+        let reduce = reduce_module_with_options(&invalid, &default_reduce_options());
         assert!(!reduce.success);
         assert!(matches!(reduce.error, ffi::ToolError::Parse));
         assert!(
@@ -1432,7 +1483,7 @@ OpFunctionEnd\n",
         );
         assert!(reduce.words.is_empty());
 
-        let fuzz = fuzz_module(&invalid);
+        let fuzz = fuzz_module_with_options(&invalid, &default_fuzz_options());
         assert!(!fuzz.success);
         assert!(matches!(fuzz.error, ffi::ToolError::Parse));
         assert!(!fuzz.message.is_empty(), "expected parse failure message");
@@ -1447,7 +1498,15 @@ OpFunctionEnd\n",
         )
         .expect("assemble");
 
-        let result = fuzz_module(&binary);
+        let options = ffi::FuzzOptions {
+            random_seed: 1234,
+            replay_range: 2,
+            shrinker_step_limit: 8,
+            enable_replay_validation: true,
+            enable_fuzzer_pass_validation: true,
+            enable_all_passes: true,
+        };
+        let result = fuzz_module_with_options(&binary, &options);
         assert!(
             matches!(result.error, ffi::ToolError::Disabled),
             "expected fuzz bridge to be disabled until wired, got {:?}",
