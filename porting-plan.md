@@ -935,6 +935,15 @@ Tasks:
 - Build the SPIRV-Tools fuzz static library (or equivalent bridge) so `fuzz_module` can fall back to the C++ implementation until the Rust pipeline is ported; mirror the reducer fallback wiring already in place.
 - Expose reducer/fuzzer options across the FFI (done) and surface message-consumer callbacks for diagnostics parity with the C API.
 
+## Upcoming Milestone: Fuzz Bridge Enablement
+Unblock the fuzz FFI by shipping the C++ fuzz bridge and establishing parity hooks.
+
+Tasks:
+- Enable the fuzz static library in the Rust build (`SPIRV_BUILD_FUZZER=ON` or equivalent) and ensure `libSPIRV-Tools-fuzz.a` is available under `build-rust/source/fuzz` for linking.
+- Wire `fuzz_with_cpp` through the cxx bridge using typed `FuzzOptions`, mapping C API status codes into `FuzzResult`/`ToolError`.
+- Add FFI/CLI success-path parity tests on a small deterministic corpus (skip cleanly if the C++ fuzz binary/lib is unavailable) and verify diagnostic/message-consumer ordering matches C++.
+- Document the build toggle and runtime env/flag required to select the C++ fuzz bridge vs. the Rust path, mirroring reducer toggles.
+
 ## Upcoming Milestone: CLI/FFI Parity Hardening
 Harden success-path and FFI parity once the basic parity sweep is in place.
 
