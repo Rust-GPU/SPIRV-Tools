@@ -903,6 +903,7 @@ Tasks for this milestone:
 - [x] Implement `spirv-objdump` source extraction and entry-point listing in Rust with unit coverage for list/outdir/overwrite cases.
 - [x] Add parity coverage for `spirv-objdump` source/list/outdir flows and keep compiler-cmd failure parity until implemented.
 - [ ] Document experimental toggles (e.g., `SPIRV_TOOLS_ENABLE_COMPILER_CMD`) and ensure help/docs call out how to enable Rust-only behaviors without breaking C++ parity.
+- [x] Add FFI parity harnesses for assembler/disassembler success/error paths to mirror core behavior (round-trip success plus invalid input diagnostics).
 
 ## Upcoming Milestone: CLI/FFI Parity Hardening
 Harden success-path and FFI parity once the basic parity sweep is in place.
