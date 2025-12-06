@@ -1151,6 +1151,17 @@ OpFunctionEnd\n";
     }
 
     #[test]
+    fn assembler_rejects_invalid_handle() {
+        let text = b"OpCapability Shader\nOpMemoryModel Logical GLSL450";
+        let result = try_assemble_text(0, text, TextToBinaryOptions::NONE.bits());
+        assert!(
+            !result.success,
+            "assembling with an invalid handle should fail"
+        );
+        assert!(result.binary.is_empty());
+    }
+
+    #[test]
     fn rust_disassembler_handles_simple_binary() {
         force_enable_rust_text_assembler_for_testing();
         let binary = assemble_text_with_env(
