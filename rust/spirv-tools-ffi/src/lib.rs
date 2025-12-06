@@ -1009,7 +1009,7 @@ OpFunctionEnd\n";
             "OpFunctionEnd",
         ]
         .join("\n");
-        let binary = assemble_text_with_env(text, TargetEnv::Universal1_6).unwrap();
+        let binary = assemble_text_with_env(&text, TargetEnv::Universal1_6).unwrap();
         let options = default_validator_options();
         let ok =
             validate_binary_rust_with_options(TargetEnv::Universal1_6.to_raw(), &binary, &options);
@@ -1039,7 +1039,7 @@ OpFunctionEnd\n";
             "OpExecutionMode %main LocalSize 1 1 1",
         ]
         .join("\n");
-        let binary = assemble_text_with_env(text, TargetEnv::Universal1_6).expect("assemble");
+        let binary = assemble_text_with_env(&text, TargetEnv::Universal1_6).expect("assemble");
 
         let mut options = default_validator_options();
         let with_names =
@@ -1079,7 +1079,7 @@ OpFunctionEnd\n";
         ]
         .join("\n");
         let binary =
-            assemble_text_with_options(text, TargetEnv::Universal1_6, TextToBinaryOptions::NONE)
+            assemble_text_with_options(&text, TargetEnv::Universal1_6, TextToBinaryOptions::NONE)
                 .expect("assemble");
 
         let first = validate_binary(TargetEnv::Universal1_6, &binary);
@@ -1117,7 +1117,7 @@ OpFunctionEnd\n";
         ]
         .join("\n");
         let mut words =
-            assemble_text_with_options(text, TargetEnv::Vulkan1_2, TextToBinaryOptions::NONE)
+            assemble_text_with_options(&text, TargetEnv::Vulkan1_2, TextToBinaryOptions::NONE)
                 .expect("assemble");
         // Move the extension to the end of the module to mirror the core layout regression.
         let mut idx = 5;
@@ -1261,5 +1261,18 @@ OpFunctionEnd\n",
         assert_eq!(ffi_messages, expected_messages);
 
         unsafe { destroy_context(handle) };
+    }
+
+    #[test]
+    fn disassembler_succeeds_on_valid_binary() {
+        let binary = assemble_text_with_env(
+            "OpCapability Shader\nOpMemoryModel Logical GLSL450",
+            TargetEnv::Universal1_0,
+        )
+        .expect("assemble header");
+        let result = try_disassemble_binary(0, &binary, 0);
+        assert!(result.success);
+        assert!(result.text.contains("OpCapability"));
+        assert!(result.diagnostics.is_empty());
     }
 }
