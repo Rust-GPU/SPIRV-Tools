@@ -922,6 +922,17 @@ Tasks:
 - Ensure message-consumer callbacks fire in the same order as the C API and that error/status codes are typed and parity-aligned.
 - Add doc/flag coverage for reducer/fuzzer toggles and roll-forward/rollback guidance once parity is confirmed.
 
+## Upcoming Milestone: Reducer/Fuzzer Bridge + Rust Port
+Bring the reducer/fuzzer library and binaries to parity with C++ by wiring the CXX bridge and porting the driver loops.
+
+Tasks:
+- Wire `reduce_module`/`fuzz_module` through the `cxx` bridge to the existing C++ implementations as a fallback until the Rust paths land, mapping C API status codes into the typed `ReduceResult`/`FuzzResult`/`ToolError` enums.
+- Thread typed options (seed newtypes, interestingness callbacks, validator/target-env overrides, message consumers) through the Rust side and ensure callback ordering matches the C API on both success and failure paths.
+- Port the reducer driver loop to Rust with deterministic interestingness runners, replayable reduction logs, and `thiserror`-based failure typing; reuse rspirv types for module ownership to keep states explicit.
+- Port the fuzzer driver loop to Rust with typed RNG/seeds, deterministic replay, and a gradual migration of the transformation pipeline (bridge to C++ transformations via `cxx` while Rust implementations mature).
+- Add CLI/FFI integration tests that exercise the Rust reducer/fuzzer flows end-to-end (success + diagnostics) and assert flag/env toggles choose Rust vs. C++ paths without changing observable output.
+- Add criterion/hyperfine benches plus cargo-fuzz targets for reducer/fuzzer entry points to guard perf/regressions once the Rust paths are functional.
+
 ## Upcoming Milestone: CLI/FFI Parity Hardening
 Harden success-path and FFI parity once the basic parity sweep is in place.
 
