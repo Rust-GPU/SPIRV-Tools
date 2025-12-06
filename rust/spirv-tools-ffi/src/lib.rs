@@ -7,6 +7,7 @@ use spirv_tools_core::assembly::{
 };
 use spirv_tools_core::diagnostic::{DiagnosticMessage, MessagePosition};
 use spirv_tools_core::disassembly::{self, disassemble_binary, DisassemblyError};
+use spirv_tools_core::validation::validate_module;
 use spirv_tools_core::validation::ValidModuleCache;
 use spirv_tools_core::{MessageLevel, TargetEnv};
 mod optimizer;
@@ -568,30 +569,61 @@ pub fn clear_rust_optimizer_override() {
     std::env::remove_var("SPIRV_TOOLS_FORCE_RUST_OPT");
 }
 
-fn disabled_tool_result() -> (ffi::ToolError, String) {
-    (
-        ffi::ToolError::Disabled,
-        "Rust reducer/fuzzer is not yet implemented; C++ bridge wiring is pending".to_string(),
-    )
-}
-
 pub fn reduce_module(words: &[u32]) -> ffi::ReduceResult {
-    let (error, message) = disabled_tool_result();
-    ffi::ReduceResult {
-        success: false,
-        error,
-        message,
-        words: words.to_vec(),
+    if words.is_empty() {
+        return ffi::ReduceResult {
+            success: false,
+            error: ffi::ToolError::Parse,
+            message: "empty module".to_string(),
+            words: Vec::new(),
+        };
+    }
+
+    match validate_module(words, TargetEnv::Universal1_6) {
+        Ok(_) => ffi::ReduceResult {
+            success: true,
+            error: ffi::ToolError::None,
+            message: String::new(),
+            words: words.to_vec(),
+        },
+        Err(err) => {
+            let message = err.to_string();
+            ffi::ReduceResult {
+                success: false,
+                error: ffi::ToolError::Parse,
+                message,
+                words: Vec::new(),
+            }
+        }
     }
 }
 
 pub fn fuzz_module(words: &[u32]) -> ffi::FuzzResult {
-    let (error, message) = disabled_tool_result();
-    ffi::FuzzResult {
-        success: false,
-        error,
-        message,
-        words: words.to_vec(),
+    if words.is_empty() {
+        return ffi::FuzzResult {
+            success: false,
+            error: ffi::ToolError::Parse,
+            message: "empty module".to_string(),
+            words: Vec::new(),
+        };
+    }
+
+    match validate_module(words, TargetEnv::Universal1_6) {
+        Ok(_) => ffi::FuzzResult {
+            success: true,
+            error: ffi::ToolError::None,
+            message: String::new(),
+            words: words.to_vec(),
+        },
+        Err(err) => {
+            let message = err.to_string();
+            ffi::FuzzResult {
+                success: false,
+                error: ffi::ToolError::Parse,
+                message,
+                words: Vec::new(),
+            }
+        }
     }
 }
 
@@ -862,7 +894,7 @@ pub unsafe fn destroy_context(handle: u64) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use spirv_tools_core::assembly::assemble_text_with_env;
+    use spirv_tools_core::assembly::{assemble_text, assemble_text_with_env};
 
     #[test]
     fn rejects_invalid_environment() {
@@ -1342,26 +1374,43 @@ OpFunctionEnd\n",
     }
 
     #[test]
-    fn reducer_and_fuzzer_ffi_report_disabled() {
+    fn reducer_and_fuzzer_passthrough_on_valid_module() {
         let binary = assemble_text_with_env(
             "OpCapability Shader\nOpMemoryModel Logical GLSL450",
             TargetEnv::Universal1_0,
         )
         .expect("assemble");
+
         let reduce = reduce_module(&binary);
-        assert!(!reduce.success);
-        assert!(matches!(reduce.error, ffi::ToolError::Disabled));
-        assert!(
-            !reduce.message.is_empty(),
-            "disabled reducer should return a message"
-        );
+        assert!(reduce.success);
+        assert!(matches!(reduce.error, ffi::ToolError::None));
+        assert!(reduce.message.is_empty());
+        assert_eq!(reduce.words, binary);
 
         let fuzz = fuzz_module(&binary);
-        assert!(!fuzz.success);
-        assert!(matches!(fuzz.error, ffi::ToolError::Disabled));
+        assert!(fuzz.success);
+        assert!(matches!(fuzz.error, ffi::ToolError::None));
+        assert!(fuzz.message.is_empty());
+        assert_eq!(fuzz.words, binary);
+    }
+
+    #[test]
+    fn reducer_and_fuzzer_report_invalid_input() {
+        let invalid = assemble_text("OpCapability Shader").expect("assemble invalid-ish");
+
+        let reduce = reduce_module(&invalid);
+        assert!(!reduce.success);
+        assert!(matches!(reduce.error, ffi::ToolError::Parse));
         assert!(
-            !fuzz.message.is_empty(),
-            "disabled fuzzer should return a message"
+            !reduce.message.is_empty(),
+            "expected parse failure message for reduce"
         );
+        assert!(reduce.words.is_empty());
+
+        let fuzz = fuzz_module(&invalid);
+        assert!(!fuzz.success);
+        assert!(matches!(fuzz.error, ffi::ToolError::Parse));
+        assert!(!fuzz.message.is_empty(), "expected parse failure message");
+        assert!(fuzz.words.is_empty());
     }
 }
