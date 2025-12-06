@@ -1519,4 +1519,59 @@ OpFunctionEnd\n",
         assert!(!result.success);
         assert!(result.words.is_empty());
     }
+
+    #[test]
+    fn default_reducer_options_are_sensible() {
+        let opts = default_reduce_options();
+        assert_eq!(opts.step_limit, 0);
+        assert!(!opts.fail_on_validation_error);
+        assert_eq!(opts.target_function, 0);
+    }
+
+    #[test]
+    fn default_fuzzer_options_are_sensible() {
+        let opts = default_fuzz_options();
+        assert_eq!(opts.random_seed, 0);
+        assert_eq!(opts.replay_range, 0);
+        assert_eq!(opts.shrinker_step_limit, 0);
+        assert!(!opts.enable_replay_validation);
+        assert!(!opts.enable_fuzzer_pass_validation);
+        assert!(!opts.enable_all_passes);
+    }
+
+    #[test]
+    fn reduce_and_fuzz_accept_custom_options() {
+        let binary = assemble_text_with_env(
+            "OpCapability Shader\nOpMemoryModel Logical GLSL450",
+            TargetEnv::Universal1_0,
+        )
+        .expect("assemble");
+
+        let reduce_opts = ffi::ReduceOptions {
+            step_limit: 4,
+            fail_on_validation_error: true,
+            target_function: 7,
+        };
+        let reduce = reduce_module_with_options(&binary, &reduce_opts);
+        assert!(
+            reduce.success || matches!(reduce.error, ffi::ToolError::Disabled),
+            "expected success or disabled fallback: {:?}",
+            reduce.error
+        );
+
+        let fuzz_opts = ffi::FuzzOptions {
+            random_seed: 42,
+            replay_range: 3,
+            shrinker_step_limit: 9,
+            enable_replay_validation: true,
+            enable_fuzzer_pass_validation: true,
+            enable_all_passes: true,
+        };
+        let fuzz = fuzz_module_with_options(&binary, &fuzz_opts);
+        assert!(
+            fuzz.success || matches!(fuzz.error, ffi::ToolError::Disabled),
+            "expected success or disabled fallback: {:?}",
+            fuzz.error
+        );
+    }
 }
