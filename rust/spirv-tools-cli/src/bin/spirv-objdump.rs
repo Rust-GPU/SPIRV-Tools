@@ -40,7 +40,7 @@ struct Args {
     #[arg(long, conflicts_with_all = ["source", "compiler_cmd"])]
     entrypoint: bool,
 
-    /// Extract the recorded compiler command instead of disassembling.
+    /// Extract the recorded compiler command instead of disassembling (requires SPIRV_TOOLS_ENABLE_COMPILER_CMD=1).
     #[arg(long, conflicts_with_all = ["source", "entrypoint"])]
     compiler_cmd: bool,
 
