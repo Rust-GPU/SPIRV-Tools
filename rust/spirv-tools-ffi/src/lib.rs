@@ -626,6 +626,11 @@ pub fn fuzz_module(words: &[u32]) -> ffi::FuzzResult {
     if cpp.success {
         return cpp;
     }
+    if matches!(cpp.error, ffi::ToolError::Disabled | ffi::ToolError::Parse)
+        && !cpp.message.is_empty()
+    {
+        return cpp;
+    }
 
     ffi::FuzzResult {
         success: true,
@@ -1396,10 +1401,22 @@ OpFunctionEnd\n",
         assert_eq!(reduce.words, binary);
 
         let fuzz = fuzz_module(&binary);
-        assert!(fuzz.success);
-        assert!(matches!(fuzz.error, ffi::ToolError::None));
-        assert!(fuzz.message.is_empty());
-        assert_eq!(fuzz.words, binary);
+        if fuzz.success {
+            assert!(matches!(fuzz.error, ffi::ToolError::None));
+            assert!(fuzz.message.is_empty());
+            assert_eq!(fuzz.words, binary);
+        } else {
+            assert!(
+                matches!(fuzz.error, ffi::ToolError::Disabled),
+                "unexpected fuzz error: {:?}",
+                fuzz.error
+            );
+            assert!(
+                !fuzz.message.is_empty(),
+                "disabled fuzz bridge should surface a message"
+            );
+            assert!(fuzz.words.is_empty());
+        }
     }
 
     #[test]
@@ -1420,5 +1437,27 @@ OpFunctionEnd\n",
         assert!(matches!(fuzz.error, ffi::ToolError::Parse));
         assert!(!fuzz.message.is_empty(), "expected parse failure message");
         assert!(fuzz.words.is_empty());
+    }
+
+    #[test]
+    fn fuzz_bridge_reports_disabled_until_wired() {
+        let binary = assemble_text_with_env(
+            "OpCapability Shader\nOpMemoryModel Logical GLSL450",
+            TargetEnv::Universal1_0,
+        )
+        .expect("assemble");
+
+        let result = fuzz_module(&binary);
+        assert!(
+            matches!(result.error, ffi::ToolError::Disabled),
+            "expected fuzz bridge to be disabled until wired, got {:?}",
+            result.error
+        );
+        assert!(
+            !result.message.is_empty(),
+            "disabled fuzz bridge should surface a message"
+        );
+        assert!(!result.success);
+        assert!(result.words.is_empty());
     }
 }
