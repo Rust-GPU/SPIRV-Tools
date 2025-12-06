@@ -25,6 +25,8 @@ fn validation_cache() -> &'static Mutex<ValidModuleCache> {
     VALIDATION_CACHE.get_or_init(Default::default)
 }
 
+const HAS_FUZZ_LIB: bool = cfg!(spirv_tools_has_fuzz_lib);
+
 #[cxx::bridge(namespace = "spvtools::ffi")]
 mod ffi {
     #[derive(Debug)]
@@ -673,21 +675,23 @@ pub fn fuzz_module_with_options(words: &[u32], options: &ffi::FuzzOptions) -> ff
         };
     }
 
-    let cpp = ffi::fuzz_with_cpp(TargetEnv::Universal1_6.to_raw(), words, options);
-    if cpp.success {
-        return cpp;
-    }
-    if matches!(cpp.error, ffi::ToolError::Disabled | ffi::ToolError::Parse)
-        && !cpp.message.is_empty()
-    {
-        return cpp;
+    if HAS_FUZZ_LIB {
+        let cpp = ffi::fuzz_with_cpp(TargetEnv::Universal1_6.to_raw(), words, options);
+        if cpp.success {
+            return cpp;
+        }
+        if matches!(cpp.error, ffi::ToolError::Disabled | ffi::ToolError::Parse)
+            && !cpp.message.is_empty()
+        {
+            return cpp;
+        }
     }
 
     ffi::FuzzResult {
-        success: true,
-        error: ffi::ToolError::None,
-        message: String::new(),
-        words: words.to_vec(),
+        success: false,
+        error: ffi::ToolError::Disabled,
+        message: "Rust fuzz bridge not yet wired; C++ fuzz library unavailable".to_string(),
+        words: Vec::new(),
     }
 }
 

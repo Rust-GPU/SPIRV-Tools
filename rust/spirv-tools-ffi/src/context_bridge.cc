@@ -159,16 +159,22 @@ ReduceResult reduce_with_cpp(std::uint32_t env,
 FuzzResult fuzz_with_cpp(std::uint32_t env,
                          rust::Slice<const std::uint32_t> words,
                          const FuzzOptions&) {
+#ifdef SPIRV_TOOLS_HAS_FUZZ_LIB
   (void)env;
-  FuzzResult result{/*success=*/true,
-                    ToolError::None,
-                    ::rust::String(),
+  FuzzResult result{/*success=*/false,
+                    ToolError::Disabled,
+                    ::rust::String("fuzzer bridge not yet wired to C++"),
                     ::rust::Vec<std::uint32_t>()};
-  result.words.reserve(words.size());
-  for (auto word : words) {
-    result.words.push_back(word);
-  }
   return result;
+#else
+  (void)env;
+  (void)words;
+  FuzzResult result{/*success=*/false,
+                    ToolError::Disabled,
+                    ::rust::String("SPIRV-Tools fuzz library unavailable"),
+                    ::rust::Vec<std::uint32_t>()};
+  return result;
+#endif
 }
 
 }  // namespace spvtools::ffi

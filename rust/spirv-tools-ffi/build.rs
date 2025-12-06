@@ -5,6 +5,8 @@ use std::path::PathBuf;
 fn main() {
     println!("cargo:rerun-if-changed=../cxxbridge/spirv-tools-ffi/src/context_bridge.h");
 
+    println!("cargo:rustc-check-cfg=cfg(spirv_tools_has_fuzz_lib)");
+
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let repo_root = manifest_dir
         .parent()
@@ -29,7 +31,8 @@ fn main() {
     )
     .expect("failed to copy context bridge header");
 
-    cxx_build::bridge("src/lib.rs")
+    let mut bridge_builder = cxx_build::bridge("src/lib.rs");
+    bridge_builder
         .file("src/context_bridge.cc")
         .include(repo_root)
         .include(include_root)
@@ -48,6 +51,8 @@ fn main() {
     if fuzz_lib_dir.join("libSPIRV-Tools-fuzz.a").is_file() {
         println!("cargo:rustc-link-search=native={}", fuzz_lib_dir.display());
         println!("cargo:rustc-link-lib=static=SPIRV-Tools-fuzz");
+        println!("cargo:rustc-cfg=spirv_tools_has_fuzz_lib");
+        bridge_builder.define("SPIRV_TOOLS_HAS_FUZZ_LIB", None);
     } else {
         println!("cargo:warning=SPIRV-Tools fuzz static library not found; fuzz FFI will stay disabled");
     }
