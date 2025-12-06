@@ -930,8 +930,10 @@ dependencies = [
  "cxx",
  "cxx-build",
  "rspirv",
+ "spirv-tools-cli",
  "spirv-tools-core",
  "spirv-tools-opt",
+ "tempfile",
  "thiserror",
 ]
 

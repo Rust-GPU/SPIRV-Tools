@@ -17,5 +17,9 @@ spirv-tools-opt = { path = "../spirv-tools-opt" }
 rspirv = "0.12"
 thiserror = "1"
 
+[dev-dependencies]
+tempfile = "3.10"
+spirv-tools-cli = { path = "../spirv-tools-cli" }
+
 [build-dependencies]
 cxx-build = "1"
