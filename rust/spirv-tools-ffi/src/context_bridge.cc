@@ -1,9 +1,12 @@
 #include <cstdint>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include "spirv-tools-ffi/src/lib.rs.h"
 #include "rust/cxxbridge/spirv-tools-ffi/src/context_bridge.h"
+#include "source/reduce/reducer.h"
+#include "source/spirv_reducer_options.h"
 #include "source/table.h"
 #include "spirv-tools/libspirv.hpp"
 
@@ -80,6 +83,71 @@ ValidateResult validate_binary(std::uint32_t env,
                                rust::Slice<const std::uint32_t> words) {
   auto options = default_validator_options();
   return validate_binary_with_options(env, words, options);
+}
+
+ReduceResult reduce_with_cpp(std::uint32_t env,
+                             rust::Slice<const std::uint32_t> words) {
+  ReduceResult result{/*success=*/false,
+                      ToolError::Parse,
+                      ::rust::String(),
+                      ::rust::Vec<std::uint32_t>()};
+  if (words.empty()) {
+    result.message = ::rust::String("empty module");
+    return result;
+  }
+
+  spvtools::reduce::Reducer reducer(static_cast<spv_target_env>(env));
+  std::string diagnostics;
+  reducer.SetMessageConsumer(
+      [&diagnostics](spv_message_level_t level, const char*,
+                     const spv_position_t& position, const char* message) {
+        if (!diagnostics.empty()) diagnostics += '\n';
+        diagnostics += FormatDiagnostic(level, position, message);
+      });
+
+  // Keep behavior deterministic until the Rust reducer path lands: use no
+  // reduction passes and a trivially-true interestingness predicate so the
+  // original module is preserved while exercising the C++ reducer plumbing.
+  reducer.SetInterestingnessFunction(
+      [](const std::vector<std::uint32_t>&, std::uint32_t) { return true; });
+
+  spv_validator_options validator_options = spvValidatorOptionsCreate();
+  std::vector<std::uint32_t> input(words.begin(), words.end());
+  std::vector<std::uint32_t> reduced;
+  spv_reducer_options reducer_options = spvReducerOptionsCreate();
+  const auto status =
+      reducer.Run(input, &reduced, reducer_options, validator_options);
+  spvReducerOptionsDestroy(reducer_options);
+  spvValidatorOptionsDestroy(validator_options);
+
+  switch (status) {
+    case spvtools::reduce::Reducer::ReductionResultStatus::kComplete:
+    case spvtools::reduce::Reducer::ReductionResultStatus::kReachedStepLimit:
+    case spvtools::reduce::Reducer::ReductionResultStatus::kInitialStateNotInteresting:
+      result.success = true;
+      result.error = ToolError::None;
+      result.message = ::rust::String();
+      {
+        const auto& chosen = reduced.empty() ? input : reduced;
+        result.words.reserve(chosen.size());
+        for (auto value : chosen) {
+          result.words.push_back(value);
+        }
+      }
+      break;
+    case spvtools::reduce::Reducer::ReductionResultStatus::kInitialStateInvalid:
+    case spvtools::reduce::Reducer::ReductionResultStatus::kStateInvalid:
+      result.success = false;
+      result.error = ToolError::Parse;
+      if (diagnostics.empty()) {
+        result.message = ::rust::String("reducer validation failed");
+      } else {
+        result.message = ::rust::String(diagnostics);
+      }
+      break;
+  }
+
+  return result;
 }
 
 }  // namespace spvtools::ffi

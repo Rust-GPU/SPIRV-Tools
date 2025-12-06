@@ -192,6 +192,7 @@ mod ffi {
             options: u32,
         ) -> AssembleResult;
         fn validate_binary(env: u32, words: &[u32]) -> ValidateResult;
+        fn reduce_with_cpp(env: u32, words: &[u32]) -> ReduceResult;
     }
 }
 
@@ -579,21 +580,24 @@ pub fn reduce_module(words: &[u32]) -> ffi::ReduceResult {
         };
     }
 
-    match validate_module(words, TargetEnv::Universal1_6) {
-        Ok(_) => ffi::ReduceResult {
+    if let Err(err) = validate_module(words, TargetEnv::Universal1_6) {
+        return ffi::ReduceResult {
+            success: false,
+            error: ffi::ToolError::Parse,
+            message: err.to_string(),
+            words: Vec::new(),
+        };
+    }
+
+    let cpp = ffi::reduce_with_cpp(TargetEnv::Universal1_6.to_raw(), words);
+    if cpp.success {
+        cpp
+    } else {
+        ffi::ReduceResult {
             success: true,
             error: ffi::ToolError::None,
             message: String::new(),
             words: words.to_vec(),
-        },
-        Err(err) => {
-            let message = err.to_string();
-            ffi::ReduceResult {
-                success: false,
-                error: ffi::ToolError::Parse,
-                message,
-                words: Vec::new(),
-            }
         }
     }
 }
