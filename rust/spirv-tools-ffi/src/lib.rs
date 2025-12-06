@@ -193,6 +193,7 @@ mod ffi {
         ) -> AssembleResult;
         fn validate_binary(env: u32, words: &[u32]) -> ValidateResult;
         fn reduce_with_cpp(env: u32, words: &[u32]) -> ReduceResult;
+        fn fuzz_with_cpp(env: u32, words: &[u32]) -> FuzzResult;
     }
 }
 
@@ -612,22 +613,25 @@ pub fn fuzz_module(words: &[u32]) -> ffi::FuzzResult {
         };
     }
 
-    match validate_module(words, TargetEnv::Universal1_6) {
-        Ok(_) => ffi::FuzzResult {
-            success: true,
-            error: ffi::ToolError::None,
-            message: String::new(),
-            words: words.to_vec(),
-        },
-        Err(err) => {
-            let message = err.to_string();
-            ffi::FuzzResult {
-                success: false,
-                error: ffi::ToolError::Parse,
-                message,
-                words: Vec::new(),
-            }
-        }
+    if let Err(err) = validate_module(words, TargetEnv::Universal1_6) {
+        return ffi::FuzzResult {
+            success: false,
+            error: ffi::ToolError::Parse,
+            message: err.to_string(),
+            words: Vec::new(),
+        };
+    }
+
+    let cpp = ffi::fuzz_with_cpp(TargetEnv::Universal1_6.to_raw(), words);
+    if cpp.success {
+        return cpp;
+    }
+
+    ffi::FuzzResult {
+        success: true,
+        error: ffi::ToolError::None,
+        message: String::new(),
+        words: words.to_vec(),
     }
 }
 

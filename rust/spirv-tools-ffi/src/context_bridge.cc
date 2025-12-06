@@ -8,6 +8,7 @@
 #include "source/reduce/reducer.h"
 #include "source/spirv_reducer_options.h"
 #include "source/table.h"
+#include "spirv-tools/libspirv.h"
 #include "spirv-tools/libspirv.hpp"
 
 namespace {
@@ -145,6 +146,38 @@ ReduceResult reduce_with_cpp(std::uint32_t env,
         result.message = ::rust::String(diagnostics);
       }
       break;
+  }
+
+  return result;
+}
+
+FuzzResult fuzz_with_cpp(std::uint32_t env,
+                         rust::Slice<const std::uint32_t> words) {
+  FuzzResult result{/*success=*/false,
+                    ToolError::Disabled,
+                    ::rust::String("fuzzer bridge not yet wired to C++"),
+                    ::rust::Vec<std::uint32_t>()};
+  if (words.empty()) {
+    result.error = ToolError::Parse;
+    result.message = ::rust::String("empty module");
+    return result;
+  }
+
+  // Keep the same validation as the reducer bridge to avoid running the C++
+  // fuzzer on invalid modules. Until the C++ fuzz bridge is enabled, fall back
+  // to the Rust passthrough path by returning a disabled marker without words.
+  spvtools::SpirvTools tools(static_cast<spv_target_env>(env));
+  std::string diagnostics;
+  tools.SetMessageConsumer(
+      [&diagnostics](spv_message_level_t level, const char*,
+                     const spv_position_t& position, const char* message) {
+        if (!diagnostics.empty()) diagnostics += '\n';
+        diagnostics += FormatDiagnostic(level, position, message);
+      });
+
+  if (!tools.Validate(words.data(), words.size())) {
+    result.error = ToolError::Parse;
+    result.message = ::rust::String(diagnostics);
   }
 
   return result;
