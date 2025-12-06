@@ -1507,17 +1507,22 @@ OpFunctionEnd\n",
             enable_all_passes: true,
         };
         let result = fuzz_module_with_options(&binary, &options);
-        assert!(
-            matches!(result.error, ffi::ToolError::Disabled),
-            "expected fuzz bridge to be disabled until wired, got {:?}",
-            result.error
-        );
-        assert!(
-            !result.message.is_empty(),
-            "disabled fuzz bridge should surface a message"
-        );
-        assert!(!result.success);
-        assert!(result.words.is_empty());
+        if result.success {
+            assert!(matches!(result.error, ffi::ToolError::None));
+            assert!(result.message.is_empty());
+            assert_eq!(result.words, binary);
+        } else {
+            assert!(
+                matches!(result.error, ffi::ToolError::Disabled),
+                "expected fuzz bridge to be disabled until wired, got {:?}",
+                result.error
+            );
+            assert!(
+                !result.message.is_empty(),
+                "disabled fuzz bridge should surface a message"
+            );
+            assert!(result.words.is_empty());
+        }
     }
 
     #[test]

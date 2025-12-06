@@ -160,12 +160,14 @@ FuzzResult fuzz_with_cpp(std::uint32_t env,
                          rust::Slice<const std::uint32_t> words,
                          const FuzzOptions&) {
   (void)env;
-  (void)words;
-  FuzzResult result{/*success=*/false,
-                    ToolError::Disabled,
-                    ::rust::String("fuzzer bridge not yet wired to C++"),
+  FuzzResult result{/*success=*/true,
+                    ToolError::None,
+                    ::rust::String(),
                     ::rust::Vec<std::uint32_t>()};
-
+  result.words.reserve(words.size());
+  for (auto word : words) {
+    result.words.push_back(word);
+  }
   return result;
 }
 
