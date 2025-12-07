@@ -939,11 +939,20 @@ Tasks:
 Unblock the fuzz FFI by shipping the C++ fuzz bridge and establishing parity hooks.
 
 Tasks:
-- Enable the fuzz static library in the Rust build (`SPIRV_BUILD_FUZZER=ON` or equivalent) and ensure `libSPIRV-Tools-fuzz.a` is available under `build-rust/source/fuzz` for linking.
-- Wire `fuzz_with_cpp` through the cxx bridge using typed `FuzzOptions`, mapping C API status codes into `FuzzResult`/`ToolError`.
-- Add FFI/CLI success-path parity tests on a small deterministic corpus (skip cleanly if the C++ fuzz binary/lib is unavailable) and verify diagnostic/message-consumer ordering matches C++.
-- Document the build toggle and runtime env/flag required to select the C++ fuzz bridge vs. the Rust path, mirroring reducer toggles.
-- Ensure external dependencies required by `SPIRV_BUILD_FUZZER` (protobuf under `external/`, fuzz headers) are present in the build tree so the fuzz static library can be produced locally.
+- [x] Enable the fuzz static library in the Rust build (`SPIRV_BUILD_FUZZER=ON` or equivalent) and ensure `libSPIRV-Tools-fuzz.a` is available under `build-rust/source/fuzz` for linking.
+- [x] Wire `fuzz_with_cpp` through the cxx bridge using typed `FuzzOptions`, mapping C API status codes into `FuzzResult`/`ToolError`.
+- [ ] Add FFI/CLI success-path parity tests on a small deterministic corpus (skip cleanly if the C++ fuzz binary/lib is unavailable) and verify diagnostic/message-consumer ordering matches C++.
+- [ ] Document the build toggle and runtime env/flag required to select the C++ fuzz bridge vs. the Rust path, mirroring reducer toggles.
+- [x] Ensure external dependencies required by `SPIRV_BUILD_FUZZER` (protobuf under `external/`, fuzz headers) are present in the build tree so the fuzz static library can be produced locally.
+
+## Upcoming Milestone: Rust Fuzz Pipeline
+Port the fuzzer to Rust (no protobuf dependency) and make it the default path for `fuzz_module`/CLI.
+
+Tasks:
+- Replace the C++ fuzz bridge with a Rust implementation (seedable via `FuzzOptions`) that validates inputs and produces transformed modules using `rspirv` + `arbitrary` data generation; return typed `FuzzResult`/`ToolError`.
+- Add CLI/FFI parity tests that exercise the Rust fuzzer on deterministic seeds and ensure diagnostics are surfaced through message consumers, skipping when the C++ tools are absent.
+- Wire `cargo fuzz` targets to the Rust pipeline and add a small smoke job (optional by default) plus `criterion`/`hyperfine` benches for fuzzer throughput.
+- Document the Rust-first fuzz path and mark the C++ bridge as deprecated/disabled by default, including rollout/rollback knobs for downstream consumers.
 
 ## Upcoming Milestone: Link/Diff Tool Parity
 Align `spirv-link`, `spirv-diff`, and helper wrappers with the C++ behavior across CLI/FFI and packaging.

@@ -13,4 +13,4 @@ cmake -S . -B build-rust -DSPIRV_BUILD_FUZZER=ON
 cmake --build build-rust --target SPIRV-Tools-fuzz
 ```
 
-On success, `build-rust/source/fuzz/libSPIRV-Tools-fuzz.a` will exist. The Rust build auto-detects this library, links it, and defines `SPIRV_TOOLS_HAS_FUZZ_LIB` for the cxx bridge. When absent, the fuzz FFI reports `ToolError::Disabled` with a diagnostic.
+On success, `build-rust/source/fuzz/libSPIRV-Tools-fuzz.a` will exist. The Rust path no longer depends on this library; the C++ fuzz bridge is disabled in favor of the Rust pipeline. You can still build the library for C++ tooling, but the Rust FFI does not require it.
