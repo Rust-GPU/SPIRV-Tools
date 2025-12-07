@@ -945,6 +945,26 @@ Tasks:
 - Document the build toggle and runtime env/flag required to select the C++ fuzz bridge vs. the Rust path, mirroring reducer toggles.
 - Ensure external dependencies required by `SPIRV_BUILD_FUZZER` (protobuf under `external/`, fuzz headers) are present in the build tree so the fuzz static library can be produced locally.
 
+## Upcoming Milestone: Link/Diff Tool Parity
+Align `spirv-link`, `spirv-diff`, and helper wrappers with the C++ behavior across CLI/FFI and packaging.
+
+Tasks:
+- Bridge `spirv-link` through the `cxx` bridge to the existing C++ linker (libSPIRV-Tools-link) as a fallback while a Rust path lands; surface typed link options (target env, verify-each, create library/relocatable, partial-link toggles) and message-consumer routing with CLI/FFI parity tests for success/error merges (duplicate symbols, capability conflicts), skipping cleanly when the C++ binary/lib is absent.
+- Port the linker pipeline to Rust using `rspirv` modules with typed module/entry-point metadata so merges are zero-copy and capability/extension sets reconcile at type level; add corpus coverage for library vs. executable linking and option combinations.
+- Bridge and then port `spirv-diff` with typed diff output (instruction/operand deltas with location metadata) that matches CLI options (`--color`, `--text`, `--no-indent`, word-only); add CLI/FFI parity tests on small modules.
+- Wire remaining helper tools (`spirv-lesspipe`, `spirv-cfg` path printing) to the Rust core/assembler/disassembler and add CLI parity for their help/success/error flows; ensure packaging builds them by default like C++.
+- Ensure `libSPIRV-Tools-link`/`libSPIRV-Tools-diff` shared/static artifacts are produced with the same names/SONAMEs in CMake/GN/Bazel and document swap-in instructions for downstreams.
+
+## Upcoming Milestone: Optimizer Pass Coverage
+Grow beyond arithmetic to cover the full C++ optimizer pass surface while keeping the Rust path the default.
+
+Tasks:
+- Inventory the remaining C++ passes (structural simplification, inline/inline-opaque, DCE, mem2reg and SSA rebuild, descriptor/resource legalization, instrumentation, flattening/merge-return, loop unroll/peeling, convert-relaxed-to-half, robustness passes, etc.) and stage a Rust/e-graph implementation plan with fallbacks.
+- Thread pass option structs through the Rust optimizer (e.g., legalization target, inline thresholds, instrumentation configs) with typed errors and cxx-bridge fallbacks to the C++ passes until ported.
+- Add CLI/FFI parity tests for standard pipelines (`--O`, `--Os`, `--strip-debug`, `--legalize-hlsl`, `--robust-buffer-access`, instrumentation passes) diffing outputs vs. C++ and skipping when the C++ binary is absent.
+- Add corpus fuzz/criterion benches for multi-pass pipelines and track perf vs. C++; keep hyperfine/criterion hooks aligned with pass coverage.
+- Ensure pass registration/aliasing (`--reduce-load-size`, `--convert-local-access-chains`, `--loop-unroll`, etc.) matches C++ and document Rust default/fallback semantics.
+
 ## Upcoming Milestone: CLI/FFI Parity Hardening
 Harden success-path and FFI parity once the basic parity sweep is in place.
 
