@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use arbitrary::{Arbitrary, Unstructured};
 use rspirv::binary::Assemble;
 use rspirv::dr::{self, Builder, InsertPoint, Instruction, Module};
-use rspirv::spirv::{AddressingModel, Capability, FunctionControl, MemoryModel, Op};
+use rspirv::spirv::{AddressingModel, Capability, ExecutionModel, FunctionControl, MemoryModel, Op};
 use spirv_tools_core::validation::validate_module;
 use spirv_tools_core::TargetEnv;
 
@@ -16,6 +16,8 @@ pub enum IntentionallyInvalid {}
 pub enum InvalidKind {
     MissingMemoryModel,
     MissingTerminator,
+    MissingEntryPoint,
+    TypeMismatch,
 }
 
 pub struct FuzzConfig {
@@ -46,10 +48,14 @@ impl Arbitrary<'_> for FuzzModule<Unchecked> {
         let func_ty = builder.type_function(void, vec![]);
 
         let func_count = u.int_in_range::<u32>(1..=2)?;
+        let mut first_func_id = None;
         for _ in 0..func_count {
-            builder
+            let func_id = builder
                 .begin_function(void, None, FunctionControl::NONE, func_ty)
                 .map_err(|_| arbitrary::Error::IncorrectFormat)?;
+            if first_func_id.is_none() {
+                first_func_id = Some(func_id);
+            }
             builder
                 .begin_block(None)
                 .map_err(|_| arbitrary::Error::IncorrectFormat)?;
@@ -66,6 +72,15 @@ impl Arbitrary<'_> for FuzzModule<Unchecked> {
             builder
                 .end_function()
                 .map_err(|_| arbitrary::Error::IncorrectFormat)?;
+        }
+
+        if let Some(func_id) = first_func_id {
+            builder.entry_point(
+                ExecutionModel::Vertex,
+                func_id,
+                "main",
+                Vec::new(),
+            );
         }
 
         let module = builder.module();
@@ -152,6 +167,18 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
                 if let Some(block) = func.blocks.first_mut() {
                     if !block.instructions.is_empty() {
                         block.instructions.pop();
+                    }
+                }
+            }
+        }
+        InvalidKind::MissingEntryPoint => {
+            module.entry_points.clear();
+        }
+        InvalidKind::TypeMismatch => {
+            if let Some(func) = module.functions.first_mut() {
+                if let Some(block) = func.blocks.first_mut() {
+                    if let Some(inst) = block.instructions.first_mut() {
+                        inst.result_type = Some(0);
                     }
                 }
             }

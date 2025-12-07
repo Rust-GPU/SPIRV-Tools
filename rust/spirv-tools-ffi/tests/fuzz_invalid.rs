@@ -22,12 +22,10 @@ fn rust_fuzzer_can_emit_intentionally_invalid() {
 
     let result = fuzz_module_with_options(&binary, &opts);
     assert!(result.success);
-    if validate_binary(TargetEnv::Universal1_6, &result.words).success {
-        // Valid path is fine too.
-        return;
+    if !validate_binary(TargetEnv::Universal1_6, &result.words).success {
+        assert!(
+            result.message.contains("intentionally invalid"),
+            "expected intentionally invalid marker"
+        );
     }
-    assert!(
-        result.message.contains("intentionally invalid"),
-        "expected intentionally invalid marker"
-    );
 }
