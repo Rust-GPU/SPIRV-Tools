@@ -1015,14 +1015,16 @@ spv_result_t spvTextToBinaryWithOptions(const spv_const_context context,
                                         spv_diagnostic* pDiagnostic) {
   const uint64_t rust_context_handle =
       spvtools::GetRustContextHandle(context);
-  const bool has_rust_context = rust_context_handle != 0;
 
-  const uint32_t sanitized_options =
 #if defined(SPIRV_RUST_TARGET_ENV)
-      has_rust_context ?
-          spvtools::ffi::sanitize_text_to_binary_options(options) : options;
+  const bool has_rust_context = rust_context_handle != 0;
+  const uint32_t sanitized_options =
+      has_rust_context
+          ? spvtools::ffi::sanitize_text_to_binary_options(options)
+          : options;
 #else
-      options;
+  (void)rust_context_handle;
+  const uint32_t sanitized_options = options;
 #endif
 
 #if defined(SPIRV_RUST_TARGET_ENV)

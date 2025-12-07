@@ -14,6 +14,8 @@
 
 if(SPIRV_BUILD_FUZZER)
 
+  option(SPIRV_TOOLS_SKIP_FUZZ_EXPORT "Skip exporting fuzz targets for local builds" ON)
+
   file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/protobufs)
 
   set(PROTOBUF_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/protobufs/spvtoolsfuzz.proto)
@@ -472,7 +474,7 @@ if(SPIRV_BUILD_FUZZER)
   set_property(TARGET SPIRV-Tools-fuzz PROPERTY FOLDER "SPIRV-Tools libraries")
   spvtools_check_symbol_exports(SPIRV-Tools-fuzz)
 
-  if(ENABLE_SPIRV_TOOLS_INSTALL)
+  if(ENABLE_SPIRV_TOOLS_INSTALL AND NOT SPIRV_TOOLS_SKIP_FUZZ_EXPORT AND TARGET protobuf::libprotobuf)
       set(SPIRV-Tools-fuzz-InstallTargets SPIRV-Tools-fuzz)
 
       if (SPIRV_TOOLS_USE_MIMALLOC AND (NOT SPIRV_TOOLS_BUILD_STATIC OR SPIRV_TOOLS_USE_MIMALLOC_IN_STATIC_BUILD))
@@ -488,6 +490,6 @@ if(SPIRV_BUILD_FUZZER)
 
       spvtools_generate_config_file(SPIRV-Tools-fuzz)
       install(FILES ${CMAKE_BINARY_DIR}/SPIRV-Tools-fuzzConfig.cmake DESTINATION ${PACKAGE_DIR})
-  endif(ENABLE_SPIRV_TOOLS_INSTALL)
+  endif(ENABLE_SPIRV_TOOLS_INSTALL AND NOT SPIRV_TOOLS_SKIP_FUZZ_EXPORT AND TARGET protobuf::libprotobuf)
 
 endif(SPIRV_BUILD_FUZZER)

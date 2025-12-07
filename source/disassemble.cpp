@@ -54,7 +54,8 @@
 namespace spvtools {
 namespace {
 
-spv_result_t AssignTextResult(const std::string& source, spv_text* text_result) {
+[[maybe_unused]] spv_result_t AssignTextResult(const std::string& source,
+                                               spv_text* text_result) {
   if (!text_result) {
     return SPV_SUCCESS;
   }
@@ -1079,7 +1080,11 @@ std::string spvInstructionBinaryToText(const spv_target_env env,
 
   const uint64_t rust_context_handle =
       spvtools::GetRustContextHandle(context);
+#if defined(SPIRV_RUST_TARGET_ENV)
   const bool has_rust_context = rust_context_handle != 0;
+#else
+  (void)rust_context_handle;
+#endif
 
   const uint32_t sanitized_options =
 #if defined(SPIRV_RUST_TARGET_ENV)
@@ -1129,7 +1134,11 @@ spv_result_t spvBinaryToText(const spv_const_context context,
   }
 
   const uint64_t rust_context_handle = spvtools::GetRustContextHandle(context);
+#if defined(SPIRV_RUST_TARGET_ENV)
   const bool has_rust_context = rust_context_handle != 0;
+#else
+  (void)rust_context_handle;
+#endif
 
   const uint32_t sanitized_options =
 #if defined(SPIRV_RUST_TARGET_ENV)
