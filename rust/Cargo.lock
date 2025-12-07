@@ -927,8 +927,10 @@ dependencies = [
 name = "spirv-tools-ffi"
 version = "0.1.0"
 dependencies = [
+ "arbitrary",
  "cxx",
  "cxx-build",
+ "fastrand",
  "rspirv",
  "spirv-tools-cli",
  "spirv-tools-core",

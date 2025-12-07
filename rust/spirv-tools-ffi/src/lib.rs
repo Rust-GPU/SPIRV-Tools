@@ -1,8 +1,7 @@
 use core::ffi::c_void;
 use core::ptr::NonNull;
-use rspirv::binary::{parse_words, Assemble};
-use rspirv::dr::{Instruction, Loader};
-use rspirv::spirv::Op;
+use rspirv::binary::parse_words;
+use rspirv::dr::Loader;
 use spirv_tools_core::assembly::{
     assemble_text_with_options, BinaryToTextOptions, TextToBinaryOptions,
 };
@@ -12,6 +11,7 @@ use spirv_tools_core::validation::validate_module;
 use spirv_tools_core::validation::ValidModuleCache;
 use spirv_tools_core::{MessageLevel, TargetEnv};
 mod optimizer;
+mod fuzz;
 mod tests_optimizer;
 use std::panic::{self, AssertUnwindSafe};
 use std::str;
@@ -656,7 +656,7 @@ pub fn fuzz_module(words: &[u32]) -> ffi::FuzzResult {
     fuzz_module_with_options(words, &default_fuzz_options())
 }
 
-pub fn fuzz_module_with_options(words: &[u32], _options: &ffi::FuzzOptions) -> ffi::FuzzResult {
+pub fn fuzz_module_with_options(words: &[u32], options: &ffi::FuzzOptions) -> ffi::FuzzResult {
     if words.is_empty() {
         return ffi::FuzzResult {
             success: false,
@@ -675,12 +675,25 @@ pub fn fuzz_module_with_options(words: &[u32], _options: &ffi::FuzzOptions) -> f
         };
     }
 
-    match inject_nop(words, _options.random_seed) {
-        Ok(fuzzed) => ffi::FuzzResult {
+    let cfg = fuzz::FuzzConfig {
+        seed: options.random_seed as u64,
+        prefer_valid: options.enable_fuzzer_pass_validation,
+        allow_invalid: !options.enable_fuzzer_pass_validation,
+    };
+    let generator = fuzz::FuzzGenerator::new(cfg);
+    let input_bytes = words_as_bytes(words);
+    match generator.generate(TargetEnv::Universal1_6, &input_bytes) {
+        Ok(fuzz::FuzzOutcome::Valid { words }) => ffi::FuzzResult {
             success: true,
             error: ffi::ToolError::None,
             message: String::new(),
-            words: fuzzed,
+            words,
+        },
+        Ok(fuzz::FuzzOutcome::Invalid { words, kind }) => ffi::FuzzResult {
+            success: true,
+            error: ffi::ToolError::None,
+            message: format!("intentionally invalid module: {:?}", kind),
+            words,
         },
         Err(message) => ffi::FuzzResult {
             success: false,
@@ -691,35 +704,12 @@ pub fn fuzz_module_with_options(words: &[u32], _options: &ffi::FuzzOptions) -> f
     }
 }
 
-fn inject_nop(words: &[u32], seed: u32) -> Result<Vec<u32>, String> {
-    let mut loader = Loader::new();
-    parse_words(words, &mut loader).map_err(|e| format!("parse failed: {e}"))?;
-    let mut module = loader.module();
-    if module.functions.is_empty() {
-        return Ok(words.to_vec());
+fn words_as_bytes(words: &[u32]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(words.len() * 4);
+    for w in words {
+        bytes.extend_from_slice(&w.to_le_bytes());
     }
-
-    let start_idx = (seed as usize) % module.functions.len();
-    let mut chosen = None;
-    for offset in 0..module.functions.len() {
-        let idx = (start_idx + offset) % module.functions.len();
-        if let Some(block) = module.functions[idx].blocks.first() {
-            if !block.instructions.is_empty() || block.label.is_some() {
-                chosen = Some(idx);
-                break;
-            }
-        }
-    }
-
-    if let Some(func_idx) = chosen {
-        if let Some(block) = module.functions[func_idx].blocks.get_mut(0) {
-            block
-                .instructions
-                .insert(0, Instruction::new(Op::Nop, None, None, Vec::new()));
-        }
-    }
-
-    Ok(module.assemble())
+    bytes
 }
 
 pub fn try_assemble_text(context_handle: u64, text: &[u8], options: u32) -> ffi::AssembleResult {
@@ -1263,6 +1253,7 @@ OpFunctionEnd\n";
             assemble_text_with_options(&text, TargetEnv::Universal1_6, TextToBinaryOptions::NONE)
                 .expect("assemble");
 
+        set_rust_validator_override(true);
         let first = validate_binary(TargetEnv::Universal1_6, &binary);
         assert!(first.success);
         assert_eq!(LAST_VALIDATION_PATH.load(Ordering::Relaxed), 1);
@@ -1483,22 +1474,13 @@ OpFunctionEnd\n",
         assert_eq!(reduce.words, binary);
 
         let fuzz = fuzz_module_with_options(&binary, &default_fuzz_options());
-        if fuzz.success {
-            assert!(matches!(fuzz.error, ffi::ToolError::None));
-            assert!(fuzz.message.is_empty());
-            assert_eq!(fuzz.words, binary);
-        } else {
-            assert!(
-                matches!(fuzz.error, ffi::ToolError::Disabled),
-                "unexpected fuzz error: {:?}",
-                fuzz.error
-            );
-            assert!(
-                !fuzz.message.is_empty(),
-                "disabled fuzz bridge should surface a message"
-            );
-            assert!(fuzz.words.is_empty());
-        }
+        assert!(fuzz.success);
+        assert!(matches!(fuzz.error, ffi::ToolError::None));
+        let validated = validate_binary(TargetEnv::Universal1_0, &fuzz.words).success;
+        assert!(
+            validated || fuzz.message.contains("intentionally invalid"),
+            "fuzz output should be valid or flagged"
+        );
     }
 
     #[test]
@@ -1538,22 +1520,9 @@ OpFunctionEnd\n",
             enable_all_passes: true,
         };
         let result = fuzz_module_with_options(&binary, &options);
-        if result.success {
-            assert!(matches!(result.error, ffi::ToolError::None));
-            assert!(result.message.is_empty());
-            assert_eq!(result.words, binary);
-        } else {
-            assert!(
-                matches!(result.error, ffi::ToolError::Disabled),
-                "expected fuzz bridge to be disabled until wired, got {:?}",
-                result.error
-            );
-            assert!(
-                !result.message.is_empty(),
-                "disabled fuzz bridge should surface a message"
-            );
-            assert!(result.words.is_empty());
-        }
+        assert!(result.success);
+        assert!(matches!(result.error, ffi::ToolError::None));
+        assert!(validate_binary(TargetEnv::Universal1_0, &result.words).success);
     }
 
     #[test]

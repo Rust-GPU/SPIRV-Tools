@@ -6,7 +6,7 @@ use rspirv::dr::Loader;
 use rspirv::spirv::Op;
 
 #[test]
-fn cpp_fuzz_bridge_runs_with_seed() {
+fn rust_fuzzer_runs_with_seed() {
     let text = [
         "OpCapability Shader",
         "OpMemoryModel Logical GLSL450",
