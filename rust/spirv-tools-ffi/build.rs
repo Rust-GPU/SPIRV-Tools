@@ -34,6 +34,7 @@ fn main() {
     .expect("failed to copy context bridge header");
 
     let mut bridge_builder = cxx_build::bridge("src/lib.rs");
+    bridge_builder.define("SPIRV_RUST_TARGET_ENV", None);
     bridge_builder
         .file("src/context_bridge.cc")
         .include(repo_root)
@@ -41,7 +42,7 @@ fn main() {
         .include(headers_root)
         .include(&build_root)
         .std("c++17")
-        .compile("spirv-tools-ffi");
+        .warnings_into_errors(true);
 
     let core_lib_dir = build_root.join("source");
     let opt_lib_dir = core_lib_dir.join("opt");
@@ -61,4 +62,6 @@ fn main() {
     println!("cargo:rustc-link-lib=static=SPIRV-Tools");
     println!("cargo:rustc-link-lib=static=SPIRV-Tools-opt");
     println!("cargo:rustc-link-lib=static=SPIRV-Tools-reduce");
+
+    bridge_builder.compile("spirv-tools-ffi");
 }

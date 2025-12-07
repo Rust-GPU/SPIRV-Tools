@@ -161,6 +161,7 @@ FuzzResult fuzz_with_cpp(std::uint32_t env,
                          const FuzzOptions&) {
 #ifdef SPIRV_TOOLS_HAS_FUZZ_LIB
   (void)env;
+  (void)words;
   FuzzResult result{/*success=*/false,
                     ToolError::Disabled,
                     ::rust::String("fuzzer bridge not yet wired to C++"),

@@ -298,7 +298,9 @@ set(SPIRV_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/val/validation_state.cpp)
 
 if (SPIRV_ENABLE_RUST_TARGET_ENV)
-  list(APPEND SPIRV_SOURCES ${PROJECT_SOURCE_DIR}/rust/cxxbridge/spirv-tools-ffi.cc)
+  # The Rust static library already contains the cxxbridge objects; avoid
+  # compiling the generated shim a second time to prevent duplicate symbols
+  # when linking SPIRV-Tools against the cargo-built archive.
 endif()
 
 if (${SPIRV_TIMER_ENABLED})
