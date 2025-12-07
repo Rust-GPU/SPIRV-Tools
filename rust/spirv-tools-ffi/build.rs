@@ -4,6 +4,8 @@ use std::path::PathBuf;
 
 fn main() {
     println!("cargo:rerun-if-changed=../cxxbridge/spirv-tools-ffi/src/context_bridge.h");
+    let fuzz_static = PathBuf::from("../build-rust/source/fuzz/libSPIRV-Tools-fuzz.a");
+    println!("cargo:rerun-if-changed={}", fuzz_static.display());
 
     println!("cargo:rustc-check-cfg=cfg(spirv_tools_has_fuzz_lib)");
 
