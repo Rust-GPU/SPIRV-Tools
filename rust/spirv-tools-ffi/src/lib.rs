@@ -1,7 +1,8 @@
 use core::ffi::c_void;
 use core::ptr::NonNull;
-use rspirv::binary::parse_words;
-use rspirv::dr::Loader;
+use rspirv::binary::{parse_words, Assemble};
+use rspirv::dr::{Instruction, Loader};
+use rspirv::spirv::Op;
 use spirv_tools_core::assembly::{
     assemble_text_with_options, BinaryToTextOptions, TextToBinaryOptions,
 };
@@ -214,6 +215,7 @@ mod ffi {
         ) -> AssembleResult;
         fn validate_binary(env: u32, words: &[u32]) -> ValidateResult;
         fn reduce_with_cpp(env: u32, words: &[u32], options: &ReduceOptions) -> ReduceResult;
+        #[allow(dead_code)]
         fn fuzz_with_cpp(env: u32, words: &[u32], options: &FuzzOptions) -> FuzzResult;
     }
 }
@@ -673,17 +675,51 @@ pub fn fuzz_module_with_options(words: &[u32], _options: &ffi::FuzzOptions) -> f
         };
     }
 
-    // Initial Rust fuzz pipeline: keep behavior deterministic and validation-safe
-    // by returning the validated module unchanged, respecting requested options
-    // for deterministic seeding when we expand transformations.
-    let mut output = Vec::with_capacity(words.len());
-    output.extend_from_slice(words);
-    ffi::FuzzResult {
-        success: true,
-        error: ffi::ToolError::None,
-        message: String::new(),
-        words: output,
+    match inject_nop(words, _options.random_seed) {
+        Ok(fuzzed) => ffi::FuzzResult {
+            success: true,
+            error: ffi::ToolError::None,
+            message: String::new(),
+            words: fuzzed,
+        },
+        Err(message) => ffi::FuzzResult {
+            success: false,
+            error: ffi::ToolError::Fuzz,
+            message,
+            words: Vec::new(),
+        },
     }
+}
+
+fn inject_nop(words: &[u32], seed: u32) -> Result<Vec<u32>, String> {
+    let mut loader = Loader::new();
+    parse_words(words, &mut loader).map_err(|e| format!("parse failed: {e}"))?;
+    let mut module = loader.module();
+    if module.functions.is_empty() {
+        return Ok(words.to_vec());
+    }
+
+    let start_idx = (seed as usize) % module.functions.len();
+    let mut chosen = None;
+    for offset in 0..module.functions.len() {
+        let idx = (start_idx + offset) % module.functions.len();
+        if let Some(block) = module.functions[idx].blocks.first() {
+            if !block.instructions.is_empty() || block.label.is_some() {
+                chosen = Some(idx);
+                break;
+            }
+        }
+    }
+
+    if let Some(func_idx) = chosen {
+        if let Some(block) = module.functions[func_idx].blocks.get_mut(0) {
+            block
+                .instructions
+                .insert(0, Instruction::new(Op::Nop, None, None, Vec::new()));
+        }
+    }
+
+    Ok(module.assemble())
 }
 
 pub fn try_assemble_text(context_handle: u64, text: &[u8], options: u32) -> ffi::AssembleResult {

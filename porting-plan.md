@@ -953,6 +953,7 @@ Tasks:
 - Add CLI/FFI parity tests that exercise the Rust fuzzer on deterministic seeds and ensure diagnostics are surfaced through message consumers, skipping when the C++ tools are absent.
 - Wire `cargo fuzz` targets to the Rust pipeline and add a small smoke job (optional by default) plus `criterion`/`hyperfine` benches for fuzzer throughput.
 - Document the Rust-first fuzz path and mark the C++ bridge as deprecated/disabled by default, including rollout/rollback knobs for downstream consumers.
+ - Seeded Rust path currently performs a deterministic, validation-preserving nop injection; expand to richer transformations and corpus coverage next.
 
 ## Upcoming Milestone: Link/Diff Tool Parity
 Align `spirv-link`, `spirv-diff`, and helper wrappers with the C++ behavior across CLI/FFI and packaging.
