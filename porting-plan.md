@@ -982,6 +982,12 @@ Tasks:
 - Add a light `cargo fuzz` smoke script to CI (optional by default) and document how to run targeted seeds/hints locally.
 - Teach the fuzz generator to emit typed modules with richer type graphs (arrays/structs/pointers) and guarded invalid mutations (e.g., duplicate ids, wrong storage classes) while keeping the validity marker types zero-cost.
 
+## Upcoming Milestone: Fuzz Parity Rollout
+- Expand FFI/CLI fuzz parity to a richer deterministic corpus (beyond vertex/fragment/compute) and diff outputs/diagnostics vs. the C++ bridge/binaries when available (skip cleanly otherwise).
+- Add diagnostic parity checks (stderr/status) for fuzz CLI/FFI across success and invalid inputs; document skips/assumptions when C++ tools are absent.
+- Wire optional fuzz-path hyperfine/criterion benches (opt-in) to track Rust vs. C++ fuzz throughput and document how to run them locally.
+- Document the build/runtime toggles for selecting Rust vs. C++ fuzz paths (bridge availability, env flags) mirroring reducer toggles.
+
 ## Upcoming Milestone: Link/Diff Tool Parity
 Align `spirv-link`, `spirv-diff`, and helper wrappers with the C++ behavior across CLI/FFI and packaging.
 
