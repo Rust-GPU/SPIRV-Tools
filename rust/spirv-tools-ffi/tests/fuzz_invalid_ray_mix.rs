@@ -71,6 +71,28 @@ fn rust_fuzzer_can_emit_missing_ray_execution_model() {
 }
 
 #[test]
+fn rust_fuzzer_can_emit_missing_ray_capability() {
+    let cfg = FuzzConfig {
+        seed: 57,
+        prefer_valid: false,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::MissingRayCapability),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    let words = match outcome {
+        spirv_tools_ffi::FuzzOutcome::Invalid { words, .. } => words,
+        spirv_tools_ffi::FuzzOutcome::Valid { words } => words,
+    };
+    assert!(
+        !validate_binary(TargetEnv::Universal1_6, &words).success,
+        "ray interfaces without ray capability should fail validation"
+    );
+}
+
+#[test]
 fn fuzz_bridge_passthrough_rejects_mixed_ray_interfaces() {
     // Use the public fuzz wrapper to ensure the higher-level API rejects the invalid module too.
     let opts = default_fuzz_options();

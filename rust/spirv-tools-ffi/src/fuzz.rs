@@ -41,6 +41,7 @@ pub enum InvalidKind {
     RayEntryWithNonRayInterface,
     MixedRayInterfaceStorageClasses,
     MissingRayExecutionModel,
+    MissingRayCapability,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -961,6 +962,35 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
                     *model = ExecutionModel::Vertex.into();
                 }
             }
+        }
+        InvalidKind::MissingRayCapability => {
+            ensure_ray_entry_point(module);
+            // Add a payload interface so the missing capability is observable.
+            let int_ty = ensure_int_type(module);
+            let payload_ptr =
+                ensure_pointer_type(module, StorageClass::IncomingRayPayloadKHR, int_ty);
+            let ids = insert_global_vars(
+                module,
+                payload_ptr,
+                StorageClass::IncomingRayPayloadKHR,
+                1,
+            );
+            push_interfaces(module, &ids);
+            // Strip ray tracing capabilities if present.
+            module.capabilities.retain(|inst| {
+                match inst.operands.first() {
+                    Some(Operand::Capability(spirv::Capability::RayTracingKHR))
+                    | Some(Operand::Capability(spirv::Capability::RayTracingNV)) => false,
+                    _ => true,
+                }
+            });
+            // Keep Shader for a valid baseline.
+            module.capabilities.push(Instruction::new(
+                Op::Capability,
+                None,
+                None,
+                vec![Capability::Shader.into()],
+            ));
         }
     }
 }
