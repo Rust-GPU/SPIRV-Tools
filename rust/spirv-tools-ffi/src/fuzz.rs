@@ -135,11 +135,16 @@ impl Arbitrary<'_> for FuzzModule<Unchecked> {
             let array_int = builder.type_array(int_ty, array_len);
             let struct_ty = builder.type_struct(vec![int_ty, array_int]);
             let ptr_fn_int = builder.type_pointer(None, StorageClass::Function, int_ty);
-            let _ptr_fn_struct = builder.type_pointer(None, StorageClass::Function, struct_ty);
+            let ptr_fn_struct = builder.type_pointer(None, StorageClass::Function, struct_ty);
             let zero_const = builder.constant_bit32(int_ty, 0);
             let one_const = builder.constant_bit32(int_ty, 1);
             let cond_true = builder.constant_true(bool_ty);
             let cond_false = builder.constant_false(bool_ty);
+            let array_const = builder.constant_composite(
+                array_int,
+                vec![zero_const, zero_const, zero_const, zero_const],
+            );
+            let struct_const = builder.constant_composite(struct_ty, vec![zero_const, array_const]);
 
             let func_count = u.int_in_range::<u32>(1..=2)?;
             let mut first_func_id = None;
@@ -173,6 +178,22 @@ impl Arbitrary<'_> for FuzzModule<Unchecked> {
                             None,
                             None,
                             vec![var_id.into(), zero_const.into()],
+                        ),
+                    );
+                }
+
+                // Optionally store a composite struct into a function-scoped variable
+                // to exercise aggregate types.
+                if u.ratio(1, 3)? {
+                    let struct_var =
+                        builder.variable(ptr_fn_struct, None, StorageClass::Function, None);
+                    let _ = builder.insert_into_block(
+                        InsertPoint::End,
+                        Instruction::new(
+                            Op::Store,
+                            None,
+                            None,
+                            vec![struct_var.into(), struct_const.into()],
                         ),
                     );
                 }
