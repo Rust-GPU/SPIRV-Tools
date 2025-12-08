@@ -252,6 +252,60 @@ fn rust_fuzzer_can_emit_ray_payload_interface_on_non_ray_entry() {
 }
 
 #[test]
+fn rust_fuzzer_can_emit_callable_data_interface_on_non_ray_entry() {
+    let cfg = FuzzConfig {
+        seed: 35,
+        prefer_valid: false,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::CallableDataInterfaceOnNonRayEntry),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    match outcome {
+        FuzzOutcome::Invalid { kind, words } => {
+            assert!(matches!(
+                kind,
+                InvalidKind::CallableDataInterfaceOnNonRayEntry
+            ));
+            assert!(
+                !validate_binary(TargetEnv::Universal1_6, &words).success,
+                "callable data on non-ray entry should fail validation"
+            );
+        }
+        FuzzOutcome::Valid { .. } => panic!("expected invalid module"),
+    }
+}
+
+#[test]
+fn rust_fuzzer_can_emit_hit_attribute_interface_on_non_ray_entry() {
+    let cfg = FuzzConfig {
+        seed: 37,
+        prefer_valid: false,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::HitAttributeInterfaceOnNonRayEntry),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    match outcome {
+        FuzzOutcome::Invalid { kind, words } => {
+            assert!(matches!(
+                kind,
+                InvalidKind::HitAttributeInterfaceOnNonRayEntry
+            ));
+            assert!(
+                !validate_binary(TargetEnv::Universal1_6, &words).success,
+                "hit attribute on non-ray entry should fail validation"
+            );
+        }
+        FuzzOutcome::Valid { .. } => panic!("expected invalid module"),
+    }
+}
+
+#[test]
 fn rust_fuzzer_can_emit_missing_loop_merge() {
     let cfg = FuzzConfig {
         seed: 23,

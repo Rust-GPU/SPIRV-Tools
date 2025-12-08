@@ -33,6 +33,8 @@ pub enum InvalidKind {
     DuplicateBinding,
     DuplicateEntryPointInterface,
     RayPayloadInterfaceOnNonRayEntry,
+    CallableDataInterfaceOnNonRayEntry,
+    HitAttributeInterfaceOnNonRayEntry,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -859,6 +861,47 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
                 // Force a non-ray execution model so the interface storage class is invalid.
                 if let Some(model) = ep.operands.get_mut(0) {
                     *model = ExecutionModel::Vertex.into();
+                }
+                ep.operands.push(var_id.into());
+            }
+        }
+        InvalidKind::CallableDataInterfaceOnNonRayEntry => {
+            if module.entry_points.is_empty() || module.functions.is_empty() {
+                *module = minimal_valid_module_with_tag(0);
+            }
+            let int_ty = ensure_int_type(module);
+            let ptr =
+                ensure_pointer_type(module, StorageClass::IncomingCallableDataKHR, int_ty);
+            let var_id = fresh_id(module);
+            module.types_global_values.push(Instruction::new(
+                Op::Variable,
+                Some(ptr),
+                Some(var_id),
+                vec![StorageClass::IncomingCallableDataKHR.into()],
+            ));
+            if let Some(ep) = module.entry_points.first_mut() {
+                if let Some(model) = ep.operands.get_mut(0) {
+                    *model = ExecutionModel::Fragment.into();
+                }
+                ep.operands.push(var_id.into());
+            }
+        }
+        InvalidKind::HitAttributeInterfaceOnNonRayEntry => {
+            if module.entry_points.is_empty() || module.functions.is_empty() {
+                *module = minimal_valid_module_with_tag(0);
+            }
+            let int_ty = ensure_int_type(module);
+            let ptr = ensure_pointer_type(module, StorageClass::HitAttributeKHR, int_ty);
+            let var_id = fresh_id(module);
+            module.types_global_values.push(Instruction::new(
+                Op::Variable,
+                Some(ptr),
+                Some(var_id),
+                vec![StorageClass::HitAttributeKHR.into()],
+            ));
+            if let Some(ep) = module.entry_points.first_mut() {
+                if let Some(model) = ep.operands.get_mut(0) {
+                    *model = ExecutionModel::GLCompute.into();
                 }
                 ep.operands.push(var_id.into());
             }
