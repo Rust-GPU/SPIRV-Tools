@@ -76,3 +76,27 @@ fn rust_fuzzer_respects_prefer_valid_even_with_hint() {
         FuzzOutcome::Invalid { .. } => panic!("expected valid module when prefer_valid=true"),
     }
 }
+
+#[test]
+fn rust_fuzzer_can_emit_dangling_use() {
+    let cfg = FuzzConfig {
+        seed: 42,
+        prefer_valid: false,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::DanglingUse),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    match outcome {
+        FuzzOutcome::Invalid { kind, words } => {
+            assert!(matches!(kind, InvalidKind::DanglingUse));
+            assert!(
+                !validate_binary(TargetEnv::Universal1_6, &words).success,
+                "dangling use should fail validation"
+            );
+        }
+        FuzzOutcome::Valid { .. } => panic!("expected invalid module"),
+    }
+}

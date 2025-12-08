@@ -22,6 +22,7 @@ pub enum InvalidKind {
     MissingEntryPoint,
     TypeMismatch,
     BrokenIdBound,
+    DanglingUse,
 }
 
 pub struct FuzzConfig {
@@ -54,6 +55,7 @@ impl Arbitrary<'_> for FuzzModule<Unchecked> {
         let int_ty = builder.type_int(32, 0);
         let ptr_fn_int = builder.type_pointer(None, StorageClass::Function, int_ty);
         let zero_const = builder.constant_bit32(int_ty, 0);
+        let one_const = builder.constant_bit32(int_ty, 1);
 
         let func_count = u.int_in_range::<u32>(1..=2)?;
         let mut first_func_id = None;
@@ -87,6 +89,19 @@ impl Arbitrary<'_> for FuzzModule<Unchecked> {
                         None,
                         None,
                         vec![var_id.into(), zero_const.into()],
+                    ),
+                );
+            }
+
+            if u.ratio(1, 2)? {
+                let fresh = builder.id();
+                let _ = builder.insert_into_block(
+                    InsertPoint::End,
+                    Instruction::new(
+                        Op::IAdd,
+                        Some(int_ty),
+                        Some(fresh),
+                        vec![zero_const.into(), one_const.into()],
                     ),
                 );
             }
@@ -213,14 +228,23 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
             if let Some(header) = module.header.as_mut() {
                 header.bound = 1;
             } else {
-            module.header = Some(dr::ModuleHeader {
-                magic_number: spirv::MAGIC_NUMBER,
-                version: ((spirv::MAJOR_VERSION as u32) << 16) | ((spirv::MINOR_VERSION as u32) << 8),
-                generator: 0,
-                bound: 1,
-                reserved_word: 0,
-            });
+                module.header = Some(dr::ModuleHeader {
+                    magic_number: spirv::MAGIC_NUMBER,
+                    version: ((spirv::MAJOR_VERSION as u32) << 16)
+                        | ((spirv::MINOR_VERSION as u32) << 8),
+                    generator: 0,
+                    bound: 1,
+                    reserved_word: 0,
+                });
+            }
+        }
+        InvalidKind::DanglingUse => {
+            module.types_global_values.push(Instruction::new(
+                Op::IAdd,
+                Some(99),
+                Some(98),
+                vec![97u32.into(), 96u32.into()],
+            ));
         }
     }
-}
 }

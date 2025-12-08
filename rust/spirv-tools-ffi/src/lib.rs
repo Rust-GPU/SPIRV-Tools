@@ -1255,7 +1255,7 @@ OpFunctionEnd\n";
         let binary_v16 =
             assemble_text_with_options(&text, TargetEnv::Universal1_6, TextToBinaryOptions::NONE)
                 .expect("assemble");
-        let text_alt = [
+        let _text_alt = [
             "OpCapability Shader",
             "OpMemoryModel Logical GLSL450",
             "%void = OpTypeVoid",
