@@ -65,6 +65,7 @@ pub enum InvalidKind {
     RayEntryWithCodeSectionInterface,
     RayEntryWithDeviceOnlyInterface,
     RayEntryWithInputOutputMix,
+    RayEntryWithHostOnlyInterface,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1073,6 +1074,11 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
             let input = insert_interface_var(module, StorageClass::Input);
             let output = insert_interface_var(module, StorageClass::Output);
             push_interfaces(module, &[input, output]);
+        }
+        InvalidKind::RayEntryWithHostOnlyInterface => {
+            ensure_ray_entry_point(module);
+            let id = insert_interface_var(module, StorageClass::HostOnlyINTEL);
+            push_interfaces(module, &[id]);
         }
         InvalidKind::MissingRayExecutionModel => {
             ensure_ray_entry_point(module);
