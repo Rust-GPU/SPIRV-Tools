@@ -68,6 +68,7 @@ pub enum InvalidKind {
     RayEntryWithHostOnlyInterface,
     RayEntryWithDanglingInterfaceId,
     RayInterfaceNonPointer,
+    RayInterfacePointerToPointer,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1102,6 +1103,20 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
             module.types_global_values.push(Instruction::new(
                 Op::Variable,
                 Some(int_ty),
+                Some(var_id),
+                vec![StorageClass::IncomingRayPayloadKHR.into()],
+            ));
+            push_interfaces(module, &[var_id]);
+        }
+        InvalidKind::RayInterfacePointerToPointer => {
+            ensure_ray_entry_point(module);
+            let int_ty = ensure_int_type(module);
+            let inner_ptr = ensure_pointer_type(module, StorageClass::Function, int_ty);
+            let ptr_to_ptr = ensure_pointer_type(module, StorageClass::IncomingRayPayloadKHR, inner_ptr);
+            let var_id = fresh_id(module);
+            module.types_global_values.push(Instruction::new(
+                Op::Variable,
+                Some(ptr_to_ptr),
                 Some(var_id),
                 vec![StorageClass::IncomingRayPayloadKHR.into()],
             ));
