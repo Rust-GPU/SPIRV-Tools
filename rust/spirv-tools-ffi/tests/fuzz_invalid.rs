@@ -153,6 +153,30 @@ fn rust_fuzzer_can_emit_storage_class_mismatch() {
 }
 
 #[test]
+fn rust_fuzzer_can_emit_access_chain_overshoot() {
+    let cfg = FuzzConfig {
+        seed: 25,
+        prefer_valid: false,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::AccessChainOvershoot),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    match outcome {
+        FuzzOutcome::Invalid { kind, words } => {
+            assert!(matches!(kind, InvalidKind::AccessChainOvershoot));
+            assert!(
+                !validate_binary(TargetEnv::Universal1_6, &words).success,
+                "access chain overshoot should fail validation"
+            );
+        }
+        FuzzOutcome::Valid { .. } => panic!("expected invalid module"),
+    }
+}
+
+#[test]
 fn rust_fuzzer_can_emit_missing_loop_merge() {
     let cfg = FuzzConfig {
         seed: 23,

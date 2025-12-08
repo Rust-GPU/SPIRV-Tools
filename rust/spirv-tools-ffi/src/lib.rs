@@ -554,10 +554,12 @@ pub fn set_rust_validator_override(enable: bool) {
     let value = if enable { 1 } else { 2 };
     RUST_VALIDATOR_OVERRIDE.store(value, Ordering::Relaxed);
     if enable {
+        ENABLE_RUST_VALIDATOR.store(true, Ordering::Relaxed);
         // Keep the env hint in sync so child processes/tests can pick it up.
         std::env::set_var("SPIRV_TOOLS_FORCE_RUST_VALIDATOR", "1");
         std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_VALIDATOR");
     } else {
+        ENABLE_RUST_VALIDATOR.store(false, Ordering::Relaxed);
         std::env::set_var("SPIRV_TOOLS_DISABLE_RUST_VALIDATOR", "1");
         std::env::remove_var("SPIRV_TOOLS_FORCE_RUST_VALIDATOR");
     }

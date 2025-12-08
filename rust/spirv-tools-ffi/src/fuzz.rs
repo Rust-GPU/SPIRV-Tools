@@ -28,6 +28,7 @@ pub enum InvalidKind {
     PhiPredecessorMismatch,
     StorageClassMismatch,
     MissingLoopMerge,
+    AccessChainOvershoot,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -136,6 +137,7 @@ impl Arbitrary<'_> for FuzzModule<Unchecked> {
             let struct_ty = builder.type_struct(vec![int_ty, array_int]);
             let ptr_fn_int = builder.type_pointer(None, StorageClass::Function, int_ty);
             let ptr_fn_struct = builder.type_pointer(None, StorageClass::Function, struct_ty);
+            let ptr_fn_array = builder.type_pointer(None, StorageClass::Function, array_int);
             let zero_const = builder.constant_bit32(int_ty, 0);
             let one_const = builder.constant_bit32(int_ty, 1);
             let cond_true = builder.constant_true(bool_ty);
@@ -145,26 +147,26 @@ impl Arbitrary<'_> for FuzzModule<Unchecked> {
                 vec![zero_const, zero_const, zero_const, zero_const],
             );
             let struct_const = builder.constant_composite(struct_ty, vec![zero_const, array_const]);
-            let struct_ptr_member = builder
-                .insert_into_block(
-                    InsertPoint::End,
-                    Instruction::new(Op::CompositeExtract, Some(int_ty), Some(builder.id()), vec![
-                        struct_const.into(),
-                        0u32.into(),
-                    ]),
-                )
-                .unwrap_or(zero_const);
-            let struct_rebuilt = builder
-                .insert_into_block(
-                    InsertPoint::End,
-                    Instruction::new(
-                        Op::CompositeInsert,
-                        Some(struct_ty),
-                        Some(builder.id()),
-                        vec![struct_ptr_member.into(), struct_const.into(), 0u32.into()],
-                    ),
-                )
-                .unwrap_or(struct_const);
+            let struct_ptr_member = builder.id();
+            let _ = builder.insert_into_block(
+                InsertPoint::End,
+                Instruction::new(
+                    Op::CompositeExtract,
+                    Some(int_ty),
+                    Some(struct_ptr_member),
+                    vec![struct_const.into(), 0u32.into()],
+                ),
+            );
+            let struct_rebuilt = builder.id();
+            let _ = builder.insert_into_block(
+                InsertPoint::End,
+                Instruction::new(
+                    Op::CompositeInsert,
+                    Some(struct_ty),
+                    Some(struct_rebuilt),
+                    vec![struct_ptr_member.into(), struct_const.into(), 0u32.into()],
+                ),
+            );
 
             let func_count = u.int_in_range::<u32>(1..=2)?;
             let mut first_func_id = None;
@@ -214,6 +216,61 @@ impl Arbitrary<'_> for FuzzModule<Unchecked> {
                             None,
                             None,
                             vec![struct_var.into(), struct_rebuilt.into()],
+                        ),
+                    );
+
+                    // Access an array element inside the struct and load it.
+                    let access_chain_id = builder.id();
+                    let _ = builder.insert_into_block(
+                        InsertPoint::End,
+                        Instruction::new(
+                            Op::AccessChain,
+                            Some(ptr_fn_int),
+                            Some(access_chain_id),
+                            vec![struct_var.into(), 1u32.into(), 0u32.into()],
+                        ),
+                    );
+                    let load_struct_elem = builder.id();
+                    let _ = builder.insert_into_block(
+                        InsertPoint::End,
+                        Instruction::new(
+                            Op::Load,
+                            Some(int_ty),
+                            Some(load_struct_elem),
+                            vec![access_chain_id.into()],
+                        ),
+                    );
+
+                    // Also create an access into the array directly for mutation hooks.
+                    let array_var =
+                        builder.variable(ptr_fn_array, None, StorageClass::Function, None);
+                    let _ = builder.insert_into_block(
+                        InsertPoint::End,
+                        Instruction::new(
+                            Op::Store,
+                            None,
+                            None,
+                            vec![array_var.into(), array_const.into()],
+                        ),
+                    );
+                    let array_access = builder.id();
+                    let _ = builder.insert_into_block(
+                        InsertPoint::End,
+                        Instruction::new(
+                            Op::AccessChain,
+                            Some(ptr_fn_int),
+                            Some(array_access),
+                            vec![array_var.into(), 2u32.into()],
+                        ),
+                    );
+                    let load_array_elem = builder.id();
+                    let _ = builder.insert_into_block(
+                        InsertPoint::End,
+                        Instruction::new(
+                            Op::Load,
+                            Some(int_ty),
+                            Some(load_array_elem),
+                            vec![array_access.into()],
                         ),
                     );
                 }
@@ -725,6 +782,11 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
                 header.bound = 1;
             }
         }
+        InvalidKind::AccessChainOvershoot => {
+            if !widen_access_chain(module) {
+                inject_bad_access_chain(module);
+            }
+        }
     }
 }
 
@@ -863,6 +925,67 @@ fn insert_mismatched_variable(module: &mut dr::Module) {
                     Some(ptr_fn),
                     Some(var_id),
                     vec![StorageClass::UniformConstant.into()],
+                ),
+            );
+        }
+    }
+}
+
+fn widen_access_chain(module: &mut dr::Module) -> bool {
+    for func in &mut module.functions {
+        for block in &mut func.blocks {
+            for inst in &mut block.instructions {
+                if inst.class.opcode == Op::AccessChain {
+                    inst.operands.push(5u32.into());
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+fn inject_bad_access_chain(module: &mut dr::Module) {
+    let int_ty = module
+        .types_global_values
+        .iter()
+        .find_map(|inst| (inst.class.opcode == Op::TypeInt).then_some(inst.result_id))
+        .flatten()
+        .unwrap_or_else(|| {
+            let id = fresh_id(module);
+            module.types_global_values.push(Instruction::new(
+                Op::TypeInt,
+                None,
+                Some(id),
+                vec![32u32.into(), 0u32.into()],
+            ));
+            id
+        });
+    let ptr_ty = module
+        .types_global_values
+        .iter()
+        .find_map(|inst| (inst.class.opcode == Op::TypePointer).then_some(inst.result_id))
+        .flatten()
+        .unwrap_or_else(|| {
+            let id = fresh_id(module);
+            module.types_global_values.push(Instruction::new(
+                Op::TypePointer,
+                None,
+                Some(id),
+                vec![StorageClass::Function.into(), int_ty.into()],
+            ));
+            id
+        });
+    let access_id = fresh_id(module);
+    if let Some(func) = module.functions.first_mut() {
+        if let Some(block) = func.blocks.first_mut() {
+            block.instructions.insert(
+                0,
+                Instruction::new(
+                    Op::AccessChain,
+                    Some(ptr_ty),
+                    Some(access_id),
+                    vec![999u32.into(), 1u32.into(), 2u32.into()],
                 ),
             );
         }
