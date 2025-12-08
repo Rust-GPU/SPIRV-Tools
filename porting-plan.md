@@ -1062,7 +1062,7 @@ Tasks for this milestone:
 - [x] Wire entry-point interface checks through the CLI/FFI parity runs and update the corpus to match C++ diagnostics (`scripts/run-rust-validator-corpus.sh build-tests`).
 
 ## Upcoming Milestone: Optimizer E-Graph Strengthening
-- Add bitwise distributivity/absorption rewrites (and/or/xor over masks) using e-graphs, keeping id stability and cost-aware ordering with Rust tests plus CLI/FFI parity against C++.
+- Add bitwise distributivity/absorption rewrites (and/or/xor over masks) using e-graphs, keeping id stability and cost-aware ordering with Rust tests plus CLI/FFI parity against C++. (Progress: absorption and band/bor distributivity rewrites added with CLI tests that eliminate redundant bitwise ops.)
 - Extend e-graph coverage to mixed arithmetic-bitwise forms (e.g., `x + (x & mask)` simplifications) with unit and CLI parity tests mirroring the C++ optimizer behavior.
 - Introduce criterion benches for the new rewrites (small/medium blocks) to track performance vs. existing arithmetic passes; keep hyperfine smoke green.
 - Add a fuzz target exercising mixed arithmetic/bitwise blocks to guard the new rewrites against panics and misfolds.

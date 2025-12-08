@@ -343,6 +343,46 @@ fn build_bxor_self_u64_module() -> (Vec<u32>, u32, u32) {
     (b.module().assemble(), bxor, int)
 }
 
+fn build_band_absorb_or_module() -> Vec<u32> {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![int]);
+    let _func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let x = b.function_parameter(int).expect("param x");
+    let y = b.constant_bit32(int, 0xFFFF0000);
+    let _ = b.begin_block(None).unwrap();
+    let bor = b.bitwise_or(int, None, x, y).expect("bor");
+    let _band = b.bitwise_and(int, None, x, bor).expect("band");
+    b.ret().unwrap();
+    b.end_function().unwrap();
+    b.module().assemble()
+}
+
+fn build_bor_absorb_and_module() -> Vec<u32> {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![int]);
+    let _func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let x = b.function_parameter(int).expect("param x");
+    let y = b.constant_bit32(int, 0x0FFF0FFF);
+    let _ = b.begin_block(None).unwrap();
+    let band = b.bitwise_and(int, None, x, y).expect("band");
+    let _bor = b.bitwise_or(int, None, x, band).expect("bor");
+    b.ret().unwrap();
+    b.end_function().unwrap();
+    b.module().assemble()
+}
+
 fn arith_signature(words: &[u32]) -> Vec<(Op, Vec<String>)> {
     let mut loader = Loader::new();
     rspirv::binary::parse_words(words, &mut loader).expect("parse module");
@@ -1317,6 +1357,67 @@ fn cli_opt_block_matches_cpp_bxor_self_u32() {
     assert!(
         folded.is_some(),
         "Rust output should fold bxor self to zero"
+    );
+}
+
+fn has_bitwise_ops(words: &[u32]) -> bool {
+    let mut loader = Loader::new();
+    rspirv::binary::parse_words(words, &mut loader).expect("parse module");
+    loader.module().all_inst_iter().any(|inst| {
+        matches!(
+            inst.class.opcode,
+            Op::BitwiseAnd | Op::BitwiseOr | Op::BitwiseXor | Op::Not
+        )
+    })
+}
+
+#[test]
+fn cli_opt_block_absorbs_band_over_bor() {
+    let _guard = ENV_GUARD.lock().unwrap();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let words = build_band_absorb_or_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let rust_output = dir.path().join("rust_output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let rust_status = Command::new(exe)
+        .arg(&input)
+        .arg(&rust_output)
+        .status()
+        .expect("run opt_block");
+    assert!(rust_status.success(), "opt_block should succeed");
+
+    let rust_words = bytes_to_words(&std::fs::read(&rust_output).unwrap());
+    assert!(
+        !has_bitwise_ops(&rust_words),
+        "bitwise ops should be eliminated after absorption rewrite"
+    );
+}
+
+#[test]
+fn cli_opt_block_absorbs_bor_over_band() {
+    let _guard = ENV_GUARD.lock().unwrap();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let words = build_bor_absorb_and_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let rust_output = dir.path().join("rust_output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let rust_status = Command::new(exe)
+        .arg(&input)
+        .arg(&rust_output)
+        .status()
+        .expect("run opt_block");
+    assert!(rust_status.success(), "opt_block should succeed");
+
+    let rust_words = bytes_to_words(&std::fs::read(&rust_output).unwrap());
+    assert!(
+        !has_bitwise_ops(&rust_words),
+        "bitwise ops should be eliminated after absorption rewrite"
     );
 }
 
