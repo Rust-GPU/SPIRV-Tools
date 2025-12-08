@@ -66,10 +66,7 @@ fn cpp_fuzz_bridge_reports_disabled() {
     let binary = build_minimal_module();
     let opts = default_fuzz_options();
     let result = fuzz_module_with_cpp(&binary, &opts);
-    assert!(
-        !result.success,
-        "C++ fuzz bridge is expected to be disabled in Rust-first builds"
-    );
+    assert!(!result.success, "C++ fuzz bridge is expected to be disabled in Rust-first builds");
     assert!(
         result.message.contains("unavailable") || result.message.contains("disabled"),
         "disabled bridge should surface a user-facing reason"
