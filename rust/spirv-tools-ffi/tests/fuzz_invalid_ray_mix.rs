@@ -291,6 +291,50 @@ fn rust_fuzzer_can_emit_storage_buffer_on_ray_entry() {
 }
 
 #[test]
+fn rust_fuzzer_can_emit_shader_record_buffer_on_ray_entry() {
+    let cfg = FuzzConfig {
+        seed: 89,
+        prefer_valid: false,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::RayEntryWithShaderRecordBufferInterface),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    let words = match outcome {
+        spirv_tools_ffi::FuzzOutcome::Invalid { words, .. } => words,
+        spirv_tools_ffi::FuzzOutcome::Valid { words } => words,
+    };
+    assert!(
+        !validate_binary(TargetEnv::Universal1_6, &words).success,
+        "shader record buffer interface on ray entry should fail validation"
+    );
+}
+
+#[test]
+fn rust_fuzzer_can_emit_task_payload_on_ray_entry() {
+    let cfg = FuzzConfig {
+        seed: 91,
+        prefer_valid: false,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::RayEntryWithTaskPayloadInterface),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    let words = match outcome {
+        spirv_tools_ffi::FuzzOutcome::Invalid { words, .. } => words,
+        spirv_tools_ffi::FuzzOutcome::Valid { words } => words,
+    };
+    assert!(
+        !validate_binary(TargetEnv::Universal1_6, &words).success,
+        "task payload interface on ray entry should fail validation"
+    );
+}
+
+#[test]
 fn rust_fuzzer_can_emit_missing_ray_execution_model() {
     let cfg = FuzzConfig {
         seed: 55,
