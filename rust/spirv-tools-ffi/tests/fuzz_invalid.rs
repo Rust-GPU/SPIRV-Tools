@@ -384,6 +384,30 @@ fn rust_fuzzer_can_emit_duplicate_hit_attribute_interface() {
 }
 
 #[test]
+fn rust_fuzzer_can_emit_ray_entry_with_non_ray_interface() {
+    let cfg = FuzzConfig {
+        seed: 47,
+        prefer_valid: false,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::RayEntryWithNonRayInterface),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    match outcome {
+        FuzzOutcome::Invalid { kind, words } => {
+            assert!(matches!(kind, InvalidKind::RayEntryWithNonRayInterface));
+            assert!(
+                !validate_binary(TargetEnv::Universal1_6, &words).success,
+                "ray entry with Input interface should fail validation"
+            );
+        }
+        FuzzOutcome::Valid { .. } => panic!("expected invalid module"),
+    }
+}
+
+#[test]
 fn rust_fuzzer_can_emit_missing_loop_merge() {
     let cfg = FuzzConfig {
         seed: 23,

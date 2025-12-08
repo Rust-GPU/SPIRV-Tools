@@ -38,6 +38,7 @@ pub enum InvalidKind {
     DuplicateRayPayloadInterface,
     DuplicateCallableDataInterface,
     DuplicateHitAttributeInterface,
+    RayEntryWithNonRayInterface,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -928,6 +929,13 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
             let int_ty = ensure_int_type(module);
             let ptr = ensure_pointer_type(module, StorageClass::HitAttributeKHR, int_ty);
             let ids = insert_global_vars(module, ptr, StorageClass::HitAttributeKHR, 2);
+            push_interfaces(module, &ids);
+        }
+        InvalidKind::RayEntryWithNonRayInterface => {
+            ensure_ray_entry_point(module);
+            let int_ty = ensure_int_type(module);
+            let ptr = ensure_pointer_type(module, StorageClass::Input, int_ty);
+            let ids = insert_global_vars(module, ptr, StorageClass::Input, 1);
             push_interfaces(module, &ids);
         }
     }
