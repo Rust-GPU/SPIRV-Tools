@@ -12,6 +12,9 @@ cd rust
 SPIRV_CPP_FUZZ=/path/to/spirv-fuzz cargo test -p spirv-tools-ffi --tests fuzz_cpp_parity
 SPIRV_CPP_FUZZ=/path/to/spirv-fuzz cargo test -p spirv-tools-cli --tests fuzz_cli_cpp_parity
 SPIRV_CPP_FUZZ=/path/to/spirv-fuzz cargo test -p spirv-tools-cli --tests spirv_reduce_fuzz_cfg_lint_parity
+
+# or use the shell helper to diff outputs directly
+SPIRV_CPP_FUZZ=/path/to/spirv-fuzz ./scripts/run-fuzz-parity.sh
 ```
 
 The corpora include vertex/fragment/compute and a ray-generation module, plus ray interface edge cases (dangling ids, non-pointer/pointer-to-pointer payloads). When the binary is missing, the tests emit a skip message and pass.
