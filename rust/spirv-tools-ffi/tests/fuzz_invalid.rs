@@ -177,6 +177,30 @@ fn rust_fuzzer_can_emit_access_chain_overshoot() {
 }
 
 #[test]
+fn rust_fuzzer_can_emit_invalid_decoration_target() {
+    let cfg = FuzzConfig {
+        seed: 27,
+        prefer_valid: false,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::InvalidDecorationTarget),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    match outcome {
+        FuzzOutcome::Invalid { kind, words } => {
+            assert!(matches!(kind, InvalidKind::InvalidDecorationTarget));
+            assert!(
+                !validate_binary(TargetEnv::Universal1_6, &words).success,
+                "invalid decoration target should fail validation"
+            );
+        }
+        FuzzOutcome::Valid { .. } => panic!("expected invalid module"),
+    }
+}
+
+#[test]
 fn rust_fuzzer_can_emit_missing_loop_merge() {
     let cfg = FuzzConfig {
         seed: 23,

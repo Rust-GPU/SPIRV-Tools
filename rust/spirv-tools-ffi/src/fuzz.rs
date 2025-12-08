@@ -29,6 +29,7 @@ pub enum InvalidKind {
     StorageClassMismatch,
     MissingLoopMerge,
     AccessChainOvershoot,
+    InvalidDecorationTarget,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -786,6 +787,18 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
             if !widen_access_chain(module) {
                 inject_bad_access_chain(module);
             }
+        }
+        InvalidKind::InvalidDecorationTarget => {
+            module.annotations.push(Instruction::new(
+                Op::Decorate,
+                None,
+                None,
+                vec![
+                    999u32.into(),
+                    spirv::Decoration::Binding.into(),
+                    0u32.into(),
+                ],
+            ));
         }
     }
 }

@@ -722,6 +722,15 @@ pub fn fuzz_module_with_options(words: &[u32], options: &ffi::FuzzOptions) -> ff
         },
     };
 
+    if options.enable_fuzzer_pass_validation
+        && result.success
+        && !validate_binary(TargetEnv::Universal1_0, &result.words).success
+    {
+        // Fall back to the input module when validation is required.
+        result.words = words.to_vec();
+        result.message.clear();
+    }
+
     if result.success
         && result.message.is_empty()
         && !validate_binary(TargetEnv::Universal1_6, &result.words).success
