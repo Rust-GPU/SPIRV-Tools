@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use arbitrary::{Arbitrary, Unstructured};
 use rspirv::binary::Assemble;
-use rspirv::dr::{self, Builder, InsertPoint, Instruction, Module};
+use rspirv::dr::{self, Builder, InsertPoint, Instruction, Module, Operand};
 use rspirv::spirv::{
     self, AddressingModel, Capability, ExecutionModel, FunctionControl, LoopControl, MemoryModel,
     Op, SelectionControl, StorageClass,
@@ -32,6 +32,7 @@ pub enum InvalidKind {
     InvalidDecorationTarget,
     DuplicateBinding,
     DuplicateEntryPointInterface,
+    RayPayloadInterfaceOnNonRayEntry,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -840,6 +841,28 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
                 }
             }
         }
+        InvalidKind::RayPayloadInterfaceOnNonRayEntry => {
+            if module.entry_points.is_empty() || module.functions.is_empty() {
+                *module = minimal_valid_module_with_tag(0);
+            }
+            let int_ty = ensure_int_type(module);
+            let payload_ptr =
+                ensure_pointer_type(module, StorageClass::IncomingRayPayloadKHR, int_ty);
+            let var_id = fresh_id(module);
+            module.types_global_values.push(Instruction::new(
+                Op::Variable,
+                Some(payload_ptr),
+                Some(var_id),
+                vec![StorageClass::IncomingRayPayloadKHR.into()],
+            ));
+            if let Some(ep) = module.entry_points.first_mut() {
+                // Force a non-ray execution model so the interface storage class is invalid.
+                if let Some(model) = ep.operands.get_mut(0) {
+                    *model = ExecutionModel::Vertex.into();
+                }
+                ep.operands.push(var_id.into());
+            }
+        }
     }
 }
 
@@ -932,36 +955,8 @@ fn insert_mismatched_variable(module: &mut dr::Module) {
     if module.functions.is_empty() {
         *module = minimal_valid_module_with_tag(0);
     }
-    let int_ty = module
-        .types_global_values
-        .iter()
-        .find_map(|inst| (inst.class.opcode == Op::TypeInt).then_some(inst.result_id))
-        .flatten()
-        .unwrap_or_else(|| {
-            let id = fresh_id(module);
-            module.types_global_values.push(Instruction::new(
-                Op::TypeInt,
-                None,
-                Some(id),
-                vec![32u32.into(), 0u32.into()],
-            ));
-            id
-        });
-    let ptr_fn = module
-        .types_global_values
-        .iter()
-        .find_map(|inst| (inst.class.opcode == Op::TypePointer).then_some(inst.result_id))
-        .flatten()
-        .unwrap_or_else(|| {
-            let id = fresh_id(module);
-            module.types_global_values.push(Instruction::new(
-                Op::TypePointer,
-                None,
-                Some(id),
-                vec![StorageClass::Function.into(), int_ty.into()],
-            ));
-            id
-        });
+    let int_ty = ensure_int_type(module);
+    let ptr_fn = ensure_pointer_type(module, StorageClass::Function, int_ty);
 
     let var_id = {
         let header = ensure_header(module);
@@ -999,36 +994,8 @@ fn widen_access_chain(module: &mut dr::Module) -> bool {
 }
 
 fn inject_bad_access_chain(module: &mut dr::Module) {
-    let int_ty = module
-        .types_global_values
-        .iter()
-        .find_map(|inst| (inst.class.opcode == Op::TypeInt).then_some(inst.result_id))
-        .flatten()
-        .unwrap_or_else(|| {
-            let id = fresh_id(module);
-            module.types_global_values.push(Instruction::new(
-                Op::TypeInt,
-                None,
-                Some(id),
-                vec![32u32.into(), 0u32.into()],
-            ));
-            id
-        });
-    let ptr_ty = module
-        .types_global_values
-        .iter()
-        .find_map(|inst| (inst.class.opcode == Op::TypePointer).then_some(inst.result_id))
-        .flatten()
-        .unwrap_or_else(|| {
-            let id = fresh_id(module);
-            module.types_global_values.push(Instruction::new(
-                Op::TypePointer,
-                None,
-                Some(id),
-                vec![StorageClass::Function.into(), int_ty.into()],
-            ));
-            id
-        });
+    let int_ty = ensure_int_type(module);
+    let ptr_ty = ensure_pointer_type(module, StorageClass::Function, int_ty);
     let access_id = fresh_id(module);
     if let Some(func) = module.functions.first_mut() {
         if let Some(block) = func.blocks.first_mut() {
@@ -1046,11 +1013,27 @@ fn inject_bad_access_chain(module: &mut dr::Module) {
 }
 
 fn ensure_uniform_vars(module: &mut dr::Module, count: usize) -> (u32, Vec<u32>) {
-    let int_ty = module
+    let int_ty = ensure_int_type(module);
+    let ptr_ty = ensure_pointer_type(module, StorageClass::UniformConstant, int_ty);
+
+    let mut vars = Vec::new();
+    for _ in 0..count {
+        vars.push(fresh_id(module));
+    }
+    (ptr_ty, vars)
+}
+
+fn ensure_int_type(module: &mut dr::Module) -> u32 {
+    module
         .types_global_values
         .iter()
-        .find_map(|inst| (inst.class.opcode == Op::TypeInt).then_some(inst.result_id))
-        .flatten()
+        .find_map(|inst| {
+            if inst.class.opcode == Op::TypeInt {
+                inst.result_id
+            } else {
+                None
+            }
+        })
         .unwrap_or_else(|| {
             let id = fresh_id(module);
             module.types_global_values.push(Instruction::new(
@@ -1060,26 +1043,34 @@ fn ensure_uniform_vars(module: &mut dr::Module, count: usize) -> (u32, Vec<u32>)
                 vec![32u32.into(), 0u32.into()],
             ));
             id
-        });
-    let ptr_ty = module
+        })
+}
+
+fn ensure_pointer_type(module: &mut dr::Module, storage: StorageClass, target: u32) -> u32 {
+    module
         .types_global_values
         .iter()
-        .find_map(|inst| (inst.class.opcode == Op::TypePointer).then_some(inst.result_id))
-        .flatten()
+        .find_map(|inst| {
+            if inst.class.opcode != Op::TypePointer {
+                return None;
+            }
+            let [Operand::StorageClass(sc), Operand::IdRef(pointee)] = inst.operands.as_slice()
+            else {
+                return None;
+            };
+            if *sc == storage && *pointee == target {
+                return inst.result_id;
+            }
+            None
+        })
         .unwrap_or_else(|| {
             let id = fresh_id(module);
             module.types_global_values.push(Instruction::new(
                 Op::TypePointer,
                 None,
                 Some(id),
-                vec![StorageClass::UniformConstant.into(), int_ty.into()],
+                vec![storage.into(), target.into()],
             ));
             id
-        });
-
-    let mut vars = Vec::new();
-    for _ in 0..count {
-        vars.push(fresh_id(module));
-    }
-    (ptr_ty, vars)
+        })
 }

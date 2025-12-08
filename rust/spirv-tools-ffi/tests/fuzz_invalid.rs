@@ -225,6 +225,33 @@ fn rust_fuzzer_can_emit_invalid_decoration_target() {
 }
 
 #[test]
+fn rust_fuzzer_can_emit_ray_payload_interface_on_non_ray_entry() {
+    let cfg = FuzzConfig {
+        seed: 33,
+        prefer_valid: false,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::RayPayloadInterfaceOnNonRayEntry),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    match outcome {
+        FuzzOutcome::Invalid { kind, words } => {
+            assert!(matches!(
+                kind,
+                InvalidKind::RayPayloadInterfaceOnNonRayEntry
+            ));
+            assert!(
+                !validate_binary(TargetEnv::Universal1_6, &words).success,
+                "ray payload on non-ray entry should fail validation"
+            );
+        }
+        FuzzOutcome::Valid { .. } => panic!("expected invalid module"),
+    }
+}
+
+#[test]
 fn rust_fuzzer_can_emit_missing_loop_merge() {
     let cfg = FuzzConfig {
         seed: 23,
