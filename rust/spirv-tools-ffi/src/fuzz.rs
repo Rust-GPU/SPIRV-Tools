@@ -145,6 +145,26 @@ impl Arbitrary<'_> for FuzzModule<Unchecked> {
                 vec![zero_const, zero_const, zero_const, zero_const],
             );
             let struct_const = builder.constant_composite(struct_ty, vec![zero_const, array_const]);
+            let struct_ptr_member = builder
+                .insert_into_block(
+                    InsertPoint::End,
+                    Instruction::new(Op::CompositeExtract, Some(int_ty), Some(builder.id()), vec![
+                        struct_const.into(),
+                        0u32.into(),
+                    ]),
+                )
+                .unwrap_or(zero_const);
+            let struct_rebuilt = builder
+                .insert_into_block(
+                    InsertPoint::End,
+                    Instruction::new(
+                        Op::CompositeInsert,
+                        Some(struct_ty),
+                        Some(builder.id()),
+                        vec![struct_ptr_member.into(), struct_const.into(), 0u32.into()],
+                    ),
+                )
+                .unwrap_or(struct_const);
 
             let func_count = u.int_in_range::<u32>(1..=2)?;
             let mut first_func_id = None;
@@ -193,7 +213,7 @@ impl Arbitrary<'_> for FuzzModule<Unchecked> {
                             Op::Store,
                             None,
                             None,
-                            vec![struct_var.into(), struct_const.into()],
+                            vec![struct_var.into(), struct_rebuilt.into()],
                         ),
                     );
                 }
