@@ -951,10 +951,19 @@ Port the fuzzer to Rust (no protobuf dependency) and make it the default path fo
 Tasks:
 - Replace the C++ fuzz bridge with a Rust implementation (seedable via `FuzzOptions`) that validates inputs and produces transformed modules using `rspirv` + `arbitrary` data generation; return typed `FuzzResult`/`ToolError`.
 - Add CLI/FFI parity tests that exercise the Rust fuzzer on deterministic seeds and ensure diagnostics are surfaced through message consumers, skipping when the C++ tools are absent.
-- Wire `cargo fuzz` targets to the Rust pipeline and add a small smoke job (optional by default) plus `criterion`/`hyperfine` benches for fuzzer throughput.
+- Wire `cargo fuzz` targets to the Rust pipeline and add a small smoke job (optional by default) plus `criterion`/`hyperfine` benches for fuzzer throughput. (new `ffi_rust_fuzz_pipeline` harness emits valid/invalid modules via `FuzzConfig` knobs)
 - Document the Rust-first fuzz path and mark the C++ bridge as deprecated/disabled by default, including rollout/rollback knobs for downstream consumers.
 - Seeded Rust path now uses an `arbitrary`-driven structured generator with typed validity markers (Valid/Unchecked/IntentionallyInvalid) and invalid mutations (missing memory model/terminator/entry point/type mismatches); expand to richer transformations and corpus coverage next.
 - Added a `cargo fuzz` harness (`ffi_rust_fuzz_pipeline`) that drives the Rust fuzzer/validator end to end with configurable validity/invalid-hint bits from the fuzz input.
+
+## Upcoming Milestone: Rust Fuzz Corpus Expansion
+Deepen the Rust fuzz generator to cover more SPIR-V constructs and hook it into CLI parity.
+
+Tasks:
+- Extend `InvalidKind`/structured generators to cover control flow (blocks/branches/merges), SSA/phi shapes, execution modes, and descriptor/interface decorations, with shrink-friendly `Arbitrary` impls.
+- Add CLI/FFI parity fuzz smokes that run the Rust fuzz pipeline and diff diagnostics/exit codes vs. the legacy tools when available; keep skips clean when C++ binaries are absent.
+- Add a light `cargo fuzz` smoke script to CI (optional by default) and document how to run targeted seeds/hints locally.
+- Teach the fuzz generator to emit typed modules with richer type graphs (arrays/structs/pointers) and guarded invalid mutations (e.g., duplicate ids, wrong storage classes) while keeping the validity marker types zero-cost.
 
 ## Upcoming Milestone: Link/Diff Tool Parity
 Align `spirv-link`, `spirv-diff`, and helper wrappers with the C++ behavior across CLI/FFI and packaging.
