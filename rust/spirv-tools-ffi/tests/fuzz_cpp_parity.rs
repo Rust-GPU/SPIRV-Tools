@@ -1,8 +1,6 @@
 use spirv_tools_core::assembly::assemble_text;
 use spirv_tools_core::TargetEnv;
-use spirv_tools_ffi::{
-    default_fuzz_options, fuzz_module, fuzz_module_with_cpp, validate_binary, FuzzOutcome,
-};
+use spirv_tools_ffi::{default_fuzz_options, fuzz_module, fuzz_module_with_cpp, validate_binary};
 
 fn minimal_words() -> Vec<u32> {
     assemble_text(

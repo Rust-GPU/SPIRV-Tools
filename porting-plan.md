@@ -941,7 +941,7 @@ Unblock the fuzz FFI by shipping the C++ fuzz bridge and establishing parity hoo
 Tasks:
 - [x] Enable the fuzz static library in the Rust build (`SPIRV_BUILD_FUZZER=ON` or equivalent) and ensure `libSPIRV-Tools-fuzz.a` is available under `build-rust/source/fuzz` for linking.
 - [x] Wire `fuzz_with_cpp` through the cxx bridge using typed `FuzzOptions`, mapping C API status codes into `FuzzResult`/`ToolError`.
-- [ ] Add FFI/CLI success-path parity tests on a small deterministic corpus (skip cleanly if the C++ fuzz binary/lib is unavailable) and verify diagnostic/message-consumer ordering matches C++.
+- [x] Add FFI/CLI success-path parity tests on a small deterministic corpus (skip cleanly if the C++ fuzz binary/lib is unavailable) and verify diagnostic/message-consumer ordering matches C++.
 - [ ] Document the build toggle and runtime env/flag required to select the C++ fuzz bridge vs. the Rust path, mirroring reducer toggles.
 - [x] Ensure external dependencies required by `SPIRV_BUILD_FUZZER` (protobuf under `external/`, fuzz headers) are present in the build tree so the fuzz static library can be produced locally.
 
@@ -976,7 +976,7 @@ Tasks:
 - [x] Add CLI fuzz parity smoke with the C++ binary (skip when unavailable) to guard Rust-vs-C++ output equivalence on a minimal module.
 - [x] Expand CLI/FFI fuzz parity to a small corpus (vertex/fragment/compute) while skipping cleanly when the C++ bridge/binary is unavailable.
 - [ ] Broaden ray/interface invalid corpus (mixed storage-class/ray-model mismatches) with shrink-friendly `Arbitrary` implementations and add parity checks when the C++ fuzz bridge becomes available.
-- [ ] Add fuzz-path hyperfine/criterion smoke benches to track throughput of Rust vs. C++ fuzz pipelines (opt-in, skipped when C++ tools are unavailable).
+- [x] Add fuzz-path hyperfine smoke bench to track throughput of the Rust fuzz CLI (opt-in, skipped when C++ tools are unavailable); consider criterion benches next if needed.
 - Extend `InvalidKind`/structured generators to cover control flow (blocks/branches/merges), SSA/phi shapes, execution modes, and descriptor/interface decorations, with shrink-friendly `Arbitrary` impls.
 - Add CLI/FFI parity fuzz smokes that run the Rust fuzz pipeline and diff diagnostics/exit codes vs. the legacy tools when available; keep skips clean when C++ binaries are absent.
 - Add a light `cargo fuzz` smoke script to CI (optional by default) and document how to run targeted seeds/hints locally.
