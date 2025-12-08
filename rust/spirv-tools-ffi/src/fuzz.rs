@@ -42,6 +42,7 @@ pub enum InvalidKind {
     MixedRayInterfaceStorageClasses,
     MissingRayExecutionModel,
     MissingRayCapability,
+    RayPayloadTypeMismatch,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -990,6 +991,27 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
                 None,
                 None,
                 vec![Capability::Shader.into()],
+            ));
+        }
+        InvalidKind::RayPayloadTypeMismatch => {
+            ensure_ray_entry_point(module);
+            let int_ty = ensure_int_type(module);
+            // Deliberately use a payload variable that points to an int instead of a struct.
+            let payload_ptr =
+                ensure_pointer_type(module, StorageClass::IncomingRayPayloadKHR, int_ty);
+            let ids = insert_global_vars(
+                module,
+                payload_ptr,
+                StorageClass::IncomingRayPayloadKHR,
+                1,
+            );
+            push_interfaces(module, &ids);
+            // Ensure capability is present so the type error surfaces.
+            module.capabilities.push(Instruction::new(
+                Op::Capability,
+                None,
+                None,
+                vec![Capability::RayTracingKHR.into()],
             ));
         }
     }

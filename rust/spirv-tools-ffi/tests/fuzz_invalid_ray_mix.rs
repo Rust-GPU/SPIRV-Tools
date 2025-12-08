@@ -93,6 +93,28 @@ fn rust_fuzzer_can_emit_missing_ray_capability() {
 }
 
 #[test]
+fn rust_fuzzer_can_emit_ray_payload_type_mismatch() {
+    let cfg = FuzzConfig {
+        seed: 59,
+        prefer_valid: false,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::RayPayloadTypeMismatch),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    let words = match outcome {
+        spirv_tools_ffi::FuzzOutcome::Invalid { words, .. } => words,
+        spirv_tools_ffi::FuzzOutcome::Valid { words } => words,
+    };
+    assert!(
+        !validate_binary(TargetEnv::Universal1_6, &words).success,
+        "ray payload with wrong type should fail validation"
+    );
+}
+
+#[test]
 fn fuzz_bridge_passthrough_rejects_mixed_ray_interfaces() {
     // Use the public fuzz wrapper to ensure the higher-level API rejects the invalid module too.
     let opts = default_fuzz_options();
