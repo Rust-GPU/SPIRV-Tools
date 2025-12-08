@@ -1,9 +1,9 @@
-use spirv_tools_core::assembly::assemble_text;
-use spirv_tools_core::TargetEnv;
-use spirv_tools_ffi::{default_fuzz_options, fuzz_module_with_options, validate_binary};
 use rspirv::binary::parse_words;
 use rspirv::dr::Loader;
 use rspirv::spirv::Op;
+use spirv_tools_core::assembly::assemble_text;
+use spirv_tools_core::TargetEnv;
+use spirv_tools_ffi::{default_fuzz_options, fuzz_module_with_options, validate_binary};
 
 #[test]
 fn rust_fuzzer_runs_with_seed() {
@@ -80,5 +80,8 @@ fn fuzz_seed_changes_target_block() {
     let a = fuzz_module_with_options(&binary, &opts1);
     let b = fuzz_module_with_options(&binary, &opts2);
     assert!(a.success && b.success);
-    assert_ne!(a.words, b.words, "different seeds should produce different layouts");
+    assert_ne!(
+        a.words, b.words,
+        "different seeds should produce different layouts"
+    );
 }

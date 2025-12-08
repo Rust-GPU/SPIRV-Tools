@@ -10,11 +10,14 @@ use spirv_tools_core::disassembly::{self, disassemble_binary, DisassemblyError};
 use spirv_tools_core::validation::validate_module;
 use spirv_tools_core::validation::ValidModuleCache;
 use spirv_tools_core::{MessageLevel, TargetEnv};
-mod optimizer;
 mod fuzz;
+mod optimizer;
 mod tests_optimizer;
 
-pub use fuzz::{FuzzConfig, FuzzGenerator, FuzzOutcome, InvalidKind};
+pub use fuzz::{
+    FuzzConfig, FuzzGenerator, FuzzModule, FuzzOutcome, InvalidKind, MaybeInvalid, Unchecked,
+    Validity,
+};
 use std::panic::{self, AssertUnwindSafe};
 use std::str;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};

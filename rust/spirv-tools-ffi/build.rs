@@ -44,7 +44,10 @@ fn main() {
     let reduce_lib_dir = core_lib_dir.join("reduce");
     println!("cargo:rustc-link-search=native={}", core_lib_dir.display());
     println!("cargo:rustc-link-search=native={}", opt_lib_dir.display());
-    println!("cargo:rustc-link-search=native={}", reduce_lib_dir.display());
+    println!(
+        "cargo:rustc-link-search=native={}",
+        reduce_lib_dir.display()
+    );
     println!("cargo:rustc-link-lib=static=SPIRV-Tools");
     println!("cargo:rustc-link-lib=static=SPIRV-Tools-opt");
     println!("cargo:rustc-link-lib=static=SPIRV-Tools-reduce");

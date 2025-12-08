@@ -15,7 +15,7 @@ pub enum Valid {}
 pub enum Unchecked {}
 pub enum IntentionallyInvalid {}
 
-#[derive(Debug, Clone, Copy, Arbitrary)]
+#[derive(Debug, Clone, Copy, Arbitrary, PartialEq, Eq)]
 pub enum InvalidKind {
     MissingMemoryModel,
     MissingTerminator,
@@ -23,6 +23,65 @@ pub enum InvalidKind {
     TypeMismatch,
     BrokenIdBound,
     DanglingUse,
+    DuplicateId,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Validity {
+    Valid,
+    Invalid(InvalidKind),
+    Unchecked,
+}
+
+impl<'a> Arbitrary<'a> for Validity {
+    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
+        if u.ratio(1, 4)? {
+            let kind = InvalidKind::arbitrary(u)?;
+            return Ok(Validity::Invalid(kind));
+        }
+        if u.ratio(1, 4)? {
+            return Ok(Validity::Unchecked);
+        }
+        Ok(Validity::Valid)
+    }
+
+    fn arbitrary_take_rest(mut u: Unstructured<'a>) -> arbitrary::Result<Self> {
+        Self::arbitrary(&mut u)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MaybeInvalid<T> {
+    value: T,
+    validity: Validity,
+}
+
+impl<T> MaybeInvalid<T> {
+    pub fn new(value: T, validity: Validity) -> Self {
+        Self { value, validity }
+    }
+
+    pub fn validity(&self) -> Validity {
+        self.validity
+    }
+
+    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> MaybeInvalid<U> {
+        MaybeInvalid {
+            value: f(self.value),
+            validity: self.validity,
+        }
+    }
+
+    pub fn into_inner(self) -> T {
+        self.value
+    }
+
+    pub fn with_validity(self, validity: Validity) -> Self {
+        MaybeInvalid {
+            value: self.value,
+            validity,
+        }
+    }
 }
 
 pub struct FuzzConfig {
@@ -106,25 +165,37 @@ impl Arbitrary<'_> for FuzzModule<Unchecked> {
                 );
             }
 
-            builder.ret().map_err(|_| arbitrary::Error::IncorrectFormat)?;
+            builder
+                .ret()
+                .map_err(|_| arbitrary::Error::IncorrectFormat)?;
             builder
                 .end_function()
                 .map_err(|_| arbitrary::Error::IncorrectFormat)?;
         }
 
         if let Some(func_id) = first_func_id {
-            builder.entry_point(
-                ExecutionModel::Vertex,
-                func_id,
-                "main",
-                Vec::new(),
-            );
+            builder.entry_point(ExecutionModel::Vertex, func_id, "main", Vec::new());
         }
 
         let module = builder.module();
         Ok(FuzzModule {
             module,
             _marker: PhantomData,
+        })
+    }
+
+    fn arbitrary_take_rest(mut u: Unstructured<'_>) -> arbitrary::Result<Self> {
+        Self::arbitrary(&mut u)
+    }
+}
+
+impl Arbitrary<'_> for MaybeInvalid<FuzzModule<Unchecked>> {
+    fn arbitrary(u: &mut Unstructured<'_>) -> arbitrary::Result<Self> {
+        let module = FuzzModule::<Unchecked>::arbitrary(u)?;
+        let validity = Validity::arbitrary(u).unwrap_or(Validity::Unchecked);
+        Ok(MaybeInvalid {
+            value: module,
+            validity,
         })
     }
 
@@ -175,26 +246,58 @@ impl FuzzGenerator {
         }
         data.extend_from_slice(input);
         let mut u = Unstructured::new(&data);
-        let unchecked: FuzzModule<Unchecked> = Arbitrary::arbitrary(&mut u)
-            .map_err(|e| format!("fuzz gen failed: {e:?}"))?;
+        let candidate: MaybeInvalid<FuzzModule<Unchecked>> =
+            Arbitrary::arbitrary(&mut u).map_err(|e| format!("fuzz gen failed: {e:?}"))?;
 
-        if self.cfg.prefer_valid || !self.cfg.allow_invalid {
-            let valid = unchecked.into_valid(env)?;
-            return Ok(FuzzOutcome::Valid {
-                words: valid.into_words(),
+        self.materialize(env, candidate, &mut u)
+    }
+
+    fn materialize(
+        &self,
+        env: TargetEnv,
+        candidate: MaybeInvalid<FuzzModule<Unchecked>>,
+        u: &mut Unstructured<'_>,
+    ) -> Result<FuzzOutcome, String> {
+        let want_invalid = self.cfg.allow_invalid
+            && !self.cfg.prefer_valid
+            && (self.cfg.invalid_hint.is_some()
+                || matches!(candidate.validity(), Validity::Invalid(_)));
+
+        if want_invalid {
+            let invalid_kind = self.choose_invalid_kind(candidate.validity(), u);
+            let invalid = candidate.value.into_invalid(invalid_kind);
+            return Ok(FuzzOutcome::Invalid {
+                words: invalid.into_words(),
+                kind: invalid_kind,
             });
         }
 
-        let invalid_kind: InvalidKind = self
-            .cfg
-            .invalid_hint
-            .or_else(|| Arbitrary::arbitrary(&mut u).ok())
-            .unwrap_or(InvalidKind::MissingMemoryModel);
-        let invalid = unchecked.into_invalid(invalid_kind);
-        Ok(FuzzOutcome::Invalid {
-            words: invalid.into_words(),
-            kind: invalid_kind,
+        let valid = candidate.value.into_valid(env)?;
+        Ok(FuzzOutcome::Valid {
+            words: valid.into_words(),
         })
+    }
+
+    fn choose_invalid_kind(&self, validity: Validity, u: &mut Unstructured<'_>) -> InvalidKind {
+        if let Some(kind) = self.cfg.invalid_hint {
+            return kind;
+        }
+        if let Validity::Invalid(kind) = validity {
+            return kind;
+        }
+        Arbitrary::arbitrary(u).unwrap_or(InvalidKind::MissingMemoryModel)
+    }
+}
+
+impl FuzzGenerator {
+    #[doc(hidden)]
+    pub fn materialize_for_test(
+        &self,
+        env: TargetEnv,
+        candidate: MaybeInvalid<FuzzModule<Unchecked>>,
+    ) -> Result<FuzzOutcome, String> {
+        let mut empty = Unstructured::new(&[]);
+        self.materialize(env, candidate, &mut empty)
     }
 }
 
@@ -244,6 +347,31 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
                 Some(99),
                 Some(98),
                 vec![97u32.into(), 96u32.into()],
+            ));
+        }
+        InvalidKind::DuplicateId => {
+            let int_ty = module
+                .types_global_values
+                .iter()
+                .find_map(|inst| {
+                    if inst.class.opcode == Op::TypeInt {
+                        inst.result_id
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or(2);
+            module.types_global_values.push(Instruction::new(
+                Op::Constant,
+                Some(int_ty),
+                Some(50),
+                vec![0u32.into()],
+            ));
+            module.types_global_values.push(Instruction::new(
+                Op::Constant,
+                Some(int_ty),
+                Some(50),
+                vec![1u32.into()],
             ));
         }
     }
