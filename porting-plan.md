@@ -975,6 +975,7 @@ Tasks:
 - [x] Add FFI fuzz parity smoke with the C++ bridge (skip when unavailable) to prepare for full output diffing when the bridge is wired.
 - [x] Add CLI fuzz parity smoke with the C++ binary (skip when unavailable) to guard Rust-vs-C++ output equivalence on a minimal module.
 - [x] Expand CLI/FFI fuzz parity to a small corpus (vertex/fragment/compute) while skipping cleanly when the C++ bridge/binary is unavailable.
+- [ ] Broaden ray/interface invalid corpus (mixed storage-class/ray-model mismatches) with shrink-friendly `Arbitrary` implementations and add parity checks when the C++ fuzz bridge becomes available.
 - Extend `InvalidKind`/structured generators to cover control flow (blocks/branches/merges), SSA/phi shapes, execution modes, and descriptor/interface decorations, with shrink-friendly `Arbitrary` impls.
 - Add CLI/FFI parity fuzz smokes that run the Rust fuzz pipeline and diff diagnostics/exit codes vs. the legacy tools when available; keep skips clean when C++ binaries are absent.
 - Add a light `cargo fuzz` smoke script to CI (optional by default) and document how to run targeted seeds/hints locally.
