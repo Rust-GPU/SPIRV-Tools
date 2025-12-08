@@ -49,6 +49,10 @@ pub enum InvalidKind {
     RayEntryWithWorkgroupInterface,
     RayEntryWithOutputInterface,
     RayEntryWithMixedIoInterfaces,
+    RayEntryWithPrivateInterface,
+    RayEntryWithFunctionInterface,
+    RayEntryWithCrossWorkgroupInterface,
+    RayEntryWithGenericInterface,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -976,6 +980,26 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
             let input = insert_interface_var(module, StorageClass::Input);
             let output = insert_interface_var(module, StorageClass::Output);
             push_interfaces(module, &[input, output]);
+        }
+        InvalidKind::RayEntryWithPrivateInterface => {
+            ensure_ray_entry_point(module);
+            let id = insert_interface_var(module, StorageClass::Private);
+            push_interfaces(module, &[id]);
+        }
+        InvalidKind::RayEntryWithFunctionInterface => {
+            ensure_ray_entry_point(module);
+            let id = insert_interface_var(module, StorageClass::Function);
+            push_interfaces(module, &[id]);
+        }
+        InvalidKind::RayEntryWithCrossWorkgroupInterface => {
+            ensure_ray_entry_point(module);
+            let id = insert_interface_var(module, StorageClass::CrossWorkgroup);
+            push_interfaces(module, &[id]);
+        }
+        InvalidKind::RayEntryWithGenericInterface => {
+            ensure_ray_entry_point(module);
+            let id = insert_interface_var(module, StorageClass::Generic);
+            push_interfaces(module, &[id]);
         }
         InvalidKind::MissingRayExecutionModel => {
             ensure_ray_entry_point(module);

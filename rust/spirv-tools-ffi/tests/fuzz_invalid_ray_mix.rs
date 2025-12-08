@@ -115,6 +115,94 @@ fn rust_fuzzer_can_emit_mixed_io_interfaces_on_ray_entry() {
 }
 
 #[test]
+fn rust_fuzzer_can_emit_private_interface_on_ray_entry() {
+    let cfg = FuzzConfig {
+        seed: 73,
+        prefer_valid: false,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::RayEntryWithPrivateInterface),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    let words = match outcome {
+        spirv_tools_ffi::FuzzOutcome::Invalid { words, .. } => words,
+        spirv_tools_ffi::FuzzOutcome::Valid { words } => words,
+    };
+    assert!(
+        !validate_binary(TargetEnv::Universal1_6, &words).success,
+        "private storage in ray entry interface should fail validation"
+    );
+}
+
+#[test]
+fn rust_fuzzer_can_emit_function_interface_on_ray_entry() {
+    let cfg = FuzzConfig {
+        seed: 75,
+        prefer_valid: false,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::RayEntryWithFunctionInterface),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    let words = match outcome {
+        spirv_tools_ffi::FuzzOutcome::Invalid { words, .. } => words,
+        spirv_tools_ffi::FuzzOutcome::Valid { words } => words,
+    };
+    assert!(
+        !validate_binary(TargetEnv::Universal1_6, &words).success,
+        "function storage in ray entry interface should fail validation"
+    );
+}
+
+#[test]
+fn rust_fuzzer_can_emit_cross_workgroup_interface_on_ray_entry() {
+    let cfg = FuzzConfig {
+        seed: 77,
+        prefer_valid: false,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::RayEntryWithCrossWorkgroupInterface),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    let words = match outcome {
+        spirv_tools_ffi::FuzzOutcome::Invalid { words, .. } => words,
+        spirv_tools_ffi::FuzzOutcome::Valid { words } => words,
+    };
+    assert!(
+        !validate_binary(TargetEnv::Universal1_6, &words).success,
+        "cross-workgroup storage in ray entry interface should fail validation"
+    );
+}
+
+#[test]
+fn rust_fuzzer_can_emit_generic_interface_on_ray_entry() {
+    let cfg = FuzzConfig {
+        seed: 79,
+        prefer_valid: false,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::RayEntryWithGenericInterface),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    let words = match outcome {
+        spirv_tools_ffi::FuzzOutcome::Invalid { words, .. } => words,
+        spirv_tools_ffi::FuzzOutcome::Valid { words } => words,
+    };
+    assert!(
+        !validate_binary(TargetEnv::Universal1_6, &words).success,
+        "generic storage in ray entry interface should fail validation"
+    );
+}
+
+#[test]
 fn rust_fuzzer_can_emit_missing_ray_execution_model() {
     let cfg = FuzzConfig {
         seed: 55,
