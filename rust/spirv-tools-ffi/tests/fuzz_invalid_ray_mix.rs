@@ -577,6 +577,28 @@ fn rust_fuzzer_can_emit_null_interface_operand_on_ray_entry() {
 }
 
 #[test]
+fn rust_fuzzer_can_emit_function_scope_interface_on_ray_entry() {
+    let cfg = FuzzConfig {
+        seed: 115,
+        prefer_valid: false,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::RayInterfaceFunctionScopeVar),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    let words = match outcome {
+        spirv_tools_ffi::FuzzOutcome::Invalid { words, .. } => words,
+        spirv_tools_ffi::FuzzOutcome::Valid { words } => words,
+    };
+    assert!(
+        !validate_binary(TargetEnv::Universal1_6, &words).success,
+        "function-scope interface on ray entry should fail validation"
+    );
+}
+
+#[test]
 fn rust_fuzzer_can_emit_missing_ray_execution_model() {
     let cfg = FuzzConfig {
         seed: 55,

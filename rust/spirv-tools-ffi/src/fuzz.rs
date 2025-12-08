@@ -70,6 +70,7 @@ pub enum InvalidKind {
     RayInterfaceNonPointer,
     RayInterfacePointerToPointer,
     RayInterfaceNullOperand,
+    RayInterfaceFunctionScopeVar,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1128,6 +1129,26 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
             if let Some(ep) = module.entry_points.first_mut() {
                 ep.operands.push(0u32.into());
             }
+        }
+        InvalidKind::RayInterfaceFunctionScopeVar => {
+            ensure_ray_entry_point(module);
+            let int_ty = ensure_int_type(module);
+            let ptr_fn = ensure_pointer_type(module, StorageClass::Function, int_ty);
+            let var_id = fresh_id(module);
+            if let Some(func) = module.functions.first_mut() {
+                if let Some(block) = func.blocks.first_mut() {
+                    block.instructions.insert(
+                        0,
+                        Instruction::new(
+                            Op::Variable,
+                            Some(ptr_fn),
+                            Some(var_id),
+                            vec![StorageClass::Function.into()],
+                        ),
+                    );
+                }
+            }
+            push_interfaces(module, &[var_id]);
         }
         InvalidKind::MissingRayExecutionModel => {
             ensure_ray_entry_point(module);
