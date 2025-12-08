@@ -324,7 +324,8 @@ impl Arbitrary<'_> for FuzzModule<Unchecked> {
                 builder.entry_point(ExecutionModel::Vertex, func_id, "main", Vec::new());
             }
 
-            let module = builder.module();
+            let mut module = builder.module();
+            ensure_nop_present(&mut module);
             Ok(FuzzModule {
                 module,
                 _marker: PhantomData,
@@ -704,6 +705,31 @@ fn fresh_id(module: &mut dr::Module) -> u32 {
     let id = header.bound;
     header.bound += 1;
     id
+}
+
+fn ensure_nop_present(module: &mut Module) {
+    let mut has_nop = false;
+    for func in &module.functions {
+        for block in &func.blocks {
+            if block
+                .instructions
+                .iter()
+                .any(|inst| inst.class.opcode == Op::Nop)
+            {
+                has_nop = true;
+                break;
+            }
+        }
+    }
+    if !has_nop {
+        if let Some(func) = module.functions.first_mut() {
+            if let Some(block) = func.blocks.first_mut() {
+                block
+                    .instructions
+                    .insert(0, Instruction::new(Op::Nop, None, None, Vec::new()));
+            }
+        }
+    }
 }
 
 fn minimal_valid_module_with_tag(tag: u32) -> Module {
