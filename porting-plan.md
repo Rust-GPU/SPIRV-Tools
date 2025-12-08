@@ -1060,3 +1060,9 @@ Tasks for this milestone:
   - [x] Reject ShaderRecordBufferKHR on non-ray entry points with Rust regression.
   - [x] Enforce Input/Output interface presence only on shader stages that allow them; added compute-stage Output rejection regression.
 - [x] Wire entry-point interface checks through the CLI/FFI parity runs and update the corpus to match C++ diagnostics (`scripts/run-rust-validator-corpus.sh build-tests`).
+
+## Upcoming Milestone: Optimizer E-Graph Strengthening
+- Add bitwise distributivity/absorption rewrites (and/or/xor over masks) using e-graphs, keeping id stability and cost-aware ordering with Rust tests plus CLI/FFI parity against C++.
+- Extend e-graph coverage to mixed arithmetic-bitwise forms (e.g., `x + (x & mask)` simplifications) with unit and CLI parity tests mirroring the C++ optimizer behavior.
+- Introduce criterion benches for the new rewrites (small/medium blocks) to track performance vs. existing arithmetic passes; keep hyperfine smoke green.
+- Add a fuzz target exercising mixed arithmetic/bitwise blocks to guard the new rewrites against panics and misfolds.
