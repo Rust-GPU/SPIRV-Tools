@@ -67,6 +67,7 @@ pub enum InvalidKind {
     RayEntryWithInputOutputMix,
     RayEntryWithHostOnlyInterface,
     RayEntryWithDanglingInterfaceId,
+    RayInterfaceNonPointer,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1092,6 +1093,19 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
             if let Some(ep) = module.entry_points.first_mut() {
                 ep.operands.push(dangling_id.into());
             }
+        }
+        InvalidKind::RayInterfaceNonPointer => {
+            ensure_ray_entry_point(module);
+            let int_ty = ensure_int_type(module);
+            // Create a variable with a non-pointer type in a ray-specific storage class.
+            let var_id = fresh_id(module);
+            module.types_global_values.push(Instruction::new(
+                Op::Variable,
+                Some(int_ty),
+                Some(var_id),
+                vec![StorageClass::IncomingRayPayloadKHR.into()],
+            ));
+            push_interfaces(module, &[var_id]);
         }
         InvalidKind::MissingRayExecutionModel => {
             ensure_ray_entry_point(module);
