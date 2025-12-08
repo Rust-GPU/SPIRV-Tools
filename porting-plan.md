@@ -961,6 +961,7 @@ Deepen the Rust fuzz generator to cover more SPIR-V constructs and hook it into 
 
 Tasks:
 - [x] Add `MaybeInvalid` wrapper and `Arbitrary`-driven valid/invalid selection (including duplicate-id mutation) with Rust tests and cargo-fuzz harness coverage.
+- [x] Extend invalid mutations to cover structured control flow/phi predecessor mismatches and selection-merge removal with deterministic fallbacks and tests.
 - Extend `InvalidKind`/structured generators to cover control flow (blocks/branches/merges), SSA/phi shapes, execution modes, and descriptor/interface decorations, with shrink-friendly `Arbitrary` impls.
 - Add CLI/FFI parity fuzz smokes that run the Rust fuzz pipeline and diff diagnostics/exit codes vs. the legacy tools when available; keep skips clean when C++ binaries are absent.
 - Add a light `cargo fuzz` smoke script to CI (optional by default) and document how to run targeted seeds/hints locally.

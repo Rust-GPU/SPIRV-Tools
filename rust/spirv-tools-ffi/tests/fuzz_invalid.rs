@@ -127,6 +127,54 @@ fn rust_fuzzer_can_emit_duplicate_id() {
 }
 
 #[test]
+fn rust_fuzzer_can_emit_missing_selection_merge() {
+    let cfg = FuzzConfig {
+        seed: 9,
+        prefer_valid: false,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::MissingSelectionMerge),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    match outcome {
+        FuzzOutcome::Invalid { kind, words } => {
+            assert!(matches!(kind, InvalidKind::MissingSelectionMerge));
+            assert!(
+                !validate_binary(TargetEnv::Universal1_6, &words).success,
+                "missing selection merge should fail validation"
+            );
+        }
+        FuzzOutcome::Valid { .. } => panic!("expected invalid module"),
+    }
+}
+
+#[test]
+fn rust_fuzzer_can_emit_phi_predecessor_mismatch() {
+    let cfg = FuzzConfig {
+        seed: 11,
+        prefer_valid: false,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::PhiPredecessorMismatch),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    match outcome {
+        FuzzOutcome::Invalid { kind, words } => {
+            assert!(matches!(kind, InvalidKind::PhiPredecessorMismatch));
+            assert!(
+                !validate_binary(TargetEnv::Universal1_6, &words).success,
+                "phi predecessor mismatch should fail validation"
+            );
+        }
+        FuzzOutcome::Valid { .. } => panic!("expected invalid module"),
+    }
+}
+
+#[test]
 fn maybeinvalid_arbitrary_can_request_invalid() {
     let mut u = Unstructured::new(&[0u8; 256]);
     let candidate: MaybeInvalid<FuzzModule<Unchecked>> =
@@ -183,5 +231,28 @@ fn materialize_uses_candidate_validity_when_no_hint() {
             "expected validity-provided invalid kind to win"
         ),
         FuzzOutcome::Valid { .. } => panic!("expected invalid outcome"),
+    }
+}
+
+#[test]
+fn generator_prefers_valid_when_requested() {
+    let cfg = FuzzConfig {
+        seed: 13,
+        prefer_valid: true,
+        allow_invalid: false,
+        invalid_hint: None,
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    match outcome {
+        FuzzOutcome::Valid { words } => {
+            assert!(
+                validate_binary(TargetEnv::Universal1_6, &words).success,
+                "prefer_valid should yield a validated module"
+            );
+        }
+        FuzzOutcome::Invalid { .. } => panic!("expected valid module when allow_invalid=false"),
     }
 }

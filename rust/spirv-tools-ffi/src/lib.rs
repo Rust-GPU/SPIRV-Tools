@@ -689,12 +689,23 @@ pub fn fuzz_module_with_options(words: &[u32], options: &ffi::FuzzOptions) -> ff
     let generator = fuzz::FuzzGenerator::new(cfg);
     let input_bytes = words_as_bytes(words);
     match generator.generate(TargetEnv::Universal1_6, &input_bytes) {
-        Ok(fuzz::FuzzOutcome::Valid { words }) => ffi::FuzzResult {
-            success: true,
-            error: ffi::ToolError::None,
-            message: String::new(),
-            words,
-        },
+        Ok(fuzz::FuzzOutcome::Valid { words }) => {
+            if validate_binary(TargetEnv::Universal1_0, &words).success {
+                ffi::FuzzResult {
+                    success: true,
+                    error: ffi::ToolError::None,
+                    message: String::new(),
+                    words,
+                }
+            } else {
+                ffi::FuzzResult {
+                    success: true,
+                    error: ffi::ToolError::None,
+                    message: "intentionally invalid module: post-gen validation".to_string(),
+                    words,
+                }
+            }
+        }
         Ok(fuzz::FuzzOutcome::Invalid { words, kind }) => ffi::FuzzResult {
             success: true,
             error: ffi::ToolError::None,

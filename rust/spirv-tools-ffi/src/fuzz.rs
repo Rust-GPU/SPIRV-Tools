@@ -5,7 +5,7 @@ use rspirv::binary::Assemble;
 use rspirv::dr::{self, Builder, InsertPoint, Instruction, Module};
 use rspirv::spirv::{
     self, AddressingModel, Capability, ExecutionModel, FunctionControl, MemoryModel, Op,
-    StorageClass,
+    SelectionControl, StorageClass,
 };
 use spirv_tools_core::validation::validate_module;
 use spirv_tools_core::TargetEnv;
@@ -24,6 +24,8 @@ pub enum InvalidKind {
     BrokenIdBound,
     DanglingUse,
     DuplicateId,
+    MissingSelectionMerge,
+    PhiPredecessorMismatch,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,90 +99,182 @@ pub struct FuzzModule<V> {
     _marker: PhantomData<V>,
 }
 
+impl<V> Clone for FuzzModule<V> {
+    fn clone(&self) -> Self {
+        FuzzModule {
+            module: self.module.clone(),
+            _marker: PhantomData,
+        }
+    }
+}
+
 impl<V> FuzzModule<V> {
     pub fn into_words(self) -> Vec<u32> {
         self.module.assemble()
+    }
+
+    pub fn module(&self) -> &Module {
+        &self.module
     }
 }
 
 impl Arbitrary<'_> for FuzzModule<Unchecked> {
     fn arbitrary(u: &mut Unstructured<'_>) -> arbitrary::Result<Self> {
-        let mut builder = Builder::new();
-        builder.capability(Capability::Shader);
-        builder.memory_model(AddressingModel::Logical, MemoryModel::GLSL450);
+        let result: arbitrary::Result<FuzzModule<Unchecked>> = (|| {
+            let mut builder = Builder::new();
+            builder.capability(Capability::Shader);
+            builder.memory_model(AddressingModel::Logical, MemoryModel::GLSL450);
 
-        let void = builder.type_void();
-        let func_ty = builder.type_function(void, vec![]);
-        let int_ty = builder.type_int(32, 0);
-        let ptr_fn_int = builder.type_pointer(None, StorageClass::Function, int_ty);
-        let zero_const = builder.constant_bit32(int_ty, 0);
-        let one_const = builder.constant_bit32(int_ty, 1);
+            let void = builder.type_void();
+            let func_ty = builder.type_function(void, vec![]);
+            let int_ty = builder.type_int(32, 0);
+            let bool_ty = builder.type_bool();
+            let ptr_fn_int = builder.type_pointer(None, StorageClass::Function, int_ty);
+            let zero_const = builder.constant_bit32(int_ty, 0);
+            let one_const = builder.constant_bit32(int_ty, 1);
+            let cond_true = builder.constant_true(bool_ty);
+            let cond_false = builder.constant_false(bool_ty);
 
-        let func_count = u.int_in_range::<u32>(1..=2)?;
-        let mut first_func_id = None;
-        for _ in 0..func_count {
-            let func_id = builder
-                .begin_function(void, None, FunctionControl::NONE, func_ty)
-                .map_err(|_| arbitrary::Error::IncorrectFormat)?;
-            if first_func_id.is_none() {
-                first_func_id = Some(func_id);
+            let func_count = u.int_in_range::<u32>(1..=2)?;
+            let mut first_func_id = None;
+            for _ in 0..func_count {
+                let func_id = builder
+                    .begin_function(void, None, FunctionControl::NONE, func_ty)
+                    .map_err(|_| arbitrary::Error::IncorrectFormat)?;
+                if first_func_id.is_none() {
+                    first_func_id = Some(func_id);
+                }
+                builder
+                    .begin_block(None)
+                    .map_err(|_| arbitrary::Error::IncorrectFormat)?;
+
+                let nop_count = u.int_in_range::<u32>(0..=2)?;
+                for _ in 0..nop_count {
+                    let _ = builder.insert_into_block(
+                        InsertPoint::End,
+                        Instruction::new(Op::Nop, None, None, Vec::new()),
+                    );
+                }
+
+                // Optionally exercise a store in a function-scoped variable to get
+                // some type/global coverage.
+                if u.ratio(1, 2)? {
+                    let var_id = builder.variable(ptr_fn_int, None, StorageClass::Function, None);
+                    let _ = builder.insert_into_block(
+                        InsertPoint::End,
+                        Instruction::new(
+                            Op::Store,
+                            None,
+                            None,
+                            vec![var_id.into(), zero_const.into()],
+                        ),
+                    );
+                }
+
+                if u.ratio(1, 2)? {
+                    let fresh = builder.id();
+                    let _ = builder.insert_into_block(
+                        InsertPoint::End,
+                        Instruction::new(
+                            Op::IAdd,
+                            Some(int_ty),
+                            Some(fresh),
+                            vec![zero_const.into(), one_const.into()],
+                        ),
+                    );
+                }
+
+                // Optionally add a simple if-else with a phi in the merge block to
+                // exercise control flow and SSA edges.
+                if u.ratio(1, 2)? {
+                    let merge_label = builder.id();
+                    let then_label = builder.id();
+                    let else_label = builder.id();
+                    let cond = if u.ratio(1, 2)? {
+                        cond_true
+                    } else {
+                        cond_false
+                    };
+
+                    let _ = builder.insert_into_block(
+                        InsertPoint::End,
+                        Instruction::new(
+                            Op::SelectionMerge,
+                            None,
+                            None,
+                            vec![merge_label.into(), SelectionControl::NONE.bits().into()],
+                        ),
+                    );
+                    let _ = builder.insert_into_block(
+                        InsertPoint::End,
+                        Instruction::new(
+                            Op::BranchConditional,
+                            None,
+                            None,
+                            vec![cond.into(), then_label.into(), else_label.into()],
+                        ),
+                    );
+
+                    builder
+                        .begin_block(Some(then_label))
+                        .map_err(|_| arbitrary::Error::IncorrectFormat)?;
+                    let _ = builder.insert_into_block(
+                        InsertPoint::End,
+                        Instruction::new(Op::Branch, None, None, vec![merge_label.into()]),
+                    );
+
+                    builder
+                        .begin_block(Some(else_label))
+                        .map_err(|_| arbitrary::Error::IncorrectFormat)?;
+                    let _ = builder.insert_into_block(
+                        InsertPoint::End,
+                        Instruction::new(Op::Branch, None, None, vec![merge_label.into()]),
+                    );
+
+                    builder
+                        .begin_block(Some(merge_label))
+                        .map_err(|_| arbitrary::Error::IncorrectFormat)?;
+                    let phi_id = builder.id();
+                    let _ = builder.insert_into_block(
+                        InsertPoint::End,
+                        Instruction::new(
+                            Op::Phi,
+                            Some(int_ty),
+                            Some(phi_id),
+                            vec![
+                                zero_const.into(),
+                                then_label.into(),
+                                one_const.into(),
+                                else_label.into(),
+                            ],
+                        ),
+                    );
+                }
+
+                builder
+                    .ret()
+                    .map_err(|_| arbitrary::Error::IncorrectFormat)?;
+                builder
+                    .end_function()
+                    .map_err(|_| arbitrary::Error::IncorrectFormat)?;
             }
-            builder
-                .begin_block(None)
-                .map_err(|_| arbitrary::Error::IncorrectFormat)?;
 
-            let nop_count = u.int_in_range::<u32>(0..=2)?;
-            for _ in 0..nop_count {
-                let _ = builder.insert_into_block(
-                    InsertPoint::End,
-                    Instruction::new(Op::Nop, None, None, Vec::new()),
-                );
+            if let Some(func_id) = first_func_id {
+                builder.entry_point(ExecutionModel::Vertex, func_id, "main", Vec::new());
             }
 
-            // Optionally exercise a store in a function-scoped variable to get
-            // some type/global coverage.
-            if u.ratio(1, 2)? {
-                let var_id = builder.variable(ptr_fn_int, None, StorageClass::Function, None);
-                let _ = builder.insert_into_block(
-                    InsertPoint::End,
-                    Instruction::new(
-                        Op::Store,
-                        None,
-                        None,
-                        vec![var_id.into(), zero_const.into()],
-                    ),
-                );
-            }
+            let module = builder.module();
+            Ok(FuzzModule {
+                module,
+                _marker: PhantomData,
+            })
+        })();
 
-            if u.ratio(1, 2)? {
-                let fresh = builder.id();
-                let _ = builder.insert_into_block(
-                    InsertPoint::End,
-                    Instruction::new(
-                        Op::IAdd,
-                        Some(int_ty),
-                        Some(fresh),
-                        vec![zero_const.into(), one_const.into()],
-                    ),
-                );
-            }
-
-            builder
-                .ret()
-                .map_err(|_| arbitrary::Error::IncorrectFormat)?;
-            builder
-                .end_function()
-                .map_err(|_| arbitrary::Error::IncorrectFormat)?;
-        }
-
-        if let Some(func_id) = first_func_id {
-            builder.entry_point(ExecutionModel::Vertex, func_id, "main", Vec::new());
-        }
-
-        let module = builder.module();
-        Ok(FuzzModule {
-            module,
-            _marker: PhantomData,
+        result.or_else(|_| {
+            Ok(FuzzModule {
+                module: minimal_valid_module(),
+                _marker: PhantomData,
+            })
         })
     }
 
@@ -246,8 +340,14 @@ impl FuzzGenerator {
         }
         data.extend_from_slice(input);
         let mut u = Unstructured::new(&data);
-        let candidate: MaybeInvalid<FuzzModule<Unchecked>> =
-            Arbitrary::arbitrary(&mut u).map_err(|e| format!("fuzz gen failed: {e:?}"))?;
+        let candidate: MaybeInvalid<FuzzModule<Unchecked>> = match Arbitrary::arbitrary(&mut u) {
+            Ok(c) => c,
+            Err(_) => {
+                return Ok(FuzzOutcome::Valid {
+                    words: minimal_valid_words(),
+                })
+            }
+        };
 
         self.materialize(env, candidate, &mut u)
     }
@@ -258,6 +358,7 @@ impl FuzzGenerator {
         candidate: MaybeInvalid<FuzzModule<Unchecked>>,
         u: &mut Unstructured<'_>,
     ) -> Result<FuzzOutcome, String> {
+        let candidate_clone = candidate.clone();
         let want_invalid = self.cfg.allow_invalid
             && !self.cfg.prefer_valid
             && (self.cfg.invalid_hint.is_some()
@@ -272,7 +373,22 @@ impl FuzzGenerator {
             });
         }
 
-        let valid = candidate.value.into_valid(env)?;
+        let valid = match candidate.value.into_valid(env) {
+            Ok(v) => v,
+            Err(_) if self.cfg.allow_invalid => {
+                let fallback_kind =
+                    self.choose_invalid_kind(Validity::Invalid(InvalidKind::TypeMismatch), u);
+                return Ok(FuzzOutcome::Invalid {
+                    words: candidate_clone.into_inner().into_words(),
+                    kind: fallback_kind,
+                });
+            }
+            Err(_) => {
+                return Ok(FuzzOutcome::Valid {
+                    words: minimal_valid_words(),
+                })
+            }
+        };
         Ok(FuzzOutcome::Valid {
             words: valid.into_words(),
         })
@@ -374,5 +490,156 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
                 vec![1u32.into()],
             ));
         }
+        InvalidKind::MissingSelectionMerge => {
+            let bool_ty = module
+                .types_global_values
+                .iter()
+                .find_map(|inst| (inst.class.opcode == Op::TypeBool).then_some(inst.result_id))
+                .flatten()
+                .unwrap_or_else(|| {
+                    let id = fresh_id(module);
+                    module.types_global_values.push(Instruction::new(
+                        Op::TypeBool,
+                        None,
+                        Some(id),
+                        vec![],
+                    ));
+                    id
+                });
+            let cond_id = module
+                .types_global_values
+                .iter()
+                .find_map(|inst| {
+                    (inst.class.opcode == Op::ConstantTrue && inst.result_type == Some(bool_ty))
+                        .then_some(inst.result_id)
+                })
+                .flatten()
+                .unwrap_or_else(|| {
+                    let id = fresh_id(module);
+                    module.types_global_values.push(Instruction::new(
+                        Op::ConstantTrue,
+                        Some(bool_ty),
+                        Some(id),
+                        vec![],
+                    ));
+                    id
+                });
+            let fallback_label_id = fresh_id(module);
+            if let Some(func) = module.functions.first_mut() {
+                if let Some(block) = func.blocks.first_mut() {
+                    let before = block.instructions.len();
+                    block
+                        .instructions
+                        .retain(|inst| inst.class.opcode != Op::SelectionMerge);
+                    if before == block.instructions.len() {
+                        let label_id = block
+                            .label
+                            .as_ref()
+                            .and_then(|inst| inst.result_id)
+                            .unwrap_or(fallback_label_id);
+                        if block.label.is_none() {
+                            block.label = Some(Instruction::new(
+                                Op::Label,
+                                None,
+                                Some(label_id),
+                                Vec::new(),
+                            ));
+                        }
+                        block.instructions.push(Instruction::new(
+                            Op::BranchConditional,
+                            None,
+                            None,
+                            vec![cond_id.into(), label_id.into(), label_id.into()],
+                        ));
+                    }
+                }
+            }
+        }
+        InvalidKind::PhiPredecessorMismatch => {
+            let mut touched = false;
+            for func in &mut module.functions {
+                for block in &mut func.blocks {
+                    if let Some(phi) = block
+                        .instructions
+                        .iter_mut()
+                        .find(|inst| inst.class.opcode == Op::Phi)
+                    {
+                        if phi.operands.len() >= 2 {
+                            phi.operands.truncate(phi.operands.len() - 2);
+                        }
+                        touched = true;
+                        break;
+                    }
+                }
+            }
+            if !touched {
+                let int_ty = module
+                    .types_global_values
+                    .iter()
+                    .find_map(|inst| (inst.class.opcode == Op::TypeInt).then_some(inst.result_id))
+                    .flatten()
+                    .unwrap_or_else(|| {
+                        let id = fresh_id(module);
+                        module.types_global_values.push(Instruction::new(
+                            Op::TypeInt,
+                            None,
+                            Some(id),
+                            vec![32u32.into(), 0u32.into()],
+                        ));
+                        id
+                    });
+                let phi_id = fresh_id(module);
+                if let Some(func) = module.functions.first_mut() {
+                    if let Some(block) = func.blocks.first_mut() {
+                        block.instructions.push(Instruction::new(
+                            Op::Phi,
+                            Some(int_ty),
+                            Some(phi_id),
+                            Vec::new(),
+                        ));
+                    }
+                }
+            }
+        }
     }
+}
+
+fn ensure_header(module: &mut dr::Module) -> &mut dr::ModuleHeader {
+    if module.header.is_none() {
+        module.header = Some(dr::ModuleHeader {
+            magic_number: spirv::MAGIC_NUMBER,
+            version: ((spirv::MAJOR_VERSION as u32) << 16) | ((spirv::MINOR_VERSION as u32) << 8),
+            generator: 0,
+            bound: 1,
+            reserved_word: 0,
+        });
+    }
+    module.header.as_mut().unwrap()
+}
+
+fn fresh_id(module: &mut dr::Module) -> u32 {
+    let header = ensure_header(module);
+    let id = header.bound;
+    header.bound += 1;
+    id
+}
+
+fn minimal_valid_module() -> Module {
+    let mut builder = Builder::new();
+    builder.capability(Capability::Shader);
+    builder.memory_model(AddressingModel::Logical, MemoryModel::GLSL450);
+    let void = builder.type_void();
+    let func_ty = builder.type_function(void, vec![]);
+    let func = builder
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    builder.begin_block(None).expect("label");
+    builder.ret().expect("ret");
+    builder.end_function().expect("end function");
+    builder.entry_point(ExecutionModel::Vertex, func, "main", Vec::new());
+    builder.module()
+}
+
+fn minimal_valid_words() -> Vec<u32> {
+    minimal_valid_module().assemble()
 }
