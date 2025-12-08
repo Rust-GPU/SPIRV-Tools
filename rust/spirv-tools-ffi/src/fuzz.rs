@@ -25,6 +25,7 @@ pub struct FuzzConfig {
     pub seed: u64,
     pub prefer_valid: bool,
     pub allow_invalid: bool,
+    pub invalid_hint: Option<InvalidKind>,
 }
 
 /// Wrapper around an rspirv module with a validity marker.
@@ -148,7 +149,10 @@ impl FuzzGenerator {
             });
         }
 
-        let invalid_kind: InvalidKind = Arbitrary::arbitrary(&mut u)
+        let invalid_kind: InvalidKind = self
+            .cfg
+            .invalid_hint
+            .or_else(|| Arbitrary::arbitrary(&mut u).ok())
             .unwrap_or(InvalidKind::MissingMemoryModel);
         let invalid = unchecked.into_invalid(invalid_kind);
         Ok(FuzzOutcome::Invalid {

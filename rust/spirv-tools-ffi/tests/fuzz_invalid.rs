@@ -1,6 +1,9 @@
 use spirv_tools_core::assembly::assemble_text;
 use spirv_tools_core::TargetEnv;
-use spirv_tools_ffi::{default_fuzz_options, fuzz_module_with_options, validate_binary};
+use spirv_tools_ffi::{
+    default_fuzz_options, fuzz_module_with_options, validate_binary, FuzzConfig, FuzzGenerator,
+    FuzzOutcome, InvalidKind,
+};
 
 #[test]
 fn rust_fuzzer_can_emit_intentionally_invalid() {
@@ -27,5 +30,29 @@ fn rust_fuzzer_can_emit_intentionally_invalid() {
             result.message.contains("intentionally invalid"),
             "expected intentionally invalid marker"
         );
+    }
+}
+
+#[test]
+fn rust_fuzzer_can_target_specific_invalid_kind() {
+    let cfg = FuzzConfig {
+        seed: 0,
+        prefer_valid: false,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::BrokenIdBound),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    match outcome {
+        FuzzOutcome::Invalid { kind, words } => {
+            assert!(matches!(kind, InvalidKind::BrokenIdBound));
+            assert!(
+                !validate_binary(TargetEnv::Universal1_6, &words).success,
+                "broken id bound should fail validation"
+            );
+        }
+        FuzzOutcome::Valid { .. } => panic!("expected invalid module"),
     }
 }

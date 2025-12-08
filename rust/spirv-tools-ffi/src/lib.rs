@@ -13,6 +13,8 @@ use spirv_tools_core::{MessageLevel, TargetEnv};
 mod optimizer;
 mod fuzz;
 mod tests_optimizer;
+
+pub use fuzz::{FuzzConfig, FuzzGenerator, FuzzOutcome, InvalidKind};
 use std::panic::{self, AssertUnwindSafe};
 use std::str;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
@@ -679,6 +681,7 @@ pub fn fuzz_module_with_options(words: &[u32], options: &ffi::FuzzOptions) -> ff
         seed: options.random_seed as u64,
         prefer_valid: options.enable_fuzzer_pass_validation,
         allow_invalid: !options.enable_fuzzer_pass_validation,
+        invalid_hint: None,
     };
     let generator = fuzz::FuzzGenerator::new(cfg);
     let input_bytes = words_as_bytes(words);
