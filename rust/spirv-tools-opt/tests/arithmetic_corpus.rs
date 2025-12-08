@@ -961,3 +961,44 @@ fn corpus_distributes_bor_over_bxor_and_folds() {
         "bor distribution over xor should fold to the expected constant"
     );
 }
+
+#[test]
+fn corpus_absorbs_add_of_masked_value() {
+    let int = 1;
+    let x_val = 0xDEAD_BEEFu32;
+    let mask_val = 0xFFFF0000u32;
+    let x = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(x_val)],
+    );
+    let mask = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(mask_val)],
+    );
+    let band = inst(
+        Op::BitwiseAnd,
+        int,
+        4,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(3)],
+    );
+    let add = inst(
+        Op::IAdd,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(4), rspirv::dr::Operand::IdRef(2)],
+    );
+    let optimized = optimize_arith_block(&[x, mask, band, add]).expect("optimize");
+    let folded = optimized.iter().find(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(5)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(x_val)]
+    });
+    assert!(
+        folded.is_some(),
+        "add of x & mask plus x should fold to x"
+    );
+}
