@@ -22,7 +22,7 @@ fn rust_bin(name: &str) -> PathBuf {
         .unwrap_or_else(|_| panic!("missing test binary path for {name} (expected {key})"))
 }
 
-fn corpus() -> [&'static str; 3] {
+fn corpus() -> [&'static str; 4] {
     [
         "\
 OpCapability Shader
@@ -52,6 +52,22 @@ OpMemoryModel Logical GLSL450
 OpEntryPoint GLCompute %main \"main\"
 %void = OpTypeVoid
 %fn = OpTypeFunction %void
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+",
+        "\
+OpCapability RayTracingKHR
+OpExtension \"SPV_KHR_ray_tracing\"
+OpMemoryModel Logical GLSL450
+OpEntryPoint RayGenerationKHR %main \"main\" %payload
+%void = OpTypeVoid
+%uint = OpTypeInt 32 0
+%payload_ty = OpTypeStruct %uint
+%ptr_payload = OpTypePointer IncomingRayPayloadKHR %payload_ty
+%fn = OpTypeFunction %void
+%payload = OpVariable %ptr_payload IncomingRayPayloadKHR
 %main = OpFunction %void None %fn
 %entry = OpLabel
 OpReturn
