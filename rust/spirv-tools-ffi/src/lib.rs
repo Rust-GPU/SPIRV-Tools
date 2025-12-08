@@ -749,6 +749,11 @@ pub fn fuzz_module_with_options(words: &[u32], options: &ffi::FuzzOptions) -> ff
     result
 }
 
+/// Invoke the C++ fuzz bridge directly when available; returns a disabled result otherwise.
+pub fn fuzz_module_with_cpp(words: &[u32], options: &ffi::FuzzOptions) -> ffi::FuzzResult {
+    ffi::fuzz_with_cpp(TargetEnv::Universal1_6.to_raw(), words, options)
+}
+
 fn words_as_bytes(words: &[u32]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(words.len() * 4);
     for w in words {

@@ -2,7 +2,9 @@ use rspirv::binary::Assemble;
 use rspirv::dr::Builder;
 use rspirv::spirv::{Capability, ExecutionModel, FunctionControl, MemoryModel};
 use spirv_tools_core::TargetEnv;
-use spirv_tools_ffi::{default_fuzz_options, fuzz_module_with_options, validate_binary};
+use spirv_tools_ffi::{
+    default_fuzz_options, fuzz_module_with_cpp, fuzz_module_with_options, validate_binary,
+};
 
 fn build_minimal_module() -> Vec<u32> {
     let mut b = Builder::new();
@@ -56,5 +58,20 @@ fn fuzz_seed_changes_target_block() {
     assert_ne!(
         a.words, b.words,
         "different seeds should produce different layouts"
+    );
+}
+
+#[test]
+fn cpp_fuzz_bridge_reports_disabled() {
+    let binary = build_minimal_module();
+    let opts = default_fuzz_options();
+    let result = fuzz_module_with_cpp(&binary, &opts);
+    assert!(
+        !result.success,
+        "C++ fuzz bridge is expected to be disabled in Rust-first builds"
+    );
+    assert!(
+        result.message.contains("unavailable") || result.message.contains("disabled"),
+        "disabled bridge should surface a user-facing reason"
     );
 }
