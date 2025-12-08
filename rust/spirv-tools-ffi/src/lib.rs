@@ -19,9 +19,12 @@ pub use fuzz::{
     Validity,
 };
 use std::panic::{self, AssertUnwindSafe};
+use std::path::PathBuf;
+use std::process::Command;
 use std::str;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Mutex, Once, OnceLock};
+use tempfile::NamedTempFile;
 
 static VALIDATION_CACHE: OnceLock<Mutex<ValidModuleCache>> = OnceLock::new();
 // 0 = default/env-controlled, 1 = force enable rust optimizer, 2 = force disable rust optimizer
@@ -751,6 +754,9 @@ pub fn fuzz_module_with_options(words: &[u32], options: &ffi::FuzzOptions) -> ff
 
 /// Invoke the C++ fuzz bridge directly when available; returns a disabled result otherwise.
 pub fn fuzz_module_with_cpp(words: &[u32], options: &ffi::FuzzOptions) -> ffi::FuzzResult {
+    if let Some(result) = try_cpp_fuzz_cli(words, options) {
+        return result;
+    }
     ffi::fuzz_with_cpp(TargetEnv::Universal1_6.to_raw(), words, options)
 }
 
@@ -760,6 +766,126 @@ fn words_as_bytes(words: &[u32]) -> Vec<u8> {
         bytes.extend_from_slice(&w.to_le_bytes());
     }
     bytes
+}
+
+fn bytes_to_words(bytes: &[u8]) -> Result<Vec<u32>, String> {
+    if bytes.len() % 4 != 0 {
+        return Err("output length is not a multiple of 4 bytes".to_string());
+    }
+    let mut out = Vec::with_capacity(bytes.len() / 4);
+    for chunk in bytes.chunks_exact(4) {
+        out.push(u32::from_le_bytes(chunk.try_into().expect("chunk size")));
+    }
+    Ok(out)
+}
+
+fn find_cpp_fuzz_binary() -> Option<PathBuf> {
+    if let Ok(path) = std::env::var("SPIRV_CPP_FUZZ") {
+        let candidate = PathBuf::from(path);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+        eprintln!("SPIRV_CPP_FUZZ is set but not a file: {candidate:?}");
+    }
+    which::which("spirv-fuzz").ok()
+}
+
+fn try_cpp_fuzz_cli(words: &[u32], options: &ffi::FuzzOptions) -> Option<ffi::FuzzResult> {
+    let cpp_bin = find_cpp_fuzz_binary()?;
+    let input = match NamedTempFile::new() {
+        Ok(f) => f,
+        Err(err) => {
+            return Some(ffi::FuzzResult {
+                success: false,
+                error: ffi::ToolError::Fuzz,
+                message: format!("failed to create temp file for C++ fuzz: {err}"),
+                words: Vec::new(),
+            })
+        }
+    };
+    let output = match NamedTempFile::new() {
+        Ok(f) => f,
+        Err(err) => {
+            return Some(ffi::FuzzResult {
+                success: false,
+                error: ffi::ToolError::Fuzz,
+                message: format!("failed to create output temp file for C++ fuzz: {err}"),
+                words: Vec::new(),
+            })
+        }
+    };
+
+    if let Err(err) = std::fs::write(input.path(), words_as_bytes(words)) {
+        return Some(ffi::FuzzResult {
+            success: false,
+            error: ffi::ToolError::Fuzz,
+            message: format!("failed to write input module for C++ fuzz: {err}"),
+            words: Vec::new(),
+        });
+    }
+
+    let mut cmd = Command::new(&cpp_bin);
+    cmd.arg(input.path()).arg("-o").arg(output.path());
+    if options.random_seed != 0 {
+        cmd.arg(format!("--seed={}", options.random_seed));
+    }
+
+    let status = match cmd.output() {
+        Ok(out) => out,
+        Err(err) => {
+            return Some(ffi::FuzzResult {
+                success: false,
+                error: ffi::ToolError::Fuzz,
+                message: format!("failed to invoke C++ fuzz binary: {err}"),
+                words: Vec::new(),
+            })
+        }
+    };
+
+    if !status.status.success() {
+        let stderr = String::from_utf8_lossy(&status.stderr).to_string();
+        return Some(ffi::FuzzResult {
+            success: false,
+            error: ffi::ToolError::Fuzz,
+            message: if stderr.is_empty() {
+                "C++ fuzz binary failed".to_string()
+            } else {
+                stderr
+            },
+            words: Vec::new(),
+        });
+    }
+
+    let bytes = match std::fs::read(output.path()) {
+        Ok(b) => b,
+        Err(err) => {
+            return Some(ffi::FuzzResult {
+                success: false,
+                error: ffi::ToolError::Fuzz,
+                message: format!("failed to read C++ fuzz output: {err}"),
+                words: Vec::new(),
+            })
+        }
+    };
+
+    let words = match bytes_to_words(&bytes) {
+        Ok(w) => w,
+        Err(err) => {
+            return Some(ffi::FuzzResult {
+                success: false,
+                error: ffi::ToolError::Fuzz,
+                message: err,
+                words: Vec::new(),
+            })
+        }
+    };
+
+    Some(ffi::FuzzResult {
+        success: true,
+        error: ffi::ToolError::None,
+        message: String::new(),
+        words,
+    })
 }
 
 pub fn try_assemble_text(context_handle: u64, text: &[u8], options: u32) -> ffi::AssembleResult {

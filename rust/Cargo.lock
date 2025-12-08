@@ -937,6 +937,7 @@ dependencies = [
  "spirv-tools-opt",
  "tempfile",
  "thiserror",
+ "which",
 ]
 
 [[package]]
