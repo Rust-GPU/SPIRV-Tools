@@ -1255,6 +1255,18 @@ OpFunctionEnd\n";
         let binary_v16 =
             assemble_text_with_options(&text, TargetEnv::Universal1_6, TextToBinaryOptions::NONE)
                 .expect("assemble");
+        let text_alt = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpNop",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
         let binary_v15 =
             assemble_text_with_options(&text, TargetEnv::Universal1_5, TextToBinaryOptions::NONE)
                 .expect("assemble");
@@ -1271,7 +1283,7 @@ OpFunctionEnd\n";
 
         set_rust_validator_override(true);
         LAST_VALIDATION_PATH.store(0, Ordering::Relaxed);
-        let rust = validate_binary(TargetEnv::Universal1_6, &binary_v16);
+        let rust = validate_binary(TargetEnv::Universal1_4, &binary_v16);
         assert!(rust.success);
         assert_eq!(LAST_VALIDATION_PATH.load(Ordering::Relaxed), 1);
 

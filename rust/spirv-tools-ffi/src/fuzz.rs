@@ -3,7 +3,10 @@ use std::marker::PhantomData;
 use arbitrary::{Arbitrary, Unstructured};
 use rspirv::binary::Assemble;
 use rspirv::dr::{self, Builder, InsertPoint, Instruction, Module};
-use rspirv::spirv::{self, AddressingModel, Capability, ExecutionModel, FunctionControl, MemoryModel, Op};
+use rspirv::spirv::{
+    self, AddressingModel, Capability, ExecutionModel, FunctionControl, MemoryModel, Op,
+    StorageClass,
+};
 use spirv_tools_core::validation::validate_module;
 use spirv_tools_core::TargetEnv;
 
@@ -48,6 +51,9 @@ impl Arbitrary<'_> for FuzzModule<Unchecked> {
 
         let void = builder.type_void();
         let func_ty = builder.type_function(void, vec![]);
+        let int_ty = builder.type_int(32, 0);
+        let ptr_fn_int = builder.type_pointer(None, StorageClass::Function, int_ty);
+        let zero_const = builder.constant_bit32(int_ty, 0);
 
         let func_count = u.int_in_range::<u32>(1..=2)?;
         let mut first_func_id = None;
@@ -67,6 +73,21 @@ impl Arbitrary<'_> for FuzzModule<Unchecked> {
                 let _ = builder.insert_into_block(
                     InsertPoint::End,
                     Instruction::new(Op::Nop, None, None, Vec::new()),
+                );
+            }
+
+            // Optionally exercise a store in a function-scoped variable to get
+            // some type/global coverage.
+            if u.ratio(1, 2)? {
+                let var_id = builder.variable(ptr_fn_int, None, StorageClass::Function, None);
+                let _ = builder.insert_into_block(
+                    InsertPoint::End,
+                    Instruction::new(
+                        Op::Store,
+                        None,
+                        None,
+                        vec![var_id.into(), zero_const.into()],
+                    ),
                 );
             }
 
