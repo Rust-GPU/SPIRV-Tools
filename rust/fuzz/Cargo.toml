@@ -11,6 +11,8 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 spirv-tools-opt = { path = "../spirv-tools-opt" }
 arbitrary = { version = "1.3", features = ["derive"] }
+spirv-tools-ffi = { path = "../spirv-tools-ffi" }
+spirv-tools-core = { path = "../spirv-tools-core" }
 
 [workspace]
 members = ["."]
@@ -26,6 +28,13 @@ bench = false
 [[bin]]
 name = "opt_spirv_block"
 path = "fuzz_targets/opt_spirv_block.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ffi_rust_fuzz_pipeline"
+path = "fuzz_targets/ffi_rust_fuzz_pipeline.rs"
 test = false
 doc = false
 bench = false
