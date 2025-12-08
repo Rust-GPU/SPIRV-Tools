@@ -4,8 +4,8 @@ use arbitrary::{Arbitrary, Unstructured};
 use rspirv::binary::Assemble;
 use rspirv::dr::{self, Builder, InsertPoint, Instruction, Module};
 use rspirv::spirv::{
-    self, AddressingModel, Capability, ExecutionModel, FunctionControl, MemoryModel, Op,
-    SelectionControl, StorageClass,
+    self, AddressingModel, Capability, ExecutionModel, FunctionControl, LoopControl, MemoryModel,
+    Op, SelectionControl, StorageClass,
 };
 use spirv_tools_core::validation::validate_module;
 use spirv_tools_core::TargetEnv;
@@ -27,6 +27,7 @@ pub enum InvalidKind {
     MissingSelectionMerge,
     PhiPredecessorMismatch,
     StorageClassMismatch,
+    MissingLoopMerge,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -153,7 +154,7 @@ impl Arbitrary<'_> for FuzzModule<Unchecked> {
                     .begin_block(None)
                     .map_err(|_| arbitrary::Error::IncorrectFormat)?;
 
-                let nop_count = u.int_in_range::<u32>(0..=2)?;
+                let nop_count = u.int_in_range::<u32>(1..=3)?;
                 for _ in 0..nop_count {
                     let _ = builder.insert_into_block(
                         InsertPoint::End,
@@ -187,6 +188,61 @@ impl Arbitrary<'_> for FuzzModule<Unchecked> {
                             vec![zero_const.into(), one_const.into()],
                         ),
                     );
+                }
+
+                // Optionally add a loop with merge/continue and a conditional exit.
+                if u.ratio(1, 3)? {
+                    let merge_label = builder.id();
+                    let continue_label = builder.id();
+                    let body_label = builder.id();
+                    let loop_cond = if u.ratio(1, 2)? {
+                        cond_true
+                    } else {
+                        cond_false
+                    };
+
+                    let _ = builder.insert_into_block(
+                        InsertPoint::End,
+                        Instruction::new(
+                            Op::LoopMerge,
+                            None,
+                            None,
+                            vec![
+                                merge_label.into(),
+                                continue_label.into(),
+                                LoopControl::NONE.bits().into(),
+                            ],
+                        ),
+                    );
+                    let _ = builder.insert_into_block(
+                        InsertPoint::End,
+                        Instruction::new(Op::Branch, None, None, vec![continue_label.into()]),
+                    );
+
+                    builder
+                        .begin_block(Some(continue_label))
+                        .map_err(|_| arbitrary::Error::IncorrectFormat)?;
+                    let _ = builder.insert_into_block(
+                        InsertPoint::End,
+                        Instruction::new(Op::Branch, None, None, vec![body_label.into()]),
+                    );
+
+                    builder
+                        .begin_block(Some(body_label))
+                        .map_err(|_| arbitrary::Error::IncorrectFormat)?;
+                    let _ = builder.insert_into_block(
+                        InsertPoint::End,
+                        Instruction::new(
+                            Op::BranchConditional,
+                            None,
+                            None,
+                            vec![loop_cond.into(), continue_label.into(), merge_label.into()],
+                        ),
+                    );
+
+                    builder
+                        .begin_block(Some(merge_label))
+                        .map_err(|_| arbitrary::Error::IncorrectFormat)?;
                 }
 
                 // Optionally add a simple if-else with a phi in the merge block to
@@ -275,12 +331,7 @@ impl Arbitrary<'_> for FuzzModule<Unchecked> {
             })
         })();
 
-        result.or_else(|_| {
-            Ok(FuzzModule {
-                module: minimal_valid_module(),
-                _marker: PhantomData,
-            })
-        })
+        result
     }
 
     fn arbitrary_take_rest(mut u: Unstructured<'_>) -> arbitrary::Result<Self> {
@@ -345,14 +396,17 @@ impl FuzzGenerator {
         }
         data.extend_from_slice(input);
         let mut u = Unstructured::new(&data);
-        let candidate: MaybeInvalid<FuzzModule<Unchecked>> = match Arbitrary::arbitrary(&mut u) {
-            Ok(c) => c,
-            Err(_) => {
-                return Ok(FuzzOutcome::Valid {
-                    words: minimal_valid_words(),
-                })
-            }
-        };
+        let candidate: MaybeInvalid<FuzzModule<Unchecked>> = Arbitrary::arbitrary(&mut u)
+            .unwrap_or_else(|_| {
+                let module = minimal_valid_module_with_tag(self.cfg.seed as u32);
+                MaybeInvalid::new(
+                    FuzzModule {
+                        module,
+                        _marker: PhantomData,
+                    },
+                    Validity::Valid,
+                )
+            });
 
         self.materialize(env, candidate, &mut u)
     }
@@ -611,6 +665,24 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
                 insert_mismatched_variable(module);
             }
         }
+        InvalidKind::MissingLoopMerge => {
+            let mut removed = false;
+            for func in &mut module.functions {
+                for block in &mut func.blocks {
+                    let before = block.instructions.len();
+                    block
+                        .instructions
+                        .retain(|inst| inst.class.opcode != Op::LoopMerge);
+                    if before != block.instructions.len() {
+                        removed = true;
+                    }
+                }
+            }
+            if !removed {
+                let header = ensure_header(module);
+                header.bound = 1;
+            }
+        }
     }
 }
 
@@ -634,24 +706,30 @@ fn fresh_id(module: &mut dr::Module) -> u32 {
     id
 }
 
-fn minimal_valid_module() -> Module {
+fn minimal_valid_module_with_tag(tag: u32) -> Module {
     let mut builder = Builder::new();
     builder.capability(Capability::Shader);
     builder.memory_model(AddressingModel::Logical, MemoryModel::GLSL450);
     let void = builder.type_void();
     let func_ty = builder.type_function(void, vec![]);
+    let int_ty = builder.type_int(32, 0);
+    let _tag_const = builder.constant_bit32(int_ty, tag);
     let func = builder
         .begin_function(void, None, FunctionControl::NONE, func_ty)
         .expect("begin function");
     builder.begin_block(None).expect("label");
+    let _ = builder.insert_into_block(
+        InsertPoint::End,
+        Instruction::new(Op::Nop, None, None, Vec::new()),
+    );
     builder.ret().expect("ret");
     builder.end_function().expect("end function");
     builder.entry_point(ExecutionModel::Vertex, func, "main", Vec::new());
     builder.module()
 }
 
-fn minimal_valid_words() -> Vec<u32> {
-    minimal_valid_module().assemble()
+pub(crate) fn minimal_valid_words() -> Vec<u32> {
+    minimal_valid_module_with_tag(0).assemble()
 }
 
 fn mutate_variable_storage_class(module: &mut dr::Module) -> bool {
@@ -670,7 +748,7 @@ fn mutate_variable_storage_class(module: &mut dr::Module) -> bool {
 
 fn insert_mismatched_variable(module: &mut dr::Module) {
     if module.functions.is_empty() {
-        *module = minimal_valid_module();
+        *module = minimal_valid_module_with_tag(0);
     }
     let int_ty = module
         .types_global_values

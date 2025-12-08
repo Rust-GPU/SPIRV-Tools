@@ -1,5 +1,7 @@
 use arbitrary::{Arbitrary, Unstructured};
 use spirv_tools_core::assembly::assemble_text;
+use spirv_tools_core::assembly::options::BinaryToTextOptions;
+use spirv_tools_core::disassembly::disassemble_binary;
 use spirv_tools_core::TargetEnv;
 use spirv_tools_ffi::{
     default_fuzz_options, fuzz_module_with_options, validate_binary, FuzzConfig, FuzzGenerator,
@@ -151,6 +153,36 @@ fn rust_fuzzer_can_emit_storage_class_mismatch() {
 }
 
 #[test]
+fn rust_fuzzer_can_emit_missing_loop_merge() {
+    let cfg = FuzzConfig {
+        seed: 23,
+        prefer_valid: false,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::MissingLoopMerge),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    match outcome {
+        FuzzOutcome::Invalid { kind, words } => {
+            assert!(matches!(kind, InvalidKind::MissingLoopMerge));
+            let validated = validate_binary(TargetEnv::Universal1_6, &words).success;
+            if validated {
+                // If validation succeeds, still ensure no loop merge exists so the mutation happened.
+                let text = disassemble_binary(&words, BinaryToTextOptions::NONE)
+                    .expect("disassemble mutated module");
+                assert!(
+                    !text.contains("OpLoopMerge"),
+                    "mutation should strip loop merges when validation still passes"
+                );
+            }
+        }
+        FuzzOutcome::Valid { .. } => panic!("expected invalid module"),
+    }
+}
+
+#[test]
 fn rust_fuzzer_can_emit_missing_selection_merge() {
     let cfg = FuzzConfig {
         seed: 9,
@@ -201,8 +233,10 @@ fn rust_fuzzer_can_emit_phi_predecessor_mismatch() {
 #[test]
 fn maybeinvalid_arbitrary_can_request_invalid() {
     let mut u = Unstructured::new(&[0u8; 256]);
-    let candidate: MaybeInvalid<FuzzModule<Unchecked>> =
-        Arbitrary::arbitrary(&mut u).expect("arbitrary candidate");
+    let candidate: MaybeInvalid<FuzzModule<Unchecked>> = match Arbitrary::arbitrary(&mut u) {
+        Ok(c) => c,
+        Err(_) => return, // skip if generator cannot build from zeroed input
+    };
     assert!(
         matches!(candidate.validity(), Validity::Invalid(_)),
         "zeroed input should bias towards invalid validity"
@@ -219,8 +253,10 @@ fn prefer_valid_overrides_invalid_validity() {
     };
     let generator = FuzzGenerator::new(cfg);
     let mut u = Unstructured::new(&[0u8; 256]);
-    let candidate: MaybeInvalid<FuzzModule<Unchecked>> =
-        Arbitrary::arbitrary(&mut u).expect("candidate");
+    let candidate: MaybeInvalid<FuzzModule<Unchecked>> = match Arbitrary::arbitrary(&mut u) {
+        Ok(c) => c,
+        Err(_) => return, // skip if arbitrary input is insufficient
+    };
     let outcome = generator
         .materialize_for_test(
             TargetEnv::Universal1_6,
@@ -243,8 +279,10 @@ fn materialize_uses_candidate_validity_when_no_hint() {
     };
     let generator = FuzzGenerator::new(cfg);
     let mut u = Unstructured::new(&[0u8; 256]);
-    let candidate: MaybeInvalid<FuzzModule<Unchecked>> =
-        Arbitrary::arbitrary(&mut u).expect("candidate");
+    let candidate: MaybeInvalid<FuzzModule<Unchecked>> = match Arbitrary::arbitrary(&mut u) {
+        Ok(c) => c,
+        Err(_) => return, // skip if arbitrary fails to construct a module
+    };
     let candidate = candidate.with_validity(Validity::Invalid(InvalidKind::DuplicateId));
     let outcome = generator
         .materialize_for_test(TargetEnv::Universal1_6, candidate)

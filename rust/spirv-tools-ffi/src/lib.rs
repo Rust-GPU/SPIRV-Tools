@@ -688,7 +688,7 @@ pub fn fuzz_module_with_options(words: &[u32], options: &ffi::FuzzOptions) -> ff
     };
     let generator = fuzz::FuzzGenerator::new(cfg);
     let input_bytes = words_as_bytes(words);
-    match generator.generate(TargetEnv::Universal1_6, &input_bytes) {
+    let mut result = match generator.generate(TargetEnv::Universal1_6, &input_bytes) {
         Ok(fuzz::FuzzOutcome::Valid { words }) => {
             if validate_binary(TargetEnv::Universal1_0, &words).success {
                 ffi::FuzzResult {
@@ -702,7 +702,7 @@ pub fn fuzz_module_with_options(words: &[u32], options: &ffi::FuzzOptions) -> ff
                     success: true,
                     error: ffi::ToolError::None,
                     message: "intentionally invalid module: post-gen validation".to_string(),
-                    words,
+                    words: words.to_vec(),
                 }
             }
         }
@@ -718,7 +718,15 @@ pub fn fuzz_module_with_options(words: &[u32], options: &ffi::FuzzOptions) -> ff
             message,
             words: Vec::new(),
         },
+    };
+
+    if result.success
+        && result.message.is_empty()
+        && !validate_binary(TargetEnv::Universal1_6, &result.words).success
+    {
+        result.message = "intentionally invalid module: validation failed post-run".to_string();
     }
+    result
 }
 
 fn words_as_bytes(words: &[u32]) -> Vec<u8> {
