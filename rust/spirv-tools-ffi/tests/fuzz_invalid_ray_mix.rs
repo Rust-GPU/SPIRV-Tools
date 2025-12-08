@@ -335,6 +335,50 @@ fn rust_fuzzer_can_emit_task_payload_on_ray_entry() {
 }
 
 #[test]
+fn rust_fuzzer_can_emit_atomic_counter_on_ray_entry() {
+    let cfg = FuzzConfig {
+        seed: 93,
+        prefer_valid: false,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::RayEntryWithAtomicCounterInterface),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    let words = match outcome {
+        spirv_tools_ffi::FuzzOutcome::Invalid { words, .. } => words,
+        spirv_tools_ffi::FuzzOutcome::Valid { words } => words,
+    };
+    assert!(
+        !validate_binary(TargetEnv::Universal1_6, &words).success,
+        "atomic counter interface on ray entry should fail validation"
+    );
+}
+
+#[test]
+fn rust_fuzzer_can_emit_image_on_ray_entry() {
+    let cfg = FuzzConfig {
+        seed: 95,
+        prefer_valid: false,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::RayEntryWithImageInterface),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    let words = match outcome {
+        spirv_tools_ffi::FuzzOutcome::Invalid { words, .. } => words,
+        spirv_tools_ffi::FuzzOutcome::Valid { words } => words,
+    };
+    assert!(
+        !validate_binary(TargetEnv::Universal1_6, &words).success,
+        "image storage-class interface on ray entry should fail validation"
+    );
+}
+
+#[test]
 fn rust_fuzzer_can_emit_missing_ray_execution_model() {
     let cfg = FuzzConfig {
         seed: 55,
