@@ -127,6 +127,30 @@ fn rust_fuzzer_can_emit_duplicate_id() {
 }
 
 #[test]
+fn rust_fuzzer_can_emit_storage_class_mismatch() {
+    let cfg = FuzzConfig {
+        seed: 21,
+        prefer_valid: false,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::StorageClassMismatch),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    match outcome {
+        FuzzOutcome::Invalid { kind, words } => {
+            assert!(matches!(kind, InvalidKind::StorageClassMismatch));
+            assert!(
+                !validate_binary(TargetEnv::Universal1_6, &words).success,
+                "storage class mismatch should fail validation"
+            );
+        }
+        FuzzOutcome::Valid { .. } => panic!("expected invalid module"),
+    }
+}
+
+#[test]
 fn rust_fuzzer_can_emit_missing_selection_merge() {
     let cfg = FuzzConfig {
         seed: 9,

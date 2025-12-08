@@ -26,6 +26,7 @@ pub enum InvalidKind {
     DuplicateId,
     MissingSelectionMerge,
     PhiPredecessorMismatch,
+    StorageClassMismatch,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -129,7 +130,11 @@ impl Arbitrary<'_> for FuzzModule<Unchecked> {
             let func_ty = builder.type_function(void, vec![]);
             let int_ty = builder.type_int(32, 0);
             let bool_ty = builder.type_bool();
+            let array_len = builder.constant_bit32(int_ty, 4);
+            let array_int = builder.type_array(int_ty, array_len);
+            let struct_ty = builder.type_struct(vec![int_ty, array_int]);
             let ptr_fn_int = builder.type_pointer(None, StorageClass::Function, int_ty);
+            let _ptr_fn_struct = builder.type_pointer(None, StorageClass::Function, struct_ty);
             let zero_const = builder.constant_bit32(int_ty, 0);
             let one_const = builder.constant_bit32(int_ty, 1);
             let cond_true = builder.constant_true(bool_ty);
@@ -601,6 +606,11 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
                 }
             }
         }
+        InvalidKind::StorageClassMismatch => {
+            if !mutate_variable_storage_class(module) {
+                insert_mismatched_variable(module);
+            }
+        }
     }
 }
 
@@ -642,4 +652,74 @@ fn minimal_valid_module() -> Module {
 
 fn minimal_valid_words() -> Vec<u32> {
     minimal_valid_module().assemble()
+}
+
+fn mutate_variable_storage_class(module: &mut dr::Module) -> bool {
+    for func in &mut module.functions {
+        for block in &mut func.blocks {
+            for inst in &mut block.instructions {
+                if inst.class.opcode == Op::Variable && !inst.operands.is_empty() {
+                    inst.operands[0] = StorageClass::Private.into();
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+fn insert_mismatched_variable(module: &mut dr::Module) {
+    if module.functions.is_empty() {
+        *module = minimal_valid_module();
+    }
+    let int_ty = module
+        .types_global_values
+        .iter()
+        .find_map(|inst| (inst.class.opcode == Op::TypeInt).then_some(inst.result_id))
+        .flatten()
+        .unwrap_or_else(|| {
+            let id = fresh_id(module);
+            module.types_global_values.push(Instruction::new(
+                Op::TypeInt,
+                None,
+                Some(id),
+                vec![32u32.into(), 0u32.into()],
+            ));
+            id
+        });
+    let ptr_fn = module
+        .types_global_values
+        .iter()
+        .find_map(|inst| (inst.class.opcode == Op::TypePointer).then_some(inst.result_id))
+        .flatten()
+        .unwrap_or_else(|| {
+            let id = fresh_id(module);
+            module.types_global_values.push(Instruction::new(
+                Op::TypePointer,
+                None,
+                Some(id),
+                vec![StorageClass::Function.into(), int_ty.into()],
+            ));
+            id
+        });
+
+    let var_id = {
+        let header = ensure_header(module);
+        let id = header.bound;
+        header.bound += 1;
+        id
+    };
+    if let Some(func) = module.functions.first_mut() {
+        if let Some(block) = func.blocks.first_mut() {
+            block.instructions.insert(
+                0,
+                Instruction::new(
+                    Op::Variable,
+                    Some(ptr_fn),
+                    Some(var_id),
+                    vec![StorageClass::UniformConstant.into()],
+                ),
+            );
+        }
+    }
 }
