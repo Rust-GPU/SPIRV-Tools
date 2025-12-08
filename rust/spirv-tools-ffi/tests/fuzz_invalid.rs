@@ -61,6 +61,30 @@ fn rust_fuzzer_can_target_specific_invalid_kind() {
 }
 
 #[test]
+fn rust_fuzzer_can_emit_duplicate_binding() {
+    let cfg = FuzzConfig {
+        seed: 31,
+        prefer_valid: false,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::DuplicateBinding),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    match outcome {
+        FuzzOutcome::Invalid { kind, words } => {
+            assert!(matches!(kind, InvalidKind::DuplicateBinding));
+            assert!(
+                !validate_binary(TargetEnv::Universal1_6, &words).success,
+                "duplicate binding should fail validation"
+            );
+        }
+        FuzzOutcome::Valid { .. } => panic!("expected invalid module"),
+    }
+}
+
+#[test]
 fn rust_fuzzer_respects_prefer_valid_even_with_hint() {
     let cfg = FuzzConfig {
         seed: 0,

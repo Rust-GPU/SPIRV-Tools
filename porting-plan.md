@@ -965,6 +965,7 @@ Tasks:
 - [x] Add storage-class mismatch and loop-merge removal invalids with structured loop generation guarded by shrink-friendly Arbitrary impls.
 - [x] Exercise composite types (struct/array) in the fuzz generator via construct/extract/insert and aggregate stores, keeping the generator shrink-friendly.
 - [x] Add access-chain/decoration invalid mutations to broaden interface/aggregate coverage.
+- [x] Add decoration/interface/access-chain invalids (duplicate bindings, duplicate entry-point interfaces, invalid decoration targets, access-chain overshoot) plus CLI fuzz smoke coverage to guard the Rust pipeline end-to-end.
 - Extend `InvalidKind`/structured generators to cover control flow (blocks/branches/merges), SSA/phi shapes, execution modes, and descriptor/interface decorations, with shrink-friendly `Arbitrary` impls.
 - Add CLI/FFI parity fuzz smokes that run the Rust fuzz pipeline and diff diagnostics/exit codes vs. the legacy tools when available; keep skips clean when C++ binaries are absent.
 - Add a light `cargo fuzz` smoke script to CI (optional by default) and document how to run targeted seeds/hints locally.

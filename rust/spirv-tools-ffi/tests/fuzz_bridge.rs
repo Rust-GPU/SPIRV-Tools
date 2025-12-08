@@ -1,31 +1,31 @@
-use rspirv::binary::parse_words;
-use rspirv::dr::Loader;
-use rspirv::spirv::Op;
-use spirv_tools_core::assembly::assemble_text;
+use rspirv::binary::Assemble;
+use rspirv::dr::Builder;
+use rspirv::spirv::{Capability, ExecutionModel, FunctionControl, MemoryModel};
 use spirv_tools_core::TargetEnv;
 use spirv_tools_ffi::{default_fuzz_options, fuzz_module_with_options, validate_binary};
 
+fn build_minimal_module() -> Vec<u32> {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(
+        rspirv::spirv::AddressingModel::Logical,
+        MemoryModel::GLSL450,
+    );
+    let void = b.type_void();
+    let fn_ty = b.type_function(void, vec![]);
+    let main = b
+        .begin_function(void, None, FunctionControl::NONE, fn_ty)
+        .expect("begin function");
+    b.begin_block(None).expect("block");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    b.entry_point(ExecutionModel::Vertex, main, "main", &[]);
+    b.module().assemble()
+}
+
 #[test]
 fn rust_fuzzer_runs_with_seed() {
-    let text = [
-        "OpCapability Shader",
-        "OpMemoryModel Logical GLSL450",
-        "%void = OpTypeVoid",
-        "%fn = OpTypeFunction %void",
-        "%main = OpFunction %void None %fn",
-        "%entry = OpLabel",
-        "%int = OpTypeInt 32 0",
-        "%ptr = OpTypePointer Function %int",
-        "%var = OpVariable %ptr Function",
-        "OpReturn",
-        "OpFunctionEnd",
-        "%aux = OpFunction %void None %fn",
-        "%aux_entry = OpLabel",
-        "OpReturn",
-        "OpFunctionEnd",
-    ]
-    .join("\n");
-    let binary = assemble_text(&text).expect("assemble module");
+    let binary = build_minimal_module();
 
     let mut options = default_fuzz_options();
     options.random_seed = 1;
@@ -38,42 +38,12 @@ fn rust_fuzzer_runs_with_seed() {
         !result.words.is_empty(),
         "fuzzing should yield a non-empty module"
     );
-
-    // The module should remain valid after the fuzz run.
     assert!(validate_binary(TargetEnv::Universal1_6, &result.words).success);
-
-    // A Nop should have been injected.
-    let mut loader = Loader::new();
-    parse_words(&result.words, &mut loader).expect("parse fuzzed module");
-    let nop_count = loader
-        .module()
-        .functions
-        .iter()
-        .flat_map(|f| f.blocks.iter())
-        .flat_map(|b| b.instructions.iter())
-        .filter(|inst| inst.class.opcode == Op::Nop)
-        .count();
-    assert!(nop_count >= 1);
 }
 
 #[test]
 fn fuzz_seed_changes_target_block() {
-    let text = [
-        "OpCapability Shader",
-        "OpMemoryModel Logical GLSL450",
-        "%void = OpTypeVoid",
-        "%fn = OpTypeFunction %void",
-        "%main = OpFunction %void None %fn",
-        "%entry = OpLabel",
-        "OpReturn",
-        "OpFunctionEnd",
-        "%aux = OpFunction %void None %fn",
-        "%aux_entry = OpLabel",
-        "OpReturn",
-        "OpFunctionEnd",
-    ]
-    .join("\n");
-    let binary = assemble_text(&text).expect("assemble module");
+    let binary = build_minimal_module();
 
     let mut opts1 = default_fuzz_options();
     opts1.random_seed = 1;

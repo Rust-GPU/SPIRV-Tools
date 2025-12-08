@@ -30,6 +30,8 @@ pub enum InvalidKind {
     MissingLoopMerge,
     AccessChainOvershoot,
     InvalidDecorationTarget,
+    DuplicateBinding,
+    DuplicateEntryPointInterface,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -800,6 +802,44 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
                 ],
             ));
         }
+        InvalidKind::DuplicateBinding => {
+            let (ptr_ty, vars) = ensure_uniform_vars(module, 2);
+            for id in &vars {
+                module.annotations.push(Instruction::new(
+                    Op::Decorate,
+                    None,
+                    None,
+                    vec![(*id).into(), spirv::Decoration::Binding.into(), 0u32.into()],
+                ));
+            }
+            for var_id in vars {
+                if !module
+                    .types_global_values
+                    .iter()
+                    .any(|inst| inst.result_id == Some(var_id))
+                {
+                    module.types_global_values.insert(
+                        0,
+                        Instruction::new(
+                            Op::Variable,
+                            Some(ptr_ty),
+                            Some(var_id),
+                            vec![StorageClass::UniformConstant.into()],
+                        ),
+                    );
+                }
+            }
+        }
+        InvalidKind::DuplicateEntryPointInterface => {
+            if let Some(ep) = module.entry_points.first_mut() {
+                if let Some(first) = ep.operands.get(2).cloned() {
+                    ep.operands.push(first);
+                } else {
+                    ep.operands.push(1u32.into());
+                    ep.operands.push(1u32.into());
+                }
+            }
+        }
     }
 }
 
@@ -1003,4 +1043,43 @@ fn inject_bad_access_chain(module: &mut dr::Module) {
             );
         }
     }
+}
+
+fn ensure_uniform_vars(module: &mut dr::Module, count: usize) -> (u32, Vec<u32>) {
+    let int_ty = module
+        .types_global_values
+        .iter()
+        .find_map(|inst| (inst.class.opcode == Op::TypeInt).then_some(inst.result_id))
+        .flatten()
+        .unwrap_or_else(|| {
+            let id = fresh_id(module);
+            module.types_global_values.push(Instruction::new(
+                Op::TypeInt,
+                None,
+                Some(id),
+                vec![32u32.into(), 0u32.into()],
+            ));
+            id
+        });
+    let ptr_ty = module
+        .types_global_values
+        .iter()
+        .find_map(|inst| (inst.class.opcode == Op::TypePointer).then_some(inst.result_id))
+        .flatten()
+        .unwrap_or_else(|| {
+            let id = fresh_id(module);
+            module.types_global_values.push(Instruction::new(
+                Op::TypePointer,
+                None,
+                Some(id),
+                vec![StorageClass::UniformConstant.into(), int_ty.into()],
+            ));
+            id
+        });
+
+    let mut vars = Vec::new();
+    for _ in 0..count {
+        vars.push(fresh_id(module));
+    }
+    (ptr_ty, vars)
 }

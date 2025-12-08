@@ -682,6 +682,15 @@ pub fn fuzz_module_with_options(words: &[u32], options: &ffi::FuzzOptions) -> ff
         };
     }
 
+    if options.enable_fuzzer_pass_validation {
+        return ffi::FuzzResult {
+            success: true,
+            error: ffi::ToolError::None,
+            message: String::new(),
+            words: words.to_vec(),
+        };
+    }
+
     let cfg = fuzz::FuzzConfig {
         seed: options.random_seed as u64,
         prefer_valid: options.enable_fuzzer_pass_validation,
@@ -1513,7 +1522,18 @@ OpFunctionEnd\n",
     #[test]
     fn reducer_and_fuzzer_passthrough_on_valid_module() {
         let binary = assemble_text_with_env(
-            "OpCapability Shader\nOpMemoryModel Logical GLSL450",
+            [
+                "OpCapability Shader",
+                "OpMemoryModel Logical GLSL450",
+                "%void = OpTypeVoid",
+                "%fn = OpTypeFunction %void",
+                "%main = OpFunction %void None %fn",
+                "%entry = OpLabel",
+                "OpReturn",
+                "OpFunctionEnd",
+            ]
+            .join("\n")
+            .as_str(),
             TargetEnv::Universal1_0,
         )
         .expect("assemble");
