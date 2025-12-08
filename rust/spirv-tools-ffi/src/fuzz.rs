@@ -39,6 +39,8 @@ pub enum InvalidKind {
     DuplicateCallableDataInterface,
     DuplicateHitAttributeInterface,
     RayEntryWithNonRayInterface,
+    MixedRayInterfaceStorageClasses,
+    MissingRayExecutionModel,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -937,6 +939,28 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
             let ptr = ensure_pointer_type(module, StorageClass::Input, int_ty);
             let ids = insert_global_vars(module, ptr, StorageClass::Input, 1);
             push_interfaces(module, &ids);
+        }
+        InvalidKind::MixedRayInterfaceStorageClasses => {
+            ensure_ray_entry_point(module);
+            let int_ty = ensure_int_type(module);
+            let input_ptr = ensure_pointer_type(module, StorageClass::Input, int_ty);
+            let uniform_ptr =
+                ensure_pointer_type(module, StorageClass::UniformConstant, int_ty);
+            let ids_input = insert_global_vars(module, input_ptr, StorageClass::Input, 1);
+            let ids_uniform =
+                insert_global_vars(module, uniform_ptr, StorageClass::UniformConstant, 1);
+            let mut ids = ids_input;
+            ids.extend(ids_uniform);
+            push_interfaces(module, &ids);
+        }
+        InvalidKind::MissingRayExecutionModel => {
+            ensure_ray_entry_point(module);
+            // Force a non-ray execution model but keep ray-only interfaces to trigger validation.
+            if let Some(ep) = module.entry_points.first_mut() {
+                if let Some(model) = ep.operands.get_mut(0) {
+                    *model = ExecutionModel::Vertex.into();
+                }
+            }
         }
     }
 }
