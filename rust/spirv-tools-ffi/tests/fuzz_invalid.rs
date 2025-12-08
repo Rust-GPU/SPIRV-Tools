@@ -56,3 +56,23 @@ fn rust_fuzzer_can_target_specific_invalid_kind() {
         FuzzOutcome::Valid { .. } => panic!("expected invalid module"),
     }
 }
+
+#[test]
+fn rust_fuzzer_respects_prefer_valid_even_with_hint() {
+    let cfg = FuzzConfig {
+        seed: 0,
+        prefer_valid: true,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::MissingMemoryModel),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    match outcome {
+        FuzzOutcome::Valid { words } => {
+            assert!(validate_binary(TargetEnv::Universal1_6, &words).success);
+        }
+        FuzzOutcome::Invalid { .. } => panic!("expected valid module when prefer_valid=true"),
+    }
+}
