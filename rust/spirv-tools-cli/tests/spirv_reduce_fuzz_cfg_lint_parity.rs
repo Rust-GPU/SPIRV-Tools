@@ -153,6 +153,23 @@ fn corpus_modules() -> Vec<String> {
             "OpFunctionEnd",
         ]
         .join("\n"),
+        [
+            "OpCapability RayTracingKHR",
+            "OpExtension \"SPV_KHR_ray_tracing\"",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint RayGenerationKHR %main \"main\" %payload",
+            "%void = OpTypeVoid",
+            "%u32 = OpTypeInt 32 0",
+            "%payload_ty = OpTypeStruct %u32",
+            "%ptr_payload = OpTypePointer IncomingRayPayloadKHR %payload_ty",
+            "%fn = OpTypeFunction %void",
+            "%payload = OpVariable %ptr_payload IncomingRayPayloadKHR",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n"),
     ]
 }
 
