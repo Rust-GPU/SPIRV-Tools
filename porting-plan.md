@@ -970,6 +970,7 @@ Tasks:
 - [x] Broaden ray interface invalids (callable data and hit attributes on non-ray entry points) to stress ray interface storage-class validation in fuzzing.
 - [x] Add duplicate ray interface invalids (payload, callable data, hit attribute) to exercise uniqueness checks in ray entry-point validation.
 - [x] Add FFI fuzz bridge coverage to ensure disabled C++ fuzz path surfaces a clear status while Rust-first fuzzing remains the default.
+- [x] Add an FFI fuzz bridge smoke test that skips cleanly when the C++ bridge is absent/disabled and validates output when present.
 - Extend `InvalidKind`/structured generators to cover control flow (blocks/branches/merges), SSA/phi shapes, execution modes, and descriptor/interface decorations, with shrink-friendly `Arbitrary` impls.
 - Add CLI/FFI parity fuzz smokes that run the Rust fuzz pipeline and diff diagnostics/exit codes vs. the legacy tools when available; keep skips clean when C++ binaries are absent.
 - Add a light `cargo fuzz` smoke script to CI (optional by default) and document how to run targeted seeds/hints locally.
