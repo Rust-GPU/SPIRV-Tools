@@ -115,3 +115,39 @@ fn spirv_fuzz_cli_matches_cpp_output_when_available() {
         assert_eq!(rust_bytes, cpp_bytes, "spirv-fuzz outputs differed on corpus {idx}");
     }
 }
+
+#[test]
+fn spirv_fuzz_cli_reports_errors_like_cpp() {
+    let Some(cpp_tool) = find_cpp_tool("SPIRV_CPP_FUZZ", "spirv-fuzz") else {
+        eprintln!("SPIRV_CPP_FUZZ not set and spirv-fuzz not found on PATH; skipping parity");
+        return;
+    };
+    let rust_fuzz = rust_bin("spirv-fuzz");
+    let dir = tempdir().expect("tempdir");
+    let invalid = dir.path().join("invalid.spv");
+    fs::write(&invalid, &[0u8, 1, 2, 3]).expect("write invalid spv");
+
+    let rust = Command::new(&rust_fuzz)
+        .arg(&invalid)
+        .output()
+        .expect("run rust spirv-fuzz");
+    let cpp = Command::new(&cpp_tool)
+        .arg(&invalid)
+        .output()
+        .expect("run cpp spirv-fuzz");
+
+    assert!(
+        !rust.status.success(),
+        "rust spirv-fuzz should fail on invalid input"
+    );
+    assert!(
+        !cpp.status.success(),
+        "cpp spirv-fuzz should fail on invalid input"
+    );
+    let rust_err = String::from_utf8_lossy(&rust.stderr);
+    let cpp_err = String::from_utf8_lossy(&cpp.stderr);
+    assert!(
+        !rust_err.is_empty() && !cpp_err.is_empty(),
+        "both rust and cpp should emit diagnostics"
+    );
+}
