@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use arbitrary::{Arbitrary, Unstructured};
 use rspirv::binary::Assemble;
 use rspirv::dr::{self, Builder, InsertPoint, Instruction, Module};
-use rspirv::spirv::{AddressingModel, Capability, ExecutionModel, FunctionControl, MemoryModel, Op};
+use rspirv::spirv::{self, AddressingModel, Capability, ExecutionModel, FunctionControl, MemoryModel, Op};
 use spirv_tools_core::validation::validate_module;
 use spirv_tools_core::TargetEnv;
 
@@ -18,6 +18,7 @@ pub enum InvalidKind {
     MissingTerminator,
     MissingEntryPoint,
     TypeMismatch,
+    BrokenIdBound,
 }
 
 pub struct FuzzConfig {
@@ -183,5 +184,18 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
                 }
             }
         }
+        InvalidKind::BrokenIdBound => {
+            if let Some(header) = module.header.as_mut() {
+                header.bound = 1;
+            } else {
+            module.header = Some(dr::ModuleHeader {
+                magic_number: spirv::MAGIC_NUMBER,
+                version: ((spirv::MAJOR_VERSION as u32) << 16) | ((spirv::MINOR_VERSION as u32) << 8),
+                generator: 0,
+                bound: 1,
+                reserved_word: 0,
+            });
+        }
     }
+}
 }
