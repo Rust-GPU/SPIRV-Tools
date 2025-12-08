@@ -383,6 +383,27 @@ fn build_bor_absorb_and_module() -> Vec<u32> {
     b.module().assemble()
 }
 
+fn build_bor_distribute_over_bxor_module() -> Vec<u32> {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![int, int]);
+    let _func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let x = b.function_parameter(int).expect("x");
+    let y = b.function_parameter(int).expect("y");
+    let z = b.constant_bit32(int, 0xFF00FF00);
+    let _ = b.begin_block(None).unwrap();
+    let xor = b.bitwise_xor(int, None, y, z).expect("xor");
+    let _ = b.bitwise_or(int, None, x, xor).expect("bor");
+    b.ret().unwrap();
+    b.end_function().unwrap();
+    b.module().assemble()
+}
+
 fn arith_signature(words: &[u32]) -> Vec<(Op, Vec<String>)> {
     let mut loader = Loader::new();
     rspirv::binary::parse_words(words, &mut loader).expect("parse module");
@@ -1418,6 +1439,31 @@ fn cli_opt_block_absorbs_bor_over_band() {
     assert!(
         !has_bitwise_ops(&rust_words),
         "bitwise ops should be eliminated after absorption rewrite"
+    );
+}
+
+#[test]
+fn cli_opt_block_distributes_bor_over_bxor() {
+    let _guard = ENV_GUARD.lock().unwrap();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let words = build_bor_distribute_over_bxor_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let rust_output = dir.path().join("rust_output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let rust_status = Command::new(exe)
+        .arg(&input)
+        .arg(&rust_output)
+        .status()
+        .expect("run opt_block");
+    assert!(rust_status.success(), "opt_block should succeed");
+
+    let rust_words = bytes_to_words(&std::fs::read(&rust_output).unwrap());
+    assert!(
+        !has_bitwise_ops(&rust_words),
+        "bitwise ops should be simplified after distribution rewrite"
     );
 }
 

@@ -546,6 +546,8 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
             BitXorComplement { _x: var("?x") }
         }),
         rewrite!("bxor-self"; "(bxor ?x ?x)" => { BitXorSelf { _x: var("?x") } }),
+        rewrite!("bor-distribute-over-xor"; "(bor ?x (bxor ?y ?z))" => "(bxor (bor ?x ?y) (bor ?x ?z))"),
+        rewrite!("bor-distribute-over-xor-left"; "(bor (bxor ?y ?z) ?x)" => "(bxor (bor ?x ?y) (bor ?x ?z))"),
         rewrite!("bnot-const-fold"; "(bnot ?x)" => { BitNotFold { x: var("?x") } }),
         rewrite!("bnot-double"; "(bnot (bnot ?x))" => { BitNotDouble { x: var("?x") } }),
         rewrite!("rotate-const-pattern"; "(bor (shl ?x ?s) (shr_u ?x ?t))" => {
