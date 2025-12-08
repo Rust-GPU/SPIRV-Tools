@@ -66,6 +66,7 @@ pub enum InvalidKind {
     RayEntryWithDeviceOnlyInterface,
     RayEntryWithInputOutputMix,
     RayEntryWithHostOnlyInterface,
+    RayEntryWithDanglingInterfaceId,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1079,6 +1080,18 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
             ensure_ray_entry_point(module);
             let id = insert_interface_var(module, StorageClass::HostOnlyINTEL);
             push_interfaces(module, &[id]);
+        }
+        InvalidKind::RayEntryWithDanglingInterfaceId => {
+            ensure_ray_entry_point(module);
+            // Push an interface id that is intentionally out of the declared bound.
+            let dangling_id = {
+                let header = ensure_header(module);
+                // Choose an id well beyond the current bound.
+                header.bound + 100
+            };
+            if let Some(ep) = module.entry_points.first_mut() {
+                ep.operands.push(dangling_id.into());
+            }
         }
         InvalidKind::MissingRayExecutionModel => {
             ensure_ray_entry_point(module);
