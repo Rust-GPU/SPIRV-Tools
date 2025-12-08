@@ -82,6 +82,14 @@ fn rust_and_cpp_fuzz_both_fail_on_invalid_when_cpp_available() {
         !validate_binary(TargetEnv::Universal1_6, &invalid).success,
         "baseline validation should fail for invalid input"
     );
+    assert!(
+        !rust.message.is_empty(),
+        "Rust fuzz should surface diagnostics on invalid input"
+    );
+    assert!(
+        !cpp.message.is_empty(),
+        "C++ fuzz should surface diagnostics on invalid input"
+    );
 }
 
 #[test]

@@ -1030,6 +1030,14 @@ pub unsafe fn destroy_context(handle: u64) {
 mod tests {
     use super::*;
     use spirv_tools_core::assembly::{assemble_text, assemble_text_with_env};
+    use std::sync::{Mutex, OnceLock};
+
+    fn assembler_override_guard() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(Default::default)
+            .lock()
+            .expect("assembler override lock poisoned")
+    }
 
     #[test]
     fn rejects_invalid_environment() {
@@ -1092,6 +1100,7 @@ OpFunctionEnd\n";
     #[test]
     fn rust_assembler_preserves_function_body_via_context() {
         use spirv_tools_core::assembly::TextToBinaryOptions;
+        let _guard = assembler_override_guard();
 
         set_rust_text_assembler_override(true);
         let env = TargetEnv::Universal1_3.to_raw();
@@ -1139,6 +1148,7 @@ OpFunctionEnd\n";
     #[test]
     fn rust_assembler_rejects_invalid_text_with_override() {
         use spirv_tools_core::assembly::TextToBinaryOptions;
+        let _guard = assembler_override_guard();
         set_rust_text_assembler_override(true);
         let env = TargetEnv::Universal1_0.to_raw();
         let pointer = NonNull::<c_void>::dangling().as_ptr() as usize;
@@ -1171,6 +1181,7 @@ OpFunctionEnd\n";
     #[test]
     fn rust_and_cpp_assembler_match_with_override() {
         use spirv_tools_core::assembly::TextToBinaryOptions;
+        let _guard = assembler_override_guard();
         let env = TargetEnv::Universal1_3.to_raw();
         let pointer = NonNull::<c_void>::dangling().as_ptr() as usize;
         let handle = create_context(env, pointer);
