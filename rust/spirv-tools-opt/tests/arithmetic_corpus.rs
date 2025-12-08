@@ -872,3 +872,92 @@ fn corpus_preserves_umod_by_zero() {
     let optimized = optimize_arith_block(&block).expect("optimize");
     assert_eq!(optimized, block, "umod by zero should be preserved");
 }
+
+#[test]
+fn corpus_absorbs_band_over_bor_constant_case() {
+    let int = 1;
+    let x_val = 0x1234_u32;
+    let y_val = 0xFFFF0000_u32;
+    let x_const = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(x_val)],
+    );
+    let y_const = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(y_val)],
+    );
+    let bor = inst(
+        Op::BitwiseOr,
+        int,
+        4,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(3)],
+    );
+    let band = inst(
+        Op::BitwiseAnd,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(4)],
+    );
+    let optimized = optimize_arith_block(&[x_const, y_const, bor, band]).expect("optimize");
+    let folded = optimized.iter().find(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(5)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(x_val)]
+    });
+    assert!(
+        folded.is_some(),
+        "band absorption should fold to the left operand constant"
+    );
+}
+
+#[test]
+fn corpus_distributes_bor_over_bxor_and_folds() {
+    let int = 1;
+    let x_val = 0xF0_u32;
+    let y_val = 0x0F_u32;
+    let z_val = 0xFF_u32;
+    let x = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(x_val)],
+    );
+    let y = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(y_val)],
+    );
+    let z = inst(
+        Op::Constant,
+        int,
+        4,
+        vec![rspirv::dr::Operand::LiteralBit32(z_val)],
+    );
+    let xor = inst(
+        Op::BitwiseXor,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(3), rspirv::dr::Operand::IdRef(4)],
+    );
+    let bor = inst(
+        Op::BitwiseOr,
+        int,
+        6,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(5)],
+    );
+    let optimized = optimize_arith_block(&[x, y, z, xor, bor]).expect("optimize");
+    let folded = optimized.iter().find(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(6)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(x_val)]
+    });
+    assert!(
+        folded.is_some(),
+        "bor distribution over xor should fold to the expected constant"
+    );
+}
