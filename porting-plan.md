@@ -1065,4 +1065,4 @@ Tasks for this milestone:
 - Add bitwise distributivity/absorption rewrites (and/or/xor over masks) using e-graphs, keeping id stability and cost-aware ordering with Rust tests plus CLI/FFI parity against C++. (Progress: absorption and band/bor/xor distributivity rewrites added with corpus + CLI tests eliminating redundant bitwise ops.)
 - Extend e-graph coverage to mixed arithmetic-bitwise forms (e.g., `x + (x & mask)` simplifications) with unit and CLI parity tests mirroring the C++ optimizer behavior.
 - Introduce criterion benches for the new rewrites (small/medium blocks) to track performance vs. existing arithmetic passes; keep hyperfine smoke green.
-- Add a fuzz target exercising mixed arithmetic/bitwise blocks to guard the new rewrites against panics and misfolds.
+- Add a fuzz target exercising mixed arithmetic/bitwise blocks to guard the new rewrites against panics and misfolds. (Progress: added `arith_bitwise` cargo-fuzz target.)

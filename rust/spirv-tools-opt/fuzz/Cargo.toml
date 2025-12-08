@@ -27,3 +27,9 @@ name = "arith_block"
 path = "fuzz_targets/arith_block.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "arith_bitwise"
+path = "fuzz_targets/arith_bitwise.rs"
+test = false
+doc = false
