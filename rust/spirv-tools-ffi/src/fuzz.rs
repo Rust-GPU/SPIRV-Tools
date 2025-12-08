@@ -61,6 +61,8 @@ pub enum InvalidKind {
     RayEntryWithTaskPayloadInterface,
     RayEntryWithAtomicCounterInterface,
     RayEntryWithImageInterface,
+    RayEntryWithPhysicalStorageInterface,
+    RayEntryWithCodeSectionInterface,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1047,6 +1049,16 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
         InvalidKind::RayEntryWithImageInterface => {
             ensure_ray_entry_point(module);
             let id = insert_interface_var(module, StorageClass::Image);
+            push_interfaces(module, &[id]);
+        }
+        InvalidKind::RayEntryWithPhysicalStorageInterface => {
+            ensure_ray_entry_point(module);
+            let id = insert_interface_var(module, StorageClass::PhysicalStorageBuffer);
+            push_interfaces(module, &[id]);
+        }
+        InvalidKind::RayEntryWithCodeSectionInterface => {
+            ensure_ray_entry_point(module);
+            let id = insert_interface_var(module, StorageClass::CodeSectionINTEL);
             push_interfaces(module, &[id]);
         }
         InvalidKind::MissingRayExecutionModel => {
