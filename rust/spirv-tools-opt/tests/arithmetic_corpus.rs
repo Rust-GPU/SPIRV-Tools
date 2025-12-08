@@ -1002,3 +1002,44 @@ fn corpus_absorbs_add_of_masked_value() {
         "add of x & mask plus x should fold to x"
     );
 }
+
+#[test]
+fn corpus_absorbs_bor_with_masked_value() {
+    let int = 1;
+    let x_val = 0x0F0F_F0F0u32;
+    let mask_val = 0xFF00_FF00u32;
+    let x = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(x_val)],
+    );
+    let mask = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(mask_val)],
+    );
+    let band = inst(
+        Op::BitwiseAnd,
+        int,
+        4,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(3)],
+    );
+    let bor = inst(
+        Op::BitwiseOr,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(4)],
+    );
+    let optimized = optimize_arith_block(&[x, mask, band, bor]).expect("optimize");
+    let folded = optimized.iter().find(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(5)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(x_val)]
+    });
+    assert!(
+        folded.is_some(),
+        "bor absorption should fold to the left operand constant"
+    );
+}
