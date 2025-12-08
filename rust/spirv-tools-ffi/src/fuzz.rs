@@ -35,6 +35,9 @@ pub enum InvalidKind {
     RayPayloadInterfaceOnNonRayEntry,
     CallableDataInterfaceOnNonRayEntry,
     HitAttributeInterfaceOnNonRayEntry,
+    DuplicateRayPayloadInterface,
+    DuplicateCallableDataInterface,
+    DuplicateHitAttributeInterface,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -906,6 +909,27 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
                 ep.operands.push(var_id.into());
             }
         }
+        InvalidKind::DuplicateRayPayloadInterface => {
+            ensure_ray_entry_point(module);
+            let int_ty = ensure_int_type(module);
+            let ptr = ensure_pointer_type(module, StorageClass::IncomingRayPayloadKHR, int_ty);
+            let ids = insert_global_vars(module, ptr, StorageClass::IncomingRayPayloadKHR, 2);
+            push_interfaces(module, &ids);
+        }
+        InvalidKind::DuplicateCallableDataInterface => {
+            ensure_ray_entry_point(module);
+            let int_ty = ensure_int_type(module);
+            let ptr = ensure_pointer_type(module, StorageClass::IncomingCallableDataKHR, int_ty);
+            let ids = insert_global_vars(module, ptr, StorageClass::IncomingCallableDataKHR, 2);
+            push_interfaces(module, &ids);
+        }
+        InvalidKind::DuplicateHitAttributeInterface => {
+            ensure_ray_entry_point(module);
+            let int_ty = ensure_int_type(module);
+            let ptr = ensure_pointer_type(module, StorageClass::HitAttributeKHR, int_ty);
+            let ids = insert_global_vars(module, ptr, StorageClass::HitAttributeKHR, 2);
+            push_interfaces(module, &ids);
+        }
     }
 }
 
@@ -1116,4 +1140,43 @@ fn ensure_pointer_type(module: &mut dr::Module, storage: StorageClass, target: u
             ));
             id
         })
+}
+
+fn insert_global_vars(
+    module: &mut dr::Module,
+    ptr_ty: u32,
+    storage: StorageClass,
+    count: usize,
+) -> Vec<u32> {
+    let mut ids = Vec::with_capacity(count);
+    for _ in 0..count {
+        let id = fresh_id(module);
+        module.types_global_values.push(Instruction::new(
+            Op::Variable,
+            Some(ptr_ty),
+            Some(id),
+            vec![storage.into()],
+        ));
+        ids.push(id);
+    }
+    ids
+}
+
+fn ensure_ray_entry_point(module: &mut dr::Module) {
+    if module.entry_points.is_empty() || module.functions.is_empty() {
+        *module = minimal_valid_module_with_tag(0);
+    }
+    if let Some(ep) = module.entry_points.first_mut() {
+        if let Some(model) = ep.operands.get_mut(0) {
+            *model = ExecutionModel::RayGenerationKHR.into();
+        }
+    }
+}
+
+fn push_interfaces(module: &mut dr::Module, ids: &[u32]) {
+    if let Some(ep) = module.entry_points.first_mut() {
+        for id in ids {
+            ep.operands.push((*id).into());
+        }
+    }
 }

@@ -968,6 +968,7 @@ Tasks:
 - [x] Add decoration/interface/access-chain invalids (duplicate bindings, duplicate entry-point interfaces, invalid decoration targets, access-chain overshoot) plus CLI fuzz smoke coverage to guard the Rust pipeline end-to-end.
 - [x] Add ray-entry interface invalid generation (payload on non-ray entry) to exercise ray-storage-class validation in the fuzz corpus.
 - [x] Broaden ray interface invalids (callable data and hit attributes on non-ray entry points) to stress ray interface storage-class validation in fuzzing.
+- [x] Add duplicate ray interface invalids (payload, callable data, hit attribute) to exercise uniqueness checks in ray entry-point validation.
 - Extend `InvalidKind`/structured generators to cover control flow (blocks/branches/merges), SSA/phi shapes, execution modes, and descriptor/interface decorations, with shrink-friendly `Arbitrary` impls.
 - Add CLI/FFI parity fuzz smokes that run the Rust fuzz pipeline and diff diagnostics/exit codes vs. the legacy tools when available; keep skips clean when C++ binaries are absent.
 - Add a light `cargo fuzz` smoke script to CI (optional by default) and document how to run targeted seeds/hints locally.

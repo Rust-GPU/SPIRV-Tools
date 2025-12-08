@@ -306,6 +306,84 @@ fn rust_fuzzer_can_emit_hit_attribute_interface_on_non_ray_entry() {
 }
 
 #[test]
+fn rust_fuzzer_can_emit_duplicate_ray_payload_interface() {
+    let cfg = FuzzConfig {
+        seed: 41,
+        prefer_valid: false,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::DuplicateRayPayloadInterface),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    match outcome {
+        FuzzOutcome::Invalid { kind, words } => {
+            assert!(matches!(kind, InvalidKind::DuplicateRayPayloadInterface));
+            assert!(
+                !validate_binary(TargetEnv::Universal1_6, &words).success,
+                "duplicate ray payload interface should fail validation"
+            );
+        }
+        FuzzOutcome::Valid { .. } => panic!("expected invalid module"),
+    }
+}
+
+#[test]
+fn rust_fuzzer_can_emit_duplicate_callable_data_interface() {
+    let cfg = FuzzConfig {
+        seed: 43,
+        prefer_valid: false,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::DuplicateCallableDataInterface),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    match outcome {
+        FuzzOutcome::Invalid { kind, words } => {
+            assert!(matches!(
+                kind,
+                InvalidKind::DuplicateCallableDataInterface
+            ));
+            assert!(
+                !validate_binary(TargetEnv::Universal1_6, &words).success,
+                "duplicate callable data interface should fail validation"
+            );
+        }
+        FuzzOutcome::Valid { .. } => panic!("expected invalid module"),
+    }
+}
+
+#[test]
+fn rust_fuzzer_can_emit_duplicate_hit_attribute_interface() {
+    let cfg = FuzzConfig {
+        seed: 45,
+        prefer_valid: false,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::DuplicateHitAttributeInterface),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    match outcome {
+        FuzzOutcome::Invalid { kind, words } => {
+            assert!(matches!(
+                kind,
+                InvalidKind::DuplicateHitAttributeInterface
+            ));
+            assert!(
+                !validate_binary(TargetEnv::Universal1_6, &words).success,
+                "duplicate hit attribute interface should fail validation"
+            );
+        }
+        FuzzOutcome::Valid { .. } => panic!("expected invalid module"),
+    }
+}
+
+#[test]
 fn rust_fuzzer_can_emit_missing_loop_merge() {
     let cfg = FuzzConfig {
         seed: 23,
