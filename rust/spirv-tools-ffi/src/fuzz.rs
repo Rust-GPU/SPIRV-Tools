@@ -69,6 +69,7 @@ pub enum InvalidKind {
     RayEntryWithDanglingInterfaceId,
     RayInterfaceNonPointer,
     RayInterfacePointerToPointer,
+    RayInterfaceNullOperand,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1121,6 +1122,12 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
                 vec![StorageClass::IncomingRayPayloadKHR.into()],
             ));
             push_interfaces(module, &[var_id]);
+        }
+        InvalidKind::RayInterfaceNullOperand => {
+            ensure_ray_entry_point(module);
+            if let Some(ep) = module.entry_points.first_mut() {
+                ep.operands.push(0u32.into());
+            }
         }
         InvalidKind::MissingRayExecutionModel => {
             ensure_ray_entry_point(module);
