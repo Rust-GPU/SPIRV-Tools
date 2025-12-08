@@ -553,6 +553,9 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("bor-distribute-over-xor"; "(bor ?x (bxor ?y ?z))" => "(bxor (bor ?x ?y) (bor ?x ?z))"),
         rewrite!("bor-distribute-over-xor-left"; "(bor (bxor ?y ?z) ?x)" => "(bxor (bor ?x ?y) (bor ?x ?z))"),
         rewrite!("sub-mask-absorb"; "(- (band ?x ?mask) ?x)" => { SubMaskAbsorb { x: var("?x"), mask: var("?mask") } }),
+        rewrite!("bxor-absorbs-and"; "(bxor ?x (band ?x ?mask))" => {
+            BitXorAbsorb { x: var("?x"), mask: var("?mask") }
+        }),
         rewrite!("bnot-const-fold"; "(bnot ?x)" => { BitNotFold { x: var("?x") } }),
         rewrite!("bnot-double"; "(bnot (bnot ?x))" => { BitNotDouble { x: var("?x") } }),
         rewrite!("rotate-const-pattern"; "(bor (shl ?x ?s) (shr_u ?x ?t))" => {
@@ -985,6 +988,10 @@ struct BitXorSelf {
     _x: Var,
 }
 struct SubMaskAbsorb {
+    x: Var,
+    mask: Var,
+}
+struct BitXorAbsorb {
     x: Var,
     mask: Var,
 }
@@ -2509,6 +2516,24 @@ impl Applier<SpirvLang, ()> for SubMaskAbsorb {
     ) -> Vec<Id> {
         if let Some(mask_val) = const_value(egraph, subst[self.mask]) {
             if mask_val.get() == u32::MAX {
+                egraph.union(eclass, subst[self.x]);
+            }
+        }
+        Vec::new()
+    }
+}
+
+impl Applier<SpirvLang, ()> for BitXorAbsorb {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _ast: Option<&PatternAst<SpirvLang>>,
+        _runner: Symbol,
+    ) -> Vec<Id> {
+        if let Some(mask_val) = const_value(egraph, subst[self.mask]) {
+            if mask_val.get() == 0 {
                 egraph.union(eclass, subst[self.x]);
             }
         }
