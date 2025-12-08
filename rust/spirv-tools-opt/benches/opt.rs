@@ -31,6 +31,7 @@ fn bench_optimize(c: &mut Criterion) {
     let expr_affine = affine_expr();
     let block_fold = spirv_block_add_zero();
     let block_medium = arith_block(32);
+    let bitwise_block = bitwise_mixed_block();
 
     c.bench_function("optimize small expr", |b| {
         b.iter(|| optimize_expr(black_box(&expr_small)))
@@ -54,6 +55,13 @@ fn bench_optimize(c: &mut Criterion) {
     c.bench_function("optimize arithmetic block medium", |b| {
         b.iter(|| {
             let optimized = optimize_arith_block(black_box(&block_medium)).unwrap();
+            black_box(optimized)
+        })
+    });
+
+    c.bench_function("optimize bitwise block", |b| {
+        b.iter(|| {
+            let optimized = optimize_arith_block(black_box(&bitwise_block)).unwrap();
             black_box(optimized)
         })
     });
@@ -128,6 +136,66 @@ fn arith_block(depth: usize) -> Vec<rspirv::dr::Instruction> {
             vec![Operand::IdRef(prev_id), Operand::IdRef(const_id)],
         ));
     }
+
+    insts
+}
+
+fn bitwise_mixed_block() -> Vec<rspirv::dr::Instruction> {
+    use rspirv::dr::Operand;
+    use rspirv::spirv::Op;
+
+    let mut insts = Vec::new();
+    let ty = 1;
+    let mut next_id = 1u32;
+
+    let const32 = |val: u32, id: u32| {
+        rspirv::dr::Instruction::new(Op::Constant, Some(ty), Some(id), vec![Operand::LiteralBit32(val)])
+    };
+
+    insts.push(const32(0xFFFF0000, next_id));
+    let mask1 = next_id;
+    next_id += 1;
+    insts.push(const32(0x00FF00FF, next_id));
+    let mask2 = next_id;
+    next_id += 1;
+    insts.push(const32(0x12345678, next_id));
+    let base = next_id;
+    next_id += 1;
+
+    let band1 = next_id;
+    next_id += 1;
+    insts.push(rspirv::dr::Instruction::new(
+        Op::BitwiseAnd,
+        Some(ty),
+        Some(band1),
+        vec![Operand::IdRef(base), Operand::IdRef(mask1)],
+    ));
+
+    let bor = next_id;
+    next_id += 1;
+    insts.push(rspirv::dr::Instruction::new(
+        Op::BitwiseOr,
+        Some(ty),
+        Some(bor),
+        vec![Operand::IdRef(band1), Operand::IdRef(mask2)],
+    ));
+
+    let band2 = next_id;
+    next_id += 1;
+    insts.push(rspirv::dr::Instruction::new(
+        Op::BitwiseAnd,
+        Some(ty),
+        Some(band2),
+        vec![Operand::IdRef(bor), Operand::IdRef(mask2)],
+    ));
+
+    let add = next_id;
+    insts.push(rspirv::dr::Instruction::new(
+        Op::IAdd,
+        Some(ty),
+        Some(add),
+        vec![Operand::IdRef(band2), Operand::IdRef(base)],
+    ));
 
     insts
 }
