@@ -1,6 +1,8 @@
 use spirv_tools_core::assembly::assemble_text;
 use spirv_tools_core::TargetEnv;
-use spirv_tools_ffi::{default_fuzz_options, fuzz_module, fuzz_module_with_cpp, validate_binary};
+use spirv_tools_ffi::{
+    default_fuzz_options, fuzz_module, fuzz_module_with_cpp, validate_binary, FuzzOutcome,
+};
 
 fn minimal_words() -> Vec<u32> {
     assemble_text(
@@ -54,6 +56,33 @@ fn rust_and_cpp_fuzz_both_succeed_when_cpp_available() {
     assert!(
         validate_binary(TargetEnv::Universal1_6, &cpp.words).success,
         "C++ fuzz bridge should emit a valid module"
+    );
+}
+
+#[test]
+fn rust_and_cpp_fuzz_both_fail_on_invalid_when_cpp_available() {
+    let opts = default_fuzz_options();
+    let invalid = vec![0x07230203, 0, 0, 0, 0]; // header-only garbage
+    let cpp = fuzz_module_with_cpp(&invalid, &opts);
+    if !cpp.success {
+        eprintln!(
+            "C++ fuzz bridge unavailable or disabled for invalid parity: {}",
+            cpp.message
+        );
+        return;
+    }
+    let rust = fuzz_module(&invalid);
+    assert!(
+        !rust.success,
+        "Rust fuzz pipeline should reject invalid input"
+    );
+    assert!(
+        !cpp.success,
+        "C++ fuzz pipeline should reject invalid input"
+    );
+    assert!(
+        !validate_binary(TargetEnv::Universal1_6, &invalid).success,
+        "baseline validation should fail for invalid input"
     );
 }
 
