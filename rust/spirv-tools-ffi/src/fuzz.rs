@@ -43,6 +43,12 @@ pub enum InvalidKind {
     MissingRayExecutionModel,
     MissingRayCapability,
     RayPayloadTypeMismatch,
+    CallableDataTypeMismatch,
+    HitAttributeTypeMismatch,
+    HitAttributeOnRayGen,
+    RayEntryWithWorkgroupInterface,
+    RayEntryWithOutputInterface,
+    RayEntryWithMixedIoInterfaces,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -955,6 +961,22 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
             ids.extend(ids_uniform);
             push_interfaces(module, &ids);
         }
+        InvalidKind::RayEntryWithWorkgroupInterface => {
+            ensure_ray_entry_point(module);
+            let id = insert_interface_var(module, StorageClass::Workgroup);
+            push_interfaces(module, &[id]);
+        }
+        InvalidKind::RayEntryWithOutputInterface => {
+            ensure_ray_entry_point(module);
+            let id = insert_interface_var(module, StorageClass::Output);
+            push_interfaces(module, &[id]);
+        }
+        InvalidKind::RayEntryWithMixedIoInterfaces => {
+            ensure_ray_entry_point(module);
+            let input = insert_interface_var(module, StorageClass::Input);
+            let output = insert_interface_var(module, StorageClass::Output);
+            push_interfaces(module, &[input, output]);
+        }
         InvalidKind::MissingRayExecutionModel => {
             ensure_ray_entry_point(module);
             // Force a non-ray execution model but keep ray-only interfaces to trigger validation.
@@ -1007,6 +1029,51 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
             );
             push_interfaces(module, &ids);
             // Ensure capability is present so the type error surfaces.
+            module.capabilities.push(Instruction::new(
+                Op::Capability,
+                None,
+                None,
+                vec![Capability::RayTracingKHR.into()],
+            ));
+        }
+        InvalidKind::CallableDataTypeMismatch => {
+            ensure_ray_entry_point(module);
+            let int_ty = ensure_int_type(module);
+            let ptr = ensure_pointer_type(module, StorageClass::IncomingCallableDataKHR, int_ty);
+            let ids =
+                insert_global_vars(module, ptr, StorageClass::IncomingCallableDataKHR, 1);
+            push_interfaces(module, &ids);
+            module.capabilities.push(Instruction::new(
+                Op::Capability,
+                None,
+                None,
+                vec![Capability::RayTracingKHR.into()],
+            ));
+        }
+        InvalidKind::HitAttributeTypeMismatch => {
+            ensure_ray_entry_point(module);
+            let int_ty = ensure_int_type(module);
+            let ptr = ensure_pointer_type(module, StorageClass::HitAttributeKHR, int_ty);
+            let ids = insert_global_vars(module, ptr, StorageClass::HitAttributeKHR, 1);
+            push_interfaces(module, &ids);
+            module.capabilities.push(Instruction::new(
+                Op::Capability,
+                None,
+                None,
+                vec![Capability::RayTracingKHR.into()],
+            ));
+        }
+        InvalidKind::HitAttributeOnRayGen => {
+            ensure_ray_entry_point(module);
+            if let Some(ep) = module.entry_points.first_mut() {
+                if let Some(model) = ep.operands.get_mut(0) {
+                    *model = ExecutionModel::RayGenerationKHR.into();
+                }
+            }
+            let int_ty = ensure_int_type(module);
+            let ptr = ensure_pointer_type(module, StorageClass::HitAttributeKHR, int_ty);
+            let ids = insert_global_vars(module, ptr, StorageClass::HitAttributeKHR, 1);
+            push_interfaces(module, &ids);
             module.capabilities.push(Instruction::new(
                 Op::Capability,
                 None,
@@ -1244,6 +1311,13 @@ fn insert_global_vars(
         ids.push(id);
     }
     ids
+}
+
+fn insert_interface_var(module: &mut dr::Module, storage: StorageClass) -> u32 {
+    let int_ty = ensure_int_type(module);
+    let ptr = ensure_pointer_type(module, storage, int_ty);
+    let ids = insert_global_vars(module, ptr, storage, 1);
+    ids[0]
 }
 
 fn ensure_ray_entry_point(module: &mut dr::Module) {

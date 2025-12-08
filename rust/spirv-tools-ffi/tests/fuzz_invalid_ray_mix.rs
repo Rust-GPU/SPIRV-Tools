@@ -49,6 +49,72 @@ fn rust_fuzzer_can_emit_mixed_ray_interfaces() {
 }
 
 #[test]
+fn rust_fuzzer_can_emit_workgroup_interface_on_ray_entry() {
+    let cfg = FuzzConfig {
+        seed: 67,
+        prefer_valid: false,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::RayEntryWithWorkgroupInterface),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    let words = match outcome {
+        spirv_tools_ffi::FuzzOutcome::Invalid { words, .. } => words,
+        spirv_tools_ffi::FuzzOutcome::Valid { words } => words,
+    };
+    assert!(
+        !validate_binary(TargetEnv::Universal1_6, &words).success,
+        "workgroup interface on ray entry should fail validation"
+    );
+}
+
+#[test]
+fn rust_fuzzer_can_emit_output_interface_on_ray_entry() {
+    let cfg = FuzzConfig {
+        seed: 69,
+        prefer_valid: false,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::RayEntryWithOutputInterface),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    let words = match outcome {
+        spirv_tools_ffi::FuzzOutcome::Invalid { words, .. } => words,
+        spirv_tools_ffi::FuzzOutcome::Valid { words } => words,
+    };
+    assert!(
+        !validate_binary(TargetEnv::Universal1_6, &words).success,
+        "output interface on ray entry should fail validation"
+    );
+}
+
+#[test]
+fn rust_fuzzer_can_emit_mixed_io_interfaces_on_ray_entry() {
+    let cfg = FuzzConfig {
+        seed: 71,
+        prefer_valid: false,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::RayEntryWithMixedIoInterfaces),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    let words = match outcome {
+        spirv_tools_ffi::FuzzOutcome::Invalid { words, .. } => words,
+        spirv_tools_ffi::FuzzOutcome::Valid { words } => words,
+    };
+    assert!(
+        !validate_binary(TargetEnv::Universal1_6, &words).success,
+        "mixing input/output on ray entry should fail validation"
+    );
+}
+
+#[test]
 fn rust_fuzzer_can_emit_missing_ray_execution_model() {
     let cfg = FuzzConfig {
         seed: 55,
@@ -111,6 +177,72 @@ fn rust_fuzzer_can_emit_ray_payload_type_mismatch() {
     assert!(
         !validate_binary(TargetEnv::Universal1_6, &words).success,
         "ray payload with wrong type should fail validation"
+    );
+}
+
+#[test]
+fn rust_fuzzer_can_emit_callable_data_type_mismatch() {
+    let cfg = FuzzConfig {
+        seed: 61,
+        prefer_valid: false,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::CallableDataTypeMismatch),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    let words = match outcome {
+        spirv_tools_ffi::FuzzOutcome::Invalid { words, .. } => words,
+        spirv_tools_ffi::FuzzOutcome::Valid { words } => words,
+    };
+    assert!(
+        !validate_binary(TargetEnv::Universal1_6, &words).success,
+        "callable data with wrong type should fail validation"
+    );
+}
+
+#[test]
+fn rust_fuzzer_can_emit_hit_attribute_type_mismatch() {
+    let cfg = FuzzConfig {
+        seed: 63,
+        prefer_valid: false,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::HitAttributeTypeMismatch),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    let words = match outcome {
+        spirv_tools_ffi::FuzzOutcome::Invalid { words, .. } => words,
+        spirv_tools_ffi::FuzzOutcome::Valid { words } => words,
+    };
+    assert!(
+        !validate_binary(TargetEnv::Universal1_6, &words).success,
+        "hit attribute with wrong type should fail validation"
+    );
+}
+
+#[test]
+fn rust_fuzzer_can_emit_hit_attribute_on_ray_gen() {
+    let cfg = FuzzConfig {
+        seed: 65,
+        prefer_valid: false,
+        allow_invalid: true,
+        invalid_hint: Some(InvalidKind::HitAttributeOnRayGen),
+    };
+    let generator = FuzzGenerator::new(cfg);
+    let outcome = generator
+        .generate(TargetEnv::Universal1_6, &[])
+        .expect("generate");
+    let words = match outcome {
+        spirv_tools_ffi::FuzzOutcome::Invalid { words, .. } => words,
+        spirv_tools_ffi::FuzzOutcome::Valid { words } => words,
+    };
+    assert!(
+        !validate_binary(TargetEnv::Universal1_6, &words).success,
+        "hit attribute on ray-gen should fail validation"
     );
 }
 
