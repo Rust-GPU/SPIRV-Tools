@@ -1214,3 +1214,44 @@ fn corpus_absorbs_or_with_zero_masked_value() {
         "bor with (y & 0) should fold to the unmasked operand"
     );
 }
+
+#[test]
+fn corpus_absorbs_and_over_or() {
+    let int = 1;
+    let x_val = 0xABCDu32;
+    let y_val = 0x00FFu32;
+    let x = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(x_val)],
+    );
+    let y = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(y_val)],
+    );
+    let bor = inst(
+        Op::BitwiseOr,
+        int,
+        4,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(3)],
+    );
+    let band = inst(
+        Op::BitwiseAnd,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(4)],
+    );
+    let optimized = optimize_arith_block(&[x, y, bor, band]).expect("optimize");
+    let folded = optimized.iter().find(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(5)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(x_val)]
+    });
+    assert!(
+        folded.is_some(),
+        "band with (x | y) should absorb to x"
+    );
+}
