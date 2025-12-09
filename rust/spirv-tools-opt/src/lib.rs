@@ -559,6 +559,7 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("bxor-zero-when-masked-all-ones"; "(bxor ?x (band ?x ?mask))" => {
             BitXorAllOnes { x: var("?x"), mask: var("?mask") }
         }),
+        rewrite!("or-with-zero-band"; "(bor ?x (band ?y 0))" => "?x"),
         rewrite!("bnot-const-fold"; "(bnot ?x)" => { BitNotFold { x: var("?x") } }),
         rewrite!("bnot-double"; "(bnot (bnot ?x))" => { BitNotDouble { x: var("?x") } }),
         rewrite!("rotate-const-pattern"; "(bor (shl ?x ?s) (shr_u ?x ?t))" => {

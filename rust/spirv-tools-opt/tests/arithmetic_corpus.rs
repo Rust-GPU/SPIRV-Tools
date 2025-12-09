@@ -1166,3 +1166,51 @@ fn corpus_folds_xor_with_all_ones_mask_to_zero() {
         "xor of x with (x & all ones) should fold to zero"
     );
 }
+
+#[test]
+fn corpus_absorbs_or_with_zero_masked_value() {
+    let int = 1;
+    let x_val = 0x1234_5678u32;
+    let mask_val = 0u32;
+    let y_val = 0xFFFF_FFFFu32;
+    let x = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(x_val)],
+    );
+    let mask = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(mask_val)],
+    );
+    let y = inst(
+        Op::Constant,
+        int,
+        4,
+        vec![rspirv::dr::Operand::LiteralBit32(y_val)],
+    );
+    let band = inst(
+        Op::BitwiseAnd,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(4), rspirv::dr::Operand::IdRef(3)],
+    );
+    let bor = inst(
+        Op::BitwiseOr,
+        int,
+        6,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(5)],
+    );
+    let optimized = optimize_arith_block(&[x, mask, y, band, bor]).expect("optimize");
+    let folded = optimized.iter().find(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(6)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(x_val)]
+    });
+    assert!(
+        folded.is_some(),
+        "bor with (y & 0) should fold to the unmasked operand"
+    );
+}
