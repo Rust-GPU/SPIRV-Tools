@@ -1125,3 +1125,44 @@ fn corpus_absorbs_xor_with_zero_masked_value() {
         "xor of x with (x & 0) should fold to x"
     );
 }
+
+#[test]
+fn corpus_folds_xor_with_all_ones_mask_to_zero() {
+    let int = 1;
+    let x_val = 0xCAFEBABEu32;
+    let mask_val = u32::MAX;
+    let x = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(x_val)],
+    );
+    let mask = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(mask_val)],
+    );
+    let band = inst(
+        Op::BitwiseAnd,
+        int,
+        4,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(3)],
+    );
+    let bxor = inst(
+        Op::BitwiseXor,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(4)],
+    );
+    let optimized = optimize_arith_block(&[x, mask, band, bxor]).expect("optimize");
+    let folded = optimized.iter().find(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(5)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0)]
+    });
+    assert!(
+        folded.is_some(),
+        "xor of x with (x & all ones) should fold to zero"
+    );
+}
