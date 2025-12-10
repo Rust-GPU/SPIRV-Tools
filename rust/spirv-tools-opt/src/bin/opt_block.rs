@@ -831,6 +831,10 @@ fn insert_pre_for_shared_arith(
             continue;
         }
         if let Some(merge) = find_nearest_common_dominator(&blocks, dominators) {
+            // Skip hoisting if the merged expression is trivial (all operands are constants).
+            if key.operands.is_empty() {
+                continue;
+            }
             hoist_expr_to_block(func, &key, merge, &blocks);
         }
     }
@@ -863,16 +867,22 @@ fn hoist_expr_to_block(
     if target_block_idx >= func.blocks.len() {
         return;
     }
-    let inst_template = Instruction::new(
-        key.opcode,
-        key.result_type,
-        None,
-        key.operands
-            .iter()
-            .copied()
-            .map(rspirv::dr::Operand::IdRef)
-            .collect(),
-    );
+    let operands: Vec<_> = key
+        .operands
+        .iter()
+        .copied()
+        .map(rspirv::dr::Operand::IdRef)
+        .collect();
+    // Heuristic: only hoist when the expression has at least two id operands,
+    // otherwise leave it local to avoid bloating dominator blocks.
+    let id_operand_count = operands
+        .iter()
+        .filter(|op| matches!(op, rspirv::dr::Operand::IdRef(_)))
+        .count();
+    if id_operand_count < 2 {
+        return;
+    }
+    let inst_template = Instruction::new(key.opcode, key.result_type, None, operands);
 
     let new_id = next_result_id(func);
     let mut hoisted = inst_template.clone();
@@ -882,10 +892,10 @@ fn hoist_expr_to_block(
         .insert(0, hoisted);
 
     for &blk_idx in original_blocks {
-        if blk_idx == target_block_idx {
-            continue;
-        }
-        let block = func.blocks.get_mut(blk_idx).unwrap();
+        let block = match func.blocks.get_mut(blk_idx) {
+            Some(b) => b,
+            None => continue,
+        };
         for inst in &mut block.instructions {
             if let Some(existing_key) = make_arith_key(inst) {
                 if existing_key == *key {
