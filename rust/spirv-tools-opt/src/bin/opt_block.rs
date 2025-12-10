@@ -342,6 +342,20 @@ fn optimize_function_global(
         return None;
     }
 
+    // Enforce that intra-function dependencies respect block order; uses of ids
+    // defined in later blocks fall back to the block-local path.
+    for inst in &arithmetic {
+        let Some(result_id) = inst.result_id else { continue };
+        let Some(&block_idx) = id_to_block.get(&result_id) else { continue };
+        for op_id in collect_id_operands(inst) {
+            if let Some(&op_block) = id_to_block.get(&op_id) {
+                if op_block > block_idx {
+                    return None;
+                }
+            }
+        }
+    }
+
     let mut arith_stream = Vec::new();
     arith_stream.extend(constant_map.values().cloned());
     arith_stream.extend(arithmetic.clone());
@@ -437,4 +451,77 @@ fn collect_arith_topo(
     }
 
     Some((ordered, id_to_block))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rspirv::dr::{Block, Function};
+    use rspirv::spirv::Word;
+
+    fn type_int(id: Word, width: u32) -> Instruction {
+        Instruction::new(
+            Op::TypeInt,
+            None,
+            Some(id),
+            vec![
+                rspirv::dr::Operand::LiteralBit32(width),
+                rspirv::dr::Operand::LiteralBit32(0),
+            ],
+        )
+    }
+
+    fn make_const(id: Word, ty: Word, value: u32) -> Instruction {
+        Instruction::new(
+            Op::Constant,
+            Some(ty),
+            Some(id),
+            vec![rspirv::dr::Operand::LiteralBit32(value)],
+        )
+    }
+
+    #[test]
+    fn global_optimizer_bails_on_forward_block_use() {
+        // Block0 uses id 3, which is produced in block1. The global optimizer
+        // should refuse and let the per-block path handle the function.
+        let _ty_int = type_int(1, 32);
+        let c_two = make_const(2, 1, 2);
+        let block0_add = Instruction::new(
+            Op::IAdd,
+            Some(1),
+            Some(10),
+            vec![
+                rspirv::dr::Operand::IdRef(3),
+                rspirv::dr::Operand::IdRef(2),
+            ],
+        );
+        let block1_mul = Instruction::new(
+            Op::IMul,
+            Some(1),
+            Some(3),
+            vec![
+                rspirv::dr::Operand::IdRef(2),
+                rspirv::dr::Operand::IdRef(2),
+            ],
+        );
+
+        let mut func = Function::new();
+        func.blocks.push(Block {
+            label: None,
+            instructions: vec![block0_add.clone()],
+        });
+        func.blocks.push(Block {
+            label: None,
+            instructions: vec![c_two.clone(), block1_mul.clone()],
+        });
+
+        let type_widths = HashMap::from_iter([(1u32, 32u32)]);
+        let constant_map = BTreeMap::new();
+
+        let res = optimize_function_global(&func, &type_widths, &constant_map);
+        assert!(
+            res.is_none(),
+            "global optimizer should decline when operands are defined in later blocks"
+        );
+    }
 }
