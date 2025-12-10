@@ -957,6 +957,34 @@ fn build_loop_invariant_mul_module() -> (Vec<u32>, u32) {
     (b.module().assemble(), mul)
 }
 
+fn build_cross_block_factor_module() -> (Vec<u32>, u32, u32) {
+    // block0: m2 = x * 2
+    // block1: m3 = x * 3; add = m2 + m3
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let int = b.type_int(32, 1);
+    let func_ty = b.type_function(int, vec![int]);
+    let _func = b
+        .begin_function(int, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let x = b.function_parameter(int).unwrap();
+
+    let _ = b.begin_block(None).unwrap();
+    let c2 = b.constant_bit32(int, 2);
+    let m2 = b.i_mul(int, None, x, c2).expect("mul by 2");
+    let block1 = b.id();
+    b.branch(block1).unwrap();
+
+    b.begin_block(Some(block1)).unwrap();
+    let c3 = b.constant_bit32(int, 3);
+    let m3 = b.i_mul(int, None, x, c3).expect("mul by 3");
+    let add = b.i_add(int, None, m2, m3).expect("add muls");
+    b.ret_value(add).unwrap();
+    b.end_function().unwrap();
+    (b.module().assemble(), add, x)
+}
+
 #[test]
 fn cli_opt_block_folds_arithmetic() {
     let _guard = env_guard();
@@ -3612,6 +3640,65 @@ fn cli_opt_block_hoists_loop_invariant_mul() {
         Some(0),
         "loop-invariant multiply should be hoisted to the entry block"
     );
+}
+
+#[test]
+fn cli_opt_block_factors_across_blocks() {
+    let _guard = env_guard();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let (words, add_id, x_id) = build_cross_block_factor_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let output = dir.path().join("output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let status = Command::new(exe)
+        .arg(&input)
+        .arg(&output)
+        .status()
+        .expect("run opt_block");
+    assert!(status.success(), "opt_block should exit successfully");
+
+    let optimized_bytes = std::fs::read(&output).expect("read output");
+    let optimized_words = bytes_to_words(&optimized_bytes);
+    let mut loader = Loader::new();
+    rspirv::binary::parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+
+    let const_five = module.all_inst_iter().find_map(|inst| {
+        (inst.class.opcode == Op::Constant
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(5)])
+        .then_some(inst.result_id)
+        .flatten()
+    });
+    let has_mul = module.all_inst_iter().any(|inst| {
+        inst.class.opcode == Op::IMul
+            && inst.result_id == Some(add_id)
+            && inst
+                .operands
+                .iter()
+                .any(|op| matches!(op, rspirv::dr::Operand::IdRef(id) if *id == x_id))
+            && const_five.map_or(false, |cid| {
+                inst.operands
+                    .iter()
+                    .any(|op| matches!(op, rspirv::dr::Operand::IdRef(id) if *id == cid))
+            })
+    });
+    let has_add = module
+        .all_inst_iter()
+        .any(|inst| inst.class.opcode == Op::IAdd && inst.result_id == Some(add_id));
+    if !has_mul {
+        eprintln!(
+            "factoring module instructions: {:?}",
+            module
+                .all_inst_iter()
+                .map(|inst| (inst.class.opcode, inst.result_id, inst.operands.clone()))
+                .collect::<Vec<_>>()
+        );
+    }
+    assert!(has_mul, "factored add should become a single multiply by 5");
+    assert!(!has_add, "add should be eliminated after factoring");
 }
 
 fn module_has_result(words: &[u32], result_id: u32) -> bool {

@@ -989,7 +989,14 @@ pub fn optimize_arith_block_with_types(
                 Some(result_id),
                 vec![rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)])],
             ),
-            SpirvLang::Symbol(_) => continue,
+            SpirvLang::Symbol(sym) => Instruction::new(
+                Op::CopyObject,
+                Some(result_type),
+                Some(result_id),
+                vec![rspirv::dr::Operand::IdRef(
+                    symbol_id(sym).expect("symbol id"),
+                )],
+            ),
         };
         output.push(inst);
     }

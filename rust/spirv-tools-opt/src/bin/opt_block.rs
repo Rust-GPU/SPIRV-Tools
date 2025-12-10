@@ -1,11 +1,8 @@
 use clap::Parser;
-use egg::{EGraph, Extractor, Id, Language, Runner};
 use rspirv::binary::{parse_words, Assemble};
 use rspirv::dr::Instruction;
 use rspirv::spirv::Op;
-use spirv_tools_opt::translate::{
-    optimize_arith_block_with_types, translate_arith_with_types_dominated, type_widths_from_module,
-};
+use spirv_tools_opt::translate::{optimize_arith_block_with_types, type_widths_from_module};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::env;
 use std::fs;
@@ -35,10 +32,6 @@ struct Args {
     /// Force the global (multi-block) optimizer path when possible.
     #[arg(long, default_value_t = false)]
     force_global: bool,
-}
-
-fn symbol_id(sym: &egg::Symbol) -> Option<u32> {
-    sym.as_str().strip_prefix("id")?.parse().ok()
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -419,83 +412,18 @@ fn optimize_function_global(
     arith_stream.extend(constant_map.values().cloned());
     arith_stream.extend(arithmetic.clone());
 
-    let translated = translate_arith_with_types_dominated(&arith_stream, type_widths).ok()?;
-    let mut egraph = EGraph::default();
-    let mut expr_ids: Vec<Id> = Vec::new();
-    for node in translated.expr.as_ref() {
-        let mapped = node
-            .clone()
-            .map_children(|child| expr_ids[usize::from(child)]);
-        let id = egraph.add(mapped);
-        expr_ids.push(id);
-    }
-    let Some(_root) = expr_ids.last().copied() else {
-        return None;
-    };
-    let runner = Runner::default()
-        .with_egraph(egraph)
-        .run(&spirv_tools_opt::rewrites());
-    let extractor = Extractor::new(&runner.egraph, spirv_tools_opt::ExprCost);
-
-    let mut id_to_expr_idx: HashMap<u32, usize> = HashMap::new();
-    for (idx, maybe_id) in translated.original_ids.iter().enumerate() {
-        if let Some(id) = maybe_id {
-            id_to_expr_idx.insert(*id, idx);
-        }
-    }
-
-    let mut optimized = Vec::new();
-    for inst in arith_stream.iter() {
-        let Some(result_id) = inst.result_id else {
-            continue;
-        };
-        let Some(expr_idx) = id_to_expr_idx.get(&result_id).copied() else {
-            return None;
-        };
-        let Some(result_type) = translated.node_types.get(expr_idx).and_then(|t| *t) else {
-            return None;
-        };
-        let eclass = runner.egraph.find(expr_ids[expr_idx]);
-        let (_cost, best) = extractor.find_best(eclass);
-        let best_root = best.as_ref().last().cloned();
-        let replacement = match best_root {
-            Some(spirv_tools_opt::SpirvLang::Const(val)) => {
-                let operands = match val.width_bits() {
-                    64 => vec![rspirv::dr::Operand::LiteralBit64(val.get_u64())],
-                    _ => vec![rspirv::dr::Operand::LiteralBit32(val.get())],
-                };
-                Instruction::new(Op::Constant, Some(result_type), Some(result_id), operands)
-            }
-            Some(spirv_tools_opt::SpirvLang::Symbol(sym)) => {
-                let Some(src_id) = symbol_id(&sym) else {
-                    return None;
-                };
-                Instruction::new(
-                    Op::CopyObject,
-                    Some(result_type),
-                    Some(result_id),
-                    vec![rspirv::dr::Operand::IdRef(src_id)],
-                )
-            }
-            _ => inst.clone(),
-        };
-        optimized.push(replacement);
-    }
-
-    let original_ids: HashSet<u32> = arith_stream
-        .iter()
-        .filter_map(|inst| inst.result_id)
-        .collect();
+    let optimized = optimize_arith_block_with_types(&arith_stream, type_widths).ok()?;
 
     let mut new_constants = constant_map.clone();
     let mut per_block = vec![Vec::new(); func.blocks.len()];
     let mut uses_map = collect_use_blocks(func, &id_to_block);
+    let mut block_map = id_to_block.clone();
     for inst in &optimized {
-        let Some(user_block) = inst.result_id.and_then(|id| id_to_block.get(&id)).copied() else {
+        let Some(user_block) = inst.result_id.and_then(|id| block_map.get(&id)).copied() else {
             continue;
         };
         for op in collect_id_operands(inst) {
-            if id_to_block.contains_key(&op) {
+            if block_map.contains_key(&op) {
                 uses_map.entry(op).or_default().insert(user_block);
             }
         }
@@ -504,17 +432,24 @@ fn optimize_function_global(
 
     for inst in optimized {
         let id = inst.result_id?;
-        if !original_ids.contains(&id) {
-            return None;
-        }
         if inst.class.opcode == Op::Constant {
             new_constants.insert(id, inst);
             continue;
         }
-        let block_idx = *id_to_block.get(&id)?;
+        let block_idx = match block_map.get(&id) {
+            Some(idx) => *idx,
+            None => {
+                let from_ops = collect_id_operands(&inst)
+                    .into_iter()
+                    .find_map(|op| block_map.get(&op).copied())
+                    .unwrap_or(0);
+                block_map.insert(id, from_ops);
+                from_ops
+            }
+        };
         let operand_blocks: Vec<_> = collect_id_operands(&inst)
             .into_iter()
-            .filter_map(|op| id_to_block.get(&op).copied())
+            .filter_map(|op| block_map.get(&op).copied())
             .collect();
         let use_blocks = uses_map.get(&id).cloned().unwrap_or_default();
 
