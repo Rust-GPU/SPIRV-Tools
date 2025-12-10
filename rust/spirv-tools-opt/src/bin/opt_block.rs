@@ -220,6 +220,7 @@ fn optimize_module(
 
         if let Some(doms) = compute_block_dominators(func) {
             dedup_common_arith(func, &doms);
+            insert_pre_for_shared_arith(func, &doms);
         }
     }
 
@@ -807,6 +808,110 @@ fn collapse_copy_chains(func: &mut rspirv::dr::Function) {
             }
         }
     }
+}
+
+fn insert_pre_for_shared_arith(
+    func: &mut rspirv::dr::Function,
+    dominators: &HashMap<usize, HashSet<usize>>,
+) {
+    let mut expr_to_blocks: HashMap<ArithKey, Vec<usize>> = HashMap::new();
+    for (idx, block) in func.blocks.iter().enumerate() {
+        for inst in &block.instructions {
+            if !is_arith(inst.class.opcode) || inst.class.opcode == Op::Constant {
+                continue;
+            }
+            if let Some(key) = make_arith_key(inst) {
+                expr_to_blocks.entry(key).or_default().push(idx);
+            }
+        }
+    }
+
+    for (key, blocks) in expr_to_blocks {
+        if blocks.len() < 2 {
+            continue;
+        }
+        if let Some(merge) = find_nearest_common_dominator(&blocks, dominators) {
+            hoist_expr_to_block(func, &key, merge, &blocks);
+        }
+    }
+}
+
+fn find_nearest_common_dominator(
+    blocks: &[usize],
+    dominators: &HashMap<usize, HashSet<usize>>,
+) -> Option<usize> {
+    let mut dom_sets: Vec<HashSet<usize>> = blocks
+        .iter()
+        .filter_map(|b| dominators.get(b).cloned())
+        .collect();
+    if dom_sets.is_empty() {
+        return None;
+    }
+    let mut intersection = dom_sets.pop().unwrap();
+    for set in dom_sets {
+        intersection = intersection.intersection(&set).copied().collect();
+    }
+    intersection.into_iter().max()
+}
+
+fn hoist_expr_to_block(
+    func: &mut rspirv::dr::Function,
+    key: &ArithKey,
+    target_block_idx: usize,
+    original_blocks: &[usize],
+) {
+    if target_block_idx >= func.blocks.len() {
+        return;
+    }
+    let inst_template = Instruction::new(
+        key.opcode,
+        key.result_type,
+        None,
+        key.operands
+            .iter()
+            .copied()
+            .map(rspirv::dr::Operand::IdRef)
+            .collect(),
+    );
+
+    let new_id = next_result_id(func);
+    let mut hoisted = inst_template.clone();
+    hoisted.result_id = Some(new_id);
+    func.blocks[target_block_idx]
+        .instructions
+        .insert(0, hoisted);
+
+    for &blk_idx in original_blocks {
+        if blk_idx == target_block_idx {
+            continue;
+        }
+        let block = func.blocks.get_mut(blk_idx).unwrap();
+        for inst in &mut block.instructions {
+            if let Some(existing_key) = make_arith_key(inst) {
+                if existing_key == *key {
+                    let result_id = inst.result_id;
+                    *inst = Instruction::new(
+                        Op::CopyObject,
+                        inst.result_type,
+                        result_id,
+                        vec![rspirv::dr::Operand::IdRef(new_id)],
+                    );
+                }
+            }
+        }
+    }
+}
+
+fn next_result_id(func: &rspirv::dr::Function) -> u32 {
+    let mut max_id = 1;
+    for block in &func.blocks {
+        for inst in &block.instructions {
+            if let Some(id) = inst.result_id {
+                max_id = max_id.max(id + 1);
+            }
+        }
+    }
+    max_id
 }
 
 #[cfg(test)]
