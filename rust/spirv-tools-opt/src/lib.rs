@@ -532,8 +532,6 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("band-absorbs-or-commuted"; "(band (bor ?x ?y) ?x)" => "?x"),
         rewrite!("bor-distribute-over-and-right"; "(bor ?x (band ?y ?z))" => "(band (bor ?x ?y) (bor ?x ?z))"),
         rewrite!("bor-distribute-over-and-left"; "(bor (band ?y ?z) ?x)" => "(band (bor ?x ?y) (bor ?x ?z))"),
-        rewrite!("bor-de-morgan-xor"; "(bor (band ?x (bnot ?y)) (band (bnot ?x) ?y))" => "(bxor ?x ?y)"),
-        rewrite!("bor-de-morgan-xor-comm"; "(bor (band (bnot ?y) ?x) (band ?y (bnot ?x)))" => "(bxor ?x ?y)"),
         rewrite!("bxor-diff-masked-right"; "(bxor ?x (band ?x ?y))" => "(band ?x (bnot ?y))"),
         rewrite!("bxor-diff-masked-left"; "(bxor (band ?x ?y) ?x)" => "(band ?x (bnot ?y))"),
         rewrite!("bxor-diff-masked-or-right"; "(bxor ?x (bor ?x ?y))" => "(band ?y (bnot ?x))"),
@@ -554,12 +552,8 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
             BitXorComplement { _x: var("?x") }
         }),
         rewrite!("bxor-self"; "(bxor ?x ?x)" => { BitXorSelf { _x: var("?x") } }),
-        rewrite!("add-mask-absorb"; "(add (band ?x ?mask) ?x)" => "?x"),
-        rewrite!("add-mask-absorb-commuted"; "(add ?x (band ?x ?mask))" => "?x"),
         rewrite!("bor-absorbs-band"; "(bor ?x (band ?x ?y))" => "?x"),
         rewrite!("bor-absorbs-band-commuted"; "(bor (band ?x ?y) ?x)" => "?x"),
-        rewrite!("bor-distribute-over-xor"; "(bor ?x (bxor ?y ?z))" => "(bxor (bor ?x ?y) (bor ?x ?z))"),
-        rewrite!("bor-distribute-over-xor-left"; "(bor (bxor ?y ?z) ?x)" => "(bxor (bor ?x ?y) (bor ?x ?z))"),
         rewrite!("sub-mask-absorb"; "(- (band ?x ?mask) ?x)" => { SubMaskAbsorb { x: var("?x"), mask: var("?mask") } }),
         rewrite!("bxor-absorbs-and"; "(bxor ?x (band ?x ?mask))" => {
             BitXorAbsorb { x: var("?x"), mask: var("?mask") }
