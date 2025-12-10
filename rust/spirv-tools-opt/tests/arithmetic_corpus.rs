@@ -1047,6 +1047,141 @@ fn corpus_absorbs_bor_with_masked_value() {
     );
 }
 
+/// Rust-only: absorb (~x & y) | y into y.
+#[test]
+fn corpus_absorbs_or_with_masked_not() {
+    let int = 1;
+    let x = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(0xAAAA_5555)],
+    );
+    let y = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(0x1234_5678)],
+    );
+    let not_x = inst(Op::Not, int, 4, vec![rspirv::dr::Operand::IdRef(2)]);
+    let masked = inst(
+        Op::BitwiseAnd,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(4), rspirv::dr::Operand::IdRef(3)],
+    );
+    let bor = inst(
+        Op::BitwiseOr,
+        int,
+        6,
+        vec![rspirv::dr::Operand::IdRef(5), rspirv::dr::Operand::IdRef(3)],
+    );
+    let optimized = optimize_arith_block(&[x, y, not_x, masked, bor]).expect("optimize");
+    let folded = optimized.iter().find(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(6)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0x1234_5678)]
+    });
+    assert!(
+        folded.is_some(),
+        "(~x & y) | y should fold to y (Rust-only improvement; C++ leaves expanded)"
+    );
+}
+
+/// Rust-only: absorb split y term (x & y) | (~x & y) into y.
+#[test]
+fn corpus_absorbs_split_y_term() {
+    let int = 1;
+    let x = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(0x0F0F_F0F0)],
+    );
+    let y = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(0xAAAA_5555)],
+    );
+    let not_x = inst(Op::Not, int, 4, vec![rspirv::dr::Operand::IdRef(2)]);
+    let band1 = inst(
+        Op::BitwiseAnd,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(3)],
+    );
+    let band2 = inst(
+        Op::BitwiseAnd,
+        int,
+        6,
+        vec![rspirv::dr::Operand::IdRef(4), rspirv::dr::Operand::IdRef(3)],
+    );
+    let bor = inst(
+        Op::BitwiseOr,
+        int,
+        7,
+        vec![rspirv::dr::Operand::IdRef(5), rspirv::dr::Operand::IdRef(6)],
+    );
+    let optimized = optimize_arith_block(&[x, y, not_x, band1, band2, bor]).expect("optimize");
+    let folded = optimized.iter().find(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(7)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0xAAAA_5555)]
+    });
+    assert!(
+        folded.is_some(),
+        "(x & y) | (~x & y) should fold to y (Rust-only improvement; C++ leaves expanded)"
+    );
+}
+
+/// Rust-only: absorb split x term (x & y) | (x & ~y) into x.
+#[test]
+fn corpus_absorbs_split_x_term() {
+    let int = 1;
+    let x = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(0x1234_5678)],
+    );
+    let y = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(0x00FF_00FF)],
+    );
+    let not_y = inst(Op::Not, int, 4, vec![rspirv::dr::Operand::IdRef(3)]);
+    let band1 = inst(
+        Op::BitwiseAnd,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(3)],
+    );
+    let band2 = inst(
+        Op::BitwiseAnd,
+        int,
+        6,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(4)],
+    );
+    let bor = inst(
+        Op::BitwiseOr,
+        int,
+        7,
+        vec![rspirv::dr::Operand::IdRef(5), rspirv::dr::Operand::IdRef(6)],
+    );
+    let optimized = optimize_arith_block(&[x, y, not_y, band1, band2, bor]).expect("optimize");
+    let folded = optimized.iter().find(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(7)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0x1234_5678)]
+    });
+    assert!(
+        folded.is_some(),
+        "(x & y) | (x & ~y) should fold to x (Rust-only improvement; C++ leaves expanded)"
+    );
+}
+
 #[test]
 fn corpus_absorbs_sub_of_masked_value() {
     let int = 1;

@@ -151,7 +151,7 @@ Planned tasks:
 - Added C++ parity coverage for bitwise absorption (`x & (x | y)` and `x | (x & y)`) plus 64-bit variants to guard the new bitwise rewrites against drift and width handling.
 - Added CLI parity tests for bitwise absorption (32- and 64-bit) so `opt_block` output stays aligned with C++ spirv-opt when available.
 - Added FFI parity tests for bitwise absorption and distribution (32- and 64-bit) to keep library optimizer output aligned with C++.
-- Added optimizer e-graph rewrites for xor with masked/shared operands (`x ^ (x & y)` -> `x & ~y`, `x ^ (x | y)` -> `y & ~x`) with Rust-side coverage noting the deliberate optimization beyond C++.
+- Added optimizer e-graph rewrites for xor with masked/shared operands (`x ^ (x & y)` -> `x & ~y`, `x ^ (x | y)` -> `y & ~x`) plus absorption-like bitwise or rewrites with Rust-only tests marking the divergence from C++.
 - Extended optimizer e-graph rewrites for xor with shared operands and masked forms (`x ^ (x & y) -> x & ~y`, `x ^ (x | y) -> y & ~x`), with Rust-only tests documenting the divergence from C++.
 - Added CLI regression to ensure the De Morgan xor form collapses to `xor` under the Rust optimizer (documented divergence from C++).
 
