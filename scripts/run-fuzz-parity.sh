@@ -64,6 +64,54 @@ OpEntryPoint RayGenerationKHR %main \"main\" %payload
 OpReturn
 OpFunctionEnd
 "
+"OpCapability RayTracingKHR
+OpExtension \"SPV_KHR_ray_tracing\"
+OpMemoryModel Logical GLSL450
+OpEntryPoint MissKHR %main \"main\" %payload
+%void = OpTypeVoid
+%u32 = OpTypeInt 32 0
+%payload_ty = OpTypeStruct %u32
+%ptr_payload = OpTypePointer IncomingRayPayloadKHR %payload_ty
+%fn = OpTypeFunction %void
+%payload = OpVariable %ptr_payload IncomingRayPayloadKHR
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"
+"OpCapability RayTracingKHR
+OpExtension \"SPV_KHR_ray_tracing\"
+OpMemoryModel Logical GLSL450
+OpEntryPoint ClosestHitKHR %main \"main\" %payload %hit_attr
+%void = OpTypeVoid
+%u32 = OpTypeInt 32 0
+%payload_ty = OpTypeStruct %u32
+%attr_ty = OpTypeStruct %u32
+%ptr_payload = OpTypePointer IncomingRayPayloadKHR %payload_ty
+%ptr_attr = OpTypePointer HitAttributeKHR %attr_ty
+%fn = OpTypeFunction %void
+%payload = OpVariable %ptr_payload IncomingRayPayloadKHR
+%hit_attr = OpVariable %ptr_attr HitAttributeKHR
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"
+"OpCapability RayTracingKHR
+OpExtension \"SPV_KHR_ray_tracing\"
+OpMemoryModel Logical GLSL450
+OpEntryPoint CallableKHR %main \"main\" %call_data
+%void = OpTypeVoid
+%u32 = OpTypeInt 32 0
+%call_ty = OpTypeStruct %u32
+%ptr_call = OpTypePointer CallableDataKHR %call_ty
+%fn = OpTypeFunction %void
+%call_data = OpVariable %ptr_call CallableDataKHR
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"
 )
 
 for idx in "${!corpus[@]}"; do

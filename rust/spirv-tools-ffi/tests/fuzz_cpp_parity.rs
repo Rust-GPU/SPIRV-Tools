@@ -2,8 +2,9 @@ use spirv_tools_core::assembly::assemble_text;
 use spirv_tools_core::TargetEnv;
 use spirv_tools_ffi::{default_fuzz_options, fuzz_module, fuzz_module_with_cpp, validate_binary};
 
-fn minimal_words() -> Vec<u32> {
-    assemble_text(
+const CORPUS_TEXTS: [(&str, &str); 7] = [
+    (
+        "vertex",
         "\
 OpCapability Shader
 OpMemoryModel Logical GLSL450
@@ -13,10 +14,123 @@ OpMemoryModel Logical GLSL450
 %entry = OpLabel
 OpReturn
 OpFunctionEnd
-OpEntryPoint Vertex %main \"main\"
 ",
-    )
-    .expect("assemble")
+    ),
+    (
+        "fragment",
+        "\
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main \"main\"
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+",
+    ),
+    (
+        "compute",
+        "\
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main \"main\"
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+",
+    ),
+    (
+        "raygen_payload",
+        "\
+OpCapability RayTracingKHR
+OpExtension \"SPV_KHR_ray_tracing\"
+OpMemoryModel Logical GLSL450
+OpEntryPoint RayGenerationKHR %main \"main\" %payload
+%void = OpTypeVoid
+%u32 = OpTypeInt 32 0
+%payload_ty = OpTypeStruct %u32
+%ptr_payload = OpTypePointer IncomingRayPayloadKHR %payload_ty
+%fn = OpTypeFunction %void
+%payload = OpVariable %ptr_payload IncomingRayPayloadKHR
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+",
+    ),
+    (
+        "miss_payload",
+        "\
+OpCapability RayTracingKHR
+OpExtension \"SPV_KHR_ray_tracing\"
+OpMemoryModel Logical GLSL450
+OpEntryPoint MissKHR %main \"main\" %payload
+%void = OpTypeVoid
+%u32 = OpTypeInt 32 0
+%payload_ty = OpTypeStruct %u32
+%ptr_payload = OpTypePointer IncomingRayPayloadKHR %payload_ty
+%fn = OpTypeFunction %void
+%payload = OpVariable %ptr_payload IncomingRayPayloadKHR
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+",
+    ),
+    (
+        "closest_hit_payload_attr",
+        "\
+OpCapability RayTracingKHR
+OpExtension \"SPV_KHR_ray_tracing\"
+OpMemoryModel Logical GLSL450
+OpEntryPoint ClosestHitKHR %main \"main\" %payload %hit_attr
+%void = OpTypeVoid
+%u32 = OpTypeInt 32 0
+%payload_ty = OpTypeStruct %u32
+%attr_ty = OpTypeStruct %u32
+%ptr_payload = OpTypePointer IncomingRayPayloadKHR %payload_ty
+%ptr_attr = OpTypePointer HitAttributeKHR %attr_ty
+%fn = OpTypeFunction %void
+%payload = OpVariable %ptr_payload IncomingRayPayloadKHR
+%hit_attr = OpVariable %ptr_attr HitAttributeKHR
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+",
+    ),
+    (
+        "callable_data",
+        "\
+OpCapability RayTracingKHR
+OpExtension \"SPV_KHR_ray_tracing\"
+OpMemoryModel Logical GLSL450
+OpEntryPoint CallableKHR %main \"main\" %call_data
+%void = OpTypeVoid
+%u32 = OpTypeInt 32 0
+%call_ty = OpTypeStruct %u32
+%ptr_call = OpTypePointer CallableDataKHR %call_ty
+%fn = OpTypeFunction %void
+%call_data = OpVariable %ptr_call CallableDataKHR
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+",
+    ),
+];
+
+fn assemble_case((label, text): (&str, &str)) -> Vec<u32> {
+    assemble_text(text).unwrap_or_else(|err| panic!("assemble {label}: {err}"))
+}
+
+fn minimal_words() -> Vec<u32> {
+    assemble_case(CORPUS_TEXTS[0])
 }
 
 #[test]
@@ -94,56 +208,7 @@ fn rust_and_cpp_fuzz_both_fail_on_invalid_when_cpp_available() {
 
 #[test]
 fn cpp_and_rust_fuzz_match_on_corpus_when_cpp_available() {
-    let corpus = vec![
-        minimal_words(),
-        assemble_text(
-            "\
-OpCapability Shader
-OpMemoryModel Logical GLSL450
-OpEntryPoint Fragment %main \"main\"
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-",
-        )
-        .expect("assemble fragment"),
-        assemble_text(
-            "\
-OpCapability Shader
-OpMemoryModel Logical GLSL450
-OpEntryPoint GLCompute %main \"main\"
-%void = OpTypeVoid
-%fn = OpTypeFunction %void
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-",
-        )
-        .expect("assemble compute"),
-        assemble_text(
-            "\
-OpCapability RayTracingKHR
-OpExtension \"SPV_KHR_ray_tracing\"
-OpMemoryModel Logical GLSL450
-OpEntryPoint RayGenerationKHR %main \"main\" %payload
-%void = OpTypeVoid
-%u32 = OpTypeInt 32 0
-%payload_ty = OpTypeStruct %u32
-%ptr_payload = OpTypePointer IncomingRayPayloadKHR %payload_ty
-%fn = OpTypeFunction %void
-%payload = OpVariable %ptr_payload IncomingRayPayloadKHR
-%main = OpFunction %void None %fn
-%entry = OpLabel
-OpReturn
-OpFunctionEnd
-",
-        )
-        .expect("assemble ray-gen"),
-    ];
+    let corpus: Vec<_> = CORPUS_TEXTS.into_iter().map(assemble_case).collect();
 
     let opts = default_fuzz_options();
     let mut cpp_unavailable = false;

@@ -17,7 +17,7 @@ SPIRV_CPP_FUZZ=/path/to/spirv-fuzz cargo test -p spirv-tools-cli --tests spirv_r
 SPIRV_CPP_FUZZ=/path/to/spirv-fuzz ./scripts/run-fuzz-parity.sh
 ```
 
-The corpora include vertex/fragment/compute and a ray-generation module, plus ray interface edge cases (dangling ids, non-pointer/pointer-to-pointer payloads). When the binary is missing, the tests emit a skip message and pass.
+The corpora include vertex/fragment/compute and ray-generation/miss/closest-hit/callable entry points so every ray interface storage class exercised by the Rust fuzz generator is parity-checked. Ray interface edge cases (dangling ids, non-pointer/pointer-to-pointer payloads) remain covered in the Rust fuzz suites; the C++ parity harness skips cleanly when the binary is missing.
 
 ## Notes
 - The Rust `fuzz_module_with_cpp` helper now consults `SPIRV_CPP_FUZZ` or `PATH` and invokes the C++ CLI before falling back to the cxx bridge stub.

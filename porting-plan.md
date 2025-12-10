@@ -980,7 +980,7 @@ Tasks:
 - [x] Enable the fuzz static library in the Rust build (`SPIRV_BUILD_FUZZER=ON` or equivalent) and ensure `libSPIRV-Tools-fuzz.a` is available under `build-rust/source/fuzz` for linking.
 - [x] Wire `fuzz_with_cpp` through the cxx bridge using typed `FuzzOptions`, mapping C API status codes into `FuzzResult`/`ToolError`.
 - [x] Add FFI/CLI success-path parity tests on a small deterministic corpus (skip cleanly if the C++ fuzz binary/lib is unavailable) and verify diagnostic/message-consumer ordering matches C++.
-- [ ] Document the build toggle and runtime env/flag required to select the C++ fuzz bridge vs. the Rust path, mirroring reducer toggles.
+- [x] Document the build toggle and runtime env/flag required to select the C++ fuzz bridge vs. the Rust path, mirroring reducer toggles. (`SPIRV_BUILD_FUZZER` + `SPIRV_CPP_FUZZ` documented in `docs/fuzz-bridge.md` and `docs/fuzz-parity-run.md`)
 - [x] Ensure external dependencies required by `SPIRV_BUILD_FUZZER` (protobuf under `external/`, fuzz headers) are present in the build tree so the fuzz static library can be produced locally.
 
 ## Upcoming Milestone: Rust Fuzz Pipeline
@@ -1014,7 +1014,7 @@ Tasks:
 - [x] Add CLI fuzz parity smoke with the C++ binary (skip when unavailable) to guard Rust-vs-C++ output equivalence on a minimal module.
 - [x] Expand CLI/FFI fuzz parity to a small corpus (vertex/fragment/compute) while skipping cleanly when the C++ bridge/binary is unavailable.
 - [x] Broaden ray/interface invalid corpus (mixed storage-class/ray-model mismatches) with shrink-friendly `Arbitrary` implementations and add parity checks when the C++ fuzz bridge becomes available. (Coverage now includes workgroup/output/mixed IO, private/function/cross-workgroup/generic, uniform-constant/push-constant, uniform/storage-buffer, shader-record buffer, task payload, atomic counter, image, physical storage buffer, code-section, device-only, input/output mix, and host-only interface invalids; parity checks still blocked on the C++ fuzz bridge.)
-- [ ] Add C++ fuzz parity coverage for the expanded ray/interface corpus once the fuzz bridge/binary is available; skip cleanly otherwise and document toggles. (Progress: parity corpora now include a ray-generation module on the CLI and FFI test suites; corpus coverage includes dangling ids and non-pointer/pointer-to-pointer interfaces; still gated on bridge availability. See `docs/fuzz-parity-run.md` for how to run locally.)
+- [x] Add C++ fuzz parity coverage for the expanded ray/interface corpus once the fuzz bridge/binary is available; skip cleanly otherwise and document toggles. (CLI/FFI parity corpora now cover raygen/miss/closest-hit/callable entry points alongside the existing ray-generation case; docs note the broader coverage and skips when C++ tools are absent.)
 - [ ] Wire optional fuzz-path hyperfine/criterion benches (opt-in) to track Rust vs. C++ fuzz throughput and document how to run them locally. (Progress: hyperfine script exists; added criterion bench for `spirv-fuzz` CLI that skips when binaries are unavailable.)
 - [x] Document build/runtime toggles for selecting the C++ fuzz bridge (binary or static lib) vs. the Rust path.
 - [x] Add fuzz-path hyperfine smoke bench to track throughput of the Rust fuzz CLI (opt-in, skipped when C++ tools are unavailable); consider criterion benches next if needed.
