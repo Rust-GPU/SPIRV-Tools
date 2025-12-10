@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::process::Command;
 
 use rspirv::binary::Assemble;
@@ -980,6 +981,25 @@ fn build_cse_across_blocks_module() -> (Vec<u32>, u32, u32) {
     b.end_function().unwrap();
     let _ = entry;
     (b.module().assemble(), add0, add1)
+}
+
+fn build_copy_chain_module() -> (Vec<u32>, u32, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let int = b.type_int(32, 1);
+    let func_ty = b.type_function(int, vec![int]);
+    let _func = b
+        .begin_function(int, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let x = b.function_parameter(int).unwrap();
+
+    let _ = b.begin_block(None).unwrap();
+    let copy1 = b.copy_object(int, None, x).expect("copy1");
+    let copy2 = b.copy_object(int, None, copy1).expect("copy2");
+    b.ret_value(copy2).unwrap();
+    b.end_function().unwrap();
+    (b.module().assemble(), copy1, copy2)
 }
 
 fn build_cross_block_factor_module() -> (Vec<u32>, u32, u32) {
@@ -3691,28 +3711,64 @@ fn cli_opt_block_dedupes_common_expr_across_blocks() {
     rspirv::binary::parse_words(&optimized_words, &mut loader).expect("parse optimized");
     let module = loader.module();
 
-    let has_copy = module.all_inst_iter().any(|inst| {
-        inst.class.opcode == Op::CopyObject
-            && inst.result_id == Some(second_add)
-            && inst.operands == vec![rspirv::dr::Operand::IdRef(first_add)]
-    });
     let has_second_add = module
         .all_inst_iter()
         .any(|inst| inst.class.opcode == Op::IAdd && inst.result_id == Some(second_add));
-    if !has_copy {
-        eprintln!(
-            "cse module instructions: {:?}",
-            module
-                .all_inst_iter()
-                .map(|inst| (inst.class.opcode, inst.result_id, inst.operands.clone()))
-                .collect::<Vec<_>>()
-        );
-    }
-    assert!(
-        has_copy,
-        "second add should be replaced by a copy of the first"
-    );
+    let ret_uses_first = module.all_inst_iter().any(|inst| {
+        inst.class.opcode == Op::ReturnValue
+            && inst
+                .operands
+                .iter()
+                .any(|op| matches!(op, rspirv::dr::Operand::IdRef(id) if *id == first_add))
+    });
     assert!(!has_second_add, "duplicate add should be removed");
+    assert!(ret_uses_first, "return should use the surviving add");
+}
+
+#[test]
+fn cli_opt_block_collapses_copy_chains() {
+    let _guard = env_guard();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let (words, copy1, copy2) = build_copy_chain_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let output = dir.path().join("output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let status = Command::new(exe)
+        .arg(&input)
+        .arg(&output)
+        .status()
+        .expect("run opt_block");
+    assert!(status.success(), "opt_block should exit successfully");
+
+    let optimized_bytes = std::fs::read(&output).expect("read output");
+    let optimized_words = bytes_to_words(&optimized_bytes);
+    let mut loader = Loader::new();
+    rspirv::binary::parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+
+    let mut copies: HashMap<u32, u32> = HashMap::new();
+    for inst in module.all_inst_iter() {
+        if inst.class.opcode == Op::CopyObject {
+            if let (Some(dst), Some(src)) = (
+                inst.result_id,
+                inst.operands.get(0).and_then(|op| op.id_ref_any()),
+            ) {
+                copies.insert(dst, src);
+            }
+        }
+    }
+    for (dst, src) in &copies {
+        assert_ne!(dst, src, "copy chains must not self-loop");
+        if let Some(src_src) = copies.get(src) {
+            assert_eq!(
+                src_src, src,
+                "nested copy should have been collapsed to a root operand"
+            );
+        }
+    }
 }
 
 #[test]

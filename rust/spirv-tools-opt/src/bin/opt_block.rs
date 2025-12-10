@@ -738,6 +738,8 @@ fn dedup_common_arith(
             table.insert(key, (inst.result_id.unwrap_or(result_id), idx));
         }
     }
+
+    collapse_copy_chains(func);
 }
 
 fn make_arith_key(inst: &Instruction) -> Option<ArithKey> {
@@ -762,6 +764,49 @@ fn make_arith_key(inst: &Instruction) -> Option<ArithKey> {
         result_type: inst.result_type,
         operands,
     })
+}
+
+fn collapse_copy_chains(func: &mut rspirv::dr::Function) {
+    let mut parent: HashMap<u32, u32> = HashMap::new();
+    for block in &func.blocks {
+        for inst in &block.instructions {
+            if inst.class.opcode == Op::CopyObject {
+                if let (Some(dst), Some(src)) = (
+                    inst.result_id,
+                    inst.operands.get(0).and_then(|op| op.id_ref_any()),
+                ) {
+                    parent.insert(dst, src);
+                }
+            }
+        }
+    }
+
+    fn find_root(id: u32, parent: &mut HashMap<u32, u32>) -> u32 {
+        let mut current = id;
+        let mut seen = HashSet::new();
+        while let Some(&next) = parent.get(&current) {
+            if !seen.insert(current) {
+                break;
+            }
+            current = next;
+        }
+        let root = current;
+        for node in seen {
+            parent.insert(node, root);
+        }
+        root
+    }
+
+    for block in &mut func.blocks {
+        for inst in &mut block.instructions {
+            for op in &mut inst.operands {
+                if let Some(idref) = op.id_ref_any_mut() {
+                    let root = find_root(*idref, &mut parent);
+                    *idref = root;
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
