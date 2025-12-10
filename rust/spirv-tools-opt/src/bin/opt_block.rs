@@ -487,6 +487,8 @@ fn compute_block_dominators(
     for i in 0..block_count {
         if i == 0 {
             dom[i].insert(i);
+        } else if preds[i].is_empty() {
+            dom[i].insert(i);
         } else {
             dom[i] = (0..block_count).collect();
         }
@@ -693,5 +695,34 @@ mod tests {
             res.is_none(),
             "non-dominating defs must fall back to block-local optimization"
         );
+    }
+
+    #[test]
+    fn compute_dominators_handles_switch_and_unreachable() {
+        // entry -> switch to two cases, plus an unreachable block with no preds.
+        let mut func = Function::new();
+        func.blocks.push(block_with_label(
+            1,
+            vec![branch_cond(2, 3)], // not exactly switch, but multiple succs
+        ));
+        func.blocks.push(block_with_label(2, vec![branch(4)]));
+        func.blocks.push(block_with_label(3, vec![branch(4)]));
+        func.blocks.push(block_with_label(4, vec![Instruction::new(
+            Op::Return,
+            None,
+            None,
+            Vec::new(),
+        )]));
+        // unreachable block with no predecessors
+        func.blocks
+            .push(block_with_label(99, vec![Instruction::new(Op::Return, None, None, Vec::new())]));
+
+        let dom = compute_block_dominators(&func).expect("dominators");
+        // Block 0 dominates 1,2,3,4 but not unreachable 5 (idx 4).
+        assert!(dom.get(&1).unwrap().contains(&0));
+        assert!(dom.get(&2).unwrap().contains(&0));
+        assert!(dom.get(&3).unwrap().contains(&0));
+        assert!(dom.get(&4).unwrap().contains(&4)); // only itself
+        assert!(!dom.get(&1).unwrap().contains(&4));
     }
 }
