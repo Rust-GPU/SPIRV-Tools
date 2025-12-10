@@ -3,7 +3,7 @@ use std::process::Command;
 use rspirv::binary::Assemble;
 use rspirv::dr::{Builder, Loader};
 use rspirv::spirv::{AddressingModel, Capability, FunctionControl, MemoryModel, Op};
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 use tempfile::tempdir;
 
 fn cpp_opt_bin() -> Option<String> {
@@ -748,7 +748,7 @@ fn build_srem_pow2_module_u64() -> Vec<u32> {
 
 #[test]
 fn cli_opt_block_folds_arithmetic() {
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let (words, sub_id) = build_sample_module();
     let dir = tempdir().expect("tempdir");
@@ -787,7 +787,7 @@ fn cli_opt_block_folds_arithmetic() {
 
 #[test]
 fn cli_opt_block_respects_disable_env() {
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::set_var("SPIRV_TOOLS_DISABLE_RUST_OPT", "1");
     let (words, sub_id) = build_sample_module();
     let dir = tempdir().expect("tempdir");
@@ -819,7 +819,7 @@ fn cli_opt_block_respects_disable_env() {
 
 #[test]
 fn cli_opt_block_force_rust_overrides_disable_env() {
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::set_var("SPIRV_TOOLS_DISABLE_RUST_OPT", "1");
     let (words, sub_id) = build_sample_module();
     let dir = tempdir().expect("tempdir");
@@ -857,7 +857,7 @@ fn cli_opt_block_force_rust_overrides_disable_env() {
 
 #[test]
 fn cli_opt_block_force_env_enables_optimizer() {
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     std::env::set_var("SPIRV_TOOLS_FORCE_RUST_OPT", "1");
     let (words, sub_id) = build_sample_module();
@@ -955,7 +955,7 @@ fn cli_opt_block_rejects_unaligned_input() {
 
 #[test]
 fn cli_opt_block_folds_complement_with_width_awareness() {
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let (words, (band_id, int_ty)) = build_band_complement_u64_module();
     let dir = tempdir().expect("tempdir");
@@ -999,7 +999,7 @@ fn cli_opt_block_matches_cpp_band_complement_u64() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
     };
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let (words, _) = build_band_complement_u64_module();
     let dir = tempdir().expect("tempdir");
@@ -1038,7 +1038,7 @@ fn cli_opt_block_matches_cpp_band_complement_u32() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
     };
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let (words, (band_id, int_ty)) = build_band_complement_u32_module();
     let dir = tempdir().expect("tempdir");
@@ -1094,7 +1094,7 @@ fn cli_opt_block_matches_cpp_band_all_ones_u32() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
     };
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let (words, band_id, int_ty) = build_band_all_ones_u32_module();
     let dir = tempdir().expect("tempdir");
@@ -1150,7 +1150,7 @@ fn cli_opt_block_matches_cpp_band_all_ones_u64() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
     };
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let (words, band_id, int_ty) = build_band_all_ones_u64_module();
     let dir = tempdir().expect("tempdir");
@@ -1206,7 +1206,7 @@ fn cli_opt_block_matches_cpp_bor_zero_u32() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
     };
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let (words, bor_id, int_ty) = build_bor_zero_u32_module();
     let dir = tempdir().expect("tempdir");
@@ -1259,7 +1259,7 @@ fn cli_opt_block_matches_cpp_bor_zero_u64() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
     };
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let (words, bor_id, int_ty) = build_bor_zero_u64_module();
     let dir = tempdir().expect("tempdir");
@@ -1312,7 +1312,7 @@ fn cli_opt_block_matches_cpp_bxor_self_u32() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
     };
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let (words, bxor_id, int_ty) = build_bxor_self_u32_module();
     let dir = tempdir().expect("tempdir");
@@ -1371,9 +1371,59 @@ fn has_bitwise_ops(words: &[u32]) -> bool {
     })
 }
 
+fn build_split_y_absorption_module() -> Vec<u32> {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![int, int]);
+    let func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let x = b.function_parameter(int).expect("x");
+    let y = b.function_parameter(int).expect("y");
+    let _ = b.begin_block(None).unwrap();
+    let not_x = b.not(int, None, x).expect("not x");
+    let band1 = b.bitwise_and(int, None, x, y).expect("x & y");
+    let band2 = b.bitwise_and(int, None, not_x, y).expect("~x & y");
+    let _ = b
+        .bitwise_or(int, None, band1, band2)
+        .expect("(x & y) | (~x & y)");
+    b.ret().unwrap();
+    b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", &[x, y]);
+    b.module().assemble()
+}
+
+fn build_split_x_absorption_module() -> Vec<u32> {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![int, int]);
+    let func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let x = b.function_parameter(int).expect("x");
+    let y = b.function_parameter(int).expect("y");
+    let _ = b.begin_block(None).unwrap();
+    let not_y = b.not(int, None, y).expect("not y");
+    let band1 = b.bitwise_and(int, None, x, y).expect("x & y");
+    let band2 = b.bitwise_and(int, None, x, not_y).expect("x & ~y");
+    let _ = b
+        .bitwise_or(int, None, band1, band2)
+        .expect("(x & y) | (x & ~y)");
+    b.ret().unwrap();
+    b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", &[x, y]);
+    b.module().assemble()
+}
+
 #[test]
 fn cli_opt_block_absorbs_band_over_bor() {
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let words = build_band_absorb_or_module();
     let dir = tempdir().expect("tempdir");
@@ -1398,7 +1448,7 @@ fn cli_opt_block_absorbs_band_over_bor() {
 
 #[test]
 fn cli_opt_block_absorbs_bor_over_band() {
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let words = build_bor_absorb_and_module();
     let dir = tempdir().expect("tempdir");
@@ -1426,7 +1476,7 @@ fn cli_opt_block_matches_cpp_bxor_self_u64() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
     };
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let (words, bxor_id, int_ty) = build_bxor_self_u64_module();
     let dir = tempdir().expect("tempdir");
@@ -1479,7 +1529,7 @@ fn cli_opt_block_matches_cpp_mul_identities() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
     };
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let (words, sum_id) = build_mul_identity_module();
     let dir = tempdir().expect("tempdir");
@@ -1539,7 +1589,7 @@ fn cli_opt_block_matches_cpp_mul_identities_s32() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
     };
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let (words, sum_id) = build_mul_identity_module_s32();
     let dir = tempdir().expect("tempdir");
@@ -1596,7 +1646,7 @@ fn cli_opt_block_matches_cpp_mul_identities_s64() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
     };
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let (words, sum_id) = build_mul_identity_module_s64();
     let dir = tempdir().expect("tempdir");
@@ -1654,7 +1704,7 @@ fn cli_opt_block_matches_cpp_mul_identities_u64() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
     };
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let (words, sum_id) = build_mul_identity_module_u64();
     let dir = tempdir().expect("tempdir");
@@ -1712,7 +1762,7 @@ fn cli_opt_block_matches_cpp_div_rem_identities() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
     };
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let (words, (div_id, rem_id)) = build_div_rem_identity_module();
     let dir = tempdir().expect("tempdir");
@@ -1780,7 +1830,7 @@ fn cli_opt_block_matches_cpp_div_rem_identities_u64() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
     };
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let (words, (div_id, rem_id)) = build_udiv_rem_identity_module_u64();
     let dir = tempdir().expect("tempdir");
@@ -1848,7 +1898,7 @@ fn cli_opt_block_matches_cpp_signed_div_rem_identities() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
     };
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let (words, (div_id, rem_id)) = build_signed_div_rem_identity_module();
     let dir = tempdir().expect("tempdir");
@@ -1916,7 +1966,7 @@ fn cli_opt_block_matches_cpp_signed_div_rem_identities_u64() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
     };
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let (words, (div_id, rem_id)) = build_signed_div_rem_identity_module_u64();
     let dir = tempdir().expect("tempdir");
@@ -1988,7 +2038,7 @@ fn cli_opt_block_matches_cpp_mul_pow2_rewrite() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
     };
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let (words, (_mul_id, shift_const_id)) = build_mul_pow2_module();
     let dir = tempdir().expect("tempdir");
@@ -2053,7 +2103,7 @@ fn cli_opt_block_matches_cpp_mul_pow2_rewrite_s32() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
     };
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let (words, (_mul_id, shift_const_id)) = build_mul_pow2_module_s32();
     let dir = tempdir().expect("tempdir");
@@ -2118,7 +2168,7 @@ fn cli_opt_block_matches_cpp_mul_pow2_rewrite_s64() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
     };
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let (words, (_mul_id, shift_const_id)) = build_mul_pow2_module_s64();
     let dir = tempdir().expect("tempdir");
@@ -2187,7 +2237,7 @@ fn cli_opt_block_matches_cpp_mul_neg_one_rewrite() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
     };
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let (words, mul_id) = build_mul_neg_one_module();
     let dir = tempdir().expect("tempdir");
@@ -2254,7 +2304,7 @@ fn cli_opt_block_matches_cpp_mul_neg_one_rewrite_s64() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
     };
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let (words, mul_id) = build_mul_neg_one_module_s64();
     let dir = tempdir().expect("tempdir");
@@ -2320,7 +2370,7 @@ fn cli_opt_block_matches_cpp_mul_neg_one_rewrite_u64() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
     };
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let (words, mul_id) = build_mul_neg_one_module_u64();
     let dir = tempdir().expect("tempdir");
@@ -2386,7 +2436,7 @@ fn cli_opt_block_matches_cpp_udiv_pow2_rewrite() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
     };
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let words = build_udiv_pow2_module();
     let dir = tempdir().expect("tempdir");
@@ -2451,7 +2501,7 @@ fn cli_opt_block_matches_cpp_mul_pow2_rewrite_u64() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
     };
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let (words, (_mul_id, shift_const_id)) = build_mul_pow2_module_u64();
     let dir = tempdir().expect("tempdir");
@@ -2529,7 +2579,7 @@ fn cli_opt_block_matches_cpp_umod_pow2_rewrite() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
     };
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let words = build_umod_pow2_module();
     let dir = tempdir().expect("tempdir");
@@ -2594,7 +2644,7 @@ fn cli_opt_block_matches_cpp_udiv_pow2_rewrite_u64() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
     };
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let words = build_udiv_pow2_module_u64();
     let dir = tempdir().expect("tempdir");
@@ -2659,7 +2709,7 @@ fn cli_opt_block_matches_cpp_umod_pow2_rewrite_u64() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
     };
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let words = build_umod_pow2_module_u64();
     let dir = tempdir().expect("tempdir");
@@ -2724,7 +2774,7 @@ fn cli_opt_block_matches_cpp_sdiv_pow2_rewrite() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
     };
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let words = build_sdiv_pow2_module();
     let dir = tempdir().expect("tempdir");
@@ -2797,7 +2847,7 @@ fn cli_opt_block_matches_cpp_srem_pow2_rewrite() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
     };
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let words = build_srem_pow2_module();
     let dir = tempdir().expect("tempdir");
@@ -2857,7 +2907,7 @@ fn cli_opt_block_matches_cpp_sdiv_pow2_rewrite_u64() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
     };
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let words = build_sdiv_pow2_module_u64();
     let dir = tempdir().expect("tempdir");
@@ -2930,7 +2980,7 @@ fn cli_opt_block_matches_cpp_srem_pow2_rewrite_u64() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
     };
-    let _guard = ENV_GUARD.lock().unwrap();
+    let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let words = build_srem_pow2_module_u64();
     let dir = tempdir().expect("tempdir");
@@ -2986,6 +3036,12 @@ fn cli_opt_block_matches_cpp_srem_pow2_rewrite_u64() {
 }
 
 static ENV_GUARD: Mutex<()> = Mutex::new(());
+
+fn env_guard() -> MutexGuard<'static, ()> {
+    ENV_GUARD
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 fn words_to_bytes(words: &[u32]) -> Vec<u8> {
     let mut out = Vec::with_capacity(words.len() * 4);
@@ -3081,6 +3137,58 @@ fn const_literals(words: &[u32]) -> std::collections::BTreeSet<u32> {
             }
         })
         .collect()
+}
+
+/// Rust-only improvement: absorb split y term (x & y) | (~x & y) into y.
+#[test]
+fn cli_opt_block_absorbs_split_y_term() {
+    let _guard = env_guard();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let words = build_split_y_absorption_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let rust_output = dir.path().join("rust_output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let rust_status = Command::new(exe)
+        .arg(&input)
+        .arg(&rust_output)
+        .status()
+        .expect("run opt_block");
+    assert!(rust_status.success(), "opt_block should succeed");
+
+    let rust_words = bytes_to_words(&std::fs::read(&rust_output).unwrap());
+    assert!(
+        !has_bitwise_ops(&rust_words),
+        "Rust optimizer should fold split y term and drop bitwise ops (C++ leaves expanded)"
+    );
+}
+
+/// Rust-only improvement: absorb split x term (x & y) | (x & ~y) into x.
+#[test]
+fn cli_opt_block_absorbs_split_x_term() {
+    let _guard = env_guard();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let words = build_split_x_absorption_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let rust_output = dir.path().join("rust_output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let rust_status = Command::new(exe)
+        .arg(&input)
+        .arg(&rust_output)
+        .status()
+        .expect("run opt_block");
+    assert!(rust_status.success(), "opt_block should succeed");
+
+    let rust_words = bytes_to_words(&std::fs::read(&rust_output).unwrap());
+    assert!(
+        !has_bitwise_ops(&rust_words),
+        "Rust optimizer should fold split x term and drop bitwise ops (C++ leaves expanded)"
+    );
 }
 
 fn module_has_result(words: &[u32], result_id: u32) -> bool {
