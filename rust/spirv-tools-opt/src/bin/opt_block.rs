@@ -127,6 +127,18 @@ fn optimize_module(
     let mut preserved_roots: Vec<u32> = Vec::new();
 
     for func in &mut module.functions {
+        for block in &func.blocks {
+            if let Some(root_id) = block
+                .instructions
+                .iter()
+                .rev()
+                .find(|inst| is_arith(inst.class.opcode))
+                .and_then(|inst| inst.result_id)
+            {
+                preserved_roots.push(root_id);
+            }
+        }
+
         if func.blocks.len() > 1 {
             if let Some((new_constants, optimized_blocks)) =
                 optimize_function_global(func, &type_widths, &constant_map)
@@ -148,9 +160,6 @@ fn optimize_module(
                 .collect();
             if arithmetic.is_empty() {
                 continue;
-            }
-            if let Some(root_id) = arithmetic.last().and_then(|inst| inst.result_id) {
-                preserved_roots.push(root_id);
             }
 
             let mut arith_stream = Vec::new();
