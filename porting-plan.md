@@ -148,7 +148,7 @@ Planned tasks:
 - Parity runs via `run-opt-parity.sh` in the optimizer CI smoke script; parity suite now spans 50 cases and skips cleanly if `spirv-opt` is absent.
 - Parity now also exercises shift-by-zero elimination and optimizer error/override reporting through the CLI/FFI bridge.
 - Clippy/rustfmt, fuzz/hyperfine hooks remain green alongside ctest with the Rust validator enabled.
-- Added C++ parity coverage for bitwise absorption (`x & (x | y)` and `x | (x & y)`) to guard the new bitwise rewrites against drift.
+- Added C++ parity coverage for bitwise absorption (`x & (x | y)` and `x | (x & y)`) plus a 64-bit variant to guard the new bitwise rewrites against drift and width handling.
 
 ## Upcoming Milestone: Optimizer Rewrite Stability & Extension
 - Broaden e-graph rewrites to additional algebraic/bitwise identities while preserving id stability (e.g., deeper shift/mask mixes, rotate-like sequences as supported).
