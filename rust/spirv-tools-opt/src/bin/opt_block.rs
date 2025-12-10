@@ -3,8 +3,8 @@ use rspirv::binary::{parse_words, Assemble};
 use rspirv::dr::Instruction;
 use rspirv::spirv::Op;
 use spirv_tools_opt::translate::{
-    optimize_arith_block_with_types, rebuild_arith_with_original_ids, translate_arith_with_types,
-    type_widths_from_module,
+    optimize_arith_block_with_types, rebuild_arith_with_original_ids,
+    translate_arith_with_types_dominated, type_widths_from_module,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::env;
@@ -346,7 +346,8 @@ fn optimize_function_global(
     arith_stream.extend(constant_map.values().cloned());
     arith_stream.extend(arithmetic.clone());
 
-    let translated = translate_arith_with_types(&arith_stream, type_widths).ok()?;
+    let translated =
+        translate_arith_with_types_dominated(&arith_stream, type_widths).ok()?;
     let optimized_expr = spirv_tools_opt::optimize_translated(&translated);
     if optimized_expr.as_ref().len() != translated.original_ids.len() {
         return None;

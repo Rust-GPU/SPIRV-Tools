@@ -182,6 +182,7 @@ Tasks:
 - Added a function-level arithmetic optimizer path (global e-graph stream) that rewrites multi-block arithmetic when IDs can be mapped back to their original blocks; guarded to fall back to per-block optimization on any mismatch.
 - Added a topo-sorted multi-block arithmetic extractor so the global e-graph path respects SSA dependencies across blocks while keeping block-local rebuilds aligned with original ids.
 - Added translation/rebuild tests to ensure the global arithmetic path preserves original ids/types, and wired the multi-block path to translate→optimize→rebuild while still retaining the per-block fallback.
+- [x] Enforce dominance when translating multi-block arithmetic streams, falling back to per-block optimization when a definition order is violated and allowing externally defined operands to flow through safely; added dominance regression tests.
 
 ## Upcoming Milestone: Optimizer CLI/FFI Integration
 - Expose the Rust arithmetic optimizer through CLI/FFI entry points with a flag/env toggle and a documented C++ fallback.

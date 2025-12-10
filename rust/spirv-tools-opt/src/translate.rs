@@ -27,6 +27,9 @@ pub enum TranslateError {
     /// A rebuilt node was missing a result type.
     #[error("optimized node {node:?} is missing result type for rebuild")]
     MissingResultType { node: SpirvLang },
+    /// An operand is not dominated by a prior definition when dominance is enforced.
+    #[error("operand id {id} for {opcode:?} is not dominated in the linear stream")]
+    UndominatedOperand { id: u32, opcode: Op },
 }
 
 /// Extract integer type widths from a parsed module.
@@ -517,6 +520,41 @@ pub fn translate_arith_with_types(
         symbol_widths,
         node_types,
     })
+}
+
+/// Translate while enforcing that operands are defined earlier in the linear stream.
+pub fn translate_arith_with_types_dominated(
+    instructions: &[Instruction],
+    type_widths: &HashMap<Word, u32>,
+) -> Result<TranslatedExpr, TranslateError> {
+    check_linear_dominance(instructions)?;
+    translate_arith_with_types(instructions, type_widths)
+}
+
+fn check_linear_dominance(instructions: &[Instruction]) -> Result<(), TranslateError> {
+    let defined: HashSet<Word> = instructions.iter().filter_map(|inst| inst.result_id).collect();
+    let mut seen: HashSet<Word> = HashSet::new();
+    for inst in instructions {
+        let opcode = inst.class.opcode;
+        if opcode == Op::TypeInt {
+            if let Some(id) = inst.result_id {
+                seen.insert(id);
+            }
+            continue;
+        }
+        for operand in inst.operands.iter().filter_map(|op| op.id_ref_any()) {
+            if defined.contains(&operand) && !seen.contains(&operand) {
+                return Err(TranslateError::UndominatedOperand {
+                    id: operand,
+                    opcode,
+                });
+            }
+        }
+        if let Some(id) = inst.result_id {
+            seen.insert(id);
+        }
+    }
+    Ok(())
 }
 
 /// Optimize a straight-line arithmetic block; if it reduces to a constant,
