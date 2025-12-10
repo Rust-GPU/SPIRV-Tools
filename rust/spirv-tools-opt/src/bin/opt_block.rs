@@ -124,6 +124,18 @@ fn optimize_module(
     let mut preserved_roots: Vec<u32> = Vec::new();
 
     for func in &mut module.functions {
+        if func.blocks.len() > 1 {
+            if let Some((new_constants, optimized_blocks)) =
+                optimize_function_global(func, &type_widths, &constant_map)
+            {
+                constant_map = new_constants;
+                for (block, optimized_block) in func.blocks.iter_mut().zip(optimized_blocks) {
+                    replace_block_arith(block, &optimized_block);
+                }
+                continue;
+            }
+        }
+
         for block in &mut func.blocks {
             let original_block = block.instructions.clone();
             let arithmetic: Vec<_> = original_block
@@ -285,4 +297,79 @@ fn collect_id_operands(inst: &Instruction) -> Vec<u32> {
             _ => None,
         })
         .collect()
+}
+
+fn replace_block_arith(block: &mut rspirv::dr::Block, optimized_block: &[Instruction]) {
+    let original_block = block.instructions.clone();
+    let mut new_block = Vec::new();
+    let mut inserted = false;
+    for inst in original_block {
+        if is_arith(inst.class.opcode) {
+            if !inserted {
+                new_block.extend_from_slice(optimized_block);
+                inserted = true;
+            }
+            continue;
+        }
+        new_block.push(inst);
+    }
+    if !inserted {
+        new_block.extend_from_slice(optimized_block);
+    }
+    block.instructions = new_block;
+}
+
+fn optimize_function_global(
+    func: &rspirv::dr::Function,
+    type_widths: &HashMap<u32, u32>,
+    constant_map: &BTreeMap<u32, Instruction>,
+) -> Option<(BTreeMap<u32, Instruction>, Vec<Vec<Instruction>>)> {
+    let mut arithmetic = Vec::new();
+    let mut id_to_block = HashMap::new();
+    for (block_idx, block) in func.blocks.iter().enumerate() {
+        for inst in &block.instructions {
+            if !is_arith(inst.class.opcode) {
+                continue;
+            }
+            let id = inst.result_id?;
+            arithmetic.push(inst.clone());
+            id_to_block.insert(id, block_idx);
+        }
+    }
+
+    if arithmetic.is_empty() {
+        return None;
+    }
+
+    let mut arith_stream = Vec::new();
+    arith_stream.extend(constant_map.values().cloned());
+    arith_stream.extend(arithmetic.clone());
+
+    let optimized = optimize_arith_block_with_types(&arith_stream, type_widths).ok()?;
+
+    let original_ids: HashSet<u32> = arith_stream
+        .iter()
+        .filter_map(|inst| inst.result_id)
+        .collect();
+
+    let mut new_constants = constant_map.clone();
+    let mut per_block = vec![Vec::new(); func.blocks.len()];
+
+    for inst in optimized {
+        let id = inst.result_id?;
+        if !original_ids.contains(&id) {
+            return None;
+        }
+        if inst.class.opcode == Op::Constant {
+            new_constants.insert(id, inst);
+            continue;
+        }
+        let block_idx = match id_to_block.get(&id) {
+            Some(idx) => *idx,
+            None => return None,
+        };
+        per_block[block_idx].push(inst);
+    }
+
+    Some((new_constants, per_block))
 }

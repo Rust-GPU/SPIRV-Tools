@@ -765,6 +765,31 @@ fn build_dead_arith_module() -> (Vec<u32>, u32, u32) {
     (b.module().assemble(), dead_add, c5)
 }
 
+fn build_two_block_arith_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(int, vec![]);
+    let _func = b
+        .begin_function(int, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+
+    let _ = b.begin_block(None).unwrap();
+    let c4 = b.constant_bit32(int, 4);
+    let c5 = b.constant_bit32(int, 5);
+    let add = b.i_add(int, None, c4, c5).expect("add in block1");
+    let block2 = b.id();
+    b.branch(block2).unwrap();
+
+    b.begin_block(Some(block2)).unwrap();
+    let c2 = b.constant_bit32(int, 2);
+    let sub = b.i_sub(int, None, add, c2).expect("sub in block2");
+    b.ret_value(sub).unwrap();
+    b.end_function().unwrap();
+    (b.module().assemble(), sub)
+}
+
 #[test]
 fn cli_opt_block_folds_arithmetic() {
     let _guard = env_guard();
@@ -3240,6 +3265,47 @@ fn cli_opt_block_prunes_dead_arith_and_consts() {
     assert!(
         !module_has_result(&rust_words, dead_const_id),
         "dead constant should be removed alongside dead arithmetic"
+    );
+}
+
+#[test]
+fn cli_opt_block_folds_across_blocks() {
+    let _guard = env_guard();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let (words, sub_id) = build_two_block_arith_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let output = dir.path().join("output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let status = Command::new(exe)
+        .arg(&input)
+        .arg(&output)
+        .status()
+        .expect("run opt_block");
+    assert!(status.success(), "opt_block should exit successfully");
+
+    let optimized_bytes = std::fs::read(&output).expect("read output");
+    let optimized_words = bytes_to_words(&optimized_bytes);
+    let mut loader = Loader::new();
+    rspirv::binary::parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+
+    let folded = module.all_inst_iter().find(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(sub_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(7)]
+    });
+    assert!(
+        folded.is_some(),
+        "folded subtraction across blocks should become constant 7"
+    );
+    assert!(
+        !module
+            .all_inst_iter()
+            .any(|inst| inst.class.opcode == Op::ISub && inst.result_id == Some(sub_id)),
+        "subtraction should be removed across blocks"
     );
 }
 
