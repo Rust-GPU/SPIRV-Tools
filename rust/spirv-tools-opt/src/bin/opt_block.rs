@@ -324,18 +324,7 @@ fn optimize_function_global(
     type_widths: &HashMap<u32, u32>,
     constant_map: &BTreeMap<u32, Instruction>,
 ) -> Option<(BTreeMap<u32, Instruction>, Vec<Vec<Instruction>>)> {
-    let mut arithmetic = Vec::new();
-    let mut id_to_block = HashMap::new();
-    for (block_idx, block) in func.blocks.iter().enumerate() {
-        for inst in &block.instructions {
-            if !is_arith(inst.class.opcode) {
-                continue;
-            }
-            let id = inst.result_id?;
-            arithmetic.push(inst.clone());
-            id_to_block.insert(id, block_idx);
-        }
-    }
+    let (arithmetic, id_to_block) = collect_arith_topo(func)?;
 
     if arithmetic.is_empty() {
         return None;
@@ -372,4 +361,62 @@ fn optimize_function_global(
     }
 
     Some((new_constants, per_block))
+}
+
+fn collect_arith_topo(
+    func: &rspirv::dr::Function,
+) -> Option<(Vec<Instruction>, HashMap<u32, usize>)> {
+    let mut id_to_inst: HashMap<u32, Instruction> = HashMap::new();
+    let mut id_to_block: HashMap<u32, usize> = HashMap::new();
+    let mut deps: HashMap<u32, Vec<u32>> = HashMap::new();
+    let mut indegree: HashMap<u32, usize> = HashMap::new();
+
+    for (block_idx, block) in func.blocks.iter().enumerate() {
+        for inst in &block.instructions {
+            if !is_arith(inst.class.opcode) {
+                continue;
+            }
+            let id = inst.result_id?;
+            indegree.entry(id).or_default();
+            id_to_inst.insert(id, inst.clone());
+            id_to_block.insert(id, block_idx);
+        }
+    }
+
+    for inst in id_to_inst.values() {
+        let this_id = inst.result_id?;
+        for op_id in collect_id_operands(inst) {
+            if id_to_inst.contains_key(&op_id) {
+                deps.entry(op_id).or_default().push(this_id);
+                *indegree.entry(this_id).or_default() += 1;
+            }
+        }
+    }
+
+    let mut queue: Vec<u32> = indegree
+        .iter()
+        .filter_map(|(id, deg)| (*deg == 0).then_some(*id))
+        .collect();
+    let mut ordered = Vec::new();
+    while let Some(id) = queue.pop() {
+        if let Some(inst) = id_to_inst.get(&id) {
+            ordered.push(inst.clone());
+        }
+        if let Some(nexts) = deps.get(&id) {
+            for &n in nexts {
+                if let Some(entry) = indegree.get_mut(&n) {
+                    *entry -= 1;
+                    if *entry == 0 {
+                        queue.push(n);
+                    }
+                }
+            }
+        }
+    }
+
+    if ordered.len() != id_to_inst.len() {
+        return None;
+    }
+
+    Some((ordered, id_to_block))
 }
