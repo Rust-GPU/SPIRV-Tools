@@ -191,6 +191,8 @@ Tasks:
 - [x] Allow the global optimizer to collapse affine expressions across blocks into leaf copies/constants while preserving original ids via `OpCopyObject`, with CLI coverage for the divergence vs. the block-local path.
 - [x] Hoist loop-invariant arithmetic to the nearest dominating block using CFG dominators (with backedge tolerance), and add CLI coverage to ensure loop bodies are scrubbed while keeping id stability.
 - [x] Enable cross-block factorization of shared multiplicands (e.g., `x*2 + x*3 -> x*5`) via the global e-graph path, maintaining id stability with `OpCopyObject` when necessary and adding CLI regression coverage.
+- [x] Deduplicate dominated arithmetic across blocks and collapse copy chains to their roots so repeated expressions and redundant `OpCopyObject` sequences are eliminated; backed by CLI regressions for CSE and copy flattening.
+- [ ] Extend deduplication to branch-shared expressions (partial redundancy elimination) by hoisting common expressions into the nearest dominating block and inserting structured copies at merge points, with CFG/dominator tests and CLI coverage.
 
 ## Upcoming Milestone: Optimizer CLI/FFI Integration
 - Expose the Rust arithmetic optimizer through CLI/FFI entry points with a flag/env toggle and a documented C++ fallback.
