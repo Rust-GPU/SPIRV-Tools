@@ -725,4 +725,28 @@ mod tests {
         assert!(dom.get(&4).unwrap().contains(&4)); // only itself
         assert!(!dom.get(&1).unwrap().contains(&4));
     }
+
+    #[test]
+    fn compute_dominators_handles_loops() {
+        // entry -> header -> body -> header (backedge) -> exit.
+        let mut func = Function::new();
+        func.blocks.push(block_with_label(10, vec![branch(20)]));
+        func.blocks.push(block_with_label(
+            20,
+            vec![branch_cond(30, 40)], // branch to body or exit
+        ));
+        func.blocks.push(block_with_label(30, vec![branch(20)])); // backedge
+        func.blocks.push(block_with_label(
+            40,
+            vec![Instruction::new(Op::Return, None, None, Vec::new())],
+        ));
+
+        let dom = compute_block_dominators(&func).expect("dominators");
+        // Header is dominated by entry
+        assert!(dom.get(&1).unwrap().contains(&0));
+        // Body is dominated by header
+        assert!(dom.get(&2).unwrap().contains(&1));
+        // Exit is dominated by header as well
+        assert!(dom.get(&3).unwrap().contains(&1));
+    }
 }
