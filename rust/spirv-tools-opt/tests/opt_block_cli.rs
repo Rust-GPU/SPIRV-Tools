@@ -746,6 +746,25 @@ fn build_srem_pow2_module_u64() -> Vec<u32> {
     b.module().assemble()
 }
 
+fn build_dead_arith_module() -> (Vec<u32>, u32, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let int = b.type_int(32, 1);
+    let func_ty = b.type_function(int, vec![]);
+    let _func = b
+        .begin_function(int, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let _ = b.begin_block(None).unwrap();
+    let c4 = b.constant_bit32(int, 4);
+    let c5 = b.constant_bit32(int, 5);
+    let dead_add = b.i_add(int, None, c4, c5).expect("dead add");
+    let live_add = b.i_add(int, None, c4, c4).expect("live add");
+    b.ret_value(live_add).unwrap();
+    b.end_function().unwrap();
+    (b.module().assemble(), dead_add, c5)
+}
+
 #[test]
 fn cli_opt_block_folds_arithmetic() {
     let _guard = env_guard();
@@ -3188,6 +3207,39 @@ fn cli_opt_block_absorbs_split_x_term() {
     assert!(
         !has_bitwise_ops(&rust_words),
         "Rust optimizer should fold split x term and drop bitwise ops (C++ leaves expanded)"
+    );
+}
+
+#[test]
+fn cli_opt_block_prunes_dead_arith_and_consts() {
+    let _guard = env_guard();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let (words, dead_add_id, dead_const_id) = build_dead_arith_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let rust_output = dir.path().join("rust_output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let rust_status = Command::new(exe)
+        .arg(&input)
+        .arg(&rust_output)
+        .status()
+        .expect("run opt_block");
+    assert!(rust_status.success(), "opt_block should succeed");
+
+    let rust_words = bytes_to_words(&std::fs::read(&rust_output).unwrap());
+    assert!(
+        !module_has_result(&rust_words, dead_add_id),
+        "dead arithmetic instruction should be removed"
+    );
+    assert!(
+        !has_const_literal(&rust_words, 5),
+        "unused constant should be removed after DCE"
+    );
+    assert!(
+        !module_has_result(&rust_words, dead_const_id),
+        "dead constant should be removed alongside dead arithmetic"
     );
 }
 

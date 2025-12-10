@@ -178,6 +178,7 @@ Tasks:
 - Port instrumentation passes (bindless, coverage, sanitizers) or bridge to C++ via `cxx` until Rust versions land; add CLI/FFI parity and skip when binaries are absent.
 - Expand e-graph rewrites to cover composite/aggregate simplifications (composite insert/extract chains, access-chain constant folding, scalar replacement of aggregates) with tests and parity where feasible.
 - Wire the global optimizer into CLI/FFI flags (default-off until parity proven), keep rustfmt/clippy/fuzz/criterion/hyperfine green, and document rollout/rollback knobs.
+- Landed an initial post-rewrite dead-code elimination pass for arithmetic/constant ids (module-wide), preserving block roots for observability while pruning unused temporaries/constants.
 
 ## Upcoming Milestone: Optimizer CLI/FFI Integration
 - Expose the Rust arithmetic optimizer through CLI/FFI entry points with a flag/env toggle and a documented C++ fallback.

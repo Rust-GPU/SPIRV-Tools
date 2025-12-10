@@ -3,7 +3,7 @@ use rspirv::binary::{parse_words, Assemble};
 use rspirv::dr::Instruction;
 use rspirv::spirv::Op;
 use spirv_tools_opt::translate::{optimize_arith_block_with_types, type_widths_from_module};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::env;
 use std::fs;
 use std::io::Write;
@@ -121,6 +121,8 @@ fn optimize_module(
         .filter(|(_, inst)| inst.class.opcode == Op::Constant)
         .collect();
 
+    let mut preserved_roots: Vec<u32> = Vec::new();
+
     for func in &mut module.functions {
         for block in &mut func.blocks {
             let original_block = block.instructions.clone();
@@ -131,6 +133,9 @@ fn optimize_module(
                 .collect();
             if arithmetic.is_empty() {
                 continue;
+            }
+            if let Some(root_id) = arithmetic.last().and_then(|inst| inst.result_id) {
+                preserved_roots.push(root_id);
             }
 
             let mut arith_stream = Vec::new();
@@ -175,5 +180,109 @@ fn optimize_module(
         .types_global_values
         .extend(constant_map.into_values());
 
+    dead_code_eliminate(&mut module, &preserved_roots);
+
     Ok(module.assemble())
+}
+
+fn dead_code_eliminate(module: &mut rspirv::dr::Module, preserved_roots: &[u32]) {
+    let mut candidate_operands: HashMap<u32, Vec<u32>> = HashMap::new();
+    let mut worklist: Vec<u32> = Vec::new();
+    let mut live: HashSet<u32> = HashSet::new();
+
+    let is_candidate = |op: Op| is_arith(op) || op == Op::Constant;
+
+    let mut record_candidate = |inst: &Instruction| {
+        if let Some(id) = inst.result_id {
+            if is_candidate(inst.class.opcode) {
+                let mut ops = collect_id_operands(inst);
+                if let Some(rt) = inst.result_type {
+                    ops.push(rt);
+                }
+                candidate_operands.insert(id, ops);
+                return true;
+            }
+        }
+        false
+    };
+
+    for func in &module.functions {
+        for param in &func.parameters {
+            worklist.extend(collect_id_operands(param));
+            if let Some(rt) = param.result_type {
+                worklist.push(rt);
+            }
+        }
+        for block in &func.blocks {
+            let mut last_candidate = None;
+            for inst in &block.instructions {
+                if record_candidate(inst) {
+                    last_candidate = inst.result_id;
+                    continue;
+                }
+                worklist.extend(collect_id_operands(inst));
+                if let Some(rt) = inst.result_type {
+                    worklist.push(rt);
+                }
+            }
+            if let Some(id) = last_candidate {
+                worklist.push(id);
+            }
+        }
+    }
+
+    for inst in &module.types_global_values {
+        if record_candidate(inst) {
+            continue;
+        }
+        worklist.extend(collect_id_operands(inst));
+        if let Some(rt) = inst.result_type {
+            worklist.push(rt);
+        }
+    }
+
+    worklist.extend(preserved_roots.iter().copied());
+
+    while let Some(id) = worklist.pop() {
+        if !live.insert(id) {
+            continue;
+        }
+        if let Some(ops) = candidate_operands.get(&id) {
+            worklist.extend(ops.iter().copied());
+        }
+    }
+
+    for func in &mut module.functions {
+        for block in &mut func.blocks {
+            block.instructions.retain(|inst| {
+                if let Some(id) = inst.result_id {
+                    if is_candidate(inst.class.opcode) {
+                        return live.contains(&id);
+                    }
+                }
+                true
+            });
+        }
+    }
+
+    module.types_global_values.retain(|inst| {
+        if inst.class.opcode == Op::Constant {
+            if let Some(id) = inst.result_id {
+                return live.contains(&id);
+            }
+        }
+        true
+    });
+}
+
+fn collect_id_operands(inst: &Instruction) -> Vec<u32> {
+    inst.operands
+        .iter()
+        .filter_map(|op| match op {
+            rspirv::dr::Operand::IdRef(id)
+            | rspirv::dr::Operand::IdScope(id)
+            | rspirv::dr::Operand::IdMemorySemantics(id) => Some(*id),
+            _ => None,
+        })
+        .collect()
 }
