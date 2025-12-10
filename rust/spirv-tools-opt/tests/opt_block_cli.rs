@@ -3729,7 +3729,7 @@ fn cli_opt_block_dedupes_common_expr_across_blocks() {
 fn cli_opt_block_collapses_copy_chains() {
     let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
-    let (words, copy1, copy2) = build_copy_chain_module();
+    let (words, _copy1, _copy2) = build_copy_chain_module();
     let dir = tempdir().expect("tempdir");
     let input = dir.path().join("input.spv");
     let output = dir.path().join("output.spv");
