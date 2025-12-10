@@ -1002,6 +1002,24 @@ fn build_copy_chain_module() -> (Vec<u32>, u32, u32) {
     (b.module().assemble(), copy1, copy2)
 }
 
+fn build_duplicate_constants_module() -> (Vec<u32>, u32, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(int, vec![]);
+    let _func = b
+        .begin_function(int, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let _ = b.begin_block(None).unwrap();
+    let c1 = b.constant_bit32(int, 42);
+    let c2 = b.constant_bit32(int, 42);
+    let add = b.i_add(int, None, c1, c2).expect("add dup const");
+    b.ret_value(add).unwrap();
+    b.end_function().unwrap();
+    (b.module().assemble(), c1, c2)
+}
+
 fn build_cross_block_factor_module() -> (Vec<u32>, u32, u32) {
     // block0: m2 = x * 2
     // block1: m3 = x * 3; add = m2 + m3
@@ -3827,6 +3845,44 @@ fn cli_opt_block_factors_across_blocks() {
     }
     assert!(has_mul, "factored add should become a single multiply by 5");
     assert!(!has_add, "add should be eliminated after factoring");
+}
+
+#[test]
+fn cli_opt_block_dedups_constants_globally() {
+    let _guard = env_guard();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let (words, c1, c2) = build_duplicate_constants_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let output = dir.path().join("output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let status = Command::new(exe)
+        .arg(&input)
+        .arg(&output)
+        .status()
+        .expect("run opt_block");
+    assert!(status.success(), "opt_block should exit successfully");
+
+    let optimized_bytes = std::fs::read(&output).expect("read output");
+    let optimized_words = bytes_to_words(&optimized_bytes);
+    let mut loader = Loader::new();
+    rspirv::binary::parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+
+    let consts: Vec<_> = module
+        .types_global_values
+        .iter()
+        .filter(|inst| inst.class.opcode == Op::Constant)
+        .collect();
+    assert_eq!(consts.len(), 1, "duplicate constants should be merged");
+    let has_folded_const = consts.iter().any(|inst| {
+        inst.operands
+            .iter()
+            .any(|op| matches!(op, rspirv::dr::Operand::LiteralBit32(v) if *v == 84))
+    });
+    assert!(has_folded_const, "add should fold to a single constant 84");
 }
 
 fn module_has_result(words: &[u32], result_id: u32) -> bool {

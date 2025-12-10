@@ -3,6 +3,7 @@ use rspirv::binary::{parse_words, Assemble};
 use rspirv::dr::Instruction;
 use rspirv::spirv::Op;
 use spirv_tools_opt::translate::{optimize_arith_block_with_types, type_widths_from_module};
+use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::env;
 use std::fs;
@@ -229,6 +230,7 @@ fn optimize_module(
         .types_global_values
         .extend(constant_map.into_values());
 
+    dedup_constants(&mut module);
     dead_code_eliminate(&mut module, &preserved_roots);
 
     Ok(module.assemble())
@@ -835,6 +837,9 @@ fn insert_pre_for_shared_arith(
             if key.operands.is_empty() {
                 continue;
             }
+            if key.opcode == Op::CopyObject {
+                continue;
+            }
             hoist_expr_to_block(func, &key, merge, &blocks);
         }
     }
@@ -856,6 +861,65 @@ fn find_nearest_common_dominator(
         intersection = intersection.intersection(&set).copied().collect();
     }
     intersection.into_iter().max()
+}
+
+fn dedup_constants(module: &mut rspirv::dr::Module) {
+    #[derive(Eq, PartialEq, Hash)]
+    enum ConstKey {
+        Bit32(u32, u32),
+        Bit64(u32, u64),
+    }
+
+    let mut canonical: HashMap<ConstKey, u32> = HashMap::new();
+    let mut id_rewrites: HashMap<u32, u32> = HashMap::new();
+
+    for inst in &module.types_global_values {
+        if inst.class.opcode != Op::Constant {
+            continue;
+        }
+        let Some(result_id) = inst.result_id else {
+            continue;
+        };
+        let Some(ty) = inst.result_type else { continue };
+        let key = match inst.operands.get(0) {
+            Some(rspirv::dr::Operand::LiteralBit32(v)) => ConstKey::Bit32(ty, *v),
+            Some(rspirv::dr::Operand::LiteralBit64(v)) => ConstKey::Bit64(ty, *v),
+            _ => continue,
+        };
+        match canonical.entry(key) {
+            Entry::Vacant(v) => {
+                v.insert(result_id);
+            }
+            Entry::Occupied(o) => {
+                id_rewrites.insert(result_id, *o.get());
+            }
+        }
+    }
+
+    if id_rewrites.is_empty() {
+        return;
+    }
+
+    for func in &mut module.functions {
+        for inst in func.all_inst_iter_mut() {
+            for op in &mut inst.operands {
+                if let Some(idref) = op.id_ref_any_mut() {
+                    if let Some(&replacement) = id_rewrites.get(idref) {
+                        *idref = replacement;
+                    }
+                }
+            }
+        }
+    }
+
+    module.types_global_values.retain(|inst| {
+        if inst.class.opcode == Op::Constant {
+            if let Some(id) = inst.result_id {
+                return !id_rewrites.contains_key(&id);
+            }
+        }
+        true
+    });
 }
 
 fn hoist_expr_to_block(
