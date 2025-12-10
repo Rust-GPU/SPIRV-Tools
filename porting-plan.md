@@ -184,6 +184,7 @@ Tasks:
 - Added translation/rebuild tests to ensure the global arithmetic path preserves original ids/types, and wired the multi-block path to translate→optimize→rebuild while still retaining the per-block fallback.
 - [x] Enforce dominance when translating multi-block arithmetic streams, falling back to per-block optimization when a definition order is violated and allowing externally defined operands to flow through safely; added dominance regression tests.
 - [x] Add a block-order dominance guard for the global arithmetic path so any operand produced in a later block triggers a safe fallback to block-local optimization, with regression coverage.
+- [x] Compute CFG-based block dominators for the global arithmetic path; reject non-dominating uses across blocks and fix the translator to track node types for symbol operands so rebuilds remain aligned.
 
 ## Upcoming Milestone: Optimizer CLI/FFI Integration
 - Expose the Rust arithmetic optimizer through CLI/FFI entry points with a flag/env toggle and a documented C++ fallback.

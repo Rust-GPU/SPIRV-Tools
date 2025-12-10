@@ -76,6 +76,7 @@ fn intern_operand(
     ids: &mut HashMap<Word, Id>,
     expr: &mut RecExpr<SpirvLang>,
     node_to_id: &mut Vec<Option<Word>>,
+    node_types: &mut Vec<Option<Word>>,
     symbol_widths: &mut HashMap<Symbol, u8>,
     id_widths: &HashMap<Word, u8>,
 ) -> Id {
@@ -89,6 +90,7 @@ fn intern_operand(
     }
     ids.insert(operand_id, sym_id);
     node_to_id.push(Some(operand_id));
+    node_types.push(None);
     sym_id
 }
 
@@ -178,6 +180,7 @@ pub fn translate_arith_with_types(
                     &mut ids,
                     &mut expr,
                     &mut node_to_id,
+                    &mut node_types,
                     &mut symbol_widths,
                     &id_widths,
                 );
@@ -225,6 +228,7 @@ pub fn translate_arith_with_types(
                     &mut ids,
                     &mut expr,
                     &mut node_to_id,
+                    &mut node_types,
                     &mut symbol_widths,
                     &id_widths,
                 );
@@ -233,6 +237,7 @@ pub fn translate_arith_with_types(
                     &mut ids,
                     &mut expr,
                     &mut node_to_id,
+                    &mut node_types,
                     &mut symbol_widths,
                     &id_widths,
                 );
@@ -255,6 +260,7 @@ pub fn translate_arith_with_types(
                     &mut ids,
                     &mut expr,
                     &mut node_to_id,
+                    &mut node_types,
                     &mut symbol_widths,
                     &id_widths,
                 );
@@ -263,6 +269,7 @@ pub fn translate_arith_with_types(
                     &mut ids,
                     &mut expr,
                     &mut node_to_id,
+                    &mut node_types,
                     &mut symbol_widths,
                     &id_widths,
                 );
@@ -285,6 +292,7 @@ pub fn translate_arith_with_types(
                     &mut ids,
                     &mut expr,
                     &mut node_to_id,
+                    &mut node_types,
                     &mut symbol_widths,
                     &id_widths,
                 );
@@ -293,6 +301,7 @@ pub fn translate_arith_with_types(
                     &mut ids,
                     &mut expr,
                     &mut node_to_id,
+                    &mut node_types,
                     &mut symbol_widths,
                     &id_widths,
                 );
@@ -309,6 +318,7 @@ pub fn translate_arith_with_types(
                     &mut ids,
                     &mut expr,
                     &mut node_to_id,
+                    &mut node_types,
                     &mut symbol_widths,
                     &id_widths,
                 );
@@ -331,6 +341,7 @@ pub fn translate_arith_with_types(
                     &mut ids,
                     &mut expr,
                     &mut node_to_id,
+                    &mut node_types,
                     &mut symbol_widths,
                     &id_widths,
                 );
@@ -339,6 +350,7 @@ pub fn translate_arith_with_types(
                     &mut ids,
                     &mut expr,
                     &mut node_to_id,
+                    &mut node_types,
                     &mut symbol_widths,
                     &id_widths,
                 );
@@ -366,6 +378,7 @@ pub fn translate_arith_with_types(
                     &mut ids,
                     &mut expr,
                     &mut node_to_id,
+                    &mut node_types,
                     &mut symbol_widths,
                     &id_widths,
                 );
@@ -374,6 +387,7 @@ pub fn translate_arith_with_types(
                     &mut ids,
                     &mut expr,
                     &mut node_to_id,
+                    &mut node_types,
                     &mut symbol_widths,
                     &id_widths,
                 );
@@ -396,6 +410,7 @@ pub fn translate_arith_with_types(
                     &mut ids,
                     &mut expr,
                     &mut node_to_id,
+                    &mut node_types,
                     &mut symbol_widths,
                     &id_widths,
                 );
@@ -404,6 +419,7 @@ pub fn translate_arith_with_types(
                     &mut ids,
                     &mut expr,
                     &mut node_to_id,
+                    &mut node_types,
                     &mut symbol_widths,
                     &id_widths,
                 );
@@ -431,6 +447,7 @@ pub fn translate_arith_with_types(
                     &mut ids,
                     &mut expr,
                     &mut node_to_id,
+                    &mut node_types,
                     &mut symbol_widths,
                     &id_widths,
                 );
@@ -439,6 +456,7 @@ pub fn translate_arith_with_types(
                     &mut ids,
                     &mut expr,
                     &mut node_to_id,
+                    &mut node_types,
                     &mut symbol_widths,
                     &id_widths,
                 );
@@ -466,6 +484,7 @@ pub fn translate_arith_with_types(
                     &mut ids,
                     &mut expr,
                     &mut node_to_id,
+                    &mut node_types,
                     &mut symbol_widths,
                     &id_widths,
                 );
@@ -474,6 +493,7 @@ pub fn translate_arith_with_types(
                     &mut ids,
                     &mut expr,
                     &mut node_to_id,
+                    &mut node_types,
                     &mut symbol_widths,
                     &id_widths,
                 );
@@ -495,6 +515,7 @@ pub fn translate_arith_with_types(
                     &mut ids,
                     &mut expr,
                     &mut node_to_id,
+                    &mut node_types,
                     &mut symbol_widths,
                     &id_widths,
                 );

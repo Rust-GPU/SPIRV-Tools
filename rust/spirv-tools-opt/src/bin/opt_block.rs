@@ -342,14 +342,23 @@ fn optimize_function_global(
         return None;
     }
 
-    // Enforce that intra-function dependencies respect block order; uses of ids
-    // defined in later blocks fall back to the block-local path.
+    // Enforce block dominance for intra-function dependencies; if a value's
+    // defining block does not dominate the use, fall back to the block-local path.
+    let block_dominators = compute_block_dominators(func)?;
+    // Quick sanity: block-order dominance check to catch obvious forward uses.
     for inst in &arithmetic {
         let Some(result_id) = inst.result_id else { continue };
         let Some(&block_idx) = id_to_block.get(&result_id) else { continue };
         for op_id in collect_id_operands(inst) {
             if let Some(&op_block) = id_to_block.get(&op_id) {
                 if op_block > block_idx {
+                    return None;
+                }
+                if !block_dominators
+                    .get(&block_idx)
+                    .map(|doms| doms.contains(&op_block))
+                    .unwrap_or(false)
+                {
                     return None;
                 }
             }
@@ -453,6 +462,107 @@ fn collect_arith_topo(
     Some((ordered, id_to_block))
 }
 
+fn compute_block_dominators(
+    func: &rspirv::dr::Function,
+) -> Option<HashMap<usize, HashSet<usize>>> {
+    let mut label_to_idx: HashMap<u32, usize> = HashMap::new();
+    for (idx, block) in func.blocks.iter().enumerate() {
+        let label_id = block.label.as_ref()?.result_id?;
+        label_to_idx.insert(label_id, idx);
+    }
+    let block_count = func.blocks.len();
+    let mut succs: Vec<Vec<usize>> = vec![Vec::new(); block_count];
+    for (idx, block) in func.blocks.iter().enumerate() {
+        succs[idx] = block_successors(block, &label_to_idx)?;
+    }
+
+    let mut preds: Vec<Vec<usize>> = vec![Vec::new(); block_count];
+    for (idx, succ_list) in succs.iter().enumerate() {
+        for &succ in succ_list {
+            preds[succ].push(idx);
+        }
+    }
+
+    let mut dom: Vec<HashSet<usize>> = vec![HashSet::new(); block_count];
+    for i in 0..block_count {
+        if i == 0 {
+            dom[i].insert(i);
+        } else {
+            dom[i] = (0..block_count).collect();
+        }
+    }
+
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for b in 1..block_count {
+            if preds[b].is_empty() {
+                continue;
+            }
+            let mut new_dom: HashSet<usize> = preds[b]
+                .iter()
+                .map(|p| dom[*p].clone())
+                .reduce(|a, b| a.intersection(&b).copied().collect())
+                .unwrap_or_default();
+            new_dom.insert(b);
+            if new_dom != dom[b] {
+                dom[b] = new_dom;
+                changed = true;
+            }
+        }
+    }
+
+    let mut result = HashMap::new();
+    for (idx, set) in dom.into_iter().enumerate() {
+        result.insert(idx, set);
+    }
+    Some(result)
+}
+
+fn block_successors(
+    block: &rspirv::dr::Block,
+    label_to_idx: &HashMap<u32, usize>,
+) -> Option<Vec<usize>> {
+    let Some(last) = block.instructions.last() else { return Some(Vec::new()) };
+    use rspirv::dr::Operand::*;
+    let mut targets = Vec::new();
+    match last.class.opcode {
+        Op::Branch => {
+            if let Some(IdRef(label)) = last.operands.get(0) {
+                if let Some(idx) = label_to_idx.get(label) {
+                    targets.push(*idx);
+                }
+            }
+        }
+        Op::BranchConditional => {
+            // operands: condition, true label, false label
+            if let Some(IdRef(true_lab)) = last.operands.get(1) {
+                if let Some(idx) = label_to_idx.get(true_lab) {
+                    targets.push(*idx);
+                }
+            }
+            if let Some(IdRef(false_lab)) = last.operands.get(2) {
+                if let Some(idx) = label_to_idx.get(false_lab) {
+                    targets.push(*idx);
+                }
+            }
+        }
+        Op::Switch => {
+            // operands: selector, default label, literal/label pairs
+            for op in last.operands.iter().skip(1) {
+                if let IdRef(label) = op {
+                    if let Some(idx) = label_to_idx.get(label) {
+                        targets.push(*idx);
+                    }
+                }
+            }
+        }
+        Op::Return | Op::ReturnValue | Op::Unreachable => {}
+        _ => {}
+    }
+    Some(targets)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -522,6 +632,66 @@ mod tests {
         assert!(
             res.is_none(),
             "global optimizer should decline when operands are defined in later blocks"
+        );
+    }
+
+    fn block_with_label(label: Word, instructions: Vec<Instruction>) -> Block {
+        Block {
+            label: Some(Instruction::new(Op::Label, None, Some(label), Vec::new())),
+            instructions,
+        }
+    }
+
+    fn branch(target: Word) -> Instruction {
+        Instruction::new(Op::Branch, None, None, vec![rspirv::dr::Operand::IdRef(target)])
+    }
+
+    fn branch_cond(true_t: Word, false_t: Word) -> Instruction {
+        Instruction::new(
+            Op::BranchConditional,
+            None,
+            None,
+            vec![
+                rspirv::dr::Operand::IdRef(999), // condition placeholder
+                rspirv::dr::Operand::IdRef(true_t),
+                rspirv::dr::Operand::IdRef(false_t),
+            ],
+        )
+    }
+
+    #[test]
+    fn dominator_blocks_non_dominating_defs() {
+        // def in left branch does not dominate merge, so global optimization
+        // should refuse.
+        let ty = type_int(1, 32);
+        let def_left = make_const(5, 1, 4);
+        let use_merge = Instruction::new(
+            Op::IAdd,
+            Some(1),
+            Some(10),
+            vec![
+                rspirv::dr::Operand::IdRef(5),
+                rspirv::dr::Operand::IdRef(5),
+            ],
+        );
+
+        let mut func = Function::new();
+        func.blocks.push(block_with_label(
+            100,
+            vec![ty.clone(), branch_cond(101, 102)],
+        ));
+        func.blocks
+            .push(block_with_label(101, vec![def_left.clone(), branch(103)]));
+        func.blocks
+            .push(block_with_label(102, vec![branch(103)]));
+        func.blocks.push(block_with_label(103, vec![use_merge.clone()]));
+
+        let type_widths = HashMap::from_iter([(1u32, 32u32)]);
+        let constant_map = BTreeMap::new();
+        let res = optimize_function_global(&func, &type_widths, &constant_map);
+        assert!(
+            res.is_none(),
+            "non-dominating defs must fall back to block-local optimization"
         );
     }
 }
