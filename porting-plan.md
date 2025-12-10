@@ -150,6 +150,7 @@ Planned tasks:
 - Clippy/rustfmt, fuzz/hyperfine hooks remain green alongside ctest with the Rust validator enabled.
 - Added C++ parity coverage for bitwise absorption (`x & (x | y)` and `x | (x & y)`) plus 64-bit variants to guard the new bitwise rewrites against drift and width handling.
 - Added CLI parity tests for bitwise absorption (32- and 64-bit) so `opt_block` output stays aligned with C++ spirv-opt when available.
+- Added FFI parity tests for bitwise absorption (32- and 64-bit) to keep library optimizer output aligned with C++.
 
 ## Upcoming Milestone: Optimizer Rewrite Stability & Extension
 - Broaden e-graph rewrites to additional algebraic/bitwise identities while preserving id stability (e.g., deeper shift/mask mixes, rotate-like sequences as supported).
