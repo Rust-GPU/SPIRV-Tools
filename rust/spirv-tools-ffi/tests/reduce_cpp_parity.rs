@@ -205,6 +205,14 @@ fn rust_and_cpp_reduce_fail_on_invalid_when_cpp_available() {
         "C++ reduce should reject invalid input: {}",
         cpp.message
     );
+    assert!(
+        !rust.message.is_empty() && !cpp.message.is_empty(),
+        "both reducers should surface diagnostics for invalid input"
+    );
+    assert!(
+        rust.words.is_empty() && cpp.words.is_empty(),
+        "reducers should not emit modules on invalid input"
+    );
 }
 
 #[test]
