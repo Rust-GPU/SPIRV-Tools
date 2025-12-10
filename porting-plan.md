@@ -153,6 +153,7 @@ Planned tasks:
 - Added FFI parity tests for bitwise absorption and distribution (32- and 64-bit) to keep library optimizer output aligned with C++.
 - Added optimizer e-graph rewrites for xor with masked/shared operands (`x ^ (x & y)` -> `x & ~y`, `x ^ (x | y)` -> `y & ~x`) with Rust-side coverage noting the deliberate optimization beyond C++.
 - Added optimizer e-graph rewrite for De Morgan xor form (`(x & ~y) | (~x & y) -> x ^ y`) with Rust-only test coverage (C++ leaves it expanded).
+- Added CLI regression to ensure the De Morgan xor form collapses to `xor` under the Rust optimizer (documented divergence from C++).
 
 ## Upcoming Milestone: Optimizer Rewrite Stability & Extension
 - Broaden e-graph rewrites to additional algebraic/bitwise identities while preserving id stability (e.g., deeper shift/mask mixes, rotate-like sequences as supported).
