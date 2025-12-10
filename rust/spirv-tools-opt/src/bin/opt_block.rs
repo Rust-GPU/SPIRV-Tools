@@ -2,10 +2,7 @@ use clap::Parser;
 use rspirv::binary::{parse_words, Assemble};
 use rspirv::dr::Instruction;
 use rspirv::spirv::Op;
-use spirv_tools_opt::translate::{
-    optimize_arith_block_with_types, rebuild_arith_with_original_ids, translate_arith_with_types,
-    type_widths_from_module,
-};
+use spirv_tools_opt::translate::{optimize_arith_block_with_types, type_widths_from_module};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::env;
 use std::fs;
