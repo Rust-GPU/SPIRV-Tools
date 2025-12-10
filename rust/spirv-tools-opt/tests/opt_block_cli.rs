@@ -179,6 +179,38 @@ fn cli_opt_block_force_global_env_matches_force_flag() {
     assert_eq!(a, b, "force-global flag and env should align");
 }
 
+#[test]
+fn cli_opt_block_disable_overrides_force() {
+    let (words, _) = build_sample_module();
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("in.spv");
+    let output_default = dir.path().join("out_default.spv");
+    let output_conflict = dir.path().join("out_conflict.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    // Baseline run.
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_opt_block"));
+    cmd.arg(&input).arg(&output_default);
+    let status = cmd.status().unwrap();
+    assert!(status.success());
+
+    // Force + disable: disable should win.
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_opt_block"));
+    cmd.arg(&input)
+        .arg(&output_conflict)
+        .arg("--force-global")
+        .env("SPIRV_TOOLS_DISABLE_GLOBAL_OPT", "1");
+    let status = cmd.status().unwrap();
+    assert!(status.success());
+
+    let a = std::fs::read(&output_default).unwrap();
+    let b = std::fs::read(&output_conflict).unwrap();
+    assert_eq!(
+        a, b,
+        "disable-global env should override force-global flag"
+    );
+}
+
 fn build_mul_identity_module_s64() -> (Vec<u32>, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
