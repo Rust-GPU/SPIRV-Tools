@@ -99,6 +99,32 @@ fn build_mul_identity_module_s32() -> (Vec<u32>, u32) {
     (b.module().assemble(), sum)
 }
 
+#[test]
+fn cli_opt_block_disable_global_flag_round_trips() {
+    let (words, _) = build_sample_module();
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("in.spv");
+    let output_default = dir.path().join("out_default.spv");
+    let output_disabled = dir.path().join("out_disabled.spv");
+    std::fs::write(&input, words_to_bytes(&words)).unwrap();
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_opt_block"));
+    cmd.arg(&input).arg(&output_default);
+    let status = cmd.status().unwrap();
+    assert!(status.success());
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_opt_block"));
+    cmd.arg(&input)
+        .arg(&output_disabled)
+        .arg("--disable-global");
+    let status = cmd.status().unwrap();
+    assert!(status.success());
+
+    let a = std::fs::read(&output_default).unwrap();
+    let b = std::fs::read(&output_disabled).unwrap();
+    assert_eq!(a, b, "disable-global flag should not change output");
+}
+
 fn build_mul_identity_module_s64() -> (Vec<u32>, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
