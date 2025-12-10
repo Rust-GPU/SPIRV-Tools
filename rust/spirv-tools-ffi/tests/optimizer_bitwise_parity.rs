@@ -174,6 +174,32 @@ fn build_or_over_and_module(int_width: u32) -> Vec<u32> {
     b.module().assemble()
 }
 
+fn build_bor_distribute_over_bxor_module(int_width: u32) -> Vec<u32> {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(int_width, 0);
+    let func_ty = b.type_function(void, vec![int, int]);
+    let func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let x = b.function_parameter(int).expect("x");
+    let y = b.function_parameter(int).expect("y");
+    let z = if int_width == 32 {
+        b.constant_bit32(int, 0xFF00FF00)
+    } else {
+        b.constant_bit64(int, 0xFF00_FF00_FF00_FF00)
+    };
+    let _ = b.begin_block(None).unwrap();
+    let xor = b.bitwise_xor(int, None, y, z).expect("xor");
+    let _ = b.bitwise_or(int, None, x, xor).expect("bor");
+    b.ret().unwrap();
+    b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", &[]);
+    b.module().assemble()
+}
+
 fn assert_ffi_parity(module_words: &[u32]) {
     let Some(cpp_opt) = cpp_opt_bin() else {
         eprintln!("SPIRV_CPP_OPT not set and spirv-opt not on PATH; skipping FFI parity");
@@ -212,4 +238,14 @@ fn ffi_bitwise_and_absorption_parity_64bit() {
 #[test]
 fn ffi_bitwise_or_absorption_parity_64bit() {
     assert_ffi_parity(&build_or_over_and_module(64));
+}
+
+#[test]
+fn ffi_bitwise_distributes_over_xor_parity() {
+    assert_ffi_parity(&build_bor_distribute_over_bxor_module(32));
+}
+
+#[test]
+fn ffi_bitwise_distributes_over_xor_parity_64bit() {
+    assert_ffi_parity(&build_bor_distribute_over_bxor_module(64));
 }
