@@ -997,10 +997,7 @@ fn corpus_absorbs_add_of_masked_value() {
             && inst.result_id == Some(5)
             && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(x_val)]
     });
-    assert!(
-        folded.is_some(),
-        "add of x & mask plus x should fold to x"
-    );
+    assert!(folded.is_some(), "add of x & mask plus x should fold to x");
 }
 
 #[test]
@@ -1120,10 +1117,7 @@ fn corpus_absorbs_xor_with_zero_masked_value() {
             && inst.result_id == Some(5)
             && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(x_val)]
     });
-    assert!(
-        folded.is_some(),
-        "xor of x with (x & 0) should fold to x"
-    );
+    assert!(folded.is_some(), "xor of x with (x & 0) should fold to x");
 }
 
 #[test]
@@ -1216,6 +1210,150 @@ fn corpus_absorbs_or_with_zero_masked_value() {
 }
 
 #[test]
+fn corpus_rewrites_xor_with_masked_self() {
+    let int = 1;
+    let x_val = 0x1234_5678u32;
+    let mask_val = 0x00FF_00FFu32;
+    let x = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(x_val)],
+    );
+    let mask = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(mask_val)],
+    );
+    let band = inst(
+        Op::BitwiseAnd,
+        int,
+        4,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(3)],
+    );
+    let bxor = inst(
+        Op::BitwiseXor,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(4)],
+    );
+    let optimized = optimize_arith_block(&[x, mask, band, bxor]).expect("optimize");
+    assert!(
+        !optimized
+            .iter()
+            .any(|inst| inst.class.opcode == Op::BitwiseXor),
+        "xor with masked self should normalize to band + not"
+    );
+    let mut opcode_by_id = std::collections::HashMap::new();
+    for inst in &optimized {
+        if let Some(id) = inst.result_id {
+            opcode_by_id.insert(id, inst.class.opcode);
+        }
+    }
+    let band_inst = optimized
+        .iter()
+        .find(|inst| inst.class.opcode == Op::BitwiseAnd)
+        .expect("band should remain");
+    let operands: Vec<_> = band_inst
+        .operands
+        .iter()
+        .filter_map(|op| op.id_ref_any())
+        .collect();
+    assert!(operands.contains(&2), "band should keep original x");
+    let not_id = operands
+        .iter()
+        .copied()
+        .find(|id| *id != 2)
+        .expect("band should include not operand");
+    assert_eq!(
+        opcode_by_id.get(&not_id),
+        Some(&Op::Not),
+        "band should use a not of the mask"
+    );
+    let not_inst = optimized
+        .iter()
+        .find(|inst| inst.result_id == Some(not_id))
+        .expect("not instruction should exist");
+    assert_eq!(
+        not_inst.operands,
+        vec![rspirv::dr::Operand::IdRef(3)],
+        "not should target the original mask"
+    );
+}
+
+#[test]
+fn corpus_rewrites_xor_with_or_shared_operand() {
+    let int = 1;
+    let x = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(0xAAAA5555)],
+    );
+    let y = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(0x0F0F0F0F)],
+    );
+    let bor = inst(
+        Op::BitwiseOr,
+        int,
+        4,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(3)],
+    );
+    let bxor = inst(
+        Op::BitwiseXor,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(4)],
+    );
+    let optimized = optimize_arith_block(&[x, y, bor, bxor]).expect("optimize");
+    assert!(
+        !optimized
+            .iter()
+            .any(|inst| inst.class.opcode == Op::BitwiseXor),
+        "xor with (x | y) should normalize to band + not"
+    );
+    let mut opcode_by_id = std::collections::HashMap::new();
+    for inst in &optimized {
+        if let Some(id) = inst.result_id {
+            opcode_by_id.insert(id, inst.class.opcode);
+        }
+    }
+    let band_inst = optimized
+        .iter()
+        .find(|inst| inst.class.opcode == Op::BitwiseAnd)
+        .expect("band should remain");
+    let operands: Vec<_> = band_inst
+        .operands
+        .iter()
+        .filter_map(|op| op.id_ref_any())
+        .collect();
+    assert!(operands.contains(&3), "band should carry the other operand");
+    let not_id = operands
+        .iter()
+        .copied()
+        .find(|id| *id != 3)
+        .expect("band should include not of x");
+    assert_eq!(
+        opcode_by_id.get(&not_id),
+        Some(&Op::Not),
+        "band should use a not of the shared xor/or operand"
+    );
+    let not_inst = optimized
+        .iter()
+        .find(|inst| inst.result_id == Some(not_id))
+        .expect("not instruction should exist");
+    assert_eq!(
+        not_inst.operands,
+        vec![rspirv::dr::Operand::IdRef(2)],
+        "not should target the shared x"
+    );
+}
+
+#[test]
 fn corpus_absorbs_and_over_or() {
     let int = 1;
     let x_val = 0xABCDu32;
@@ -1250,8 +1388,5 @@ fn corpus_absorbs_and_over_or() {
             && inst.result_id == Some(5)
             && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(x_val)]
     });
-    assert!(
-        folded.is_some(),
-        "band with (x | y) should absorb to x"
-    );
+    assert!(folded.is_some(), "band with (x | y) should absorb to x");
 }
