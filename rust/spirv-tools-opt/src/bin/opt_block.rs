@@ -6,6 +6,7 @@ use spirv_tools_opt::translate::{optimize_arith_block_with_types, type_widths_fr
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::env;
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -163,6 +164,9 @@ fn optimize_module(
                 for (block, optimized_block) in func.blocks.iter_mut().zip(optimized_blocks) {
                     replace_block_arith(block, &optimized_block);
                 }
+                if let Some(doms) = compute_block_dominators(func) {
+                    dedup_common_arith(func, &doms);
+                }
                 continue;
             }
         }
@@ -212,6 +216,10 @@ fn optimize_module(
                 new_block.extend(optimized_block);
             }
             block.instructions = new_block;
+        }
+
+        if let Some(doms) = compute_block_dominators(func) {
+            dedup_common_arith(func, &doms);
         }
     }
 
@@ -673,6 +681,87 @@ fn collect_use_blocks(
         }
     }
     uses
+}
+
+#[derive(Clone, Debug, Eq)]
+struct ArithKey {
+    opcode: Op,
+    result_type: Option<u32>,
+    operands: Vec<u32>,
+}
+
+impl PartialEq for ArithKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.opcode == other.opcode
+            && self.result_type == other.result_type
+            && self.operands == other.operands
+    }
+}
+
+impl Hash for ArithKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.opcode.hash(state);
+        self.result_type.hash(state);
+        self.operands.hash(state);
+    }
+}
+
+fn dedup_common_arith(
+    func: &mut rspirv::dr::Function,
+    dominators: &HashMap<usize, HashSet<usize>>,
+) {
+    let mut table: HashMap<ArithKey, (u32, usize)> = HashMap::new();
+    for (idx, block) in func.blocks.iter_mut().enumerate() {
+        for inst in &mut block.instructions {
+            if !is_arith(inst.class.opcode) {
+                continue;
+            }
+            let Some(result_id) = inst.result_id else {
+                continue;
+            };
+            if inst.class.opcode == Op::Constant {
+                continue;
+            }
+            let Some(key) = make_arith_key(inst) else {
+                continue;
+            };
+            if let Some((prev_id, prev_block)) = table.get(&key) {
+                if dominates(dominators, *prev_block, idx) {
+                    *inst = Instruction::new(
+                        Op::CopyObject,
+                        inst.result_type,
+                        Some(result_id),
+                        vec![rspirv::dr::Operand::IdRef(*prev_id)],
+                    );
+                }
+            }
+            table.insert(key, (inst.result_id.unwrap_or(result_id), idx));
+        }
+    }
+}
+
+fn make_arith_key(inst: &Instruction) -> Option<ArithKey> {
+    let opcode = inst.class.opcode;
+    let commutative = matches!(
+        opcode,
+        Op::IAdd | Op::IMul | Op::BitwiseAnd | Op::BitwiseOr | Op::BitwiseXor
+    );
+    let mut operands: Vec<u32> = inst
+        .operands
+        .iter()
+        .filter_map(|op| op.id_ref_any())
+        .collect();
+    if operands.len() != inst.operands.len() {
+        return None;
+    }
+    if commutative && operands.len() == 2 {
+        operands.sort();
+    }
+    Some(ArithKey {
+        opcode,
+        result_type: inst.result_type,
+        operands,
+    })
 }
 
 #[cfg(test)]

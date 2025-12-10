@@ -957,6 +957,31 @@ fn build_loop_invariant_mul_module() -> (Vec<u32>, u32) {
     (b.module().assemble(), mul)
 }
 
+fn build_cse_across_blocks_module() -> (Vec<u32>, u32, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let int = b.type_int(32, 1);
+    let func_ty = b.type_function(int, vec![int, int]);
+    let _func = b
+        .begin_function(int, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let x = b.function_parameter(int).unwrap();
+    let y = b.function_parameter(int).unwrap();
+
+    let entry = b.begin_block(None).unwrap();
+    let add0 = b.i_add(int, None, x, y).expect("first add");
+    let next = b.id();
+    b.branch(next).unwrap();
+
+    b.begin_block(Some(next)).unwrap();
+    let add1 = b.i_add(int, None, x, y).expect("second add");
+    b.ret_value(add1).unwrap();
+    b.end_function().unwrap();
+    let _ = entry;
+    (b.module().assemble(), add0, add1)
+}
+
 fn build_cross_block_factor_module() -> (Vec<u32>, u32, u32) {
     // block0: m2 = x * 2
     // block1: m3 = x * 3; add = m2 + m3
@@ -3640,6 +3665,54 @@ fn cli_opt_block_hoists_loop_invariant_mul() {
         Some(0),
         "loop-invariant multiply should be hoisted to the entry block"
     );
+}
+
+#[test]
+fn cli_opt_block_dedupes_common_expr_across_blocks() {
+    let _guard = env_guard();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let (words, first_add, second_add) = build_cse_across_blocks_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let output = dir.path().join("output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let status = Command::new(exe)
+        .arg(&input)
+        .arg(&output)
+        .status()
+        .expect("run opt_block");
+    assert!(status.success(), "opt_block should exit successfully");
+
+    let optimized_bytes = std::fs::read(&output).expect("read output");
+    let optimized_words = bytes_to_words(&optimized_bytes);
+    let mut loader = Loader::new();
+    rspirv::binary::parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+
+    let has_copy = module.all_inst_iter().any(|inst| {
+        inst.class.opcode == Op::CopyObject
+            && inst.result_id == Some(second_add)
+            && inst.operands == vec![rspirv::dr::Operand::IdRef(first_add)]
+    });
+    let has_second_add = module
+        .all_inst_iter()
+        .any(|inst| inst.class.opcode == Op::IAdd && inst.result_id == Some(second_add));
+    if !has_copy {
+        eprintln!(
+            "cse module instructions: {:?}",
+            module
+                .all_inst_iter()
+                .map(|inst| (inst.class.opcode, inst.result_id, inst.operands.clone()))
+                .collect::<Vec<_>>()
+        );
+    }
+    assert!(
+        has_copy,
+        "second add should be replaced by a copy of the first"
+    );
+    assert!(!has_second_add, "duplicate add should be removed");
 }
 
 #[test]
