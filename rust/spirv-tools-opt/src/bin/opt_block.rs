@@ -29,6 +29,9 @@ struct Args {
     /// Skip optimization and emit the input unchanged.
     #[arg(long, default_value_t = false)]
     passthrough: bool,
+    /// Disable the global (multi-block) optimizer path even when available.
+    #[arg(long, default_value_t = false)]
+    disable_global: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -37,7 +40,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let input_bytes = fs::read(&args.input)?;
     let words = bytes_to_words(&input_bytes)?;
 
-    let optimized = optimize_module(&words, args.force_rust, args.passthrough)?;
+    let optimized = optimize_module(
+        &words,
+        args.force_rust,
+        args.passthrough,
+        args.disable_global,
+    )?;
     let output_bytes = words_to_bytes(&optimized);
 
     if let Some(path) = args.output {
@@ -96,6 +104,7 @@ fn optimize_module(
     words: &[u32],
     force_rust: bool,
     passthrough: bool,
+    disable_global: bool,
 ) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
     if passthrough {
         return Ok(words.to_vec());
@@ -139,7 +148,9 @@ fn optimize_module(
             }
         }
 
-        if func.blocks.len() > 1 {
+        let disable_global =
+            disable_global || env::var("SPIRV_TOOLS_DISABLE_GLOBAL_OPT").is_ok();
+        if func.blocks.len() > 1 && !disable_global {
             if let Some((new_constants, optimized_blocks)) =
                 optimize_function_global(func, &type_widths, &constant_map)
             {

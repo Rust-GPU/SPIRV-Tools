@@ -186,6 +186,7 @@ Tasks:
 - [x] Add a block-order dominance guard for the global arithmetic path so any operand produced in a later block triggers a safe fallback to block-local optimization, with regression coverage.
 - [x] Compute CFG-based block dominators for the global arithmetic path; reject non-dominating uses across blocks and fix the translator to track node types for symbol operands so rebuilds remain aligned.
 - [x] Add dominator tests for switch-like branching and unreachable blocks to ensure CFG analysis remains sound as the global optimizer expands.
+- [x] Add a CLI flag (`--disable-global`) and env override (`SPIRV_TOOLS_DISABLE_GLOBAL_OPT`) to opt out of the multi-block optimizer path when diagnosing CFG/dominance mismatches.
 
 ## Upcoming Milestone: Optimizer CLI/FFI Integration
 - Expose the Rust arithmetic optimizer through CLI/FFI entry points with a flag/env toggle and a documented C++ fallback.
