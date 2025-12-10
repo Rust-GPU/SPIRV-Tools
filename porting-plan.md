@@ -163,6 +163,22 @@ Planned tasks:
 - Add rotate-left/right support in the optimizer (where enabled) with parity coverage and rewrites, staying within SPIR-V capability limits. (basic rotate folding via shifted-or patterns is in place with complementary-shift guard; expand patterns and coverage)
 - [x] Guard power-of-two mask-to-mod/shift rewrites when the implied shift equals the bit width so we never generate width-sized shifts or zero divisors.
 
+## New Milestone: Optimizer Pass Parity (Global e-graph)
+Port the remaining C++ optimizer passes and route them through a single global e-graph driven optimizer so we can optimize across blocks/functions instead of per-block only.
+
+Tasks:
+- Inventory and stage the unported C++ passes into e-graph friendly equivalents: structured control simplification/merge-return, CFG cleanups, dead-code elimination, mem2reg + SSA rebuild, inlining (opaque-aware), loop optimizations (unroll/peel/strength-reduction/hoist invariants), descriptor/resource legalization and robust buffer access, instrumentation passes, relax-to-half/inline-opaque, duplicate elimination, and composite/access-chain simplifications.
+- Extend the optimizer driver to build a module-wide e-graph per function (preserving dominance/SSA) and replay optimized programs back into structured SPIR-V with id stability.
+- Port structured control simplification + merge-return into e-graph rewrites that normalize selections/loops while keeping SPIR-V structured-control invariants; add Rust unit + CLI/FFI tests (skip parity when C++ binary absent).
+- Implement dead-code elimination (instruction/result liveness, unreachable-block pruning) atop e-graph results so unused ids are dropped while preserving required interface symbols; add Rust tests and CLI coverage.
+- Port mem2reg/SSA rebuild in Rust using typed dominance frontiers and hook it into the global optimizer; validate against C++ mem2reg outputs with CLI parity tests (skip when C++ binary unavailable).
+- Port inlining with typed cost heuristics and e-graph simplification of newly inlined code; add CLI parity tests and guard inline-opaque/relax-to-half behaviors.
+- Port loop opts (unroll/peel/strength-reduction/invariant hoist) into e-graph rules + structural rewrites with cost checks; add CLI/FFI parity + corpus coverage.
+- Port descriptor/resource legalization and robustness passes (robust buffer access, descriptor scalar replacement, wrap-opchain) using typed resource metadata; add parity tests on Vulkan descriptor corpora.
+- Port instrumentation passes (bindless, coverage, sanitizers) or bridge to C++ via `cxx` until Rust versions land; add CLI/FFI parity and skip when binaries are absent.
+- Expand e-graph rewrites to cover composite/aggregate simplifications (composite insert/extract chains, access-chain constant folding, scalar replacement of aggregates) with tests and parity where feasible.
+- Wire the global optimizer into CLI/FFI flags (default-off until parity proven), keep rustfmt/clippy/fuzz/criterion/hyperfine green, and document rollout/rollback knobs.
+
 ## Upcoming Milestone: Optimizer CLI/FFI Integration
 - Expose the Rust arithmetic optimizer through CLI/FFI entry points with a flag/env toggle and a documented C++ fallback.
 - Add end-to-end CLI/FFI parity tests diffing Rust vs. C++ outputs on the arithmetic corpus (skip cleanly when `spirv-opt` is unavailable). **(basic CLI Rust-vs-C++ parity tests for const add and pow2 umod are in place)**
