@@ -109,6 +109,48 @@ fn build_or_over_and_module() -> Vec<u32> {
     b.module().assemble()
 }
 
+fn build_and_over_or_module_64() -> Vec<u32> {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(64, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let _ = b.begin_block(None).unwrap();
+    let x = b.constant_bit64(int, 0x1122_3344_5566_7788);
+    let y = b.constant_bit64(int, 0x00FF_00FF_00FF_00FF);
+    let bor = b.bitwise_or(int, None, x, y).expect("bor");
+    let _band = b.bitwise_and(int, None, x, bor).expect("band");
+    b.ret().unwrap();
+    b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", &[]);
+    b.module().assemble()
+}
+
+fn build_or_over_and_module_64() -> Vec<u32> {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(64, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let _ = b.begin_block(None).unwrap();
+    let x = b.constant_bit64(int, 0xA1B2_C3D4_E5F6_0708);
+    let y = b.constant_bit64(int, 0x0F0F_0F0F_0F0F_0F0F);
+    let band = b.bitwise_and(int, None, x, y).expect("and");
+    let _bor = b.bitwise_or(int, None, x, band).expect("or");
+    b.ret().unwrap();
+    b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", &[]);
+    b.module().assemble()
+}
+
 fn run_cpp_opt(words: &[u32], cpp_opt: &str) -> Vec<u32> {
     let dir = tempdir().expect("tempdir");
     let input = dir.path().join("input.spv");
@@ -167,4 +209,14 @@ fn cli_bitwise_and_absorption_parity() {
 #[test]
 fn cli_bitwise_or_absorption_parity() {
     assert_cli_parity(&build_or_over_and_module());
+}
+
+#[test]
+fn cli_bitwise_and_absorption_parity_64bit() {
+    assert_cli_parity(&build_and_over_or_module_64());
+}
+
+#[test]
+fn cli_bitwise_or_absorption_parity_64bit() {
+    assert_cli_parity(&build_or_over_and_module_64());
 }
