@@ -180,6 +180,7 @@ Tasks:
 - Wire the global optimizer into CLI/FFI flags (default-off until parity proven), keep rustfmt/clippy/fuzz/criterion/hyperfine green, and document rollout/rollback knobs.
 - Landed an initial post-rewrite dead-code elimination pass for arithmetic/constant ids (module-wide), preserving block roots for observability while pruning unused temporaries/constants.
 - Added a function-level arithmetic optimizer path (global e-graph stream) that rewrites multi-block arithmetic when IDs can be mapped back to their original blocks; guarded to fall back to per-block optimization on any mismatch.
+- Added a topo-sorted multi-block arithmetic extractor so the global e-graph path respects SSA dependencies across blocks while keeping block-local rebuilds aligned with original ids.
 
 ## Upcoming Milestone: Optimizer CLI/FFI Integration
 - Expose the Rust arithmetic optimizer through CLI/FFI entry points with a flag/env toggle and a documented C++ fallback.

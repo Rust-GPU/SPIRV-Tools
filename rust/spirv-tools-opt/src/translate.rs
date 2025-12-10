@@ -21,6 +21,12 @@ pub enum TranslateError {
     /// A constant operand had an unexpected layout.
     #[error("constant for id {id} is missing or not a 32-bit literal")]
     InvalidConstant { id: u32 },
+    /// A rebuilt node was missing an original result id.
+    #[error("optimized node {node:?} is missing original result id for rebuild")]
+    MissingOriginalId { node: SpirvLang },
+    /// A rebuilt node was missing a result type.
+    #[error("optimized node {node:?} is missing result type for rebuild")]
+    MissingResultType { node: SpirvLang },
 }
 
 /// Extract integer type widths from a parsed module.
@@ -58,6 +64,8 @@ pub struct TranslatedExpr {
     pub original_ids: Vec<Option<Word>>,
     /// Width hints for symbolic operands derived from type information.
     pub symbol_widths: HashMap<Symbol, u8>,
+    /// Result type ids per node (when available).
+    pub node_types: Vec<Option<Word>>,
 }
 
 fn intern_operand(
@@ -113,6 +121,7 @@ pub fn translate_arith_with_types(
     let mut root_id = None;
     let mut node_to_id = Vec::new();
     let mut symbol_widths: HashMap<Symbol, u8> = HashMap::new();
+    let mut node_types: Vec<Option<Word>> = Vec::new();
 
     let mut type_widths: HashMap<Word, u32> = type_widths.clone();
     for inst in instructions {
@@ -495,6 +504,7 @@ pub fn translate_arith_with_types(
         root_type = inst.result_type;
         root_id = Some(result_id);
         node_to_id.push(Some(result_id));
+        node_types.push(inst.result_type);
     }
 
     let root = root.unwrap_or_else(|| Id::from(0));
@@ -505,6 +515,7 @@ pub fn translate_arith_with_types(
         result_id: root_id,
         original_ids: node_to_id,
         symbol_widths,
+        node_types,
     })
 }
 
@@ -514,6 +525,180 @@ pub fn optimize_arith_block(
     instructions: &[Instruction],
 ) -> Result<Vec<Instruction>, TranslateError> {
     optimize_arith_block_with_types(instructions, &HashMap::new())
+}
+
+/// Rebuild a stream of arithmetic instructions from an optimized expression, reusing
+/// original result ids/types. Fails if the optimized expression contains nodes without
+/// corresponding original ids or result types.
+pub fn rebuild_arith_with_original_ids(
+    optimized: &RecExpr<SpirvLang>,
+    translated: &TranslatedExpr,
+) -> Result<Vec<Instruction>, TranslateError> {
+    let mut assigned_ids = Vec::with_capacity(optimized.as_ref().len());
+    let mut assigned_types = Vec::with_capacity(optimized.as_ref().len());
+    for (idx, _node) in optimized.as_ref().iter().enumerate() {
+        let Some(id) = translated.original_ids.get(idx).and_then(|id| *id) else {
+            return Err(TranslateError::MissingOriginalId {
+                node: optimized.as_ref()[idx].clone(),
+            });
+        };
+        let Some(ty) = translated.node_types.get(idx).and_then(|t| *t) else {
+            return Err(TranslateError::MissingResultType {
+                node: optimized.as_ref()[idx].clone(),
+            });
+        };
+        assigned_ids.push(id);
+        assigned_types.push(ty);
+    }
+
+    let mut out = Vec::new();
+    for (idx, node) in optimized.as_ref().iter().enumerate() {
+        let result_id = assigned_ids[idx];
+        let result_type = assigned_types[idx];
+        let inst = match node {
+            SpirvLang::Const(val) => {
+                let operands = match val.width_bits() {
+                    64 => vec![rspirv::dr::Operand::LiteralBit64(val.get_u64())],
+                    _ => vec![rspirv::dr::Operand::LiteralBit32(val.get())],
+                };
+                Instruction::new(Op::Constant, Some(result_type), Some(result_id), operands)
+            }
+            SpirvLang::Add([a, b]) => Instruction::new(
+                Op::IAdd,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::Mul([a, b]) => Instruction::new(
+                Op::IMul,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::Sub([a, b]) => Instruction::new(
+                Op::ISub,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::SDiv([a, b]) => Instruction::new(
+                Op::SDiv,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::UDiv([a, b]) => Instruction::new(
+                Op::UDiv,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::SRem([a, b]) => Instruction::new(
+                Op::SRem,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::UMod([a, b]) => Instruction::new(
+                Op::UMod,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::Shl([a, b]) => Instruction::new(
+                Op::ShiftLeftLogical,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::ShrS([a, b]) => Instruction::new(
+                Op::ShiftRightArithmetic,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::ShrU([a, b]) => Instruction::new(
+                Op::ShiftRightLogical,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::BitAnd([a, b]) => Instruction::new(
+                Op::BitwiseAnd,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::BitOr([a, b]) => Instruction::new(
+                Op::BitwiseOr,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::BitXor([a, b]) => Instruction::new(
+                Op::BitwiseXor,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::BitNot(a) => Instruction::new(
+                Op::Not,
+                Some(result_type),
+                Some(result_id),
+                vec![rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)])],
+            ),
+            SpirvLang::Neg(a) => Instruction::new(
+                Op::SNegate,
+                Some(result_type),
+                Some(result_id),
+                vec![rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)])],
+            ),
+            SpirvLang::RotL(_) | SpirvLang::RotR(_) => continue,
+            SpirvLang::Symbol(_) => continue,
+        };
+        out.push(inst);
+    }
+
+    Ok(out)
 }
 
 pub fn optimize_arith_block_with_types(
