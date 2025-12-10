@@ -9,7 +9,7 @@ This note captures how to exercise Rust vs. C++ parity for `spirv-reduce` and `s
 
 ## FFI Parity
 
-- FFI validation/assemble corpus parity lives in `rust/spirv-tools-ffi/tests/reduce_fuzz_ffi_parity.rs` and `reduce_fuzz_message_parity.rs`. These guard that FFI assemble/validate behavior matches the core Rust paths. When reducer/fuzzer FFI entry points are added, mirror the CLI corpus here and diff outputs/diagnostics against the C++ bridge (skip cleanly if the bridge is unavailable).
+- FFI validation/assemble corpus parity lives in `rust/spirv-tools-ffi/tests/reduce_fuzz_ffi_parity.rs` and `reduce_fuzz_message_parity.rs`. These guard that FFI assemble/validate behavior matches the core Rust paths. FFI reducer parity against the C++ bridge is covered in `rust/spirv-tools-ffi/tests/reduce_cpp_parity.rs` (vertex/fragment/compute plus raygen/miss/closest-hit/callable), skipping cleanly when the bridge is unavailable. Mirror the CLI corpus for fuzzer FFI once the bridge is wired.
 - Prefer deterministic modules that do not rely on external interestingness scripts so Rust-vs-C++ output diffs are stable.
 
 ## Message Consumer Routing

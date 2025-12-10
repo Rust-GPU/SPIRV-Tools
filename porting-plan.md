@@ -260,7 +260,7 @@ Planned tasks:
 - [ ] CLI reducer/fuzzer/cfg/lint success-path parity on a small corpus to complement the existing help/error parity, diffing outputs when C++ tools are available.
 - [ ] CLI parity for `spirv-objdump`/`spirv-size` (help/version/options plus invalid-input exit codes) and success corpora that diff disassembly/output formatting vs. C++.
 - [ ] Library-level assembler/disassembler/optimizer/reducer/fuzzer API parity (return codes, diagnostics, message-consumer callbacks) with Rust-vs-C++ round-trip tests.
-- [ ] Reducer/fuzzer FFI surface parity: ensure the Rust reducer/fuzzer expose the same callback wiring, option structs, and diagnostic flows as `libspirv`, with integration tests that diff outputs against C++ for good/error inputs.
+- [ ] Reducer/fuzzer FFI surface parity: ensure the Rust reducer/fuzzer expose the same callback wiring, option structs, and diagnostic flows as `libspirv`, with integration tests that diff outputs against C++ for good/error inputs. (Progress: FFI reducer corpus parity added; message-consumer wiring and broader diagnostics still pending.)
 - [ ] Enumerate per-tool parity deltas (CLI + FFI) for assembler, disassembler, validator, optimizer, reducer, fuzzer, objdump, and their flags, then track them to closure with small testable tasks (success/error, help/version, diagnostic routing).
 - [ ] Parity gaps inventory (to be driven into tasks):
   - assembler/disassembler: full success/error corpus diff (text↔binary↔text), diagnostic matching, option/help parity, id preservation checks

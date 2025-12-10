@@ -662,6 +662,11 @@ pub fn reduce_module_with_options(
     }
 }
 
+/// Invoke the C++ reducer directly when available; returns the bridge result as-is.
+pub fn reduce_module_with_cpp(words: &[u32], options: &ffi::ReduceOptions) -> ffi::ReduceResult {
+    ffi::reduce_with_cpp(TargetEnv::Universal1_6.to_raw(), words, options)
+}
+
 pub fn fuzz_module(words: &[u32]) -> ffi::FuzzResult {
     fuzz_module_with_options(words, &default_fuzz_options())
 }
