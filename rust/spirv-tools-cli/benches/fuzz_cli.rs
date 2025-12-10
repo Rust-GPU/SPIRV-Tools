@@ -42,18 +42,22 @@ fn bench_fuzz_cli(c: &mut Criterion) {
     let module_path = write_module(&tempdir, &module);
 
     let mut group = c.benchmark_group("fuzz-cli");
-    group.bench_with_input(BenchmarkId::new("rust", "valid"), &module_path, |b, path| {
-        b.iter(|| {
-            let out = tempdir.path().join("rust-out.spv");
-            let status = Command::new(&rust_bin)
-                .arg(path)
-                .arg("-o")
-                .arg(&out)
-                .status()
-                .expect("run rust spirv-fuzz");
-            assert!(status.success(), "rust spirv-fuzz failed: {status:?}");
-        });
-    });
+    group.bench_with_input(
+        BenchmarkId::new("rust", "valid"),
+        &module_path,
+        |b, path| {
+            b.iter(|| {
+                let out = tempdir.path().join("rust-out.spv");
+                let status = Command::new(&rust_bin)
+                    .arg(path)
+                    .arg("-o")
+                    .arg(&out)
+                    .status()
+                    .expect("run rust spirv-fuzz");
+                assert!(status.success(), "rust spirv-fuzz failed: {status:?}");
+            });
+        },
+    );
 
     if let Some(cpp_bin) = std::env::var_os("SPIRV_CPP_FUZZ")
         .or_else(|| which::which("spirv-fuzz").ok().map(|p| p.into_os_string()))

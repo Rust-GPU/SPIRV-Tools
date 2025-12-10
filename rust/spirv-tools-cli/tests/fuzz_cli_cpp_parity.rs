@@ -128,7 +128,10 @@ fn spirv_fuzz_cli_matches_cpp_output_when_available() {
 
         let rust_bytes = fs::read(&rust_out).expect("read rust fuzz output");
         let cpp_bytes = fs::read(&cpp_out).expect("read cpp fuzz output");
-        assert_eq!(rust_bytes, cpp_bytes, "spirv-fuzz outputs differed on corpus {idx}");
+        assert_eq!(
+            rust_bytes, cpp_bytes,
+            "spirv-fuzz outputs differed on corpus {idx}"
+        );
     }
 }
 

@@ -343,10 +343,7 @@ fn rust_fuzzer_can_emit_duplicate_callable_data_interface() {
         .expect("generate");
     match outcome {
         FuzzOutcome::Invalid { kind, words } => {
-            assert!(matches!(
-                kind,
-                InvalidKind::DuplicateCallableDataInterface
-            ));
+            assert!(matches!(kind, InvalidKind::DuplicateCallableDataInterface));
             assert!(
                 !validate_binary(TargetEnv::Universal1_6, &words).success,
                 "duplicate callable data interface should fail validation"
@@ -370,10 +367,7 @@ fn rust_fuzzer_can_emit_duplicate_hit_attribute_interface() {
         .expect("generate");
     match outcome {
         FuzzOutcome::Invalid { kind, words } => {
-            assert!(matches!(
-                kind,
-                InvalidKind::DuplicateHitAttributeInterface
-            ));
+            assert!(matches!(kind, InvalidKind::DuplicateHitAttributeInterface));
             assert!(
                 !validate_binary(TargetEnv::Universal1_6, &words).success,
                 "duplicate hit attribute interface should fail validation"

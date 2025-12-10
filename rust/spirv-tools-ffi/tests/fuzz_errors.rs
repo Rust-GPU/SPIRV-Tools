@@ -29,7 +29,10 @@ fn fuzz_rejects_empty_input() {
         "expected empty-module message, got: {}",
         result.message
     );
-    assert!(result.words.is_empty(), "empty input should not yield output");
+    assert!(
+        result.words.is_empty(),
+        "empty input should not yield output"
+    );
 }
 
 #[test]
@@ -52,7 +55,10 @@ fn fuzz_validation_passthrough_keeps_input() {
     opts.enable_fuzzer_pass_validation = true;
     let result = fuzz_module_with_options(&words, &opts);
     assert!(result.success, "validation-only path should succeed");
-    assert_eq!(result.words, words, "validation passthrough should not mutate");
+    assert_eq!(
+        result.words, words,
+        "validation passthrough should not mutate"
+    );
     assert!(
         validate_binary(TargetEnv::Universal1_6, &result.words).success,
         "returned module should validate"

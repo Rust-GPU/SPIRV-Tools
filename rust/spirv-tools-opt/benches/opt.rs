@@ -149,7 +149,12 @@ fn bitwise_mixed_block() -> Vec<rspirv::dr::Instruction> {
     let mut next_id = 1u32;
 
     let const32 = |val: u32, id: u32| {
-        rspirv::dr::Instruction::new(Op::Constant, Some(ty), Some(id), vec![Operand::LiteralBit32(val)])
+        rspirv::dr::Instruction::new(
+            Op::Constant,
+            Some(ty),
+            Some(id),
+            vec![Operand::LiteralBit32(val)],
+        )
     };
 
     insts.push(const32(0xFFFF0000, next_id));

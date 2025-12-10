@@ -906,8 +906,7 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
                 *module = minimal_valid_module_with_tag(0);
             }
             let int_ty = ensure_int_type(module);
-            let ptr =
-                ensure_pointer_type(module, StorageClass::IncomingCallableDataKHR, int_ty);
+            let ptr = ensure_pointer_type(module, StorageClass::IncomingCallableDataKHR, int_ty);
             let var_id = fresh_id(module);
             module.types_global_values.push(Instruction::new(
                 Op::Variable,
@@ -974,8 +973,7 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
             ensure_ray_entry_point(module);
             let int_ty = ensure_int_type(module);
             let input_ptr = ensure_pointer_type(module, StorageClass::Input, int_ty);
-            let uniform_ptr =
-                ensure_pointer_type(module, StorageClass::UniformConstant, int_ty);
+            let uniform_ptr = ensure_pointer_type(module, StorageClass::UniformConstant, int_ty);
             let ids_input = insert_global_vars(module, input_ptr, StorageClass::Input, 1);
             let ids_uniform =
                 insert_global_vars(module, uniform_ptr, StorageClass::UniformConstant, 1);
@@ -1114,7 +1112,8 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
             ensure_ray_entry_point(module);
             let int_ty = ensure_int_type(module);
             let inner_ptr = ensure_pointer_type(module, StorageClass::Function, int_ty);
-            let ptr_to_ptr = ensure_pointer_type(module, StorageClass::IncomingRayPayloadKHR, inner_ptr);
+            let ptr_to_ptr =
+                ensure_pointer_type(module, StorageClass::IncomingRayPayloadKHR, inner_ptr);
             let var_id = fresh_id(module);
             module.types_global_values.push(Instruction::new(
                 Op::Variable,
@@ -1165,21 +1164,17 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
             let int_ty = ensure_int_type(module);
             let payload_ptr =
                 ensure_pointer_type(module, StorageClass::IncomingRayPayloadKHR, int_ty);
-            let ids = insert_global_vars(
-                module,
-                payload_ptr,
-                StorageClass::IncomingRayPayloadKHR,
-                1,
-            );
+            let ids =
+                insert_global_vars(module, payload_ptr, StorageClass::IncomingRayPayloadKHR, 1);
             push_interfaces(module, &ids);
             // Strip ray tracing capabilities if present.
-            module.capabilities.retain(|inst| {
-                match inst.operands.first() {
+            module
+                .capabilities
+                .retain(|inst| match inst.operands.first() {
                     Some(Operand::Capability(spirv::Capability::RayTracingKHR))
                     | Some(Operand::Capability(spirv::Capability::RayTracingNV)) => false,
                     _ => true,
-                }
-            });
+                });
             // Keep Shader for a valid baseline.
             module.capabilities.push(Instruction::new(
                 Op::Capability,
@@ -1194,12 +1189,8 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
             // Deliberately use a payload variable that points to an int instead of a struct.
             let payload_ptr =
                 ensure_pointer_type(module, StorageClass::IncomingRayPayloadKHR, int_ty);
-            let ids = insert_global_vars(
-                module,
-                payload_ptr,
-                StorageClass::IncomingRayPayloadKHR,
-                1,
-            );
+            let ids =
+                insert_global_vars(module, payload_ptr, StorageClass::IncomingRayPayloadKHR, 1);
             push_interfaces(module, &ids);
             // Ensure capability is present so the type error surfaces.
             module.capabilities.push(Instruction::new(
@@ -1213,8 +1204,7 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
             ensure_ray_entry_point(module);
             let int_ty = ensure_int_type(module);
             let ptr = ensure_pointer_type(module, StorageClass::IncomingCallableDataKHR, int_ty);
-            let ids =
-                insert_global_vars(module, ptr, StorageClass::IncomingCallableDataKHR, 1);
+            let ids = insert_global_vars(module, ptr, StorageClass::IncomingCallableDataKHR, 1);
             push_interfaces(module, &ids);
             module.capabilities.push(Instruction::new(
                 Op::Capability,
