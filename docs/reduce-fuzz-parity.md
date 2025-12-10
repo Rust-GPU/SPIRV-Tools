@@ -4,7 +4,7 @@ This note captures how to exercise Rust vs. C++ parity for `spirv-reduce` and `s
 
 ## CLI Parity
 
-- Tests in `rust/spirv-tools-cli/tests/spirv_reduce_fuzz_cfg_lint_parity.rs` run a small corpus through the Rust CLIs and compare outputs against the C++ tools when available (`SPIRV_CPP_REDUCE`/`SPIRV_CPP_FUZZ` or PATH discovery). Extend the corpus there with deterministic modules as the Rust reducer/fuzzer ports grow.
+- Tests in `rust/spirv-tools-cli/tests/spirv_reduce_fuzz_cfg_lint_parity.rs` run a corpus (vertex/fragment/compute plus raygen/miss/closest-hit/callable) through the Rust CLIs and compare outputs against the C++ tools when available (`SPIRV_CPP_REDUCE`/`SPIRV_CPP_FUZZ` or PATH discovery). Extend the corpus there with deterministic modules as the Rust reducer/fuzzer ports grow.
 - Use `CARGO_TARGET_DIR=/tmp/spirv-tools-target cargo test -p spirv-tools-cli --manifest-path rust/Cargo.toml spirv_reduce_fuzz_cfg_lint_parity` to run the parity suite locally.
 
 ## FFI Parity

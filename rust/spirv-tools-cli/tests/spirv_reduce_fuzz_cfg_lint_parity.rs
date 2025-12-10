@@ -125,51 +125,123 @@ fn write_module_text(path: &PathBuf, text: &str) {
     assert!(status.success(), "spirv-as failed: {status:?}");
 }
 
-fn corpus_modules() -> Vec<String> {
+fn corpus_modules() -> Vec<(&'static str, String)> {
     vec![
-        simple_module_text(),
-        [
-            "OpCapability Shader",
-            "OpMemoryModel Logical GLSL450",
-            "OpEntryPoint Fragment %main \"main\"",
-            "%void = OpTypeVoid",
-            "%fn = OpTypeFunction %void",
-            "%main = OpFunction %void None %fn",
-            "%entry = OpLabel",
-            "OpNop",
-            "OpReturn",
-            "OpFunctionEnd",
-        ]
-        .join("\n"),
-        [
-            "OpCapability Shader",
-            "OpMemoryModel Logical GLSL450",
-            "OpEntryPoint GLCompute %main \"main\"",
-            "%void = OpTypeVoid",
-            "%fn = OpTypeFunction %void",
-            "%main = OpFunction %void None %fn",
-            "%entry = OpLabel",
-            "OpReturn",
-            "OpFunctionEnd",
-        ]
-        .join("\n"),
-        [
-            "OpCapability RayTracingKHR",
-            "OpExtension \"SPV_KHR_ray_tracing\"",
-            "OpMemoryModel Logical GLSL450",
-            "OpEntryPoint RayGenerationKHR %main \"main\" %payload",
-            "%void = OpTypeVoid",
-            "%u32 = OpTypeInt 32 0",
-            "%payload_ty = OpTypeStruct %u32",
-            "%ptr_payload = OpTypePointer IncomingRayPayloadKHR %payload_ty",
-            "%fn = OpTypeFunction %void",
-            "%payload = OpVariable %ptr_payload IncomingRayPayloadKHR",
-            "%main = OpFunction %void None %fn",
-            "%entry = OpLabel",
-            "OpReturn",
-            "OpFunctionEnd",
-        ]
-        .join("\n"),
+        ("vertex", simple_module_text()),
+        (
+            "fragment",
+            [
+                "OpCapability Shader",
+                "OpMemoryModel Logical GLSL450",
+                "OpEntryPoint Fragment %main \"main\"",
+                "%void = OpTypeVoid",
+                "%fn = OpTypeFunction %void",
+                "%main = OpFunction %void None %fn",
+                "%entry = OpLabel",
+                "OpNop",
+                "OpReturn",
+                "OpFunctionEnd",
+            ]
+            .join("\n"),
+        ),
+        (
+            "compute",
+            [
+                "OpCapability Shader",
+                "OpMemoryModel Logical GLSL450",
+                "OpEntryPoint GLCompute %main \"main\"",
+                "%void = OpTypeVoid",
+                "%fn = OpTypeFunction %void",
+                "%main = OpFunction %void None %fn",
+                "%entry = OpLabel",
+                "OpReturn",
+                "OpFunctionEnd",
+            ]
+            .join("\n"),
+        ),
+        (
+            "raygen_payload",
+            [
+                "OpCapability RayTracingKHR",
+                "OpExtension \"SPV_KHR_ray_tracing\"",
+                "OpMemoryModel Logical GLSL450",
+                "OpEntryPoint RayGenerationKHR %main \"main\" %payload",
+                "%void = OpTypeVoid",
+                "%u32 = OpTypeInt 32 0",
+                "%payload_ty = OpTypeStruct %u32",
+                "%ptr_payload = OpTypePointer IncomingRayPayloadKHR %payload_ty",
+                "%fn = OpTypeFunction %void",
+                "%payload = OpVariable %ptr_payload IncomingRayPayloadKHR",
+                "%main = OpFunction %void None %fn",
+                "%entry = OpLabel",
+                "OpReturn",
+                "OpFunctionEnd",
+            ]
+            .join("\n"),
+        ),
+        (
+            "miss_payload",
+            [
+                "OpCapability RayTracingKHR",
+                "OpExtension \"SPV_KHR_ray_tracing\"",
+                "OpMemoryModel Logical GLSL450",
+                "OpEntryPoint MissKHR %main \"main\" %payload",
+                "%void = OpTypeVoid",
+                "%u32 = OpTypeInt 32 0",
+                "%payload_ty = OpTypeStruct %u32",
+                "%ptr_payload = OpTypePointer IncomingRayPayloadKHR %payload_ty",
+                "%fn = OpTypeFunction %void",
+                "%payload = OpVariable %ptr_payload IncomingRayPayloadKHR",
+                "%main = OpFunction %void None %fn",
+                "%entry = OpLabel",
+                "OpReturn",
+                "OpFunctionEnd",
+            ]
+            .join("\n"),
+        ),
+        (
+            "closest_hit_payload_attr",
+            [
+                "OpCapability RayTracingKHR",
+                "OpExtension \"SPV_KHR_ray_tracing\"",
+                "OpMemoryModel Logical GLSL450",
+                "OpEntryPoint ClosestHitKHR %main \"main\" %payload %hit_attr",
+                "%void = OpTypeVoid",
+                "%u32 = OpTypeInt 32 0",
+                "%payload_ty = OpTypeStruct %u32",
+                "%attr_ty = OpTypeStruct %u32",
+                "%ptr_payload = OpTypePointer IncomingRayPayloadKHR %payload_ty",
+                "%ptr_attr = OpTypePointer HitAttributeKHR %attr_ty",
+                "%fn = OpTypeFunction %void",
+                "%payload = OpVariable %ptr_payload IncomingRayPayloadKHR",
+                "%hit_attr = OpVariable %ptr_attr HitAttributeKHR",
+                "%main = OpFunction %void None %fn",
+                "%entry = OpLabel",
+                "OpReturn",
+                "OpFunctionEnd",
+            ]
+            .join("\n"),
+        ),
+        (
+            "callable_data",
+            [
+                "OpCapability RayTracingKHR",
+                "OpExtension \"SPV_KHR_ray_tracing\"",
+                "OpMemoryModel Logical GLSL450",
+                "OpEntryPoint CallableKHR %main \"main\" %call_data",
+                "%void = OpTypeVoid",
+                "%u32 = OpTypeInt 32 0",
+                "%call_ty = OpTypeStruct %u32",
+                "%ptr_call = OpTypePointer CallableDataKHR %call_ty",
+                "%fn = OpTypeFunction %void",
+                "%call_data = OpVariable %ptr_call CallableDataKHR",
+                "%main = OpFunction %void None %fn",
+                "%entry = OpLabel",
+                "OpReturn",
+                "OpFunctionEnd",
+            ]
+            .join("\n"),
+        ),
     ]
 }
 
@@ -295,9 +367,9 @@ fn spirv_reduce_corpus_matches_cpp_output() {
         eprintln!("SPIRV_CPP_REDUCE not set and spirv-reduce not found on PATH; skipping parity");
         return;
     };
-    for (idx, text) in corpus_modules().iter().enumerate() {
+    for (idx, (label, text)) in corpus_modules().iter().enumerate() {
         let dir = tempdir().expect("temp dir");
-        let bin_path = dir.path().join(format!("module_{idx}.spv"));
+        let bin_path = dir.path().join(format!("module_{idx}_{label}.spv"));
         write_module_text(&bin_path, text);
 
         let rust_out = dir.path().join("rust-out.spv");
@@ -342,9 +414,9 @@ fn spirv_fuzz_corpus_matches_cpp_output() {
         eprintln!("SPIRV_CPP_FUZZ not set and spirv-fuzz not found on PATH; skipping parity");
         return;
     };
-    for (idx, text) in corpus_modules().iter().enumerate() {
+    for (idx, (label, text)) in corpus_modules().iter().enumerate() {
         let dir = tempdir().expect("temp dir");
-        let bin_path = dir.path().join(format!("module_{idx}.spv"));
+        let bin_path = dir.path().join(format!("module_{idx}_{label}.spv"));
         write_module_text(&bin_path, text);
 
         let rust_out = dir.path().join("rust-out.spv");
