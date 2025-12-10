@@ -188,6 +188,8 @@ Tasks:
 - [x] Add dominator tests for switch-like branching and unreachable blocks to ensure CFG analysis remains sound as the global optimizer expands.
 - [x] Add a CLI flag (`--disable-global`) and env override (`SPIRV_TOOLS_DISABLE_GLOBAL_OPT`) to opt out of the multi-block optimizer path when diagnosing CFG/dominance mismatches.
 - [x] Add a force-global CLI flag and env override (`SPIRV_TOOLS_FORCE_GLOBAL_OPT`) with parity tests to keep the toggle behavior aligned.
+- [x] Allow the global optimizer to collapse affine expressions across blocks into leaf copies/constants while preserving original ids via `OpCopyObject`, with CLI coverage for the divergence vs. the block-local path.
+- [x] Hoist loop-invariant arithmetic to the nearest dominating block using CFG dominators (with backedge tolerance), and add CLI coverage to ensure loop bodies are scrubbed while keeping id stability.
 
 ## Upcoming Milestone: Optimizer CLI/FFI Integration
 - Expose the Rust arithmetic optimizer through CLI/FFI entry points with a flag/env toggle and a documented C++ fallback.

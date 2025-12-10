@@ -1,10 +1,10 @@
 use clap::Parser;
+use egg::{EGraph, Extractor, Id, Language, Runner};
 use rspirv::binary::{parse_words, Assemble};
 use rspirv::dr::Instruction;
 use rspirv::spirv::Op;
 use spirv_tools_opt::translate::{
-    optimize_arith_block_with_types, rebuild_arith_with_original_ids,
-    translate_arith_with_types_dominated, type_widths_from_module,
+    optimize_arith_block_with_types, translate_arith_with_types_dominated, type_widths_from_module,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::env;
@@ -35,6 +35,10 @@ struct Args {
     /// Force the global (multi-block) optimizer path when possible.
     #[arg(long, default_value_t = false)]
     force_global: bool,
+}
+
+fn symbol_id(sym: &egg::Symbol) -> Option<u32> {
+    sym.as_str().strip_prefix("id")?.parse().ok()
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -89,6 +93,7 @@ fn is_arith(opcode: Op) -> bool {
             | Op::IAdd
             | Op::IMul
             | Op::ISub
+            | Op::CopyObject
             | Op::BitwiseOr
             | Op::BitwiseXor
             | Op::BitwiseAnd
@@ -153,10 +158,10 @@ fn optimize_module(
             }
         }
 
-        let disable_global =
-            disable_global || env::var("SPIRV_TOOLS_DISABLE_GLOBAL_OPT").is_ok();
+        let disable_global = disable_global || env::var("SPIRV_TOOLS_DISABLE_GLOBAL_OPT").is_ok();
         let force_global_env = env::var("SPIRV_TOOLS_FORCE_GLOBAL_OPT").is_ok();
-        let use_global = (func.blocks.len() > 1) && !disable_global && (force_global || force_global_env);
+        let use_global =
+            (func.blocks.len() > 1) && (!disable_global || force_global || force_global_env);
         if use_global {
             if let Some((new_constants, optimized_blocks)) =
                 optimize_function_global(func, &type_widths, &constant_map)
@@ -344,9 +349,32 @@ fn replace_block_arith(block: &mut rspirv::dr::Block, optimized_block: &[Instruc
         new_block.push(inst);
     }
     if !inserted {
-        new_block.extend_from_slice(optimized_block);
+        if let Some(last) = new_block.pop() {
+            if is_terminator(last.class.opcode) {
+                new_block.extend_from_slice(optimized_block);
+                new_block.push(last);
+                inserted = true;
+            } else {
+                new_block.push(last);
+            }
+        }
+        if !inserted {
+            new_block.extend_from_slice(optimized_block);
+        }
     }
     block.instructions = new_block;
+}
+
+fn is_terminator(opcode: Op) -> bool {
+    matches!(
+        opcode,
+        Op::Branch
+            | Op::BranchConditional
+            | Op::Switch
+            | Op::Return
+            | Op::ReturnValue
+            | Op::Unreachable
+    )
 }
 
 fn optimize_function_global(
@@ -365,8 +393,12 @@ fn optimize_function_global(
     let block_dominators = compute_block_dominators(func)?;
     // Quick sanity: block-order dominance check to catch obvious forward uses.
     for inst in &arithmetic {
-        let Some(result_id) = inst.result_id else { continue };
-        let Some(&block_idx) = id_to_block.get(&result_id) else { continue };
+        let Some(result_id) = inst.result_id else {
+            continue;
+        };
+        let Some(&block_idx) = id_to_block.get(&result_id) else {
+            continue;
+        };
         for op_id in collect_id_operands(inst) {
             if let Some(&op_block) = id_to_block.get(&op_id) {
                 if op_block > block_idx {
@@ -387,13 +419,68 @@ fn optimize_function_global(
     arith_stream.extend(constant_map.values().cloned());
     arith_stream.extend(arithmetic.clone());
 
-    let translated =
-        translate_arith_with_types_dominated(&arith_stream, type_widths).ok()?;
-    let optimized_expr = spirv_tools_opt::optimize_translated(&translated);
-    if optimized_expr.as_ref().len() != translated.original_ids.len() {
-        return None;
+    let translated = translate_arith_with_types_dominated(&arith_stream, type_widths).ok()?;
+    let mut egraph = EGraph::default();
+    let mut expr_ids: Vec<Id> = Vec::new();
+    for node in translated.expr.as_ref() {
+        let mapped = node
+            .clone()
+            .map_children(|child| expr_ids[usize::from(child)]);
+        let id = egraph.add(mapped);
+        expr_ids.push(id);
     }
-    let optimized = rebuild_arith_with_original_ids(&optimized_expr, &translated).ok()?;
+    let Some(_root) = expr_ids.last().copied() else {
+        return None;
+    };
+    let runner = Runner::default()
+        .with_egraph(egraph)
+        .run(&spirv_tools_opt::rewrites());
+    let extractor = Extractor::new(&runner.egraph, spirv_tools_opt::ExprCost);
+
+    let mut id_to_expr_idx: HashMap<u32, usize> = HashMap::new();
+    for (idx, maybe_id) in translated.original_ids.iter().enumerate() {
+        if let Some(id) = maybe_id {
+            id_to_expr_idx.insert(*id, idx);
+        }
+    }
+
+    let mut optimized = Vec::new();
+    for inst in arith_stream.iter() {
+        let Some(result_id) = inst.result_id else {
+            continue;
+        };
+        let Some(expr_idx) = id_to_expr_idx.get(&result_id).copied() else {
+            return None;
+        };
+        let Some(result_type) = translated.node_types.get(expr_idx).and_then(|t| *t) else {
+            return None;
+        };
+        let eclass = runner.egraph.find(expr_ids[expr_idx]);
+        let (_cost, best) = extractor.find_best(eclass);
+        let best_root = best.as_ref().last().cloned();
+        let replacement = match best_root {
+            Some(spirv_tools_opt::SpirvLang::Const(val)) => {
+                let operands = match val.width_bits() {
+                    64 => vec![rspirv::dr::Operand::LiteralBit64(val.get_u64())],
+                    _ => vec![rspirv::dr::Operand::LiteralBit32(val.get())],
+                };
+                Instruction::new(Op::Constant, Some(result_type), Some(result_id), operands)
+            }
+            Some(spirv_tools_opt::SpirvLang::Symbol(sym)) => {
+                let Some(src_id) = symbol_id(&sym) else {
+                    return None;
+                };
+                Instruction::new(
+                    Op::CopyObject,
+                    Some(result_type),
+                    Some(result_id),
+                    vec![rspirv::dr::Operand::IdRef(src_id)],
+                )
+            }
+            _ => inst.clone(),
+        };
+        optimized.push(replacement);
+    }
 
     let original_ids: HashSet<u32> = arith_stream
         .iter()
@@ -402,6 +489,18 @@ fn optimize_function_global(
 
     let mut new_constants = constant_map.clone();
     let mut per_block = vec![Vec::new(); func.blocks.len()];
+    let mut uses_map = collect_use_blocks(func, &id_to_block);
+    for inst in &optimized {
+        let Some(user_block) = inst.result_id.and_then(|id| id_to_block.get(&id)).copied() else {
+            continue;
+        };
+        for op in collect_id_operands(inst) {
+            if id_to_block.contains_key(&op) {
+                uses_map.entry(op).or_default().insert(user_block);
+            }
+        }
+    }
+    let idoms = compute_immediate_dominators(&block_dominators);
 
     for inst in optimized {
         let id = inst.result_id?;
@@ -412,11 +511,29 @@ fn optimize_function_global(
             new_constants.insert(id, inst);
             continue;
         }
-        let block_idx = match id_to_block.get(&id) {
-            Some(idx) => *idx,
-            None => return None,
-        };
-        per_block[block_idx].push(inst);
+        let block_idx = *id_to_block.get(&id)?;
+        let operand_blocks: Vec<_> = collect_id_operands(&inst)
+            .into_iter()
+            .filter_map(|op| id_to_block.get(&op).copied())
+            .collect();
+        let use_blocks = uses_map.get(&id).cloned().unwrap_or_default();
+
+        let mut placement = block_idx;
+        while let Some(Some(idom)) = idoms.get(&placement) {
+            let operands_dominate = operand_blocks
+                .iter()
+                .all(|op_block| dominates(&block_dominators, *op_block, *idom));
+            let placement_dominates_uses = use_blocks
+                .iter()
+                .all(|use_block| dominates(&block_dominators, *idom, *use_block));
+            if operands_dominate && placement_dominates_uses {
+                placement = *idom;
+            } else {
+                break;
+            }
+        }
+
+        per_block[placement].push(inst);
     }
 
     Some((new_constants, per_block))
@@ -480,9 +597,7 @@ fn collect_arith_topo(
     Some((ordered, id_to_block))
 }
 
-fn compute_block_dominators(
-    func: &rspirv::dr::Function,
-) -> Option<HashMap<usize, HashSet<usize>>> {
+fn compute_block_dominators(func: &rspirv::dr::Function) -> Option<HashMap<usize, HashSet<usize>>> {
     let mut label_to_idx: HashMap<u32, usize> = HashMap::new();
     for (idx, block) in func.blocks.iter().enumerate() {
         let label_id = block.label.as_ref()?.result_id?;
@@ -543,7 +658,9 @@ fn block_successors(
     block: &rspirv::dr::Block,
     label_to_idx: &HashMap<u32, usize>,
 ) -> Option<Vec<usize>> {
-    let Some(last) = block.instructions.last() else { return Some(Vec::new()) };
+    let Some(last) = block.instructions.last() else {
+        return Some(Vec::new());
+    };
     use rspirv::dr::Operand::*;
     let mut targets = Vec::new();
     match last.class.opcode {
@@ -583,6 +700,46 @@ fn block_successors(
     Some(targets)
 }
 
+fn compute_immediate_dominators(
+    dominators: &HashMap<usize, HashSet<usize>>,
+) -> HashMap<usize, Option<usize>> {
+    let mut idoms = HashMap::new();
+    for (&block, doms) in dominators {
+        if doms.len() <= 1 {
+            idoms.insert(block, None);
+            continue;
+        }
+        let mut candidates: Vec<_> = doms.iter().copied().filter(|d| *d != block).collect();
+        candidates.sort_by_key(|c| dominators.get(c).map(|s| s.len()).unwrap_or(0));
+        idoms.insert(block, candidates.last().copied());
+    }
+    idoms
+}
+
+fn dominates(dominators: &HashMap<usize, HashSet<usize>>, a: usize, b: usize) -> bool {
+    dominators
+        .get(&b)
+        .map(|set| set.contains(&a))
+        .unwrap_or(false)
+}
+
+fn collect_use_blocks(
+    func: &rspirv::dr::Function,
+    id_to_block: &HashMap<u32, usize>,
+) -> HashMap<u32, HashSet<usize>> {
+    let mut uses: HashMap<u32, HashSet<usize>> = HashMap::new();
+    for (idx, block) in func.blocks.iter().enumerate() {
+        for inst in &block.instructions {
+            for op in collect_id_operands(inst) {
+                if id_to_block.contains_key(&op) {
+                    uses.entry(op).or_default().insert(idx);
+                }
+            }
+        }
+    }
+    uses
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -620,19 +777,13 @@ mod tests {
             Op::IAdd,
             Some(1),
             Some(10),
-            vec![
-                rspirv::dr::Operand::IdRef(3),
-                rspirv::dr::Operand::IdRef(2),
-            ],
+            vec![rspirv::dr::Operand::IdRef(3), rspirv::dr::Operand::IdRef(2)],
         );
         let block1_mul = Instruction::new(
             Op::IMul,
             Some(1),
             Some(3),
-            vec![
-                rspirv::dr::Operand::IdRef(2),
-                rspirv::dr::Operand::IdRef(2),
-            ],
+            vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(2)],
         );
 
         let mut func = Function::new();
@@ -663,7 +814,12 @@ mod tests {
     }
 
     fn branch(target: Word) -> Instruction {
-        Instruction::new(Op::Branch, None, None, vec![rspirv::dr::Operand::IdRef(target)])
+        Instruction::new(
+            Op::Branch,
+            None,
+            None,
+            vec![rspirv::dr::Operand::IdRef(target)],
+        )
     }
 
     fn branch_cond(true_t: Word, false_t: Word) -> Instruction {
@@ -689,10 +845,7 @@ mod tests {
             Op::IAdd,
             Some(1),
             Some(10),
-            vec![
-                rspirv::dr::Operand::IdRef(5),
-                rspirv::dr::Operand::IdRef(5),
-            ],
+            vec![rspirv::dr::Operand::IdRef(5), rspirv::dr::Operand::IdRef(5)],
         );
 
         let mut func = Function::new();
@@ -702,9 +855,9 @@ mod tests {
         ));
         func.blocks
             .push(block_with_label(101, vec![def_left.clone(), branch(103)]));
+        func.blocks.push(block_with_label(102, vec![branch(103)]));
         func.blocks
-            .push(block_with_label(102, vec![branch(103)]));
-        func.blocks.push(block_with_label(103, vec![use_merge.clone()]));
+            .push(block_with_label(103, vec![use_merge.clone()]));
 
         let type_widths = HashMap::from_iter([(1u32, 32u32)]);
         let constant_map = BTreeMap::new();
@@ -725,15 +878,15 @@ mod tests {
         ));
         func.blocks.push(block_with_label(2, vec![branch(4)]));
         func.blocks.push(block_with_label(3, vec![branch(4)]));
-        func.blocks.push(block_with_label(4, vec![Instruction::new(
-            Op::Return,
-            None,
-            None,
-            Vec::new(),
-        )]));
+        func.blocks.push(block_with_label(
+            4,
+            vec![Instruction::new(Op::Return, None, None, Vec::new())],
+        ));
         // unreachable block with no predecessors
-        func.blocks
-            .push(block_with_label(99, vec![Instruction::new(Op::Return, None, None, Vec::new())]));
+        func.blocks.push(block_with_label(
+            99,
+            vec![Instruction::new(Op::Return, None, None, Vec::new())],
+        ));
 
         let dom = compute_block_dominators(&func).expect("dominators");
         // Block 0 dominates 1,2,3,4 but not unreachable 5 (idx 4).

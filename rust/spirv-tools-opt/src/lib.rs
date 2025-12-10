@@ -269,7 +269,7 @@ fn symbol_width(sym: &Symbol) -> Option<u8> {
 }
 
 /// Lightweight cost function favoring folded constants and shallower trees.
-struct ExprCost;
+pub struct ExprCost;
 
 impl egg::CostFunction<SpirvLang> for ExprCost {
     type Cost = usize;
@@ -313,7 +313,8 @@ pub fn optimize_translated(expr: &crate::translate::TranslatedExpr) -> RecExpr<S
     with_symbol_widths(&expr.symbol_widths, || optimize_expr(&expr.expr))
 }
 
-fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
+/// Returns the full set of algebraic rewrites used by the optimizer.
+pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
     vec![
         rewrite!("add-comm"; "(+ ?a ?b)" => "(+ ?b ?a)"),
         rewrite!("mul-comm"; "(* ?a ?b)" => "(* ?b ?a)"),

@@ -150,7 +150,10 @@ fn cli_opt_block_disable_global_env_round_trips() {
 
     let baseline = std::fs::read(&output_default).unwrap();
     let optimized = std::fs::read(&output_env).unwrap();
-    assert_eq!(baseline, optimized, "env flag should disable only the global path");
+    assert_eq!(
+        baseline, optimized,
+        "env flag should disable only the global path"
+    );
 }
 
 #[test]
@@ -205,10 +208,7 @@ fn cli_opt_block_disable_overrides_force() {
 
     let a = std::fs::read(&output_default).unwrap();
     let b = std::fs::read(&output_conflict).unwrap();
-    assert_eq!(
-        a, b,
-        "disable-global env should override force-global flag"
-    );
+    assert_eq!(a, b, "disable-global env should override force-global flag");
 }
 
 fn build_mul_identity_module_s64() -> (Vec<u32>, u32) {
@@ -900,6 +900,61 @@ fn build_two_block_arith_module() -> (Vec<u32>, u32) {
     b.ret_value(sub).unwrap();
     b.end_function().unwrap();
     (b.module().assemble(), sub)
+}
+
+fn build_two_block_affine_cancel_module() -> (Vec<u32>, u32, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let int = b.type_int(32, 1);
+    let func_ty = b.type_function(int, vec![int, int]);
+    let _func = b
+        .begin_function(int, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let x = b.function_parameter(int).unwrap();
+    let y = b.function_parameter(int).unwrap();
+
+    let _ = b.begin_block(None).unwrap();
+    let add = b.i_add(int, None, x, y).expect("add");
+    let block1 = b.id();
+    b.branch(block1).unwrap();
+
+    b.begin_block(Some(block1)).unwrap();
+    let sub = b.i_sub(int, None, add, y).expect("sub");
+    b.ret_value(sub).unwrap();
+    b.end_function().unwrap();
+    (b.module().assemble(), sub, x)
+}
+
+fn build_loop_invariant_mul_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 1);
+    let func_ty = b.type_function(void, vec![int]);
+    let _func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let param = b.function_parameter(int).unwrap();
+
+    let _ = b.begin_block(None).unwrap();
+    let header = b.id();
+    b.branch(header).unwrap();
+
+    b.begin_block(Some(header)).unwrap();
+    let body = b.id();
+    b.branch(body).unwrap();
+
+    b.begin_block(Some(body)).unwrap();
+    let mul = b.i_mul(int, None, param, param).expect("mul");
+    b.branch(header).unwrap();
+
+    let exit = b.id();
+    b.begin_block(Some(exit)).unwrap();
+    b.ret().unwrap();
+    b.end_function().unwrap();
+    (b.module().assemble(), mul)
 }
 
 #[test]
@@ -3418,6 +3473,144 @@ fn cli_opt_block_folds_across_blocks() {
             .all_inst_iter()
             .any(|inst| inst.class.opcode == Op::ISub && inst.result_id == Some(sub_id)),
         "subtraction should be removed across blocks"
+    );
+}
+
+#[test]
+fn cli_opt_block_cancels_affine_across_blocks() {
+    let _guard = env_guard();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let (words, sub_id, x_id) = build_two_block_affine_cancel_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let output = dir.path().join("output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let status = Command::new(exe)
+        .arg(&input)
+        .arg(&output)
+        .status()
+        .expect("run opt_block");
+    assert!(status.success(), "opt_block should exit successfully");
+
+    let optimized_bytes = std::fs::read(&output).expect("read output");
+    let optimized_words = bytes_to_words(&optimized_bytes);
+    let mut loader = Loader::new();
+    rspirv::binary::parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+
+    let has_copy = module.all_inst_iter().any(|inst| {
+        inst.class.opcode == Op::CopyObject
+            && inst.result_id == Some(sub_id)
+            && inst.operands == vec![rspirv::dr::Operand::IdRef(x_id)]
+    });
+    let has_sub = module
+        .all_inst_iter()
+        .any(|inst| inst.class.opcode == Op::ISub && inst.result_id == Some(sub_id));
+    if !has_copy {
+        eprintln!(
+            "affine module instructions: {:?}",
+            module
+                .all_inst_iter()
+                .map(|inst| (inst.class.opcode, inst.result_id, inst.operands.clone()))
+                .collect::<Vec<_>>()
+        );
+    }
+    assert!(has_copy, "affine cancel should reduce to a copy from x");
+    assert!(!has_sub, "subtraction should be eliminated across blocks");
+}
+
+#[test]
+fn cli_opt_block_affine_disable_global_keeps_sub() {
+    let _guard = env_guard();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let (words, sub_id, _) = build_two_block_affine_cancel_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let output = dir.path().join("output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let status = Command::new(exe)
+        .arg(&input)
+        .arg(&output)
+        .arg("--disable-global")
+        .status()
+        .expect("run opt_block");
+    assert!(status.success(), "opt_block should exit successfully");
+
+    let optimized_bytes = std::fs::read(&output).expect("read output");
+    let optimized_words = bytes_to_words(&optimized_bytes);
+    let mut loader = Loader::new();
+    rspirv::binary::parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+
+    let has_sub = module
+        .all_inst_iter()
+        .any(|inst| inst.class.opcode == Op::ISub && inst.result_id == Some(sub_id));
+    assert!(
+        has_sub,
+        "disabling global optimization should keep the original subtraction"
+    );
+}
+
+#[test]
+fn cli_opt_block_hoists_loop_invariant_mul() {
+    let _guard = env_guard();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let (words, mul_id) = build_loop_invariant_mul_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let output = dir.path().join("output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let status = Command::new(exe)
+        .arg(&input)
+        .arg(&output)
+        .status()
+        .expect("run opt_block");
+    assert!(status.success(), "opt_block should exit successfully");
+
+    let optimized_bytes = std::fs::read(&output).expect("read output");
+    let optimized_words = bytes_to_words(&optimized_bytes);
+    let mut loader = Loader::new();
+    rspirv::binary::parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+    let func = module
+        .functions
+        .first()
+        .expect("function present after optimization");
+    let mut block_of_mul = None;
+    for (idx, block) in func.blocks.iter().enumerate() {
+        if block
+            .instructions
+            .iter()
+            .any(|inst| inst.result_id == Some(mul_id))
+        {
+            block_of_mul = Some(idx);
+            break;
+        }
+    }
+    if block_of_mul != Some(0) {
+        eprintln!(
+            "mul placement blocks: {:?}",
+            func.blocks
+                .iter()
+                .map(|blk| {
+                    blk.instructions
+                        .iter()
+                        .map(|inst| (inst.class.opcode, inst.result_id, inst.operands.clone()))
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        );
+    }
+    assert_eq!(
+        block_of_mul,
+        Some(0),
+        "loop-invariant multiply should be hoisted to the entry block"
     );
 }
 

@@ -521,6 +521,18 @@ pub fn translate_arith_with_types(
                 );
                 expr.add(SpirvLang::BitNot(id))
             }
+            Op::CopyObject => {
+                let operand = inst
+                    .operands
+                    .iter()
+                    .find_map(|op| op.id_ref_any())
+                    .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
+                let sym = make_symbol(operand);
+                if let Some(width) = id_widths.get(&operand) {
+                    symbol_widths.insert(sym, *width);
+                }
+                expr.add(SpirvLang::Symbol(sym))
+            }
             other => return Err(TranslateError::UnsupportedOp(other)),
         };
         ids.insert(result_id, node_id);
@@ -553,7 +565,10 @@ pub fn translate_arith_with_types_dominated(
 }
 
 fn check_linear_dominance(instructions: &[Instruction]) -> Result<(), TranslateError> {
-    let defined: HashSet<Word> = instructions.iter().filter_map(|inst| inst.result_id).collect();
+    let defined: HashSet<Word> = instructions
+        .iter()
+        .filter_map(|inst| inst.result_id)
+        .collect();
     let mut seen: HashSet<Word> = HashSet::new();
     for inst in instructions {
         let opcode = inst.class.opcode;
@@ -751,8 +766,15 @@ pub fn rebuild_arith_with_original_ids(
                 Some(result_id),
                 vec![rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)])],
             ),
+            SpirvLang::Symbol(sym) => Instruction::new(
+                Op::CopyObject,
+                Some(result_type),
+                Some(result_id),
+                vec![rspirv::dr::Operand::IdRef(
+                    symbol_id(sym).expect("symbol id"),
+                )],
+            ),
             SpirvLang::RotL(_) | SpirvLang::RotR(_) => continue,
-            SpirvLang::Symbol(_) => continue,
         };
         out.push(inst);
     }
