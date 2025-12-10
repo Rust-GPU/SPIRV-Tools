@@ -532,6 +532,8 @@ fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("band-absorbs-or-commuted"; "(band (bor ?x ?y) ?x)" => "?x"),
         rewrite!("bor-distribute-over-and-right"; "(bor ?x (band ?y ?z))" => "(band (bor ?x ?y) (bor ?x ?z))"),
         rewrite!("bor-distribute-over-and-left"; "(bor (band ?y ?z) ?x)" => "(band (bor ?x ?y) (bor ?x ?z))"),
+        rewrite!("bor-de-morgan-xor"; "(bor (band ?x (bnot ?y)) (band (bnot ?x) ?y))" => "(bxor ?x ?y)"),
+        rewrite!("bor-de-morgan-xor-comm"; "(bor (band (bnot ?y) ?x) (band ?y (bnot ?x)))" => "(bxor ?x ?y)"),
         rewrite!("bxor-diff-masked-right"; "(bxor ?x (band ?x ?y))" => "(band ?x (bnot ?y))"),
         rewrite!("bxor-diff-masked-left"; "(bxor (band ?x ?y) ?x)" => "(band ?x (bnot ?y))"),
         rewrite!("bxor-diff-masked-or-right"; "(bxor ?x (bor ?x ?y))" => "(band ?y (bnot ?x))"),

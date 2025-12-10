@@ -1353,6 +1353,64 @@ fn corpus_rewrites_xor_with_or_shared_operand() {
     );
 }
 
+/// The Rust optimizer rewrites a De Morgan xor form into a canonical xor; C++ leaves it expanded.
+#[test]
+fn corpus_collapses_demorgan_xor() {
+    let int = 1;
+    let x = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(0xAAAA_5555)],
+    );
+    let y = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(0x0F0F_F0F0)],
+    );
+    let not_x = inst(Op::Not, int, 4, vec![rspirv::dr::Operand::IdRef(2)]);
+    let not_y = inst(Op::Not, int, 5, vec![rspirv::dr::Operand::IdRef(3)]);
+    let band1 = inst(
+        Op::BitwiseAnd,
+        int,
+        6,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(5)],
+    );
+    let band2 = inst(
+        Op::BitwiseAnd,
+        int,
+        7,
+        vec![rspirv::dr::Operand::IdRef(4), rspirv::dr::Operand::IdRef(3)],
+    );
+    let bor = inst(
+        Op::BitwiseOr,
+        int,
+        8,
+        vec![rspirv::dr::Operand::IdRef(6), rspirv::dr::Operand::IdRef(7)],
+    );
+    let optimized =
+        optimize_arith_block(&[x, y, not_x, not_y, band1, band2, bor]).expect("optimize");
+    assert!(
+        optimized
+            .iter()
+            .any(|inst| inst.class.opcode == Op::BitwiseXor && inst.result_id == Some(8)),
+        "De Morgan xor form should fold to bxor"
+    );
+    assert!(
+        !optimized
+            .iter()
+            .any(|inst| inst.class.opcode == Op::BitwiseAnd && inst.result_id == Some(6)),
+        "band arms should be removed after xor folding"
+    );
+    assert!(
+        !optimized
+            .iter()
+            .any(|inst| inst.class.opcode == Op::BitwiseAnd && inst.result_id == Some(7)),
+        "band arms should be removed after xor folding"
+    );
+}
+
 #[test]
 fn corpus_absorbs_and_over_or() {
     let int = 1;
