@@ -125,6 +125,34 @@ fn cli_opt_block_disable_global_flag_round_trips() {
     assert_eq!(a, b, "disable-global flag should not change output");
 }
 
+#[test]
+fn cli_opt_block_disable_global_env_round_trips() {
+    let (words, _) = build_sample_module();
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("in.spv");
+    let output_default = dir.path().join("out_env_enabled.spv");
+    let output_env = dir.path().join("out_env_disabled.spv");
+    std::fs::write(&input, words_to_bytes(&words)).unwrap();
+
+    // Baseline with global opt enabled (default).
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_opt_block"));
+    cmd.arg(&input).arg(&output_default);
+    let status = cmd.status().unwrap();
+    assert!(status.success());
+
+    // With global opt disabled via env.
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_opt_block"));
+    cmd.arg(&input)
+        .arg(&output_env)
+        .env("SPIRV_TOOLS_DISABLE_GLOBAL_OPT", "1");
+    let status = cmd.status().unwrap();
+    assert!(status.success());
+
+    let baseline = std::fs::read(&output_default).unwrap();
+    let optimized = std::fs::read(&output_env).unwrap();
+    assert_eq!(baseline, optimized, "env flag should disable only the global path");
+}
+
 fn build_mul_identity_module_s64() -> (Vec<u32>, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
