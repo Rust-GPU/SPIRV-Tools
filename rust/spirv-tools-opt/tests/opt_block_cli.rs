@@ -153,6 +153,32 @@ fn cli_opt_block_disable_global_env_round_trips() {
     assert_eq!(baseline, optimized, "env flag should disable only the global path");
 }
 
+#[test]
+fn cli_opt_block_force_global_env_matches_force_flag() {
+    let (words, _) = build_sample_module();
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("in.spv");
+    let output_flag = dir.path().join("out_force_flag.spv");
+    let output_env = dir.path().join("out_force_env.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_opt_block"));
+    cmd.arg(&input).arg(&output_flag).arg("--force-global");
+    let status = cmd.status().unwrap();
+    assert!(status.success());
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_opt_block"));
+    cmd.arg(&input)
+        .arg(&output_env)
+        .env("SPIRV_TOOLS_FORCE_GLOBAL_OPT", "1");
+    let status = cmd.status().unwrap();
+    assert!(status.success());
+
+    let a = std::fs::read(&output_flag).unwrap();
+    let b = std::fs::read(&output_env).unwrap();
+    assert_eq!(a, b, "force-global flag and env should align");
+}
+
 fn build_mul_identity_module_s64() -> (Vec<u32>, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
