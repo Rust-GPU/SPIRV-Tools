@@ -743,6 +743,7 @@ fn dedup_common_arith(
     }
 
     collapse_copy_chains(func);
+    prune_dead_copies(func);
 }
 
 fn make_arith_key(inst: &Instruction) -> Option<ArithKey> {
@@ -808,6 +809,36 @@ fn collapse_copy_chains(func: &mut rspirv::dr::Function) {
                     *idref = root;
                 }
             }
+        }
+    }
+}
+
+fn prune_dead_copies(func: &mut rspirv::dr::Function) {
+    loop {
+        let mut uses: HashMap<u32, usize> = HashMap::new();
+        for inst in func.all_inst_iter() {
+            for op in inst.operands.iter().filter_map(|op| op.id_ref_any()) {
+                *uses.entry(op).or_default() += 1;
+            }
+        }
+
+        let mut changed = false;
+        for block in &mut func.blocks {
+            block.instructions.retain(|inst| {
+                if inst.class.opcode == Op::CopyObject {
+                    if let Some(id) = inst.result_id {
+                        if uses.get(&id).copied().unwrap_or(0) == 0 {
+                            changed = true;
+                            return false;
+                        }
+                    }
+                }
+                true
+            });
+        }
+
+        if !changed {
+            break;
         }
     }
 }
