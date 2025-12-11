@@ -541,6 +541,9 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("bor-absorbs-split-y-comm"; "(bor (band (bnot ?x) ?y) (band ?x ?y))" => "?y"),
         rewrite!("bor-absorbs-split-x"; "(bor (band ?x ?y) (band ?x (bnot ?y)))" => "?x"),
         rewrite!("bor-absorbs-split-x-comm"; "(bor (band ?x (bnot ?y)) (band ?x ?y))" => "?x"),
+        // Rust-only improvement: x & (x ^ y) == x & ~y, removing the xor.
+        rewrite!("band-bxor-self-right"; "(band ?x (bxor ?x ?y))" => "(band ?x (bnot ?y))"),
+        rewrite!("band-bxor-self-left"; "(band (bxor ?x ?y) ?x)" => "(band ?x (bnot ?y))"),
         rewrite!("bxor-diff-masked-right"; "(bxor ?x (band ?x ?y))" => "(band ?x (bnot ?y))"),
         rewrite!("bxor-diff-masked-left"; "(bxor (band ?x ?y) ?x)" => "(band ?x (bnot ?y))"),
         rewrite!("bxor-diff-masked-or-right"; "(bxor ?x (bor ?x ?y))" => "(band ?y (bnot ?x))"),

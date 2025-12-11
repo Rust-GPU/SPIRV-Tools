@@ -1047,6 +1047,48 @@ fn corpus_absorbs_bor_with_masked_value() {
     );
 }
 
+#[test]
+fn corpus_band_with_bxor_self_becomes_masked() {
+    let int = 1;
+    let x_val = 0xDEAD_BEEFu32;
+    let y_val = 0x00FF_00FFu32;
+    let x = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(x_val)],
+    );
+    let y = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(y_val)],
+    );
+    let bxor = inst(
+        Op::BitwiseXor,
+        int,
+        4,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(3)],
+    );
+    let band = inst(
+        Op::BitwiseAnd,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(4)],
+    );
+    let optimized = optimize_arith_block(&[x, y, bxor, band]).expect("optimize");
+    let expected = x_val & !y_val;
+    let folded = optimized.iter().find(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(5)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(expected)]
+    });
+    assert!(
+        folded.is_some(),
+        "band of x with (x ^ y) should fold to x & ~y; Rust-only improvement over C++"
+    );
+}
+
 /// Rust-only: absorb (~x & y) | y into y.
 #[test]
 fn corpus_absorbs_or_with_masked_not() {

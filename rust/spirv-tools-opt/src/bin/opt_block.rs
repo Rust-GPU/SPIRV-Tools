@@ -219,9 +219,11 @@ fn optimize_module(
             block.instructions = new_block;
         }
 
-        if let Some(doms) = compute_block_dominators(func) {
-            dedup_common_arith(func, &doms);
-            insert_pre_for_shared_arith(func, &doms);
+        if !disable_global && env::var("SPIRV_TOOLS_DISABLE_GLOBAL_OPT").is_err() {
+            if let Some(doms) = compute_block_dominators(func) {
+                dedup_common_arith(func, &doms);
+                insert_pre_for_shared_arith(func, &doms);
+            }
         }
     }
 
@@ -714,6 +716,7 @@ fn dedup_common_arith(
     dominators: &HashMap<usize, HashSet<usize>>,
 ) {
     let mut table: HashMap<ArithKey, (u32, usize)> = HashMap::new();
+    let mut defs: HashMap<u32, (Op, Vec<u32>, usize)> = HashMap::new();
     for (idx, block) in func.blocks.iter_mut().enumerate() {
         for inst in &mut block.instructions {
             if !is_arith(inst.class.opcode) {
@@ -725,7 +728,37 @@ fn dedup_common_arith(
             if inst.class.opcode == Op::Constant {
                 continue;
             }
+            let operands: Vec<u32> = inst
+                .operands
+                .iter()
+                .filter_map(|op| op.id_ref_any())
+                .collect();
+
+            // Cross-block affine cancel: (x + y) - y => x (and commuted form).
+            if inst.class.opcode == Op::ISub && operands.len() == 2 {
+                if let Some((Op::IAdd, add_ops, add_block)) = defs.get(&operands[0]) {
+                    if add_ops.len() == 2 && dominates(dominators, *add_block, idx) {
+                        let replacement = if add_ops[0] == operands[1] {
+                            Some(add_ops[1])
+                        } else if add_ops[1] == operands[1] {
+                            Some(add_ops[0])
+                        } else {
+                            None
+                        };
+                        if let Some(rep) = replacement {
+                            *inst = Instruction::new(
+                                Op::CopyObject,
+                                inst.result_type,
+                                Some(result_id),
+                                vec![rspirv::dr::Operand::IdRef(rep)],
+                            );
+                        }
+                    }
+                }
+            }
+
             let Some(key) = make_arith_key(inst) else {
+                defs.insert(result_id, (inst.class.opcode, operands, idx));
                 continue;
             };
             if let Some((prev_id, prev_block)) = table.get(&key) {
@@ -739,6 +772,7 @@ fn dedup_common_arith(
                 }
             }
             table.insert(key, (inst.result_id.unwrap_or(result_id), idx));
+            defs.insert(result_id, (inst.class.opcode, operands, idx));
         }
     }
 
