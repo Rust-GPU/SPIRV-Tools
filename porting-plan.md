@@ -1102,6 +1102,7 @@ Tasks for this milestone:
 ## Upcoming Milestone: Optimizer E-Graph Strengthening
 - Add bitwise distributivity/absorption rewrites (and/or/xor over masks) using e-graphs, keeping id stability and cost-aware ordering with Rust tests plus CLI/FFI parity against C++. (Progress: absorption and band/bor/xor distributivity rewrites added with corpus + CLI tests eliminating redundant bitwise ops.)
 - Added Rust-only bitwise rewrite: `x & (x ^ y) => x & ~y` with corpus coverage; C++ parity will intentionally diverge while Rust keeps the stronger fold.
+- Added Rust-only mask factoring rewrites: `(x & m) | (y & m) => (x | y) & m` and `(x & m) ^ (y & m) => (x ^ y) & m` with corpus coverage; document divergence from C++.
 - Extend e-graph coverage to mixed arithmetic-bitwise forms (e.g., `x + (x & mask)` simplifications) with unit and CLI parity tests mirroring the C++ optimizer behavior.
 - Introduce criterion benches for the new rewrites (small/medium blocks) to track performance vs. existing arithmetic passes; keep hyperfine smoke green.
 - Add a fuzz target exercising mixed arithmetic/bitwise blocks to guard the new rewrites against panics and misfolds. (Progress: added `arith_bitwise` cargo-fuzz target.)

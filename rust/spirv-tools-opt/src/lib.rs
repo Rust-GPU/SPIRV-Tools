@@ -544,6 +544,11 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         // Rust-only improvement: x & (x ^ y) == x & ~y, removing the xor.
         rewrite!("band-bxor-self-right"; "(band ?x (bxor ?x ?y))" => "(band ?x (bnot ?y))"),
         rewrite!("band-bxor-self-left"; "(band (bxor ?x ?y) ?x)" => "(band ?x (bnot ?y))"),
+        // Rust-only improvement: factor shared masks out of OR/XOR to shrink DAG size.
+        rewrite!("bor-factor-shared-mask"; "(bor (band ?x ?m) (band ?y ?m))" => "(band (bor ?x ?y) ?m)"),
+        rewrite!("bor-factor-shared-mask-comm"; "(bor (band ?m ?x) (band ?m ?y))" => "(band (bor ?x ?y) ?m)"),
+        rewrite!("bxor-factor-shared-mask"; "(bxor (band ?x ?m) (band ?y ?m))" => "(band (bxor ?x ?y) ?m)"),
+        rewrite!("bxor-factor-shared-mask-comm"; "(bxor (band ?m ?x) (band ?m ?y))" => "(band (bxor ?x ?y) ?m)"),
         rewrite!("bxor-diff-masked-right"; "(bxor ?x (band ?x ?y))" => "(band ?x (bnot ?y))"),
         rewrite!("bxor-diff-masked-left"; "(bxor (band ?x ?y) ?x)" => "(band ?x (bnot ?y))"),
         rewrite!("bxor-diff-masked-or-right"; "(bxor ?x (bor ?x ?y))" => "(band ?y (bnot ?x))"),

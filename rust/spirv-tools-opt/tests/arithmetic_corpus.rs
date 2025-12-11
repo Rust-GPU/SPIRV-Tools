@@ -1130,6 +1130,118 @@ fn corpus_absorbs_or_with_masked_not() {
     );
 }
 
+/// Rust-only: factor shared mask out of bor to reduce ops.
+#[test]
+fn corpus_factors_shared_mask_out_of_bor() {
+    let int = 1;
+    let mask_val = 0x00FF_FF00u32;
+    let x_val = 0x1234_5678u32;
+    let y_val = 0xFFFF_0000u32;
+    let mask = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(mask_val)],
+    );
+    let x = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(x_val)],
+    );
+    let y = inst(
+        Op::Constant,
+        int,
+        4,
+        vec![rspirv::dr::Operand::LiteralBit32(y_val)],
+    );
+    let mask_x = inst(
+        Op::BitwiseAnd,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(3), rspirv::dr::Operand::IdRef(2)],
+    );
+    let mask_y = inst(
+        Op::BitwiseAnd,
+        int,
+        6,
+        vec![rspirv::dr::Operand::IdRef(4), rspirv::dr::Operand::IdRef(2)],
+    );
+    let bor = inst(
+        Op::BitwiseOr,
+        int,
+        7,
+        vec![rspirv::dr::Operand::IdRef(5), rspirv::dr::Operand::IdRef(6)],
+    );
+    let optimized = optimize_arith_block(&[mask, x, y, mask_x, mask_y, bor]).expect("optimize");
+    let expected = (x_val | y_val) & mask_val;
+    let folded = optimized.iter().find(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(7)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(expected)]
+    });
+    assert!(
+        folded.is_some(),
+        "bor with shared mask should fold to masked or (Rust-only improvement)"
+    );
+}
+
+/// Rust-only: factor shared mask out of bxor to reduce ops.
+#[test]
+fn corpus_factors_shared_mask_out_of_bxor() {
+    let int = 1;
+    let mask_val = 0x0FFF_00FFu32;
+    let x_val = 0xAAAA_BBBBu32;
+    let y_val = 0x1234_5678u32;
+    let mask = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(mask_val)],
+    );
+    let x = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(x_val)],
+    );
+    let y = inst(
+        Op::Constant,
+        int,
+        4,
+        vec![rspirv::dr::Operand::LiteralBit32(y_val)],
+    );
+    let mask_x = inst(
+        Op::BitwiseAnd,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(3), rspirv::dr::Operand::IdRef(2)],
+    );
+    let mask_y = inst(
+        Op::BitwiseAnd,
+        int,
+        6,
+        vec![rspirv::dr::Operand::IdRef(4), rspirv::dr::Operand::IdRef(2)],
+    );
+    let bxor = inst(
+        Op::BitwiseXor,
+        int,
+        7,
+        vec![rspirv::dr::Operand::IdRef(5), rspirv::dr::Operand::IdRef(6)],
+    );
+    let optimized = optimize_arith_block(&[mask, x, y, mask_x, mask_y, bxor]).expect("optimize");
+    let expected = (x_val ^ y_val) & mask_val;
+    let folded = optimized.iter().find(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(7)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(expected)]
+    });
+    assert!(
+        folded.is_some(),
+        "bxor with shared mask should fold to masked xor (Rust-only improvement)"
+    );
+}
+
 /// Rust-only: absorb split y term (x & y) | (~x & y) into y.
 #[test]
 fn corpus_absorbs_split_y_term() {
