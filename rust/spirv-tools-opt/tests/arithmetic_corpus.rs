@@ -1242,6 +1242,118 @@ fn corpus_factors_shared_mask_out_of_bxor() {
     );
 }
 
+/// Rust-only: merge distinct masks on the same value under OR.
+#[test]
+fn corpus_merges_masks_under_bor() {
+    let int = 1;
+    let m1 = 0x00FF_0000u32;
+    let m2 = 0x0000_FF00u32;
+    let x_val = 0x1234_5678u32;
+    let mask1 = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(m1)],
+    );
+    let mask2 = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(m2)],
+    );
+    let x = inst(
+        Op::Constant,
+        int,
+        4,
+        vec![rspirv::dr::Operand::LiteralBit32(x_val)],
+    );
+    let band1 = inst(
+        Op::BitwiseAnd,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(4), rspirv::dr::Operand::IdRef(2)],
+    );
+    let band2 = inst(
+        Op::BitwiseAnd,
+        int,
+        6,
+        vec![rspirv::dr::Operand::IdRef(4), rspirv::dr::Operand::IdRef(3)],
+    );
+    let bor = inst(
+        Op::BitwiseOr,
+        int,
+        7,
+        vec![rspirv::dr::Operand::IdRef(5), rspirv::dr::Operand::IdRef(6)],
+    );
+    let optimized = optimize_arith_block(&[mask1, mask2, x, band1, band2, bor]).expect("optimize");
+    let expected = x_val & (m1 | m2);
+    let folded = optimized.iter().find(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(7)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(expected)]
+    });
+    assert!(
+        folded.is_some(),
+        "(x & m1) | (x & m2) should fold to x & (m1 | m2); Rust-only improvement"
+    );
+}
+
+/// Rust-only: merge distinct masks on the same value under XOR.
+#[test]
+fn corpus_merges_masks_under_bxor() {
+    let int = 1;
+    let m1 = 0xFF00_00FFu32;
+    let m2 = 0x0F0F_F0F0u32;
+    let x_val = 0xCAFEBABEu32;
+    let mask1 = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(m1)],
+    );
+    let mask2 = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(m2)],
+    );
+    let x = inst(
+        Op::Constant,
+        int,
+        4,
+        vec![rspirv::dr::Operand::LiteralBit32(x_val)],
+    );
+    let band1 = inst(
+        Op::BitwiseAnd,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(4), rspirv::dr::Operand::IdRef(2)],
+    );
+    let band2 = inst(
+        Op::BitwiseAnd,
+        int,
+        6,
+        vec![rspirv::dr::Operand::IdRef(4), rspirv::dr::Operand::IdRef(3)],
+    );
+    let bxor = inst(
+        Op::BitwiseXor,
+        int,
+        7,
+        vec![rspirv::dr::Operand::IdRef(5), rspirv::dr::Operand::IdRef(6)],
+    );
+    let optimized = optimize_arith_block(&[mask1, mask2, x, band1, band2, bxor]).expect("optimize");
+    let expected = x_val & (m1 ^ m2);
+    let folded = optimized.iter().find(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(7)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(expected)]
+    });
+    assert!(
+        folded.is_some(),
+        "(x & m1) ^ (x & m2) should fold to x & (m1 ^ m2); Rust-only improvement"
+    );
+}
+
 /// Rust-only: absorb split y term (x & y) | (~x & y) into y.
 #[test]
 fn corpus_absorbs_split_y_term() {

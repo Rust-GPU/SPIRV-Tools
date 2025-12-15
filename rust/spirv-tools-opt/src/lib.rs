@@ -549,6 +549,11 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("bor-factor-shared-mask-comm"; "(bor (band ?m ?x) (band ?m ?y))" => "(band (bor ?x ?y) ?m)"),
         rewrite!("bxor-factor-shared-mask"; "(bxor (band ?x ?m) (band ?y ?m))" => "(band (bxor ?x ?y) ?m)"),
         rewrite!("bxor-factor-shared-mask-comm"; "(bxor (band ?m ?x) (band ?m ?y))" => "(band (bxor ?x ?y) ?m)"),
+        // Rust-only improvement: merge distinct masks on the same value.
+        rewrite!("bor-merge-masked"; "(bor (band ?x ?m) (band ?x ?n))" => "(band ?x (bor ?m ?n))"),
+        rewrite!("bor-merge-masked-comm"; "(bor (band ?m ?x) (band ?n ?x))" => "(band ?x (bor ?m ?n))"),
+        rewrite!("bxor-merge-masked"; "(bxor (band ?x ?m) (band ?x ?n))" => "(band ?x (bxor ?m ?n))"),
+        rewrite!("bxor-merge-masked-comm"; "(bxor (band ?m ?x) (band ?n ?x))" => "(band ?x (bxor ?m ?n))"),
         rewrite!("bxor-diff-masked-right"; "(bxor ?x (band ?x ?y))" => "(band ?x (bnot ?y))"),
         rewrite!("bxor-diff-masked-left"; "(bxor (band ?x ?y) ?x)" => "(band ?x (bnot ?y))"),
         rewrite!("bxor-diff-masked-or-right"; "(bxor ?x (bor ?x ?y))" => "(band ?y (bnot ?x))"),
