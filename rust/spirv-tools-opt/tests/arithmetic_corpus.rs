@@ -1354,6 +1354,56 @@ fn corpus_merges_masks_under_bxor() {
     );
 }
 
+/// Rust-only: collapse nested masks into a single AND.
+#[test]
+fn corpus_collapse_nested_masks() {
+    let int = 1;
+    let m1 = 0xFFFF_0000u32;
+    let m2 = 0x0FFF_FFFFu32;
+    let x_val = 0xDEAD_BEEFu32;
+    let m1_inst = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(m1)],
+    );
+    let m2_inst = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(m2)],
+    );
+    let x = inst(
+        Op::Constant,
+        int,
+        4,
+        vec![rspirv::dr::Operand::LiteralBit32(x_val)],
+    );
+    let band1 = inst(
+        Op::BitwiseAnd,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(4), rspirv::dr::Operand::IdRef(2)],
+    );
+    let band2 = inst(
+        Op::BitwiseAnd,
+        int,
+        6,
+        vec![rspirv::dr::Operand::IdRef(5), rspirv::dr::Operand::IdRef(3)],
+    );
+    let optimized = optimize_arith_block(&[m1_inst, m2_inst, x, band1, band2]).expect("optimize");
+    let expected = x_val & (m1 & m2);
+    let folded = optimized.iter().find(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(6)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(expected)]
+    });
+    assert!(
+        folded.is_some(),
+        "nested masks should collapse to a single AND; Rust-only improvement"
+    );
+}
+
 /// Rust-only: absorb split y term (x & y) | (~x & y) into y.
 #[test]
 fn corpus_absorbs_split_y_term() {

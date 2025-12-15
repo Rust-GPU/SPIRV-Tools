@@ -554,6 +554,10 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("bor-merge-masked-comm"; "(bor (band ?m ?x) (band ?n ?x))" => "(band ?x (bor ?m ?n))"),
         rewrite!("bxor-merge-masked"; "(bxor (band ?x ?m) (band ?x ?n))" => "(band ?x (bxor ?m ?n))"),
         rewrite!("bxor-merge-masked-comm"; "(bxor (band ?m ?x) (band ?n ?x))" => "(band ?x (bxor ?m ?n))"),
+        // Rust-only improvement: collapse nested masks to a single AND.
+        rewrite!("band-merge-nested"; "(band (band ?x ?m) ?n)" => "(band ?x (band ?m ?n))"),
+        rewrite!("band-merge-nested-comm-left"; "(band ?n (band ?x ?m))" => "(band ?x (band ?m ?n))"),
+        rewrite!("band-merge-nested-comm-right"; "(band (band ?m ?x) ?n)" => "(band ?x (band ?m ?n))"),
         rewrite!("bxor-diff-masked-right"; "(bxor ?x (band ?x ?y))" => "(band ?x (bnot ?y))"),
         rewrite!("bxor-diff-masked-left"; "(bxor (band ?x ?y) ?x)" => "(band ?x (bnot ?y))"),
         rewrite!("bxor-diff-masked-or-right"; "(bxor ?x (bor ?x ?y))" => "(band ?y (bnot ?x))"),
