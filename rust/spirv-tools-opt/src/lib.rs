@@ -539,6 +539,22 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         }),
         rewrite!("bor-comm"; "(bor ?a ?b)" => "(bor ?b ?a)"),
         rewrite!("bor-assoc"; "(bor ?a (bor ?b ?c))" => "(bor (bor ?a ?b) ?c)"),
+        rewrite!("bor-reassociate-const-right"; "(bor ?c1 (bor ?x ?c2))" => {
+            BitwiseConstReassociate {
+                op: BitwiseOp::Or,
+                x: var("?x"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+            }
+        }),
+        rewrite!("bor-reassociate-const-left"; "(bor (bor ?x ?c2) ?c1)" => {
+            BitwiseConstReassociate {
+                op: BitwiseOp::Or,
+                x: var("?x"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+            }
+        }),
         rewrite!("bor-const-fold"; "(bor ?a ?b)" => { BitOrFold { a: var("?a"), b: var("?b") } }),
         rewrite!("bor-zero-left"; "(bor ?x ?c)" => {
             BitOrConstSimplify { x: var("?x"), c: var("?c") }
@@ -633,6 +649,22 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("bxor-diff-masked-or-left"; "(bxor (bor ?x ?y) ?x)" => "(band ?y (bnot ?x))"),
         rewrite!("bxor-comm"; "(bxor ?a ?b)" => "(bxor ?b ?a)"),
         rewrite!("bxor-assoc"; "(bxor ?a (bxor ?b ?c))" => "(bxor (bxor ?a ?b) ?c)"),
+        rewrite!("bxor-reassociate-const-right"; "(bxor ?c1 (bxor ?x ?c2))" => {
+            BitwiseConstReassociate {
+                op: BitwiseOp::Xor,
+                x: var("?x"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+            }
+        }),
+        rewrite!("bxor-reassociate-const-left"; "(bxor (bxor ?x ?c2) ?c1)" => {
+            BitwiseConstReassociate {
+                op: BitwiseOp::Xor,
+                x: var("?x"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+            }
+        }),
         rewrite!("bxor-const-fold"; "(bxor ?a ?b)" => { BitXorFold { a: var("?a"), b: var("?b") } }),
         rewrite!("bxor-zero-left"; "(bxor ?x ?c)" => {
             BitXorConstSimplify { x: var("?x"), c: var("?c") }
@@ -1033,6 +1065,10 @@ enum ShiftKind {
     RightUnsigned,
     RightSigned,
 }
+enum BitwiseOp {
+    Or,
+    Xor,
+}
 struct MulPowerOfTwo {
     x: Var,
     c: Var,
@@ -1083,6 +1119,12 @@ struct BitOrFold {
 struct BitOrConstSimplify {
     x: Var,
     c: Var,
+}
+struct BitwiseConstReassociate {
+    op: BitwiseOp,
+    x: Var,
+    c1: Var,
+    c2: Var,
 }
 struct BitOrComplement {
     _x: Var,
@@ -2534,6 +2576,35 @@ impl Applier<SpirvLang, ()> for BitOrConstSimplify {
     }
 }
 
+impl Applier<SpirvLang, ()> for BitwiseConstReassociate {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(c1) = const_value(egraph, subst[self.c1]) else {
+            return Vec::new();
+        };
+        let Some(c2) = const_value(egraph, subst[self.c2]) else {
+            return Vec::new();
+        };
+        let merged = match self.op {
+            BitwiseOp::Or => combine_consts(c1, c2, |x, y| x | y),
+            BitwiseOp::Xor => combine_consts(c1, c2, |x, y| x ^ y),
+        };
+        let const_id = egraph.add(SpirvLang::Const(merged));
+        let node = match self.op {
+            BitwiseOp::Or => egraph.add(SpirvLang::BitOr([subst[self.x], const_id])),
+            BitwiseOp::Xor => egraph.add(SpirvLang::BitXor([subst[self.x], const_id])),
+        };
+        egraph.union(eclass, node);
+        vec![node]
+    }
+}
+
 impl Applier<SpirvLang, ()> for BitOrComplement {
     fn apply_one(
         &self,
@@ -3485,6 +3556,64 @@ mod tests {
             matches!(optimized.as_ref().last(), Some(SpirvLang::BitXor(_))),
             "expected bxor to remain, got {optimized:?}"
         );
+    }
+
+    #[test]
+    fn merges_nested_bor_constants_with_symbol() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new(0x0F)),      // 0
+            SpirvLang::Symbol(Symbol::from("x")),         // 1
+            SpirvLang::Const(ConstValue::new(0xF0)),      // 2
+            SpirvLang::BitOr([Id::from(1), Id::from(2)]), // 3 = x | 0xF0
+            SpirvLang::BitOr([Id::from(0), Id::from(3)]), // 4 = 0x0F | (x | 0xF0)
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let const_id = nodes
+            .iter()
+            .position(|node| matches!(node, SpirvLang::Const(val) if val.get_u64() == 0xFF));
+        let sym_id = nodes
+            .iter()
+            .position(|node| matches!(node, SpirvLang::Symbol(sym) if *sym == Symbol::from("x")));
+        let is_merged = nodes.last().is_some_and(|node| match node {
+            SpirvLang::BitOr([lhs, rhs]) => {
+                let lhs = usize::from(*lhs);
+                let rhs = usize::from(*rhs);
+                (Some(lhs) == const_id && Some(rhs) == sym_id)
+                    || (Some(rhs) == const_id && Some(lhs) == sym_id)
+            }
+            _ => false,
+        });
+        assert!(is_merged, "expected merged constant, got {optimized:?}");
+    }
+
+    #[test]
+    fn merges_nested_bxor_constants_with_symbol() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new(0x0F)),       // 0
+            SpirvLang::Symbol(Symbol::from("x")),          // 1
+            SpirvLang::Const(ConstValue::new(0xF0)),       // 2
+            SpirvLang::BitXor([Id::from(1), Id::from(2)]), // 3 = x ^ 0xF0
+            SpirvLang::BitXor([Id::from(0), Id::from(3)]), // 4 = 0x0F ^ (x ^ 0xF0)
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let const_id = nodes
+            .iter()
+            .position(|node| matches!(node, SpirvLang::Const(val) if val.get_u64() == 0xFF));
+        let sym_id = nodes
+            .iter()
+            .position(|node| matches!(node, SpirvLang::Symbol(sym) if *sym == Symbol::from("x")));
+        let is_merged = nodes.last().is_some_and(|node| match node {
+            SpirvLang::BitXor([lhs, rhs]) => {
+                let lhs = usize::from(*lhs);
+                let rhs = usize::from(*rhs);
+                (Some(lhs) == const_id && Some(rhs) == sym_id)
+                    || (Some(rhs) == const_id && Some(lhs) == sym_id)
+            }
+            _ => false,
+        });
+        assert!(is_merged, "expected merged constant, got {optimized:?}");
     }
 
     #[test]

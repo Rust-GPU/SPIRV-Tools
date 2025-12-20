@@ -1110,6 +1110,7 @@ Tasks for this milestone:
 - Ported C++ redundant-and folding rules into e-graph rewrites: drop const or/xor and const add/sub under masks when low bits are unaffected, and fold masked shifts to zero; added Rust corpus coverage plus CLI parity tests.
 - Added zero-lhs shift/div/rem folds (`0 << x`, `0 >> x`, `0 / x`, `0 % x`) with Rust corpus coverage to mirror C++ redundant-binary folding.
 - Hardened constant identity checks to respect full bit width (zero/one/all-ones), with regressions preventing 64-bit misfolds when high bits are set.
+- Added bitwise constant reassociation for nested `bor`/`bxor` to merge constants (`A op (x op C)`), with Rust unit coverage and C++ parity tests.
 - Extend e-graph coverage to mixed arithmetic-bitwise forms (e.g., `x + (x & mask)` simplifications) with unit and CLI parity tests mirroring the C++ optimizer behavior.
 - Introduce criterion benches for the new rewrites (small/medium blocks) to track performance vs. existing arithmetic passes; keep hyperfine smoke green.
 - Add a fuzz target exercising mixed arithmetic/bitwise blocks to guard the new rewrites against panics and misfolds. (Progress: added `arith_bitwise` cargo-fuzz target.)
