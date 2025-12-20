@@ -1106,6 +1106,7 @@ Tasks for this milestone:
 - Added Rust-only mask merge rewrites: `(x & m1) | (x & m2) => x & (m1 | m2)` and `(x & m1) ^ (x & m2) => x & (m1 ^ m2)` with corpus tests; these intentionally outperform the C++ optimizer.
 - Added Rust-only consensus rewrite: `(x | y) & (x | z) => x | (y & z)` with corpus coverage to reduce redundant OR trees.
 - Added Rust-only nested-mask collapse: `(x & m1) & m2 => x & (m1 & m2)` with corpus coverage to shrink mask chains.
+- Added Rust-only complement-mask absorption and add-split rewrites (e.g., `x | (~x & y) => x | y`, `x & (~x | y) => x & y`, `x ^ (~x & y) => x | y`, `x | (x ^ y) => x | y`, `(x & m) + (x & ~m) => x`, `(x & m) + (~x & m) => m`) with corpus coverage; expect C++ divergence.
 - Extend e-graph coverage to mixed arithmetic-bitwise forms (e.g., `x + (x & mask)` simplifications) with unit and CLI parity tests mirroring the C++ optimizer behavior.
 - Introduce criterion benches for the new rewrites (small/medium blocks) to track performance vs. existing arithmetic passes; keep hyperfine smoke green.
 - Add a fuzz target exercising mixed arithmetic/bitwise blocks to guard the new rewrites against panics and misfolds. (Progress: added `arith_bitwise` cargo-fuzz target.)

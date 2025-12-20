@@ -541,6 +541,14 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("bor-absorbs-split-y-comm"; "(bor (band (bnot ?x) ?y) (band ?x ?y))" => "?y"),
         rewrite!("bor-absorbs-split-x"; "(bor (band ?x ?y) (band ?x (bnot ?y)))" => "?x"),
         rewrite!("bor-absorbs-split-x-comm"; "(bor (band ?x (bnot ?y)) (band ?x ?y))" => "?x"),
+        // Rust-only improvement: absorb complement masks in OR/AND/XOR.
+        rewrite!("bor-absorb-complement-mask-right"; "(bor ?x (band (bnot ?x) ?y))" => "(bor ?x ?y)"),
+        rewrite!("bor-absorb-complement-mask-right-comm"; "(bor ?x (band ?y (bnot ?x)))" => "(bor ?x ?y)"),
+        rewrite!("band-absorb-complement-or-right"; "(band ?x (bor (bnot ?x) ?y))" => "(band ?x ?y)"),
+        rewrite!("band-absorb-complement-or-left"; "(band (bor (bnot ?x) ?y) ?x)" => "(band ?x ?y)"),
+        rewrite!("bxor-absorb-complement-mask-right"; "(bxor ?x (band (bnot ?x) ?y))" => "(bor ?x ?y)"),
+        rewrite!("bxor-absorb-complement-mask-right-comm"; "(bxor ?x (band ?y (bnot ?x)))" => "(bor ?x ?y)"),
+        rewrite!("bor-absorb-xor"; "(bor ?x (bxor ?x ?y))" => "(bor ?x ?y)"),
         // Rust-only improvement: x & (x ^ y) == x & ~y, removing the xor.
         rewrite!("band-bxor-self-right"; "(band ?x (bxor ?x ?y))" => "(band ?x (bnot ?y))"),
         rewrite!("band-bxor-self-left"; "(band (bxor ?x ?y) ?x)" => "(band ?x (bnot ?y))"),
@@ -773,6 +781,16 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("add-sub-merge-const-lhs-comm"; "(+ ?c2 (- ?c1 ?x))" => {
             AddSubConstLhs { base_const: var("?c1"), rhs: var("?x"), add_const: var("?c2") }
         }),
+        // Rust-only improvement: adding complementary mask splits reconstructs the original value.
+        rewrite!("add-mask-split-x"; "(+ (band ?x ?m) (band ?x (bnot ?m)))" => "?x"),
+        rewrite!("add-mask-split-x-mixed-left"; "(+ (band ?x ?m) (band (bnot ?m) ?x))" => "?x"),
+        rewrite!("add-mask-split-x-mixed-right"; "(+ (band ?m ?x) (band ?x (bnot ?m)))" => "?x"),
+        rewrite!("add-mask-split-x-comm"; "(+ (band ?m ?x) (band (bnot ?m) ?x))" => "?x"),
+        // Rust-only improvement: adding split x under a shared mask yields the mask.
+        rewrite!("add-mask-split-mask"; "(+ (band ?x ?m) (band (bnot ?x) ?m))" => "?m"),
+        rewrite!("add-mask-split-mask-mixed-left"; "(+ (band ?x ?m) (band ?m (bnot ?x)))" => "?m"),
+        rewrite!("add-mask-split-mask-mixed-right"; "(+ (band ?m ?x) (band (bnot ?x) ?m))" => "?m"),
+        rewrite!("add-mask-split-mask-comm"; "(+ (band ?m ?x) (band ?m (bnot ?x)))" => "?m"),
         rewrite!("neg-sub-swap"; "(neg (- ?a ?b))" => "(- ?b ?a)"),
         rewrite!("neg-fold"; "(neg ?a)" => { FoldNeg }),
         rewrite!("double-neg"; "(neg (neg ?a))" => "?a"),

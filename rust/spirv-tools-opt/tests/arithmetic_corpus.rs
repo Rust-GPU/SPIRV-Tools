@@ -1460,6 +1460,279 @@ fn corpus_band_consensus_or() {
     );
 }
 
+/// Rust-only: add split masks back into the original value.
+#[test]
+fn corpus_add_split_masks_to_x() {
+    let int = 1;
+    let x_val = 0x1234_5678u32;
+    let m_val = 0x00FF_00FFu32;
+    let x = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(x_val)],
+    );
+    let m = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(m_val)],
+    );
+    let not_m = inst(Op::Not, int, 4, vec![rspirv::dr::Operand::IdRef(3)]);
+    let band1 = inst(
+        Op::BitwiseAnd,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(3)],
+    );
+    let band2 = inst(
+        Op::BitwiseAnd,
+        int,
+        6,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(4)],
+    );
+    let add = inst(
+        Op::IAdd,
+        int,
+        7,
+        vec![rspirv::dr::Operand::IdRef(5), rspirv::dr::Operand::IdRef(6)],
+    );
+    let optimized = optimize_arith_block(&[x, m, not_m, band1, band2, add]).expect("optimize");
+    let folded = optimized.iter().find(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(7)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(x_val)]
+    });
+    assert!(
+        folded.is_some(),
+        "(x&m) + (x&~m) should fold to x; Rust-only improvement"
+    );
+}
+
+/// Rust-only: add x and ~x under the same mask to recover the mask.
+#[test]
+fn corpus_add_split_x_to_mask() {
+    let int = 1;
+    let x_val = 0x0F0F_F0F0u32;
+    let m_val = 0xFF00_FF00u32;
+    let x = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(x_val)],
+    );
+    let m = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(m_val)],
+    );
+    let not_x = inst(Op::Not, int, 4, vec![rspirv::dr::Operand::IdRef(2)]);
+    let band1 = inst(
+        Op::BitwiseAnd,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(3)],
+    );
+    let band2 = inst(
+        Op::BitwiseAnd,
+        int,
+        6,
+        vec![rspirv::dr::Operand::IdRef(4), rspirv::dr::Operand::IdRef(3)],
+    );
+    let add = inst(
+        Op::IAdd,
+        int,
+        7,
+        vec![rspirv::dr::Operand::IdRef(5), rspirv::dr::Operand::IdRef(6)],
+    );
+    let optimized = optimize_arith_block(&[x, m, not_x, band1, band2, add]).expect("optimize");
+    let folded = optimized.iter().find(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(7)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(m_val)]
+    });
+    assert!(
+        folded.is_some(),
+        "(x&m) + (~x&m) should fold to m; Rust-only improvement"
+    );
+}
+
+/// Rust-only: absorb complement masks in OR.
+#[test]
+fn corpus_or_absorb_complement_mask() {
+    let int = 1;
+    let x_val = 0x3333_CCCCu32;
+    let y_val = 0x0F0F_0F0Fu32;
+    let x = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(x_val)],
+    );
+    let y = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(y_val)],
+    );
+    let not_x = inst(Op::Not, int, 4, vec![rspirv::dr::Operand::IdRef(2)]);
+    let band = inst(
+        Op::BitwiseAnd,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(4), rspirv::dr::Operand::IdRef(3)],
+    );
+    let bor = inst(
+        Op::BitwiseOr,
+        int,
+        6,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(5)],
+    );
+    let optimized = optimize_arith_block(&[x, y, not_x, band, bor]).expect("optimize");
+    let expected = x_val | y_val;
+    let folded = optimized.iter().find(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(6)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(expected)]
+    });
+    assert!(
+        folded.is_some(),
+        "x | (~x & y) should fold to x | y; Rust-only improvement"
+    );
+}
+
+/// Rust-only: absorb complement masks in AND.
+#[test]
+fn corpus_and_absorb_complement_or() {
+    let int = 1;
+    let x_val = 0xF0F0_AAAAu32;
+    let y_val = 0x00FF_FF00u32;
+    let x = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(x_val)],
+    );
+    let y = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(y_val)],
+    );
+    let not_x = inst(Op::Not, int, 4, vec![rspirv::dr::Operand::IdRef(2)]);
+    let bor = inst(
+        Op::BitwiseOr,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(4), rspirv::dr::Operand::IdRef(3)],
+    );
+    let band = inst(
+        Op::BitwiseAnd,
+        int,
+        6,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(5)],
+    );
+    let optimized = optimize_arith_block(&[x, y, not_x, bor, band]).expect("optimize");
+    let expected = x_val & y_val;
+    let folded = optimized.iter().find(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(6)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(expected)]
+    });
+    assert!(
+        folded.is_some(),
+        "x & (~x | y) should fold to x & y; Rust-only improvement"
+    );
+}
+
+/// Rust-only: xor with a complement mask collapses to OR.
+#[test]
+fn corpus_xor_absorb_complement_mask() {
+    let int = 1;
+    let x_val = 0x0F0F_F0F0u32;
+    let y_val = 0x00FF_00FFu32;
+    let x = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(x_val)],
+    );
+    let y = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(y_val)],
+    );
+    let not_x = inst(Op::Not, int, 4, vec![rspirv::dr::Operand::IdRef(2)]);
+    let band = inst(
+        Op::BitwiseAnd,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(4), rspirv::dr::Operand::IdRef(3)],
+    );
+    let bxor = inst(
+        Op::BitwiseXor,
+        int,
+        6,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(5)],
+    );
+    let optimized = optimize_arith_block(&[x, y, not_x, band, bxor]).expect("optimize");
+    let expected = x_val | y_val;
+    let folded = optimized.iter().find(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(6)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(expected)]
+    });
+    assert!(
+        folded.is_some(),
+        "x ^ (~x & y) should fold to x | y; Rust-only improvement"
+    );
+}
+
+/// Rust-only: absorb XOR under OR.
+#[test]
+fn corpus_or_absorb_xor() {
+    let int = 1;
+    let x_val = 0x5555_AAAAu32;
+    let y_val = 0x0F0F_F0F0u32;
+    let x = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(x_val)],
+    );
+    let y = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(y_val)],
+    );
+    let bxor = inst(
+        Op::BitwiseXor,
+        int,
+        4,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(3)],
+    );
+    let bor = inst(
+        Op::BitwiseOr,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(4)],
+    );
+    let optimized = optimize_arith_block(&[x, y, bxor, bor]).expect("optimize");
+    let expected = x_val | y_val;
+    let folded = optimized.iter().find(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(5)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(expected)]
+    });
+    assert!(
+        folded.is_some(),
+        "x | (x ^ y) should fold to x | y; Rust-only improvement"
+    );
+}
+
 /// Rust-only: absorb split y term (x & y) | (~x & y) into y.
 #[test]
 fn corpus_absorbs_split_y_term() {
