@@ -174,6 +174,21 @@ impl ConstValue {
         self.value & mask
     }
 
+    /// Returns true when the value is zero in its bit width.
+    pub const fn is_zero(self) -> bool {
+        self.get_u64() == 0
+    }
+
+    /// Returns true when the value is one in its bit width.
+    pub const fn is_one(self) -> bool {
+        self.get_u64() == 1
+    }
+
+    /// Returns true when all bits in the width are set.
+    pub const fn is_all_ones(self) -> bool {
+        self.get_u64() == self.mask()
+    }
+
     /// Returns the bit width.
     pub const fn width_bits(self) -> u8 {
         self.width
@@ -1328,7 +1343,7 @@ impl Applier<SpirvLang, ()> for DivOne {
         _pat: Option<&PatternAst<SpirvLang>>,
         _symbol: Symbol,
     ) -> Vec<Id> {
-        if const_value(egraph, subst[self.b]).is_some_and(|c| c.get() == 1) {
+        if const_value(egraph, subst[self.b]).is_some_and(|c| c.is_one()) {
             egraph.union(eclass, subst[self.a]);
             return vec![subst[self.a]];
         }
@@ -1346,7 +1361,7 @@ impl Applier<SpirvLang, ()> for RemOne {
         _symbol: Symbol,
     ) -> Vec<Id> {
         if let Some(constant) = const_value(egraph, subst[self.b]) {
-            if constant.get() == 1 {
+            if constant.is_one() {
                 let id = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
                     0,
                     constant.width_bits(),
@@ -1404,11 +1419,11 @@ impl Applier<SpirvLang, ()> for AddZero {
         _pat: Option<&PatternAst<SpirvLang>>,
         _symbol: Symbol,
     ) -> Vec<Id> {
-        if const_value(egraph, subst[self.a]).is_some_and(|c| c.get() == 0) {
+        if const_value(egraph, subst[self.a]).is_some_and(|c| c.is_zero()) {
             egraph.union(eclass, subst[self.b]);
             return vec![subst[self.b]];
         }
-        if const_value(egraph, subst[self.b]).is_some_and(|c| c.get() == 0) {
+        if const_value(egraph, subst[self.b]).is_some_and(|c| c.is_zero()) {
             egraph.union(eclass, subst[self.a]);
             return vec![subst[self.a]];
         }
@@ -1425,11 +1440,11 @@ impl Applier<SpirvLang, ()> for MulOne {
         _pat: Option<&PatternAst<SpirvLang>>,
         _symbol: Symbol,
     ) -> Vec<Id> {
-        if const_value(egraph, subst[self.a]).is_some_and(|c| c.get() == 1) {
+        if const_value(egraph, subst[self.a]).is_some_and(|c| c.is_one()) {
             egraph.union(eclass, subst[self.b]);
             return vec![subst[self.b]];
         }
-        if const_value(egraph, subst[self.b]).is_some_and(|c| c.get() == 1) {
+        if const_value(egraph, subst[self.b]).is_some_and(|c| c.is_one()) {
             egraph.union(eclass, subst[self.a]);
             return vec![subst[self.a]];
         }
@@ -1448,8 +1463,8 @@ impl Applier<SpirvLang, ()> for MulZero {
     ) -> Vec<Id> {
         let left_const = const_value(egraph, subst[self.a]);
         let right_const = const_value(egraph, subst[self.b]);
-        let zero_left = left_const.is_some_and(|c| c.get() == 0);
-        let zero_right = right_const.is_some_and(|c| c.get() == 0);
+        let zero_left = left_const.is_some_and(|c| c.is_zero());
+        let zero_right = right_const.is_some_and(|c| c.is_zero());
         if zero_left || zero_right {
             let width = left_const
                 .or(right_const)
@@ -1473,7 +1488,7 @@ impl Applier<SpirvLang, ()> for SubZeroLeft {
         _pat: Option<&PatternAst<SpirvLang>>,
         _symbol: Symbol,
     ) -> Vec<Id> {
-        if const_value(egraph, subst[var("a")]).is_some_and(|c| c.get() == 0) {
+        if const_value(egraph, subst[var("a")]).is_some_and(|c| c.is_zero()) {
             let neg = egraph.add(SpirvLang::Neg(subst[var("b")]));
             egraph.union(eclass, neg);
             return vec![neg];
@@ -1491,10 +1506,8 @@ impl Applier<SpirvLang, ()> for MulNegOne {
         _pat: Option<&PatternAst<SpirvLang>>,
         _symbol: Symbol,
     ) -> Vec<Id> {
-        let left_is_neg_one =
-            const_value(egraph, subst[self.a]).is_some_and(|c| c.get() == u32::MAX);
-        let right_is_neg_one =
-            const_value(egraph, subst[self.b]).is_some_and(|c| c.get() == u32::MAX);
+        let left_is_neg_one = const_value(egraph, subst[self.a]).is_some_and(|c| c.is_all_ones());
+        let right_is_neg_one = const_value(egraph, subst[self.b]).is_some_and(|c| c.is_all_ones());
         if left_is_neg_one {
             let neg = egraph.add(SpirvLang::Neg(subst[self.b]));
             egraph.union(eclass, neg);
@@ -1616,7 +1629,7 @@ impl Applier<SpirvLang, ()> for SubSharedConstAddend {
         let Some(c2) = const_value(egraph, subst[self.c2]) else {
             return Vec::new();
         };
-        if c1.get() != c2.get() {
+        if c1 != c2 {
             return Vec::new();
         }
         let sub = egraph.add(SpirvLang::Sub([subst[self.x], subst[self.y]]));
@@ -2091,7 +2104,7 @@ impl Applier<SpirvLang, ()> for FoldAffineGcd {
         if coeff.get_u64() == 0 || const_term.get_u64() == 0 {
             return Vec::new();
         }
-        let gcd = gcd_u32(coeff.get(), const_term.get());
+        let gcd = gcd_u32(coeff.get_u64() as u32, const_term.get_u64() as u32);
         if gcd <= 1 || gcd as u64 == coeff.get_u64() {
             return Vec::new();
         }
@@ -2305,7 +2318,7 @@ impl Applier<SpirvLang, ()> for SRemConstDecompose {
         let Some(constant) = const_value(egraph, subst[self.c]) else {
             return Vec::new();
         };
-        if constant.get() == 0 {
+        if constant.is_zero() {
             return Vec::new();
         }
         let c_id = egraph.add(SpirvLang::Const(constant));
@@ -2329,7 +2342,7 @@ impl Applier<SpirvLang, ()> for UModConstDecompose {
         let Some(constant) = const_value(egraph, subst[self.c]) else {
             return Vec::new();
         };
-        if constant.get() == 0 {
+        if constant.is_zero() {
             return Vec::new();
         }
         let c_id = egraph.add(SpirvLang::Const(constant));
@@ -2597,18 +2610,16 @@ impl Applier<SpirvLang, ()> for BitXorConstSimplify {
         let Some(c) = const_value(egraph, subst[self.c]) else {
             return Vec::new();
         };
-        match c.get() {
-            0 => {
-                egraph.union(eclass, subst[self.x]);
-                vec![subst[self.x]]
-            }
-            u32::MAX => {
-                let bnot = egraph.add(SpirvLang::BitNot(subst[self.x]));
-                egraph.union(eclass, bnot);
-                vec![bnot]
-            }
-            _ => Vec::new(),
+        if c.is_zero() {
+            egraph.union(eclass, subst[self.x]);
+            return vec![subst[self.x]];
         }
+        if c.is_all_ones() {
+            let bnot = egraph.add(SpirvLang::BitNot(subst[self.x]));
+            egraph.union(eclass, bnot);
+            return vec![bnot];
+        }
+        Vec::new()
     }
 }
 
@@ -2640,7 +2651,7 @@ impl Applier<SpirvLang, ()> for SubMaskAbsorb {
         _runner: Symbol,
     ) -> Vec<Id> {
         if let Some(mask_val) = const_value(egraph, subst[self.mask]) {
-            if mask_val.get() == u32::MAX {
+            if mask_val.is_all_ones() {
                 egraph.union(eclass, subst[self.x]);
             }
         }
@@ -2658,7 +2669,7 @@ impl Applier<SpirvLang, ()> for BitXorAbsorb {
         _runner: Symbol,
     ) -> Vec<Id> {
         if let Some(mask_val) = const_value(egraph, subst[self.mask]) {
-            if mask_val.get() == 0 {
+            if mask_val.is_zero() {
                 egraph.union(eclass, subst[self.x]);
             }
         }
@@ -2676,7 +2687,7 @@ impl Applier<SpirvLang, ()> for BitXorAllOnes {
         _runner: Symbol,
     ) -> Vec<Id> {
         if let Some(mask_val) = const_value(egraph, subst[self.mask]) {
-            if mask_val.get() == u32::MAX {
+            if mask_val.is_all_ones() {
                 if let Some(width) = width_hint(egraph, eclass, [subst[self.x]]) {
                     let zero = egraph.add(SpirvLang::Const(ConstValue::new_with_width(0, width)));
                     egraph.union(eclass, zero);
@@ -2954,7 +2965,8 @@ impl Applier<SpirvLang, ()> for MaskThenShift {
         if width > 64 {
             return Vec::new();
         }
-        if shift_val.get() >= u32::from(width) {
+        let shift = shift_val.get_u64();
+        if shift >= u64::from(width) {
             return Vec::new();
         }
         let Some(mask_pow) = is_power_of_two(mask_val.get_u64()) else {
@@ -2968,7 +2980,7 @@ impl Applier<SpirvLang, ()> for MaskThenShift {
         let shr_const_id = egraph.add(SpirvLang::Const(shr_const));
         let shr = egraph.add(SpirvLang::ShrU([subst[self.x], shr_const_id]));
         let new_mask =
-            ConstValue::new_with_width(mask_val.get_u64().wrapping_shr(shift_val.get()), width);
+            ConstValue::new_with_width(mask_val.get_u64().wrapping_shr(shift as u32), width);
         let mask_id = egraph.add(SpirvLang::Const(new_mask));
         let band = egraph.add(SpirvLang::BitAnd([shr, mask_id]));
         egraph.union(eclass, band);
@@ -2995,7 +3007,8 @@ impl Applier<SpirvLang, ()> for MaskThenShiftSigned {
         if width > 64 {
             return Vec::new();
         }
-        if shift_val.get() >= u32::from(width) {
+        let shift = shift_val.get_u64();
+        if shift >= u64::from(width) {
             return Vec::new();
         }
         let Some(mask_pow) = is_power_of_two(mask_val.get_u64()) else {
@@ -3008,7 +3021,7 @@ impl Applier<SpirvLang, ()> for MaskThenShiftSigned {
         let shr_const_id = egraph.add(SpirvLang::Const(shr_const));
         let shr = egraph.add(SpirvLang::ShrS([subst[self.x], shr_const_id]));
         let new_mask =
-            ConstValue::new_with_width(mask_val.get_u64().wrapping_shr(shift_val.get()), width);
+            ConstValue::new_with_width(mask_val.get_u64().wrapping_shr(shift as u32), width);
         let mask_id = egraph.add(SpirvLang::Const(new_mask));
         let band = egraph.add(SpirvLang::BitAnd([shr, mask_id]));
         egraph.union(eclass, band);
@@ -3415,6 +3428,62 @@ mod tests {
         assert_eq!(
             optimized,
             RecExpr::from(vec![SpirvLang::Const(ConstValue::new_with_width(0, 64))])
+        );
+    }
+
+    #[test]
+    fn add_zero_checks_full_width_u64() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol("x".into()),
+            SpirvLang::Const(ConstValue::new_with_width(1u64 << 32, 64)),
+            SpirvLang::Add([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert!(
+            matches!(optimized.as_ref().last(), Some(SpirvLang::Add(_))),
+            "expected add to remain, got {optimized:?}"
+        );
+    }
+
+    #[test]
+    fn mul_one_checks_full_width_u64() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol("x".into()),
+            SpirvLang::Const(ConstValue::new_with_width(0x1_0000_0001, 64)),
+            SpirvLang::Mul([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert!(
+            matches!(optimized.as_ref().last(), Some(SpirvLang::Mul(_))),
+            "expected mul to remain, got {optimized:?}"
+        );
+    }
+
+    #[test]
+    fn mul_neg_one_requires_full_width_u64() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol("x".into()),
+            SpirvLang::Const(ConstValue::new_with_width(0xFFFF_FFFF, 64)),
+            SpirvLang::Mul([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert!(
+            matches!(optimized.as_ref().last(), Some(SpirvLang::Mul(_))),
+            "expected mul to remain, got {optimized:?}"
+        );
+    }
+
+    #[test]
+    fn bxor_all_ones_requires_full_width_u64() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol("x".into()),
+            SpirvLang::Const(ConstValue::new_with_width(0xFFFF_FFFF, 64)),
+            SpirvLang::BitXor([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert!(
+            matches!(optimized.as_ref().last(), Some(SpirvLang::BitXor(_))),
+            "expected bxor to remain, got {optimized:?}"
         );
     }
 
