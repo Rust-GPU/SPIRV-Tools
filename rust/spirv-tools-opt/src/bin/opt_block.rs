@@ -1,5 +1,5 @@
 use clap::Parser;
-use egg::{EGraph, Extractor, Id, Language, Runner};
+use egg::{EGraph, Extractor, Id, Language, RecExpr, Runner, Symbol};
 use rspirv::binary::{parse_words, Assemble};
 use rspirv::dr::Instruction;
 use rspirv::spirv::Op;
@@ -41,7 +41,12 @@ struct Args {
     force_global: bool,
 }
 
-type OptimizedFunction = (BTreeMap<u32, Instruction>, Vec<Vec<Instruction>>);
+type PhiReplacement = (u32, u32);
+type OptimizedFunction = (
+    BTreeMap<u32, Instruction>,
+    Vec<Vec<Instruction>>,
+    Vec<PhiReplacement>,
+);
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
@@ -108,6 +113,7 @@ fn is_arith(opcode: Op) -> bool {
             | Op::ShiftLeftLogical
             | Op::ShiftRightLogical
             | Op::ShiftRightArithmetic
+            | Op::Select
     )
 }
 
@@ -132,17 +138,23 @@ fn optimize_module(
     let mut module = loader.module();
     let type_widths = type_widths_from_module(&module);
 
+    let is_constant = |opcode| {
+        matches!(
+            opcode,
+            Op::Constant | Op::ConstantTrue | Op::ConstantFalse | Op::ConstantNull
+        )
+    };
     let non_constant_globals: Vec<Instruction> = module
         .types_global_values
         .iter()
-        .filter(|inst| inst.class.opcode != Op::Constant)
+        .filter(|inst| !is_constant(inst.class.opcode))
         .cloned()
         .collect();
     let mut constant_map: BTreeMap<u32, Instruction> = module
         .types_global_values
         .iter()
         .filter_map(|inst| inst.result_id.map(|id| (id, inst.clone())))
-        .filter(|(_, inst)| inst.class.opcode == Op::Constant)
+        .filter(|(_, inst)| is_constant(inst.class.opcode))
         .collect();
     let mut next_id = next_result_id_module(&module);
 
@@ -166,13 +178,14 @@ fn optimize_module(
         let use_global =
             (func.blocks.len() > 1) && (!disable_global || force_global || force_global_env);
         if use_global {
-            if let Some((new_constants, optimized_blocks)) =
+            if let Some((new_constants, optimized_blocks, phi_replacements)) =
                 optimize_function_egraph(func, &type_widths, &constant_map, &mut next_id)
             {
                 constant_map = new_constants;
                 for (block, optimized_block) in func.blocks.iter_mut().zip(optimized_blocks) {
                     replace_block_arith(block, &optimized_block);
                 }
+                apply_phi_replacements(func, &phi_replacements);
                 continue;
             }
         }
@@ -378,6 +391,35 @@ fn replace_block_arith(block: &mut rspirv::dr::Block, optimized_block: &[Instruc
     block.instructions = new_block;
 }
 
+fn apply_phi_replacements(func: &mut rspirv::dr::Function, replacements: &[PhiReplacement]) {
+    if replacements.is_empty() {
+        return;
+    }
+    let mut map = HashMap::new();
+    for (result_id, operand_id) in replacements {
+        map.insert(*result_id, *operand_id);
+    }
+    for block in &mut func.blocks {
+        for inst in &mut block.instructions {
+            if inst.class.opcode != Op::Phi {
+                continue;
+            }
+            let Some(result_id) = inst.result_id else {
+                continue;
+            };
+            let Some(&operand_id) = map.get(&result_id) else {
+                continue;
+            };
+            *inst = Instruction::new(
+                Op::CopyObject,
+                inst.result_type,
+                Some(result_id),
+                vec![rspirv::dr::Operand::IdRef(operand_id)],
+            );
+        }
+    }
+}
+
 fn is_terminator(opcode: Op) -> bool {
     matches!(
         opcode,
@@ -388,6 +430,10 @@ fn is_terminator(opcode: Op) -> bool {
             | Op::ReturnValue
             | Op::Unreachable
     )
+}
+
+fn symbol_for_id(id: u32) -> Symbol {
+    Symbol::from(format!("id{id}"))
 }
 
 fn symbol_id(sym: &egg::Symbol) -> Option<u32> {
@@ -405,6 +451,71 @@ fn add_expr_to_egraph(
         ids.push(id);
     }
     ids
+}
+
+#[derive(Debug)]
+struct PhiRoot {
+    result_id: u32,
+    root: Id,
+    operands: Vec<(u32, Id)>,
+}
+
+fn add_phi_roots(
+    func: &rspirv::dr::Function,
+    egraph: &mut EGraph<SpirvLang, ()>,
+    id_to_class: &HashMap<u32, Id>,
+) -> Vec<PhiRoot> {
+    let mut roots = Vec::new();
+    for block in &func.blocks {
+        for inst in &block.instructions {
+            if inst.class.opcode != Op::Phi {
+                continue;
+            }
+            let Some(result_id) = inst.result_id else {
+                continue;
+            };
+            let mut values = Vec::new();
+            for (idx, operand) in inst.operands.iter().enumerate() {
+                if idx % 2 != 0 {
+                    continue;
+                }
+                let Some(value_id) = operand.id_ref_any() else {
+                    continue;
+                };
+                if value_id == result_id {
+                    continue;
+                }
+                values.push(value_id);
+            }
+            if values.is_empty() {
+                continue;
+            }
+            let mut expr = RecExpr::default();
+            let mut nodes = Vec::with_capacity(values.len());
+            for value in &values {
+                nodes.push(expr.add(SpirvLang::Symbol(symbol_for_id(*value))));
+            }
+            let mut root = nodes[0];
+            for &node in nodes.iter().skip(1) {
+                root = expr.add(SpirvLang::Phi([root, node]));
+            }
+            let node_classes = add_expr_to_egraph(&expr, egraph);
+            let mut operands = Vec::with_capacity(nodes.len());
+            for (node_idx, value_id) in nodes.iter().copied().zip(values.iter().copied()) {
+                let class = node_classes[usize::from(node_idx)];
+                if let Some(&existing) = id_to_class.get(&value_id) {
+                    egraph.union(class, existing);
+                }
+                operands.push((value_id, class));
+            }
+            roots.push(PhiRoot {
+                result_id,
+                root: node_classes[usize::from(root)],
+                operands,
+            });
+        }
+    }
+    roots
 }
 
 fn build_best_rec_expr(
@@ -531,9 +642,10 @@ fn optimize_function_egraph(
     }
 
     let control_roots = add_control_roots(func, &mut egraph);
-    if arithmetic.is_empty() && control_roots.is_empty() {
+    let phi_roots = add_phi_roots(func, &mut egraph, &id_to_class);
+    if arithmetic.is_empty() && control_roots.is_empty() && phi_roots.is_empty() {
         if debug_egraph {
-            eprintln!("egraph skip: no arithmetic/control roots");
+            eprintln!("egraph skip: no arithmetic/control/phi roots");
         }
         return None;
     }
@@ -546,6 +658,17 @@ fn optimize_function_egraph(
     let egraph = runner.egraph;
     let extractor = Extractor::new(&egraph, ExprCost);
     let _ = apply_control_roots(func, &extractor, &control_roots, next_id);
+    let mut phi_replacements = Vec::new();
+    for root in &phi_roots {
+        let root_class = egraph.find(root.root);
+        if let Some((operand_id, _)) = root
+            .operands
+            .iter()
+            .find(|(_, class)| egraph.find(*class) == root_class)
+        {
+            phi_replacements.push((root.result_id, *operand_id));
+        }
+    }
 
     let mut canonical_types: HashMap<Id, u32> = HashMap::new();
     for (class, ty) in class_types {
@@ -557,7 +680,11 @@ fn optimize_function_egraph(
     }
 
     if arithmetic.is_empty() {
-        return Some((constant_map.clone(), vec![Vec::new(); func.blocks.len()]));
+        return Some((
+            constant_map.clone(),
+            vec![Vec::new(); func.blocks.len()],
+            phi_replacements,
+        ));
     }
 
     let mut root_classes = Vec::new();
@@ -691,11 +818,20 @@ fn optimize_function_egraph(
         let result_id = rec_result_ids[idx];
         let inst = match node {
             SpirvLang::Const(val) => {
-                let operands = match val.width_bits() {
-                    64 => vec![rspirv::dr::Operand::LiteralBit64(val.get_u64())],
-                    _ => vec![rspirv::dr::Operand::LiteralBit32(val.get())],
-                };
-                Instruction::new(Op::Constant, Some(result_type), Some(result_id), operands)
+                if val.width_bits() == 1 {
+                    let opcode = if val.get_u64() == 0 {
+                        Op::ConstantFalse
+                    } else {
+                        Op::ConstantTrue
+                    };
+                    Instruction::new(opcode, Some(result_type), Some(result_id), Vec::new())
+                } else {
+                    let operands = match val.width_bits() {
+                        64 => vec![rspirv::dr::Operand::LiteralBit64(val.get_u64())],
+                        _ => vec![rspirv::dr::Operand::LiteralBit32(val.get())],
+                    };
+                    Instruction::new(Op::Constant, Some(result_type), Some(result_id), operands)
+                }
             }
             SpirvLang::Add([a, b]) => Instruction::new(
                 Op::IAdd,
@@ -826,6 +962,16 @@ fn optimize_function_egraph(
                 Some(result_id),
                 vec![rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)])],
             ),
+            SpirvLang::Select([c, t, f]) => Instruction::new(
+                Op::Select,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*c)]),
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*t)]),
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*f)]),
+                ],
+            ),
             SpirvLang::Symbol(sym) => {
                 let Some(source) = symbol_id(sym) else {
                     continue;
@@ -947,7 +1093,7 @@ fn optimize_function_egraph(
         }
     }
 
-    Some((new_constants, per_block))
+    Some((new_constants, per_block, phi_replacements))
 }
 
 fn collect_arith_topo(

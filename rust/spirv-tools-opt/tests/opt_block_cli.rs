@@ -79,6 +79,65 @@ fn build_mul_identity_module() -> (Vec<u32>, u32) {
     (b.module().assemble(), sum)
 }
 
+fn build_select_true_module() -> (Vec<u32>, u32, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let int = b.type_int(32, 0);
+    let bool_ty = b.type_bool();
+    let func_ty = b.type_function(int, vec![]);
+    let _func = b
+        .begin_function(int, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let _ = b.begin_block(None).unwrap();
+    let cond = b.constant_true(bool_ty);
+    let c10 = b.constant_bit32(int, 10);
+    let c20 = b.constant_bit32(int, 20);
+    let sel = b.select(int, None, cond, c10, c20).expect("select");
+    b.ret_value(sel).unwrap();
+    b.end_function().unwrap();
+    (b.module().assemble(), sel, c10)
+}
+
+fn build_redundant_phi_module() -> (Vec<u32>, u32, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let bool_ty = b.type_bool();
+    let func_ty = b.type_function(void, vec![]);
+    let _func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let val = b.constant_bit32(int, 7);
+    let merge_label = b.id();
+    let then_label = b.id();
+    let else_label = b.id();
+    let cond = b.constant_true(bool_ty);
+
+    b.begin_block(None).unwrap();
+    b.selection_merge(merge_label, SelectionControl::NONE)
+        .expect("selection merge");
+    b.branch_conditional(cond, then_label, else_label, std::iter::empty())
+        .expect("branch conditional");
+
+    b.begin_block(Some(then_label)).unwrap();
+    b.branch(merge_label).expect("branch then");
+
+    b.begin_block(Some(else_label)).unwrap();
+    b.branch(merge_label).expect("branch else");
+
+    b.begin_block(Some(merge_label)).unwrap();
+    let phi = b
+        .phi(int, None, vec![(val, then_label), (val, else_label)])
+        .expect("phi");
+    b.ret().unwrap();
+    b.end_function().unwrap();
+
+    (b.module().assemble(), phi, val)
+}
+
 fn build_mul_identity_module_s32() -> (Vec<u32>, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
@@ -1257,6 +1316,98 @@ fn cli_opt_block_folds_arithmetic() {
         "folded value should be written as constant 7"
     );
     assert!(!has_sub, "subtraction should be folded away");
+}
+
+#[test]
+fn cli_opt_block_folds_select_true() {
+    let _guard = env_guard();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let (words, select_id, true_id) = build_select_true_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let output = dir.path().join("output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let status = Command::new(exe)
+        .arg(&input)
+        .arg(&output)
+        .status()
+        .expect("run opt_block");
+    assert!(status.success(), "opt_block should exit successfully");
+
+    let optimized_bytes = std::fs::read(&output).expect("read output");
+    let optimized_words = bytes_to_words(&optimized_bytes);
+    let mut loader = Loader::new();
+    rspirv::binary::parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+
+    let has_select = module
+        .all_inst_iter()
+        .any(|inst| inst.class.opcode == Op::Select);
+    let return_id = module
+        .all_inst_iter()
+        .find(|inst| inst.class.opcode == Op::ReturnValue)
+        .and_then(|inst| {
+            inst.operands.iter().find_map(|op| match op {
+                rspirv::dr::Operand::IdRef(id) => Some(*id),
+                _ => None,
+            })
+        })
+        .expect("return value");
+    let has_copy = module.all_inst_iter().any(|inst| {
+        inst.class.opcode == Op::CopyObject
+            && inst.result_id == Some(select_id)
+            && inst.operands == vec![rspirv::dr::Operand::IdRef(true_id)]
+    });
+    let has_const = module.all_inst_iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(select_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(10)]
+    });
+    let returns_true = return_id == true_id;
+    let returns_select = return_id == select_id && (has_copy || has_const);
+    assert!(!has_select, "select should be folded away");
+    assert!(
+        returns_true || returns_select,
+        "return should resolve to the true branch value"
+    );
+}
+
+#[test]
+fn cli_opt_block_folds_redundant_phi() {
+    let _guard = env_guard();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let (words, phi_id, val_id) = build_redundant_phi_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let output = dir.path().join("output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let status = Command::new(exe)
+        .arg(&input)
+        .arg(&output)
+        .status()
+        .expect("run opt_block");
+    assert!(status.success(), "opt_block should exit successfully");
+
+    let optimized_bytes = std::fs::read(&output).expect("read output");
+    let optimized_words = bytes_to_words(&optimized_bytes);
+    let mut loader = Loader::new();
+    rspirv::binary::parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+
+    let has_phi = module
+        .all_inst_iter()
+        .any(|inst| inst.class.opcode == Op::Phi);
+    let has_copy = module.all_inst_iter().any(|inst| {
+        inst.class.opcode == Op::CopyObject
+            && inst.result_id == Some(phi_id)
+            && inst.operands == vec![rspirv::dr::Operand::IdRef(val_id)]
+    });
+    assert!(!has_phi, "redundant phi should be folded away");
+    assert!(has_copy, "phi should fold to a copy of the operand");
 }
 
 #[test]

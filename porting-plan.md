@@ -76,6 +76,8 @@ Tasks for this milestone:
 - [x] Expand e-graph rewrites with algebraic cancellations and emit simplified SPIR-V blocks (while preserving result ids and stability when no cost improvement occurs).
 - [x] Add criterion coverage for block-level arithmetic optimization (including small and medium block cases).
 - [ ] Expand optimizer coverage with e-graph driven rewrites (egg) for algebraic simplifications beyond simple folds. (constant-offset hoisting for add/add and add/sub landed; constant-factor hoisting for mul chains; divisor merging for nested div chains; common-factor extraction for const-scaled sums and symbolic add/sub products; cancellation of common constant factors in div/rem and sub factoring; constant-flip for negated const multiplies; negation normalization across mul/sub/double-neg; pulling divisible constants out of mul/div chains; distributing constants over add/sub to expose folds; refactoring affine sums when constants share divisors; folding repeated adds into multiplies/shifts (x+x, x+x+x, x*4 via shift); merging nested const shifts; eliminating shift-by-zero forms; signed/unsigned power-of-two div strength reduction (unsigned shift; signed biased shift with bitmask); decomposing signed/unsigned remainder into div/mul/sub for const divisors; bitwise and folding/identity rules and mask-to-mod for pow2 masks; strength-reducing pow2 mul/div/umod into shifts; extend to distributivity/strength-reduction cases)
+- [x] Fold negated add/div by constants via e-graph rewrites (width-aware) and add parity/unit coverage for `-(a + c)` and `-(a / c)` forms.
+- [x] Support bool constants + `OpSelect` in the translator/rebuilder and fold redundant `select`/`phi` nodes via the e-graph, with Rust CLI regressions documenting the Rust-only simplification.
 - [x] Add a fuzz target for straight-line arithmetic blocks to exercise `optimize_arith_block` end-to-end.
 - [x] Add hyperfine benchmarks alongside criterion for optimizer passes to mirror C++ tooling.
 - [ ] Wire the Rust optimizer into the CLI/FFI path behind a flag and start porting more C++ optimizer passes using e-graphs where beneficial.
@@ -196,6 +198,7 @@ Tasks:
 - [x] Deduplicate dominated arithmetic across blocks and collapse copy chains to their roots so repeated expressions and redundant `OpCopyObject` sequences are eliminated; backed by CLI regressions for CSE and copy flattening.
 - [x] Extend deduplication to branch-shared expressions (partial redundancy elimination) by hoisting common expressions into the nearest dominating block and inserting structured copies at merge points, with CFG/dominator tests and CLI coverage. (Nearest dominator selection now uses dominator depth; hoists only when operand defs dominate and inserts after operand defs but before merge/terminators; CLI regression covers out-of-order block indices.)
 - [x] Unify the control-flow e-graph language with arithmetic (`SpirvLang` now includes `if/merge/ret/retv/phi/pair`) to enable a single shared rewrite set in the next global optimizer iteration.
+- [x] Add e-graph roots for `select`/`phi` plus bool-constant handling, and apply phi replacements after global extraction so redundant merges collapse safely.
 
 ## Upcoming Milestone: Optimizer CLI/FFI Integration
 - Expose the Rust arithmetic optimizer through CLI/FFI entry points with a flag/env toggle and a documented C++ fallback.

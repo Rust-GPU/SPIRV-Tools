@@ -3790,6 +3790,156 @@ fn rust_and_cpp_fold_double_negation() {
 }
 
 #[test]
+fn rust_and_cpp_fold_negated_add_with_const() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+
+    let (module_words, neg_id, x_id) = build_neg_add_const_module();
+    let rust_insts = extract_extended_block(&module_words);
+    let rust_optimized =
+        spirv_tools_opt::translate::optimize_arith_block(&rust_insts).expect("rust optimizer");
+    let neg_const = 0u32.wrapping_sub(5);
+    let rust_neg_consts: std::collections::HashSet<u32> = rust_optimized
+        .iter()
+        .filter(|inst| {
+            inst.class.opcode == Op::Constant
+                && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(neg_const)]
+        })
+        .filter_map(|inst| inst.result_id)
+        .collect();
+    let rust_has_sub = rust_optimized.iter().any(|inst| {
+        inst.class.opcode == Op::ISub
+            && inst.result_id == Some(neg_id)
+            && inst
+                .operands
+                .first()
+                .and_then(|op| op.id_ref_any())
+                .is_some_and(|id| rust_neg_consts.contains(&id))
+            && inst.operands.get(1).and_then(|op| op.id_ref_any()) == Some(x_id)
+    });
+    let rust_has_neg = rust_optimized
+        .iter()
+        .any(|inst| inst.class.opcode == Op::SNegate);
+    assert!(
+        rust_has_sub,
+        "rust optimizer should fold -(x + c) into sub with negated const"
+    );
+    assert!(!rust_has_neg, "rust optimizer should remove negate");
+
+    let cpp_words = run_cpp_opt(&cpp_opt, &module_words);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&cpp_words, &mut loader).expect("parse cpp optimized");
+    let module = loader.module();
+    let cpp_neg_consts: std::collections::HashSet<u32> = module
+        .all_inst_iter()
+        .filter(|inst| {
+            inst.class.opcode == Op::Constant
+                && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(neg_const)]
+        })
+        .filter_map(|inst| inst.result_id)
+        .collect();
+    let mut cpp_has_sub = false;
+    let mut cpp_has_neg = false;
+    for inst in module.all_inst_iter() {
+        if inst.class.opcode == Op::SNegate {
+            cpp_has_neg = true;
+        }
+        if inst.class.opcode == Op::ISub
+            && inst.result_id == Some(neg_id)
+            && inst
+                .operands
+                .first()
+                .and_then(|op| op.id_ref_any())
+                .is_some_and(|id| cpp_neg_consts.contains(&id))
+            && inst.operands.get(1).and_then(|op| op.id_ref_any()) == Some(x_id)
+        {
+            cpp_has_sub = true;
+        }
+    }
+    assert!(
+        cpp_has_sub,
+        "C++ spirv-opt should fold -(x + c) into sub with negated const"
+    );
+    assert!(!cpp_has_neg, "C++ spirv-opt should remove negate");
+}
+
+#[test]
+fn rust_and_cpp_fold_negated_sdiv_const() {
+    let Some(cpp_opt) = cpp_opt_bin() else {
+        return;
+    };
+
+    let (module_words, neg_id, x_id) = build_neg_sdiv_const_module();
+    let rust_insts = extract_extended_block(&module_words);
+    let rust_optimized =
+        spirv_tools_opt::translate::optimize_arith_block(&rust_insts).expect("rust optimizer");
+    let neg_const = 0u32.wrapping_sub(4);
+    let rust_neg_consts: std::collections::HashSet<u32> = rust_optimized
+        .iter()
+        .filter(|inst| {
+            inst.class.opcode == Op::Constant
+                && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(neg_const)]
+        })
+        .filter_map(|inst| inst.result_id)
+        .collect();
+    let rust_has_div = rust_optimized.iter().any(|inst| {
+        inst.class.opcode == Op::SDiv
+            && inst.result_id == Some(neg_id)
+            && inst.operands.first().and_then(|op| op.id_ref_any()) == Some(x_id)
+            && inst
+                .operands
+                .get(1)
+                .and_then(|op| op.id_ref_any())
+                .is_some_and(|id| rust_neg_consts.contains(&id))
+    });
+    let rust_has_neg = rust_optimized
+        .iter()
+        .any(|inst| inst.class.opcode == Op::SNegate);
+    assert!(
+        rust_has_div,
+        "rust optimizer should fold -(x / c) into sdiv with negated const"
+    );
+    assert!(!rust_has_neg, "rust optimizer should remove negate");
+
+    let cpp_words = run_cpp_opt(&cpp_opt, &module_words);
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(&cpp_words, &mut loader).expect("parse cpp optimized");
+    let module = loader.module();
+    let cpp_neg_consts: std::collections::HashSet<u32> = module
+        .all_inst_iter()
+        .filter(|inst| {
+            inst.class.opcode == Op::Constant
+                && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(neg_const)]
+        })
+        .filter_map(|inst| inst.result_id)
+        .collect();
+    let mut cpp_has_div = false;
+    let mut cpp_has_neg = false;
+    for inst in module.all_inst_iter() {
+        if inst.class.opcode == Op::SNegate {
+            cpp_has_neg = true;
+        }
+        if inst.class.opcode == Op::SDiv
+            && inst.result_id == Some(neg_id)
+            && inst.operands.first().and_then(|op| op.id_ref_any()) == Some(x_id)
+            && inst
+                .operands
+                .get(1)
+                .and_then(|op| op.id_ref_any())
+                .is_some_and(|id| cpp_neg_consts.contains(&id))
+        {
+            cpp_has_div = true;
+        }
+    }
+    assert!(
+        cpp_has_div,
+        "C++ spirv-opt should fold -(x / c) into sdiv with negated const"
+    );
+    assert!(!cpp_has_neg, "C++ spirv-opt should remove negate");
+}
+
+#[test]
 fn rust_and_cpp_simplify_add_commutativity() {
     let Some(cpp_opt) = cpp_opt_bin() else {
         return;
@@ -4098,6 +4248,25 @@ fn extract_simple_block(module_words: &[u32]) -> Vec<rspirv::dr::Instruction> {
             matches!(
                 inst.class.opcode,
                 Op::Constant | Op::IAdd | Op::ISub | Op::IMul
+            )
+        })
+        .cloned()
+        .collect()
+}
+
+fn extract_extended_block(module_words: &[u32]) -> Vec<rspirv::dr::Instruction> {
+    let mut loader = rspirv::dr::Loader::new();
+    parse_words(module_words, &mut loader).expect("parse module");
+    let module = loader.module();
+    let block = &module.functions[0].blocks[0];
+    module
+        .types_global_values
+        .iter()
+        .chain(block.instructions.iter())
+        .filter(|inst| {
+            matches!(
+                inst.class.opcode,
+                Op::Constant | Op::IAdd | Op::ISub | Op::IMul | Op::SNegate | Op::SDiv
             )
         })
         .cloned()
@@ -5937,6 +6106,46 @@ fn build_add_negate_module() -> (Vec<u32>, u32) {
     b.ret().expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), add)
+}
+
+fn build_neg_add_const_module() -> (Vec<u32>, u32, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![int]);
+    let _func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let x = b.function_parameter(int).expect("param x");
+    let c5 = b.constant_bit32(int, 5);
+    let add = b.i_add(int, None, x, c5).expect("add");
+    let neg = b.s_negate(int, None, add).expect("neg");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), neg, x)
+}
+
+fn build_neg_sdiv_const_module() -> (Vec<u32>, u32, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 1);
+    let func_ty = b.type_function(void, vec![int]);
+    let _func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .expect("function");
+    let _ = b.begin_block(None).expect("block");
+    let x = b.function_parameter(int).expect("param x");
+    let c4 = b.constant_bit32(int, 4);
+    let div = b.s_div(int, None, x, c4).expect("div");
+    let neg = b.s_negate(int, None, div).expect("neg");
+    b.ret().expect("ret");
+    b.end_function().expect("end");
+    (b.module().assemble(), neg, x)
 }
 
 fn build_add_sub_cancel_module() -> (Vec<u32>, u32) {

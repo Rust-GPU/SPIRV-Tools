@@ -37,17 +37,15 @@ pub fn type_widths_from_module(module: &rspirv::dr::Module) -> HashMap<Word, u32
     module
         .types_global_values
         .iter()
-        .filter_map(|inst| {
-            (inst.class.opcode == Op::TypeInt)
-                .then(|| {
-                    inst.result_id.and_then(|id| {
-                        inst.operands.first().and_then(|op| match op {
-                            rspirv::dr::Operand::LiteralBit32(bits) => Some((id, *bits)),
-                            _ => None,
-                        })
-                    })
+        .filter_map(|inst| match inst.class.opcode {
+            Op::TypeInt => inst.result_id.and_then(|id| {
+                inst.operands.first().and_then(|op| match op {
+                    rspirv::dr::Operand::LiteralBit32(bits) => Some((id, *bits)),
+                    _ => None,
                 })
-                .flatten()
+            }),
+            Op::TypeBool => inst.result_id.map(|id| (id, 1)),
+            _ => None,
         })
         .collect()
 }
@@ -130,12 +128,20 @@ pub fn translate_arith_with_types(
 
     let mut type_widths: HashMap<Word, u32> = type_widths.clone();
     for inst in instructions {
-        if inst.class.opcode == Op::TypeInt {
-            if let (Some(result_id), Some(rspirv::dr::Operand::LiteralBit32(bits))) =
-                (inst.result_id, inst.operands.first())
-            {
-                type_widths.entry(result_id).or_insert(*bits);
+        match inst.class.opcode {
+            Op::TypeInt => {
+                if let (Some(result_id), Some(rspirv::dr::Operand::LiteralBit32(bits))) =
+                    (inst.result_id, inst.operands.first())
+                {
+                    type_widths.entry(result_id).or_insert(*bits);
+                }
             }
+            Op::TypeBool => {
+                if let Some(result_id) = inst.result_id {
+                    type_widths.entry(result_id).or_insert(1);
+                }
+            }
+            _ => {}
         }
     }
 
@@ -210,6 +216,18 @@ pub fn translate_arith_with_types(
                     .ok_or(TranslateError::InvalidConstant { id: result_id })?;
                 let width = result_width.unwrap_or(literal_width);
                 expr.add(SpirvLang::Const(ConstValue::new_with_width(value, width)))
+            }
+            Op::ConstantTrue => {
+                let width = result_width.unwrap_or(1);
+                expr.add(SpirvLang::Const(ConstValue::new_with_width(1, width)))
+            }
+            Op::ConstantFalse => {
+                let width = result_width.unwrap_or(1);
+                expr.add(SpirvLang::Const(ConstValue::new_with_width(0, width)))
+            }
+            Op::ConstantNull => {
+                let width = result_width.unwrap_or(32);
+                expr.add(SpirvLang::Const(ConstValue::new_with_width(0, width)))
             }
             Op::IAdd => {
                 let mut ops = inst
@@ -360,6 +378,52 @@ pub fn translate_arith_with_types(
                     SpirvLang::UDiv([lhs, rhs])
                 };
                 expr.add(node)
+            }
+            Op::Select => {
+                let mut ops = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .peekable();
+                let cond_id = ops
+                    .next()
+                    .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
+                let true_id = ops
+                    .next()
+                    .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
+                let false_id = ops
+                    .next()
+                    .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
+                id_widths.entry(cond_id).or_insert(1);
+                symbol_widths.entry(make_symbol(cond_id)).or_insert(1);
+                let cond = intern_operand(
+                    cond_id,
+                    &mut ids,
+                    &mut expr,
+                    &mut node_to_id,
+                    &mut node_types,
+                    &mut symbol_widths,
+                    &id_widths,
+                );
+                let true_val = intern_operand(
+                    true_id,
+                    &mut ids,
+                    &mut expr,
+                    &mut node_to_id,
+                    &mut node_types,
+                    &mut symbol_widths,
+                    &id_widths,
+                );
+                let false_val = intern_operand(
+                    false_id,
+                    &mut ids,
+                    &mut expr,
+                    &mut node_to_id,
+                    &mut node_types,
+                    &mut symbol_widths,
+                    &id_widths,
+                );
+                expr.add(SpirvLang::Select([cond, true_val, false_val]))
             }
             Op::BitwiseAnd => {
                 let mut ops = inst
@@ -572,7 +636,7 @@ fn check_linear_dominance(instructions: &[Instruction]) -> Result<(), TranslateE
     let mut seen: HashSet<Word> = HashSet::new();
     for inst in instructions {
         let opcode = inst.class.opcode;
-        if opcode == Op::TypeInt {
+        if matches!(opcode, Op::TypeInt | Op::TypeBool) {
             if let Some(id) = inst.result_id {
                 seen.insert(id);
             }
@@ -631,11 +695,20 @@ pub fn rebuild_arith_with_original_ids(
         let result_type = assigned_types[idx];
         let inst = match node {
             SpirvLang::Const(val) => {
-                let operands = match val.width_bits() {
-                    64 => vec![rspirv::dr::Operand::LiteralBit64(val.get_u64())],
-                    _ => vec![rspirv::dr::Operand::LiteralBit32(val.get())],
-                };
-                Instruction::new(Op::Constant, Some(result_type), Some(result_id), operands)
+                if val.width_bits() == 1 {
+                    let opcode = if val.get_u64() == 0 {
+                        Op::ConstantFalse
+                    } else {
+                        Op::ConstantTrue
+                    };
+                    Instruction::new(opcode, Some(result_type), Some(result_id), Vec::new())
+                } else {
+                    let operands = match val.width_bits() {
+                        64 => vec![rspirv::dr::Operand::LiteralBit64(val.get_u64())],
+                        _ => vec![rspirv::dr::Operand::LiteralBit32(val.get())],
+                    };
+                    Instruction::new(Op::Constant, Some(result_type), Some(result_id), operands)
+                }
             }
             SpirvLang::Add([a, b]) => Instruction::new(
                 Op::IAdd,
@@ -766,6 +839,16 @@ pub fn rebuild_arith_with_original_ids(
                 Some(result_id),
                 vec![rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)])],
             ),
+            SpirvLang::Select([c, t, f]) => Instruction::new(
+                Op::Select,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*c)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*t)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*f)]),
+                ],
+            ),
             SpirvLang::Symbol(sym) => Instruction::new(
                 Op::CopyObject,
                 Some(result_type),
@@ -860,11 +943,20 @@ pub fn optimize_arith_block_with_types(
         let result_id = assigned_ids[idx];
         let inst = match node {
             SpirvLang::Const(val) => {
-                let operands = match val.width_bits() {
-                    64 => vec![rspirv::dr::Operand::LiteralBit64(val.get_u64())],
-                    _ => vec![rspirv::dr::Operand::LiteralBit32(val.get())],
-                };
-                Instruction::new(Op::Constant, Some(result_type), Some(result_id), operands)
+                if val.width_bits() == 1 {
+                    let opcode = if val.get_u64() == 0 {
+                        Op::ConstantFalse
+                    } else {
+                        Op::ConstantTrue
+                    };
+                    Instruction::new(opcode, Some(result_type), Some(result_id), Vec::new())
+                } else {
+                    let operands = match val.width_bits() {
+                        64 => vec![rspirv::dr::Operand::LiteralBit64(val.get_u64())],
+                        _ => vec![rspirv::dr::Operand::LiteralBit32(val.get())],
+                    };
+                    Instruction::new(Op::Constant, Some(result_type), Some(result_id), operands)
+                }
             }
             SpirvLang::Add([a, b]) => Instruction::new(
                 Op::IAdd,
@@ -962,6 +1054,16 @@ pub fn optimize_arith_block_with_types(
                 Some(result_id),
                 vec![rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*x)])],
             ),
+            SpirvLang::Select([c, t, f]) => Instruction::new(
+                Op::Select,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*c)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*t)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*f)]),
+                ],
+            ),
             SpirvLang::RotL(_)
             | SpirvLang::RotR(_)
             | SpirvLang::If(_)
@@ -1042,6 +1144,9 @@ fn expr_cost(expr: &RecExpr<SpirvLang>) -> usize {
             SpirvLang::BitAnd([a, b]) => 2 + costs[usize::from(*a)] + costs[usize::from(*b)],
             SpirvLang::BitNot(x) => 1 + costs[usize::from(*x)],
             SpirvLang::If([a, b, c]) => {
+                1 + costs[usize::from(*a)] + costs[usize::from(*b)] + costs[usize::from(*c)]
+            }
+            SpirvLang::Select([a, b, c]) => {
                 1 + costs[usize::from(*a)] + costs[usize::from(*b)] + costs[usize::from(*c)]
             }
             SpirvLang::Merge([a, b]) => 1 + costs[usize::from(*a)] + costs[usize::from(*b)],

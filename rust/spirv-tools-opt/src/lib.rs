@@ -262,6 +262,7 @@ define_language! {
         "srem" = SRem([Id; 2]),
         "umod" = UMod([Id; 2]),
         "neg" = Neg(Id),
+        "select" = Select([Id; 3]),
         "if" = If([Id; 3]),
         "merge" = Merge([Id; 2]),
         "ret" = Ret,
@@ -312,7 +313,11 @@ impl egg::CostFunction<SpirvLang> for ExprCost {
                 enode.children().iter().map(|id| costs(*id)).sum::<usize>() + 2
             }
             SpirvLang::BitNot(_) => enode.children().iter().map(|id| costs(*id)).sum::<usize>() + 1,
-            SpirvLang::If(_) | SpirvLang::Merge(_) | SpirvLang::Phi(_) | SpirvLang::Pair(_) => {
+            SpirvLang::If(_)
+            | SpirvLang::Merge(_)
+            | SpirvLang::Phi(_)
+            | SpirvLang::Pair(_)
+            | SpirvLang::Select(_) => {
                 enode.children().iter().map(|id| costs(*id)).sum::<usize>() + 1
             }
             SpirvLang::Ret => 1,
@@ -894,6 +899,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("add-mask-split-mask-mixed-right"; "(+ (band ?m ?x) (band (bnot ?x) ?m))" => "?m"),
         rewrite!("add-mask-split-mask-comm"; "(+ (band ?m ?x) (band ?m (bnot ?x)))" => "?m"),
         rewrite!("neg-sub-swap"; "(neg (- ?a ?b))" => "(- ?b ?a)"),
+        rewrite!("neg-add-const"; "(neg (+ ?a ?b))" => { NegAddConst { a: var("?a"), b: var("?b") } }),
+        rewrite!("neg-sdiv-const"; "(neg (sdiv ?a ?b))" => { NegDivConst { a: var("?a"), b: var("?b") } }),
         rewrite!("neg-fold"; "(neg ?a)" => { FoldNeg }),
         rewrite!("double-neg"; "(neg (neg ?a))" => "?a"),
         rewrite!("sdiv-fold"; "(sdiv ?a ?b)" => { FoldDiv { signed: true } }),
@@ -906,6 +913,12 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("umod-one"; "(umod ?a ?b)" => { RemOne { b: var("?b") } }),
         rewrite!("add-neg-cancel"; "(+ ?a (neg ?a))" => { AddNegZero }),
         rewrite!("add-neg-cancel-swap"; "(+ (neg ?a) ?a)" => { AddNegZero }),
+        rewrite!("select-same"; "(select ?c ?a ?a)" => "?a"),
+        rewrite!(
+            "select-const";
+            "(select ?c ?t ?f)" => { SelectConstCond { cond: var("?c"), t: var("?t"), f: var("?f") } }
+        ),
+        rewrite!("phi-same"; "(phi ?a ?a)" => "?a"),
     ]
 }
 
@@ -1243,6 +1256,19 @@ struct MulMergeConst {
 struct NegMulConst {
     c: Var,
     x: Var,
+}
+struct NegAddConst {
+    a: Var,
+    b: Var,
+}
+struct NegDivConst {
+    a: Var,
+    b: Var,
+}
+struct SelectConstCond {
+    cond: Var,
+    t: Var,
+    f: Var,
 }
 
 impl Applier<SpirvLang, ()> for FoldAdd {
@@ -1994,6 +2020,79 @@ impl Applier<SpirvLang, ()> for NegMulConst {
         let mul = egraph.add(SpirvLang::Mul([subst[self.x], const_id]));
         egraph.union(eclass, mul);
         vec![mul]
+    }
+}
+
+impl Applier<SpirvLang, ()> for NegAddConst {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let left_const = const_value(egraph, subst[self.a]);
+        let right_const = const_value(egraph, subst[self.b]);
+        let (constant, other) = match (left_const, right_const) {
+            (Some(c), None) => (c, subst[self.b]),
+            (None, Some(c)) => (c, subst[self.a]),
+            _ => return Vec::new(),
+        };
+        let negated = map_const(constant, u64::wrapping_neg);
+        let const_id = egraph.add(SpirvLang::Const(negated));
+        let sub = egraph.add(SpirvLang::Sub([const_id, other]));
+        egraph.union(eclass, sub);
+        vec![sub]
+    }
+}
+
+impl Applier<SpirvLang, ()> for NegDivConst {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let left_const = const_value(egraph, subst[self.a]);
+        let right_const = const_value(egraph, subst[self.b]);
+        let (constant, left, right) = match (left_const, right_const) {
+            (Some(c), None) => (c, None, Some(subst[self.b])),
+            (None, Some(c)) => (c, Some(subst[self.a]), None),
+            _ => return Vec::new(),
+        };
+        let negated = map_const(constant, u64::wrapping_neg);
+        let const_id = egraph.add(SpirvLang::Const(negated));
+        let div = match (left, right) {
+            (Some(lhs), None) => egraph.add(SpirvLang::SDiv([lhs, const_id])),
+            (None, Some(rhs)) => egraph.add(SpirvLang::SDiv([const_id, rhs])),
+            _ => return Vec::new(),
+        };
+        egraph.union(eclass, div);
+        vec![div]
+    }
+}
+
+impl Applier<SpirvLang, ()> for SelectConstCond {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(condition) = const_value(egraph, subst[self.cond]) else {
+            return Vec::new();
+        };
+        let Some(cond) = bool_const(condition) else {
+            return Vec::new();
+        };
+        let chosen = if cond { subst[self.t] } else { subst[self.f] };
+        egraph.union(eclass, chosen);
+        vec![chosen]
     }
 }
 
@@ -3244,6 +3343,14 @@ fn const_value(egraph: &EGraph<SpirvLang, ()>, id: Id) -> Option<ConstValue> {
             SpirvLang::Const(value) => Some(*value),
             _ => None,
         })
+}
+
+fn bool_const(value: ConstValue) -> Option<bool> {
+    if value.width_bits() == 1 {
+        Some(value.get_u64() != 0)
+    } else {
+        None
+    }
 }
 
 fn width_from_eclass(
@@ -5151,6 +5258,50 @@ mod tests {
     }
 
     #[test]
+    fn rewrites_neg_add_const_to_sub() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Const(ConstValue::new(5)), // 1
+            SpirvLang::Add([Id::from(0), Id::from(1)]),
+            SpirvLang::Neg(Id::from(2)),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let neg_const = ConstValue::new_with_width(0u32.wrapping_sub(5) as u64, 32);
+        let sub_expr = RecExpr::from(vec![
+            SpirvLang::Const(neg_const),
+            SpirvLang::Symbol(Symbol::from("x")),
+            SpirvLang::Sub([Id::from(0), Id::from(1)]),
+        ]);
+        let Some(sub_id) = runner.egraph.lookup_expr(&sub_expr) else {
+            panic!("expected negated add to introduce const-sub form");
+        };
+        assert_eq!(runner.egraph.find(root), runner.egraph.find(sub_id));
+    }
+
+    #[test]
+    fn rewrites_neg_sdiv_const() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Const(ConstValue::new(7)), // 1
+            SpirvLang::SDiv([Id::from(0), Id::from(1)]),
+            SpirvLang::Neg(Id::from(2)),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let neg_const = ConstValue::new_with_width(0u32.wrapping_sub(7) as u64, 32);
+        let div_expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),
+            SpirvLang::Const(neg_const),
+            SpirvLang::SDiv([Id::from(0), Id::from(1)]),
+        ]);
+        let Some(div_id) = runner.egraph.lookup_expr(&div_expr) else {
+            panic!("expected negated sdiv to introduce const divisor");
+        };
+        assert_eq!(runner.egraph.find(root), runner.egraph.find(div_id));
+    }
+
+    #[test]
     fn rewrites_sub_neg_left_to_neg_add() {
         let expr = RecExpr::from(vec![
             SpirvLang::Symbol(Symbol::from("a")),       // 0
@@ -5168,6 +5319,34 @@ mod tests {
             runner.egraph.find(root),
             runner.egraph.find(neg_add_id),
             "expected -(a + b) to be equivalent to (-a) - b"
+        );
+    }
+
+    #[test]
+    fn rewrites_select_true_branch() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new_with_width(1, 1)), // 0
+            SpirvLang::Symbol(Symbol::from("x")),               // 1
+            SpirvLang::Symbol(Symbol::from("y")),               // 2
+            SpirvLang::Select([Id::from(0), Id::from(1), Id::from(2)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("x"))])
+        );
+    }
+
+    #[test]
+    fn rewrites_phi_same_value() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),
+            SpirvLang::Phi([Id::from(0), Id::from(0)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("x"))])
         );
     }
 
