@@ -3826,6 +3826,7 @@ fn cli_opt_block_dedupes_common_expr_across_blocks() {
 
 #[test]
 fn cli_opt_block_hoists_branch_shared_expr_to_nearest_dom() {
+    // Rust-only PRE hoist: C++ arithmetic pass does not currently hoist across branches.
     let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
     let (words, block_c, block_left, block_right, val1, val2) =
