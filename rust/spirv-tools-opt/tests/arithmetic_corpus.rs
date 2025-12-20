@@ -11,6 +11,66 @@ fn inst(
     Instruction::new(op, Some(result_type), Some(result_id), operands)
 }
 
+fn assert_zero_lhs_folds(op: Op) {
+    let int = 1;
+    let c0 = inst(
+        Op::Constant,
+        int,
+        1,
+        vec![rspirv::dr::Operand::LiteralBit32(0)],
+    );
+    let inst = inst(
+        op,
+        int,
+        2,
+        vec![
+            rspirv::dr::Operand::IdRef(1),
+            rspirv::dr::Operand::IdRef(99),
+        ],
+    );
+    let optimized = optimize_arith_block(&[c0, inst]).expect("optimize");
+    assert_eq!(optimized.len(), 1);
+    let folded = &optimized[0];
+    assert_eq!(folded.class.opcode, Op::Constant);
+    assert_eq!(folded.result_id, Some(2));
+    assert_eq!(folded.operands, vec![rspirv::dr::Operand::LiteralBit32(0)]);
+}
+
+#[test]
+fn corpus_folds_shl_zero_left() {
+    assert_zero_lhs_folds(Op::ShiftLeftLogical);
+}
+
+#[test]
+fn corpus_folds_shr_u_zero_left() {
+    assert_zero_lhs_folds(Op::ShiftRightLogical);
+}
+
+#[test]
+fn corpus_folds_shr_s_zero_left() {
+    assert_zero_lhs_folds(Op::ShiftRightArithmetic);
+}
+
+#[test]
+fn corpus_folds_sdiv_zero_left() {
+    assert_zero_lhs_folds(Op::SDiv);
+}
+
+#[test]
+fn corpus_folds_udiv_zero_left() {
+    assert_zero_lhs_folds(Op::UDiv);
+}
+
+#[test]
+fn corpus_folds_srem_zero_left() {
+    assert_zero_lhs_folds(Op::SRem);
+}
+
+#[test]
+fn corpus_folds_umod_zero_left() {
+    assert_zero_lhs_folds(Op::UMod);
+}
+
 #[test]
 fn corpus_folds_add_two_constants() {
     let int = 1;

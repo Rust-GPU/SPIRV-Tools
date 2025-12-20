@@ -388,6 +388,9 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("shl-zero"; "(shl ?x ?c)" => "?x" if is_const_zero(var("?c"))),
         rewrite!("shr-u-zero"; "(shr_u ?x ?c)" => "?x" if is_const_zero(var("?c"))),
         rewrite!("shr-s-zero"; "(shr_s ?x ?c)" => "?x" if is_const_zero(var("?c"))),
+        rewrite!("shl-zero-left"; "(shl ?c ?x)" => "?c" if is_const_zero(var("?c"))),
+        rewrite!("shr-u-zero-left"; "(shr_u ?c ?x)" => "?c" if is_const_zero(var("?c"))),
+        rewrite!("shr-s-zero-left"; "(shr_s ?c ?x)" => "?c" if is_const_zero(var("?c"))),
         rewrite!("add-factor-consts"; "(+ (* ?x ?c1) (* ?x ?c2))" => {
             AddCommonFactor { x: var("?x"), c1: var("?c1"), c2: var("?c2") }
         }),
@@ -478,12 +481,16 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("udiv-power-of-two"; "(udiv ?x ?c)" => {
             DivPowerOfTwo { x: var("?x"), c: var("?c"), signed: false }
         }),
+        rewrite!("sdiv-zero-left"; "(sdiv ?c ?x)" => "?c" if is_const_zero(var("?c"))),
+        rewrite!("udiv-zero-left"; "(udiv ?c ?x)" => "?c" if is_const_zero(var("?c"))),
         rewrite!("srem-const-decompose"; "(srem ?x ?c)" => {
             SRemConstDecompose { x: var("?x"), c: var("?c") }
         }),
         rewrite!("umod-const-decompose"; "(umod ?x ?c)" => {
             UModConstDecompose { x: var("?x"), c: var("?c") }
         }),
+        rewrite!("srem-zero-left"; "(srem ?c ?x)" => "?c" if is_const_zero(var("?c"))),
+        rewrite!("umod-zero-left"; "(umod ?c ?x)" => "?c" if is_const_zero(var("?c"))),
         rewrite!("umod-power-of-two"; "(umod ?x ?c)" => {
             UModPowerOfTwo { x: var("?x"), c: var("?c") }
         }),
@@ -3281,7 +3288,7 @@ fn var(name: &str) -> Var {
 }
 
 fn is_const_zero(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
-    move |egraph, _, subst| const_value(egraph, subst[var]).is_some_and(|c| c.get() == 0)
+    move |egraph, _, subst| const_value(egraph, subst[var]).is_some_and(|c| c.get_u64() == 0)
 }
 
 #[cfg(test)]
