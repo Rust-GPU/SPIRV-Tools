@@ -103,8 +103,11 @@ fn make_symbol(id: Word) -> Symbol {
 /// Translate a sequence of arithmetic instructions into an e-graph expression.
 ///
 /// Supported ops:
-/// - `OpConstant` with a single 32-bit literal (treated as unsigned for folding)
-/// - `OpIAdd` and `OpIMul` with id operands
+/// - `OpConstant` (32/64-bit), `OpConstantTrue/False/Null`
+/// - Integer arithmetic/bitwise ops (`OpIAdd`, `OpIMul`, `OpISub`, shifts, bitwise)
+/// - Integer comparisons (`OpIEqual`, `OpINotEqual`, `OpSLessThan`, etc.)
+/// - Logical ops (`OpLogicalNot`, `OpLogicalAnd`, `OpLogicalOr`, logical eq/ne)
+/// - `OpSelect`, `OpCopyObject`, and unary `OpSNegate`
 ///
 /// The caller is responsible for providing instructions in dominance order so
 /// operands are defined before use. Type declarations are ignored; only value
@@ -150,10 +153,11 @@ pub fn translate_arith_with_types(
         let Some(result_id) = inst.result_id else {
             continue;
         };
-        if inst.class.opcode == Op::TypeInt {
+        let opcode = inst.class.opcode;
+        if matches!(opcode, Op::TypeInt | Op::TypeBool) {
             continue;
         }
-        let literal_width = if inst.class.opcode == Op::Constant {
+        let literal_width = if opcode == Op::Constant {
             inst.operands.iter().find_map(|op| match op {
                 rspirv::dr::Operand::LiteralBit64(_) => Some(64),
                 rspirv::dr::Operand::LiteralBit32(_) => Some(32),
@@ -169,8 +173,44 @@ pub fn translate_arith_with_types(
             .unwrap_or(32);
         let width = width_bits.min(64) as u8;
         id_widths.entry(result_id).or_insert(width);
-        for operand in inst.operands.iter().filter_map(|op| op.id_ref_any()) {
-            id_widths.entry(operand).or_insert(width);
+        match opcode {
+            Op::Select => {
+                if let Some(cond_id) = inst.operands.first().and_then(|op| op.id_ref_any()) {
+                    id_widths.entry(cond_id).or_insert(1);
+                }
+                for operand in inst
+                    .operands
+                    .iter()
+                    .skip(1)
+                    .filter_map(|op| op.id_ref_any())
+                {
+                    id_widths.entry(operand).or_insert(width);
+                }
+            }
+            Op::LogicalNot
+            | Op::LogicalAnd
+            | Op::LogicalOr
+            | Op::LogicalEqual
+            | Op::LogicalNotEqual => {
+                for operand in inst.operands.iter().filter_map(|op| op.id_ref_any()) {
+                    id_widths.entry(operand).or_insert(1);
+                }
+            }
+            Op::IEqual
+            | Op::INotEqual
+            | Op::SLessThan
+            | Op::SLessThanEqual
+            | Op::SGreaterThan
+            | Op::SGreaterThanEqual
+            | Op::ULessThan
+            | Op::ULessThanEqual
+            | Op::UGreaterThan
+            | Op::UGreaterThanEqual => {}
+            _ => {
+                for operand in inst.operands.iter().filter_map(|op| op.id_ref_any()) {
+                    id_widths.entry(operand).or_insert(width);
+                }
+            }
         }
     }
 
@@ -424,6 +464,116 @@ pub fn translate_arith_with_types(
                     &id_widths,
                 );
                 expr.add(SpirvLang::Select([cond, true_val, false_val]))
+            }
+            Op::IEqual
+            | Op::INotEqual
+            | Op::SLessThan
+            | Op::SLessThanEqual
+            | Op::SGreaterThan
+            | Op::SGreaterThanEqual
+            | Op::ULessThan
+            | Op::ULessThanEqual
+            | Op::UGreaterThan
+            | Op::UGreaterThanEqual => {
+                let mut ops = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .peekable();
+                let lhs_id = ops
+                    .next()
+                    .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
+                let rhs_id = ops
+                    .next()
+                    .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
+                let lhs = intern_operand(
+                    lhs_id,
+                    &mut ids,
+                    &mut expr,
+                    &mut node_to_id,
+                    &mut node_types,
+                    &mut symbol_widths,
+                    &id_widths,
+                );
+                let rhs = intern_operand(
+                    rhs_id,
+                    &mut ids,
+                    &mut expr,
+                    &mut node_to_id,
+                    &mut node_types,
+                    &mut symbol_widths,
+                    &id_widths,
+                );
+                let node = match opcode {
+                    Op::IEqual => SpirvLang::Eq([lhs, rhs]),
+                    Op::INotEqual => SpirvLang::Ne([lhs, rhs]),
+                    Op::SLessThan => SpirvLang::SLt([lhs, rhs]),
+                    Op::SLessThanEqual => SpirvLang::SLe([lhs, rhs]),
+                    Op::SGreaterThan => SpirvLang::SGt([lhs, rhs]),
+                    Op::SGreaterThanEqual => SpirvLang::SGe([lhs, rhs]),
+                    Op::ULessThan => SpirvLang::ULt([lhs, rhs]),
+                    Op::ULessThanEqual => SpirvLang::ULe([lhs, rhs]),
+                    Op::UGreaterThan => SpirvLang::UGt([lhs, rhs]),
+                    Op::UGreaterThanEqual => SpirvLang::UGe([lhs, rhs]),
+                    _ => return Err(TranslateError::UnsupportedOp(opcode)),
+                };
+                expr.add(node)
+            }
+            Op::LogicalNot => {
+                let operand = inst
+                    .operands
+                    .iter()
+                    .find_map(|op| op.id_ref_any())
+                    .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
+                let id = intern_operand(
+                    operand,
+                    &mut ids,
+                    &mut expr,
+                    &mut node_to_id,
+                    &mut node_types,
+                    &mut symbol_widths,
+                    &id_widths,
+                );
+                expr.add(SpirvLang::LogNot(id))
+            }
+            Op::LogicalAnd | Op::LogicalOr | Op::LogicalEqual | Op::LogicalNotEqual => {
+                let mut ops = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .peekable();
+                let lhs_id = ops
+                    .next()
+                    .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
+                let rhs_id = ops
+                    .next()
+                    .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
+                let lhs = intern_operand(
+                    lhs_id,
+                    &mut ids,
+                    &mut expr,
+                    &mut node_to_id,
+                    &mut node_types,
+                    &mut symbol_widths,
+                    &id_widths,
+                );
+                let rhs = intern_operand(
+                    rhs_id,
+                    &mut ids,
+                    &mut expr,
+                    &mut node_to_id,
+                    &mut node_types,
+                    &mut symbol_widths,
+                    &id_widths,
+                );
+                let node = match opcode {
+                    Op::LogicalAnd => SpirvLang::LogAnd([lhs, rhs]),
+                    Op::LogicalOr => SpirvLang::LogOr([lhs, rhs]),
+                    Op::LogicalEqual => SpirvLang::LogEq([lhs, rhs]),
+                    Op::LogicalNotEqual => SpirvLang::LogNe([lhs, rhs]),
+                    _ => return Err(TranslateError::UnsupportedOp(opcode)),
+                };
+                expr.add(node)
             }
             Op::BitwiseAnd => {
                 let mut ops = inst
@@ -800,6 +950,138 @@ pub fn rebuild_arith_with_original_ids(
                     rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
                 ],
             ),
+            SpirvLang::Eq([a, b]) => Instruction::new(
+                Op::IEqual,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::Ne([a, b]) => Instruction::new(
+                Op::INotEqual,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::SLt([a, b]) => Instruction::new(
+                Op::SLessThan,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::SLe([a, b]) => Instruction::new(
+                Op::SLessThanEqual,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::SGt([a, b]) => Instruction::new(
+                Op::SGreaterThan,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::SGe([a, b]) => Instruction::new(
+                Op::SGreaterThanEqual,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::ULt([a, b]) => Instruction::new(
+                Op::ULessThan,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::ULe([a, b]) => Instruction::new(
+                Op::ULessThanEqual,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::UGt([a, b]) => Instruction::new(
+                Op::UGreaterThan,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::UGe([a, b]) => Instruction::new(
+                Op::UGreaterThanEqual,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::LogNot(a) => Instruction::new(
+                Op::LogicalNot,
+                Some(result_type),
+                Some(result_id),
+                vec![rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)])],
+            ),
+            SpirvLang::LogAnd([a, b]) => Instruction::new(
+                Op::LogicalAnd,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::LogOr([a, b]) => Instruction::new(
+                Op::LogicalOr,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::LogEq([a, b]) => Instruction::new(
+                Op::LogicalEqual,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::LogNe([a, b]) => Instruction::new(
+                Op::LogicalNotEqual,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
             SpirvLang::BitAnd([a, b]) => Instruction::new(
                 Op::BitwiseAnd,
                 Some(result_type),
@@ -1099,6 +1381,138 @@ pub fn optimize_arith_block_with_types(
                     rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
                 ],
             ),
+            SpirvLang::Eq([a, b]) => Instruction::new(
+                Op::IEqual,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::Ne([a, b]) => Instruction::new(
+                Op::INotEqual,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::SLt([a, b]) => Instruction::new(
+                Op::SLessThan,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::SLe([a, b]) => Instruction::new(
+                Op::SLessThanEqual,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::SGt([a, b]) => Instruction::new(
+                Op::SGreaterThan,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::SGe([a, b]) => Instruction::new(
+                Op::SGreaterThanEqual,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::ULt([a, b]) => Instruction::new(
+                Op::ULessThan,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::ULe([a, b]) => Instruction::new(
+                Op::ULessThanEqual,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::UGt([a, b]) => Instruction::new(
+                Op::UGreaterThan,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::UGe([a, b]) => Instruction::new(
+                Op::UGreaterThanEqual,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::LogNot(a) => Instruction::new(
+                Op::LogicalNot,
+                Some(result_type),
+                Some(result_id),
+                vec![rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)])],
+            ),
+            SpirvLang::LogAnd([a, b]) => Instruction::new(
+                Op::LogicalAnd,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::LogOr([a, b]) => Instruction::new(
+                Op::LogicalOr,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::LogEq([a, b]) => Instruction::new(
+                Op::LogicalEqual,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::LogNe([a, b]) => Instruction::new(
+                Op::LogicalNotEqual,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
             SpirvLang::Neg(a) => Instruction::new(
                 Op::SNegate,
                 Some(result_type),
@@ -1126,6 +1540,7 @@ fn expr_cost(expr: &RecExpr<SpirvLang>) -> usize {
         let cost = match node {
             SpirvLang::Const(_) | SpirvLang::Symbol(_) => 1,
             SpirvLang::Neg(a) => 1 + costs[usize::from(*a)],
+            SpirvLang::LogNot(a) => 1 + costs[usize::from(*a)],
             SpirvLang::Mul([a, b]) => 2 + costs[usize::from(*a)] + costs[usize::from(*b)],
             SpirvLang::SDiv([a, b]) | SpirvLang::UDiv([a, b]) => {
                 8 + costs[usize::from(*a)] + costs[usize::from(*b)]
@@ -1139,6 +1554,20 @@ fn expr_cost(expr: &RecExpr<SpirvLang>) -> usize {
             | SpirvLang::ShrU([a, b])
             | SpirvLang::BitOr([a, b])
             | SpirvLang::BitXor([a, b])
+            | SpirvLang::Eq([a, b])
+            | SpirvLang::Ne([a, b])
+            | SpirvLang::SLt([a, b])
+            | SpirvLang::SLe([a, b])
+            | SpirvLang::SGt([a, b])
+            | SpirvLang::SGe([a, b])
+            | SpirvLang::ULt([a, b])
+            | SpirvLang::ULe([a, b])
+            | SpirvLang::UGt([a, b])
+            | SpirvLang::UGe([a, b])
+            | SpirvLang::LogAnd([a, b])
+            | SpirvLang::LogOr([a, b])
+            | SpirvLang::LogEq([a, b])
+            | SpirvLang::LogNe([a, b])
             | SpirvLang::RotL([a, b])
             | SpirvLang::RotR([a, b]) => 1 + costs[usize::from(*a)] + costs[usize::from(*b)],
             SpirvLang::BitAnd([a, b]) => 2 + costs[usize::from(*a)] + costs[usize::from(*b)],

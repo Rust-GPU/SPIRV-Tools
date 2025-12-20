@@ -114,6 +114,21 @@ fn is_arith(opcode: Op) -> bool {
             | Op::ShiftRightLogical
             | Op::ShiftRightArithmetic
             | Op::Select
+            | Op::IEqual
+            | Op::INotEqual
+            | Op::SLessThan
+            | Op::SLessThanEqual
+            | Op::SGreaterThan
+            | Op::SGreaterThanEqual
+            | Op::ULessThan
+            | Op::ULessThanEqual
+            | Op::UGreaterThan
+            | Op::UGreaterThanEqual
+            | Op::LogicalNot
+            | Op::LogicalAnd
+            | Op::LogicalOr
+            | Op::LogicalEqual
+            | Op::LogicalNotEqual
     )
 }
 
@@ -916,6 +931,138 @@ fn optimize_function_egraph(
             ),
             SpirvLang::ShrU([a, b]) => Instruction::new(
                 Op::ShiftRightLogical,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::Eq([a, b]) => Instruction::new(
+                Op::IEqual,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::Ne([a, b]) => Instruction::new(
+                Op::INotEqual,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::SLt([a, b]) => Instruction::new(
+                Op::SLessThan,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::SLe([a, b]) => Instruction::new(
+                Op::SLessThanEqual,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::SGt([a, b]) => Instruction::new(
+                Op::SGreaterThan,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::SGe([a, b]) => Instruction::new(
+                Op::SGreaterThanEqual,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::ULt([a, b]) => Instruction::new(
+                Op::ULessThan,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::ULe([a, b]) => Instruction::new(
+                Op::ULessThanEqual,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::UGt([a, b]) => Instruction::new(
+                Op::UGreaterThan,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::UGe([a, b]) => Instruction::new(
+                Op::UGreaterThanEqual,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::LogNot(a) => Instruction::new(
+                Op::LogicalNot,
+                Some(result_type),
+                Some(result_id),
+                vec![rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)])],
+            ),
+            SpirvLang::LogAnd([a, b]) => Instruction::new(
+                Op::LogicalAnd,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::LogOr([a, b]) => Instruction::new(
+                Op::LogicalOr,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::LogEq([a, b]) => Instruction::new(
+                Op::LogicalEqual,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::LogNe([a, b]) => Instruction::new(
+                Op::LogicalNotEqual,
                 Some(result_type),
                 Some(result_id),
                 vec![

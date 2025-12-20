@@ -138,6 +138,42 @@ fn build_redundant_phi_module() -> (Vec<u32>, u32, u32) {
     (b.module().assemble(), phi, val)
 }
 
+fn build_eq_self_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let int = b.type_int(32, 0);
+    let bool_ty = b.type_bool();
+    let func_ty = b.type_function(bool_ty, vec![int]);
+    let _func = b
+        .begin_function(bool_ty, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let x = b.function_parameter(int).unwrap();
+    let _ = b.begin_block(None).unwrap();
+    let eq = b.i_equal(bool_ty, None, x, x).expect("i_equal");
+    b.ret_value(eq).unwrap();
+    b.end_function().unwrap();
+    (b.module().assemble(), eq)
+}
+
+fn build_logical_and_module() -> (Vec<u32>, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let bool_ty = b.type_bool();
+    let func_ty = b.type_function(bool_ty, vec![]);
+    let _func = b
+        .begin_function(bool_ty, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let _ = b.begin_block(None).unwrap();
+    let t = b.constant_true(bool_ty);
+    let f = b.constant_false(bool_ty);
+    let and = b.logical_and(bool_ty, None, t, f).expect("logical_and");
+    b.ret_value(and).unwrap();
+    b.end_function().unwrap();
+    (b.module().assemble(), and)
+}
+
 fn build_mul_identity_module_s32() -> (Vec<u32>, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
@@ -1408,6 +1444,128 @@ fn cli_opt_block_folds_redundant_phi() {
     });
     assert!(!has_phi, "redundant phi should be folded away");
     assert!(has_copy, "phi should fold to a copy of the operand");
+}
+
+#[test]
+fn cli_opt_block_folds_eq_self_to_true() {
+    let _guard = env_guard();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let (words, eq_id) = build_eq_self_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let output = dir.path().join("output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let status = Command::new(exe)
+        .arg(&input)
+        .arg(&output)
+        .status()
+        .expect("run opt_block");
+    assert!(status.success(), "opt_block should exit successfully");
+
+    let optimized_bytes = std::fs::read(&output).expect("read output");
+    let optimized_words = bytes_to_words(&optimized_bytes);
+    let mut loader = Loader::new();
+    rspirv::binary::parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+
+    let has_eq = module
+        .all_inst_iter()
+        .any(|inst| inst.class.opcode == Op::IEqual);
+    let true_ids: std::collections::HashSet<u32> = module
+        .all_inst_iter()
+        .filter(|inst| inst.class.opcode == Op::ConstantTrue)
+        .filter_map(|inst| inst.result_id)
+        .collect();
+    let return_id = module
+        .all_inst_iter()
+        .find(|inst| inst.class.opcode == Op::ReturnValue)
+        .and_then(|inst| {
+            inst.operands.iter().find_map(|op| match op {
+                rspirv::dr::Operand::IdRef(id) => Some(*id),
+                _ => None,
+            })
+        })
+        .expect("return value");
+    let returns_true = true_ids.contains(&return_id)
+        || module.all_inst_iter().any(|inst| {
+            inst.class.opcode == Op::CopyObject
+                && inst.result_id == Some(return_id)
+                && inst.operands.iter().any(|op| match op {
+                    rspirv::dr::Operand::IdRef(id) => true_ids.contains(id),
+                    _ => false,
+                })
+        });
+    assert!(!has_eq, "i_equal should be folded away");
+    assert!(returns_true, "return should resolve to true");
+    assert!(
+        !module
+            .all_inst_iter()
+            .any(|inst| inst.result_id == Some(eq_id) && inst.class.opcode == Op::IEqual),
+        "eq result id should no longer be an i_equal"
+    );
+}
+
+#[test]
+fn cli_opt_block_folds_logical_and() {
+    let _guard = env_guard();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let (words, and_id) = build_logical_and_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let output = dir.path().join("output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let status = Command::new(exe)
+        .arg(&input)
+        .arg(&output)
+        .status()
+        .expect("run opt_block");
+    assert!(status.success(), "opt_block should exit successfully");
+
+    let optimized_bytes = std::fs::read(&output).expect("read output");
+    let optimized_words = bytes_to_words(&optimized_bytes);
+    let mut loader = Loader::new();
+    rspirv::binary::parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+
+    let has_and = module
+        .all_inst_iter()
+        .any(|inst| inst.class.opcode == Op::LogicalAnd);
+    let false_ids: std::collections::HashSet<u32> = module
+        .all_inst_iter()
+        .filter(|inst| inst.class.opcode == Op::ConstantFalse)
+        .filter_map(|inst| inst.result_id)
+        .collect();
+    let return_id = module
+        .all_inst_iter()
+        .find(|inst| inst.class.opcode == Op::ReturnValue)
+        .and_then(|inst| {
+            inst.operands.iter().find_map(|op| match op {
+                rspirv::dr::Operand::IdRef(id) => Some(*id),
+                _ => None,
+            })
+        })
+        .expect("return value");
+    let returns_false = false_ids.contains(&return_id)
+        || module.all_inst_iter().any(|inst| {
+            inst.class.opcode == Op::CopyObject
+                && inst.result_id == Some(return_id)
+                && inst.operands.iter().any(|op| match op {
+                    rspirv::dr::Operand::IdRef(id) => false_ids.contains(id),
+                    _ => false,
+                })
+        });
+    assert!(!has_and, "logical and should be folded away");
+    assert!(returns_false, "return should resolve to false");
+    assert!(
+        !module
+            .all_inst_iter()
+            .any(|inst| inst.result_id == Some(and_id) && inst.class.opcode == Op::LogicalAnd),
+        "and result id should no longer be a logical and"
+    );
 }
 
 #[test]

@@ -199,6 +199,7 @@ Tasks:
 - [x] Extend deduplication to branch-shared expressions (partial redundancy elimination) by hoisting common expressions into the nearest dominating block and inserting structured copies at merge points, with CFG/dominator tests and CLI coverage. (Nearest dominator selection now uses dominator depth; hoists only when operand defs dominate and inserts after operand defs but before merge/terminators; CLI regression covers out-of-order block indices.)
 - [x] Unify the control-flow e-graph language with arithmetic (`SpirvLang` now includes `if/merge/ret/retv/phi/pair`) to enable a single shared rewrite set in the next global optimizer iteration.
 - [x] Add e-graph roots for `select`/`phi` plus bool-constant handling, and apply phi replacements after global extraction so redundant merges collapse safely.
+- [x] Extend the e-graph language/translator to cover integer comparisons and logical ops (`OpIEqual/INotEqual`, signed/unsigned compares, `OpLogicalAnd/Or/Not`, logical eq/ne), fold self/constant cases, and add Rust unit + CLI coverage for the new boolean rewrites.
 
 ## Upcoming Milestone: Optimizer CLI/FFI Integration
 - Expose the Rust arithmetic optimizer through CLI/FFI entry points with a flag/env toggle and a documented C++ fallback.
