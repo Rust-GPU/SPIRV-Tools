@@ -16,6 +16,7 @@ use std::{
     str::FromStr,
 };
 
+pub mod control;
 pub mod translate;
 
 /// Helpers for fuzzing and property-based generation.

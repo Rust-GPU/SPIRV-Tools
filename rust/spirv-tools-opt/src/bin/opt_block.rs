@@ -2,6 +2,7 @@ use clap::Parser;
 use rspirv::binary::{parse_words, Assemble};
 use rspirv::dr::Instruction;
 use rspirv::spirv::Op;
+use spirv_tools_opt::control::merge_return_selections_egraph;
 use spirv_tools_opt::translate::{optimize_arith_block_with_types, type_widths_from_module};
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -169,6 +170,9 @@ fn optimize_module(
                 if let Some(doms) = compute_block_dominators(func) {
                     dedup_common_arith(func, &doms);
                 }
+                if !disable_global && env::var("SPIRV_TOOLS_DISABLE_GLOBAL_OPT").is_err() {
+                    merge_return_selections_egraph(func, &mut next_id);
+                }
                 continue;
             }
         }
@@ -225,6 +229,7 @@ fn optimize_module(
                 dedup_common_arith(func, &doms);
                 insert_pre_for_shared_arith(func, &doms, &mut next_id);
             }
+            merge_return_selections_egraph(func, &mut next_id);
         }
     }
 

@@ -985,6 +985,50 @@ fn build_cse_across_blocks_module() -> (Vec<u32>, u32, u32) {
     (b.module().assemble(), add0, add1)
 }
 
+fn build_selection_return_merge_module() -> (Vec<u32>, u32, u32, u32, u32, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let int = b.type_int(32, 1);
+    let bool_ty = b.type_bool();
+    let func_ty = b.type_function(int, vec![int, int]);
+    let _func = b
+        .begin_function(int, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let x = b.function_parameter(int).unwrap();
+    let y = b.function_parameter(int).unwrap();
+
+    let merge_label = b.id();
+    let then_label = b.id();
+    let else_label = b.id();
+    let cond = b.constant_true(bool_ty);
+
+    b.begin_block(None).unwrap();
+    b.selection_merge(merge_label, SelectionControl::NONE)
+        .expect("selection merge");
+    b.branch_conditional(cond, then_label, else_label, std::iter::empty())
+        .expect("branch conditional");
+
+    b.begin_block(Some(then_label)).unwrap();
+    b.ret_value(x).unwrap();
+
+    b.begin_block(Some(else_label)).unwrap();
+    b.ret_value(y).unwrap();
+
+    b.begin_block(Some(merge_label)).unwrap();
+    b.unreachable().unwrap();
+    b.end_function().unwrap();
+
+    (
+        b.module().assemble(),
+        then_label,
+        else_label,
+        merge_label,
+        x,
+        y,
+    )
+}
+
 fn build_branch_shared_expr_pre_module() -> (Vec<u32>, u32, u32, u32, u32, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
@@ -3822,6 +3866,93 @@ fn cli_opt_block_dedupes_common_expr_across_blocks() {
     );
     // Rust may keep the later add id; parity with C++ prefers the first, but
     // deduplication is still achieved as long as only one add remains.
+}
+
+#[test]
+fn cli_opt_block_merges_selection_returns_via_egraph() {
+    // Rust-only improvement: merge-return for simple selections via e-graphs.
+    let _guard = env_guard();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let (words, then_label, else_label, merge_label, then_val, else_val) =
+        build_selection_return_merge_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let output = dir.path().join("output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let status = Command::new(exe)
+        .arg(&input)
+        .arg(&output)
+        .status()
+        .expect("run opt_block");
+    assert!(status.success(), "opt_block should exit successfully");
+
+    let optimized_bytes = std::fs::read(&output).expect("read output");
+    let optimized_words = bytes_to_words(&optimized_bytes);
+    let mut loader = Loader::new();
+    rspirv::binary::parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+    let func = module
+        .functions
+        .first()
+        .expect("function present after optimization");
+
+    let find_block = |label| {
+        func.blocks
+            .iter()
+            .find(|block| block.label.as_ref().and_then(|inst| inst.result_id) == Some(label))
+            .expect("block label present")
+    };
+    let then_block = find_block(then_label);
+    let else_block = find_block(else_label);
+    let merge_block = find_block(merge_label);
+
+    let then_term = then_block.instructions.last().expect("then terminator");
+    assert_eq!(then_term.class.opcode, Op::Branch);
+    assert!(then_term
+        .operands
+        .iter()
+        .any(|op| matches!(op, rspirv::dr::Operand::IdRef(id) if *id == merge_label)));
+
+    let else_term = else_block.instructions.last().expect("else terminator");
+    assert_eq!(else_term.class.opcode, Op::Branch);
+    assert!(else_term
+        .operands
+        .iter()
+        .any(|op| matches!(op, rspirv::dr::Operand::IdRef(id) if *id == merge_label)));
+
+    let phi = merge_block
+        .instructions
+        .iter()
+        .find(|inst| inst.class.opcode == Op::Phi)
+        .expect("phi in merge");
+    let return_inst = merge_block
+        .instructions
+        .iter()
+        .find(|inst| inst.class.opcode == Op::ReturnValue)
+        .expect("return value in merge");
+
+    let phi_pairs: Vec<(u32, u32)> = phi
+        .operands
+        .chunks(2)
+        .filter_map(|chunk| match chunk {
+            [rspirv::dr::Operand::IdRef(val), rspirv::dr::Operand::IdRef(label)] => {
+                Some((*val, *label))
+            }
+            _ => None,
+        })
+        .collect();
+    assert!(
+        phi_pairs.contains(&(then_val, then_label)) && phi_pairs.contains(&(else_val, else_label)),
+        "phi should select return values from both branches"
+    );
+
+    let phi_id = phi.result_id.expect("phi id");
+    assert!(return_inst
+        .operands
+        .iter()
+        .any(|op| matches!(op, rspirv::dr::Operand::IdRef(id) if *id == phi_id)));
 }
 
 #[test]
