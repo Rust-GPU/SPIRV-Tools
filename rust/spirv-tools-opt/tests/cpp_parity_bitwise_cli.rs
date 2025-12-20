@@ -50,7 +50,14 @@ fn arith_signature(words: &[u32]) -> Vec<(Op, Vec<String>)> {
         .filter(|inst| {
             matches!(
                 inst.class.opcode,
-                Op::Constant | Op::BitwiseAnd | Op::BitwiseOr | Op::BitwiseXor
+                Op::Constant
+                    | Op::IAdd
+                    | Op::ISub
+                    | Op::ShiftLeftLogical
+                    | Op::ShiftRightLogical
+                    | Op::BitwiseAnd
+                    | Op::BitwiseOr
+                    | Op::BitwiseXor
             )
         })
         .map(|inst| {
@@ -84,7 +91,7 @@ fn build_and_over_or_module() -> Vec<u32> {
     let _band = b.bitwise_and(int, None, x, bor).expect("band");
     b.ret().unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", &[]);
+    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", []);
     b.module().assemble()
 }
 
@@ -105,7 +112,7 @@ fn build_or_over_and_module() -> Vec<u32> {
     let _bor = b.bitwise_or(int, None, x, band).expect("or");
     b.ret().unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", &[]);
+    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", []);
     b.module().assemble()
 }
 
@@ -126,7 +133,7 @@ fn build_and_over_or_module_64() -> Vec<u32> {
     let _band = b.bitwise_and(int, None, x, bor).expect("band");
     b.ret().unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", &[]);
+    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", []);
     b.module().assemble()
 }
 
@@ -147,7 +154,139 @@ fn build_or_over_and_module_64() -> Vec<u32> {
     let _bor = b.bitwise_or(int, None, x, band).expect("or");
     b.ret().unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", &[]);
+    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", []);
+    b.module().assemble()
+}
+
+fn build_redundant_and_add_module() -> Vec<u32> {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let _ = b.begin_block(None).unwrap();
+    let x = b.variable(int, None, rspirv::spirv::StorageClass::Function, None);
+    let add_const = b.constant_bit32(int, 2);
+    let add = b.i_add(int, None, x, add_const).expect("add");
+    let mask = b.constant_bit32(int, 1);
+    let _band = b.bitwise_and(int, None, mask, add).expect("band");
+    b.ret().unwrap();
+    b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", []);
+    b.module().assemble()
+}
+
+fn build_redundant_and_sub_module() -> Vec<u32> {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let _ = b.begin_block(None).unwrap();
+    let x = b.variable(int, None, rspirv::spirv::StorageClass::Function, None);
+    let sub_const = b.constant_bit32(int, 2);
+    let sub = b.i_sub(int, None, x, sub_const).expect("sub");
+    let mask = b.constant_bit32(int, 1);
+    let _band = b.bitwise_and(int, None, mask, sub).expect("band");
+    b.ret().unwrap();
+    b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", []);
+    b.module().assemble()
+}
+
+fn build_redundant_and_or_const_module() -> Vec<u32> {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let _ = b.begin_block(None).unwrap();
+    let x = b.variable(int, None, rspirv::spirv::StorageClass::Function, None);
+    let or_const = b.constant_bit32(int, 0x0000_0007);
+    let bor = b.bitwise_or(int, None, x, or_const).expect("bor");
+    let mask = b.constant_bit32(int, 0x0000_0018);
+    let _band = b.bitwise_and(int, None, mask, bor).expect("band");
+    b.ret().unwrap();
+    b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", []);
+    b.module().assemble()
+}
+
+fn build_redundant_and_xor_const_module() -> Vec<u32> {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let _ = b.begin_block(None).unwrap();
+    let x = b.variable(int, None, rspirv::spirv::StorageClass::Function, None);
+    let xor_const = b.constant_bit32(int, 0x0000_0007);
+    let bxor = b.bitwise_xor(int, None, x, xor_const).expect("bxor");
+    let mask = b.constant_bit32(int, 0x0000_0018);
+    let _band = b.bitwise_and(int, None, mask, bxor).expect("band");
+    b.ret().unwrap();
+    b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", []);
+    b.module().assemble()
+}
+
+fn build_redundant_and_shl_module() -> Vec<u32> {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let _ = b.begin_block(None).unwrap();
+    let x = b.variable(int, None, rspirv::spirv::StorageClass::Function, None);
+    let shift = b.constant_bit32(int, 1);
+    let shl = b.shift_left_logical(int, None, x, shift).expect("shl");
+    let mask = b.constant_bit32(int, 1);
+    let _band = b.bitwise_and(int, None, mask, shl).expect("band");
+    b.ret().unwrap();
+    b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", []);
+    b.module().assemble()
+}
+
+fn build_redundant_and_shr_module() -> Vec<u32> {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 0);
+    let func_ty = b.type_function(void, vec![]);
+    let func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let _ = b.begin_block(None).unwrap();
+    let x = b.variable(int, None, rspirv::spirv::StorageClass::Function, None);
+    let shift = b.constant_bit32(int, 1);
+    let shr = b.shift_right_logical(int, None, x, shift).expect("shr");
+    let mask = b.constant_bit32(int, 0x8000_0000);
+    let _band = b.bitwise_and(int, None, mask, shr).expect("band");
+    b.ret().unwrap();
+    b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", []);
     b.module().assemble()
 }
 
@@ -219,4 +358,34 @@ fn cli_bitwise_and_absorption_parity_64bit() {
 #[test]
 fn cli_bitwise_or_absorption_parity_64bit() {
     assert_cli_parity(&build_or_over_and_module_64());
+}
+
+#[test]
+fn cli_band_redundant_add_parity() {
+    assert_cli_parity(&build_redundant_and_add_module());
+}
+
+#[test]
+fn cli_band_redundant_sub_parity() {
+    assert_cli_parity(&build_redundant_and_sub_module());
+}
+
+#[test]
+fn cli_band_redundant_or_const_parity() {
+    assert_cli_parity(&build_redundant_and_or_const_module());
+}
+
+#[test]
+fn cli_band_redundant_xor_const_parity() {
+    assert_cli_parity(&build_redundant_and_xor_const_module());
+}
+
+#[test]
+fn cli_band_redundant_shl_parity() {
+    assert_cli_parity(&build_redundant_and_shl_module());
+}
+
+#[test]
+fn cli_band_redundant_shr_parity() {
+    assert_cli_parity(&build_redundant_and_shr_module());
 }

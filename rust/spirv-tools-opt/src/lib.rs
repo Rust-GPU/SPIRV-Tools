@@ -569,6 +569,42 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         // Rust-only improvement: consensus theorem for shared OR terms.
         rewrite!("band-consensus-or"; "(band (bor ?x ?y) (bor ?x ?z))" => "(bor ?x (band ?y ?z))"),
         rewrite!("band-consensus-or-comm"; "(band (bor ?y ?x) (bor ?z ?x))" => "(bor ?x (band ?y ?z))"),
+        rewrite!("band-redundant-or-const"; "(band ?m (bor ?x ?c))" => {
+            BandRedundantOr { mask: var("?m"), x: var("?x"), c: var("?c") }
+        }),
+        rewrite!("band-redundant-or-const-comm"; "(band (bor ?x ?c) ?m)" => {
+            BandRedundantOr { mask: var("?m"), x: var("?x"), c: var("?c") }
+        }),
+        rewrite!("band-redundant-xor-const"; "(band ?m (bxor ?x ?c))" => {
+            BandRedundantXor { mask: var("?m"), x: var("?x"), c: var("?c") }
+        }),
+        rewrite!("band-redundant-xor-const-comm"; "(band (bxor ?x ?c) ?m)" => {
+            BandRedundantXor { mask: var("?m"), x: var("?x"), c: var("?c") }
+        }),
+        rewrite!("band-redundant-add-const"; "(band ?m (+ ?x ?c))" => {
+            BandRedundantAdd { mask: var("?m"), x: var("?x"), c: var("?c") }
+        }),
+        rewrite!("band-redundant-add-const-comm"; "(band (+ ?x ?c) ?m)" => {
+            BandRedundantAdd { mask: var("?m"), x: var("?x"), c: var("?c") }
+        }),
+        rewrite!("band-redundant-sub-const"; "(band ?m (- ?x ?c))" => {
+            BandRedundantSub { mask: var("?m"), x: var("?x"), c: var("?c") }
+        }),
+        rewrite!("band-redundant-sub-const-comm"; "(band (- ?x ?c) ?m)" => {
+            BandRedundantSub { mask: var("?m"), x: var("?x"), c: var("?c") }
+        }),
+        rewrite!("band-redundant-shl"; "(band ?m (shl ?x ?c))" => {
+            BandRedundantShift { mask: var("?m"), shift: var("?c"), kind: ShiftKind::Left }
+        }),
+        rewrite!("band-redundant-shl-comm"; "(band (shl ?x ?c) ?m)" => {
+            BandRedundantShift { mask: var("?m"), shift: var("?c"), kind: ShiftKind::Left }
+        }),
+        rewrite!("band-redundant-shr"; "(band ?m (shr_u ?x ?c))" => {
+            BandRedundantShift { mask: var("?m"), shift: var("?c"), kind: ShiftKind::RightUnsigned }
+        }),
+        rewrite!("band-redundant-shr-comm"; "(band (shr_u ?x ?c) ?m)" => {
+            BandRedundantShift { mask: var("?m"), shift: var("?c"), kind: ShiftKind::RightUnsigned }
+        }),
         rewrite!("bxor-diff-masked-right"; "(bxor ?x (band ?x ?y))" => "(band ?x (bnot ?y))"),
         rewrite!("bxor-diff-masked-left"; "(bxor (band ?x ?y) ?x)" => "(band ?x (bnot ?y))"),
         rewrite!("bxor-diff-masked-or-right"; "(bxor ?x (bor ?x ?y))" => "(band ?y (bnot ?x))"),
@@ -1051,6 +1087,31 @@ struct BitXorAbsorb {
 struct BitXorAllOnes {
     x: Var,
     mask: Var,
+}
+struct BandRedundantOr {
+    mask: Var,
+    x: Var,
+    c: Var,
+}
+struct BandRedundantXor {
+    mask: Var,
+    x: Var,
+    c: Var,
+}
+struct BandRedundantAdd {
+    mask: Var,
+    x: Var,
+    c: Var,
+}
+struct BandRedundantSub {
+    mask: Var,
+    x: Var,
+    c: Var,
+}
+struct BandRedundantShift {
+    mask: Var,
+    shift: Var,
+    kind: ShiftKind,
 }
 struct BitNotFold {
     x: Var,
@@ -2616,6 +2677,182 @@ impl Applier<SpirvLang, ()> for BitXorAllOnes {
             }
         }
         Vec::new()
+    }
+}
+
+impl Applier<SpirvLang, ()> for BandRedundantOr {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _ast: Option<&PatternAst<SpirvLang>>,
+        _runner: Symbol,
+    ) -> Vec<Id> {
+        let Some(mask_val) = const_value(egraph, subst[self.mask]) else {
+            return Vec::new();
+        };
+        let Some(or_const) = const_value(egraph, subst[self.c]) else {
+            return Vec::new();
+        };
+        let width = max_width(mask_val, or_const);
+        if width > 64 {
+            return Vec::new();
+        }
+        let mask = ConstValue::new_with_width(mask_val.get_u64(), width).get_u64();
+        let or_const = ConstValue::new_with_width(or_const.get_u64(), width).get_u64();
+        let overlap = mask & or_const;
+        if overlap == mask {
+            let mask_id = egraph.add(SpirvLang::Const(ConstValue::new_with_width(mask, width)));
+            egraph.union(eclass, mask_id);
+            return vec![mask_id];
+        }
+        if overlap == 0 {
+            let mask_id = egraph.add(SpirvLang::Const(ConstValue::new_with_width(mask, width)));
+            let band = egraph.add(SpirvLang::BitAnd([subst[self.x], mask_id]));
+            egraph.union(eclass, band);
+            return vec![band];
+        }
+        Vec::new()
+    }
+}
+
+impl Applier<SpirvLang, ()> for BandRedundantXor {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _ast: Option<&PatternAst<SpirvLang>>,
+        _runner: Symbol,
+    ) -> Vec<Id> {
+        let Some(mask_val) = const_value(egraph, subst[self.mask]) else {
+            return Vec::new();
+        };
+        let Some(xor_const) = const_value(egraph, subst[self.c]) else {
+            return Vec::new();
+        };
+        let width = max_width(mask_val, xor_const);
+        if width > 64 {
+            return Vec::new();
+        }
+        let mask = ConstValue::new_with_width(mask_val.get_u64(), width).get_u64();
+        let xor_const = ConstValue::new_with_width(xor_const.get_u64(), width).get_u64();
+        if (mask & xor_const) != 0 {
+            return Vec::new();
+        }
+        let mask_id = egraph.add(SpirvLang::Const(ConstValue::new_with_width(mask, width)));
+        let band = egraph.add(SpirvLang::BitAnd([subst[self.x], mask_id]));
+        egraph.union(eclass, band);
+        vec![band]
+    }
+}
+
+impl Applier<SpirvLang, ()> for BandRedundantAdd {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _ast: Option<&PatternAst<SpirvLang>>,
+        _runner: Symbol,
+    ) -> Vec<Id> {
+        let Some(mask_val) = const_value(egraph, subst[self.mask]) else {
+            return Vec::new();
+        };
+        let Some(add_const) = const_value(egraph, subst[self.c]) else {
+            return Vec::new();
+        };
+        let width = max_width(mask_val, add_const);
+        if width > 64 {
+            return Vec::new();
+        }
+        let mask = ConstValue::new_with_width(mask_val.get_u64(), width).get_u64();
+        let add = ConstValue::new_with_width(add_const.get_u64(), width).get_u64();
+        let lsb = add & add.wrapping_neg();
+        if lsb == 0 || lsb <= mask {
+            return Vec::new();
+        }
+        let mask_id = egraph.add(SpirvLang::Const(ConstValue::new_with_width(mask, width)));
+        let band = egraph.add(SpirvLang::BitAnd([subst[self.x], mask_id]));
+        egraph.union(eclass, band);
+        vec![band]
+    }
+}
+
+impl Applier<SpirvLang, ()> for BandRedundantSub {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _ast: Option<&PatternAst<SpirvLang>>,
+        _runner: Symbol,
+    ) -> Vec<Id> {
+        let Some(mask_val) = const_value(egraph, subst[self.mask]) else {
+            return Vec::new();
+        };
+        let Some(sub_const) = const_value(egraph, subst[self.c]) else {
+            return Vec::new();
+        };
+        let width = max_width(mask_val, sub_const);
+        if width > 64 {
+            return Vec::new();
+        }
+        let mask = ConstValue::new_with_width(mask_val.get_u64(), width).get_u64();
+        let sub = ConstValue::new_with_width(sub_const.get_u64(), width).get_u64();
+        let lsb = sub & sub.wrapping_neg();
+        if lsb == 0 || lsb <= mask {
+            return Vec::new();
+        }
+        let mask_id = egraph.add(SpirvLang::Const(ConstValue::new_with_width(mask, width)));
+        let band = egraph.add(SpirvLang::BitAnd([subst[self.x], mask_id]));
+        egraph.union(eclass, band);
+        vec![band]
+    }
+}
+
+impl Applier<SpirvLang, ()> for BandRedundantShift {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _ast: Option<&PatternAst<SpirvLang>>,
+        _runner: Symbol,
+    ) -> Vec<Id> {
+        let Some(mask_val) = const_value(egraph, subst[self.mask]) else {
+            return Vec::new();
+        };
+        let Some(shift_val) = const_value(egraph, subst[self.shift]) else {
+            return Vec::new();
+        };
+        let width = max_width(mask_val, shift_val);
+        if width > 64 {
+            return Vec::new();
+        }
+        let shift = shift_val.get_u64();
+        if shift >= u64::from(width) {
+            return Vec::new();
+        }
+        let mask = ConstValue::new_with_width(mask_val.get_u64(), width).get_u64();
+        let width_mask = if width >= 64 {
+            u64::MAX
+        } else {
+            (1u64 << width) - 1
+        };
+        let shift = shift as u32;
+        let clears_mask = match self.kind {
+            ShiftKind::Left => (mask >> shift) == 0,
+            ShiftKind::RightUnsigned => (mask.wrapping_shl(shift) & width_mask) == 0,
+            ShiftKind::RightSigned => false,
+        };
+        if !clears_mask {
+            return Vec::new();
+        }
+        let zero = egraph.add(SpirvLang::Const(ConstValue::new_with_width(0, width)));
+        egraph.union(eclass, zero);
+        vec![zero]
     }
 }
 

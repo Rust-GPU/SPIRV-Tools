@@ -1460,6 +1460,497 @@ fn corpus_band_consensus_or() {
     );
 }
 
+#[test]
+fn corpus_band_drops_add_under_mask() {
+    let int = 1;
+    let mask = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(0x7)],
+    );
+    let add_const = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(8)],
+    );
+    let add = inst(
+        Op::IAdd,
+        int,
+        4,
+        vec![
+            rspirv::dr::Operand::IdRef(99),
+            rspirv::dr::Operand::IdRef(3),
+        ],
+    );
+    let band = inst(
+        Op::BitwiseAnd,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(4)],
+    );
+    let optimized = optimize_arith_block(&[mask, add_const, add, band]).expect("optimize");
+    assert!(
+        optimized.iter().all(|inst| inst.class.opcode != Op::IAdd),
+        "mask should drop redundant add"
+    );
+    let const_values: Vec<(u32, u64)> = optimized
+        .iter()
+        .filter_map(|inst| {
+            if inst.class.opcode != Op::Constant {
+                return None;
+            }
+            let id = inst.result_id?;
+            let value = match inst.operands.as_slice() {
+                [rspirv::dr::Operand::LiteralBit32(val)] => u64::from(*val),
+                [rspirv::dr::Operand::LiteralBit64(val)] => *val,
+                _ => return None,
+            };
+            Some((id, value))
+        })
+        .collect();
+    let const_value_for = |id| {
+        const_values
+            .iter()
+            .find(|(cid, _)| *cid == id)
+            .map(|(_, v)| *v)
+    };
+    let mut found_masked_symbol = false;
+    for inst in &optimized {
+        match inst.class.opcode {
+            Op::BitwiseAnd => {
+                let mut has_symbol = false;
+                let mut has_mask = false;
+                for op in &inst.operands {
+                    if let rspirv::dr::Operand::IdRef(id) = op {
+                        has_symbol |= *id == 99;
+                        has_mask |= const_value_for(*id) == Some(0x7);
+                    }
+                }
+                found_masked_symbol |= has_symbol && has_mask;
+            }
+            Op::UMod => {
+                let mut has_symbol = false;
+                let mut has_mod = false;
+                for op in &inst.operands {
+                    if let rspirv::dr::Operand::IdRef(id) = op {
+                        has_symbol |= *id == 99;
+                        has_mod |= const_value_for(*id) == Some(8);
+                    }
+                }
+                found_masked_symbol |= has_symbol && has_mod;
+            }
+            _ => {}
+        }
+    }
+    assert!(
+        found_masked_symbol,
+        "expected masked symbol after dropping redundant add"
+    );
+}
+
+#[test]
+fn corpus_band_drops_sub_under_mask() {
+    let int = 1;
+    let mask = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(0x7)],
+    );
+    let sub_const = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(8)],
+    );
+    let sub = inst(
+        Op::ISub,
+        int,
+        4,
+        vec![
+            rspirv::dr::Operand::IdRef(99),
+            rspirv::dr::Operand::IdRef(3),
+        ],
+    );
+    let band = inst(
+        Op::BitwiseAnd,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(4)],
+    );
+    let optimized = optimize_arith_block(&[mask, sub_const, sub, band]).expect("optimize");
+    assert!(
+        optimized.iter().all(|inst| inst.class.opcode != Op::ISub),
+        "mask should drop redundant sub"
+    );
+    let const_values: Vec<(u32, u64)> = optimized
+        .iter()
+        .filter_map(|inst| {
+            if inst.class.opcode != Op::Constant {
+                return None;
+            }
+            let id = inst.result_id?;
+            let value = match inst.operands.as_slice() {
+                [rspirv::dr::Operand::LiteralBit32(val)] => u64::from(*val),
+                [rspirv::dr::Operand::LiteralBit64(val)] => *val,
+                _ => return None,
+            };
+            Some((id, value))
+        })
+        .collect();
+    let const_value_for = |id| {
+        const_values
+            .iter()
+            .find(|(cid, _)| *cid == id)
+            .map(|(_, v)| *v)
+    };
+    let mut found_masked_symbol = false;
+    for inst in &optimized {
+        match inst.class.opcode {
+            Op::BitwiseAnd => {
+                let mut has_symbol = false;
+                let mut has_mask = false;
+                for op in &inst.operands {
+                    if let rspirv::dr::Operand::IdRef(id) = op {
+                        has_symbol |= *id == 99;
+                        has_mask |= const_value_for(*id) == Some(0x7);
+                    }
+                }
+                found_masked_symbol |= has_symbol && has_mask;
+            }
+            Op::UMod => {
+                let mut has_symbol = false;
+                let mut has_mod = false;
+                for op in &inst.operands {
+                    if let rspirv::dr::Operand::IdRef(id) = op {
+                        has_symbol |= *id == 99;
+                        has_mod |= const_value_for(*id) == Some(8);
+                    }
+                }
+                found_masked_symbol |= has_symbol && has_mod;
+            }
+            _ => {}
+        }
+    }
+    assert!(
+        found_masked_symbol,
+        "expected masked symbol after dropping redundant sub"
+    );
+}
+
+#[test]
+fn corpus_band_drops_or_const_outside_mask() {
+    let int = 1;
+    let mask = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(0x0000_000F)],
+    );
+    let or_const = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(0x0000_00F0)],
+    );
+    let bor = inst(
+        Op::BitwiseOr,
+        int,
+        4,
+        vec![
+            rspirv::dr::Operand::IdRef(99),
+            rspirv::dr::Operand::IdRef(3),
+        ],
+    );
+    let band = inst(
+        Op::BitwiseAnd,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(4)],
+    );
+    let optimized = optimize_arith_block(&[mask, or_const, bor, band]).expect("optimize");
+    assert!(
+        optimized
+            .iter()
+            .all(|inst| inst.class.opcode != Op::BitwiseOr),
+        "mask should drop redundant or constant"
+    );
+    let const_values: Vec<(u32, u64)> = optimized
+        .iter()
+        .filter_map(|inst| {
+            if inst.class.opcode != Op::Constant {
+                return None;
+            }
+            let id = inst.result_id?;
+            let value = match inst.operands.as_slice() {
+                [rspirv::dr::Operand::LiteralBit32(val)] => u64::from(*val),
+                [rspirv::dr::Operand::LiteralBit64(val)] => *val,
+                _ => return None,
+            };
+            Some((id, value))
+        })
+        .collect();
+    let const_value_for = |id| {
+        const_values
+            .iter()
+            .find(|(cid, _)| *cid == id)
+            .map(|(_, v)| *v)
+    };
+    let mut found_masked_symbol = false;
+    for inst in &optimized {
+        match inst.class.opcode {
+            Op::BitwiseAnd => {
+                let mut has_symbol = false;
+                let mut has_mask = false;
+                for op in &inst.operands {
+                    if let rspirv::dr::Operand::IdRef(id) = op {
+                        has_symbol |= *id == 99;
+                        has_mask |= const_value_for(*id) == Some(0x0000_000F);
+                    }
+                }
+                found_masked_symbol |= has_symbol && has_mask;
+            }
+            Op::UMod => {
+                let mut has_symbol = false;
+                let mut has_mod = false;
+                for op in &inst.operands {
+                    if let rspirv::dr::Operand::IdRef(id) = op {
+                        has_symbol |= *id == 99;
+                        has_mod |= const_value_for(*id) == Some(16);
+                    }
+                }
+                found_masked_symbol |= has_symbol && has_mod;
+            }
+            _ => {}
+        }
+    }
+    assert!(
+        found_masked_symbol,
+        "expected masked symbol after dropping redundant or"
+    );
+}
+
+#[test]
+fn corpus_band_drops_xor_const_outside_mask() {
+    let int = 1;
+    let mask = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(0x0000_000F)],
+    );
+    let xor_const = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(0x0000_00F0)],
+    );
+    let bxor = inst(
+        Op::BitwiseXor,
+        int,
+        4,
+        vec![
+            rspirv::dr::Operand::IdRef(99),
+            rspirv::dr::Operand::IdRef(3),
+        ],
+    );
+    let band = inst(
+        Op::BitwiseAnd,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(4)],
+    );
+    let optimized = optimize_arith_block(&[mask, xor_const, bxor, band]).expect("optimize");
+    assert!(
+        optimized
+            .iter()
+            .all(|inst| inst.class.opcode != Op::BitwiseXor),
+        "mask should drop redundant xor constant"
+    );
+    let const_values: Vec<(u32, u64)> = optimized
+        .iter()
+        .filter_map(|inst| {
+            if inst.class.opcode != Op::Constant {
+                return None;
+            }
+            let id = inst.result_id?;
+            let value = match inst.operands.as_slice() {
+                [rspirv::dr::Operand::LiteralBit32(val)] => u64::from(*val),
+                [rspirv::dr::Operand::LiteralBit64(val)] => *val,
+                _ => return None,
+            };
+            Some((id, value))
+        })
+        .collect();
+    let const_value_for = |id| {
+        const_values
+            .iter()
+            .find(|(cid, _)| *cid == id)
+            .map(|(_, v)| *v)
+    };
+    let mut found_masked_symbol = false;
+    for inst in &optimized {
+        match inst.class.opcode {
+            Op::BitwiseAnd => {
+                let mut has_symbol = false;
+                let mut has_mask = false;
+                for op in &inst.operands {
+                    if let rspirv::dr::Operand::IdRef(id) = op {
+                        has_symbol |= *id == 99;
+                        has_mask |= const_value_for(*id) == Some(0x0000_000F);
+                    }
+                }
+                found_masked_symbol |= has_symbol && has_mask;
+            }
+            Op::UMod => {
+                let mut has_symbol = false;
+                let mut has_mod = false;
+                for op in &inst.operands {
+                    if let rspirv::dr::Operand::IdRef(id) = op {
+                        has_symbol |= *id == 99;
+                        has_mod |= const_value_for(*id) == Some(16);
+                    }
+                }
+                found_masked_symbol |= has_symbol && has_mod;
+            }
+            _ => {}
+        }
+    }
+    assert!(
+        found_masked_symbol,
+        "expected masked symbol after dropping redundant xor"
+    );
+}
+
+#[test]
+fn corpus_band_or_const_superset_folds_to_mask() {
+    let int = 1;
+    let mask_val = 0x0000_00F0u32;
+    let mask = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(mask_val)],
+    );
+    let or_const = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(0x0000_00FF)],
+    );
+    let bor = inst(
+        Op::BitwiseOr,
+        int,
+        4,
+        vec![
+            rspirv::dr::Operand::IdRef(99),
+            rspirv::dr::Operand::IdRef(3),
+        ],
+    );
+    let band = inst(
+        Op::BitwiseAnd,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(4)],
+    );
+    let optimized = optimize_arith_block(&[mask, or_const, bor, band]).expect("optimize");
+    let folded = optimized.iter().find(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(5)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(mask_val)]
+    });
+    assert!(
+        folded.is_some(),
+        "mask & (x | const) should fold to mask when const covers mask"
+    );
+}
+
+#[test]
+fn corpus_band_shift_left_masks_to_zero() {
+    let int = 1;
+    let mask = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(1)],
+    );
+    let shift = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(1)],
+    );
+    let shl = inst(
+        Op::ShiftLeftLogical,
+        int,
+        4,
+        vec![
+            rspirv::dr::Operand::IdRef(99),
+            rspirv::dr::Operand::IdRef(3),
+        ],
+    );
+    let band = inst(
+        Op::BitwiseAnd,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(4)],
+    );
+    let optimized = optimize_arith_block(&[mask, shift, shl, band]).expect("optimize");
+    let folded = optimized.iter().find(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(5)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0)]
+    });
+    assert!(
+        folded.is_some(),
+        "mask should fold shifted left bits to zero when masked out"
+    );
+}
+
+#[test]
+fn corpus_band_shift_right_masks_to_zero() {
+    let int = 1;
+    let mask = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(0x8000_0000)],
+    );
+    let shift = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(1)],
+    );
+    let shr = inst(
+        Op::ShiftRightLogical,
+        int,
+        4,
+        vec![
+            rspirv::dr::Operand::IdRef(99),
+            rspirv::dr::Operand::IdRef(3),
+        ],
+    );
+    let band = inst(
+        Op::BitwiseAnd,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(4)],
+    );
+    let optimized = optimize_arith_block(&[mask, shift, shr, band]).expect("optimize");
+    let folded = optimized.iter().find(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(5)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0)]
+    });
+    assert!(
+        folded.is_some(),
+        "mask should fold shifted right bits to zero when masked out"
+    );
+}
+
 /// Rust-only: add split masks back into the original value.
 #[test]
 fn corpus_add_split_masks_to_x() {
