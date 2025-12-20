@@ -774,7 +774,14 @@ pub fn rebuild_arith_with_original_ids(
                     symbol_id(sym).expect("symbol id"),
                 )],
             ),
-            SpirvLang::RotL(_) | SpirvLang::RotR(_) => continue,
+            SpirvLang::RotL(_)
+            | SpirvLang::RotR(_)
+            | SpirvLang::If(_)
+            | SpirvLang::Merge(_)
+            | SpirvLang::Ret
+            | SpirvLang::RetVal(_)
+            | SpirvLang::Phi(_)
+            | SpirvLang::Pair(_) => continue,
         };
         out.push(inst);
     }
@@ -955,7 +962,14 @@ pub fn optimize_arith_block_with_types(
                 Some(result_id),
                 vec![rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*x)])],
             ),
-            SpirvLang::RotL(_) | SpirvLang::RotR(_) => continue,
+            SpirvLang::RotL(_)
+            | SpirvLang::RotR(_)
+            | SpirvLang::If(_)
+            | SpirvLang::Merge(_)
+            | SpirvLang::Ret
+            | SpirvLang::RetVal(_)
+            | SpirvLang::Phi(_)
+            | SpirvLang::Pair(_) => continue,
             SpirvLang::Shl([a, b]) => Instruction::new(
                 Op::ShiftLeftLogical,
                 Some(result_type),
@@ -1027,6 +1041,14 @@ fn expr_cost(expr: &RecExpr<SpirvLang>) -> usize {
             | SpirvLang::RotR([a, b]) => 1 + costs[usize::from(*a)] + costs[usize::from(*b)],
             SpirvLang::BitAnd([a, b]) => 2 + costs[usize::from(*a)] + costs[usize::from(*b)],
             SpirvLang::BitNot(x) => 1 + costs[usize::from(*x)],
+            SpirvLang::If([a, b, c]) => {
+                1 + costs[usize::from(*a)] + costs[usize::from(*b)] + costs[usize::from(*c)]
+            }
+            SpirvLang::Merge([a, b]) => 1 + costs[usize::from(*a)] + costs[usize::from(*b)],
+            SpirvLang::Ret => 1,
+            SpirvLang::RetVal(a) => 1 + costs[usize::from(*a)],
+            SpirvLang::Phi([a, b]) => 1 + costs[usize::from(*a)] + costs[usize::from(*b)],
+            SpirvLang::Pair([a, b]) => 1 + costs[usize::from(*a)] + costs[usize::from(*b)],
         };
         costs.push(cost);
     }

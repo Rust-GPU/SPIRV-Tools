@@ -262,6 +262,12 @@ define_language! {
         "srem" = SRem([Id; 2]),
         "umod" = UMod([Id; 2]),
         "neg" = Neg(Id),
+        "if" = If([Id; 3]),
+        "merge" = Merge([Id; 2]),
+        "ret" = Ret,
+        "retv" = RetVal(Id),
+        "phi" = Phi([Id; 2]),
+        "pair" = Pair([Id; 2]),
         "const" = Const(ConstValue),
         Symbol(egg::Symbol),
     }

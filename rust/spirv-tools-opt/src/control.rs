@@ -1,19 +1,8 @@
-use egg::{define_language, rewrite, AstSize, Extractor, Id, RecExpr, Rewrite, Runner, Symbol};
+use crate::SpirvLang;
+use egg::{rewrite, AstSize, Extractor, Id, RecExpr, Rewrite, Runner, Symbol};
 use rspirv::dr::{Block, Function, Instruction};
 use rspirv::spirv::Op;
 use std::collections::{HashMap, HashSet};
-
-define_language! {
-    enum ControlLang {
-        "if" = If([Id; 3]),
-        "merge" = Merge([Id; 2]),
-        "ret" = Ret,
-        "retv" = RetVal(Id),
-        "phi" = Phi([Id; 2]),
-        "pair" = Pair([Id; 2]),
-        Symbol(Symbol),
-    }
-}
 
 #[derive(Clone)]
 struct ReturnCase {
@@ -66,7 +55,7 @@ pub fn merge_return_selections_egraph(func: &mut Function, next_id: &mut u32) ->
             continue;
         };
         match root_node {
-            ControlLang::Ret => {
+            SpirvLang::Ret => {
                 if candidate.cases.iter().any(|case| case.value.is_some()) {
                     continue;
                 }
@@ -79,7 +68,7 @@ pub fn merge_return_selections_egraph(func: &mut Function, next_id: &mut u32) ->
                     changed = true;
                 }
             }
-            ControlLang::RetVal(child) => {
+            SpirvLang::RetVal(child) => {
                 let pairs = match extract_pairs(&best, *child) {
                     Some(pairs) => pairs,
                     None => continue,
@@ -133,7 +122,7 @@ pub fn merge_return_switches_egraph(func: &mut Function, next_id: &mut u32) -> b
             continue;
         };
         match root_node {
-            ControlLang::Ret => {
+            SpirvLang::Ret => {
                 if candidate.cases.iter().any(|case| case.value.is_some()) {
                     continue;
                 }
@@ -146,7 +135,7 @@ pub fn merge_return_switches_egraph(func: &mut Function, next_id: &mut u32) -> b
                     changed = true;
                 }
             }
-            ControlLang::RetVal(child) => {
+            SpirvLang::RetVal(child) => {
                 let pairs = match extract_pairs(&best, *child) {
                     Some(pairs) => pairs,
                     None => continue,
@@ -166,7 +155,7 @@ pub fn merge_return_switches_egraph(func: &mut Function, next_id: &mut u32) -> b
                     changed = true;
                 }
             }
-            ControlLang::Merge(_) => {
+            SpirvLang::Merge(_) => {
                 if candidate.cases.iter().all(|case| case.value.is_none()) {
                     if apply_merge_return_void_cases(
                         func,
@@ -205,7 +194,7 @@ pub fn merge_return_switches_egraph(func: &mut Function, next_id: &mut u32) -> b
     changed
 }
 
-fn merge_return_rewrites() -> Vec<Rewrite<ControlLang, ()>> {
+fn merge_return_rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
     vec![
         rewrite!("merge-return-void"; "(if ?c ret ret)" => "ret"),
         rewrite!(
@@ -220,7 +209,7 @@ fn merge_return_rewrites() -> Vec<Rewrite<ControlLang, ()>> {
     ]
 }
 
-fn selection_expr(cond_id: u32, cases: &[ReturnCase]) -> Option<(RecExpr<ControlLang>, Id)> {
+fn selection_expr(cond_id: u32, cases: &[ReturnCase]) -> Option<(RecExpr<SpirvLang>, Id)> {
     if cases.len() != 2 {
         return None;
     }
@@ -228,26 +217,26 @@ fn selection_expr(cond_id: u32, cases: &[ReturnCase]) -> Option<(RecExpr<Control
     let false_case = &cases[1];
 
     let mut expr = RecExpr::default();
-    let cond = expr.add(ControlLang::Symbol(symbol_for_id(cond_id)));
+    let cond = expr.add(SpirvLang::Symbol(symbol_for_id(cond_id)));
     let true_node = match true_case.value {
         Some(id) => {
             let pair = pair_node(&mut expr, id, true_case.label);
-            expr.add(ControlLang::RetVal(pair))
+            expr.add(SpirvLang::RetVal(pair))
         }
-        None => expr.add(ControlLang::Ret),
+        None => expr.add(SpirvLang::Ret),
     };
     let false_node = match false_case.value {
         Some(id) => {
             let pair = pair_node(&mut expr, id, false_case.label);
-            expr.add(ControlLang::RetVal(pair))
+            expr.add(SpirvLang::RetVal(pair))
         }
-        None => expr.add(ControlLang::Ret),
+        None => expr.add(SpirvLang::Ret),
     };
-    let root = expr.add(ControlLang::If([cond, true_node, false_node]));
+    let root = expr.add(SpirvLang::If([cond, true_node, false_node]));
     Some((expr, root))
 }
 
-fn merge_expr(cases: &[ReturnCase]) -> Option<(RecExpr<ControlLang>, Id)> {
+fn merge_expr(cases: &[ReturnCase]) -> Option<(RecExpr<SpirvLang>, Id)> {
     if cases.is_empty() {
         return None;
     }
@@ -257,31 +246,31 @@ fn merge_expr(cases: &[ReturnCase]) -> Option<(RecExpr<ControlLang>, Id)> {
         let node = match case.value {
             Some(value) => {
                 let pair = pair_node(&mut expr, value, case.label);
-                expr.add(ControlLang::RetVal(pair))
+                expr.add(SpirvLang::RetVal(pair))
             }
-            None => expr.add(ControlLang::Ret),
+            None => expr.add(SpirvLang::Ret),
         };
         roots.push(node);
     }
 
     let mut iter = roots.into_iter();
-    let mut root = iter.next().unwrap_or_else(|| expr.add(ControlLang::Ret));
+    let mut root = iter.next().unwrap_or_else(|| expr.add(SpirvLang::Ret));
     for next in iter {
-        root = expr.add(ControlLang::Merge([root, next]));
+        root = expr.add(SpirvLang::Merge([root, next]));
     }
     Some((expr, root))
 }
 
-fn pair_node(expr: &mut RecExpr<ControlLang>, value: u32, label: u32) -> Id {
-    let val_sym = expr.add(ControlLang::Symbol(symbol_for_id(value)));
-    let label_sym = expr.add(ControlLang::Symbol(symbol_for_id(label)));
-    expr.add(ControlLang::Pair([val_sym, label_sym]))
+fn pair_node(expr: &mut RecExpr<SpirvLang>, value: u32, label: u32) -> Id {
+    let val_sym = expr.add(SpirvLang::Symbol(symbol_for_id(value)));
+    let label_sym = expr.add(SpirvLang::Symbol(symbol_for_id(label)));
+    expr.add(SpirvLang::Pair([val_sym, label_sym]))
 }
 
-fn extract_pairs(expr: &RecExpr<ControlLang>, root: Id) -> Option<Vec<(u32, u32)>> {
-    fn collect(expr: &RecExpr<ControlLang>, node: Id, out: &mut Vec<(u32, u32)>) -> bool {
+fn extract_pairs(expr: &RecExpr<SpirvLang>, root: Id) -> Option<Vec<(u32, u32)>> {
+    fn collect(expr: &RecExpr<SpirvLang>, node: Id, out: &mut Vec<(u32, u32)>) -> bool {
         match &expr[node] {
-            ControlLang::Pair([value_id, label_id]) => {
+            SpirvLang::Pair([value_id, label_id]) => {
                 let Some(value) = symbol_id(&expr[*value_id]) else {
                     return false;
                 };
@@ -291,7 +280,7 @@ fn extract_pairs(expr: &RecExpr<ControlLang>, root: Id) -> Option<Vec<(u32, u32)
                 out.push((value, label));
                 true
             }
-            ControlLang::Phi([left, right]) => {
+            SpirvLang::Phi([left, right]) => {
                 collect(expr, *left, out) && collect(expr, *right, out)
             }
             _ => false,
@@ -306,13 +295,13 @@ fn extract_pairs(expr: &RecExpr<ControlLang>, root: Id) -> Option<Vec<(u32, u32)
     }
 }
 
-fn extract_return_pairs(expr: &RecExpr<ControlLang>, root: Id) -> Option<Vec<(u32, u32)>> {
-    fn collect_return(expr: &RecExpr<ControlLang>, node: Id, out: &mut Vec<(u32, u32)>) -> bool {
+fn extract_return_pairs(expr: &RecExpr<SpirvLang>, root: Id) -> Option<Vec<(u32, u32)>> {
+    fn collect_return(expr: &RecExpr<SpirvLang>, node: Id, out: &mut Vec<(u32, u32)>) -> bool {
         match &expr[node] {
-            ControlLang::Merge([left, right]) => {
+            SpirvLang::Merge([left, right]) => {
                 collect_return(expr, *left, out) && collect_return(expr, *right, out)
             }
-            ControlLang::RetVal(inner) => extract_pairs(expr, *inner)
+            SpirvLang::RetVal(inner) => extract_pairs(expr, *inner)
                 .map(|pairs| {
                     out.extend(pairs);
                     true
@@ -352,8 +341,8 @@ fn symbol_for_id(id: u32) -> Symbol {
     Symbol::from(format!("id{id}"))
 }
 
-fn symbol_id(node: &ControlLang) -> Option<u32> {
-    let ControlLang::Symbol(sym) = node else {
+fn symbol_id(node: &SpirvLang) -> Option<u32> {
+    let SpirvLang::Symbol(sym) = node else {
         return None;
     };
     sym.as_str().strip_prefix("id")?.parse().ok()

@@ -169,6 +169,7 @@ Port the remaining C++ optimizer passes and route them through a single global e
 Tasks:
 - Inventory and stage the unported C++ passes into e-graph friendly equivalents: structured control simplification/merge-return, CFG cleanups, dead-code elimination, mem2reg + SSA rebuild, inlining (opaque-aware), loop optimizations (unroll/peel/strength-reduction/hoist invariants), descriptor/resource legalization and robust buffer access, instrumentation passes, relax-to-half/inline-opaque, duplicate elimination, and composite/access-chain simplifications.
 - Extend the optimizer driver to build a module-wide e-graph per function (preserving dominance/SSA) and replay optimized programs back into structured SPIR-V with id stability.
+- Run all rewrites (arithmetic + control + CFG) in a single e-graph per function, using shared roots for control-flow patterns so optimizations interact globally; rely on extraction/codegen for placement instead of post-pass CSE/hoists.
 - Port structured control simplification + merge-return into e-graph rewrites that normalize selections/loops while keeping SPIR-V structured-control invariants; add Rust unit + CLI/FFI tests (skip parity when C++ binary absent). (Selection + switch return-merging via e-graph landed; loop cases pending.)
 - Implement dead-code elimination (instruction/result liveness, unreachable-block pruning) atop e-graph results so unused ids are dropped while preserving required interface symbols; add Rust tests and CLI coverage.
 - Port mem2reg/SSA rebuild in Rust using typed dominance frontiers and hook it into the global optimizer; validate against C++ mem2reg outputs with CLI parity tests (skip when C++ binary unavailable).
@@ -193,6 +194,7 @@ Tasks:
 - [x] Enable cross-block factorization of shared multiplicands (e.g., `x*2 + x*3 -> x*5`) via the global e-graph path, maintaining id stability with `OpCopyObject` when necessary and adding CLI regression coverage.
 - [x] Deduplicate dominated arithmetic across blocks and collapse copy chains to their roots so repeated expressions and redundant `OpCopyObject` sequences are eliminated; backed by CLI regressions for CSE and copy flattening.
 - [x] Extend deduplication to branch-shared expressions (partial redundancy elimination) by hoisting common expressions into the nearest dominating block and inserting structured copies at merge points, with CFG/dominator tests and CLI coverage. (Nearest dominator selection now uses dominator depth; hoists only when operand defs dominate and inserts after operand defs but before merge/terminators; CLI regression covers out-of-order block indices.)
+- [x] Unify the control-flow e-graph language with arithmetic (`SpirvLang` now includes `if/merge/ret/retv/phi/pair`) to enable a single shared rewrite set in the next global optimizer iteration.
 
 ## Upcoming Milestone: Optimizer CLI/FFI Integration
 - Expose the Rust arithmetic optimizer through CLI/FFI entry points with a flag/env toggle and a documented C++ fallback.
