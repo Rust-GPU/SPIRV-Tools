@@ -277,7 +277,7 @@ thread_local! {
     static SYMBOL_WIDTH_HINTS: RefCell<HashMap<Symbol, u8>> = RefCell::new(HashMap::new());
 }
 
-fn with_symbol_widths<R>(hints: &HashMap<Symbol, u8>, f: impl FnOnce() -> R) -> R {
+pub fn with_symbol_widths<R>(hints: &HashMap<Symbol, u8>, f: impl FnOnce() -> R) -> R {
     SYMBOL_WIDTH_HINTS.with(|cell| {
         let previous = cell.replace(hints.clone());
         let result = f();
@@ -312,6 +312,11 @@ impl egg::CostFunction<SpirvLang> for ExprCost {
                 enode.children().iter().map(|id| costs(*id)).sum::<usize>() + 2
             }
             SpirvLang::BitNot(_) => enode.children().iter().map(|id| costs(*id)).sum::<usize>() + 1,
+            SpirvLang::If(_) | SpirvLang::Merge(_) | SpirvLang::Phi(_) | SpirvLang::Pair(_) => {
+                enode.children().iter().map(|id| costs(*id)).sum::<usize>() + 1
+            }
+            SpirvLang::Ret => 1,
+            SpirvLang::RetVal(child) => costs(*child) + 1,
             _ => enode.children().iter().map(|id| costs(*id)).sum::<usize>() + 1,
         }
     }

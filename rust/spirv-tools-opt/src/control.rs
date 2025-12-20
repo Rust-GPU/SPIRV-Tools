@@ -1,35 +1,45 @@
 use crate::SpirvLang;
-use egg::{rewrite, AstSize, Extractor, Id, RecExpr, Rewrite, Runner, Symbol};
+use egg::{
+    rewrite, AstSize, CostFunction, EGraph, Extractor, Id, RecExpr, Rewrite, Runner, Symbol,
+};
 use rspirv::dr::{Block, Function, Instruction};
 use rspirv::spirv::Op;
 use std::collections::{HashMap, HashSet};
 
-#[derive(Clone)]
-struct ReturnCase {
-    block_idx: usize,
-    label: u32,
-    value: Option<u32>,
+#[derive(Clone, Debug)]
+pub struct ReturnCase {
+    pub block_idx: usize,
+    pub label: u32,
+    pub value: Option<u32>,
 }
 
-#[derive(Clone)]
-struct SelectionCandidate {
-    merge_idx: usize,
-    merge_label: u32,
-    cond_id: u32,
-    cases: Vec<ReturnCase>,
-    return_type: u32,
+#[derive(Clone, Debug)]
+pub enum ControlKind {
+    Selection { cond_id: u32 },
+    Switch,
 }
 
-#[derive(Clone)]
-struct SwitchCandidate {
-    merge_idx: usize,
-    merge_label: u32,
-    cases: Vec<ReturnCase>,
-    return_type: u32,
+#[derive(Clone, Debug)]
+pub struct ControlCandidate {
+    pub merge_idx: usize,
+    pub merge_label: u32,
+    pub cases: Vec<ReturnCase>,
+    pub return_type: u32,
+    pub kind: ControlKind,
+}
+
+#[derive(Clone, Debug)]
+pub struct ControlRoot {
+    pub candidate: ControlCandidate,
+    pub root: Id,
 }
 
 pub fn merge_return_selections_egraph(func: &mut Function, next_id: &mut u32) -> bool {
-    let candidates = match selection_candidates(func) {
+    let candidates = match selection_candidates(func).map(|list| {
+        list.into_iter()
+            .filter(|candidate| matches!(candidate.kind, ControlKind::Selection { .. }))
+            .collect::<Vec<_>>()
+    }) {
         Some(list) => list,
         None => return false,
     };
@@ -37,11 +47,14 @@ pub fn merge_return_selections_egraph(func: &mut Function, next_id: &mut u32) ->
         return false;
     }
 
-    let rewrites = merge_return_rewrites();
+    let rewrites = control_rewrites();
     let mut changed = false;
 
     for candidate in candidates {
-        let Some((expr, _root)) = selection_expr(candidate.cond_id, &candidate.cases) else {
+        let ControlKind::Selection { cond_id } = candidate.kind else {
+            continue;
+        };
+        let Some((expr, _root)) = selection_expr(cond_id, &candidate.cases) else {
             continue;
         };
         let runner = Runner::default().with_expr(&expr).run(&rewrites);
@@ -96,7 +109,11 @@ pub fn merge_return_selections_egraph(func: &mut Function, next_id: &mut u32) ->
 }
 
 pub fn merge_return_switches_egraph(func: &mut Function, next_id: &mut u32) -> bool {
-    let candidates = match switch_candidates(func) {
+    let candidates = match switch_candidates(func).map(|list| {
+        list.into_iter()
+            .filter(|candidate| matches!(candidate.kind, ControlKind::Switch))
+            .collect::<Vec<_>>()
+    }) {
         Some(list) => list,
         None => return false,
     };
@@ -104,7 +121,7 @@ pub fn merge_return_switches_egraph(func: &mut Function, next_id: &mut u32) -> b
         return false;
     }
 
-    let rewrites = merge_return_rewrites();
+    let rewrites = control_rewrites();
     let mut changed = false;
 
     for candidate in candidates {
@@ -194,7 +211,7 @@ pub fn merge_return_switches_egraph(func: &mut Function, next_id: &mut u32) -> b
     changed
 }
 
-fn merge_return_rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
+pub fn control_rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
     vec![
         rewrite!("merge-return-void"; "(if ?c ret ret)" => "ret"),
         rewrite!(
@@ -207,6 +224,123 @@ fn merge_return_rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
             "(merge (retv ?a) (retv ?b))" => "(retv (phi ?a ?b))"
         ),
     ]
+}
+
+pub fn add_control_roots(func: &Function, egraph: &mut EGraph<SpirvLang, ()>) -> Vec<ControlRoot> {
+    let mut roots = Vec::new();
+    let Some(mut candidates) = selection_candidates(func) else {
+        return roots;
+    };
+    if let Some(mut switches) = switch_candidates(func) {
+        candidates.append(&mut switches);
+    }
+
+    for candidate in candidates {
+        let expr = match candidate.kind {
+            ControlKind::Selection { cond_id } => selection_expr(cond_id, &candidate.cases),
+            ControlKind::Switch => merge_expr(&candidate.cases),
+        };
+        let Some((expr, _root)) = expr else {
+            continue;
+        };
+        let root = egraph.add_expr(&expr);
+        roots.push(ControlRoot { candidate, root });
+    }
+    roots
+}
+
+pub fn apply_control_roots<CF: CostFunction<SpirvLang>>(
+    func: &mut Function,
+    extractor: &Extractor<CF, SpirvLang, ()>,
+    roots: &[ControlRoot],
+    next_id: &mut u32,
+) -> bool {
+    let mut changed = false;
+    for entry in roots {
+        let (_cost, best) = extractor.find_best(entry.root);
+        let Some(root_node) = best.as_ref().last() else {
+            continue;
+        };
+        match root_node {
+            SpirvLang::Ret => {
+                if entry
+                    .candidate
+                    .cases
+                    .iter()
+                    .any(|case| case.value.is_some())
+                {
+                    continue;
+                }
+                if apply_merge_return_void_cases(
+                    func,
+                    entry.candidate.merge_idx,
+                    entry.candidate.merge_label,
+                    &entry.candidate.cases,
+                ) {
+                    changed = true;
+                }
+            }
+            SpirvLang::RetVal(child) => {
+                let pairs = match extract_pairs(&best, *child) {
+                    Some(pairs) => pairs,
+                    None => continue,
+                };
+                if !pairs_match_cases(&pairs, &entry.candidate.cases) {
+                    continue;
+                }
+                if apply_merge_return_pairs(
+                    func,
+                    entry.candidate.merge_idx,
+                    entry.candidate.merge_label,
+                    &entry.candidate.cases,
+                    &pairs,
+                    entry.candidate.return_type,
+                    next_id,
+                ) {
+                    changed = true;
+                }
+            }
+            SpirvLang::Merge(_) => {
+                if entry
+                    .candidate
+                    .cases
+                    .iter()
+                    .all(|case| case.value.is_none())
+                {
+                    if apply_merge_return_void_cases(
+                        func,
+                        entry.candidate.merge_idx,
+                        entry.candidate.merge_label,
+                        &entry.candidate.cases,
+                    ) {
+                        changed = true;
+                    }
+                    continue;
+                }
+                let root_id = Id::from(best.as_ref().len().saturating_sub(1));
+                let pairs = match extract_return_pairs(&best, root_id) {
+                    Some(pairs) => pairs,
+                    None => continue,
+                };
+                if !pairs_match_cases(&pairs, &entry.candidate.cases) {
+                    continue;
+                }
+                if apply_merge_return_pairs(
+                    func,
+                    entry.candidate.merge_idx,
+                    entry.candidate.merge_label,
+                    &entry.candidate.cases,
+                    &pairs,
+                    entry.candidate.return_type,
+                    next_id,
+                ) {
+                    changed = true;
+                }
+            }
+            _ => {}
+        }
+    }
+    changed
 }
 
 fn selection_expr(cond_id: u32, cases: &[ReturnCase]) -> Option<(RecExpr<SpirvLang>, Id)> {
@@ -360,7 +494,7 @@ fn return_value_operand(inst: &Instruction) -> Option<Option<u32>> {
     }
 }
 
-fn selection_candidates(func: &Function) -> Option<Vec<SelectionCandidate>> {
+fn selection_candidates(func: &Function) -> Option<Vec<ControlCandidate>> {
     let label_to_idx = label_to_index(func)?;
     let preds = compute_predecessors(func, &label_to_idx)?;
     let return_type = func.def.as_ref()?.result_type?;
@@ -428,10 +562,9 @@ fn selection_candidates(func: &Function) -> Option<Vec<SelectionCandidate>> {
             continue;
         }
 
-        candidates.push(SelectionCandidate {
+        candidates.push(ControlCandidate {
             merge_idx,
             merge_label,
-            cond_id,
             cases: vec![
                 ReturnCase {
                     block_idx: true_idx,
@@ -445,13 +578,14 @@ fn selection_candidates(func: &Function) -> Option<Vec<SelectionCandidate>> {
                 },
             ],
             return_type,
+            kind: ControlKind::Selection { cond_id },
         });
     }
 
     Some(candidates)
 }
 
-fn switch_candidates(func: &Function) -> Option<Vec<SwitchCandidate>> {
+fn switch_candidates(func: &Function) -> Option<Vec<ControlCandidate>> {
     let label_to_idx = label_to_index(func)?;
     let preds = compute_predecessors(func, &label_to_idx)?;
     let return_type = func.def.as_ref()?.result_type?;
@@ -550,11 +684,12 @@ fn switch_candidates(func: &Function) -> Option<Vec<SwitchCandidate>> {
             continue;
         }
 
-        candidates.push(SwitchCandidate {
+        candidates.push(ControlCandidate {
             merge_idx,
             merge_label,
             cases,
             return_type,
+            kind: ControlKind::Switch,
         });
     }
 

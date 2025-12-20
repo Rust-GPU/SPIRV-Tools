@@ -1082,7 +1082,7 @@ fn build_switch_return_merge_module() -> (Vec<u32>, Vec<(u32, u32)>, u32, Vec<u3
     )
 }
 
-fn build_branch_shared_expr_pre_module() -> (Vec<u32>, u32, u32, u32, u32, u32) {
+fn build_branch_shared_expr_pre_module() -> (Vec<u32>, u32, u32, u32, u32, u32, u32, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
@@ -1126,11 +1126,11 @@ fn build_branch_shared_expr_pre_module() -> (Vec<u32>, u32, u32, u32, u32, u32) 
         .expect("branch conditional");
 
     b.begin_block(Some(block_left)).unwrap();
-    let _expr_left = b.i_add(int, None, val1, val2).expect("left expr");
+    let expr_left = b.i_add(int, None, val1, val2).expect("left expr");
     b.branch(block_merge).unwrap();
 
     b.begin_block(Some(block_right)).unwrap();
-    let _expr_right = b.i_add(int, None, val1, val2).expect("right expr");
+    let expr_right = b.i_add(int, None, val1, val2).expect("right expr");
     b.branch(block_merge).unwrap();
 
     b.begin_block(Some(block_merge)).unwrap();
@@ -1148,6 +1148,8 @@ fn build_branch_shared_expr_pre_module() -> (Vec<u32>, u32, u32, u32, u32, u32) 
         block_right,
         val1,
         val2,
+        expr_left,
+        expr_right,
     )
 }
 
@@ -3884,7 +3886,7 @@ fn cli_opt_block_hoists_loop_invariant_mul() {
 fn cli_opt_block_dedupes_common_expr_across_blocks() {
     let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
-    let (words, _first_add, second_add) = build_cse_across_blocks_module();
+    let (words, _first_add, _second_add) = build_cse_across_blocks_module();
     let dir = tempdir().expect("tempdir");
     let input = dir.path().join("input.spv");
     let output = dir.path().join("output.spv");
@@ -4096,7 +4098,7 @@ fn cli_opt_block_hoists_branch_shared_expr_to_nearest_dom() {
     // Rust-only PRE hoist: C++ arithmetic pass does not currently hoist across branches.
     let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
-    let (words, block_c, block_left, block_right, val1, val2) =
+    let (words, block_c, block_left, block_right, val1, val2, expr_left, expr_right) =
         build_branch_shared_expr_pre_module();
     let dir = tempdir().expect("tempdir");
     let input = dir.path().join("input.spv");
@@ -4144,15 +4146,29 @@ fn cli_opt_block_hoists_branch_shared_expr_to_nearest_dom() {
     let block_c = find_block(block_c);
     let block_left = find_block(block_left);
     let block_right = find_block(block_right);
+    let defines_shared = |inst: &rspirv::dr::Instruction| {
+        inst.result_id == Some(expr_left) || inst.result_id == Some(expr_right)
+    };
 
     assert!(
-        block_c.instructions.iter().any(add_with_operands),
-        "shared add should be hoisted into the nearest dominating block"
+        block_c.instructions.iter().any(defines_shared),
+        "shared expression should be hoisted into the nearest dominating block"
     );
     assert!(
         !block_left.instructions.iter().any(add_with_operands)
             && !block_right.instructions.iter().any(add_with_operands),
         "branch blocks should use the hoisted expression instead of recomputing it"
+    );
+    assert!(
+        block_left
+            .instructions
+            .iter()
+            .all(|inst| !defines_shared(inst) || inst.class.opcode == Op::CopyObject)
+            && block_right
+                .instructions
+                .iter()
+                .all(|inst| !defines_shared(inst) || inst.class.opcode == Op::CopyObject),
+        "branch blocks should not redefine the shared expression"
     );
 }
 
@@ -4265,7 +4281,7 @@ fn cli_opt_block_factors_across_blocks() {
 fn cli_opt_block_dedups_constants_globally() {
     let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
-    let (words, c1, c2) = build_duplicate_constants_module();
+    let (words, _c1, _c2) = build_duplicate_constants_module();
     let dir = tempdir().expect("tempdir");
     let input = dir.path().join("input.spv");
     let output = dir.path().join("output.spv");

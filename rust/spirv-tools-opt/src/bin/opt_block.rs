@@ -1,9 +1,13 @@
 use clap::Parser;
+use egg::{EGraph, Extractor, Id, Language, Runner};
 use rspirv::binary::{parse_words, Assemble};
 use rspirv::dr::Instruction;
 use rspirv::spirv::Op;
-use spirv_tools_opt::control::{merge_return_selections_egraph, merge_return_switches_egraph};
-use spirv_tools_opt::translate::{optimize_arith_block_with_types, type_widths_from_module};
+use spirv_tools_opt::control::{add_control_roots, apply_control_roots, control_rewrites};
+use spirv_tools_opt::translate::{
+    optimize_arith_block_with_types, translate_arith_with_types, type_widths_from_module,
+};
+use spirv_tools_opt::{with_symbol_widths, ExprCost, SpirvLang};
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::env;
@@ -161,18 +165,11 @@ fn optimize_module(
             (func.blocks.len() > 1) && (!disable_global || force_global || force_global_env);
         if use_global {
             if let Some((new_constants, optimized_blocks)) =
-                optimize_function_global(func, &type_widths, &constant_map)
+                optimize_function_egraph(func, &type_widths, &constant_map, &mut next_id)
             {
                 constant_map = new_constants;
                 for (block, optimized_block) in func.blocks.iter_mut().zip(optimized_blocks) {
                     replace_block_arith(block, &optimized_block);
-                }
-                if let Some(doms) = compute_block_dominators(func) {
-                    dedup_common_arith(func, &doms);
-                }
-                if !disable_global && env::var("SPIRV_TOOLS_DISABLE_GLOBAL_OPT").is_err() {
-                    merge_return_selections_egraph(func, &mut next_id);
-                    merge_return_switches_egraph(func, &mut next_id);
                 }
                 continue;
             }
@@ -230,8 +227,7 @@ fn optimize_module(
                 dedup_common_arith(func, &doms);
                 insert_pre_for_shared_arith(func, &doms, &mut next_id);
             }
-            merge_return_selections_egraph(func, &mut next_id);
-            merge_return_switches_egraph(func, &mut next_id);
+            // Control merge returns are handled in the global e-graph path.
         }
     }
 
@@ -392,80 +388,480 @@ fn is_terminator(opcode: Op) -> bool {
     )
 }
 
-fn optimize_function_global(
-    func: &rspirv::dr::Function,
+fn symbol_id(sym: &egg::Symbol) -> Option<u32> {
+    sym.as_str().strip_prefix("id")?.parse().ok()
+}
+
+fn add_expr_to_egraph(
+    expr: &egg::RecExpr<SpirvLang>,
+    egraph: &mut EGraph<SpirvLang, ()>,
+) -> Vec<Id> {
+    let mut ids = Vec::with_capacity(expr.as_ref().len());
+    for node in expr.as_ref() {
+        let enode = node.clone().map_children(|child| ids[usize::from(child)]);
+        let id = egraph.add(enode);
+        ids.push(id);
+    }
+    ids
+}
+
+fn build_best_rec_expr(
+    egraph: &EGraph<SpirvLang, ()>,
+    extractor: &Extractor<ExprCost, SpirvLang, ()>,
+    roots: &[Id],
+) -> (egg::RecExpr<SpirvLang>, HashMap<Id, Id>, Vec<Id>) {
+    fn build_node(
+        egraph: &EGraph<SpirvLang, ()>,
+        extractor: &Extractor<ExprCost, SpirvLang, ()>,
+        root: Id,
+        memo: &mut HashMap<Id, Id>,
+        expr: &mut egg::RecExpr<SpirvLang>,
+        classes: &mut Vec<Id>,
+    ) -> Id {
+        let class = egraph.find(root);
+        if let Some(&existing) = memo.get(&class) {
+            return existing;
+        }
+        let best = extractor.find_best_node(class).clone();
+        let rebuilt =
+            best.map_children(|child| build_node(egraph, extractor, child, memo, expr, classes));
+        let id = expr.add(rebuilt);
+        memo.insert(class, id);
+        classes.push(class);
+        id
+    }
+
+    let mut expr = egg::RecExpr::default();
+    let mut memo: HashMap<Id, Id> = HashMap::new();
+    let mut classes: Vec<Id> = Vec::new();
+    for &root in roots {
+        let _ = build_node(egraph, extractor, root, &mut memo, &mut expr, &mut classes);
+    }
+    (expr, memo, classes)
+}
+
+fn infer_rec_types(
+    expr: &egg::RecExpr<SpirvLang>,
+    classes: &[Id],
+    class_types: &HashMap<Id, u32>,
+) -> Option<Vec<Option<u32>>> {
+    let mut types: Vec<Option<u32>> = vec![None; expr.as_ref().len()];
+    for (idx, class) in classes.iter().enumerate() {
+        if let Some(ty) = class_types.get(class) {
+            types[idx] = Some(*ty);
+        }
+    }
+    for idx in (0..expr.as_ref().len()).rev() {
+        let Some(ty) = types[idx] else {
+            continue;
+        };
+        for child in expr.as_ref()[idx].children() {
+            let child_idx = usize::from(*child);
+            match types[child_idx] {
+                None => types[child_idx] = Some(ty),
+                Some(existing) if existing != ty => return None,
+                _ => {}
+            }
+        }
+    }
+    Some(types)
+}
+
+fn optimize_function_egraph(
+    func: &mut rspirv::dr::Function,
     type_widths: &HashMap<u32, u32>,
     constant_map: &BTreeMap<u32, Instruction>,
+    next_id: &mut u32,
 ) -> Option<(BTreeMap<u32, Instruction>, Vec<Vec<Instruction>>)> {
+    let debug_egraph = std::env::var("SPIRV_TOOLS_DEBUG_EGRAPH").is_ok();
+    if debug_egraph {
+        eprintln!("egraph start: blocks={}", func.blocks.len());
+    }
     let (arithmetic, id_to_block) = collect_arith_topo(func)?;
+    if !arithmetic.is_empty() {
+        let block_dominators = compute_block_dominators(func)?;
+        for inst in &arithmetic {
+            let Some(result_id) = inst.result_id else {
+                continue;
+            };
+            let Some(&block_idx) = id_to_block.get(&result_id) else {
+                continue;
+            };
+            for op_id in collect_id_operands(inst) {
+                if let Some(&op_block) = id_to_block.get(&op_id) {
+                    if !dominates(&block_dominators, op_block, block_idx) {
+                        return None;
+                    }
+                }
+            }
+        }
+    }
+    let mut egraph = EGraph::<SpirvLang, ()>::default();
+    let mut id_to_class: HashMap<u32, Id> = HashMap::new();
+    let mut class_types: HashMap<Id, u32> = HashMap::new();
+    let mut symbol_widths: HashMap<egg::Symbol, u8> = HashMap::new();
 
-    if arithmetic.is_empty() {
+    if !arithmetic.is_empty() {
+        let mut arith_stream = Vec::new();
+        arith_stream.extend(constant_map.values().cloned());
+        arith_stream.extend(arithmetic.clone());
+        let translated = translate_arith_with_types(&arith_stream, type_widths).ok()?;
+        symbol_widths = translated.symbol_widths.clone();
+        let node_classes = add_expr_to_egraph(&translated.expr, &mut egraph);
+        let arith_ids: HashSet<u32> = arithmetic
+            .iter()
+            .filter_map(|inst| inst.result_id)
+            .collect();
+        for (idx, original_id) in translated.original_ids.iter().enumerate() {
+            let Some(id) = original_id else {
+                continue;
+            };
+            if arith_ids.contains(id) {
+                id_to_class.insert(*id, node_classes[idx]);
+            }
+        }
+        for (idx, ty) in translated.node_types.iter().enumerate() {
+            let Some(ty) = ty else {
+                continue;
+            };
+            class_types.entry(node_classes[idx]).or_insert(*ty);
+        }
+    }
+
+    let control_roots = add_control_roots(func, &mut egraph);
+    if arithmetic.is_empty() && control_roots.is_empty() {
+        if debug_egraph {
+            eprintln!("egraph skip: no arithmetic/control roots");
+        }
         return None;
     }
 
-    // Enforce block dominance for intra-function dependencies; if a value's
-    // defining block does not dominate the use, fall back to the block-local path.
-    let block_dominators = compute_block_dominators(func)?;
-    // Quick sanity: block-order dominance check to catch obvious forward uses.
-    for inst in &arithmetic {
-        let Some(result_id) = inst.result_id else {
-            continue;
-        };
-        let Some(&block_idx) = id_to_block.get(&result_id) else {
-            continue;
-        };
-        for op_id in collect_id_operands(inst) {
-            if let Some(&op_block) = id_to_block.get(&op_id) {
-                if op_block > block_idx {
-                    return None;
+    let mut rewrites = spirv_tools_opt::rewrites();
+    rewrites.extend(control_rewrites());
+    let runner = with_symbol_widths(&symbol_widths, || {
+        Runner::default().with_egraph(egraph).run(&rewrites)
+    });
+    let egraph = runner.egraph;
+    let extractor = Extractor::new(&egraph, ExprCost);
+    let _ = apply_control_roots(func, &extractor, &control_roots, next_id);
+
+    let mut canonical_types: HashMap<Id, u32> = HashMap::new();
+    for (class, ty) in class_types {
+        canonical_types.entry(egraph.find(class)).or_insert(ty);
+    }
+    class_types = canonical_types;
+    for class in id_to_class.values_mut() {
+        *class = egraph.find(*class);
+    }
+
+    if arithmetic.is_empty() {
+        return Some((constant_map.clone(), vec![Vec::new(); func.blocks.len()]));
+    }
+
+    let mut root_classes = Vec::new();
+    let mut seen = HashSet::new();
+    for class in id_to_class.values() {
+        let class = egraph.find(*class);
+        if seen.insert(class) {
+            root_classes.push(class);
+        }
+    }
+    let (best_expr, _class_to_rec, rec_classes) =
+        build_best_rec_expr(&egraph, &extractor, &root_classes);
+
+    let rec_types = infer_rec_types(&best_expr, &rec_classes, &class_types)?;
+    if rec_types.iter().any(|ty| ty.is_none()) {
+        if debug_egraph {
+            eprintln!("egraph abort: missing inferred types");
+            eprintln!("egraph expr: {best_expr}");
+            eprintln!("egraph types: {rec_types:?}");
+            for (idx, node) in best_expr.as_ref().iter().enumerate() {
+                eprintln!("egraph node {idx}: {node:?} type={:?}", rec_types[idx]);
+            }
+        }
+        return None;
+    }
+
+    let mut class_ids: HashMap<Id, Vec<u32>> = HashMap::new();
+    for (id, class) in &id_to_class {
+        class_ids.entry(egraph.find(*class)).or_default().push(*id);
+    }
+    let mut canonical_by_class: HashMap<Id, u32> = HashMap::new();
+    let mut aliases_by_class: HashMap<Id, Vec<u32>> = HashMap::new();
+    for (class, mut ids) in class_ids {
+        ids.sort_unstable();
+        ids.dedup();
+        if let Some((&canonical, rest)) = ids.split_first() {
+            canonical_by_class.insert(class, canonical);
+            if !rest.is_empty() {
+                aliases_by_class.insert(class, rest.to_vec());
+            }
+        }
+    }
+    if debug_egraph {
+        eprintln!("egraph id_to_block: {id_to_block:?}");
+        eprintln!("egraph id_to_class: {id_to_class:?}");
+        eprintln!("egraph canonical_by_class: {canonical_by_class:?}");
+        eprintln!("egraph aliases_by_class: {aliases_by_class:?}");
+    }
+
+    let block_labels: Vec<Option<u32>> = if debug_egraph {
+        func.blocks
+            .iter()
+            .map(|block| block.label.as_ref().and_then(|inst| inst.result_id))
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    let mut rec_result_ids = vec![0u32; best_expr.as_ref().len()];
+    let mut rec_emit = vec![true; best_expr.as_ref().len()];
+    for (idx, node) in best_expr.as_ref().iter().enumerate() {
+        match node {
+            SpirvLang::Symbol(sym) => {
+                let class = rec_classes[idx];
+                if let Some(canonical) = canonical_by_class.get(&class) {
+                    rec_result_ids[idx] = *canonical;
+                    rec_emit[idx] = true;
+                } else {
+                    let Some(id) = symbol_id(sym) else {
+                        return None;
+                    };
+                    rec_result_ids[idx] = id;
+                    rec_emit[idx] = false;
                 }
-                if !block_dominators
-                    .get(&block_idx)
-                    .map(|doms| doms.contains(&op_block))
-                    .unwrap_or(false)
-                {
-                    return None;
+            }
+            _ => {
+                let class = rec_classes[idx];
+                if let Some(canonical) = canonical_by_class.get(&class) {
+                    rec_result_ids[idx] = *canonical;
+                } else {
+                    let id = *next_id;
+                    *next_id = next_id.saturating_add(1);
+                    rec_result_ids[idx] = id;
                 }
             }
         }
     }
 
-    let mut arith_stream = Vec::new();
-    arith_stream.extend(constant_map.values().cloned());
-    arith_stream.extend(arithmetic.clone());
-
-    let optimized = optimize_arith_block_with_types(&arith_stream, type_widths).ok()?;
-
+    let block_dominators = compute_block_dominators(func)?;
+    let idoms = compute_immediate_dominators(&block_dominators);
+    let dom_depths = compute_dominator_depths(&idoms);
+    let mut label_to_idx = HashMap::new();
+    for (idx, block) in func.blocks.iter().enumerate() {
+        if let Some(label_id) = block.label.as_ref().and_then(|inst| inst.result_id) {
+            label_to_idx.insert(label_id, idx);
+        }
+    }
+    let mut loop_headers: HashSet<usize> = HashSet::new();
+    for (idx, block) in func.blocks.iter().enumerate() {
+        let Some(succs) = block_successors(block, &label_to_idx) else {
+            continue;
+        };
+        for succ in succs {
+            if dominates(&block_dominators, succ, idx) {
+                loop_headers.insert(succ);
+            }
+        }
+    }
     let mut new_constants = constant_map.clone();
     let mut per_block = vec![Vec::new(); func.blocks.len()];
-    let mut uses_map = collect_use_blocks(func, &id_to_block);
-    let mut block_map = id_to_block.clone();
-    for inst in &optimized {
-        let Some(user_block) = inst.result_id.and_then(|id| block_map.get(&id)).copied() else {
-            continue;
-        };
-        for op in collect_id_operands(inst) {
-            if block_map.contains_key(&op) {
-                uses_map.entry(op).or_default().insert(user_block);
-            }
+    let uses_map = collect_use_blocks(func, &id_to_block);
+    let mut class_uses: HashMap<Id, HashSet<usize>> = HashMap::new();
+    for (id, class) in &id_to_class {
+        let class = egraph.find(*class);
+        if let Some(uses) = uses_map.get(id) {
+            class_uses
+                .entry(class)
+                .or_default()
+                .extend(uses.iter().copied());
+        }
+        if let Some(block) = id_to_block.get(id) {
+            class_uses.entry(class).or_default().insert(*block);
         }
     }
-    let idoms = compute_immediate_dominators(&block_dominators);
 
-    for inst in optimized {
-        let id = inst.result_id?;
-        if inst.class.opcode == Op::Constant {
-            new_constants.insert(id, inst);
+    let mut block_map = id_to_block.clone();
+
+    for (idx, node) in best_expr.as_ref().iter().enumerate() {
+        if !rec_emit[idx] {
             continue;
         }
-        let block_idx = match block_map.get(&id) {
+        let Some(result_type) = rec_types[idx] else {
+            return None;
+        };
+        let result_id = rec_result_ids[idx];
+        let inst = match node {
+            SpirvLang::Const(val) => {
+                let operands = match val.width_bits() {
+                    64 => vec![rspirv::dr::Operand::LiteralBit64(val.get_u64())],
+                    _ => vec![rspirv::dr::Operand::LiteralBit32(val.get())],
+                };
+                Instruction::new(Op::Constant, Some(result_type), Some(result_id), operands)
+            }
+            SpirvLang::Add([a, b]) => Instruction::new(
+                Op::IAdd,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::Mul([a, b]) => Instruction::new(
+                Op::IMul,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::Sub([a, b]) => Instruction::new(
+                Op::ISub,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::SDiv([a, b]) => Instruction::new(
+                Op::SDiv,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::UDiv([a, b]) => Instruction::new(
+                Op::UDiv,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::SRem([a, b]) => Instruction::new(
+                Op::SRem,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::UMod([a, b]) => Instruction::new(
+                Op::UMod,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::Shl([a, b]) => Instruction::new(
+                Op::ShiftLeftLogical,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::ShrS([a, b]) => Instruction::new(
+                Op::ShiftRightArithmetic,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::ShrU([a, b]) => Instruction::new(
+                Op::ShiftRightLogical,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::BitAnd([a, b]) => Instruction::new(
+                Op::BitwiseAnd,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::BitOr([a, b]) => Instruction::new(
+                Op::BitwiseOr,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::BitXor([a, b]) => Instruction::new(
+                Op::BitwiseXor,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::BitNot(a) => Instruction::new(
+                Op::Not,
+                Some(result_type),
+                Some(result_id),
+                vec![rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)])],
+            ),
+            SpirvLang::Neg(a) => Instruction::new(
+                Op::SNegate,
+                Some(result_type),
+                Some(result_id),
+                vec![rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)])],
+            ),
+            SpirvLang::Symbol(sym) => {
+                let Some(source) = symbol_id(sym) else {
+                    continue;
+                };
+                Instruction::new(
+                    Op::CopyObject,
+                    Some(result_type),
+                    Some(result_id),
+                    vec![rspirv::dr::Operand::IdRef(source)],
+                )
+            }
+            SpirvLang::RotL(_)
+            | SpirvLang::RotR(_)
+            | SpirvLang::If(_)
+            | SpirvLang::Merge(_)
+            | SpirvLang::Ret
+            | SpirvLang::RetVal(_)
+            | SpirvLang::Phi(_)
+            | SpirvLang::Pair(_) => continue,
+        };
+
+        if inst.class.opcode == Op::Constant {
+            new_constants.insert(result_id, inst);
+            continue;
+        }
+
+        let block_idx = match block_map.get(&result_id) {
             Some(idx) => *idx,
             None => {
                 let from_ops = collect_id_operands(&inst)
                     .into_iter()
                     .find_map(|op| block_map.get(&op).copied())
                     .unwrap_or(0);
-                block_map.insert(id, from_ops);
+                block_map.insert(result_id, from_ops);
                 from_ops
             }
         };
@@ -473,24 +869,86 @@ fn optimize_function_global(
             .into_iter()
             .filter_map(|op| block_map.get(&op).copied())
             .collect();
-        let use_blocks = uses_map.get(&id).cloned().unwrap_or_default();
+        let use_blocks = class_uses
+            .get(&rec_classes[idx])
+            .cloned()
+            .unwrap_or_default();
 
-        let mut placement = block_idx;
-        while let Some(Some(idom)) = idoms.get(&placement) {
-            let operands_dominate = operand_blocks
-                .iter()
-                .all(|op_block| dominates(&block_dominators, *op_block, *idom));
-            let placement_dominates_uses = use_blocks
-                .iter()
-                .all(|use_block| dominates(&block_dominators, *idom, *use_block));
-            if operands_dominate && placement_dominates_uses {
-                placement = *idom;
-            } else {
-                break;
+        let placement = if use_blocks.is_empty() {
+            block_idx
+        } else {
+            let mut common: Option<HashSet<usize>> = None;
+            for use_block in &use_blocks {
+                let Some(doms) = block_dominators.get(use_block) else {
+                    continue;
+                };
+                common = Some(match common {
+                    None => doms.clone(),
+                    Some(prev) => prev.intersection(doms).copied().collect(),
+                });
             }
-        }
+            let common = common.unwrap_or_else(|| {
+                let mut set = HashSet::new();
+                set.insert(block_idx);
+                set
+            });
+            let mut candidate = *common
+                .iter()
+                .max_by_key(|block| dom_depths.get(block).copied().unwrap_or(0))
+                .unwrap_or(&block_idx);
+            if use_blocks.len() == 1 && !loop_headers.is_empty() {
+                if let Some(header) = loop_headers
+                    .iter()
+                    .filter(|header| dominates(&block_dominators, **header, candidate))
+                    .max_by_key(|header| dom_depths.get(header).copied().unwrap_or(0))
+                {
+                    if let Some(Some(preheader)) = idoms.get(header) {
+                        candidate = *preheader;
+                    }
+                }
+            }
+            while !operand_blocks
+                .iter()
+                .all(|op_block| dominates(&block_dominators, *op_block, candidate))
+            {
+                match idoms.get(&candidate).and_then(|parent| *parent) {
+                    Some(parent) => candidate = parent,
+                    None => break,
+                }
+            }
+            candidate
+        };
 
+        if debug_egraph {
+            let ops = collect_id_operands(&inst);
+            let label = block_labels.get(placement).and_then(|val| *val);
+            eprintln!(
+                "egraph place op={:?} id={} block={} label={:?} ops={:?}",
+                inst.class.opcode, result_id, placement, label, ops
+            );
+        }
         per_block[placement].push(inst);
+    }
+
+    for (class, aliases) in aliases_by_class {
+        let Some(&canonical) = canonical_by_class.get(&class) else {
+            continue;
+        };
+        let Some(result_type) = class_types.get(&class) else {
+            return None;
+        };
+        for alias in aliases {
+            let Some(&block_idx) = id_to_block.get(&alias) else {
+                continue;
+            };
+            let copy = Instruction::new(
+                Op::CopyObject,
+                Some(*result_type),
+                Some(alias),
+                vec![rspirv::dr::Operand::IdRef(canonical)],
+            );
+            per_block[block_idx].push(copy);
+        }
     }
 
     Some((new_constants, per_block))
@@ -1224,19 +1682,24 @@ mod tests {
         );
 
         let mut func = Function::new();
-        func.blocks.push(Block {
-            label: None,
-            instructions: vec![block0_add.clone()],
-        });
-        func.blocks.push(Block {
-            label: None,
-            instructions: vec![c_two.clone(), block1_mul.clone()],
-        });
+        func.blocks.push(block_with_label(
+            100,
+            vec![block0_add.clone(), branch(101)],
+        ));
+        func.blocks.push(block_with_label(
+            101,
+            vec![
+                c_two.clone(),
+                block1_mul.clone(),
+                Instruction::new(Op::Return, None, None, Vec::new()),
+            ],
+        ));
 
         let type_widths = HashMap::from_iter([(1u32, 32u32)]);
         let constant_map = BTreeMap::new();
 
-        let res = optimize_function_global(&func, &type_widths, &constant_map);
+        let mut next_id = 1000;
+        let res = optimize_function_egraph(&mut func, &type_widths, &constant_map, &mut next_id);
         assert!(
             res.is_none(),
             "global optimizer should decline when operands are defined in later blocks"
@@ -1298,7 +1761,8 @@ mod tests {
 
         let type_widths = HashMap::from_iter([(1u32, 32u32)]);
         let constant_map = BTreeMap::new();
-        let res = optimize_function_global(&func, &type_widths, &constant_map);
+        let mut next_id = 1000;
+        let res = optimize_function_egraph(&mut func, &type_widths, &constant_map, &mut next_id);
         assert!(
             res.is_none(),
             "non-dominating defs must fall back to block-local optimization"
