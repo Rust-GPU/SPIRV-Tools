@@ -58,7 +58,7 @@ pub fn merge_return_selections_egraph(func: &mut Function, next_id: &mut u32) ->
             continue;
         };
         let runner = Runner::default().with_expr(&expr).run(&rewrites);
-        let Some(&root) = runner.roots.get(0) else {
+        let Some(&root) = runner.roots.first() else {
             continue;
         };
         let extractor = Extractor::new(&runner.egraph, AstSize);
@@ -129,7 +129,7 @@ pub fn merge_return_switches_egraph(func: &mut Function, next_id: &mut u32) -> b
             continue;
         };
         let runner = Runner::default().with_expr(&expr).run(&rewrites);
-        let Some(&root) = runner.roots.get(0) else {
+        let Some(&root) = runner.roots.first() else {
             continue;
         };
         let extractor = Extractor::new(&runner.egraph, AstSize);
@@ -487,7 +487,7 @@ fn return_value_operand(inst: &Instruction) -> Option<Option<u32>> {
         Op::Return => Some(None),
         Op::ReturnValue => inst
             .operands
-            .get(0)
+            .first()
             .and_then(|op| op.id_ref_any())
             .map(Some),
         _ => None,
@@ -512,10 +512,10 @@ fn selection_candidates(func: &Function) -> Option<Vec<ControlCandidate>> {
         if terminator.class.opcode != Op::BranchConditional {
             continue;
         }
-        let merge_label = merge_inst.operands.get(0).and_then(|op| op.id_ref_any());
+        let merge_label = merge_inst.operands.first().and_then(|op| op.id_ref_any());
         let true_label = terminator.operands.get(1).and_then(|op| op.id_ref_any());
         let false_label = terminator.operands.get(2).and_then(|op| op.id_ref_any());
-        let cond_id = terminator.operands.get(0).and_then(|op| op.id_ref_any());
+        let cond_id = terminator.operands.first().and_then(|op| op.id_ref_any());
         let (Some(merge_label), Some(true_label), Some(false_label), Some(cond_id)) =
             (merge_label, true_label, false_label, cond_id)
         else {
@@ -603,7 +603,7 @@ fn switch_candidates(func: &Function) -> Option<Vec<ControlCandidate>> {
         if terminator.class.opcode != Op::Switch {
             continue;
         }
-        let merge_label = merge_inst.operands.get(0).and_then(|op| op.id_ref_any());
+        let merge_label = merge_inst.operands.first().and_then(|op| op.id_ref_any());
         let default_label = terminator.operands.get(1).and_then(|op| op.id_ref_any());
         let Some(merge_label) = merge_label else {
             continue;
@@ -668,7 +668,7 @@ fn switch_candidates(func: &Function) -> Option<Vec<ControlCandidate>> {
                     break;
                 }
             };
-            if value_kind.map_or(false, |is_value| is_value != value.is_some()) {
+            if value_kind.is_some_and(|is_value| is_value != value.is_some()) {
                 cases.clear();
                 break;
             }
@@ -818,7 +818,7 @@ fn block_successors(block: &Block, label_to_idx: &HashMap<u32, usize>) -> Option
     let mut targets = Vec::new();
     match last.class.opcode {
         Op::Branch => {
-            if let Some(IdRef(label)) = last.operands.get(0) {
+            if let Some(IdRef(label)) = last.operands.first() {
                 if let Some(idx) = label_to_idx.get(label) {
                     targets.push(*idx);
                 }

@@ -41,7 +41,7 @@ pub fn type_widths_from_module(module: &rspirv::dr::Module) -> HashMap<Word, u32
             (inst.class.opcode == Op::TypeInt)
                 .then(|| {
                     inst.result_id.and_then(|id| {
-                        inst.operands.get(0).and_then(|op| match op {
+                        inst.operands.first().and_then(|op| match op {
                             rspirv::dr::Operand::LiteralBit32(bits) => Some((id, *bits)),
                             _ => None,
                         })
@@ -132,7 +132,7 @@ pub fn translate_arith_with_types(
     for inst in instructions {
         if inst.class.opcode == Op::TypeInt {
             if let (Some(result_id), Some(rspirv::dr::Operand::LiteralBit32(bits))) =
-                (inst.result_id, inst.operands.get(0))
+                (inst.result_id, inst.operands.first())
             {
                 type_widths.entry(result_id).or_insert(*bits);
             }

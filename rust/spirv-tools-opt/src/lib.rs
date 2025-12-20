@@ -2313,7 +2313,7 @@ impl Applier<SpirvLang, ()> for DivPowerOfTwo {
             let sign = egraph.add(SpirvLang::ShrS([subst[self.x], sign_shift]));
             let mask_value = ((1u128 << shift) - 1) as u64;
             let mask = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
-                mask_value as u64,
+                mask_value,
                 constant.width_bits(),
             )));
             let bias = egraph.add(SpirvLang::BitAnd([sign, mask]));

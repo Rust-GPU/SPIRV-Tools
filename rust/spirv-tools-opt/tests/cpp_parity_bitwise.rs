@@ -114,7 +114,7 @@ fn build_and_over_or_module() -> Vec<u32> {
     let _band = b.bitwise_and(int, None, x, bor).expect("band");
     b.ret().unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", &[]);
+    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", []);
     b.module().assemble()
 }
 
@@ -135,7 +135,7 @@ fn build_or_over_and_module() -> Vec<u32> {
     let _bor = b.bitwise_or(int, None, x, band).expect("or");
     b.ret().unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", &[]);
+    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", []);
     b.module().assemble()
 }
 
@@ -156,7 +156,7 @@ fn build_and_over_or_module_64() -> Vec<u32> {
     let _band = b.bitwise_and(int, None, x, bor).expect("band");
     b.ret().unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", &[]);
+    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", []);
     b.module().assemble()
 }
 
@@ -177,7 +177,7 @@ fn build_or_over_and_module_64() -> Vec<u32> {
     let _bor = b.bitwise_or(int, None, x, band).expect("or");
     b.ret().unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", &[]);
+    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", []);
     b.module().assemble()
 }
 
@@ -199,7 +199,7 @@ fn build_reassociate_bor_const_module() -> Vec<u32> {
     let _outer = b.bitwise_or(int, None, c1, inner).expect("bor outer");
     b.ret().unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", &[]);
+    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", []);
     b.module().assemble()
 }
 
@@ -221,7 +221,7 @@ fn build_reassociate_bxor_const_module() -> Vec<u32> {
     let _outer = b.bitwise_xor(int, None, c1, inner).expect("bxor outer");
     b.ret().unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", &[]);
+    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", []);
     b.module().assemble()
 }
 

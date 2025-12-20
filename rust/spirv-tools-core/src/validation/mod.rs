@@ -3575,7 +3575,7 @@ fn validate_functions(
                         continue;
                     };
 
-                    let vector_operand = inst.operands.get(0).and_then(|op| match op {
+                    let vector_operand = inst.operands.first().and_then(|op| match op {
                         rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
                         _ => None,
                     });
@@ -3669,7 +3669,7 @@ fn validate_functions(
                         continue;
                     };
 
-                    let vector_operand = inst.operands.get(0).and_then(|op| match op {
+                    let vector_operand = inst.operands.first().and_then(|op| match op {
                         rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
                         _ => None,
                     });
@@ -3780,7 +3780,7 @@ fn validate_functions(
                         continue;
                     };
 
-                    let vector_operand = inst.operands.get(0).and_then(|op| match op {
+                    let vector_operand = inst.operands.first().and_then(|op| match op {
                         rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
                         _ => None,
                     });
@@ -3872,7 +3872,7 @@ fn validate_functions(
                         continue;
                     };
 
-                    let matrix_operand = inst.operands.get(0).and_then(|op| match op {
+                    let matrix_operand = inst.operands.first().and_then(|op| match op {
                         rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
                         _ => None,
                     });
@@ -4026,7 +4026,7 @@ fn validate_functions(
                         continue;
                     };
 
-                    let vector_operand = inst.operands.get(0).and_then(|op| match op {
+                    let vector_operand = inst.operands.first().and_then(|op| match op {
                         rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
                         _ => None,
                     });
@@ -4187,7 +4187,7 @@ fn validate_functions(
                         continue;
                     };
 
-                    let left_operand = inst.operands.get(0).and_then(|op| match op {
+                    let left_operand = inst.operands.first().and_then(|op| match op {
                         rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
                         _ => None,
                     });
@@ -4394,7 +4394,7 @@ fn validate_functions(
                         }
                     };
 
-                    let Some(vec1_id) = inst.operands.get(0).and_then(|op| match op {
+                    let Some(vec1_id) = inst.operands.first().and_then(|op| match op {
                         rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
                         _ => None,
                     }) else {
@@ -5321,7 +5321,7 @@ fn validate_functions(
                             }
                         };
 
-                        let op0_type = inst.operands.get(0).and_then(operand_type);
+                        let op0_type = inst.operands.first().and_then(operand_type);
                         if let Some(op0_type) = op0_type {
                             let Some((op0_opcode, op0_storage_class)) =
                                 pointer_info(op0_type, &definitions)

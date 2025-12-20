@@ -41,6 +41,8 @@ struct Args {
     force_global: bool,
 }
 
+type OptimizedFunction = (BTreeMap<u32, Instruction>, Vec<Vec<Instruction>>);
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
@@ -472,7 +474,7 @@ fn optimize_function_egraph(
     type_widths: &HashMap<u32, u32>,
     constant_map: &BTreeMap<u32, Instruction>,
     next_id: &mut u32,
-) -> Option<(BTreeMap<u32, Instruction>, Vec<Vec<Instruction>>)> {
+) -> Option<OptimizedFunction> {
     let debug_egraph = std::env::var("SPIRV_TOOLS_DEBUG_EGRAPH").is_ok();
     if debug_egraph {
         eprintln!("egraph start: blocks={}", func.blocks.len());
@@ -624,9 +626,7 @@ fn optimize_function_egraph(
                     rec_result_ids[idx] = *canonical;
                     rec_emit[idx] = true;
                 } else {
-                    let Some(id) = symbol_id(sym) else {
-                        return None;
-                    };
+                    let id = symbol_id(sym)?;
                     rec_result_ids[idx] = id;
                     rec_emit[idx] = false;
                 }
@@ -687,9 +687,7 @@ fn optimize_function_egraph(
         if !rec_emit[idx] {
             continue;
         }
-        let Some(result_type) = rec_types[idx] else {
-            return None;
-        };
+        let result_type = rec_types[idx]?;
         let result_id = rec_result_ids[idx];
         let inst = match node {
             SpirvLang::Const(val) => {
@@ -934,16 +932,14 @@ fn optimize_function_egraph(
         let Some(&canonical) = canonical_by_class.get(&class) else {
             continue;
         };
-        let Some(result_type) = class_types.get(&class) else {
-            return None;
-        };
+        let result_type = *class_types.get(&class)?;
         for alias in aliases {
             let Some(&block_idx) = id_to_block.get(&alias) else {
                 continue;
             };
             let copy = Instruction::new(
                 Op::CopyObject,
-                Some(*result_type),
+                Some(result_type),
                 Some(alias),
                 vec![rspirv::dr::Operand::IdRef(canonical)],
             );
@@ -1033,9 +1029,7 @@ fn compute_block_dominators(func: &rspirv::dr::Function) -> Option<HashMap<usize
 
     let mut dom: Vec<HashSet<usize>> = vec![HashSet::new(); block_count];
     for i in 0..block_count {
-        if i == 0 {
-            dom[i].insert(i);
-        } else if preds[i].is_empty() {
+        if i == 0 || preds[i].is_empty() {
             dom[i].insert(i);
         } else {
             dom[i] = (0..block_count).collect();
@@ -1080,7 +1074,7 @@ fn block_successors(
     let mut targets = Vec::new();
     match last.class.opcode {
         Op::Branch => {
-            if let Some(IdRef(label)) = last.operands.get(0) {
+            if let Some(IdRef(label)) = last.operands.first() {
                 if let Some(idx) = label_to_idx.get(label) {
                     targets.push(*idx);
                 }
@@ -1302,7 +1296,7 @@ fn collapse_copy_chains(func: &mut rspirv::dr::Function) {
             if inst.class.opcode == Op::CopyObject {
                 if let (Some(dst), Some(src)) = (
                     inst.result_id,
-                    inst.operands.get(0).and_then(|op| op.id_ref_any()),
+                    inst.operands.first().and_then(|op| op.id_ref_any()),
                 ) {
                     parent.insert(dst, src);
                 }
@@ -1454,7 +1448,7 @@ fn dedup_constants(module: &mut rspirv::dr::Module) {
             continue;
         };
         let Some(ty) = inst.result_type else { continue };
-        let key = match inst.operands.get(0) {
+        let key = match inst.operands.first() {
             Some(rspirv::dr::Operand::LiteralBit32(v)) => ConstKey::Bit32(ty, *v),
             Some(rspirv::dr::Operand::LiteralBit64(v)) => ConstKey::Bit64(ty, *v),
             _ => continue,
@@ -1682,10 +1676,8 @@ mod tests {
         );
 
         let mut func = Function::new();
-        func.blocks.push(block_with_label(
-            100,
-            vec![block0_add.clone(), branch(101)],
-        ));
+        func.blocks
+            .push(block_with_label(100, vec![block0_add.clone(), branch(101)]));
         func.blocks.push(block_with_label(
             101,
             vec![

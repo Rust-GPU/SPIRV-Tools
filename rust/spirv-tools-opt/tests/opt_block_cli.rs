@@ -9,6 +9,8 @@ use rspirv::spirv::{
 use std::sync::{Mutex, MutexGuard};
 use tempfile::tempdir;
 
+type SwitchReturnModule = (Vec<u32>, Vec<(u32, u32)>, u32, Vec<u32>);
+
 fn cpp_opt_bin() -> Option<String> {
     if let Ok(path) = std::env::var("SPIRV_CPP_OPT") {
         if !path.is_empty() {
@@ -1029,7 +1031,7 @@ fn build_selection_return_merge_module() -> (Vec<u32>, u32, u32, u32, u32, u32) 
     )
 }
 
-fn build_switch_return_merge_module() -> (Vec<u32>, Vec<(u32, u32)>, u32, Vec<u32>) {
+fn build_switch_return_merge_module() -> SwitchReturnModule {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
@@ -1545,7 +1547,7 @@ fn cli_opt_block_matches_cpp_band_complement_u32() {
 
     let mut loader = Loader::new();
     rspirv::binary::parse_words(
-        &bytes_to_words(&std::fs::read(&rust_output).unwrap()),
+        bytes_to_words(&std::fs::read(&rust_output).unwrap()),
         &mut loader,
     )
     .expect("parse optimized");
@@ -1601,7 +1603,7 @@ fn cli_opt_block_matches_cpp_band_all_ones_u32() {
 
     let mut loader = Loader::new();
     rspirv::binary::parse_words(
-        &bytes_to_words(&std::fs::read(&rust_output).unwrap()),
+        bytes_to_words(&std::fs::read(&rust_output).unwrap()),
         &mut loader,
     )
     .expect("parse optimized");
@@ -1657,7 +1659,7 @@ fn cli_opt_block_matches_cpp_band_all_ones_u64() {
 
     let mut loader = Loader::new();
     rspirv::binary::parse_words(
-        &bytes_to_words(&std::fs::read(&rust_output).unwrap()),
+        bytes_to_words(&std::fs::read(&rust_output).unwrap()),
         &mut loader,
     )
     .expect("parse optimized");
@@ -1710,7 +1712,7 @@ fn cli_opt_block_matches_cpp_bor_zero_u32() {
 
     let mut loader = Loader::new();
     rspirv::binary::parse_words(
-        &bytes_to_words(&std::fs::read(&rust_output).unwrap()),
+        bytes_to_words(&std::fs::read(&rust_output).unwrap()),
         &mut loader,
     )
     .expect("parse optimized");
@@ -1763,7 +1765,7 @@ fn cli_opt_block_matches_cpp_bor_zero_u64() {
 
     let mut loader = Loader::new();
     rspirv::binary::parse_words(
-        &bytes_to_words(&std::fs::read(&rust_output).unwrap()),
+        bytes_to_words(&std::fs::read(&rust_output).unwrap()),
         &mut loader,
     )
     .expect("parse optimized");
@@ -1816,7 +1818,7 @@ fn cli_opt_block_matches_cpp_bxor_self_u32() {
 
     let mut loader = Loader::new();
     rspirv::binary::parse_words(
-        &bytes_to_words(&std::fs::read(&rust_output).unwrap()),
+        bytes_to_words(&std::fs::read(&rust_output).unwrap()),
         &mut loader,
     )
     .expect("parse optimized");
@@ -1864,7 +1866,7 @@ fn build_split_y_absorption_module() -> Vec<u32> {
         .expect("(x & y) | (~x & y)");
     b.ret().unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", &[x, y]);
+    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", [x, y]);
     b.module().assemble()
 }
 
@@ -1889,7 +1891,7 @@ fn build_split_x_absorption_module() -> Vec<u32> {
         .expect("(x & y) | (x & ~y)");
     b.ret().unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", &[x, y]);
+    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", [x, y]);
     b.module().assemble()
 }
 
@@ -1980,7 +1982,7 @@ fn cli_opt_block_matches_cpp_bxor_self_u64() {
 
     let mut loader = Loader::new();
     rspirv::binary::parse_words(
-        &bytes_to_words(&std::fs::read(&rust_output).unwrap()),
+        bytes_to_words(&std::fs::read(&rust_output).unwrap()),
         &mut loader,
     )
     .expect("parse optimized");
@@ -4201,7 +4203,7 @@ fn cli_opt_block_collapses_copy_chains() {
         if inst.class.opcode == Op::CopyObject {
             if let (Some(dst), Some(src)) = (
                 inst.result_id,
-                inst.operands.get(0).and_then(|op| op.id_ref_any()),
+                inst.operands.first().and_then(|op| op.id_ref_any()),
             ) {
                 copies.insert(dst, src);
             }
@@ -4255,7 +4257,7 @@ fn cli_opt_block_factors_across_blocks() {
                 .operands
                 .iter()
                 .any(|op| matches!(op, rspirv::dr::Operand::IdRef(id) if *id == x_id))
-            && const_five.map_or(false, |cid| {
+            && const_five.is_some_and(|cid| {
                 inst.operands
                     .iter()
                     .any(|op| matches!(op, rspirv::dr::Operand::IdRef(id) if *id == cid))
