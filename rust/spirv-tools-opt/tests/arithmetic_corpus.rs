@@ -1404,6 +1404,62 @@ fn corpus_collapse_nested_masks() {
     );
 }
 
+/// Rust-only: apply consensus to factor shared OR terms.
+#[test]
+fn corpus_band_consensus_or() {
+    let int = 1;
+    let x_val = 0x0F0F_F0F0u32;
+    let y_val = 0xAAAA_0000u32;
+    let z_val = 0x00FF_00FFu32;
+    let x = inst(
+        Op::Constant,
+        int,
+        2,
+        vec![rspirv::dr::Operand::LiteralBit32(x_val)],
+    );
+    let y = inst(
+        Op::Constant,
+        int,
+        3,
+        vec![rspirv::dr::Operand::LiteralBit32(y_val)],
+    );
+    let z = inst(
+        Op::Constant,
+        int,
+        4,
+        vec![rspirv::dr::Operand::LiteralBit32(z_val)],
+    );
+    let bor1 = inst(
+        Op::BitwiseOr,
+        int,
+        5,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(3)],
+    );
+    let bor2 = inst(
+        Op::BitwiseOr,
+        int,
+        6,
+        vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(4)],
+    );
+    let band = inst(
+        Op::BitwiseAnd,
+        int,
+        7,
+        vec![rspirv::dr::Operand::IdRef(5), rspirv::dr::Operand::IdRef(6)],
+    );
+    let optimized = optimize_arith_block(&[x, y, z, bor1, bor2, band]).expect("optimize");
+    let expected = x_val | (y_val & z_val);
+    let folded = optimized.iter().find(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(7)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(expected)]
+    });
+    assert!(
+        folded.is_some(),
+        "(x|y)&(x|z) should fold to x|(y&z); Rust-only improvement"
+    );
+}
+
 /// Rust-only: absorb split y term (x & y) | (~x & y) into y.
 #[test]
 fn corpus_absorbs_split_y_term() {

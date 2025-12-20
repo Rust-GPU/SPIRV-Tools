@@ -558,6 +558,9 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("band-merge-nested"; "(band (band ?x ?m) ?n)" => "(band ?x (band ?m ?n))"),
         rewrite!("band-merge-nested-comm-left"; "(band ?n (band ?x ?m))" => "(band ?x (band ?m ?n))"),
         rewrite!("band-merge-nested-comm-right"; "(band (band ?m ?x) ?n)" => "(band ?x (band ?m ?n))"),
+        // Rust-only improvement: consensus theorem for shared OR terms.
+        rewrite!("band-consensus-or"; "(band (bor ?x ?y) (bor ?x ?z))" => "(bor ?x (band ?y ?z))"),
+        rewrite!("band-consensus-or-comm"; "(band (bor ?y ?x) (bor ?z ?x))" => "(bor ?x (band ?y ?z))"),
         rewrite!("bxor-diff-masked-right"; "(bxor ?x (band ?x ?y))" => "(band ?x (bnot ?y))"),
         rewrite!("bxor-diff-masked-left"; "(bxor (band ?x ?y) ?x)" => "(band ?x (bnot ?y))"),
         rewrite!("bxor-diff-masked-or-right"; "(bxor ?x (bor ?x ?y))" => "(band ?y (bnot ?x))"),
