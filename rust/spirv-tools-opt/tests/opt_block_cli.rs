@@ -1029,6 +1029,59 @@ fn build_selection_return_merge_module() -> (Vec<u32>, u32, u32, u32, u32, u32) 
     )
 }
 
+fn build_switch_return_merge_module() -> (Vec<u32>, Vec<(u32, u32)>, u32, Vec<u32>) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let int = b.type_int(32, 1);
+    let func_ty = b.type_function(int, vec![int, int]);
+    let _func = b
+        .begin_function(int, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let x = b.function_parameter(int).unwrap();
+    let y = b.function_parameter(int).unwrap();
+
+    let merge_label = b.id();
+    let default_label = b.id();
+    let case0_label = b.id();
+    let case1_label = b.id();
+    let selector = b.constant_bit32(int, 0);
+
+    b.begin_block(None).unwrap();
+    b.selection_merge(merge_label, SelectionControl::NONE)
+        .expect("selection merge");
+    b.switch(
+        selector,
+        default_label,
+        [
+            (rspirv::dr::Operand::LiteralBit32(0), case0_label),
+            (rspirv::dr::Operand::LiteralBit32(1), case1_label),
+        ],
+    )
+    .expect("switch");
+
+    b.begin_block(Some(case0_label)).unwrap();
+    b.ret_value(x).unwrap();
+
+    b.begin_block(Some(case1_label)).unwrap();
+    b.ret_value(y).unwrap();
+
+    b.begin_block(Some(default_label)).unwrap();
+    b.ret_value(x).unwrap();
+
+    b.begin_block(Some(merge_label)).unwrap();
+    b.unreachable().unwrap();
+    b.end_function().unwrap();
+
+    let expected_pairs = vec![(x, case0_label), (y, case1_label), (x, default_label)];
+    (
+        b.module().assemble(),
+        expected_pairs,
+        merge_label,
+        vec![default_label, case0_label, case1_label],
+    )
+}
+
 fn build_branch_shared_expr_pre_module() -> (Vec<u32>, u32, u32, u32, u32, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
@@ -3947,6 +4000,89 @@ fn cli_opt_block_merges_selection_returns_via_egraph() {
         phi_pairs.contains(&(then_val, then_label)) && phi_pairs.contains(&(else_val, else_label)),
         "phi should select return values from both branches"
     );
+
+    let phi_id = phi.result_id.expect("phi id");
+    assert!(return_inst
+        .operands
+        .iter()
+        .any(|op| matches!(op, rspirv::dr::Operand::IdRef(id) if *id == phi_id)));
+}
+
+#[test]
+fn cli_opt_block_merges_switch_returns_via_egraph() {
+    // Rust-only improvement: merge-return for simple switches via e-graphs.
+    let _guard = env_guard();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let (words, expected_pairs, merge_label, case_labels) = build_switch_return_merge_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let output = dir.path().join("output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let status = Command::new(exe)
+        .arg(&input)
+        .arg(&output)
+        .status()
+        .expect("run opt_block");
+    assert!(status.success(), "opt_block should exit successfully");
+
+    let optimized_bytes = std::fs::read(&output).expect("read output");
+    let optimized_words = bytes_to_words(&optimized_bytes);
+    let mut loader = Loader::new();
+    rspirv::binary::parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+    let func = module
+        .functions
+        .first()
+        .expect("function present after optimization");
+
+    let find_block = |label| {
+        func.blocks
+            .iter()
+            .find(|block| block.label.as_ref().and_then(|inst| inst.result_id) == Some(label))
+            .expect("block label present")
+    };
+
+    let merge_block = find_block(merge_label);
+    for label in case_labels {
+        let case_block = find_block(label);
+        let term = case_block.instructions.last().expect("case terminator");
+        assert_eq!(term.class.opcode, Op::Branch);
+        assert!(term
+            .operands
+            .iter()
+            .any(|op| matches!(op, rspirv::dr::Operand::IdRef(id) if *id == merge_label)));
+    }
+
+    let phi = merge_block
+        .instructions
+        .iter()
+        .find(|inst| inst.class.opcode == Op::Phi)
+        .expect("phi in merge");
+    let return_inst = merge_block
+        .instructions
+        .iter()
+        .find(|inst| inst.class.opcode == Op::ReturnValue)
+        .expect("return value in merge");
+
+    let phi_pairs: Vec<(u32, u32)> = phi
+        .operands
+        .chunks(2)
+        .filter_map(|chunk| match chunk {
+            [rspirv::dr::Operand::IdRef(val), rspirv::dr::Operand::IdRef(label)] => {
+                Some((*val, *label))
+            }
+            _ => None,
+        })
+        .collect();
+    for expected in expected_pairs {
+        assert!(
+            phi_pairs.contains(&expected),
+            "phi should include pair {:?}",
+            expected
+        );
+    }
 
     let phi_id = phi.result_id.expect("phi id");
     assert!(return_inst

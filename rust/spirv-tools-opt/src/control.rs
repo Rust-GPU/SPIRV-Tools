@@ -1,29 +1,41 @@
 use egg::{define_language, rewrite, AstSize, Extractor, Id, RecExpr, Rewrite, Runner, Symbol};
 use rspirv::dr::{Block, Function, Instruction};
 use rspirv::spirv::Op;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 define_language! {
     enum ControlLang {
         "if" = If([Id; 3]),
+        "merge" = Merge([Id; 2]),
         "ret" = Ret,
         "retv" = RetVal(Id),
         "phi" = Phi([Id; 2]),
+        "pair" = Pair([Id; 2]),
         Symbol(Symbol),
     }
+}
+
+#[derive(Clone)]
+struct ReturnCase {
+    block_idx: usize,
+    label: u32,
+    value: Option<u32>,
 }
 
 #[derive(Clone)]
 struct SelectionCandidate {
     merge_idx: usize,
     merge_label: u32,
-    true_idx: usize,
-    false_idx: usize,
-    true_label: u32,
-    false_label: u32,
     cond_id: u32,
-    true_val: Option<u32>,
-    false_val: Option<u32>,
+    cases: Vec<ReturnCase>,
+    return_type: u32,
+}
+
+#[derive(Clone)]
+struct SwitchCandidate {
+    merge_idx: usize,
+    merge_label: u32,
+    cases: Vec<ReturnCase>,
     return_type: u32,
 }
 
@@ -40,9 +52,13 @@ pub fn merge_return_selections_egraph(func: &mut Function, next_id: &mut u32) ->
     let mut changed = false;
 
     for candidate in candidates {
-        let (expr, root) =
-            selection_expr(candidate.cond_id, candidate.true_val, candidate.false_val);
+        let Some((expr, _root)) = selection_expr(candidate.cond_id, &candidate.cases) else {
+            continue;
+        };
         let runner = Runner::default().with_expr(&expr).run(&rewrites);
+        let Some(&root) = runner.roots.get(0) else {
+            continue;
+        };
         let extractor = Extractor::new(&runner.egraph, AstSize);
         let (_cost, best) = extractor.find_best(root);
 
@@ -51,27 +67,134 @@ pub fn merge_return_selections_egraph(func: &mut Function, next_id: &mut u32) ->
         };
         match root_node {
             ControlLang::Ret => {
-                if candidate.true_val.is_some() || candidate.false_val.is_some() {
+                if candidate.cases.iter().any(|case| case.value.is_some()) {
                     continue;
                 }
-                if apply_merge_return_void(func, &candidate) {
+                if apply_merge_return_void_cases(
+                    func,
+                    candidate.merge_idx,
+                    candidate.merge_label,
+                    &candidate.cases,
+                ) {
                     changed = true;
                 }
             }
             ControlLang::RetVal(child) => {
-                let child_idx = usize::from(*child);
-                let Some(ControlLang::Phi([a, b])) = best.as_ref().get(child_idx) else {
-                    continue;
+                let pairs = match extract_pairs(&best, *child) {
+                    Some(pairs) => pairs,
+                    None => continue,
                 };
-                let Some(true_value) = best.as_ref().get(usize::from(*a)).and_then(symbol_id)
-                else {
+                if !pairs_match_cases(&pairs, &candidate.cases) {
                     continue;
-                };
-                let Some(false_value) = best.as_ref().get(usize::from(*b)).and_then(symbol_id)
-                else {
+                }
+                if apply_merge_return_pairs(
+                    func,
+                    candidate.merge_idx,
+                    candidate.merge_label,
+                    &candidate.cases,
+                    &pairs,
+                    candidate.return_type,
+                    next_id,
+                ) {
+                    changed = true;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    changed
+}
+
+pub fn merge_return_switches_egraph(func: &mut Function, next_id: &mut u32) -> bool {
+    let candidates = match switch_candidates(func) {
+        Some(list) => list,
+        None => return false,
+    };
+    if candidates.is_empty() {
+        return false;
+    }
+
+    let rewrites = merge_return_rewrites();
+    let mut changed = false;
+
+    for candidate in candidates {
+        let Some((expr, _root)) = merge_expr(&candidate.cases) else {
+            continue;
+        };
+        let runner = Runner::default().with_expr(&expr).run(&rewrites);
+        let Some(&root) = runner.roots.get(0) else {
+            continue;
+        };
+        let extractor = Extractor::new(&runner.egraph, AstSize);
+        let (_cost, best) = extractor.find_best(root);
+
+        let Some(root_node) = best.as_ref().last() else {
+            continue;
+        };
+        match root_node {
+            ControlLang::Ret => {
+                if candidate.cases.iter().any(|case| case.value.is_some()) {
                     continue;
+                }
+                if apply_merge_return_void_cases(
+                    func,
+                    candidate.merge_idx,
+                    candidate.merge_label,
+                    &candidate.cases,
+                ) {
+                    changed = true;
+                }
+            }
+            ControlLang::RetVal(child) => {
+                let pairs = match extract_pairs(&best, *child) {
+                    Some(pairs) => pairs,
+                    None => continue,
                 };
-                if apply_merge_return_value(func, &candidate, true_value, false_value, next_id) {
+                if !pairs_match_cases(&pairs, &candidate.cases) {
+                    continue;
+                }
+                if apply_merge_return_pairs(
+                    func,
+                    candidate.merge_idx,
+                    candidate.merge_label,
+                    &candidate.cases,
+                    &pairs,
+                    candidate.return_type,
+                    next_id,
+                ) {
+                    changed = true;
+                }
+            }
+            ControlLang::Merge(_) => {
+                if candidate.cases.iter().all(|case| case.value.is_none()) {
+                    if apply_merge_return_void_cases(
+                        func,
+                        candidate.merge_idx,
+                        candidate.merge_label,
+                        &candidate.cases,
+                    ) {
+                        changed = true;
+                    }
+                    continue;
+                }
+                let root_id = Id::from(best.as_ref().len().saturating_sub(1));
+                let pairs = match extract_return_pairs(&best, root_id) {
+                    Some(pairs) => pairs,
+                    None => continue,
+                };
+                if !pairs_match_cases(&pairs, &candidate.cases) {
+                    continue;
+                }
+                if apply_merge_return_pairs(
+                    func,
+                    candidate.merge_idx,
+                    candidate.merge_label,
+                    &candidate.cases,
+                    &pairs,
+                    candidate.return_type,
+                    next_id,
+                ) {
                     changed = true;
                 }
             }
@@ -89,32 +212,140 @@ fn merge_return_rewrites() -> Vec<Rewrite<ControlLang, ()>> {
             "merge-return-values";
             "(if ?c (retv ?a) (retv ?b))" => "(retv (phi ?a ?b))"
         ),
+        rewrite!("merge-switch-void"; "(merge ret ret)" => "ret"),
+        rewrite!(
+            "merge-switch-values";
+            "(merge (retv ?a) (retv ?b))" => "(retv (phi ?a ?b))"
+        ),
     ]
 }
 
-fn selection_expr(
-    cond_id: u32,
-    true_val: Option<u32>,
-    false_val: Option<u32>,
-) -> (RecExpr<ControlLang>, Id) {
+fn selection_expr(cond_id: u32, cases: &[ReturnCase]) -> Option<(RecExpr<ControlLang>, Id)> {
+    if cases.len() != 2 {
+        return None;
+    }
+    let true_case = &cases[0];
+    let false_case = &cases[1];
+
     let mut expr = RecExpr::default();
     let cond = expr.add(ControlLang::Symbol(symbol_for_id(cond_id)));
-    let true_node = match true_val {
+    let true_node = match true_case.value {
         Some(id) => {
-            let sym = expr.add(ControlLang::Symbol(symbol_for_id(id)));
-            expr.add(ControlLang::RetVal(sym))
+            let pair = pair_node(&mut expr, id, true_case.label);
+            expr.add(ControlLang::RetVal(pair))
         }
         None => expr.add(ControlLang::Ret),
     };
-    let false_node = match false_val {
+    let false_node = match false_case.value {
         Some(id) => {
-            let sym = expr.add(ControlLang::Symbol(symbol_for_id(id)));
-            expr.add(ControlLang::RetVal(sym))
+            let pair = pair_node(&mut expr, id, false_case.label);
+            expr.add(ControlLang::RetVal(pair))
         }
         None => expr.add(ControlLang::Ret),
     };
     let root = expr.add(ControlLang::If([cond, true_node, false_node]));
-    (expr, root)
+    Some((expr, root))
+}
+
+fn merge_expr(cases: &[ReturnCase]) -> Option<(RecExpr<ControlLang>, Id)> {
+    if cases.is_empty() {
+        return None;
+    }
+    let mut expr = RecExpr::default();
+    let mut roots: Vec<Id> = Vec::new();
+    for case in cases {
+        let node = match case.value {
+            Some(value) => {
+                let pair = pair_node(&mut expr, value, case.label);
+                expr.add(ControlLang::RetVal(pair))
+            }
+            None => expr.add(ControlLang::Ret),
+        };
+        roots.push(node);
+    }
+
+    let mut iter = roots.into_iter();
+    let mut root = iter.next().unwrap_or_else(|| expr.add(ControlLang::Ret));
+    for next in iter {
+        root = expr.add(ControlLang::Merge([root, next]));
+    }
+    Some((expr, root))
+}
+
+fn pair_node(expr: &mut RecExpr<ControlLang>, value: u32, label: u32) -> Id {
+    let val_sym = expr.add(ControlLang::Symbol(symbol_for_id(value)));
+    let label_sym = expr.add(ControlLang::Symbol(symbol_for_id(label)));
+    expr.add(ControlLang::Pair([val_sym, label_sym]))
+}
+
+fn extract_pairs(expr: &RecExpr<ControlLang>, root: Id) -> Option<Vec<(u32, u32)>> {
+    fn collect(expr: &RecExpr<ControlLang>, node: Id, out: &mut Vec<(u32, u32)>) -> bool {
+        match &expr[node] {
+            ControlLang::Pair([value_id, label_id]) => {
+                let Some(value) = symbol_id(&expr[*value_id]) else {
+                    return false;
+                };
+                let Some(label) = symbol_id(&expr[*label_id]) else {
+                    return false;
+                };
+                out.push((value, label));
+                true
+            }
+            ControlLang::Phi([left, right]) => {
+                collect(expr, *left, out) && collect(expr, *right, out)
+            }
+            _ => false,
+        }
+    }
+
+    let mut out = Vec::new();
+    if collect(expr, root, &mut out) {
+        Some(out)
+    } else {
+        None
+    }
+}
+
+fn extract_return_pairs(expr: &RecExpr<ControlLang>, root: Id) -> Option<Vec<(u32, u32)>> {
+    fn collect_return(expr: &RecExpr<ControlLang>, node: Id, out: &mut Vec<(u32, u32)>) -> bool {
+        match &expr[node] {
+            ControlLang::Merge([left, right]) => {
+                collect_return(expr, *left, out) && collect_return(expr, *right, out)
+            }
+            ControlLang::RetVal(inner) => extract_pairs(expr, *inner)
+                .map(|pairs| {
+                    out.extend(pairs);
+                    true
+                })
+                .unwrap_or(false),
+            _ => false,
+        }
+    }
+
+    let mut out = Vec::new();
+    if collect_return(expr, root, &mut out) {
+        Some(out)
+    } else {
+        None
+    }
+}
+
+fn pairs_match_cases(pairs: &[(u32, u32)], cases: &[ReturnCase]) -> bool {
+    if pairs.len() != cases.len() {
+        return false;
+    }
+    let mut expected = HashSet::new();
+    for case in cases {
+        let Some(value) = case.value else {
+            return false;
+        };
+        expected.insert((value, case.label));
+    }
+    if expected.len() != cases.len() {
+        return false;
+    }
+    let actual: HashSet<_> = pairs.iter().copied().collect();
+    actual == expected
 }
 
 fn symbol_for_id(id: u32) -> Symbol {
@@ -186,22 +417,23 @@ fn selection_candidates(func: &Function) -> Option<Vec<SelectionCandidate>> {
         {
             continue;
         }
-        let true_term = func
+        let true_val = match func
             .blocks
             .get(true_idx)
-            .and_then(|b| b.instructions.last());
-        let false_term = func
+            .and_then(|b| b.instructions.last())
+            .and_then(return_value_operand)
+        {
+            Some(val) => val,
+            None => continue,
+        };
+        let false_val = match func
             .blocks
             .get(false_idx)
-            .and_then(|b| b.instructions.last());
-        let (Some(true_term), Some(false_term)) = (true_term, false_term) else {
-            continue;
-        };
-        let Some(true_val) = return_value_operand(true_term) else {
-            continue;
-        };
-        let Some(false_val) = return_value_operand(false_term) else {
-            continue;
+            .and_then(|b| b.instructions.last())
+            .and_then(return_value_operand)
+        {
+            Some(val) => val,
+            None => continue,
         };
         if true_val.is_some() != false_val.is_some() {
             continue;
@@ -210,13 +442,19 @@ fn selection_candidates(func: &Function) -> Option<Vec<SelectionCandidate>> {
         candidates.push(SelectionCandidate {
             merge_idx,
             merge_label,
-            true_idx,
-            false_idx,
-            true_label,
-            false_label,
             cond_id,
-            true_val,
-            false_val,
+            cases: vec![
+                ReturnCase {
+                    block_idx: true_idx,
+                    label: true_label,
+                    value: true_val,
+                },
+                ReturnCase {
+                    block_idx: false_idx,
+                    label: false_label,
+                    value: false_val,
+                },
+            ],
             return_type,
         });
     }
@@ -224,20 +462,134 @@ fn selection_candidates(func: &Function) -> Option<Vec<SelectionCandidate>> {
     Some(candidates)
 }
 
-fn apply_merge_return_void(func: &mut Function, candidate: &SelectionCandidate) -> bool {
+fn switch_candidates(func: &Function) -> Option<Vec<SwitchCandidate>> {
+    let label_to_idx = label_to_index(func)?;
+    let preds = compute_predecessors(func, &label_to_idx)?;
+    let return_type = func.def.as_ref()?.result_type?;
+    let mut candidates = Vec::new();
+
+    for block in &func.blocks {
+        let merge_inst = block
+            .instructions
+            .iter()
+            .find(|inst| inst.class.opcode == Op::SelectionMerge);
+        let terminator = block.instructions.last();
+        let (Some(merge_inst), Some(terminator)) = (merge_inst, terminator) else {
+            continue;
+        };
+        if terminator.class.opcode != Op::Switch {
+            continue;
+        }
+        let merge_label = merge_inst.operands.get(0).and_then(|op| op.id_ref_any());
+        let default_label = terminator.operands.get(1).and_then(|op| op.id_ref_any());
+        let Some(merge_label) = merge_label else {
+            continue;
+        };
+        let Some(default_label) = default_label else {
+            continue;
+        };
+        let Some(&merge_idx) = label_to_idx.get(&merge_label) else {
+            continue;
+        };
+        if !preds
+            .get(merge_idx)
+            .map(|incoming| incoming.is_empty())
+            .unwrap_or(false)
+        {
+            continue;
+        }
+
+        let mut labels = Vec::new();
+        labels.push(default_label);
+        let mut iter = terminator.operands.iter().skip(2);
+        while let Some(_literal) = iter.next() {
+            let Some(label_op) = iter.next() else {
+                labels.clear();
+                break;
+            };
+            let rspirv::dr::Operand::IdRef(label) = label_op else {
+                labels.clear();
+                break;
+            };
+            labels.push(*label);
+        }
+        if labels.is_empty() {
+            continue;
+        }
+
+        let mut seen = HashSet::new();
+        let mut cases = Vec::new();
+        let mut value_kind = None;
+        for label in labels {
+            if label == merge_label {
+                cases.clear();
+                break;
+            }
+            if !seen.insert(label) {
+                cases.clear();
+                break;
+            }
+            let Some(&block_idx) = label_to_idx.get(&label) else {
+                cases.clear();
+                break;
+            };
+            let value = match func
+                .blocks
+                .get(block_idx)
+                .and_then(|b| b.instructions.last())
+                .and_then(return_value_operand)
+            {
+                Some(val) => val,
+                None => {
+                    cases.clear();
+                    break;
+                }
+            };
+            if value_kind.map_or(false, |is_value| is_value != value.is_some()) {
+                cases.clear();
+                break;
+            }
+            value_kind = Some(value.is_some());
+            cases.push(ReturnCase {
+                block_idx,
+                label,
+                value,
+            });
+        }
+
+        if cases.len() < 2 {
+            continue;
+        }
+
+        candidates.push(SwitchCandidate {
+            merge_idx,
+            merge_label,
+            cases,
+            return_type,
+        });
+    }
+
+    Some(candidates)
+}
+
+fn apply_merge_return_void_cases(
+    func: &mut Function,
+    merge_idx: usize,
+    merge_label: u32,
+    cases: &[ReturnCase],
+) -> bool {
     let branch_inst = Instruction::new(
         Op::Branch,
         None,
         None,
-        vec![rspirv::dr::Operand::IdRef(candidate.merge_label)],
+        vec![rspirv::dr::Operand::IdRef(merge_label)],
     );
-    if !replace_terminator_with_branch(func, candidate.true_idx, branch_inst.clone()) {
-        return false;
+    for case in cases {
+        if !replace_terminator_with_branch(func, case.block_idx, branch_inst.clone()) {
+            return false;
+        }
     }
-    if !replace_terminator_with_branch(func, candidate.false_idx, branch_inst.clone()) {
-        return false;
-    }
-    let Some(merge_block) = func.blocks.get_mut(candidate.merge_idx) else {
+    let Some(merge_block) = func.blocks.get_mut(merge_idx) else {
         return false;
     };
     merge_block.instructions.clear();
@@ -247,40 +599,40 @@ fn apply_merge_return_void(func: &mut Function, candidate: &SelectionCandidate) 
     true
 }
 
-fn apply_merge_return_value(
+fn apply_merge_return_pairs(
     func: &mut Function,
-    candidate: &SelectionCandidate,
-    true_value: u32,
-    false_value: u32,
+    merge_idx: usize,
+    merge_label: u32,
+    cases: &[ReturnCase],
+    pairs: &[(u32, u32)],
+    return_type: u32,
     next_id: &mut u32,
 ) -> bool {
     let branch_inst = Instruction::new(
         Op::Branch,
         None,
         None,
-        vec![rspirv::dr::Operand::IdRef(candidate.merge_label)],
+        vec![rspirv::dr::Operand::IdRef(merge_label)],
     );
-    if !replace_terminator_with_branch(func, candidate.true_idx, branch_inst.clone()) {
-        return false;
+    for case in cases {
+        if !replace_terminator_with_branch(func, case.block_idx, branch_inst.clone()) {
+            return false;
+        }
     }
-    if !replace_terminator_with_branch(func, candidate.false_idx, branch_inst.clone()) {
-        return false;
-    }
-    let Some(merge_block) = func.blocks.get_mut(candidate.merge_idx) else {
+    let Some(merge_block) = func.blocks.get_mut(merge_idx) else {
         return false;
     };
     merge_block.instructions.clear();
     let phi_id = *next_id;
     *next_id = next_id.saturating_add(1);
-    let phi_ops = vec![
-        rspirv::dr::Operand::IdRef(true_value),
-        rspirv::dr::Operand::IdRef(candidate.true_label),
-        rspirv::dr::Operand::IdRef(false_value),
-        rspirv::dr::Operand::IdRef(candidate.false_label),
-    ];
+    let mut phi_ops = Vec::with_capacity(pairs.len() * 2);
+    for (value, label) in pairs {
+        phi_ops.push(rspirv::dr::Operand::IdRef(*value));
+        phi_ops.push(rspirv::dr::Operand::IdRef(*label));
+    }
     merge_block.instructions.push(Instruction::new(
         Op::Phi,
-        Some(candidate.return_type),
+        Some(return_type),
         Some(phi_id),
         phi_ops,
     ));
