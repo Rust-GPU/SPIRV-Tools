@@ -3,7 +3,9 @@ use std::process::Command;
 
 use rspirv::binary::Assemble;
 use rspirv::dr::{Builder, Loader};
-use rspirv::spirv::{AddressingModel, Capability, FunctionControl, MemoryModel, Op};
+use rspirv::spirv::{
+    AddressingModel, Capability, FunctionControl, MemoryModel, Op, SelectionControl,
+};
 use std::sync::{Mutex, MutexGuard};
 use tempfile::tempdir;
 
@@ -981,6 +983,75 @@ fn build_cse_across_blocks_module() -> (Vec<u32>, u32, u32) {
     b.end_function().unwrap();
     let _ = entry;
     (b.module().assemble(), add0, add1)
+}
+
+fn build_branch_shared_expr_pre_module() -> (Vec<u32>, u32, u32, u32, u32, u32) {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+    let void = b.type_void();
+    let int = b.type_int(32, 1);
+    let bool_ty = b.type_bool();
+    let func_ty = b.type_function(void, vec![int, int]);
+    let _func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let x = b.function_parameter(int).unwrap();
+    let y = b.function_parameter(int).unwrap();
+
+    let block_a = b.id();
+    let block_b = b.id();
+    let block_c = b.id();
+    let block_left = b.id();
+    let block_right = b.id();
+    let block_merge = b.id();
+    let seed_id = b.id();
+
+    let c1 = b.constant_bit32(int, 1);
+    let c2 = b.constant_bit32(int, 2);
+    let c3 = b.constant_bit32(int, 3);
+    let cond = b.constant_true(bool_ty);
+
+    b.begin_block(None).unwrap();
+    b.branch(block_a).unwrap();
+
+    // Block order is intentionally out of dominance order to exercise PRE.
+    b.begin_block(Some(block_b)).unwrap();
+    let tmp_b = b.i_add(int, None, seed_id, c1).expect("tmp_b");
+    b.branch(block_c).unwrap();
+
+    b.begin_block(Some(block_c)).unwrap();
+    let val1 = b.i_add(int, None, tmp_b, c2).expect("val1");
+    let val2 = b.i_add(int, None, tmp_b, c3).expect("val2");
+    b.selection_merge(block_merge, SelectionControl::NONE)
+        .expect("selection merge");
+    b.branch_conditional(cond, block_left, block_right, std::iter::empty())
+        .expect("branch conditional");
+
+    b.begin_block(Some(block_left)).unwrap();
+    let _expr_left = b.i_add(int, None, val1, val2).expect("left expr");
+    b.branch(block_merge).unwrap();
+
+    b.begin_block(Some(block_right)).unwrap();
+    let _expr_right = b.i_add(int, None, val1, val2).expect("right expr");
+    b.branch(block_merge).unwrap();
+
+    b.begin_block(Some(block_merge)).unwrap();
+    b.ret().unwrap();
+
+    b.begin_block(Some(block_a)).unwrap();
+    let _seed = b.i_add(int, Some(seed_id), x, y).expect("seed");
+    b.branch(block_b).unwrap();
+
+    b.end_function().unwrap();
+    (
+        b.module().assemble(),
+        block_c,
+        block_left,
+        block_right,
+        val1,
+        val2,
+    )
 }
 
 fn build_copy_chain_module() -> (Vec<u32>, u32, u32) {
@@ -3751,6 +3822,70 @@ fn cli_opt_block_dedupes_common_expr_across_blocks() {
     );
     // Rust may keep the later add id; parity with C++ prefers the first, but
     // deduplication is still achieved as long as only one add remains.
+}
+
+#[test]
+fn cli_opt_block_hoists_branch_shared_expr_to_nearest_dom() {
+    let _guard = env_guard();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+    let (words, block_c, block_left, block_right, val1, val2) =
+        build_branch_shared_expr_pre_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let output = dir.path().join("output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let status = Command::new(exe)
+        .arg(&input)
+        .arg(&output)
+        .status()
+        .expect("run opt_block");
+    assert!(status.success(), "opt_block should exit successfully");
+
+    let optimized_bytes = std::fs::read(&output).expect("read output");
+    let optimized_words = bytes_to_words(&optimized_bytes);
+    let mut loader = Loader::new();
+    rspirv::binary::parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+    let func = module
+        .functions
+        .first()
+        .expect("function present after optimization");
+
+    let find_block = |label| {
+        func.blocks
+            .iter()
+            .find(|block| block.label.as_ref().and_then(|inst| inst.result_id) == Some(label))
+            .expect("block label present")
+    };
+    let add_with_operands = |inst: &rspirv::dr::Instruction| {
+        if inst.class.opcode != Op::IAdd {
+            return false;
+        }
+        let operands: Vec<u32> = inst
+            .operands
+            .iter()
+            .filter_map(|op| op.id_ref_any())
+            .collect();
+        operands.len() == 2
+            && ((operands[0] == val1 && operands[1] == val2)
+                || (operands[0] == val2 && operands[1] == val1))
+    };
+
+    let block_c = find_block(block_c);
+    let block_left = find_block(block_left);
+    let block_right = find_block(block_right);
+
+    assert!(
+        block_c.instructions.iter().any(add_with_operands),
+        "shared add should be hoisted into the nearest dominating block"
+    );
+    assert!(
+        !block_left.instructions.iter().any(add_with_operands)
+            && !block_right.instructions.iter().any(add_with_operands),
+        "branch blocks should use the hoisted expression instead of recomputing it"
+    );
 }
 
 #[test]

@@ -137,6 +137,7 @@ fn optimize_module(
         .filter_map(|inst| inst.result_id.map(|id| (id, inst.clone())))
         .filter(|(_, inst)| inst.class.opcode == Op::Constant)
         .collect();
+    let mut next_id = next_result_id_module(&module);
 
     let mut preserved_roots: Vec<u32> = Vec::new();
 
@@ -222,7 +223,7 @@ fn optimize_module(
         if !disable_global && env::var("SPIRV_TOOLS_DISABLE_GLOBAL_OPT").is_err() {
             if let Some(doms) = compute_block_dominators(func) {
                 dedup_common_arith(func, &doms);
-                insert_pre_for_shared_arith(func, &doms);
+                insert_pre_for_shared_arith(func, &doms, &mut next_id);
             }
         }
     }
@@ -234,6 +235,7 @@ fn optimize_module(
 
     dedup_constants(&mut module);
     dead_code_eliminate(&mut module, &preserved_roots);
+    update_module_bound(&mut module, next_id);
 
     Ok(module.assemble())
 }
@@ -664,6 +666,30 @@ fn compute_immediate_dominators(
     idoms
 }
 
+fn compute_dominator_depths(idoms: &HashMap<usize, Option<usize>>) -> HashMap<usize, usize> {
+    fn depth_for(
+        block: usize,
+        idoms: &HashMap<usize, Option<usize>>,
+        depths: &mut HashMap<usize, usize>,
+    ) -> usize {
+        if let Some(&depth) = depths.get(&block) {
+            return depth;
+        }
+        let depth = match idoms.get(&block).and_then(|parent| *parent) {
+            Some(parent) => depth_for(parent, idoms, depths).saturating_add(1),
+            None => 0,
+        };
+        depths.insert(block, depth);
+        depth
+    }
+
+    let mut depths = HashMap::new();
+    for &block in idoms.keys() {
+        let _ = depth_for(block, idoms, &mut depths);
+    }
+    depths
+}
+
 fn dominates(dominators: &HashMap<usize, HashSet<usize>>, a: usize, b: usize) -> bool {
     dominators
         .get(&b)
@@ -880,7 +906,11 @@ fn prune_dead_copies(func: &mut rspirv::dr::Function) {
 fn insert_pre_for_shared_arith(
     func: &mut rspirv::dr::Function,
     dominators: &HashMap<usize, HashSet<usize>>,
+    next_id: &mut u32,
 ) {
+    let idoms = compute_immediate_dominators(dominators);
+    let dom_depths = compute_dominator_depths(&idoms);
+    let id_to_block = collect_id_def_blocks(func);
     let mut expr_to_blocks: HashMap<ArithKey, Vec<usize>> = HashMap::new();
     for (idx, block) in func.blocks.iter().enumerate() {
         for inst in &block.instructions {
@@ -897,15 +927,25 @@ fn insert_pre_for_shared_arith(
         if blocks.len() < 2 {
             continue;
         }
-        if let Some(merge) = find_nearest_common_dominator(&blocks, dominators) {
-            // Skip hoisting if the merged expression is trivial (all operands are constants).
+        if let Some(merge) = find_nearest_common_dominator(&blocks, dominators, &dom_depths) {
+            // Skip hoisting if the merged expression has no id operands.
             if key.operands.is_empty() {
                 continue;
             }
             if key.opcode == Op::CopyObject {
                 continue;
             }
-            hoist_expr_to_block(func, &key, merge, &blocks);
+            let operand_blocks: Vec<_> = key
+                .operands
+                .iter()
+                .filter_map(|op| id_to_block.get(op).copied())
+                .collect();
+            if operand_blocks
+                .iter()
+                .all(|op_block| dominates(dominators, *op_block, merge))
+            {
+                hoist_expr_to_block(func, &key, merge, &blocks, next_id);
+            }
         }
     }
 }
@@ -913,6 +953,7 @@ fn insert_pre_for_shared_arith(
 fn find_nearest_common_dominator(
     blocks: &[usize],
     dominators: &HashMap<usize, HashSet<usize>>,
+    dom_depths: &HashMap<usize, usize>,
 ) -> Option<usize> {
     let mut dom_sets: Vec<HashSet<usize>> = blocks
         .iter()
@@ -925,7 +966,9 @@ fn find_nearest_common_dominator(
     for set in dom_sets {
         intersection = intersection.intersection(&set).copied().collect();
     }
-    intersection.into_iter().max()
+    intersection
+        .into_iter()
+        .max_by_key(|block| (dom_depths.get(block).copied().unwrap_or(0), *block))
 }
 
 fn dedup_constants(module: &mut rspirv::dr::Module) {
@@ -992,6 +1035,7 @@ fn hoist_expr_to_block(
     key: &ArithKey,
     target_block_idx: usize,
     original_blocks: &[usize],
+    next_id: &mut u32,
 ) {
     if target_block_idx >= func.blocks.len() {
         return;
@@ -1013,12 +1057,33 @@ fn hoist_expr_to_block(
     }
     let inst_template = Instruction::new(key.opcode, key.result_type, None, operands);
 
-    let new_id = next_result_id(func);
+    let new_id = *next_id;
+    *next_id = next_id.saturating_add(1);
     let mut hoisted = inst_template.clone();
     hoisted.result_id = Some(new_id);
+    let operand_set: HashSet<u32> = key.operands.iter().copied().collect();
+    let mut insert_idx = 0;
+    let block_insts = &func.blocks[target_block_idx].instructions;
+    for (idx, inst) in block_insts.iter().enumerate() {
+        if let Some(id) = inst.result_id {
+            if operand_set.contains(&id) {
+                insert_idx = insert_idx.max(idx + 1);
+            }
+        }
+    }
+    let mut control_idx = block_insts.len();
+    for (idx, inst) in block_insts.iter().enumerate() {
+        if matches!(inst.class.opcode, Op::SelectionMerge | Op::LoopMerge)
+            || is_terminator(inst.class.opcode)
+        {
+            control_idx = idx;
+            break;
+        }
+    }
+    let insert_idx = insert_idx.min(control_idx);
     func.blocks[target_block_idx]
         .instructions
-        .insert(0, hoisted);
+        .insert(insert_idx, hoisted);
 
     for &blk_idx in original_blocks {
         let block = match func.blocks.get_mut(blk_idx) {
@@ -1041,16 +1106,68 @@ fn hoist_expr_to_block(
     }
 }
 
-fn next_result_id(func: &rspirv::dr::Function) -> u32 {
+fn next_result_id_module(module: &rspirv::dr::Module) -> u32 {
     let mut max_id = 1;
-    for block in &func.blocks {
-        for inst in &block.instructions {
-            if let Some(id) = inst.result_id {
+    for inst in &module.types_global_values {
+        if let Some(id) = inst.result_id {
+            max_id = max_id.max(id + 1);
+        }
+    }
+    for func in &module.functions {
+        if let Some(def) = &func.def {
+            if let Some(id) = def.result_id {
                 max_id = max_id.max(id + 1);
+            }
+        }
+        if let Some(end) = &func.end {
+            if let Some(id) = end.result_id {
+                max_id = max_id.max(id + 1);
+            }
+        }
+        for param in &func.parameters {
+            if let Some(id) = param.result_id {
+                max_id = max_id.max(id + 1);
+            }
+        }
+        for block in &func.blocks {
+            if let Some(label) = &block.label {
+                if let Some(id) = label.result_id {
+                    max_id = max_id.max(id + 1);
+                }
+            }
+            for inst in &block.instructions {
+                if let Some(id) = inst.result_id {
+                    max_id = max_id.max(id + 1);
+                }
             }
         }
     }
     max_id
+}
+
+fn update_module_bound(module: &mut rspirv::dr::Module, next_id: u32) {
+    if let Some(header) = module.header.as_mut() {
+        if header.bound < next_id {
+            header.bound = next_id;
+        }
+    }
+}
+
+fn collect_id_def_blocks(func: &rspirv::dr::Function) -> HashMap<u32, usize> {
+    let mut id_to_block = HashMap::new();
+    for (idx, block) in func.blocks.iter().enumerate() {
+        if let Some(label) = &block.label {
+            if let Some(id) = label.result_id {
+                id_to_block.insert(id, idx);
+            }
+        }
+        for inst in &block.instructions {
+            if let Some(id) = inst.result_id {
+                id_to_block.insert(id, idx);
+            }
+        }
+    }
+    id_to_block
 }
 
 #[cfg(test)]
