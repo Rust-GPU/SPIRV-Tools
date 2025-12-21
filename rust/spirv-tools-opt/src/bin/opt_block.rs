@@ -109,6 +109,7 @@ fn is_arith(opcode: Op) -> bool {
             | Op::SDiv
             | Op::UDiv
             | Op::SRem
+            | Op::SMod
             | Op::UMod
             | Op::ShiftLeftLogical
             | Op::ShiftRightLogical
@@ -895,6 +896,15 @@ fn optimize_function_egraph(
             ),
             SpirvLang::SRem([a, b]) => Instruction::new(
                 Op::SRem,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::SMod([a, b]) => Instruction::new(
+                Op::SMod,
                 Some(result_type),
                 Some(result_id),
                 vec![

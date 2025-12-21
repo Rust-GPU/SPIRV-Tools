@@ -614,6 +614,7 @@ fn arith_signature(words: &[u32]) -> Vec<(Op, Vec<String>)> {
                 | Op::SDiv
                 | Op::UDiv
                 | Op::SRem
+                | Op::SMod
                 | Op::UMod
                 | Op::ShiftLeftLogical
                 | Op::ShiftRightLogical

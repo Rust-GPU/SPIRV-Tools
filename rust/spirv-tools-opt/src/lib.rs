@@ -40,7 +40,7 @@ pub mod fuzzing {
             let node = if idx == 0 {
                 SpirvLang::Const(ConstValue::new(u.arbitrary()?))
             } else {
-                match u.choose(&[0u8, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])? {
+                match u.choose(&[0u8, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16])? {
                     0 => SpirvLang::Const(ConstValue::new(u.arbitrary()?)),
                     1 => {
                         let a = choose_child(u, idx - 1)?;
@@ -134,6 +134,11 @@ pub mod fuzzing {
                     15 => {
                         let a = choose_child(u, idx - 1)?;
                         SpirvLang::LogNot(Id::from(a))
+                    }
+                    16 => {
+                        let a = choose_child(u, idx - 1)?;
+                        let b = choose_child(u, idx - 1)?;
+                        SpirvLang::SMod([Id::from(a), Id::from(b)])
                     }
                     _ => {
                         let a = choose_child(u, idx - 1)?;
@@ -283,6 +288,7 @@ define_language! {
         "sdiv" = SDiv([Id; 2]),
         "udiv" = UDiv([Id; 2]),
         "srem" = SRem([Id; 2]),
+        "smod" = SMod([Id; 2]),
         "umod" = UMod([Id; 2]),
         "neg" = Neg(Id),
         "select" = Select([Id; 3]),
@@ -560,6 +566,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
             UModConstDecompose { x: var("?x"), c: var("?c") }
         }),
         rewrite!("srem-zero-left"; "(srem ?c ?x)" => "?c" if is_const_zero(var("?c"))),
+        rewrite!("smod-zero-left"; "(smod ?c ?x)" => "?c" if is_const_zero(var("?c"))),
         rewrite!("umod-zero-left"; "(umod ?c ?x)" => "?c" if is_const_zero(var("?c"))),
         rewrite!("umod-power-of-two"; "(umod ?x ?c)" => {
             UModPowerOfTwo { x: var("?x"), c: var("?c") }
@@ -842,6 +849,12 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("srem-mul-const-zero-right"; "(srem (* ?x ?c) ?c)" => {
             RemMulConstZero { c: var("?c") }
         }),
+        rewrite!("smod-mul-const-zero-left"; "(smod (* ?c ?x) ?c)" => {
+            RemMulConstZero { c: var("?c") }
+        }),
+        rewrite!("smod-mul-const-zero-right"; "(smod (* ?x ?c) ?c)" => {
+            RemMulConstZero { c: var("?c") }
+        }),
         rewrite!("umod-mul-const-zero-left"; "(umod (* ?c ?x) ?c)" => {
             RemMulConstZero { c: var("?c") }
         }),
@@ -946,8 +959,10 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("sdiv-one"; "(sdiv ?a ?b)" => { DivOne { a: var("?a"), b: var("?b") } }),
         rewrite!("udiv-one"; "(udiv ?a ?b)" => { DivOne { a: var("?a"), b: var("?b") } }),
         rewrite!("srem-fold"; "(srem ?a ?b)" => { FoldRem { signed: true } }),
+        rewrite!("smod-fold"; "(smod ?a ?b)" => { FoldSMod { a: var("?a"), b: var("?b") } }),
         rewrite!("umod-fold"; "(umod ?a ?b)" => { FoldRem { signed: false } }),
         rewrite!("srem-one"; "(srem ?a ?b)" => { RemOne { b: var("?b") } }),
+        rewrite!("smod-one"; "(smod ?a ?b)" => { RemOne { b: var("?b") } }),
         rewrite!("umod-one"; "(umod ?a ?b)" => { RemOne { b: var("?b") } }),
         rewrite!("add-neg-cancel"; "(+ ?a (neg ?a))" => { AddNegZero }),
         rewrite!("add-neg-cancel-swap"; "(+ (neg ?a) ?a)" => { AddNegZero }),
@@ -1029,6 +1044,10 @@ struct FoldDiv {
 }
 struct FoldRem {
     signed: bool,
+}
+struct FoldSMod {
+    a: Var,
+    b: Var,
 }
 struct SubSelf;
 struct SubZeroLeft;
@@ -1542,6 +1561,31 @@ impl Applier<SpirvLang, ()> for FoldRem {
         } else {
             combine_consts(a, b, u64::wrapping_rem)
         };
+        let id = egraph.add(SpirvLang::Const(rem));
+        egraph.union(eclass, id);
+        vec![id]
+    }
+}
+
+impl Applier<SpirvLang, ()> for FoldSMod {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(a) = const_value(egraph, subst[self.a]) else {
+            return Vec::new();
+        };
+        let Some(b) = const_value(egraph, subst[self.b]) else {
+            return Vec::new();
+        };
+        if b.get_u64() == 0 {
+            return Vec::new();
+        }
+        let rem = combine_signed_mod(a, b);
         let id = egraph.add(SpirvLang::Const(rem));
         egraph.union(eclass, id);
         vec![id]
@@ -3767,6 +3811,24 @@ fn combine_signed_consts(
     ConstValue::new_with_width(f(l, r) as u64, width)
 }
 
+fn div_floor(lhs: i128, rhs: i128) -> i128 {
+    let (d, r) = (lhs / rhs, lhs % rhs);
+    if r != 0 && ((r > 0) != (rhs > 0)) {
+        d - 1
+    } else {
+        d
+    }
+}
+
+fn combine_signed_mod(lhs: ConstValue, rhs: ConstValue) -> ConstValue {
+    let width = max_width(lhs, rhs);
+    let l = sign_extend_bits(lhs, width);
+    let r = sign_extend_bits(rhs, width);
+    let div = div_floor(l, r);
+    let rem = l - r * div;
+    ConstValue::new_with_width(rem as u64, width)
+}
+
 fn is_power_of_two(value: u64) -> Option<u32> {
     if value == 0 || value.count_ones() != 1 {
         return None;
@@ -3889,6 +3951,34 @@ mod tests {
             optimized,
             RecExpr::from(vec![SpirvLang::Const(ConstValue::new_with_width(
                 (-1i64) as u64,
+                64
+            ))])
+        );
+    }
+
+    #[test]
+    fn folds_signed_mod_u64() {
+        let expr_neg_dividend = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new64((-9i64) as u64)),
+            SpirvLang::Const(ConstValue::new64(4)),
+            SpirvLang::SMod([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized_neg_dividend = optimize_expr(&expr_neg_dividend);
+        assert_eq!(
+            optimized_neg_dividend,
+            RecExpr::from(vec![SpirvLang::Const(ConstValue::new_with_width(3, 64))])
+        );
+
+        let expr_neg_divisor = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new64(9)),
+            SpirvLang::Const(ConstValue::new64((-4i64) as u64)),
+            SpirvLang::SMod([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized_neg_divisor = optimize_expr(&expr_neg_divisor);
+        assert_eq!(
+            optimized_neg_divisor,
+            RecExpr::from(vec![SpirvLang::Const(ConstValue::new_with_width(
+                (-3i64) as u64,
                 64
             ))])
         );
@@ -5283,6 +5373,22 @@ mod tests {
             )
         });
         assert!(has_zero_signed, "srem by one should fold to zero");
+
+        let expr_mod = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),        // 0
+            SpirvLang::Const(ConstValue::new(1)),        // 1
+            SpirvLang::SMod([Id::from(0), Id::from(1)]), // 2 = x mod 1
+        ]);
+        let runner_mod = Runner::default().with_expr(&expr_mod).run(&rewrites());
+        let class_mod = runner_mod.egraph.find(runner_mod.roots[0]);
+        let nodes_mod = &runner_mod.egraph[class_mod].nodes;
+        let has_zero_mod = nodes_mod.iter().any(|n| {
+            matches!(
+                n,
+                SpirvLang::Const(val) if val.get() == 0
+            )
+        });
+        assert!(has_zero_mod, "smod by one should fold to zero");
     }
 
     #[test]
@@ -5314,6 +5420,37 @@ mod tests {
                 && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0)]
         });
         assert!(folded, "umod by one should fold to zero with same id");
+    }
+
+    #[test]
+    fn optimize_arith_block_folds_smod_by_one() {
+        let int = 1;
+        let c9 = Instruction::new(
+            rspirv::spirv::Op::Constant,
+            Some(int),
+            Some(1),
+            vec![rspirv::dr::Operand::LiteralBit32(9)],
+        );
+        let c1 = Instruction::new(
+            rspirv::spirv::Op::Constant,
+            Some(int),
+            Some(2),
+            vec![rspirv::dr::Operand::LiteralBit32(1)],
+        );
+        let smod = Instruction::new(
+            rspirv::spirv::Op::SMod,
+            Some(int),
+            Some(3),
+            vec![rspirv::dr::Operand::IdRef(1), rspirv::dr::Operand::IdRef(2)],
+        );
+        let block = vec![c9, c1, smod];
+        let optimized = optimize_arith_block(&block).expect("optimization should succeed");
+        let folded = optimized.iter().any(|inst| {
+            inst.class.opcode == rspirv::spirv::Op::Constant
+                && inst.result_id == Some(3)
+                && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(0)]
+        });
+        assert!(folded, "smod by one should fold to zero with same id");
     }
 
     #[test]

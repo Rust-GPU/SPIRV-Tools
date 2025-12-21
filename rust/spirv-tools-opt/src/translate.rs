@@ -104,7 +104,7 @@ fn make_symbol(id: Word) -> Symbol {
 ///
 /// Supported ops:
 /// - `OpConstant` (32/64-bit), `OpConstantTrue/False/Null`
-/// - Integer arithmetic/bitwise ops (`OpIAdd`, `OpIMul`, `OpISub`, shifts, bitwise)
+/// - Integer arithmetic/bitwise ops (`OpIAdd`, `OpIMul`, `OpISub`, `OpSRem`, `OpSMod`, `OpUMod`, shifts, bitwise)
 /// - Integer comparisons (`OpIEqual`, `OpINotEqual`, `OpSLessThan`, etc.)
 /// - Logical ops (`OpLogicalNot`, `OpLogicalAnd`, `OpLogicalOr`, logical eq/ne)
 /// - `OpSelect`, `OpCopyObject`, and unary `OpSNegate`
@@ -607,7 +607,7 @@ pub fn translate_arith_with_types(
                 );
                 expr.add(SpirvLang::BitAnd([lhs, rhs]))
             }
-            Op::SRem | Op::UMod => {
+            Op::SRem | Op::SMod | Op::UMod => {
                 let mut ops = inst
                     .operands
                     .iter()
@@ -637,10 +637,11 @@ pub fn translate_arith_with_types(
                     &mut symbol_widths,
                     &id_widths,
                 );
-                let node = if opcode == Op::SRem {
-                    SpirvLang::SRem([lhs, rhs])
-                } else {
-                    SpirvLang::UMod([lhs, rhs])
+                let node = match opcode {
+                    Op::SRem => SpirvLang::SRem([lhs, rhs]),
+                    Op::SMod => SpirvLang::SMod([lhs, rhs]),
+                    Op::UMod => SpirvLang::UMod([lhs, rhs]),
+                    _ => return Err(TranslateError::UnsupportedOp(opcode)),
                 };
                 expr.add(node)
             }
@@ -907,6 +908,15 @@ pub fn rebuild_arith_with_original_ids(
             ),
             SpirvLang::SRem([a, b]) => Instruction::new(
                 Op::SRem,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
+            SpirvLang::SMod([a, b]) => Instruction::new(
+                Op::SMod,
                 Some(result_type),
                 Some(result_id),
                 vec![
@@ -1294,6 +1304,15 @@ pub fn optimize_arith_block_with_types(
                     rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
                 ],
             ),
+            SpirvLang::SMod([a, b]) => Instruction::new(
+                Op::SMod,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)]),
+                    rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*b)]),
+                ],
+            ),
             SpirvLang::UMod([a, b]) => Instruction::new(
                 Op::UMod,
                 Some(result_type),
@@ -1548,6 +1567,7 @@ fn expr_cost(expr: &RecExpr<SpirvLang>) -> usize {
             SpirvLang::Add([a, b])
             | SpirvLang::Sub([a, b])
             | SpirvLang::SRem([a, b])
+            | SpirvLang::SMod([a, b])
             | SpirvLang::UMod([a, b])
             | SpirvLang::Shl([a, b])
             | SpirvLang::ShrS([a, b])
