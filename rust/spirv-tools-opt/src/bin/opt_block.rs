@@ -105,6 +105,7 @@ fn is_arith(opcode: Op) -> bool {
             | Op::BitwiseXor
             | Op::BitwiseAnd
             | Op::Not
+            | Op::BitReverse
             | Op::SNegate
             | Op::SDiv
             | Op::UDiv
@@ -1109,6 +1110,12 @@ fn optimize_function_egraph(
             ),
             SpirvLang::BitNot(a) => Instruction::new(
                 Op::Not,
+                Some(result_type),
+                Some(result_id),
+                vec![rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)])],
+            ),
+            SpirvLang::BitReverse(a) => Instruction::new(
+                Op::BitReverse,
                 Some(result_type),
                 Some(result_id),
                 vec![rspirv::dr::Operand::IdRef(rec_result_ids[usize::from(*a)])],

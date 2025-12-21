@@ -1,6 +1,7 @@
 use rspirv::dr::Instruction;
 use rspirv::spirv::Op;
-use spirv_tools_opt::translate::optimize_arith_block;
+use spirv_tools_opt::translate::{optimize_arith_block, optimize_arith_block_with_types};
+use std::collections::HashMap;
 
 fn inst(
     op: Op,
@@ -99,6 +100,69 @@ fn corpus_folds_add_two_constants() {
     assert_eq!(folded.class.opcode, Op::Constant);
     assert_eq!(folded.result_id, Some(5));
     assert_eq!(folded.operands, vec![rspirv::dr::Operand::LiteralBit32(5)]);
+}
+
+#[test]
+fn corpus_folds_bitreverse_const_32() {
+    let int = 1;
+    let cases = [
+        (0x0000_0001u32, 0x8000_0000u32),
+        (0x0000_0000u32, 0x0000_0000u32),
+        (0xFFFF_FFFFu32, 0xFFFF_FFFFu32),
+        (0x0000_FFFFu32, 0xFFFF_0000u32),
+    ];
+    for (value, expected) in cases {
+        let c = inst(
+            Op::Constant,
+            int,
+            1,
+            vec![rspirv::dr::Operand::LiteralBit32(value)],
+        );
+        let bitrev = inst(
+            Op::BitReverse,
+            int,
+            2,
+            vec![rspirv::dr::Operand::IdRef(1)],
+        );
+        let optimized = optimize_arith_block(&[c, bitrev]).expect("optimize");
+        assert_eq!(optimized.len(), 1);
+        let folded = &optimized[0];
+        assert_eq!(folded.class.opcode, Op::Constant);
+        assert_eq!(folded.result_id, Some(2));
+        assert_eq!(
+            folded.operands,
+            vec![rspirv::dr::Operand::LiteralBit32(expected)]
+        );
+    }
+}
+
+#[test]
+fn corpus_folds_bitreverse_const_64() {
+    // Rust folds 64-bit bit-reverse; C++ only handles 32-bit constants.
+    let int = 5;
+    let c = inst(
+        Op::Constant,
+        int,
+        1,
+        vec![rspirv::dr::Operand::LiteralBit64(0x0000_0000_0000_000F)],
+    );
+    let bitrev = inst(
+        Op::BitReverse,
+        int,
+        2,
+        vec![rspirv::dr::Operand::IdRef(1)],
+    );
+    let type_widths = HashMap::from([(int, 64u32)]);
+    let optimized =
+        optimize_arith_block_with_types(&[c, bitrev], &type_widths).expect("optimize");
+    assert_eq!(optimized.len(), 1);
+    let folded = &optimized[0];
+    assert_eq!(folded.class.opcode, Op::Constant);
+    assert_eq!(folded.result_id, Some(2));
+    assert_eq!(
+        folded.operands,
+        vec![rspirv::dr::Operand::LiteralBit64(0xF000_0000_0000_0000)]
+    );
 }
 
 #[test]

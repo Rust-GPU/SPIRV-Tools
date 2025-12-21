@@ -104,7 +104,7 @@ fn make_symbol(id: Word) -> Symbol {
 ///
 /// Supported ops:
 /// - `OpConstant` (32/64-bit), `OpConstantTrue/False/Null`
-/// - Integer arithmetic/bitwise ops (`OpIAdd`, `OpIMul`, `OpISub`, `OpSRem`, `OpSMod`, `OpUMod`, shifts, bitwise)
+/// - Integer arithmetic/bitwise ops (`OpIAdd`, `OpIMul`, `OpISub`, `OpSRem`, `OpSMod`, `OpUMod`, shifts, bitwise, `OpBitReverse`)
 /// - Integer comparisons (`OpIEqual`, `OpINotEqual`, `OpSLessThan`, etc.)
 /// - Logical ops (`OpLogicalNot`, `OpLogicalAnd`, `OpLogicalOr`, logical eq/ne)
 /// - `OpSelect`, `OpCopyObject`, and unary `OpSNegate`
@@ -736,6 +736,23 @@ pub fn translate_arith_with_types(
                 );
                 expr.add(SpirvLang::BitNot(id))
             }
+            Op::BitReverse => {
+                let operand = inst
+                    .operands
+                    .iter()
+                    .find_map(|op| op.id_ref_any())
+                    .ok_or(TranslateError::UnknownOperand { id: 0, opcode })?;
+                let id = intern_operand(
+                    operand,
+                    &mut ids,
+                    &mut expr,
+                    &mut node_to_id,
+                    &mut node_types,
+                    &mut symbol_widths,
+                    &id_widths,
+                );
+                expr.add(SpirvLang::BitReverse(id))
+            }
             Op::CopyObject => {
                 let operand = inst
                     .operands
@@ -1125,6 +1142,12 @@ pub fn rebuild_arith_with_original_ids(
                 Some(result_id),
                 vec![rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)])],
             ),
+            SpirvLang::BitReverse(a) => Instruction::new(
+                Op::BitReverse,
+                Some(result_type),
+                Some(result_id),
+                vec![rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*a)])],
+            ),
             SpirvLang::Neg(a) => Instruction::new(
                 Op::SNegate,
                 Some(result_type),
@@ -1351,6 +1374,12 @@ pub fn optimize_arith_block_with_types(
             ),
             SpirvLang::BitNot(x) => Instruction::new(
                 Op::Not,
+                Some(result_type),
+                Some(result_id),
+                vec![rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*x)])],
+            ),
+            SpirvLang::BitReverse(x) => Instruction::new(
+                Op::BitReverse,
                 Some(result_type),
                 Some(result_id),
                 vec![rspirv::dr::Operand::IdRef(assigned_ids[usize::from(*x)])],
@@ -1591,7 +1620,7 @@ fn expr_cost(expr: &RecExpr<SpirvLang>) -> usize {
             | SpirvLang::RotL([a, b])
             | SpirvLang::RotR([a, b]) => 1 + costs[usize::from(*a)] + costs[usize::from(*b)],
             SpirvLang::BitAnd([a, b]) => 2 + costs[usize::from(*a)] + costs[usize::from(*b)],
-            SpirvLang::BitNot(x) => 1 + costs[usize::from(*x)],
+            SpirvLang::BitNot(x) | SpirvLang::BitReverse(x) => 1 + costs[usize::from(*x)],
             SpirvLang::If([a, b, c]) => {
                 1 + costs[usize::from(*a)] + costs[usize::from(*b)] + costs[usize::from(*c)]
             }

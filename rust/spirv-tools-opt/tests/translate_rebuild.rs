@@ -46,6 +46,7 @@ fn is_arith(opcode: Op) -> bool {
             | Op::BitwiseXor
             | Op::BitwiseAnd
             | Op::Not
+            | Op::BitReverse
             | Op::SNegate
             | Op::SDiv
             | Op::UDiv

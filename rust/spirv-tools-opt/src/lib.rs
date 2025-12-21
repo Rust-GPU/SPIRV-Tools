@@ -40,7 +40,9 @@ pub mod fuzzing {
             let node = if idx == 0 {
                 SpirvLang::Const(ConstValue::new(u.arbitrary()?))
             } else {
-                match u.choose(&[0u8, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16])? {
+                match u.choose(&[
+                    0u8, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+                ])? {
                     0 => SpirvLang::Const(ConstValue::new(u.arbitrary()?)),
                     1 => {
                         let a = choose_child(u, idx - 1)?;
@@ -114,15 +116,19 @@ pub mod fuzzing {
                     }
                     12 => {
                         let a = choose_child(u, idx - 1)?;
-                        let b = choose_child(u, idx - 1)?;
-                        SpirvLang::Eq([Id::from(a), Id::from(b)])
+                        SpirvLang::BitReverse(Id::from(a))
                     }
                     13 => {
                         let a = choose_child(u, idx - 1)?;
                         let b = choose_child(u, idx - 1)?;
-                        SpirvLang::Ne([Id::from(a), Id::from(b)])
+                        SpirvLang::Eq([Id::from(a), Id::from(b)])
                     }
                     14 => {
+                        let a = choose_child(u, idx - 1)?;
+                        let b = choose_child(u, idx - 1)?;
+                        SpirvLang::Ne([Id::from(a), Id::from(b)])
+                    }
+                    15 => {
                         let a = choose_child(u, idx - 1)?;
                         let b = choose_child(u, idx - 1)?;
                         if *u.choose(&[true, false])? {
@@ -131,11 +137,11 @@ pub mod fuzzing {
                             SpirvLang::LogOr([Id::from(a), Id::from(b)])
                         }
                     }
-                    15 => {
+                    16 => {
                         let a = choose_child(u, idx - 1)?;
                         SpirvLang::LogNot(Id::from(a))
                     }
-                    16 => {
+                    17 => {
                         let a = choose_child(u, idx - 1)?;
                         let b = choose_child(u, idx - 1)?;
                         SpirvLang::SMod([Id::from(a), Id::from(b)])
@@ -282,6 +288,7 @@ define_language! {
         "bor" = BitOr([Id; 2]),
         "bxor" = BitXor([Id; 2]),
         "bnot" = BitNot(Id),
+        "brev" = BitReverse(Id),
         "rotl" = RotL([Id; 2]),
         "rotr" = RotR([Id; 2]),
         "-" = Sub([Id; 2]),
@@ -357,7 +364,9 @@ impl egg::CostFunction<SpirvLang> for ExprCost {
             SpirvLang::BitAnd(_) | SpirvLang::BitXor(_) => {
                 enode.children().iter().map(|id| costs(*id)).sum::<usize>() + 2
             }
-            SpirvLang::BitNot(_) => enode.children().iter().map(|id| costs(*id)).sum::<usize>() + 1,
+            SpirvLang::BitNot(_) | SpirvLang::BitReverse(_) => {
+                enode.children().iter().map(|id| costs(*id)).sum::<usize>() + 1
+            }
             SpirvLang::If(_)
             | SpirvLang::Merge(_)
             | SpirvLang::Phi(_)
@@ -407,6 +416,7 @@ fn expr_has_bitwise(expr: &RecExpr<SpirvLang>) -> bool {
                 | SpirvLang::BitOr(_)
                 | SpirvLang::BitXor(_)
                 | SpirvLang::BitNot(_)
+                | SpirvLang::BitReverse(_)
                 | SpirvLang::Shl(_)
                 | SpirvLang::ShrS(_)
                 | SpirvLang::ShrU(_)
@@ -783,6 +793,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("or-with-zero-band"; "(bor ?x (band ?y 0))" => "?x"),
         rewrite!("bnot-const-fold"; "(bnot ?x)" => { BitNotFold { x: var("?x") } }),
         rewrite!("bnot-double"; "(bnot (bnot ?x))" => { BitNotDouble { x: var("?x") } }),
+        rewrite!("brev-const-fold"; "(brev ?x)" => { BitReverseFold { x: var("?x") } }),
         rewrite!("rotate-const-pattern"; "(bor (shl ?x ?s) (shr_u ?x ?t))" => {
             RotatePatternFold { x: var("?x"), s: var("?s"), t: var("?t") }
         }),
@@ -1375,6 +1386,9 @@ struct BitNotFold {
     x: Var,
 }
 struct BitNotDouble {
+    x: Var,
+}
+struct BitReverseFold {
     x: Var,
 }
 struct RotatePatternFold {
@@ -3513,6 +3527,34 @@ impl Applier<SpirvLang, ()> for BitNotDouble {
     ) -> Vec<Id> {
         egraph.union(eclass, subst[self.x]);
         vec![subst[self.x]]
+    }
+}
+
+impl Applier<SpirvLang, ()> for BitReverseFold {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(value) = unique_const_value(egraph, subst[self.x]) else {
+            return Vec::new();
+        };
+        let width = value.width_bits();
+        if width == 0 || width > 64 {
+            return Vec::new();
+        }
+        let reversed = if width == 64 {
+            value.get_u64().reverse_bits()
+        } else {
+            value.get_u64().reverse_bits() >> (64 - width as u32)
+        };
+        let folded = ConstValue::new_with_width(reversed, width);
+        let id = egraph.add(SpirvLang::Const(folded));
+        egraph.union(eclass, id);
+        vec![id]
     }
 }
 
