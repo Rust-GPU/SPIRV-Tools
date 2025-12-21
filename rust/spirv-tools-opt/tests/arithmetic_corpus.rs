@@ -1730,7 +1730,8 @@ fn corpus_band_drops_or_const_outside_mask() {
         5,
         vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(4)],
     );
-    let optimized = optimize_arith_block(&[mask, or_const, bor, band]).expect("optimize");
+    let insts = vec![mask, or_const, bor, band];
+    let optimized = optimize_arith_block(&insts).expect("optimize");
     assert!(
         optimized
             .iter()

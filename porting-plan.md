@@ -157,6 +157,7 @@ Planned tasks:
 - Added split-term absorption rewrites (`(x & y) | (~x & y) -> y`, `(x & y) | (x & ~y) -> x`) with Rust-only CLI regressions (documented divergence from C++).
 - Added a cargo-fuzz target (`arith_bitwise_split`) using `arbitrary` to generate mixed arithmetic/bitwise cases (including split-term absorptions) to stress the optimizer.
 - Added CLI regression to ensure the De Morgan xor form collapses to `xor` under the Rust optimizer (documented divergence from C++).
+- Guarded power-of-two `umod` decomposition in mixed bitwise expressions so mask/shift rewrites do not collapse masked symbols into constants.
 
 ## Upcoming Milestone: Optimizer Rewrite Stability & Extension
 - Broaden e-graph rewrites to additional algebraic/bitwise identities while preserving id stability (e.g., deeper shift/mask mixes, rotate-like sequences as supported).

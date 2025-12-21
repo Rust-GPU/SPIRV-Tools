@@ -313,7 +313,7 @@ define_language! {
         "retv" = RetVal(Id),
         "phi" = Phi([Id; 2]),
         "pair" = Pair([Id; 2]),
-        "const" = Const(ConstValue),
+        Const(ConstValue),
         Symbol(egg::Symbol),
     }
 }
@@ -376,7 +376,21 @@ impl egg::CostFunction<SpirvLang> for ExprCost {
 /// The returned expression is the cheapest representative (per `ExprCost`) of
 /// the root e-class after saturation.
 pub fn optimize_expr(expr: &RecExpr<SpirvLang>) -> RecExpr<SpirvLang> {
-    let rewrites = rewrites();
+    let mut rewrites = rewrites();
+    if expr_has_bitwise(expr) {
+        // Avoid remainder decomposition in mixed bitwise expressions; it can
+        // combine with mask/shift rewrites to drop masked symbols to constants.
+        rewrites.retain(|rw| {
+            let name = rw.name.as_str();
+            !name.contains("affine")
+                && !name.contains("gcd")
+                && !name.contains("cancel-common-factor")
+                && !name.contains("mul-const-zero")
+                && !name.contains("rem-const-decompose")
+                && !name.contains("mod-const-decompose")
+                && !name.contains("umod-power-of-two")
+        });
+    }
     let runner = Runner::default().with_expr(expr).run(&rewrites);
     let root = runner.roots[0];
     let extractor = egg::Extractor::new(&runner.egraph, ExprCost);
