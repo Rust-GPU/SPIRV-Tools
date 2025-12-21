@@ -201,6 +201,7 @@ Tasks:
 - [x] Add e-graph roots for `select`/`phi` plus bool-constant handling, and apply phi replacements after global extraction so redundant merges collapse safely.
 - [x] Extend the e-graph language/translator to cover integer comparisons and logical ops (`OpIEqual/INotEqual`, signed/unsigned compares, `OpLogicalAnd/Or/Not`, logical eq/ne), fold self/constant cases, and add Rust unit + CLI coverage for the new boolean rewrites.
 - [x] Add `OpSMod` support to the e-graph language/translator/rebuilder with signed-mod constant folding (floor division semantics) plus unit/block tests.
+- [x] Normalize logical comparisons via e-graph rewrites (commutativity, `logical eq/ne` with constants, and `x && !x` / `x || !x` folds) with Rust unit coverage.
 
 ## Upcoming Milestone: Optimizer CLI/FFI Integration
 - Expose the Rust arithmetic optimizer through CLI/FFI entry points with a flag/env toggle and a documented C++ fallback.

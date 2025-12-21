@@ -1011,6 +1011,12 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("logne-fold"; "(lne ?a ?b)" => {
             FoldCmp { kind: CmpKind::LogNe, a: var("?a"), b: var("?b") }
         }),
+        rewrite!("eq-comm"; "(eq ?a ?b)" => "(eq ?b ?a)"),
+        rewrite!("ne-comm"; "(ne ?a ?b)" => "(ne ?b ?a)"),
+        rewrite!("logand-comm"; "(land ?a ?b)" => "(land ?b ?a)"),
+        rewrite!("logor-comm"; "(lor ?a ?b)" => "(lor ?b ?a)"),
+        rewrite!("logeq-comm"; "(leq ?a ?b)" => "(leq ?b ?a)"),
+        rewrite!("logne-comm"; "(lne ?a ?b)" => "(lne ?b ?a)"),
         rewrite!("eq-self"; "(eq ?a ?a)" => { BoolConst { value: true } }),
         rewrite!("ne-self"; "(ne ?a ?a)" => { BoolConst { value: false } }),
         rewrite!("slt-self"; "(slt ?a ?a)" => { BoolConst { value: false } }),
@@ -1023,6 +1029,10 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("uge-self"; "(uge ?a ?a)" => { BoolConst { value: true } }),
         rewrite!("logeq-self"; "(leq ?a ?a)" => { BoolConst { value: true } }),
         rewrite!("logne-self"; "(lne ?a ?a)" => { BoolConst { value: false } }),
+        rewrite!("logand-neg"; "(land ?a (lnot ?a))" => { BoolConst { value: false } }),
+        rewrite!("logand-neg-comm"; "(land (lnot ?a) ?a)" => { BoolConst { value: false } }),
+        rewrite!("logor-neg"; "(lor ?a (lnot ?a))" => { BoolConst { value: true } }),
+        rewrite!("logor-neg-comm"; "(lor (lnot ?a) ?a)" => { BoolConst { value: true } }),
         rewrite!("lognot-double"; "(lnot (lnot ?a))" => "?a"),
         rewrite!("logand-idem"; "(land ?a ?a)" => "?a"),
         rewrite!("logor-idem"; "(lor ?a ?a)" => "?a"),
@@ -2298,57 +2308,85 @@ impl Applier<SpirvLang, ()> for FoldCmp {
         _pat: Option<&PatternAst<SpirvLang>>,
         _symbol: Symbol,
     ) -> Vec<Id> {
-        let Some(lhs) = const_value(egraph, subst[self.a]) else {
-            return Vec::new();
-        };
-        let Some(rhs) = const_value(egraph, subst[self.b]) else {
-            return Vec::new();
-        };
-        let result = match self.kind {
-            CmpKind::Eq => lhs.get_u64() == rhs.get_u64(),
-            CmpKind::Ne => lhs.get_u64() != rhs.get_u64(),
-            CmpKind::SLt => {
-                let width = max_width(lhs, rhs);
-                sign_extend_bits(lhs, width) < sign_extend_bits(rhs, width)
+        let lhs = const_value(egraph, subst[self.a]);
+        let rhs = const_value(egraph, subst[self.b]);
+        match self.kind {
+            CmpKind::LogEq | CmpKind::LogNe => {
+                let lhs_bool = lhs.and_then(bool_const);
+                let rhs_bool = rhs.and_then(bool_const);
+                match (lhs_bool, rhs_bool) {
+                    (Some(a), Some(b)) => {
+                        let result = match self.kind {
+                            CmpKind::LogEq => a == b,
+                            CmpKind::LogNe => a != b,
+                            _ => unreachable!(),
+                        };
+                        let id = egraph.add(SpirvLang::Const(const_bool(result)));
+                        egraph.union(eclass, id);
+                        vec![id]
+                    }
+                    (Some(value), None) => {
+                        let target = match (self.kind, value) {
+                            (CmpKind::LogEq, true) | (CmpKind::LogNe, false) => subst[self.b],
+                            (CmpKind::LogEq, false) | (CmpKind::LogNe, true) => {
+                                egraph.add(SpirvLang::LogNot(subst[self.b]))
+                            }
+                            _ => subst[self.b],
+                        };
+                        egraph.union(eclass, target);
+                        vec![target]
+                    }
+                    (None, Some(value)) => {
+                        let target = match (self.kind, value) {
+                            (CmpKind::LogEq, true) | (CmpKind::LogNe, false) => subst[self.a],
+                            (CmpKind::LogEq, false) | (CmpKind::LogNe, true) => {
+                                egraph.add(SpirvLang::LogNot(subst[self.a]))
+                            }
+                            _ => subst[self.a],
+                        };
+                        egraph.union(eclass, target);
+                        vec![target]
+                    }
+                    _ => Vec::new(),
+                }
             }
-            CmpKind::SLe => {
-                let width = max_width(lhs, rhs);
-                sign_extend_bits(lhs, width) <= sign_extend_bits(rhs, width)
-            }
-            CmpKind::SGt => {
-                let width = max_width(lhs, rhs);
-                sign_extend_bits(lhs, width) > sign_extend_bits(rhs, width)
-            }
-            CmpKind::SGe => {
-                let width = max_width(lhs, rhs);
-                sign_extend_bits(lhs, width) >= sign_extend_bits(rhs, width)
-            }
-            CmpKind::ULt => lhs.get_u64() < rhs.get_u64(),
-            CmpKind::ULe => lhs.get_u64() <= rhs.get_u64(),
-            CmpKind::UGt => lhs.get_u64() > rhs.get_u64(),
-            CmpKind::UGe => lhs.get_u64() >= rhs.get_u64(),
-            CmpKind::LogEq => {
-                let Some(a) = bool_const(lhs) else {
+            _ => {
+                let Some(lhs) = lhs else {
                     return Vec::new();
                 };
-                let Some(b) = bool_const(rhs) else {
+                let Some(rhs) = rhs else {
                     return Vec::new();
                 };
-                a == b
+                let result = match self.kind {
+                    CmpKind::Eq => lhs.get_u64() == rhs.get_u64(),
+                    CmpKind::Ne => lhs.get_u64() != rhs.get_u64(),
+                    CmpKind::SLt => {
+                        let width = max_width(lhs, rhs);
+                        sign_extend_bits(lhs, width) < sign_extend_bits(rhs, width)
+                    }
+                    CmpKind::SLe => {
+                        let width = max_width(lhs, rhs);
+                        sign_extend_bits(lhs, width) <= sign_extend_bits(rhs, width)
+                    }
+                    CmpKind::SGt => {
+                        let width = max_width(lhs, rhs);
+                        sign_extend_bits(lhs, width) > sign_extend_bits(rhs, width)
+                    }
+                    CmpKind::SGe => {
+                        let width = max_width(lhs, rhs);
+                        sign_extend_bits(lhs, width) >= sign_extend_bits(rhs, width)
+                    }
+                    CmpKind::ULt => lhs.get_u64() < rhs.get_u64(),
+                    CmpKind::ULe => lhs.get_u64() <= rhs.get_u64(),
+                    CmpKind::UGt => lhs.get_u64() > rhs.get_u64(),
+                    CmpKind::UGe => lhs.get_u64() >= rhs.get_u64(),
+                    CmpKind::LogEq | CmpKind::LogNe => return Vec::new(),
+                };
+                let id = egraph.add(SpirvLang::Const(const_bool(result)));
+                egraph.union(eclass, id);
+                vec![id]
             }
-            CmpKind::LogNe => {
-                let Some(a) = bool_const(lhs) else {
-                    return Vec::new();
-                };
-                let Some(b) = bool_const(rhs) else {
-                    return Vec::new();
-                };
-                a != b
-            }
-        };
-        let id = egraph.add(SpirvLang::Const(const_bool(result)));
-        egraph.union(eclass, id);
-        vec![id]
+        }
     }
 }
 
@@ -5838,6 +5876,96 @@ mod tests {
         assert_eq!(
             optimized,
             RecExpr::from(vec![SpirvLang::Const(const_bool(false))])
+        );
+    }
+
+    #[test]
+    fn rewrites_logical_eq_with_true() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),
+            SpirvLang::Const(const_bool(true)),
+            SpirvLang::LogEq([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("x"))])
+        );
+    }
+
+    #[test]
+    fn rewrites_logical_eq_with_false() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),
+            SpirvLang::Const(const_bool(false)),
+            SpirvLang::LogEq([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![
+                SpirvLang::Symbol(Symbol::from("x")),
+                SpirvLang::LogNot(Id::from(0))
+            ])
+        );
+    }
+
+    #[test]
+    fn rewrites_logical_ne_with_true() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),
+            SpirvLang::Const(const_bool(true)),
+            SpirvLang::LogNe([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![
+                SpirvLang::Symbol(Symbol::from("x")),
+                SpirvLang::LogNot(Id::from(0))
+            ])
+        );
+    }
+
+    #[test]
+    fn rewrites_logical_ne_with_false() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),
+            SpirvLang::Const(const_bool(false)),
+            SpirvLang::LogNe([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("x"))])
+        );
+    }
+
+    #[test]
+    fn rewrites_logical_and_with_negation() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),
+            SpirvLang::LogNot(Id::from(0)),
+            SpirvLang::LogAnd([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Const(const_bool(false))])
+        );
+    }
+
+    #[test]
+    fn rewrites_logical_or_with_negation() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),
+            SpirvLang::LogNot(Id::from(0)),
+            SpirvLang::LogOr([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Const(const_bool(true))])
         );
     }
 
