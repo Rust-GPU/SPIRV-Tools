@@ -1033,6 +1033,18 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("logand-neg-comm"; "(land (lnot ?a) ?a)" => { BoolConst { value: false } }),
         rewrite!("logor-neg"; "(lor ?a (lnot ?a))" => { BoolConst { value: true } }),
         rewrite!("logor-neg-comm"; "(lor (lnot ?a) ?a)" => { BoolConst { value: true } }),
+        rewrite!("lognot-eq"; "(lnot (eq ?a ?b))" => "(ne ?a ?b)"),
+        rewrite!("lognot-ne"; "(lnot (ne ?a ?b))" => "(eq ?a ?b)"),
+        rewrite!("lognot-slt"; "(lnot (slt ?a ?b))" => "(sge ?a ?b)"),
+        rewrite!("lognot-sle"; "(lnot (sle ?a ?b))" => "(sgt ?a ?b)"),
+        rewrite!("lognot-sgt"; "(lnot (sgt ?a ?b))" => "(sle ?a ?b)"),
+        rewrite!("lognot-sge"; "(lnot (sge ?a ?b))" => "(slt ?a ?b)"),
+        rewrite!("lognot-ult"; "(lnot (ult ?a ?b))" => "(uge ?a ?b)"),
+        rewrite!("lognot-ule"; "(lnot (ule ?a ?b))" => "(ugt ?a ?b)"),
+        rewrite!("lognot-ugt"; "(lnot (ugt ?a ?b))" => "(ule ?a ?b)"),
+        rewrite!("lognot-uge"; "(lnot (uge ?a ?b))" => "(ult ?a ?b)"),
+        rewrite!("lognot-logeq"; "(lnot (leq ?a ?b))" => "(lne ?a ?b)"),
+        rewrite!("lognot-logne"; "(lnot (lne ?a ?b))" => "(leq ?a ?b)"),
         rewrite!("lognot-double"; "(lnot (lnot ?a))" => "?a"),
         rewrite!("logand-idem"; "(land ?a ?a)" => "?a"),
         rewrite!("logor-idem"; "(lor ?a ?a)" => "?a"),
@@ -5966,6 +5978,55 @@ mod tests {
         assert_eq!(
             optimized,
             RecExpr::from(vec![SpirvLang::Const(const_bool(true))])
+        );
+    }
+
+    #[test]
+    fn rewrites_lognot_eq_to_ne() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),
+            SpirvLang::Symbol(Symbol::from("y")),
+            SpirvLang::Eq([Id::from(0), Id::from(1)]),
+            SpirvLang::LogNot(Id::from(2)),
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::Ne([lhs, rhs])) = nodes.last() else {
+            panic!("expected optimized expr to end in ne, got {nodes:?}");
+        };
+        let lhs_node = &nodes[usize::from(*lhs)];
+        let rhs_node = &nodes[usize::from(*rhs)];
+        let symbols = [lhs_node, rhs_node];
+        assert!(
+            symbols
+                .iter()
+                .any(|n| matches!(n, SpirvLang::Symbol(sym) if *sym == Symbol::from("x")))
+                && symbols
+                    .iter()
+                    .any(|n| matches!(n, SpirvLang::Symbol(sym) if *sym == Symbol::from("y"))),
+            "expected ne to compare x and y, got lhs={lhs_node:?} rhs={rhs_node:?}"
+        );
+    }
+
+    #[test]
+    fn rewrites_lognot_slt_to_sge() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),
+            SpirvLang::Symbol(Symbol::from("y")),
+            SpirvLang::SLt([Id::from(0), Id::from(1)]),
+            SpirvLang::LogNot(Id::from(2)),
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::SGe([lhs, rhs])) = nodes.last() else {
+            panic!("expected optimized expr to end in sge, got {nodes:?}");
+        };
+        let lhs_node = &nodes[usize::from(*lhs)];
+        let rhs_node = &nodes[usize::from(*rhs)];
+        assert!(
+            matches!(lhs_node, SpirvLang::Symbol(sym) if *sym == Symbol::from("x"))
+                && matches!(rhs_node, SpirvLang::Symbol(sym) if *sym == Symbol::from("y")),
+            "expected sge to compare x >= y, got lhs={lhs_node:?} rhs={rhs_node:?}"
         );
     }
 
