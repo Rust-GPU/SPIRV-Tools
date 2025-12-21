@@ -347,8 +347,9 @@ impl egg::CostFunction<SpirvLang> for ExprCost {
     {
         match enode {
             SpirvLang::Const(_) => 1,
-            SpirvLang::Mul(_) | SpirvLang::SDiv(_) | SpirvLang::UDiv(_) => {
-                enode.children().iter().map(|id| costs(*id)).sum::<usize>() + 2
+            SpirvLang::Mul(_) => enode.children().iter().map(|id| costs(*id)).sum::<usize>() + 2,
+            SpirvLang::SDiv(_) | SpirvLang::UDiv(_) => {
+                enode.children().iter().map(|id| costs(*id)).sum::<usize>() + 8
             }
             SpirvLang::Shl(_) | SpirvLang::ShrS(_) | SpirvLang::ShrU(_) => {
                 enode.children().iter().map(|id| costs(*id)).sum::<usize>() + 1
@@ -396,6 +397,21 @@ pub fn optimize_expr(expr: &RecExpr<SpirvLang>) -> RecExpr<SpirvLang> {
     let extractor = egg::Extractor::new(&runner.egraph, ExprCost);
     let (_cost, best) = extractor.find_best(root);
     best
+}
+
+fn expr_has_bitwise(expr: &RecExpr<SpirvLang>) -> bool {
+    expr.as_ref().iter().any(|node| {
+        matches!(
+            node,
+            SpirvLang::BitAnd(_)
+                | SpirvLang::BitOr(_)
+                | SpirvLang::BitXor(_)
+                | SpirvLang::BitNot(_)
+                | SpirvLang::Shl(_)
+                | SpirvLang::ShrS(_)
+                | SpirvLang::ShrU(_)
+        )
+    })
 }
 
 /// Optimize the root of a translated SPIR-V arithmetic expression.
@@ -2601,10 +2617,13 @@ impl Applier<SpirvLang, ()> for FoldAffineConst {
         _pat: Option<&PatternAst<SpirvLang>>,
         _symbol: Symbol,
     ) -> Vec<Id> {
-        let Some(const_factor) = const_value(egraph, subst[self.c]) else {
+        if const_value(egraph, subst[self.x]).is_some() {
+            return Vec::new();
+        }
+        let Some(const_factor) = pure_const_value(egraph, subst[self.c]) else {
             return Vec::new();
         };
-        let Some(const_term) = const_value(egraph, subst[self.k]) else {
+        let Some(const_term) = pure_const_value(egraph, subst[self.k]) else {
             return Vec::new();
         };
         if const_factor.get_u64() == 0 {
@@ -2640,10 +2659,13 @@ impl Applier<SpirvLang, ()> for FoldAffineGcd {
         _pat: Option<&PatternAst<SpirvLang>>,
         _symbol: Symbol,
     ) -> Vec<Id> {
-        let Some(coeff) = const_value(egraph, subst[self.c]) else {
+        if const_value(egraph, subst[self.x]).is_some() {
+            return Vec::new();
+        }
+        let Some(coeff) = pure_const_value(egraph, subst[self.c]) else {
             return Vec::new();
         };
-        let Some(const_term) = const_value(egraph, subst[self.k]) else {
+        let Some(const_term) = pure_const_value(egraph, subst[self.k]) else {
             return Vec::new();
         };
         let width = max_width(coeff, const_term);
@@ -3652,10 +3674,10 @@ impl Applier<SpirvLang, ()> for ShlFoldConst {
         _pat: Option<&PatternAst<SpirvLang>>,
         _symbol: Symbol,
     ) -> Vec<Id> {
-        let Some(lhs) = pure_const_value(egraph, subst[self.a]) else {
+        let Some(lhs) = unique_const_value(egraph, subst[self.a]) else {
             return Vec::new();
         };
-        let Some(rhs) = pure_const_value(egraph, subst[self.b]) else {
+        let Some(rhs) = unique_const_value(egraph, subst[self.b]) else {
             return Vec::new();
         };
         let width = lhs.width_bits().max(rhs.width_bits()).max(1);
@@ -3676,10 +3698,10 @@ impl Applier<SpirvLang, ()> for ShrUFoldConst {
         _pat: Option<&PatternAst<SpirvLang>>,
         _symbol: Symbol,
     ) -> Vec<Id> {
-        let Some(lhs) = pure_const_value(egraph, subst[self.a]) else {
+        let Some(lhs) = unique_const_value(egraph, subst[self.a]) else {
             return Vec::new();
         };
-        let Some(rhs) = pure_const_value(egraph, subst[self.b]) else {
+        let Some(rhs) = unique_const_value(egraph, subst[self.b]) else {
             return Vec::new();
         };
         let width = lhs.width_bits().max(rhs.width_bits()).max(1);
@@ -3700,10 +3722,10 @@ impl Applier<SpirvLang, ()> for ShrSFoldConst {
         _pat: Option<&PatternAst<SpirvLang>>,
         _symbol: Symbol,
     ) -> Vec<Id> {
-        let Some(lhs) = pure_const_value(egraph, subst[self.a]) else {
+        let Some(lhs) = unique_const_value(egraph, subst[self.a]) else {
             return Vec::new();
         };
-        let Some(rhs) = pure_const_value(egraph, subst[self.b]) else {
+        let Some(rhs) = unique_const_value(egraph, subst[self.b]) else {
             return Vec::new();
         };
         let width = lhs.width_bits().max(rhs.width_bits()).max(1);
@@ -3741,13 +3763,27 @@ impl Applier<SpirvLang, ()> for MulMergeConst {
 }
 
 fn const_value(egraph: &EGraph<SpirvLang, ()>, id: Id) -> Option<ConstValue> {
-    egraph[egraph.find(id)]
-        .nodes
-        .iter()
-        .find_map(|node| match node {
-            SpirvLang::Const(value) => Some(*value),
-            _ => None,
-        })
+    unique_const_value(egraph, id)
+}
+
+fn pure_const_value(egraph: &EGraph<SpirvLang, ()>, id: Id) -> Option<ConstValue> {
+    let class = egraph.find(id);
+    let mut value: Option<ConstValue> = None;
+    for node in &egraph[class].nodes {
+        match node {
+            SpirvLang::Const(constant) => {
+                if let Some(existing) = value {
+                    if existing != *constant {
+                        return None;
+                    }
+                } else {
+                    value = Some(*constant);
+                }
+            }
+            _ => return None,
+        }
+    }
+    value
 }
 
 fn bool_const(value: ConstValue) -> Option<bool> {
@@ -3816,24 +3852,19 @@ fn width_hint(
     width.or(Some(32))
 }
 
-fn pure_const_value(egraph: &EGraph<SpirvLang, ()>, id: Id) -> Option<ConstValue> {
-    let mut constants = egraph[id].nodes.iter().filter_map(|node| match node {
-        SpirvLang::Const(value) => Some(*value),
-        _ => None,
-    });
-    let value = constants.next()?;
-    if constants.next().is_some() {
-        return None;
-    }
-    if egraph[id]
+fn unique_const_value(egraph: &EGraph<SpirvLang, ()>, id: Id) -> Option<ConstValue> {
+    let mut constants = egraph[egraph.find(id)]
         .nodes
         .iter()
-        .all(|node| matches!(node, SpirvLang::Const(_)))
-    {
-        Some(value)
-    } else {
-        None
+        .filter_map(|node| match node {
+            SpirvLang::Const(value) => Some(*value),
+            _ => None,
+        });
+    let value = constants.next()?;
+    if constants.any(|other| other != value) {
+        return None;
     }
+    Some(value)
 }
 
 fn max_width(lhs: ConstValue, rhs: ConstValue) -> u8 {
