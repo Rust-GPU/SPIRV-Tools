@@ -619,6 +619,10 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
             "band-shl-factor";
             "(band (shl ?x ?c) (shl ?y ?c))" => "(shl (band ?x ?y) ?c)"
         ),
+        rewrite!(
+            "bor-shl-factor";
+            "(bor (shl ?x ?c) (shl ?y ?c))" => "(shl (bor ?x ?y) ?c)"
+        ),
         rewrite!("band-comm"; "(band ?a ?b)" => "(band ?b ?a)"),
         rewrite!("band-assoc"; "(band ?a (band ?b ?c))" => "(band (band ?a ?b) ?c)"),
         rewrite!("band-const-fold"; "(band ?a ?b)" => { BitAndFold { a: var("?a"), b: var("?b") } }),
@@ -14019,6 +14023,11 @@ mod tests {
     #[test]
     fn rewrites_band_shl_factor() {
         assert_simplifies("(band (shl x c) (shl y c))", "(shl (band x y) c)");
+    }
+
+    #[test]
+    fn rewrites_bor_shl_factor() {
+        assert_simplifies("(bor (shl x c) (shl y c))", "(shl (bor x y) c)");
     }
 
     #[test]
