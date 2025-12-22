@@ -728,6 +728,10 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
             "bnot-bor-not-right";
             "(bnot (bor ?x (bnot ?y)))" => "(band (bnot ?x) ?y)"
         ),
+        rewrite!(
+            "bnot-bor-not-left";
+            "(bnot (bor (bnot ?x) ?y))" => "(band ?x (bnot ?y))"
+        ),
         rewrite!("bor-self"; "(bor ?x ?x)" => "?x"),
         rewrite!("bor-nested-idempotent-right"; "(bor ?x (bor ?x ?y))" => "(bor ?x ?y)"),
         rewrite!("bor-nested-idempotent-left"; "(bor (bor ?x ?y) ?x)" => "(bor ?x ?y)"),
@@ -13975,6 +13979,11 @@ mod tests {
     #[test]
     fn rewrites_bnot_bor_not_right() {
         assert_simplifies("(bnot (bor x (bnot y)))", "(band (bnot x) y)");
+    }
+
+    #[test]
+    fn rewrites_bnot_bor_not_left() {
+        assert_simplifies("(bnot (bor (bnot x) y))", "(band x (bnot y))");
     }
 
     #[test]
