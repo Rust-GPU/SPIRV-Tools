@@ -211,6 +211,7 @@ Planned tasks:
 - Added nested complement AND rewrites so `(~x) & (x & y)` folds to zero, with Rust unit coverage.
 - Added eq/ne rewrites that reduce `x - y == y` to `x == y + y`, with Rust unit coverage.
 - Added bitwise rewrites so `x & ~(x | y)` folds to zero, with Rust unit coverage.
+- Added bitwise rewrites so `x & ~(x & y)` folds to `x & ~y`, with Rust unit coverage.
 
 ## Upcoming Milestone: Optimizer Rewrite Stability & Extension
 - Broaden e-graph rewrites to additional algebraic/bitwise identities while preserving id stability (e.g., deeper shift/mask mixes, rotate-like sequences as supported).

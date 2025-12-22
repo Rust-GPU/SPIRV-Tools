@@ -636,6 +636,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("band-not-or-self-left"; "(band (bnot (bor ?x ?y)) ?x)" => {
             BitAndComplement { _x: var("?x") }
         }),
+        rewrite!("band-not-and-self-right"; "(band ?x (bnot (band ?x ?y)))" => "(band ?x (bnot ?y))"),
+        rewrite!("band-not-and-self-left"; "(band (bnot (band ?x ?y)) ?x)" => "(band ?x (bnot ?y))"),
         rewrite!("band-demorgan"; "(band (bnot ?a) (bnot ?b))" => "(bnot (bor ?a ?b))"),
         rewrite!("band-mask-to-umod"; "(band ?x ?c)" => {
             BitAndToUmod { x: var("?x"), c: var("?c") }
@@ -8407,6 +8409,35 @@ mod tests {
             optimized,
             RecExpr::from(vec![SpirvLang::Const(ConstValue::new(0))])
         );
+    }
+
+    #[test]
+    fn rewrites_band_not_and_self_to_band_not_rhs() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::BitAnd([Id::from(0), Id::from(1)]),
+            SpirvLang::BitNot(Id::from(2)),
+            SpirvLang::BitAnd([Id::from(0), Id::from(3)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::BitAnd([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_x = is_named_symbol(&runner.egraph, *lhs, "x");
+            let rhs_is_x = is_named_symbol(&runner.egraph, *rhs, "x");
+            let lhs_is_bnot_y = is_bnot_named_symbol(&runner.egraph, *lhs, "y");
+            let rhs_is_bnot_y = is_bnot_named_symbol(&runner.egraph, *rhs, "y");
+            if (lhs_is_x && rhs_is_bnot_y) || (rhs_is_x && lhs_is_bnot_y) {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected x & ~(x & y) to rewrite to x & ~y");
     }
 
     #[test]
