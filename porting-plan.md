@@ -177,6 +177,7 @@ Planned tasks:
 - Added eq/ne rewrites collapsing `bxor` comparisons against zero into direct equality/inequality, with Rust unit coverage.
 - Added eq/ne rewrites collapsing subtraction comparisons against zero into direct equality/inequality, with Rust unit coverage.
 - Added eq/ne rewrites collapsing negation comparisons against zero into direct equality/inequality, with Rust unit coverage.
+- Added eq/ne rewrites collapsing `bxor` comparisons against all-ones into `bnot` comparisons, with Rust unit coverage.
 
 ## Upcoming Milestone: Optimizer Rewrite Stability & Extension
 - Broaden e-graph rewrites to additional algebraic/bitwise identities while preserving id stability (e.g., deeper shift/mask mixes, rotate-like sequences as supported).

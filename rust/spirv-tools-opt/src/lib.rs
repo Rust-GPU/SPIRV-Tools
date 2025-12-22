@@ -1087,6 +1087,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("ne-sub-zero"; "(ne (- ?x ?y) ?c)" => "(ne ?x ?y)" if is_const_zero(var("?c"))),
         rewrite!("eq-neg-zero"; "(eq (neg ?x) ?c)" => "(eq ?x ?c)" if is_const_zero(var("?c"))),
         rewrite!("ne-neg-zero"; "(ne (neg ?x) ?c)" => "(ne ?x ?c)" if is_const_zero(var("?c"))),
+        rewrite!("eq-bxor-all-ones"; "(eq (bxor ?x ?y) ?c)" => "(eq ?x (bnot ?y))" if is_const_all_ones(var("?c"))),
+        rewrite!("ne-bxor-all-ones"; "(ne (bxor ?x ?y) ?c)" => "(ne ?x (bnot ?y))" if is_const_all_ones(var("?c"))),
         rewrite!("slt-self"; "(slt ?a ?a)" => { BoolConst { value: false } }),
         rewrite!("sle-self"; "(sle ?a ?a)" => { BoolConst { value: true } }),
         rewrite!("sgt-self"; "(sgt ?a ?a)" => { BoolConst { value: false } }),
@@ -4059,6 +4061,10 @@ fn is_const_zero(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) ->
     move |egraph, _, subst| const_value(egraph, subst[var]).is_some_and(|c| c.get_u64() == 0)
 }
 
+fn is_const_all_ones(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
+    move |egraph, _, subst| const_value(egraph, subst[var]).is_some_and(ConstValue::is_all_ones)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -6662,6 +6668,66 @@ mod tests {
             .or_else(|| runner.egraph.lookup_expr(&expected_comm))
         else {
             panic!("expected ne between x and 0 to be introduced by rewrites");
+        };
+        assert_eq!(runner.egraph.find(root), runner.egraph.find(expected_id));
+    }
+
+    #[test]
+    fn rewrites_eq_bxor_all_ones_to_bnot() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),                      // 0
+            SpirvLang::Symbol(Symbol::from("y")),                      // 1
+            SpirvLang::BitXor([Id::from(0), Id::from(1)]),             // 2 = x ^ y
+            SpirvLang::Const(ConstValue::new_with_width(u32::MAX as u64, 32)), // 3
+            SpirvLang::Eq([Id::from(2), Id::from(3)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let mut expected_id = None;
+        for candidate in [
+            "(eq x (bnot y))",
+            "(eq (bnot y) x)",
+            "(eq y (bnot x))",
+            "(eq (bnot x) y)",
+        ] {
+            let expr: RecExpr<SpirvLang> = candidate.parse().unwrap();
+            if let Some(id) = runner.egraph.lookup_expr(&expr) {
+                expected_id = Some(id);
+                break;
+            }
+        }
+        let Some(expected_id) = expected_id else {
+            panic!("expected eq with bnot to be introduced by rewrites");
+        };
+        assert_eq!(runner.egraph.find(root), runner.egraph.find(expected_id));
+    }
+
+    #[test]
+    fn rewrites_ne_bxor_all_ones_to_bnot() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),                      // 0
+            SpirvLang::Symbol(Symbol::from("y")),                      // 1
+            SpirvLang::BitXor([Id::from(0), Id::from(1)]),             // 2 = x ^ y
+            SpirvLang::Const(ConstValue::new_with_width(u32::MAX as u64, 32)), // 3
+            SpirvLang::Ne([Id::from(2), Id::from(3)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let mut expected_id = None;
+        for candidate in [
+            "(ne x (bnot y))",
+            "(ne (bnot y) x)",
+            "(ne y (bnot x))",
+            "(ne (bnot x) y)",
+        ] {
+            let expr: RecExpr<SpirvLang> = candidate.parse().unwrap();
+            if let Some(id) = runner.egraph.lookup_expr(&expr) {
+                expected_id = Some(id);
+                break;
+            }
+        }
+        let Some(expected_id) = expected_id else {
+            panic!("expected ne with bnot to be introduced by rewrites");
         };
         assert_eq!(runner.egraph.find(root), runner.egraph.find(expected_id));
     }
