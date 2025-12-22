@@ -1424,6 +1424,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("ult-zero-left"; "(ult ?c ?x)" => "(ne ?x ?c)" if is_const_zero(var("?c"))),
         rewrite!("ult-max-right"; "(ult ?x ?c)" => "(ne ?x ?c)" if is_const_all_ones(var("?c"))),
         rewrite!("ult-max-left"; "(ult ?c ?x)" => { BoolConst { value: false } } if is_const_all_ones(var("?c"))),
+        rewrite!("ult-one-right"; "(ult ?x ?c)" => { CmpZero { target: var("?x"), eq: true } } if is_const_one(var("?c"))),
         rewrite!("ule-zero-right"; "(ule ?x ?c)" => "(eq ?x ?c)" if is_const_zero(var("?c"))),
         rewrite!("ule-zero-left"; "(ule ?c ?x)" => { BoolConst { value: true } } if is_const_zero(var("?c"))),
         rewrite!("ule-max-right"; "(ule ?x ?c)" => { BoolConst { value: true } } if is_const_all_ones(var("?c"))),
@@ -4887,6 +4888,10 @@ fn var(name: &str) -> Var {
 
 fn is_const_zero(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
     move |egraph, _, subst| const_value(egraph, subst[var]).is_some_and(|c| c.get_u64() == 0)
+}
+
+fn is_const_one(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
+    move |egraph, _, subst| const_value(egraph, subst[var]).is_some_and(ConstValue::is_one)
 }
 
 fn is_const_all_ones(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
@@ -13802,6 +13807,11 @@ mod tests {
         assert_simplifies("(uge 0 x)", "(eq x 0)");
         assert_simplifies("(uge x 4294967295)", "(eq x 4294967295)");
         assert_simplifies("(uge 4294967295 x)", "true");
+    }
+
+    #[test]
+    fn rewrites_unsigned_compare_near_extremes() {
+        assert_simplifies("(ult x 1)", "(eq x 0)");
     }
 
     #[test]
