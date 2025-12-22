@@ -1393,3 +1393,4 @@ Tasks for this milestone:
 - Added partial De Morgan rewrite for `~(~x | y)` (`~(~x | y) -> x & ~y`) with Rust coverage.
 - Added partial De Morgan rewrite for `!(a && !b)` (`!(a && !b) -> !a || b`) with Rust coverage.
 - Added partial De Morgan rewrite for `!(!a && b)` (`!(!a && b) -> a || !b`) with Rust coverage.
+- Added partial De Morgan rewrite for `!(a || !b)` (`!(a || !b) -> !a && b`) with Rust coverage.
