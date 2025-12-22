@@ -1081,6 +1081,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("logand-neg-comm"; "(land (lnot ?a) ?a)" => { BoolConst { value: false } }),
         rewrite!("logor-neg"; "(lor ?a (lnot ?a))" => { BoolConst { value: true } }),
         rewrite!("logor-neg-comm"; "(lor (lnot ?a) ?a)" => { BoolConst { value: true } }),
+        rewrite!("logand-demorgan"; "(land (lnot ?a) (lnot ?b))" => "(lnot (lor ?a ?b))"),
+        rewrite!("logor-demorgan"; "(lor (lnot ?a) (lnot ?b))" => "(lnot (land ?a ?b))"),
         rewrite!("lognot-eq"; "(lnot (eq ?a ?b))" => "(ne ?a ?b)"),
         rewrite!("lognot-ne"; "(lnot (ne ?a ?b))" => "(eq ?a ?b)"),
         rewrite!("lognot-slt"; "(lnot (slt ?a ?b))" => "(sge ?a ?b)"),
@@ -6341,6 +6343,64 @@ mod tests {
         assert_eq!(
             optimized,
             RecExpr::from(vec![SpirvLang::Const(const_bool(true))])
+        );
+    }
+
+    #[test]
+    fn rewrites_logand_of_negations_to_negated_or() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("a")), // 0
+            SpirvLang::Symbol(Symbol::from("b")), // 1
+            SpirvLang::LogNot(Id::from(0)),       // 2
+            SpirvLang::LogNot(Id::from(1)),       // 3
+            SpirvLang::LogAnd([Id::from(2), Id::from(3)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::LogNot(inner)) = nodes.last() else {
+            panic!("expected lognot root, got {:?}", nodes.last());
+        };
+        let SpirvLang::LogOr([lhs, rhs]) = nodes[usize::from(*inner)] else {
+            panic!("expected logor under lognot, got {:?}", nodes[usize::from(*inner)]);
+        };
+        let a = Symbol::from("a");
+        let b = Symbol::from("b");
+        let lhs_is_a = matches!(nodes[usize::from(lhs)], SpirvLang::Symbol(sym) if sym == a);
+        let rhs_is_b = matches!(nodes[usize::from(rhs)], SpirvLang::Symbol(sym) if sym == b);
+        let lhs_is_b = matches!(nodes[usize::from(lhs)], SpirvLang::Symbol(sym) if sym == b);
+        let rhs_is_a = matches!(nodes[usize::from(rhs)], SpirvLang::Symbol(sym) if sym == a);
+        assert!(
+            (lhs_is_a && rhs_is_b) || (lhs_is_b && rhs_is_a),
+            "expected logor between a and b, got {nodes:?}"
+        );
+    }
+
+    #[test]
+    fn rewrites_logor_of_negations_to_negated_and() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("a")), // 0
+            SpirvLang::Symbol(Symbol::from("b")), // 1
+            SpirvLang::LogNot(Id::from(0)),       // 2
+            SpirvLang::LogNot(Id::from(1)),       // 3
+            SpirvLang::LogOr([Id::from(2), Id::from(3)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::LogNot(inner)) = nodes.last() else {
+            panic!("expected lognot root, got {:?}", nodes.last());
+        };
+        let SpirvLang::LogAnd([lhs, rhs]) = nodes[usize::from(*inner)] else {
+            panic!("expected logand under lognot, got {:?}", nodes[usize::from(*inner)]);
+        };
+        let a = Symbol::from("a");
+        let b = Symbol::from("b");
+        let lhs_is_a = matches!(nodes[usize::from(lhs)], SpirvLang::Symbol(sym) if sym == a);
+        let rhs_is_b = matches!(nodes[usize::from(rhs)], SpirvLang::Symbol(sym) if sym == b);
+        let lhs_is_b = matches!(nodes[usize::from(lhs)], SpirvLang::Symbol(sym) if sym == b);
+        let rhs_is_a = matches!(nodes[usize::from(rhs)], SpirvLang::Symbol(sym) if sym == a);
+        assert!(
+            (lhs_is_a && rhs_is_b) || (lhs_is_b && rhs_is_a),
+            "expected logand between a and b, got {nodes:?}"
         );
     }
 

@@ -166,6 +166,7 @@ Planned tasks:
 - Added comparison rewrites that drop paired negations in `eq`/`ne` operands, with Rust unit coverage.
 - Added comparison rewrites that drop paired bitwise-not operands in `eq`/`ne`, with Rust unit coverage.
 - Added bxor rewrite to drop paired bitwise-not operands (`(~x) ^ (~y)` -> `x ^ y`) with Rust unit coverage.
+- Added logical De Morgan rewrites so `(!a && !b)` folds into `!(a || b)` and `(!a || !b)` folds into `!(a && b)` with Rust unit coverage.
 
 ## Upcoming Milestone: Optimizer Rewrite Stability & Extension
 - Broaden e-graph rewrites to additional algebraic/bitwise identities while preserving id stability (e.g., deeper shift/mask mixes, rotate-like sequences as supported).
