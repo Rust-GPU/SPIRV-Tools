@@ -199,6 +199,7 @@ Planned tasks:
 - Added eq/ne rewrites that push bitwise-not into constant operands, with Rust unit coverage.
 - Added eq/ne rewrites that fold xor-with-constant comparisons into direct const comparisons, with Rust unit coverage.
 - Added logical eq/ne contradiction rewrite so `(a == b) && (a != b)` folds to `false`, with Rust unit coverage.
+- Added logical eq split-or rewrite so `leq(a | b, a | !b)` folds to `a`, with Rust unit coverage.
 - Added eq/ne rewrites that fold add-with-constant comparisons into direct const comparisons, with Rust unit coverage.
 - Added eq/ne rewrites that fold sub-with-constant comparisons into direct const comparisons, with Rust unit coverage.
 - Added eq/ne rewrites that fold left-sub-with-constant comparisons into direct const comparisons, with Rust unit coverage.
