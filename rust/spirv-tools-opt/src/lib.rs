@@ -1681,6 +1681,10 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
             "logand-absorb-nested-or";
             "(land ?a (lor ?b (land ?a ?c)))" => "(land ?a (lor ?b ?c))"
         ),
+        rewrite!(
+            "logand-absorb-nested-or-comm";
+            "(land ?a (lor ?b (land ?c ?a)))" => "(land ?a (lor ?b ?c))"
+        ),
         rewrite!("logor-absorb-land"; "(lor ?a (land ?a ?b))" => "?a"),
         rewrite!("logor-absorb-land-comm"; "(lor (land ?a ?b) ?a)" => "?a"),
         rewrite!("logor-tautology-right"; "(lor ?a (lor (lnot ?a) ?b))" => { BoolConst { value: true } }),
@@ -14221,6 +14225,14 @@ mod tests {
     fn rewrites_logand_absorb_nested_or() {
         assert_simplifies(
             "(land a (lor b (land a c)))",
+            "(land a (lor b c))",
+        );
+    }
+
+    #[test]
+    fn rewrites_logand_absorb_nested_or_comm() {
+        assert_simplifies(
+            "(land a (lor b (land c a)))",
             "(land a (lor b c))",
         );
     }
