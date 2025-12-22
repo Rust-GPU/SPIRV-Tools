@@ -711,6 +711,10 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("bxor-absorbs-split-y-comm"; "(bxor (band (bnot ?x) ?y) (band ?x ?y))" => "?y"),
         rewrite!("bxor-absorbs-split-x"; "(bxor (band ?x ?y) (band ?x (bnot ?y)))" => "?x"),
         rewrite!("bxor-absorbs-split-x-comm"; "(bxor (band ?x (bnot ?y)) (band ?x ?y))" => "?x"),
+        rewrite!("bor-consensus-and-left"; "(bor (band ?x ?y) (band ?x ?z))" => "(band ?x (bor ?y ?z))"),
+        rewrite!("bor-consensus-and-left-comm"; "(bor (band ?y ?x) (band ?x ?z))" => "(band ?x (bor ?y ?z))"),
+        rewrite!("bor-consensus-and-right"; "(bor (band ?x ?y) (band ?z ?x))" => "(band ?x (bor ?y ?z))"),
+        rewrite!("bor-consensus-and-right-comm"; "(bor (band ?y ?x) (band ?z ?x))" => "(band ?x (bor ?y ?z))"),
         // Rust-only improvement: absorb complement masks in OR/AND/XOR.
         rewrite!("bor-absorb-complement-mask-right"; "(bor ?x (band (bnot ?x) ?y))" => "(bor ?x ?y)"),
         rewrite!("bor-absorb-complement-mask-right-comm"; "(bor ?x (band ?y (bnot ?x)))" => "(bor ?x ?y)"),
@@ -8460,6 +8464,31 @@ mod tests {
             optimized,
             RecExpr::from(vec![SpirvLang::Const(ConstValue::new(u32::MAX))])
         );
+    }
+
+    #[test]
+    fn rewrites_bor_consensus_and_to_band_or() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::Symbol(Symbol::from("z")), // 2
+            SpirvLang::BitAnd([Id::from(0), Id::from(1)]),
+            SpirvLang::BitAnd([Id::from(0), Id::from(2)]),
+            SpirvLang::BitOr([Id::from(3), Id::from(4)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let expected = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::Symbol(Symbol::from("z")), // 2
+            SpirvLang::BitOr([Id::from(1), Id::from(2)]),
+            SpirvLang::BitAnd([Id::from(0), Id::from(3)]),
+        ]);
+        let Some(expected_id) = runner.egraph.lookup_expr(&expected) else {
+            panic!("expected x & (y | z) to be introduced by consensus rewrites");
+        };
+        assert_eq!(runner.egraph.find(root), runner.egraph.find(expected_id));
     }
 
     #[test]
