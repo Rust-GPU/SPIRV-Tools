@@ -4584,10 +4584,10 @@ mod tests {
     use std::collections::HashMap;
 
     fn is_named_symbol(egraph: &EGraph<SpirvLang, ()>, id: Id, name: &str) -> bool {
-        matches!(
-            egraph[egraph.find(id)].nodes.as_slice(),
-            [SpirvLang::Symbol(sym)] if *sym == Symbol::from(name)
-        )
+        egraph[egraph.find(id)]
+            .nodes
+            .iter()
+            .any(|node| matches!(node, SpirvLang::Symbol(sym) if *sym == Symbol::from(name)))
     }
 
     fn is_neg_named_symbol(egraph: &EGraph<SpirvLang, ()>, id: Id, name: &str) -> bool {
