@@ -141,7 +141,7 @@ fn build_and_over_or_module(int_width: u32) -> Vec<u32> {
     let _band = b.bitwise_and(int, None, x, bor).expect("band");
     b.ret().unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", &[]);
+    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", []);
     b.module().assemble()
 }
 
@@ -170,7 +170,7 @@ fn build_or_over_and_module(int_width: u32) -> Vec<u32> {
     let _bor = b.bitwise_or(int, None, x, band).expect("or");
     b.ret().unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", &[]);
+    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", []);
     b.module().assemble()
 }
 
@@ -196,7 +196,7 @@ fn build_bor_distribute_over_bxor_module(int_width: u32) -> Vec<u32> {
     let _ = b.bitwise_or(int, None, x, xor).expect("bor");
     b.ret().unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", &[]);
+    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", []);
     b.module().assemble()
 }
 

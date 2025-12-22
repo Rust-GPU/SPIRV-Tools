@@ -774,7 +774,7 @@ fn words_as_bytes(words: &[u32]) -> Vec<u8> {
 }
 
 fn bytes_to_words(bytes: &[u8]) -> Result<Vec<u32>, String> {
-    if bytes.len() % 4 != 0 {
+    if !bytes.len().is_multiple_of(4) {
         return Err("output length is not a multiple of 4 bytes".to_string());
     }
     let mut out = Vec::with_capacity(bytes.len() / 4);

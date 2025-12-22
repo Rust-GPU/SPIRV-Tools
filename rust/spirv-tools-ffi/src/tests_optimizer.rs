@@ -1305,7 +1305,7 @@ mod optimizer_tests {
                     if inst.result_id != Some(add_id) {
                         continue;
                     }
-                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -1372,7 +1372,7 @@ mod optimizer_tests {
                     if inst.result_id != Some(add_id) {
                         continue;
                     }
-                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -1395,7 +1395,7 @@ mod optimizer_tests {
                     if inst.result_id != Some(add_id) {
                         continue;
                     }
-                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -1466,7 +1466,7 @@ mod optimizer_tests {
                     if inst.result_id != Some(add_id) {
                         continue;
                     }
-                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -1489,7 +1489,7 @@ mod optimizer_tests {
                     if inst.result_id != Some(add_id) {
                         continue;
                     }
-                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -1560,7 +1560,7 @@ mod optimizer_tests {
                     if inst.result_id != Some(add_id) {
                         continue;
                     }
-                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -1583,7 +1583,7 @@ mod optimizer_tests {
                     if inst.result_id != Some(add_id) {
                         continue;
                     }
-                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -1641,7 +1641,7 @@ mod optimizer_tests {
                         Some(sub_id),
                         "mul should replace subtract result"
                     );
-                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -1704,7 +1704,7 @@ mod optimizer_tests {
                         Some(sub_id),
                         "mul should replace subtract result"
                     );
-                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -1767,7 +1767,7 @@ mod optimizer_tests {
                         Some(sub_id),
                         "mul should replace subtract result"
                     );
-                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -1831,7 +1831,7 @@ mod optimizer_tests {
                         Some(sub_id),
                         "mul should replace subtract result"
                     );
-                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -1895,7 +1895,7 @@ mod optimizer_tests {
                         Some(sub_id),
                         "mul should replace subtract result"
                     );
-                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -1959,7 +1959,7 @@ mod optimizer_tests {
                         Some(sub_id),
                         "mul should replace subtract result"
                     );
-                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2019,7 +2019,7 @@ mod optimizer_tests {
                         Some(sub_id),
                         "mul should replace subtract result"
                     );
-                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2079,7 +2079,7 @@ mod optimizer_tests {
                         Some(sub_id),
                         "mul should replace subtract result"
                     );
-                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2243,7 +2243,7 @@ mod optimizer_tests {
                         Some(sub_id),
                         "mul should replace subtract result"
                     );
-                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2303,7 +2303,7 @@ mod optimizer_tests {
                         Some(sub_id),
                         "mul should replace subtract result"
                     );
-                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2363,7 +2363,7 @@ mod optimizer_tests {
                         Some(sub_id),
                         "mul should replace subtract result"
                     );
-                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2423,7 +2423,7 @@ mod optimizer_tests {
                         Some(sub_id),
                         "mul should replace subtract result"
                     );
-                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2483,7 +2483,7 @@ mod optimizer_tests {
                         Some(sub_id),
                         "mul should replace subtract result"
                     );
-                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2557,7 +2557,7 @@ mod optimizer_tests {
                     if inst.result_id != Some(sub_id) {
                         continue;
                     }
-                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2581,7 +2581,7 @@ mod optimizer_tests {
                     if inst.result_id != Some(sub_id) {
                         continue;
                     }
-                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2645,7 +2645,7 @@ mod optimizer_tests {
                     if inst.result_id != Some(sub_id) {
                         continue;
                     }
-                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2669,7 +2669,7 @@ mod optimizer_tests {
                     if inst.result_id != Some(sub_id) {
                         continue;
                     }
-                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2736,7 +2736,7 @@ mod optimizer_tests {
                     if inst.result_id != Some(sub_id) {
                         continue;
                     }
-                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2760,7 +2760,7 @@ mod optimizer_tests {
                     if inst.result_id != Some(sub_id) {
                         continue;
                     }
-                    let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2807,7 +2807,7 @@ mod optimizer_tests {
             match inst.class.opcode {
                 Op::ISub => {
                     diff_id = inst.result_id;
-                    let Some(lhs_id) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs_id) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs_id) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2822,7 +2822,7 @@ mod optimizer_tests {
                     if inst.result_id != Some(sub_id) {
                         continue;
                     }
-                    let Some(lhs_id) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs_id) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs_id) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2860,7 +2860,7 @@ mod optimizer_tests {
             match inst.class.opcode {
                 Op::IAdd => {
                     sum_id = inst.result_id;
-                    let Some(lhs_id) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs_id) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs_id) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2875,7 +2875,7 @@ mod optimizer_tests {
                     if inst.result_id != Some(add_id) {
                         continue;
                     }
-                    let Some(lhs_id) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs_id) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs_id) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2913,7 +2913,7 @@ mod optimizer_tests {
             match inst.class.opcode {
                 Op::ISub => {
                     diff_id = inst.result_id;
-                    let Some(lhs_id) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs_id) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs_id) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2928,7 +2928,7 @@ mod optimizer_tests {
                     if inst.result_id != Some(sub_id) {
                         continue;
                     }
-                    let Some(lhs_id) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs_id) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs_id) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2969,7 +2969,7 @@ mod optimizer_tests {
             match inst.class.opcode {
                 Op::ISub => {
                     diff_id = inst.result_id;
-                    let Some(lhs_id) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs_id) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs_id) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2984,7 +2984,7 @@ mod optimizer_tests {
                     if inst.result_id != Some(sub_id) {
                         continue;
                     }
-                    let Some(lhs_id) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs_id) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs_id) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -3025,7 +3025,7 @@ mod optimizer_tests {
             match inst.class.opcode {
                 Op::IAdd => {
                     sum_id = inst.result_id;
-                    let Some(lhs_id) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs_id) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs_id) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -3040,7 +3040,7 @@ mod optimizer_tests {
                     if inst.result_id != Some(add_id) {
                         continue;
                     }
-                    let Some(lhs_id) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs_id) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs_id) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -3081,7 +3081,7 @@ mod optimizer_tests {
             match inst.class.opcode {
                 Op::IAdd => {
                     sum_id = inst.result_id;
-                    let Some(lhs_id) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs_id) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs_id) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -3096,7 +3096,7 @@ mod optimizer_tests {
                     if inst.result_id != Some(add_id) {
                         continue;
                     }
-                    let Some(lhs_id) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                    let Some(lhs_id) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                         continue;
                     };
                     let Some(rhs_id) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {

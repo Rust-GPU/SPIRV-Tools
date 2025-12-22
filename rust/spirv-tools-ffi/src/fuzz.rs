@@ -1168,13 +1168,13 @@ fn apply_invalid_mutation(module: &mut dr::Module, kind: InvalidKind) {
                 insert_global_vars(module, payload_ptr, StorageClass::IncomingRayPayloadKHR, 1);
             push_interfaces(module, &ids);
             // Strip ray tracing capabilities if present.
-            module
-                .capabilities
-                .retain(|inst| match inst.operands.first() {
+            module.capabilities.retain(|inst| {
+                !matches!(
+                    inst.operands.first(),
                     Some(Operand::Capability(spirv::Capability::RayTracingKHR))
-                    | Some(Operand::Capability(spirv::Capability::RayTracingNV)) => false,
-                    _ => true,
-                });
+                        | Some(Operand::Capability(spirv::Capability::RayTracingNV))
+                )
+            });
             // Keep Shader for a valid baseline.
             module.capabilities.push(Instruction::new(
                 Op::Capability,

@@ -21,7 +21,7 @@ fn build_minimal_module() -> Vec<u32> {
     b.begin_block(None).expect("block");
     b.ret().expect("ret");
     b.end_function().expect("end");
-    b.entry_point(ExecutionModel::Vertex, main, "main", &[]);
+    b.entry_point(ExecutionModel::Vertex, main, "main", []);
     b.module().assemble()
 }
 
