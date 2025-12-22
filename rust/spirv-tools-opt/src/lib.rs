@@ -1087,6 +1087,12 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("ne-sub-cancel-right"; "(ne (- ?y ?x) (- ?z ?x))" => "(ne ?y ?z)"),
         rewrite!("eq-bxor-cancel-left"; "(eq (bxor ?x ?y) (bxor ?x ?z))" => "(eq ?y ?z)"),
         rewrite!("ne-bxor-cancel-left"; "(ne (bxor ?x ?y) (bxor ?x ?z))" => "(ne ?y ?z)"),
+        rewrite!("eq-bxor-self-zero"; "(eq (bxor ?x ?y) ?x)" => {
+            CmpXorSelfZero { other: var("?y"), eq: true }
+        }),
+        rewrite!("ne-bxor-self-zero"; "(ne (bxor ?x ?y) ?x)" => {
+            CmpXorSelfZero { other: var("?y"), eq: false }
+        }),
         rewrite!("eq-mul-odd-cancel"; "(eq (* ?x ?c) (* ?y ?c))" => "(eq ?x ?y)" if is_const_odd(var("?c"))),
         rewrite!("ne-mul-odd-cancel"; "(ne (* ?x ?c) (* ?y ?c))" => "(ne ?x ?y)" if is_const_odd(var("?c"))),
         rewrite!("eq-bxor-zero"; "(eq (bxor ?x ?y) ?c)" => "(eq ?x ?y)" if is_const_zero(var("?c"))),
@@ -1610,6 +1616,10 @@ struct CmpSubMoveConstLeft {
     x: Var,
     c: Var,
     y: Var,
+    eq: bool,
+}
+struct CmpXorSelfZero {
+    other: Var,
     eq: bool,
 }
 struct SelectConstCond {
@@ -2710,6 +2720,29 @@ impl Applier<SpirvLang, ()> for CmpSubMoveConstLeft {
             egraph.add(SpirvLang::Eq([subst[self.x], sub]))
         } else {
             egraph.add(SpirvLang::Ne([subst[self.x], sub]))
+        };
+        egraph.union(eclass, cmp);
+        vec![cmp]
+    }
+}
+
+impl Applier<SpirvLang, ()> for CmpXorSelfZero {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(width) = width_hint(egraph, eclass, [subst[self.other]]) else {
+            return Vec::new();
+        };
+        let const_zero = egraph.add(SpirvLang::Const(ConstValue::new_with_width(0, width)));
+        let cmp = if self.eq {
+            egraph.add(SpirvLang::Eq([subst[self.other], const_zero]))
+        } else {
+            egraph.add(SpirvLang::Ne([subst[self.other], const_zero]))
         };
         egraph.union(eclass, cmp);
         vec![cmp]
@@ -8022,6 +8055,66 @@ mod tests {
             }
         }
         assert!(found, "expected ne(x, y) from mul-by-odd comparison");
+    }
+
+    #[test]
+    fn rewrites_eq_bxor_self_to_other_zero() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),          // 0
+            SpirvLang::Symbol(Symbol::from("y")),          // 1
+            SpirvLang::BitXor([Id::from(0), Id::from(1)]), // 2 = x ^ y
+            SpirvLang::Eq([Id::from(2), Id::from(0)]),     // x ^ y == x
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::Eq([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_y = has_symbol(&runner.egraph, *lhs);
+            let rhs_is_y = has_symbol(&runner.egraph, *rhs);
+            let lhs_const = const_value(&runner.egraph, *lhs);
+            let rhs_const = const_value(&runner.egraph, *rhs);
+            if (lhs_is_y && rhs_const == Some(ConstValue::new(0)))
+                || (rhs_is_y && lhs_const == Some(ConstValue::new(0)))
+            {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected eq(y, 0) from x^y == x");
+    }
+
+    #[test]
+    fn rewrites_ne_bxor_self_to_other_zero() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),          // 0
+            SpirvLang::Symbol(Symbol::from("y")),          // 1
+            SpirvLang::BitXor([Id::from(0), Id::from(1)]), // 2 = x ^ y
+            SpirvLang::Ne([Id::from(2), Id::from(0)]),     // x ^ y != x
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::Ne([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_y = has_symbol(&runner.egraph, *lhs);
+            let rhs_is_y = has_symbol(&runner.egraph, *rhs);
+            let lhs_const = const_value(&runner.egraph, *lhs);
+            let rhs_const = const_value(&runner.egraph, *rhs);
+            if (lhs_is_y && rhs_const == Some(ConstValue::new(0)))
+                || (rhs_is_y && lhs_const == Some(ConstValue::new(0)))
+            {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected ne(y, 0) from x^y != x");
     }
 
     #[test]
