@@ -1273,6 +1273,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("logand-comm"; "(land ?a ?b)" => "(land ?b ?a)"),
         rewrite!("logand-assoc"; "(land ?a (land ?b ?c))" => "(land (land ?a ?b) ?c)"),
         rewrite!("logor-comm"; "(lor ?a ?b)" => "(lor ?b ?a)"),
+        rewrite!("logor-assoc"; "(lor ?a (lor ?b ?c))" => "(lor (lor ?a ?b) ?c)"),
         rewrite!("logeq-comm"; "(leq ?a ?b)" => "(leq ?b ?a)"),
         rewrite!("logne-comm"; "(lne ?a ?b)" => "(lne ?b ?a)"),
         rewrite!("logeq-true-right"; "(leq ?a ?c)" => "?a" if is_const_true(var("?c"))),
@@ -13943,6 +13944,11 @@ mod tests {
     #[test]
     fn rewrites_logand_associates() {
         assert_simplifies("(land a (land b c))", "(land (land a b) c)");
+    }
+
+    #[test]
+    fn rewrites_logor_associates() {
+        assert_simplifies("(lor a (lor b c))", "(lor (lor a b) c)");
     }
 
     #[test]
