@@ -202,6 +202,7 @@ Planned tasks:
 - Added logical eq split-or rewrite so `leq(a | b, a | !b)` folds to `a`, with Rust unit coverage.
 - Added logical eq split-or rewrite so `leq(a | b, !a | b)` folds to `b`, with Rust unit coverage.
 - Rust-only: added logical ne split-or rewrites so `lne(a | b, a | !b)` folds to `!a` and `lne(a | b, !a | b)` folds to `!b`, with Rust unit coverage.
+- Rust-only: added logical eq absorption so `a && (a == b)` folds to `a && b`, with Rust unit coverage.
 - Added eq/ne rewrites that fold add-with-constant comparisons into direct const comparisons, with Rust unit coverage.
 - Added eq/ne rewrites that fold sub-with-constant comparisons into direct const comparisons, with Rust unit coverage.
 - Added eq/ne rewrites that fold left-sub-with-constant comparisons into direct const comparisons, with Rust unit coverage.

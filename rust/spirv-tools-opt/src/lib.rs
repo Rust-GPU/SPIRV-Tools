@@ -1444,6 +1444,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("logor-leq-lne-left"; "(lor (lne ?a ?b) (leq ?a ?b))" => { BoolConst { value: true } }),
         rewrite!("logand-leq-lne-right"; "(land (leq ?a ?b) (lne ?a ?b))" => { BoolConst { value: false } }),
         rewrite!("logand-leq-lne-left"; "(land (lne ?a ?b) (leq ?a ?b))" => { BoolConst { value: false } }),
+        rewrite!("logand-leq-absorb"; "(land ?a (leq ?a ?b))" => "(land ?a ?b)"),
         rewrite!("logeq-or-split-a-right"; "(leq (lor ?a ?b) (lor ?a (lnot ?b)))" => "?a"),
         rewrite!("logeq-or-split-a-left"; "(leq (lor ?a (lnot ?b)) (lor ?a ?b))" => "?a"),
         rewrite!("logeq-or-split-b-right"; "(leq (lor ?a ?b) (lor (lnot ?a) ?b))" => "?b"),
@@ -4874,6 +4875,13 @@ mod tests {
                 SpirvLang::BitNot(child) if is_named_symbol(egraph, *child, name)
             )
         })
+    }
+
+    fn assert_simplifies(expr: &str, expected: &str) {
+        let expr: RecExpr<SpirvLang> = expr.parse().unwrap();
+        let expected: RecExpr<SpirvLang> = expected.parse().unwrap();
+        let optimized = optimize_expr(&expr);
+        assert_eq!(optimized, expected);
     }
 
     #[test]
@@ -11114,6 +11122,11 @@ mod tests {
             optimized,
             RecExpr::from(vec![SpirvLang::Const(const_bool(false))])
         );
+    }
+
+    #[test]
+    fn rewrites_logical_eq_absorptions() {
+        assert_simplifies("(land a (leq a b))", "(land a b)");
     }
 
     #[test]
