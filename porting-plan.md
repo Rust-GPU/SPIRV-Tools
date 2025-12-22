@@ -1422,3 +1422,4 @@ Tasks for this milestone:
 - Added nested complement absorption for logical AND over OR with commuted AND (`a && (b || (c && !a)) -> a && b`) with Rust coverage.
 - Added nested complement absorption for logical OR over AND (`a || (b && (!a || c)) -> a || b`) with Rust coverage.
 - Added nested complement absorption for logical OR over AND with commuted OR (`a || (b && (c || !a)) -> a || b`) with Rust coverage.
+- Added nested complement absorption for inverted logical AND (`!a && (b || (a && c)) -> !a && b`) with Rust coverage.
