@@ -1,4 +1,5 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use rspirv::binary::Assemble;
 use spirv_tools_cli::disassemble::InputSource;
 use spirv_tools_cli::optimizer::{run_optimize, OptimizeConfig};
 use std::path::PathBuf;
