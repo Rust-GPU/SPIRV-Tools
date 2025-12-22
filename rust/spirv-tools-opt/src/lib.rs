@@ -893,6 +893,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("bxor-diff-masked-or-left"; "(bxor (bor ?x ?y) ?x)" => "(band ?y (bnot ?x))"),
         rewrite!("bxor-or-or-noty-right"; "(bxor (bor ?x ?y) (bor ?x (bnot ?y)))" => "(bnot ?x)"),
         rewrite!("bxor-or-or-noty-left"; "(bxor (bor ?x (bnot ?y)) (bor ?x ?y))" => "(bnot ?x)"),
+        rewrite!("bxor-or-or-notx-right"; "(bxor (bor ?x ?y) (bor (bnot ?x) ?y))" => "(bnot ?y)"),
+        rewrite!("bxor-or-or-notx-left"; "(bxor (bor (bnot ?x) ?y) (bor ?x ?y))" => "(bnot ?y)"),
         rewrite!("bxor-bnot-bnot"; "(bxor (bnot ?x) (bnot ?y))" => "(bxor ?x ?y)"),
         rewrite!("bxor-comm"; "(bxor ?a ?b)" => "(bxor ?b ?a)"),
         rewrite!("bxor-assoc"; "(bxor ?a (bxor ?b ?c))" => "(bxor (bxor ?a ?b) ?c)"),
@@ -9879,6 +9881,24 @@ mod tests {
         assert!(
             is_bnot_named_symbol(&runner.egraph, root, "x"),
             "expected (x | y) ^ (x | ~y) to rewrite to ~x"
+        );
+    }
+
+    #[test]
+    fn rewrites_bxor_or_or_notx_to_not_y() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::BitOr([Id::from(0), Id::from(1)]),
+            SpirvLang::BitNot(Id::from(0)),
+            SpirvLang::BitOr([Id::from(3), Id::from(1)]),
+            SpirvLang::BitXor([Id::from(2), Id::from(4)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        assert!(
+            is_bnot_named_symbol(&runner.egraph, root, "y"),
+            "expected (x | y) ^ (~x | y) to rewrite to ~y"
         );
     }
 
