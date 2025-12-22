@@ -1749,6 +1749,10 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
             "logor-absorb-complement-and-comm";
             "(lor (land (lnot ?a) ?b) ?a)" => "(lor ?a ?b)"
         ),
+        rewrite!(
+            "logor-absorb-nested-complement-and";
+            "(lor ?a (land ?b (lor (lnot ?a) ?c)))" => "(lor ?a ?b)"
+        ),
         rewrite!("select-same"; "(select ?c ?a ?a)" => "?a"),
         rewrite!("select-nest-right"; "(select ?c ?x (select ?c ?y ?z))" => "(select ?c ?x ?z)"),
         rewrite!("select-nest-left"; "(select ?c (select ?c ?x ?y) ?z)" => "(select ?c ?x ?z)"),
@@ -14282,6 +14286,14 @@ mod tests {
         assert_simplifies(
             "(land a (lor b (land c (lnot a))))",
             "(land a b)",
+        );
+    }
+
+    #[test]
+    fn rewrites_logor_absorb_nested_complement_and() {
+        assert_simplifies(
+            "(lor a (land b (lor (lnot a) c)))",
+            "(lor a b)",
         );
     }
 
