@@ -1429,6 +1429,9 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("ule-zero-left"; "(ule ?c ?x)" => { BoolConst { value: true } } if is_const_zero(var("?c"))),
         rewrite!("ule-max-right"; "(ule ?x ?c)" => { BoolConst { value: true } } if is_const_all_ones(var("?c"))),
         rewrite!("ule-max-left"; "(ule ?c ?x)" => "(eq ?x ?c)" if is_const_all_ones(var("?c"))),
+        rewrite!("ule-max-minus-one-right"; "(ule ?x ?c)" => {
+            CmpConstOffset { x: var("?x"), c: var("?c"), offset: 1, eq: false }
+        } if is_const_unsigned_max_minus_one(var("?c"))),
         rewrite!("ugt-zero-right"; "(ugt ?x ?c)" => "(ne ?x ?c)" if is_const_zero(var("?c"))),
         rewrite!("ugt-zero-left"; "(ugt ?c ?x)" => { BoolConst { value: false } } if is_const_zero(var("?c"))),
         rewrite!("ugt-max-right"; "(ugt ?x ?c)" => { BoolConst { value: false } } if is_const_all_ones(var("?c"))),
@@ -13867,6 +13870,7 @@ mod tests {
         assert_simplifies("(ult x 1)", "(eq x 0)");
         assert_simplifies("(uge x 1)", "(ne x 0)");
         assert_simplifies("(ugt x 4294967294)", "(eq x 4294967295)");
+        assert_simplifies("(ule x 4294967294)", "(ne x 4294967295)");
     }
 
     #[test]

@@ -395,6 +395,7 @@ Planned tasks:
 - Added unsigned compare rewrite so `ult(x, 1)` folds to `x == 0`, with Rust unit coverage.
 - Added unsigned compare rewrite so `uge(x, 1)` folds to `x != 0`, with Rust unit coverage.
 - Added unsigned compare rewrite so `ugt(x, max-1)` folds to `x == max`, with Rust unit coverage.
+- Added unsigned compare rewrite so `ule(x, max-1)` folds to `x != max`, with Rust unit coverage.
 
 ## Upcoming Milestone: Optimizer Rewrite Stability & Extension
 - Broaden e-graph rewrites to additional algebraic/bitwise identities while preserving id stability (e.g., deeper shift/mask mixes, rotate-like sequences as supported).
