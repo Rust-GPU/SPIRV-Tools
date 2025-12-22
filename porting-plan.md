@@ -1407,3 +1407,4 @@ Tasks for this milestone:
 - Added nested absorption rewrite for AND over OR (`x & (y | (x & z)) -> x & (y | z)`) with Rust coverage.
 - Added nested absorption rewrite for AND over OR with commuted AND (`x & (y | (z & x)) -> x & (y | z)`) with Rust coverage.
 - Added nested absorption rewrite for OR over AND (`x | (y & (x | z)) -> x | (y & z)`) with Rust coverage.
+- Added nested absorption rewrite for OR over AND with commuted OR (`x | (y & (z | x)) -> x | (y & z)`) with Rust coverage.
