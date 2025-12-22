@@ -687,6 +687,10 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("bor-absorbs-split-y-comm"; "(bor (band (bnot ?x) ?y) (band ?x ?y))" => "?y"),
         rewrite!("bor-absorbs-split-x"; "(bor (band ?x ?y) (band ?x (bnot ?y)))" => "?x"),
         rewrite!("bor-absorbs-split-x-comm"; "(bor (band ?x (bnot ?y)) (band ?x ?y))" => "?x"),
+        rewrite!("bxor-absorbs-split-y"; "(bxor (band ?x ?y) (band (bnot ?x) ?y))" => "?y"),
+        rewrite!("bxor-absorbs-split-y-comm"; "(bxor (band (bnot ?x) ?y) (band ?x ?y))" => "?y"),
+        rewrite!("bxor-absorbs-split-x"; "(bxor (band ?x ?y) (band ?x (bnot ?y)))" => "?x"),
+        rewrite!("bxor-absorbs-split-x-comm"; "(bxor (band ?x (bnot ?y)) (band ?x ?y))" => "?x"),
         // Rust-only improvement: absorb complement masks in OR/AND/XOR.
         rewrite!("bor-absorb-complement-mask-right"; "(bor ?x (band (bnot ?x) ?y))" => "(bor ?x ?y)"),
         rewrite!("bor-absorb-complement-mask-right-comm"; "(bor ?x (band ?y (bnot ?x)))" => "(bor ?x ?y)"),
@@ -5458,6 +5462,40 @@ mod tests {
         assert!(
             (lhs_is_x && rhs_is_y) || (lhs_is_y && rhs_is_x),
             "expected bxor between x and y, got {nodes:?}"
+        );
+    }
+
+    #[test]
+    fn rewrites_bxor_split_y_term_to_mask() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),          // 0
+            SpirvLang::Symbol(Symbol::from("y")),          // 1
+            SpirvLang::BitAnd([Id::from(0), Id::from(1)]), // 2 = x & y
+            SpirvLang::BitNot(Id::from(0)),                // 3 = ~x
+            SpirvLang::BitAnd([Id::from(3), Id::from(1)]), // 4 = ~x & y
+            SpirvLang::BitXor([Id::from(2), Id::from(4)]), // 5 = (x & y) ^ (~x & y)
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("y"))])
+        );
+    }
+
+    #[test]
+    fn rewrites_bxor_split_x_term_to_mask() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),          // 0
+            SpirvLang::Symbol(Symbol::from("y")),          // 1
+            SpirvLang::BitAnd([Id::from(0), Id::from(1)]), // 2 = x & y
+            SpirvLang::BitNot(Id::from(1)),                // 3 = ~y
+            SpirvLang::BitAnd([Id::from(0), Id::from(3)]), // 4 = x & ~y
+            SpirvLang::BitXor([Id::from(2), Id::from(4)]), // 5 = (x & y) ^ (x & ~y)
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("x"))])
         );
     }
 
