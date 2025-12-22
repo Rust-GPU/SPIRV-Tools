@@ -1205,6 +1205,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("ne-sub-const"; "(ne (- ?x ?c1) ?c2)" => {
             CmpSubConstRight { x: var("?x"), c1: var("?c1"), c2: var("?c2"), eq: false }
         }),
+        rewrite!("eq-sub-move"; "(eq (- ?x ?y) ?z)" => "(eq ?x (+ ?z ?y))"),
+        rewrite!("ne-sub-move"; "(ne (- ?x ?y) ?z)" => "(ne ?x (+ ?z ?y))"),
         rewrite!("eq-sub-move-const"; "(eq (- ?x ?c) ?y)" => {
             CmpSubMoveConstRight { x: var("?x"), c: var("?c"), y: var("?y"), eq: true }
         }),
@@ -8294,6 +8296,51 @@ mod tests {
         ]);
         let Some(expected_id) = runner.egraph.lookup_expr(&expected) else {
             panic!("expected x != (z - y) to be introduced by rewrites");
+        };
+        assert_eq!(runner.egraph.find(root), runner.egraph.find(expected_id));
+    }
+
+    #[test]
+    fn rewrites_sub_moves_symbol_across_comparison() {
+        let expr_eq = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::Symbol(Symbol::from("z")), // 2
+            SpirvLang::Sub([Id::from(0), Id::from(1)]),
+            SpirvLang::Eq([Id::from(3), Id::from(2)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr_eq).run(&rewrites());
+        let root = runner.roots[0];
+        let expected = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::Symbol(Symbol::from("z")), // 2
+            SpirvLang::Add([Id::from(2), Id::from(1)]),
+            SpirvLang::Eq([Id::from(0), Id::from(3)]),
+        ]);
+        let Some(expected_id) = runner.egraph.lookup_expr(&expected) else {
+            panic!("expected x == (z + y) to be introduced by rewrites");
+        };
+        assert_eq!(runner.egraph.find(root), runner.egraph.find(expected_id));
+
+        let expr_ne = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::Symbol(Symbol::from("z")), // 2
+            SpirvLang::Sub([Id::from(0), Id::from(1)]),
+            SpirvLang::Ne([Id::from(3), Id::from(2)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr_ne).run(&rewrites());
+        let root = runner.roots[0];
+        let expected = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::Symbol(Symbol::from("z")), // 2
+            SpirvLang::Add([Id::from(2), Id::from(1)]),
+            SpirvLang::Ne([Id::from(0), Id::from(3)]),
+        ]);
+        let Some(expected_id) = runner.egraph.lookup_expr(&expected) else {
+            panic!("expected x != (z + y) to be introduced by rewrites");
         };
         assert_eq!(runner.egraph.find(root), runner.egraph.find(expected_id));
     }
