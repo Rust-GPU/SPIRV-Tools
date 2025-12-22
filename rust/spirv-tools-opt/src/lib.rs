@@ -1461,6 +1461,9 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("sgt-max-left"; "(sgt ?c ?x)" => "(ne ?x ?c)" if is_const_signed_max(var("?c"))),
         rewrite!("sge-min-right"; "(sge ?x ?c)" => { BoolConst { value: true } } if is_const_signed_min(var("?c"))),
         rewrite!("sge-min-left"; "(sge ?c ?x)" => "(eq ?x ?c)" if is_const_signed_min(var("?c"))),
+        rewrite!("sge-min-plus-one-right"; "(sge ?x ?c)" => {
+            CmpConstOffset { x: var("?x"), c: var("?c"), offset: -1, eq: false }
+        } if is_const_signed_min_plus_one(var("?c"))),
         rewrite!("sge-max-right"; "(sge ?x ?c)" => "(eq ?x ?c)" if is_const_signed_max(var("?c"))),
         rewrite!("sge-max-left"; "(sge ?c ?x)" => { BoolConst { value: true } } if is_const_signed_max(var("?c"))),
         rewrite!("logeq-self"; "(leq ?a ?a)" => { BoolConst { value: true } }),
@@ -13923,5 +13926,6 @@ mod tests {
     #[test]
     fn rewrites_signed_compare_near_extremes() {
         assert_simplifies("(slt x 2147483649)", "(eq x 2147483648)");
+        assert_simplifies("(sge x 2147483649)", "(ne x 2147483648)");
     }
 }
