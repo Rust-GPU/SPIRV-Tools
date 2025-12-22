@@ -235,6 +235,7 @@ Planned tasks:
 - Added bitwise rewrites so `~x | (x ^ y)` collapses to `~(x & y)`, with Rust unit coverage.
 - Added bitwise rewrites so `x | (~x ^ y)` collapses to `x | ~y`, with Rust unit coverage.
 - Added bitwise rewrites so `(x | y) & (x & y)` collapses to `x & y`, with Rust unit coverage.
+- Added bitwise rewrites so `(x | y) | (x & y)` collapses to `x | y`, with Rust unit coverage.
 - Added bitwise rewrites so `(x ^ y) & (x | y)` collapses to `x ^ y`, with Rust unit coverage.
 - Added bitwise consensus rewrites so `(x | y) & (~x | y)` collapses to `y`, with Rust unit coverage.
 - Added bitwise consensus rewrites so `(x | y) & (x | ~y)` collapses to `x`, with Rust unit coverage.
