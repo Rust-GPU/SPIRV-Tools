@@ -173,6 +173,7 @@ Planned tasks:
 - Added logical consensus so `(a || b) && (!a || b)` folds to `b`, with Rust unit coverage.
 - Added logical xnor rewrites so `(a && b) || (!a && !b)` folds to `leq(a, b)`, with Rust unit coverage.
 - Added logical xor rewrites so `(a && !b) || (!a && b)` folds to `lne(a, b)`, with Rust unit coverage.
+- Added logical xnor rewrites so `(a || !b) && (!a || b)` folds to `leq(a, b)`, with Rust unit coverage.
 - Added bitwise De Morgan rewrites so `(~a & ~b)` folds into `~(a | b)` and `(~a | ~b)` folds into `~(a & b)` with Rust unit coverage.
 - Added subtraction-add cancellation rewrites so `x - (x + y)` and `x - (y + x)` normalize to `-y`, with Rust unit coverage.
 - Added logical eq/ne rewrites to drop paired `lnot` operands, with Rust unit coverage.
