@@ -1151,6 +1151,10 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("lognot-uge"; "(lnot (uge ?a ?b))" => "(ult ?a ?b)"),
         rewrite!("lognot-logeq"; "(lnot (leq ?a ?b))" => "(lne ?a ?b)"),
         rewrite!("lognot-logne"; "(lnot (lne ?a ?b))" => "(leq ?a ?b)"),
+        rewrite!("logeq-not-left"; "(leq (lnot ?a) ?b)" => "(lne ?a ?b)"),
+        rewrite!("logeq-not-right"; "(leq ?a (lnot ?b))" => "(lne ?a ?b)"),
+        rewrite!("logne-not-left"; "(lne (lnot ?a) ?b)" => "(leq ?a ?b)"),
+        rewrite!("logne-not-right"; "(lne ?a (lnot ?b))" => "(leq ?a ?b)"),
         rewrite!("lognot-double"; "(lnot (lnot ?a))" => "?a"),
         rewrite!("logand-idem"; "(land ?a ?a)" => "?a"),
         rewrite!("logor-idem"; "(lor ?a ?a)" => "?a"),
@@ -7442,6 +7446,62 @@ mod tests {
             }
         }
         assert!(found, "expected ne to compare x against left-sub folded const");
+    }
+
+    #[test]
+    fn rewrites_logeq_with_negated_left_operand() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::LogNot(Id::from(0)),       // 2 = !x
+            SpirvLang::LogEq([Id::from(2), Id::from(1)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::LogNe([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_x = has_symbol(&runner.egraph, *lhs);
+            let rhs_is_y = has_symbol(&runner.egraph, *rhs);
+            let lhs_is_y = has_symbol(&runner.egraph, *lhs);
+            let rhs_is_x = has_symbol(&runner.egraph, *rhs);
+            if (lhs_is_x && rhs_is_y) || (lhs_is_y && rhs_is_x) {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected logne(x, y) from leq(!x, y)");
+    }
+
+    #[test]
+    fn rewrites_logne_with_negated_right_operand() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::LogNot(Id::from(1)),       // 2 = !y
+            SpirvLang::LogNe([Id::from(0), Id::from(2)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::LogEq([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_x = has_symbol(&runner.egraph, *lhs);
+            let rhs_is_y = has_symbol(&runner.egraph, *rhs);
+            let lhs_is_y = has_symbol(&runner.egraph, *lhs);
+            let rhs_is_x = has_symbol(&runner.egraph, *rhs);
+            if (lhs_is_x && rhs_is_y) || (lhs_is_y && rhs_is_x) {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected leq(x, y) from lne(x, !y)");
     }
 
     #[test]
