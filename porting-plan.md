@@ -218,6 +218,7 @@ Planned tasks:
 - Added eq/ne rewrites that move symbolic subtrahends across comparisons (`x - y == z` -> `x == z + y`), with Rust unit coverage.
 - Added logical idempotence rewrites so `a && a` and `a || a` fold to `a`, with Rust unit coverage.
 - Added logical eq/ne rewrites that fold comparisons against `true`/`false`, with Rust unit coverage.
+- Added bitwise absorption rewrites so `(~x) & ~(x | y)` folds to `~(x | y)`, with Rust unit coverage.
 - Added bxor rewrites so `x ^ ~(x ^ y)` folds to `~y`, with Rust unit coverage.
 - Added bitwise rewrites so `x | ~(x | y)` folds to `x | ~y`, with Rust unit coverage.
 - Added bitwise rewrites so `~x & ~(x & y)` folds to `~x`, with Rust unit coverage.
