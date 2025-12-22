@@ -439,6 +439,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("add-zero"; "(+ ?a ?b)" => { AddZero { a: var("?a"), b: var("?b") } }),
         rewrite!("add-neg-to-sub"; "(+ ?a (neg ?b))" => "(- ?a ?b)"),
         rewrite!("add-neg-to-sub-swap"; "(+ (neg ?a) ?b)" => "(- ?b ?a)"),
+        rewrite!("add-neg-neg"; "(+ (neg ?a) (neg ?b))" => "(neg (+ ?a ?b))"),
         rewrite!("neg-neg-cancel"; "(neg (neg ?x))" => "?x"),
         rewrite!("mul-neg-left"; "(* (neg ?a) ?b)" => "(neg (* ?a ?b))"),
         rewrite!("mul-neg-right"; "(* ?a (neg ?b))" => "(neg (* ?a ?b))"),
@@ -4606,6 +4607,35 @@ mod tests {
         assert!(
             matches!(lhs, SpirvLang::Symbol(_)) && matches!(rhs, SpirvLang::Symbol(_)),
             "subtraction should reference the two symbols: {lhs:?} {rhs:?}"
+        );
+    }
+
+    #[test]
+    fn rewrites_add_double_negation_to_negated_sum() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::Neg(Id::from(0)),          // 2 = -x
+            SpirvLang::Neg(Id::from(1)),          // 3 = -y
+            SpirvLang::Add([Id::from(2), Id::from(3)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::Neg(sum)) = nodes.last() else {
+            panic!("expected negated sum, got {:?}", nodes.last());
+        };
+        let SpirvLang::Add([lhs, rhs]) = nodes[usize::from(*sum)] else {
+            panic!("expected add under negation, got {:?}", nodes[usize::from(*sum)]);
+        };
+        let x = Symbol::from("x");
+        let y = Symbol::from("y");
+        let lhs_is_x = matches!(nodes[usize::from(lhs)], SpirvLang::Symbol(sym) if sym == x);
+        let rhs_is_y = matches!(nodes[usize::from(rhs)], SpirvLang::Symbol(sym) if sym == y);
+        let lhs_is_y = matches!(nodes[usize::from(lhs)], SpirvLang::Symbol(sym) if sym == y);
+        let rhs_is_x = matches!(nodes[usize::from(rhs)], SpirvLang::Symbol(sym) if sym == x);
+        assert!(
+            (lhs_is_x && rhs_is_y) || (lhs_is_y && rhs_is_x),
+            "expected negated sum of x and y, got {nodes:?}"
         );
     }
 
