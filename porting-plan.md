@@ -172,6 +172,7 @@ Planned tasks:
 - Added logical eq/ne rewrites to drop paired `lnot` operands, with Rust unit coverage.
 - Added eq/ne cancellation rewrites for shared `add` operands, with Rust unit coverage.
 - Added eq/ne cancellation rewrites for shared left `sub` operands, with Rust unit coverage.
+- Added eq/ne cancellation rewrites for shared right `sub` operands, with Rust unit coverage.
 
 ## Upcoming Milestone: Optimizer Rewrite Stability & Extension
 - Broaden e-graph rewrites to additional algebraic/bitwise identities while preserving id stability (e.g., deeper shift/mask mixes, rotate-like sequences as supported).
