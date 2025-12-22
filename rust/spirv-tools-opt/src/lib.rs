@@ -691,6 +691,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("bor-complement-right"; "(bor (bnot ?x) ?x)" => { BitOrComplement { _x: var("?x") } }),
         rewrite!("bor-demorgan"; "(bor (bnot ?a) (bnot ?b))" => "(bnot (band ?a ?b))"),
         rewrite!("bor-self"; "(bor ?x ?x)" => "?x"),
+        rewrite!("bor-nested-idempotent-right"; "(bor ?x (bor ?x ?y))" => "(bor ?x ?y)"),
+        rewrite!("bor-nested-idempotent-left"; "(bor (bor ?x ?y) ?x)" => "(bor ?x ?y)"),
         rewrite!("bor-absorb-right"; "(bor ?x (band ?x ?y))" => "?x"),
         rewrite!("bor-absorb-left"; "(bor (band ?x ?y) ?x)" => "?x"),
         rewrite!("band-absorbs-or"; "(band ?x (bor ?x ?y))" => "?x"),
@@ -8899,6 +8901,34 @@ mod tests {
                 SpirvLang::BitNot(Id::from(0))
             ])
         );
+    }
+
+    #[test]
+    fn rewrites_bor_nested_idempotence() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::BitOr([Id::from(0), Id::from(1)]),
+            SpirvLang::BitOr([Id::from(0), Id::from(2)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::BitOr([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_x = is_named_symbol(&runner.egraph, *lhs, "x");
+            let rhs_is_x = is_named_symbol(&runner.egraph, *rhs, "x");
+            let lhs_is_y = is_named_symbol(&runner.egraph, *lhs, "y");
+            let rhs_is_y = is_named_symbol(&runner.egraph, *rhs, "y");
+            if (lhs_is_x && rhs_is_y) || (lhs_is_y && rhs_is_x) {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected x | (x | y) to rewrite to x | y");
     }
 
     #[test]
