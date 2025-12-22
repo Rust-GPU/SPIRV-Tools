@@ -1518,6 +1518,10 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
             "lognot-logor-not-right";
             "(lnot (lor ?x (lnot ?y)))" => "(land (lnot ?x) ?y)"
         ),
+        rewrite!(
+            "lognot-logor-not-left";
+            "(lnot (lor (lnot ?x) ?y))" => "(land ?x (lnot ?y))"
+        ),
         rewrite!("lognot-eq"; "(lnot (eq ?a ?b))" => "(ne ?a ?b)"),
         rewrite!("lognot-ne"; "(lnot (ne ?a ?b))" => "(eq ?a ?b)"),
         rewrite!("lognot-slt"; "(lnot (slt ?a ?b))" => "(sge ?a ?b)"),
@@ -14027,6 +14031,11 @@ mod tests {
     #[test]
     fn rewrites_lognot_logor_not_right() {
         assert_simplifies("(lnot (lor a (lnot b)))", "(land (lnot a) b)");
+    }
+
+    #[test]
+    fn rewrites_lognot_logor_not_left() {
+        assert_simplifies("(lnot (lor (lnot a) b))", "(land a (lnot b))");
     }
 
     #[test]
