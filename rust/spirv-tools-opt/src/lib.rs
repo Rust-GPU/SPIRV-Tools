@@ -1465,6 +1465,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("logeq-lor-self"; "(leq ?a (lor ?a ?b))" => "(lor ?a (lnot ?b))"),
         rewrite!("logne-lor-self"; "(lne ?a (lor ?a ?b))" => "(land (lnot ?a) ?b)"),
         rewrite!("logeq-land-negself"; "(leq ?a (land (lnot ?a) ?b))" => "(land (lnot ?a) ?b)"),
+        rewrite!("logne-land-negself"; "(lne ?a (land (lnot ?a) ?b))" => "(lor ?a (lnot ?b))"),
         rewrite!("logeq-or-split-a-right"; "(leq (lor ?a ?b) (lor ?a (lnot ?b)))" => "?a"),
         rewrite!("logeq-or-split-a-left"; "(leq (lor ?a (lnot ?b)) (lor ?a ?b))" => "?a"),
         rewrite!("logeq-or-split-b-right"; "(leq (lor ?a ?b) (lor (lnot ?a) ?b))" => "?b"),
@@ -11167,6 +11168,7 @@ mod tests {
         assert_simplifies("(leq a (lor a b))", "(lor a (lnot b))");
         assert_simplifies("(lne a (lor a b))", "(land (lnot a) b)");
         assert_simplifies("(leq a (land (lnot a) b))", "(land (lnot a) b)");
+        assert_simplifies("(lne a (land (lnot a) b))", "(lor a (lnot b))");
     }
 
     #[test]
