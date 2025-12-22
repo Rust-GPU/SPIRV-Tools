@@ -1087,6 +1087,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("ne-sub-cancel-right"; "(ne (- ?y ?x) (- ?z ?x))" => "(ne ?y ?z)"),
         rewrite!("eq-bxor-cancel-left"; "(eq (bxor ?x ?y) (bxor ?x ?z))" => "(eq ?y ?z)"),
         rewrite!("ne-bxor-cancel-left"; "(ne (bxor ?x ?y) (bxor ?x ?z))" => "(ne ?y ?z)"),
+        rewrite!("eq-mul-odd-cancel"; "(eq (* ?x ?c) (* ?y ?c))" => "(eq ?x ?y)" if is_const_odd(var("?c"))),
+        rewrite!("ne-mul-odd-cancel"; "(ne (* ?x ?c) (* ?y ?c))" => "(ne ?x ?y)" if is_const_odd(var("?c"))),
         rewrite!("eq-bxor-zero"; "(eq (bxor ?x ?y) ?c)" => "(eq ?x ?y)" if is_const_zero(var("?c"))),
         rewrite!("ne-bxor-zero"; "(ne (bxor ?x ?y) ?c)" => "(ne ?x ?y)" if is_const_zero(var("?c"))),
         rewrite!("eq-sub-zero"; "(eq (- ?x ?y) ?c)" => "(eq ?x ?y)" if is_const_zero(var("?c"))),
@@ -4295,6 +4297,10 @@ fn is_const_zero(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) ->
 
 fn is_const_all_ones(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
     move |egraph, _, subst| const_value(egraph, subst[var]).is_some_and(ConstValue::is_all_ones)
+}
+
+fn is_const_odd(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
+    move |egraph, _, subst| const_value(egraph, subst[var]).is_some_and(|c| (c.get_u64() & 1) == 1)
 }
 
 #[cfg(test)]
@@ -7534,6 +7540,66 @@ mod tests {
             optimized,
             RecExpr::from(vec![SpirvLang::Const(const_bool(true))])
         );
+    }
+
+    #[test]
+    fn rewrites_eq_mul_by_odd_const() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Symbol(Symbol::from("y")),       // 1
+            SpirvLang::Const(ConstValue::new(3)),       // 2 (odd)
+            SpirvLang::Mul([Id::from(0), Id::from(2)]), // 3 = x * 3
+            SpirvLang::Mul([Id::from(1), Id::from(2)]), // 4 = y * 3
+            SpirvLang::Eq([Id::from(3), Id::from(4)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::Eq([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_x = has_symbol(&runner.egraph, *lhs);
+            let rhs_is_y = has_symbol(&runner.egraph, *rhs);
+            let lhs_is_y = has_symbol(&runner.egraph, *lhs);
+            let rhs_is_x = has_symbol(&runner.egraph, *rhs);
+            if (lhs_is_x && rhs_is_y) || (lhs_is_y && rhs_is_x) {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected eq(x, y) from mul-by-odd comparison");
+    }
+
+    #[test]
+    fn rewrites_ne_mul_by_odd_const() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Symbol(Symbol::from("y")),       // 1
+            SpirvLang::Const(ConstValue::new(5)),       // 2 (odd)
+            SpirvLang::Mul([Id::from(0), Id::from(2)]), // 3 = x * 5
+            SpirvLang::Mul([Id::from(1), Id::from(2)]), // 4 = y * 5
+            SpirvLang::Ne([Id::from(3), Id::from(4)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::Ne([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_x = has_symbol(&runner.egraph, *lhs);
+            let rhs_is_y = has_symbol(&runner.egraph, *rhs);
+            let lhs_is_y = has_symbol(&runner.egraph, *lhs);
+            let rhs_is_x = has_symbol(&runner.egraph, *rhs);
+            if (lhs_is_x && rhs_is_y) || (lhs_is_y && rhs_is_x) {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected ne(x, y) from mul-by-odd comparison");
     }
 
     #[test]
