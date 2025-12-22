@@ -1092,6 +1092,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("logand-idem"; "(land ?a ?a)" => "?a"),
         rewrite!("logor-idem"; "(lor ?a ?a)" => "?a"),
         rewrite!("select-same"; "(select ?c ?a ?a)" => "?a"),
+        rewrite!("select-neg-cond"; "(select (lnot ?c) ?t ?f)" => "(select ?c ?f ?t)"),
         rewrite!(
             "select-const";
             "(select ?c ?t ?f)" => { SelectConstCond { cond: var("?c"), t: var("?t"), f: var("?f") } }
@@ -5958,6 +5959,29 @@ mod tests {
         assert_eq!(
             optimized,
             RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("x"))])
+        );
+    }
+
+    #[test]
+    fn rewrites_select_negated_condition() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("c")), // 0
+            SpirvLang::LogNot(Id::from(0)),       // 1 = !c
+            SpirvLang::Symbol(Symbol::from("x")), // 2
+            SpirvLang::Symbol(Symbol::from("y")), // 3
+            SpirvLang::Select([Id::from(1), Id::from(2), Id::from(3)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::Select([cond, t, f])) = nodes.last() else {
+            panic!("expected select root, got {:?}", nodes.last());
+        };
+        let cond_sym = matches!(nodes[usize::from(*cond)], SpirvLang::Symbol(sym) if sym == Symbol::from("c"));
+        let t_sym = matches!(nodes[usize::from(*t)], SpirvLang::Symbol(sym) if sym == Symbol::from("y"));
+        let f_sym = matches!(nodes[usize::from(*f)], SpirvLang::Symbol(sym) if sym == Symbol::from("x"));
+        assert!(
+            cond_sym && t_sym && f_sym,
+            "expected select c y x after negated cond rewrite, got {nodes:?}"
         );
     }
 
