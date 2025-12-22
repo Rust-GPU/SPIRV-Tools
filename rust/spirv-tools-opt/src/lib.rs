@@ -1436,6 +1436,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("uge-zero-left"; "(uge ?c ?x)" => "(eq ?x ?c)" if is_const_zero(var("?c"))),
         rewrite!("uge-max-right"; "(uge ?x ?c)" => "(eq ?x ?c)" if is_const_all_ones(var("?c"))),
         rewrite!("uge-max-left"; "(uge ?c ?x)" => { BoolConst { value: true } } if is_const_all_ones(var("?c"))),
+        rewrite!("slt-min-right"; "(slt ?x ?c)" => { BoolConst { value: false } } if is_const_signed_min(var("?c"))),
         rewrite!("logeq-self"; "(leq ?a ?a)" => { BoolConst { value: true } }),
         rewrite!("logne-self"; "(lne ?a ?a)" => { BoolConst { value: false } }),
         rewrite!("logand-neg"; "(land ?a (lnot ?a))" => { BoolConst { value: false } }),
@@ -4875,6 +4876,36 @@ fn is_const_zero(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) ->
 
 fn is_const_all_ones(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
     move |egraph, _, subst| const_value(egraph, subst[var]).is_some_and(ConstValue::is_all_ones)
+}
+
+fn signed_limits(value: ConstValue) -> Option<(u64, u64, u64)> {
+    let width = value.width_bits();
+    if width == 0 {
+        return None;
+    }
+    let mask = value.mask();
+    let sign_bit = 1u64 << (width - 1);
+    let min = sign_bit & mask;
+    let max = mask ^ sign_bit;
+    Some((min, max, mask))
+}
+
+fn is_const_signed_min(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
+    move |egraph, _, subst| {
+        let Some(value) = const_value(egraph, subst[var]) else {
+            return false;
+        };
+        signed_limits(value).is_some_and(|(min, _, _)| value.get_u64() == min)
+    }
+}
+
+fn is_const_signed_max(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
+    move |egraph, _, subst| {
+        let Some(value) = const_value(egraph, subst[var]) else {
+            return false;
+        };
+        signed_limits(value).is_some_and(|(_, max, _)| value.get_u64() == max)
+    }
 }
 
 fn is_const_odd(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
@@ -13756,5 +13787,10 @@ mod tests {
         assert_simplifies("(uge 0 x)", "(eq x 0)");
         assert_simplifies("(uge x 4294967295)", "(eq x 4294967295)");
         assert_simplifies("(uge 4294967295 x)", "true");
+    }
+
+    #[test]
+    fn rewrites_signed_compare_extremes() {
+        assert_simplifies("(slt x 2147483648)", "false");
     }
 }
