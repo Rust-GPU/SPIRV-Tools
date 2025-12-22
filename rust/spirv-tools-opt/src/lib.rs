@@ -773,6 +773,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("bor-xor-notand-absorb-left"; "(bor (bnot (band ?x ?y)) (bxor ?x ?y))" => "(bnot (band ?x ?y))"),
         rewrite!("bor-xnor-and-absorb-right"; "(bor (bnot (bxor ?x ?y)) (band ?x ?y))" => "(bnot (bxor ?x ?y))"),
         rewrite!("bor-xnor-and-absorb-left"; "(bor (band ?x ?y) (bnot (bxor ?x ?y)))" => "(bnot (bxor ?x ?y))"),
+        rewrite!("bor-notand-nor-absorb-right"; "(bor (bnot (band ?x ?y)) (bnot (bor ?x ?y)))" => "(bnot (band ?x ?y))"),
+        rewrite!("bor-notand-nor-absorb-left"; "(bor (bnot (bor ?x ?y)) (bnot (band ?x ?y)))" => "(bnot (band ?x ?y))"),
         // Rust-only improvement: x & (x ^ y) == x & ~y, removing the xor.
         rewrite!("band-bxor-self-right"; "(band ?x (bxor ?x ?y))" => "(band ?x (bnot ?y))"),
         rewrite!("band-bxor-self-left"; "(band (bxor ?x ?y) ?x)" => "(band ?x (bnot ?y))"),
@@ -9602,6 +9604,43 @@ mod tests {
             }
         }
         assert!(found, "expected ~(x ^ y) | (x & y) to rewrite to ~(x ^ y)");
+    }
+
+    #[test]
+    fn rewrites_bor_notand_nor_absorbs() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::BitAnd([Id::from(0), Id::from(1)]),
+            SpirvLang::BitNot(Id::from(2)),
+            SpirvLang::BitOr([Id::from(0), Id::from(1)]),
+            SpirvLang::BitNot(Id::from(4)),
+            SpirvLang::BitOr([Id::from(3), Id::from(5)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::BitNot(child) = node else {
+                continue;
+            };
+            let child_class = runner.egraph.find(*child);
+            for inner in &runner.egraph[child_class].nodes {
+                let SpirvLang::BitAnd([lhs, rhs]) = inner else {
+                    continue;
+                };
+                let lhs_is_x = is_named_symbol(&runner.egraph, *lhs, "x");
+                let rhs_is_x = is_named_symbol(&runner.egraph, *rhs, "x");
+                let lhs_is_y = is_named_symbol(&runner.egraph, *lhs, "y");
+                let rhs_is_y = is_named_symbol(&runner.egraph, *rhs, "y");
+                if (lhs_is_x && rhs_is_y) || (lhs_is_y && rhs_is_x) {
+                    found = true;
+                    break;
+                }
+            }
+        }
+        assert!(found, "expected ~(x & y) | ~(x | y) to rewrite to ~(x & y)");
     }
 
     #[test]
