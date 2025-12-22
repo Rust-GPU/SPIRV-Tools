@@ -5014,7 +5014,7 @@ fn is_const_signed_min_plus_one(
             return false;
         };
         signed_limits(value)
-            .is_some_and(|(min, _, mask)| value.get_u64() == min.wrapping_add(1) & mask)
+            .is_some_and(|(min, _, mask)| value.get_u64() == (min.wrapping_add(1) & mask))
     }
 }
 
@@ -5026,7 +5026,7 @@ fn is_const_signed_max_minus_one(
             return false;
         };
         signed_limits(value)
-            .is_some_and(|(_, max, mask)| value.get_u64() == max.wrapping_sub(1) & mask)
+            .is_some_and(|(_, max, mask)| value.get_u64() == (max.wrapping_sub(1) & mask))
     }
 }
 
