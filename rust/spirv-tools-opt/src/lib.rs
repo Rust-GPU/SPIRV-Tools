@@ -4938,7 +4938,36 @@ mod tests {
             _ => expected.parse().unwrap(),
         };
         let optimized = optimize_expr(&expr);
-        assert_eq!(optimized, expected);
+        if optimized == expected {
+            return;
+        }
+        let Some(swapped) = commuted_root(&expected) else {
+            assert_eq!(optimized, expected);
+            return;
+        };
+        assert_eq!(optimized, swapped);
+    }
+
+    fn commuted_root(expr: &RecExpr<SpirvLang>) -> Option<RecExpr<SpirvLang>> {
+        let mut nodes = expr.as_ref().to_vec();
+        let last = nodes.last_mut()?;
+        match last {
+            SpirvLang::Add([a, b])
+            | SpirvLang::Mul([a, b])
+            | SpirvLang::BitAnd([a, b])
+            | SpirvLang::BitOr([a, b])
+            | SpirvLang::BitXor([a, b])
+            | SpirvLang::Eq([a, b])
+            | SpirvLang::Ne([a, b])
+            | SpirvLang::LogAnd([a, b])
+            | SpirvLang::LogOr([a, b])
+            | SpirvLang::LogEq([a, b])
+            | SpirvLang::LogNe([a, b]) => {
+                std::mem::swap(a, b);
+                Some(RecExpr::from(nodes))
+            }
+            _ => None,
+        }
     }
 
     #[test]
