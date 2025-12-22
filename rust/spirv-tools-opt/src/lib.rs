@@ -1463,6 +1463,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
             "(lor (land ?b ?c) (lor (land ?a ?b) (land (lnot ?a) ?c)))" =>
                 "(lor (land ?a ?b) (land (lnot ?a) ?c))"
         ),
+        rewrite!("logor-factor-and"; "(lor (land ?a ?b) (land ?a ?c))" => "(land ?a (lor ?b ?c))"),
         rewrite!("logand-consensus-a"; "(land (lor ?a ?b) (lor ?a (lnot ?b)))" => "?a"),
         rewrite!("logand-consensus-b"; "(land (lor ?a ?b) (lor (lnot ?a) ?b))" => "?b"),
         rewrite!("logand-xnor-to-logeq"; "(land (lor ?a (lnot ?b)) (lor (lnot ?a) ?b))" => "(leq ?a ?b)"),
@@ -11175,6 +11176,31 @@ mod tests {
         ]);
         let Some(expected_id) = runner.egraph.lookup_expr(&expected) else {
             panic!("expected (a && b) || (!a && c) to be introduced by rewrites");
+        };
+        assert_eq!(runner.egraph.find(root), runner.egraph.find(expected_id));
+    }
+
+    #[test]
+    fn rewrites_logor_factor_and() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("a")), // 0
+            SpirvLang::Symbol(Symbol::from("b")), // 1
+            SpirvLang::Symbol(Symbol::from("c")), // 2
+            SpirvLang::LogAnd([Id::from(0), Id::from(1)]),
+            SpirvLang::LogAnd([Id::from(0), Id::from(2)]),
+            SpirvLang::LogOr([Id::from(3), Id::from(4)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let expected = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("a")), // 0
+            SpirvLang::Symbol(Symbol::from("b")), // 1
+            SpirvLang::Symbol(Symbol::from("c")), // 2
+            SpirvLang::LogOr([Id::from(1), Id::from(2)]),
+            SpirvLang::LogAnd([Id::from(0), Id::from(3)]),
+        ]);
+        let Some(expected_id) = runner.egraph.lookup_expr(&expected) else {
+            panic!("expected a && (b || c) to be introduced by rewrites");
         };
         assert_eq!(runner.egraph.find(root), runner.egraph.find(expected_id));
     }
