@@ -845,6 +845,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("band-maxterms-to-xnor-left"; "(band (bor (bnot ?x) ?y) (bor ?x (bnot ?y)))" => "(bnot (bxor ?x ?y))"),
         rewrite!("band-distribute-over-or-right"; "(band ?x (bor ?y ?z))" => "(bor (band ?x ?y) (band ?x ?z))"),
         rewrite!("band-distribute-over-or-left"; "(band (bor ?y ?z) ?x)" => "(bor (band ?x ?y) (band ?x ?z))"),
+        rewrite!("band-distribute-over-xor-right"; "(band ?x (bxor ?y ?z))" => "(bxor (band ?x ?y) (band ?x ?z))"),
+        rewrite!("band-distribute-over-xor-left"; "(band (bxor ?y ?z) ?x)" => "(bxor (band ?x ?y) (band ?x ?z))"),
         rewrite!("mask-then-shift-to-shift-and-umod";
         "(shr_u (band ?x ?c_mask) ?c_shift)" => {
             MaskThenShift { x: var("?x"), mask: var("?c_mask"), shift: var("?c_shift") }
@@ -1491,6 +1493,26 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("logor-comm"; "(lor ?a ?b)" => "(lor ?b ?a)"),
         rewrite!("logand-assoc"; "(land ?a (land ?b ?c))" => "(land (land ?a ?b) ?c)"),
         rewrite!("logor-assoc"; "(lor ?a (lor ?b ?c))" => "(lor (lor ?a ?b) ?c)"),
+        rewrite!("logand-true-left"; "(land ?c ?x)" => "?x" if is_const_true(var("?c"))),
+        rewrite!("logand-true-right"; "(land ?x ?c)" => "?x" if is_const_true(var("?c"))),
+        rewrite!(
+            "logand-false-left";
+            "(land ?c ?x)" => { BoolConst { value: false } } if is_const_false(var("?c"))
+        ),
+        rewrite!(
+            "logand-false-right";
+            "(land ?x ?c)" => { BoolConst { value: false } } if is_const_false(var("?c"))
+        ),
+        rewrite!(
+            "logor-true-left";
+            "(lor ?c ?x)" => { BoolConst { value: true } } if is_const_true(var("?c"))
+        ),
+        rewrite!(
+            "logor-true-right";
+            "(lor ?x ?c)" => { BoolConst { value: true } } if is_const_true(var("?c"))
+        ),
+        rewrite!("logor-false-left"; "(lor ?c ?x)" => "?x" if is_const_false(var("?c"))),
+        rewrite!("logor-false-right"; "(lor ?x ?c)" => "?x" if is_const_false(var("?c"))),
         rewrite!("logeq-comm"; "(leq ?a ?b)" => "(leq ?b ?a)"),
         rewrite!("logne-comm"; "(lne ?a ?b)" => "(lne ?b ?a)"),
         rewrite!("logeq-true-right"; "(leq ?a ?c)" => "?a" if is_const_true(var("?c"))),
@@ -2334,6 +2356,22 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
             "(lor (land ?b ?c) (lor (land ?a ?b) (land (lnot ?a) ?c)))" =>
                 "(lor (land ?a ?b) (land (lnot ?a) ?c))"
         ),
+        rewrite!(
+            "logand-distribute-over-logor-right";
+            "(land ?a (lor ?b ?c))" => "(lor (land ?a ?b) (land ?a ?c))"
+        ),
+        rewrite!(
+            "logand-distribute-over-logor-left";
+            "(land (lor ?b ?c) ?a)" => "(lor (land ?a ?b) (land ?a ?c))"
+        ),
+        rewrite!(
+            "logor-distribute-over-logand-right";
+            "(lor ?a (land ?b ?c))" => "(land (lor ?a ?b) (lor ?a ?c))"
+        ),
+        rewrite!(
+            "logor-distribute-over-logand-left";
+            "(lor (land ?b ?c) ?a)" => "(land (lor ?a ?b) (lor ?a ?c))"
+        ),
         rewrite!("logor-factor-and"; "(lor (land ?a ?b) (land ?a ?c))" => "(land ?a (lor ?b ?c))"),
         rewrite!("logor-factor-or"; "(lor (lor ?a ?b) (lor ?a ?c))" => "(lor ?a (lor ?b ?c))"),
         rewrite!("logand-consensus-a"; "(land (lor ?a ?b) (lor ?a (lnot ?b)))" => "?a"),
@@ -2419,6 +2457,20 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
             "(select (lnot ?c) (select ?c ?x ?y) (select ?c ?z ?w))" => "(select ?c ?z ?y)"
         ),
         rewrite!("select-neg-cond"; "(select (lnot ?c) ?t ?f)" => "(select ?c ?f ?t)"),
+        rewrite!("select-cond-true-then"; "(select ?c ?c ?f)" => "(lor ?c ?f)"),
+        rewrite!("select-cond-true-else"; "(select ?c ?t ?c)" => "(land ?c ?t)"),
+        rewrite!(
+            "select-cond-not-then";
+            "(select ?c (lnot ?c) ?f)" => "(land (lnot ?c) ?f)"
+        ),
+        rewrite!(
+            "select-cond-not-else";
+            "(select ?c ?t (lnot ?c))" => "(lor (lnot ?c) ?t)"
+        ),
+        rewrite!(
+            "select-cond-not-self";
+            "(select ?c (lnot ?c) ?c)" => { BoolConst { value: false } }
+        ),
         rewrite!(
             "select-true-then";
             "(select ?c ?t ?f)" => "(lor ?c ?f)" if is_const_true(var("?t"))
@@ -2452,12 +2504,236 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
             "(neg (select ?c ?t ?f))" => "(select ?c (neg ?t) (neg ?f))"
         ),
         rewrite!(
+            "lnot-select-distribute";
+            "(lnot (select ?c ?t ?f))" => "(select ?c (lnot ?t) (lnot ?f))"
+        ),
+        rewrite!(
+            "bnot-select-distribute";
+            "(bnot (select ?c ?t ?f))" => "(select ?c (bnot ?t) (bnot ?f))"
+        ),
+        rewrite!(
             "select-const";
             "(select ?c ?t ?f)" => { SelectConstCond { cond: var("?c"), t: var("?t"), f: var("?f") } }
         ),
         rewrite!(
             "select-bool-arms";
             "(select ?c ?t ?f)" => { SelectBoolArms { cond: var("?c"), t: var("?t"), f: var("?f") } }
+        ),
+        rewrite!(
+            "select-factor-add-left";
+            "(select ?c (+ ?a ?x) (+ ?a ?y))" => "(+ ?a (select ?c ?x ?y))"
+        ),
+        rewrite!(
+            "select-factor-add-right";
+            "(select ?c (+ ?x ?a) (+ ?y ?a))" => "(+ (select ?c ?x ?y) ?a)"
+        ),
+        rewrite!(
+            "select-factor-mul-left";
+            "(select ?c (* ?a ?x) (* ?a ?y))" => "(* ?a (select ?c ?x ?y))"
+        ),
+        rewrite!(
+            "select-factor-mul-right";
+            "(select ?c (* ?x ?a) (* ?y ?a))" => "(* (select ?c ?x ?y) ?a)"
+        ),
+        rewrite!(
+            "select-factor-sub-left";
+            "(select ?c (- ?a ?x) (- ?a ?y))" => "(- ?a (select ?c ?x ?y))"
+        ),
+        rewrite!(
+            "select-factor-sub-right";
+            "(select ?c (- ?x ?a) (- ?y ?a))" => "(- (select ?c ?x ?y) ?a)"
+        ),
+        rewrite!(
+            "select-factor-band-left";
+            "(select ?c (band ?a ?x) (band ?a ?y))" => "(band ?a (select ?c ?x ?y))"
+        ),
+        rewrite!(
+            "select-factor-band-right";
+            "(select ?c (band ?x ?a) (band ?y ?a))" => "(band (select ?c ?x ?y) ?a)"
+        ),
+        rewrite!(
+            "select-factor-bor-left";
+            "(select ?c (bor ?a ?x) (bor ?a ?y))" => "(bor ?a (select ?c ?x ?y))"
+        ),
+        rewrite!(
+            "select-factor-bor-right";
+            "(select ?c (bor ?x ?a) (bor ?y ?a))" => "(bor (select ?c ?x ?y) ?a)"
+        ),
+        rewrite!(
+            "select-factor-bxor-left";
+            "(select ?c (bxor ?a ?x) (bxor ?a ?y))" => "(bxor ?a (select ?c ?x ?y))"
+        ),
+        rewrite!(
+            "select-factor-bxor-right";
+            "(select ?c (bxor ?x ?a) (bxor ?y ?a))" => "(bxor (select ?c ?x ?y) ?a)"
+        ),
+        rewrite!(
+            "select-factor-shl-value";
+            "(select ?c (shl ?x ?a) (shl ?x ?b))" => "(shl ?x (select ?c ?a ?b))"
+        ),
+        rewrite!(
+            "select-factor-shl-shift";
+            "(select ?c (shl ?a ?s) (shl ?b ?s))" => "(shl (select ?c ?a ?b) ?s)"
+        ),
+        rewrite!(
+            "select-factor-shru-value";
+            "(select ?c (shr_u ?x ?a) (shr_u ?x ?b))" => "(shr_u ?x (select ?c ?a ?b))"
+        ),
+        rewrite!(
+            "select-factor-shru-shift";
+            "(select ?c (shr_u ?a ?s) (shr_u ?b ?s))" => "(shr_u (select ?c ?a ?b) ?s)"
+        ),
+        rewrite!(
+            "select-factor-shrs-value";
+            "(select ?c (shr_s ?x ?a) (shr_s ?x ?b))" => "(shr_s ?x (select ?c ?a ?b))"
+        ),
+        rewrite!(
+            "select-factor-shrs-shift";
+            "(select ?c (shr_s ?a ?s) (shr_s ?b ?s))" => "(shr_s (select ?c ?a ?b) ?s)"
+        ),
+        rewrite!(
+            "select-factor-eq-left";
+            "(select ?c (eq ?a ?x) (eq ?a ?y))" => "(eq ?a (select ?c ?x ?y))"
+        ),
+        rewrite!(
+            "select-factor-eq-right";
+            "(select ?c (eq ?x ?a) (eq ?y ?a))" => "(eq (select ?c ?x ?y) ?a)"
+        ),
+        rewrite!(
+            "select-factor-ne-left";
+            "(select ?c (ne ?a ?x) (ne ?a ?y))" => "(ne ?a (select ?c ?x ?y))"
+        ),
+        rewrite!(
+            "select-factor-ne-right";
+            "(select ?c (ne ?x ?a) (ne ?y ?a))" => "(ne (select ?c ?x ?y) ?a)"
+        ),
+        rewrite!(
+            "select-factor-slt-left";
+            "(select ?c (slt ?a ?x) (slt ?a ?y))" => "(slt ?a (select ?c ?x ?y))"
+        ),
+        rewrite!(
+            "select-factor-slt-right";
+            "(select ?c (slt ?x ?a) (slt ?y ?a))" => "(slt (select ?c ?x ?y) ?a)"
+        ),
+        rewrite!(
+            "select-factor-sle-left";
+            "(select ?c (sle ?a ?x) (sle ?a ?y))" => "(sle ?a (select ?c ?x ?y))"
+        ),
+        rewrite!(
+            "select-factor-sle-right";
+            "(select ?c (sle ?x ?a) (sle ?y ?a))" => "(sle (select ?c ?x ?y) ?a)"
+        ),
+        rewrite!(
+            "select-factor-sgt-left";
+            "(select ?c (sgt ?a ?x) (sgt ?a ?y))" => "(sgt ?a (select ?c ?x ?y))"
+        ),
+        rewrite!(
+            "select-factor-sgt-right";
+            "(select ?c (sgt ?x ?a) (sgt ?y ?a))" => "(sgt (select ?c ?x ?y) ?a)"
+        ),
+        rewrite!(
+            "select-factor-sge-left";
+            "(select ?c (sge ?a ?x) (sge ?a ?y))" => "(sge ?a (select ?c ?x ?y))"
+        ),
+        rewrite!(
+            "select-factor-sge-right";
+            "(select ?c (sge ?x ?a) (sge ?y ?a))" => "(sge (select ?c ?x ?y) ?a)"
+        ),
+        rewrite!(
+            "select-factor-ult-left";
+            "(select ?c (ult ?a ?x) (ult ?a ?y))" => "(ult ?a (select ?c ?x ?y))"
+        ),
+        rewrite!(
+            "select-factor-ult-right";
+            "(select ?c (ult ?x ?a) (ult ?y ?a))" => "(ult (select ?c ?x ?y) ?a)"
+        ),
+        rewrite!(
+            "select-factor-ule-left";
+            "(select ?c (ule ?a ?x) (ule ?a ?y))" => "(ule ?a (select ?c ?x ?y))"
+        ),
+        rewrite!(
+            "select-factor-ule-right";
+            "(select ?c (ule ?x ?a) (ule ?y ?a))" => "(ule (select ?c ?x ?y) ?a)"
+        ),
+        rewrite!(
+            "select-factor-ugt-left";
+            "(select ?c (ugt ?a ?x) (ugt ?a ?y))" => "(ugt ?a (select ?c ?x ?y))"
+        ),
+        rewrite!(
+            "select-factor-ugt-right";
+            "(select ?c (ugt ?x ?a) (ugt ?y ?a))" => "(ugt (select ?c ?x ?y) ?a)"
+        ),
+        rewrite!(
+            "select-factor-uge-left";
+            "(select ?c (uge ?a ?x) (uge ?a ?y))" => "(uge ?a (select ?c ?x ?y))"
+        ),
+        rewrite!(
+            "select-factor-uge-right";
+            "(select ?c (uge ?x ?a) (uge ?y ?a))" => "(uge (select ?c ?x ?y) ?a)"
+        ),
+        rewrite!(
+            "select-factor-logeq-left";
+            "(select ?c (leq ?a ?x) (leq ?a ?y))" => "(leq ?a (select ?c ?x ?y))"
+        ),
+        rewrite!(
+            "select-factor-logeq-right";
+            "(select ?c (leq ?x ?a) (leq ?y ?a))" => "(leq (select ?c ?x ?y) ?a)"
+        ),
+        rewrite!(
+            "select-factor-logne-left";
+            "(select ?c (lne ?a ?x) (lne ?a ?y))" => "(lne ?a (select ?c ?x ?y))"
+        ),
+        rewrite!(
+            "select-factor-logne-right";
+            "(select ?c (lne ?x ?a) (lne ?y ?a))" => "(lne (select ?c ?x ?y) ?a)"
+        ),
+        rewrite!(
+            "select-factor-logand-left";
+            "(select ?c (land ?a ?x) (land ?a ?y))" => "(land ?a (select ?c ?x ?y))"
+        ),
+        rewrite!(
+            "select-factor-logand-right";
+            "(select ?c (land ?x ?a) (land ?y ?a))" => "(land (select ?c ?x ?y) ?a)"
+        ),
+        rewrite!(
+            "select-factor-logor-left";
+            "(select ?c (lor ?a ?x) (lor ?a ?y))" => "(lor ?a (select ?c ?x ?y))"
+        ),
+        rewrite!(
+            "select-factor-logor-right";
+            "(select ?c (lor ?x ?a) (lor ?y ?a))" => "(lor (select ?c ?x ?y) ?a)"
+        ),
+        rewrite!(
+            "select-factor-sdiv-left";
+            "(select ?c (sdiv ?a ?x) (sdiv ?a ?y))" => "(sdiv ?a (select ?c ?x ?y))"
+        ),
+        rewrite!(
+            "select-factor-sdiv-right";
+            "(select ?c (sdiv ?x ?a) (sdiv ?y ?a))" => "(sdiv (select ?c ?x ?y) ?a)"
+        ),
+        rewrite!(
+            "select-factor-udiv-left";
+            "(select ?c (udiv ?a ?x) (udiv ?a ?y))" => "(udiv ?a (select ?c ?x ?y))"
+        ),
+        rewrite!(
+            "select-factor-udiv-right";
+            "(select ?c (udiv ?x ?a) (udiv ?y ?a))" => "(udiv (select ?c ?x ?y) ?a)"
+        ),
+        rewrite!(
+            "select-factor-srem-left";
+            "(select ?c (srem ?a ?x) (srem ?a ?y))" => "(srem ?a (select ?c ?x ?y))"
+        ),
+        rewrite!(
+            "select-factor-srem-right";
+            "(select ?c (srem ?x ?a) (srem ?y ?a))" => "(srem (select ?c ?x ?y) ?a)"
+        ),
+        rewrite!(
+            "select-factor-umod-left";
+            "(select ?c (umod ?a ?x) (umod ?a ?y))" => "(umod ?a (select ?c ?x ?y))"
+        ),
+        rewrite!(
+            "select-factor-umod-right";
+            "(select ?c (umod ?x ?a) (umod ?y ?a))" => "(umod (select ?c ?x ?y) ?a)"
         ),
         rewrite!("phi-same"; "(phi ?a ?a)" => "?a"),
     ]
@@ -15607,6 +15883,75 @@ mod tests {
     }
 
     #[test]
+    fn rewrites_logical_constants() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(const_bool(true)),
+            SpirvLang::Symbol(Symbol::from("x")),
+            SpirvLang::LogAnd([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("x"))])
+        );
+
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),
+            SpirvLang::Const(const_bool(true)),
+            SpirvLang::LogAnd([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("x"))])
+        );
+
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(const_bool(false)),
+            SpirvLang::Symbol(Symbol::from("x")),
+            SpirvLang::LogAnd([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Const(const_bool(false))])
+        );
+
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(const_bool(true)),
+            SpirvLang::Symbol(Symbol::from("x")),
+            SpirvLang::LogOr([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Const(const_bool(true))])
+        );
+
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),
+            SpirvLang::Const(const_bool(false)),
+            SpirvLang::LogOr([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("x"))])
+        );
+    }
+
+    #[test]
+    fn rewrites_logical_distributes() {
+        assert_simplifies("(land a (lor b c))", "(lor (land a b) (land a c))");
+        assert_simplifies("(lor a (land b c))", "(land (lor a b) (lor a c))");
+    }
+
+    #[test]
+    fn rewrites_band_distributes_over_bxor() {
+        assert_simplifies("(band x (bxor y z))", "(bxor (band x y) (band x z))");
+    }
+
+    #[test]
     fn rewrites_brev_involution() {
         assert_simplifies("(brev (brev x))", "x");
     }
@@ -15683,6 +16028,75 @@ mod tests {
         assert_simplifies(
             "(select (lnot c) (select c x y) (select c z w))",
             "(select c z y)",
+        );
+    }
+
+    #[test]
+    fn rewrites_select_cond_arms() {
+        assert_simplifies("(select c c f)", "(lor c f)");
+        assert_simplifies("(select c t c)", "(land c t)");
+        assert_simplifies("(select c (lnot c) f)", "(land (lnot c) f)");
+        assert_simplifies("(select c t (lnot c))", "(lor (lnot c) t)");
+        assert_simplifies("(select c (lnot c) c)", "false");
+    }
+
+    #[test]
+    fn rewrites_select_factors_arith_bitwise() {
+        assert_simplifies("(select c (+ a x) (+ a y))", "(+ a (select c x y))");
+        assert_simplifies(
+            "(select c (band a x) (band a y))",
+            "(band a (select c x y))",
+        );
+    }
+
+    #[test]
+    fn rewrites_select_factors_shifts() {
+        assert_simplifies("(select c (shl x s) (shl y s))", "(shl (select c x y) s)");
+        assert_simplifies(
+            "(select c (shr_u x a) (shr_u x b))",
+            "(shr_u x (select c a b))",
+        );
+    }
+
+    #[test]
+    fn rewrites_select_factors_comparisons() {
+        assert_simplifies("(select c (eq a x) (eq a y))", "(eq a (select c x y))");
+        assert_simplifies("(select c (ult x a) (ult y a))", "(ult (select c x y) a)");
+        assert_simplifies("(select c (leq a x) (leq a y))", "(leq a (select c x y))");
+    }
+
+    #[test]
+    fn rewrites_select_factors_logical() {
+        assert_simplifies(
+            "(select c (land a x) (land a y))",
+            "(land a (select c x y))",
+        );
+        assert_simplifies("(select c (lor a x) (lor a y))", "(lor a (select c x y))");
+    }
+
+    #[test]
+    fn rewrites_select_distributes_not() {
+        assert_simplifies("(lnot (select c a b))", "(select c (lnot a) (lnot b))");
+        assert_simplifies("(bnot (select c x y))", "(select c (bnot x) (bnot y))");
+    }
+
+    #[test]
+    fn rewrites_select_factors_div_rem() {
+        assert_simplifies(
+            "(select c (sdiv a x) (sdiv a y))",
+            "(sdiv a (select c x y))",
+        );
+        assert_simplifies(
+            "(select c (udiv x a) (udiv y a))",
+            "(udiv (select c x y) a)",
+        );
+        assert_simplifies(
+            "(select c (srem a x) (srem a y))",
+            "(srem a (select c x y))",
+        );
+        assert_simplifies(
+            "(select c (umod x a) (umod y a))",
+            "(umod (select c x y) a)",
         );
     }
 

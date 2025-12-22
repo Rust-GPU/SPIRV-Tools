@@ -1390,6 +1390,7 @@ Tasks for this milestone:
 - Added select nesting rewrite for negated outer condition with nested else (`select !c x (select c y z) -> select c y x`) with Rust coverage.
 - Added select nesting rewrite for negated outer condition with nested then (`select !c (select c x y) z -> select c z y`) with Rust coverage.
 - Added select nesting rewrite for negated outer condition with nested then/else (`select !c (select c x y) (select c z w) -> select c z y`) with Rust coverage.
+- Added logical constant identities, logand/lor distribution, band distribution over xor, and select-based factoring (arith/bitwise/shifts/comparisons/logic/div/rem) plus lnot/bnot select distribution with Rust coverage; select-heavy cases may canonicalize more aggressively than C++.
 - Added partial De Morgan rewrite for `~(x & ~y)` (`~(x & ~y) -> ~x | y`) with Rust coverage.
 - Added partial De Morgan rewrite for `~(~x & y)` (`~(~x & y) -> x | ~y`) with Rust coverage.
 - Added partial De Morgan rewrite for `~(x | ~y)` (`~(x | ~y) -> ~x & y`) with Rust coverage.
