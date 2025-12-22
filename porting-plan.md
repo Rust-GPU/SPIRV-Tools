@@ -193,6 +193,7 @@ Planned tasks:
 - Added logical absorption rewrites for `a || (a && b)`, with Rust unit coverage.
 - Added logical complement absorption rewrites for `a && (!a || b)`, with Rust unit coverage.
 - Added logical complement absorption rewrites for `a || (!a && b)`, with Rust unit coverage.
+- Added eq/ne rewrites that move additive constants across comparisons, with Rust unit coverage.
 
 ## Upcoming Milestone: Optimizer Rewrite Stability & Extension
 - Broaden e-graph rewrites to additional algebraic/bitwise identities while preserving id stability (e.g., deeper shift/mask mixes, rotate-like sequences as supported).
