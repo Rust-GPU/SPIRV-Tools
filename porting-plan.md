@@ -170,6 +170,7 @@ Planned tasks:
 - Added bitwise De Morgan rewrites so `(~a & ~b)` folds into `~(a | b)` and `(~a | ~b)` folds into `~(a & b)` with Rust unit coverage.
 - Added subtraction-add cancellation rewrites so `x - (x + y)` and `x - (y + x)` normalize to `-y`, with Rust unit coverage.
 - Added logical eq/ne rewrites to drop paired `lnot` operands, with Rust unit coverage.
+- Added eq/ne cancellation rewrites for shared `add` operands, with Rust unit coverage.
 
 ## Upcoming Milestone: Optimizer Rewrite Stability & Extension
 - Broaden e-graph rewrites to additional algebraic/bitwise identities while preserving id stability (e.g., deeper shift/mask mixes, rotate-like sequences as supported).
