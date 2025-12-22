@@ -1445,6 +1445,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("logand-leq-lne-right"; "(land (leq ?a ?b) (lne ?a ?b))" => { BoolConst { value: false } }),
         rewrite!("logand-leq-lne-left"; "(land (lne ?a ?b) (leq ?a ?b))" => { BoolConst { value: false } }),
         rewrite!("logand-leq-absorb"; "(land ?a (leq ?a ?b))" => "(land ?a ?b)"),
+        rewrite!("logand-lne-absorb"; "(land ?a (lne ?a ?b))" => "(land ?a (lnot ?b))"),
         rewrite!("logeq-or-split-a-right"; "(leq (lor ?a ?b) (lor ?a (lnot ?b)))" => "?a"),
         rewrite!("logeq-or-split-a-left"; "(leq (lor ?a (lnot ?b)) (lor ?a ?b))" => "?a"),
         rewrite!("logeq-or-split-b-right"; "(leq (lor ?a ?b) (lor (lnot ?a) ?b))" => "?b"),
@@ -11127,6 +11128,7 @@ mod tests {
     #[test]
     fn rewrites_logical_eq_absorptions() {
         assert_simplifies("(land a (leq a b))", "(land a b)");
+        assert_simplifies("(land a (lne a b))", "(land a (lnot b))");
     }
 
     #[test]
