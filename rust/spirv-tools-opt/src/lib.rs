@@ -751,6 +751,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("bxor-diff-masked-left"; "(bxor (band ?x ?y) ?x)" => "(band ?x (bnot ?y))"),
         rewrite!("bxor-diff-masked-or-right"; "(bxor ?x (bor ?x ?y))" => "(band ?y (bnot ?x))"),
         rewrite!("bxor-diff-masked-or-left"; "(bxor (bor ?x ?y) ?x)" => "(band ?y (bnot ?x))"),
+        rewrite!("bxor-bnot-bnot"; "(bxor (bnot ?x) (bnot ?y))" => "(bxor ?x ?y)"),
         rewrite!("bxor-comm"; "(bxor ?a ?b)" => "(bxor ?b ?a)"),
         rewrite!("bxor-assoc"; "(bxor ?a (bxor ?b ?c))" => "(bxor (bxor ?a ?b) ?c)"),
         rewrite!("bxor-reassociate-const-right"; "(bxor ?c1 (bxor ?x ?c2))" => {
@@ -5372,6 +5373,32 @@ mod tests {
         assert_eq!(
             optimized,
             RecExpr::from(vec![SpirvLang::Const(ConstValue::new(6))])
+        );
+    }
+
+    #[test]
+    fn rewrites_bxor_with_double_bitnot_operands() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::BitNot(Id::from(0)),        // 2 = ~x
+            SpirvLang::BitNot(Id::from(1)),        // 3 = ~y
+            SpirvLang::BitXor([Id::from(2), Id::from(3)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::BitXor([lhs, rhs])) = nodes.last() else {
+            panic!("expected bxor root, got {:?}", nodes.last());
+        };
+        let x = Symbol::from("x");
+        let y = Symbol::from("y");
+        let lhs_is_x = matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == x);
+        let rhs_is_y = matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(sym) if sym == y);
+        let lhs_is_y = matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == y);
+        let rhs_is_x = matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(sym) if sym == x);
+        assert!(
+            (lhs_is_x && rhs_is_y) || (lhs_is_y && rhs_is_x),
+            "expected bxor between x and y, got {nodes:?}"
         );
     }
 
