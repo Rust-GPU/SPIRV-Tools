@@ -205,6 +205,7 @@ Planned tasks:
 - Added eq/ne rewrites that reduce `x - y == -y` to `x == 0` using width-aware zero constants, with Rust unit coverage.
 - Added eq/ne rewrites that reduce `x - y == -x` to `y == x + x`, with Rust unit coverage.
 - Added eq/ne rewrites that reduce `(x * odd_const) == 0` to `x == 0` using width-aware zero constants, with Rust unit coverage.
+- Added bitwise absorption rewrites so `(~x) & (x | y)` reduces to `(~x) & y`, with Rust unit coverage.
 
 ## Upcoming Milestone: Optimizer Rewrite Stability & Extension
 - Broaden e-graph rewrites to additional algebraic/bitwise identities while preserving id stability (e.g., deeper shift/mask mixes, rotate-like sequences as supported).
