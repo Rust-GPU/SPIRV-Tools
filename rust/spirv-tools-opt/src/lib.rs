@@ -707,6 +707,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         }),
         rewrite!("bor-not-or-self-right"; "(bor ?x (bnot (bor ?x ?y)))" => "(bor ?x (bnot ?y))"),
         rewrite!("bor-not-or-self-left"; "(bor (bnot (bor ?x ?y)) ?x)" => "(bor ?x (bnot ?y))"),
+        rewrite!("bor-not-or-bnot-right"; "(bor (bnot ?x) (bnot (bor ?x ?y)))" => "(bnot ?x)"),
+        rewrite!("bor-not-or-bnot-left"; "(bor (bnot (bor ?x ?y)) (bnot ?x))" => "(bnot ?x)"),
         rewrite!("bor-absorbs-split-y"; "(bor (band ?x ?y) (band (bnot ?x) ?y))" => "?y"),
         rewrite!("bor-absorbs-split-y-comm"; "(bor (band (bnot ?x) ?y) (band ?x ?y))" => "?y"),
         rewrite!("bor-absorbs-split-x"; "(bor (band ?x ?y) (band ?x (bnot ?y)))" => "?x"),
@@ -8672,6 +8674,26 @@ mod tests {
             SpirvLang::BitNot(Id::from(2)),
             SpirvLang::BitNot(Id::from(0)),
             SpirvLang::BitAnd([Id::from(4), Id::from(3)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![
+                SpirvLang::Symbol(Symbol::from("x")),
+                SpirvLang::BitNot(Id::from(0))
+            ])
+        );
+    }
+
+    #[test]
+    fn rewrites_bor_not_or_bnot_absorbs() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::BitOr([Id::from(0), Id::from(1)]),
+            SpirvLang::BitNot(Id::from(2)),
+            SpirvLang::BitNot(Id::from(0)),
+            SpirvLang::BitOr([Id::from(4), Id::from(3)]),
         ]);
         let optimized = optimize_expr(&expr);
         assert_eq!(
