@@ -1622,6 +1622,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("select-nest-left"; "(select ?c (select ?c ?x ?y) ?z)" => "(select ?c ?x ?z)"),
         rewrite!("select-nest-both"; "(select ?c (select ?c ?x ?y) (select ?c ?z ?w))" => "(select ?c ?x ?w)"),
         rewrite!("select-nest-neg-right"; "(select ?c ?x (select (lnot ?c) ?y ?z))" => "(select ?c ?x ?y)"),
+        rewrite!("select-nest-neg-left"; "(select ?c (select (lnot ?c) ?x ?y) ?z)" => "(select ?c ?y ?z)"),
         rewrite!("select-neg-cond"; "(select (lnot ?c) ?t ?f)" => "(select ?c ?f ?t)"),
         rewrite!(
             "select-const";
@@ -13967,5 +13968,10 @@ mod tests {
         assert_simplifies("(select c (select c x y) z)", "(select c x z)");
         assert_simplifies("(select c (select c x y) (select c z w))", "(select c x w)");
         assert_simplifies("(select c x (select (lnot c) y z))", "(select c x y)");
+    }
+
+    #[test]
+    fn rewrites_select_nested_negated_left() {
+        assert_simplifies("(select c (select (lnot c) x y) z)", "(select c y z)");
     }
 }
