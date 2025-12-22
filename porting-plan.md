@@ -1388,3 +1388,4 @@ Tasks for this milestone:
 - Added select nesting rewrite for negated outer condition with nested then (`select !c (select c x y) z -> select c z y`) with Rust coverage.
 - Added select nesting rewrite for negated outer condition with nested then/else (`select !c (select c x y) (select c z w) -> select c z y`) with Rust coverage.
 - Added partial De Morgan rewrite for `~(x & ~y)` (`~(x & ~y) -> ~x | y`) with Rust coverage.
+- Added partial De Morgan rewrite for `~(~x & y)` (`~(~x & y) -> x | ~y`) with Rust coverage.
