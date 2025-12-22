@@ -1453,6 +1453,16 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("logor-split-b"; "(lor (land ?a ?b) (land (lnot ?a) ?b))" => "?b"),
         rewrite!("logor-xor-to-logne"; "(lor (land ?a (lnot ?b)) (land (lnot ?a) ?b))" => "(lne ?a ?b)"),
         rewrite!("logor-xnor-to-logeq"; "(lor (land ?a ?b) (land (lnot ?a) (lnot ?b)))" => "(leq ?a ?b)"),
+        rewrite!(
+            "logor-consensus-term-right";
+            "(lor (lor (land ?a ?b) (land (lnot ?a) ?c)) (land ?b ?c))" =>
+                "(lor (land ?a ?b) (land (lnot ?a) ?c))"
+        ),
+        rewrite!(
+            "logor-consensus-term-left";
+            "(lor (land ?b ?c) (lor (land ?a ?b) (land (lnot ?a) ?c)))" =>
+                "(lor (land ?a ?b) (land (lnot ?a) ?c))"
+        ),
         rewrite!("logand-consensus-a"; "(land (lor ?a ?b) (lor ?a (lnot ?b)))" => "?a"),
         rewrite!("logand-consensus-b"; "(land (lor ?a ?b) (lor (lnot ?a) ?b))" => "?b"),
         rewrite!("logand-xnor-to-logeq"; "(land (lor ?a (lnot ?b)) (lor (lnot ?a) ?b))" => "(leq ?a ?b)"),
@@ -11127,6 +11137,36 @@ mod tests {
             optimized,
             RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("b"))])
         );
+    }
+
+    #[test]
+    fn rewrites_logor_consensus_term_elim() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("a")), // 0
+            SpirvLang::Symbol(Symbol::from("b")), // 1
+            SpirvLang::Symbol(Symbol::from("c")), // 2
+            SpirvLang::LogAnd([Id::from(0), Id::from(1)]),
+            SpirvLang::LogNot(Id::from(0)),
+            SpirvLang::LogAnd([Id::from(4), Id::from(2)]),
+            SpirvLang::LogOr([Id::from(3), Id::from(5)]),
+            SpirvLang::LogAnd([Id::from(1), Id::from(2)]),
+            SpirvLang::LogOr([Id::from(6), Id::from(7)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let expected = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("a")), // 0
+            SpirvLang::Symbol(Symbol::from("b")), // 1
+            SpirvLang::Symbol(Symbol::from("c")), // 2
+            SpirvLang::LogAnd([Id::from(0), Id::from(1)]),
+            SpirvLang::LogNot(Id::from(0)),
+            SpirvLang::LogAnd([Id::from(4), Id::from(2)]),
+            SpirvLang::LogOr([Id::from(3), Id::from(5)]),
+        ]);
+        let Some(expected_id) = runner.egraph.lookup_expr(&expected) else {
+            panic!("expected (a && b) || (!a && c) to be introduced by rewrites");
+        };
+        assert_eq!(runner.egraph.find(root), runner.egraph.find(expected_id));
     }
 
     #[test]

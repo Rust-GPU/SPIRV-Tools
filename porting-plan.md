@@ -173,6 +173,7 @@ Planned tasks:
 - Added logical contradiction rewrites so `a && (!a && b)` folds to `false`, with Rust unit coverage.
 - Added logical consensus so `(a || b) && (a || !b)` folds to `a`, with Rust unit coverage.
 - Added logical consensus so `(a || b) && (!a || b)` folds to `b`, with Rust unit coverage.
+- Added logical consensus rewrites so `(a && b) || (!a && c) || (b && c)` folds to `(a && b) || (!a && c)`, with Rust unit coverage.
 - Added logical xnor rewrites so `(a && b) || (!a && !b)` folds to `leq(a, b)`, with Rust unit coverage.
 - Added logical xor rewrites so `(a && !b) || (!a && b)` folds to `lne(a, b)`, with Rust unit coverage.
 - Added logical xnor rewrites so `(a || !b) && (!a || b)` folds to `leq(a, b)`, with Rust unit coverage.
