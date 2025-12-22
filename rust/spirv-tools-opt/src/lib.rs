@@ -820,6 +820,12 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("band-xnor-notand-to-nor-left"; "(band (bnot (band ?x ?y)) (bnot (bxor ?x ?y)))" => "(bnot (bor ?x ?y))"),
         rewrite!("band-xnor-nor-absorb-right"; "(band (bnot (bxor ?x ?y)) (bnot (bor ?x ?y)))" => "(bnot (bor ?x ?y))"),
         rewrite!("band-xnor-nor-absorb-left"; "(band (bnot (bor ?x ?y)) (bnot (bxor ?x ?y)))" => "(bnot (bor ?x ?y))"),
+        rewrite!("band-xor-nor-to-zero-right"; "(band (bxor ?x ?y) (bnot (bor ?x ?y)))" => {
+            BitAndComplement { _x: var("?x") }
+        }),
+        rewrite!("band-xor-nor-to-zero-left"; "(band (bnot (bor ?x ?y)) (bxor ?x ?y))" => {
+            BitAndComplement { _x: var("?x") }
+        }),
         rewrite!("band-notand-nor-absorb-right"; "(band (bnot (band ?x ?y)) (bnot (bor ?x ?y)))" => "(bnot (bor ?x ?y))"),
         rewrite!("band-notand-nor-absorb-left"; "(band (bnot (bor ?x ?y)) (bnot (band ?x ?y)))" => "(bnot (bor ?x ?y))"),
         rewrite!("bxor-bnot-left"; "(bxor (bnot ?x) ?y)" => "(bnot (bxor ?x ?y))"),
@@ -9423,6 +9429,23 @@ mod tests {
             }
         }
         assert!(found, "expected ~(x ^ y) & ~(x | y) to rewrite to ~(x | y)");
+    }
+
+    #[test]
+    fn rewrites_band_xor_nor_to_zero() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::BitXor([Id::from(0), Id::from(1)]),
+            SpirvLang::BitOr([Id::from(0), Id::from(1)]),
+            SpirvLang::BitNot(Id::from(3)),
+            SpirvLang::BitAnd([Id::from(2), Id::from(4)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Const(ConstValue::new(0))])
+        );
     }
 
     #[test]
