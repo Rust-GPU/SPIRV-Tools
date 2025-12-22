@@ -1447,6 +1447,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("logand-absorb-lor-comm"; "(land (lor ?a ?b) ?a)" => "?a"),
         rewrite!("logor-absorb-land"; "(lor ?a (land ?a ?b))" => "?a"),
         rewrite!("logor-absorb-land-comm"; "(lor (land ?a ?b) ?a)" => "?a"),
+        rewrite!("logor-tautology-right"; "(lor ?a (lor (lnot ?a) ?b))" => { BoolConst { value: true } }),
+        rewrite!("logor-tautology-left"; "(lor (lor (lnot ?a) ?b) ?a)" => { BoolConst { value: true } }),
         rewrite!("logor-split-a"; "(lor (land ?a ?b) (land ?a (lnot ?b)))" => "?a"),
         rewrite!("logor-split-b"; "(lor (land ?a ?b) (land (lnot ?a) ?b))" => "?b"),
         rewrite!("logor-xor-to-logne"; "(lor (land ?a (lnot ?b)) (land (lnot ?a) ?b))" => "(lne ?a ?b)"),
@@ -11073,6 +11075,22 @@ mod tests {
         assert_eq!(
             optimized,
             RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("a"))])
+        );
+    }
+
+    #[test]
+    fn rewrites_logor_tautology_nested() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("a")), // 0
+            SpirvLang::Symbol(Symbol::from("b")), // 1
+            SpirvLang::LogNot(Id::from(0)),
+            SpirvLang::LogOr([Id::from(2), Id::from(1)]),
+            SpirvLang::LogOr([Id::from(0), Id::from(3)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Const(const_bool(true))])
         );
     }
 

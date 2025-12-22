@@ -169,6 +169,7 @@ Planned tasks:
 - Added logical De Morgan rewrites so `(!a && !b)` folds into `!(a || b)` and `(!a || !b)` folds into `!(a && b)` with Rust unit coverage.
 - Added logical split-term absorption so `(a && b) || (a && !b)` folds to `a`, with Rust unit coverage.
 - Added logical split-term absorption so `(a && b) || (!a && b)` folds to `b`, with Rust unit coverage.
+- Added logical tautology rewrites so `a || (!a || b)` folds to `true`, with Rust unit coverage.
 - Added logical consensus so `(a || b) && (a || !b)` folds to `a`, with Rust unit coverage.
 - Added logical consensus so `(a || b) && (!a || b)` folds to `b`, with Rust unit coverage.
 - Added logical xnor rewrites so `(a && b) || (!a && !b)` folds to `leq(a, b)`, with Rust unit coverage.
