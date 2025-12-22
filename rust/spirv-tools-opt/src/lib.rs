@@ -1125,6 +1125,12 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("ne-sub-const"; "(ne (- ?x ?c1) ?c2)" => {
             CmpSubConstRight { x: var("?x"), c1: var("?c1"), c2: var("?c2"), eq: false }
         }),
+        rewrite!("eq-sub-move-const"; "(eq (- ?x ?c) ?y)" => {
+            CmpSubMoveConstRight { x: var("?x"), c: var("?c"), y: var("?y"), eq: true }
+        }),
+        rewrite!("ne-sub-move-const"; "(ne (- ?x ?c) ?y)" => {
+            CmpSubMoveConstRight { x: var("?x"), c: var("?c"), y: var("?y"), eq: false }
+        }),
         rewrite!("eq-sub-const-left"; "(eq (- ?c1 ?x) ?c2)" => {
             CmpSubConstLeft { x: var("?x"), c1: var("?c1"), c2: var("?c2"), eq: true }
         }),
@@ -1580,6 +1586,12 @@ struct CmpSubConstRight {
     x: Var,
     c1: Var,
     c2: Var,
+    eq: bool,
+}
+struct CmpSubMoveConstRight {
+    x: Var,
+    c: Var,
+    y: Var,
     eq: bool,
 }
 struct CmpSubConstLeft {
@@ -2611,6 +2623,30 @@ impl Applier<SpirvLang, ()> for CmpSubConstRight {
             egraph.add(SpirvLang::Eq([subst[self.x], const_id]))
         } else {
             egraph.add(SpirvLang::Ne([subst[self.x], const_id]))
+        };
+        egraph.union(eclass, cmp);
+        vec![cmp]
+    }
+}
+
+impl Applier<SpirvLang, ()> for CmpSubMoveConstRight {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(constant) = const_value(egraph, subst[self.c]) else {
+            return Vec::new();
+        };
+        let const_id = egraph.add(SpirvLang::Const(constant));
+        let add = egraph.add(SpirvLang::Add([subst[self.y], const_id]));
+        let cmp = if self.eq {
+            egraph.add(SpirvLang::Eq([subst[self.x], add]))
+        } else {
+            egraph.add(SpirvLang::Ne([subst[self.x], add]))
         };
         egraph.union(eclass, cmp);
         vec![cmp]
@@ -7490,6 +7526,54 @@ mod tests {
             }
         }
         assert!(found, "expected ne to compare x against add-folded const");
+    }
+
+    #[test]
+    fn rewrites_eq_sub_moves_const_across_comparison() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),          // 0
+            SpirvLang::Symbol(Symbol::from("y")),          // 1
+            SpirvLang::Const(ConstValue::new(4)),          // 2
+            SpirvLang::Sub([Id::from(0), Id::from(2)]),    // 3 = x - 4
+            SpirvLang::Eq([Id::from(3), Id::from(1)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let expected = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),          // 0
+            SpirvLang::Symbol(Symbol::from("y")),          // 1
+            SpirvLang::Const(ConstValue::new(4)),          // 2
+            SpirvLang::Add([Id::from(1), Id::from(2)]),    // 3 = y + 4
+            SpirvLang::Eq([Id::from(0), Id::from(3)]),
+        ]);
+        let Some(expected_id) = runner.egraph.lookup_expr(&expected) else {
+            panic!("expected x == (y + 4) to be introduced by rewrites");
+        };
+        assert_eq!(runner.egraph.find(root), runner.egraph.find(expected_id));
+    }
+
+    #[test]
+    fn rewrites_ne_sub_moves_const_across_comparison() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),          // 0
+            SpirvLang::Symbol(Symbol::from("y")),          // 1
+            SpirvLang::Const(ConstValue::new(4)),          // 2
+            SpirvLang::Sub([Id::from(0), Id::from(2)]),    // 3 = x - 4
+            SpirvLang::Ne([Id::from(3), Id::from(1)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let expected = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),          // 0
+            SpirvLang::Symbol(Symbol::from("y")),          // 1
+            SpirvLang::Const(ConstValue::new(4)),          // 2
+            SpirvLang::Add([Id::from(1), Id::from(2)]),    // 3 = y + 4
+            SpirvLang::Ne([Id::from(0), Id::from(3)]),
+        ]);
+        let Some(expected_id) = runner.egraph.lookup_expr(&expected) else {
+            panic!("expected x != (y + 4) to be introduced by rewrites");
+        };
+        assert_eq!(runner.egraph.find(root), runner.egraph.find(expected_id));
     }
 
     #[test]
