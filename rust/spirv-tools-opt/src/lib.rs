@@ -1440,6 +1440,10 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("logeq-not-self-comm"; "(leq (lnot ?a) ?a)" => { BoolConst { value: false } }),
         rewrite!("logne-not-self"; "(lne ?a (lnot ?a))" => { BoolConst { value: true } }),
         rewrite!("logne-not-self-comm"; "(lne (lnot ?a) ?a)" => { BoolConst { value: true } }),
+        rewrite!("logor-leq-lne-right"; "(lor (leq ?a ?b) (lne ?a ?b))" => { BoolConst { value: true } }),
+        rewrite!("logor-leq-lne-left"; "(lor (lne ?a ?b) (leq ?a ?b))" => { BoolConst { value: true } }),
+        rewrite!("logand-leq-lne-right"; "(land (leq ?a ?b) (lne ?a ?b))" => { BoolConst { value: false } }),
+        rewrite!("logand-leq-lne-left"; "(land (lne ?a ?b) (leq ?a ?b))" => { BoolConst { value: false } }),
         rewrite!("lognot-double"; "(lnot (lnot ?a))" => "?a"),
         rewrite!("logand-idem"; "(land ?a ?a)" => "?a"),
         rewrite!("logor-idem"; "(lor ?a ?a)" => "?a"),
@@ -11085,6 +11089,22 @@ mod tests {
         assert_eq!(
             optimized,
             RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("x"))])
+        );
+    }
+
+    #[test]
+    fn rewrites_logand_leq_lne_to_false() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("a")),         // 0
+            SpirvLang::Symbol(Symbol::from("b")),         // 1
+            SpirvLang::LogEq([Id::from(0), Id::from(1)]),  // 2
+            SpirvLang::LogNe([Id::from(0), Id::from(1)]),  // 3
+            SpirvLang::LogAnd([Id::from(2), Id::from(3)]), // 4
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Const(const_bool(false))])
         );
     }
 
