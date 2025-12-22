@@ -1446,6 +1446,9 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("uge-one-right"; "(uge ?x ?c)" => { CmpZero { target: var("?x"), eq: false } } if is_const_one(var("?c"))),
         rewrite!("slt-min-right"; "(slt ?x ?c)" => { BoolConst { value: false } } if is_const_signed_min(var("?c"))),
         rewrite!("slt-min-left"; "(slt ?c ?x)" => "(ne ?x ?c)" if is_const_signed_min(var("?c"))),
+        rewrite!("slt-min-plus-one-right"; "(slt ?x ?c)" => {
+            CmpConstOffset { x: var("?x"), c: var("?c"), offset: -1, eq: true }
+        } if is_const_signed_min_plus_one(var("?c"))),
         rewrite!("slt-max-right"; "(slt ?x ?c)" => "(ne ?x ?c)" if is_const_signed_max(var("?c"))),
         rewrite!("slt-max-left"; "(slt ?c ?x)" => { BoolConst { value: false } } if is_const_signed_max(var("?c"))),
         rewrite!("sle-min-right"; "(sle ?x ?c)" => "(eq ?x ?c)" if is_const_signed_min(var("?c"))),
@@ -4981,6 +4984,30 @@ fn is_const_signed_max(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Sub
             return false;
         };
         signed_limits(value).is_some_and(|(_, max, _)| value.get_u64() == max)
+    }
+}
+
+fn is_const_signed_min_plus_one(
+    var: Var,
+) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
+    move |egraph, _, subst| {
+        let Some(value) = const_value(egraph, subst[var]) else {
+            return false;
+        };
+        signed_limits(value)
+            .is_some_and(|(min, _, mask)| value.get_u64() == min.wrapping_add(1) & mask)
+    }
+}
+
+fn is_const_signed_max_minus_one(
+    var: Var,
+) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
+    move |egraph, _, subst| {
+        let Some(value) = const_value(egraph, subst[var]) else {
+            return false;
+        };
+        signed_limits(value)
+            .is_some_and(|(_, max, mask)| value.get_u64() == max.wrapping_sub(1) & mask)
     }
 }
 
@@ -13891,5 +13918,10 @@ mod tests {
         assert_simplifies("(sge 2147483648 x)", "(eq x 2147483648)");
         assert_simplifies("(sge x 2147483647)", "(eq x 2147483647)");
         assert_simplifies("(sge 2147483647 x)", "true");
+    }
+
+    #[test]
+    fn rewrites_signed_compare_near_extremes() {
+        assert_simplifies("(slt x 2147483649)", "(eq x 2147483648)");
     }
 }
