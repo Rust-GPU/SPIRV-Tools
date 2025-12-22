@@ -1395,3 +1395,4 @@ Tasks for this milestone:
 - Added partial De Morgan rewrite for `!(!a && b)` (`!(!a && b) -> a || !b`) with Rust coverage.
 - Added partial De Morgan rewrite for `!(a || !b)` (`!(a || !b) -> !a && b`) with Rust coverage.
 - Added partial De Morgan rewrite for `!(!a || b)` (`!(!a || b) -> a && !b`) with Rust coverage.
+- Added shift factoring rewrite for AND with shared left shift (`(x << c) & (y << c) -> (x & y) << c`) with Rust coverage.
