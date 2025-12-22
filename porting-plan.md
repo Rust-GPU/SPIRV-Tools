@@ -167,6 +167,7 @@ Planned tasks:
 - Added comparison rewrites that drop paired bitwise-not operands in `eq`/`ne`, with Rust unit coverage.
 - Added bxor rewrite to drop paired bitwise-not operands (`(~x) ^ (~y)` -> `x ^ y`) with Rust unit coverage.
 - Added logical De Morgan rewrites so `(!a && !b)` folds into `!(a || b)` and `(!a || !b)` folds into `!(a && b)` with Rust unit coverage.
+- Added logical split-term absorption so `(a && b) || (a && !b)` folds to `a`, with Rust unit coverage.
 - Added bitwise De Morgan rewrites so `(~a & ~b)` folds into `~(a | b)` and `(~a | ~b)` folds into `~(a & b)` with Rust unit coverage.
 - Added subtraction-add cancellation rewrites so `x - (x + y)` and `x - (y + x)` normalize to `-y`, with Rust unit coverage.
 - Added logical eq/ne rewrites to drop paired `lnot` operands, with Rust unit coverage.
