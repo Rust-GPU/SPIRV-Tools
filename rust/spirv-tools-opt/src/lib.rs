@@ -616,6 +616,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
             UModPowerOfTwo { x: var("?x"), c: var("?c") }
         }),
         rewrite!("band-comm"; "(band ?a ?b)" => "(band ?b ?a)"),
+        rewrite!("band-assoc"; "(band ?a (band ?b ?c))" => "(band (band ?a ?b) ?c)"),
         rewrite!("band-const-fold"; "(band ?a ?b)" => { BitAndFold { a: var("?a"), b: var("?b") } }),
         rewrite!("band-one-left"; "(band ?x ?c)" => {
             BitAndConstSimplify { x: var("?x"), c: var("?c") }
@@ -13925,6 +13926,11 @@ mod tests {
     #[test]
     fn rewrites_band_commutes() {
         assert_simplifies("(band x y)", "(band y x)");
+    }
+
+    #[test]
+    fn rewrites_band_associates() {
+        assert_simplifies("(band x (band y z))", "(band (band x y) z)");
     }
 
     #[test]
