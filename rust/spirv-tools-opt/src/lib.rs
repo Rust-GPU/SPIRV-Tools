@@ -1067,6 +1067,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("logne-comm"; "(lne ?a ?b)" => "(lne ?b ?a)"),
         rewrite!("eq-self"; "(eq ?a ?a)" => { BoolConst { value: true } }),
         rewrite!("ne-self"; "(ne ?a ?a)" => { BoolConst { value: false } }),
+        rewrite!("logeq-not-not"; "(leq (lnot ?a) (lnot ?b))" => "(leq ?a ?b)"),
+        rewrite!("logne-not-not"; "(lne (lnot ?a) (lnot ?b))" => "(lne ?a ?b)"),
         rewrite!("eq-neg-neg"; "(eq (neg ?a) (neg ?b))" => "(eq ?a ?b)"),
         rewrite!("ne-neg-neg"; "(ne (neg ?a) (neg ?b))" => "(ne ?a ?b)"),
         rewrite!("eq-bnot-bnot"; "(eq (bnot ?a) (bnot ?b))" => "(eq ?a ?b)"),
@@ -6409,6 +6411,52 @@ mod tests {
             optimized,
             RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("x"))])
         );
+    }
+
+    #[test]
+    fn rewrites_logeq_of_negated_operands() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("a")), // 0
+            SpirvLang::Symbol(Symbol::from("b")), // 1
+            SpirvLang::LogNot(Id::from(0)),       // 2 = !a
+            SpirvLang::LogNot(Id::from(1)),       // 3 = !b
+            SpirvLang::LogEq([Id::from(2), Id::from(3)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let expected: RecExpr<SpirvLang> = "(leq a b)".parse().unwrap();
+        let expected_comm: RecExpr<SpirvLang> = "(leq b a)".parse().unwrap();
+        let Some(expected_id) = runner
+            .egraph
+            .lookup_expr(&expected)
+            .or_else(|| runner.egraph.lookup_expr(&expected_comm))
+        else {
+            panic!("expected leq to be introduced by rewrites");
+        };
+        assert_eq!(runner.egraph.find(root), runner.egraph.find(expected_id));
+    }
+
+    #[test]
+    fn rewrites_logne_of_negated_operands() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("a")), // 0
+            SpirvLang::Symbol(Symbol::from("b")), // 1
+            SpirvLang::LogNot(Id::from(0)),       // 2 = !a
+            SpirvLang::LogNot(Id::from(1)),       // 3 = !b
+            SpirvLang::LogNe([Id::from(2), Id::from(3)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let expected: RecExpr<SpirvLang> = "(lne a b)".parse().unwrap();
+        let expected_comm: RecExpr<SpirvLang> = "(lne b a)".parse().unwrap();
+        let Some(expected_id) = runner
+            .egraph
+            .lookup_expr(&expected)
+            .or_else(|| runner.egraph.lookup_expr(&expected_comm))
+        else {
+            panic!("expected lne to be introduced by rewrites");
+        };
+        assert_eq!(runner.egraph.find(root), runner.egraph.find(expected_id));
     }
 
     #[test]
