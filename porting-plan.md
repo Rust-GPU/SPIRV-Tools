@@ -220,6 +220,7 @@ Planned tasks:
 - Added logical eq/ne rewrites that fold comparisons against `true`/`false`, with Rust unit coverage.
 - Added bitwise absorption rewrites so `(~x) & ~(x | y)` folds to `~(x | y)`, with Rust unit coverage.
 - Added bitwise absorption rewrites so `(~x) | ~(x & y)` folds to `~x`, with Rust unit coverage.
+- Added bxor rewrites so `(~x) ^ (x & y)` folds to `(~x | y)`, with Rust unit coverage.
 - Added bxor rewrites so `x ^ ~(x ^ y)` folds to `~y`, with Rust unit coverage.
 - Added bitwise rewrites so `x | ~(x | y)` folds to `x | ~y`, with Rust unit coverage.
 - Added bitwise rewrites so `~x & ~(x & y)` folds to `~x`, with Rust unit coverage.
