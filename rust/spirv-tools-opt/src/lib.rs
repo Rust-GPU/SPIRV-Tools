@@ -1396,6 +1396,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("logor-absorb-land-comm"; "(lor (land ?a ?b) ?a)" => "?a"),
         rewrite!("logor-split-a"; "(lor (land ?a ?b) (land ?a (lnot ?b)))" => "?a"),
         rewrite!("logor-split-b"; "(lor (land ?a ?b) (land (lnot ?a) ?b))" => "?b"),
+        rewrite!("logand-consensus-a"; "(land (lor ?a ?b) (lor ?a (lnot ?b)))" => "?a"),
         rewrite!("logand-absorb-complement-or"; "(land ?a (lor (lnot ?a) ?b))" => "(land ?a ?b)"),
         rewrite!(
             "logand-absorb-complement-or-comm";
@@ -10637,6 +10638,23 @@ mod tests {
         assert_eq!(
             optimized,
             RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("b"))])
+        );
+    }
+
+    #[test]
+    fn rewrites_logand_consensus_a() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("a")), // 0
+            SpirvLang::Symbol(Symbol::from("b")), // 1
+            SpirvLang::LogOr([Id::from(0), Id::from(1)]),
+            SpirvLang::LogNot(Id::from(1)),
+            SpirvLang::LogOr([Id::from(0), Id::from(3)]),
+            SpirvLang::LogAnd([Id::from(2), Id::from(4)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("a"))])
         );
     }
 
