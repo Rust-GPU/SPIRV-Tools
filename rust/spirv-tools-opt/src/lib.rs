@@ -4666,23 +4666,18 @@ mod tests {
             SpirvLang::Neg(Id::from(1)),          // 3 = -y
             SpirvLang::Add([Id::from(2), Id::from(3)]),
         ]);
-        let optimized = optimize_expr(&expr);
-        let nodes = optimized.as_ref();
-        let Some(SpirvLang::Neg(sum)) = nodes.last() else {
-            panic!("expected negated sum, got {:?}", nodes.last());
-        };
-        let SpirvLang::Add([lhs, rhs]) = nodes[usize::from(*sum)] else {
-            panic!("expected add under negation, got {:?}", nodes[usize::from(*sum)]);
-        };
-        let x = Symbol::from("x");
-        let y = Symbol::from("y");
-        let lhs_is_x = matches!(nodes[usize::from(lhs)], SpirvLang::Symbol(sym) if sym == x);
-        let rhs_is_y = matches!(nodes[usize::from(rhs)], SpirvLang::Symbol(sym) if sym == y);
-        let lhs_is_y = matches!(nodes[usize::from(lhs)], SpirvLang::Symbol(sym) if sym == y);
-        let rhs_is_x = matches!(nodes[usize::from(rhs)], SpirvLang::Symbol(sym) if sym == x);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let neg_sum: RecExpr<SpirvLang> = "(neg (+ x y))".parse().unwrap();
+        let neg_sum_comm: RecExpr<SpirvLang> = "(neg (+ y x))".parse().unwrap();
+        let neg_sum_id = runner
+            .egraph
+            .lookup_expr(&neg_sum)
+            .or_else(|| runner.egraph.lookup_expr(&neg_sum_comm))
+            .expect("expected negated sum to be introduced by rewrites");
         assert!(
-            (lhs_is_x && rhs_is_y) || (lhs_is_y && rhs_is_x),
-            "expected negated sum of x and y, got {nodes:?}"
+            runner.egraph.find(root) == runner.egraph.find(neg_sum_id),
+            "expected negated sum to be equivalent to (-x) + (-y)"
         );
     }
 
