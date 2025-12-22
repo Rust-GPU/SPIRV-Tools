@@ -1402,3 +1402,4 @@ Tasks for this milestone:
 - Added shift factoring rewrite for OR with shared logical right shift (`(x >>u c) | (y >>u c) -> (x | y) >>u c`) with Rust coverage.
 - Added shift factoring rewrite for XOR with shared logical right shift (`(x >>u c) ^ (y >>u c) -> (x ^ y) >>u c`) with Rust coverage.
 - Added shift factoring rewrite for AND with shared arithmetic right shift (`(x >>s c) & (y >>s c) -> (x & y) >>s c`) with Rust coverage.
+- Added shift factoring rewrite for OR with shared arithmetic right shift (`(x >>s c) | (y >>s c) -> (x | y) >>s c`) with Rust coverage.
