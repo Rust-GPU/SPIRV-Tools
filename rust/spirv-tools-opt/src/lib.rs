@@ -649,6 +649,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("band-not-and-bnot-right"; "(band (bnot ?x) (bnot (band ?x ?y)))" => "(bnot ?x)"),
         rewrite!("band-not-and-bnot-left"; "(band (bnot (band ?x ?y)) (bnot ?x))" => "(bnot ?x)"),
         rewrite!("band-demorgan"; "(band (bnot ?a) (bnot ?b))" => "(bnot (bor ?a ?b))"),
+        rewrite!("bnot-band-demorgan"; "(bnot (band ?a ?b))" => "(bor (bnot ?a) (bnot ?b))"),
         rewrite!("band-mask-to-umod"; "(band ?x ?c)" => {
             BitAndToUmod { x: var("?x"), c: var("?c") }
         }),
@@ -13935,5 +13936,10 @@ mod tests {
         assert_simplifies("(sge x 2147483649)", "(ne x 2147483648)");
         assert_simplifies("(sgt x 2147483646)", "(eq x 2147483647)");
         assert_simplifies("(sle x 2147483646)", "(ne x 2147483647)");
+    }
+
+    #[test]
+    fn rewrites_bitwise_demorgan_from_not() {
+        assert_simplifies("(bnot (band x y))", "(bor (bnot x) (bnot y))");
     }
 }
