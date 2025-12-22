@@ -1006,6 +1006,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("bnot-const-fold"; "(bnot ?x)" => { BitNotFold { x: var("?x") } }),
         rewrite!("bnot-double"; "(bnot (bnot ?x))" => { BitNotDouble { x: var("?x") } }),
         rewrite!("brev-const-fold"; "(brev ?x)" => { BitReverseFold { x: var("?x") } }),
+        rewrite!("brev-brev"; "(brev (brev ?x))" => "?x"),
         rewrite!("rotate-const-pattern"; "(bor (shl ?x ?s) (shr_u ?x ?t))" => {
             RotatePatternFold { x: var("?x"), s: var("?s"), t: var("?t") }
         }),
@@ -13951,5 +13952,10 @@ mod tests {
     fn rewrites_logical_demorgan_from_not() {
         assert_simplifies("(lnot (land a b))", "(lor (lnot a) (lnot b))");
         assert_simplifies("(lnot (lor a b))", "(land (lnot a) (lnot b))");
+    }
+
+    #[test]
+    fn rewrites_brev_involution() {
+        assert_simplifies("(brev (brev x))", "x");
     }
 }
