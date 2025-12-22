@@ -653,6 +653,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("band-nested-idempotent-swap-left"; "(band (band ?y ?x) ?x)" => "(band ?x ?y)"),
         rewrite!("band-absorb-right"; "(band ?x (bor ?x ?y))" => "?x"),
         rewrite!("band-absorb-left"; "(band (bor ?x ?y) ?x)" => "?x"),
+        rewrite!("band-or-and-absorb-right"; "(band (bor ?x ?y) (band ?x ?y))" => "(band ?x ?y)"),
+        rewrite!("band-or-and-absorb-left"; "(band (band ?x ?y) (bor ?x ?y))" => "(band ?x ?y)"),
         rewrite!("band-consensus-or-y-right"; "(band (bor ?x ?y) (bor (bnot ?x) ?y))" => "?y"),
         rewrite!("band-consensus-or-y-left"; "(band (bor (bnot ?x) ?y) (bor ?x ?y))" => "?y"),
         rewrite!("band-consensus-or-x-right"; "(band (bor ?x ?y) (bor ?x (bnot ?y)))" => "?x"),
@@ -9103,6 +9105,35 @@ mod tests {
             }
         }
         assert!(found, "expected x & (~x ^ y) to rewrite to x & y");
+    }
+
+    #[test]
+    fn rewrites_band_or_and_absorbs() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::BitOr([Id::from(0), Id::from(1)]),
+            SpirvLang::BitAnd([Id::from(0), Id::from(1)]),
+            SpirvLang::BitAnd([Id::from(2), Id::from(3)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::BitAnd([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_x = is_named_symbol(&runner.egraph, *lhs, "x");
+            let rhs_is_x = is_named_symbol(&runner.egraph, *rhs, "x");
+            let lhs_is_y = is_named_symbol(&runner.egraph, *lhs, "y");
+            let rhs_is_y = is_named_symbol(&runner.egraph, *rhs, "y");
+            if (lhs_is_x && rhs_is_y) || (lhs_is_y && rhs_is_x) {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected (x | y) & (x & y) to rewrite to x & y");
     }
 
     #[test]
