@@ -713,6 +713,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("bor-complement-left"; "(bor ?x (bnot ?x))" => { BitOrComplement { _x: var("?x") } }),
         rewrite!("bor-complement-right"; "(bor (bnot ?x) ?x)" => { BitOrComplement { _x: var("?x") } }),
         rewrite!("bor-demorgan"; "(bor (bnot ?a) (bnot ?b))" => "(bnot (band ?a ?b))"),
+        rewrite!("bnot-bor-demorgan"; "(bnot (bor ?a ?b))" => "(band (bnot ?a) (bnot ?b))"),
         rewrite!("bor-self"; "(bor ?x ?x)" => "?x"),
         rewrite!("bor-nested-idempotent-right"; "(bor ?x (bor ?x ?y))" => "(bor ?x ?y)"),
         rewrite!("bor-nested-idempotent-left"; "(bor (bor ?x ?y) ?x)" => "(bor ?x ?y)"),
@@ -13941,5 +13942,6 @@ mod tests {
     #[test]
     fn rewrites_bitwise_demorgan_from_not() {
         assert_simplifies("(bnot (band x y))", "(bor (bnot x) (bnot y))");
+        assert_simplifies("(bnot (bor x y))", "(band (bnot x) (bnot y))");
     }
 }
