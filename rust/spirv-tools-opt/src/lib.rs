@@ -1121,6 +1121,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("ne-mul-odd-cancel"; "(ne (* ?x ?c) (* ?y ?c))" => "(ne ?x ?y)" if is_const_odd(var("?c"))),
         rewrite!("eq-bxor-zero"; "(eq (bxor ?x ?y) ?c)" => "(eq ?x ?y)" if is_const_zero(var("?c"))),
         rewrite!("ne-bxor-zero"; "(ne (bxor ?x ?y) ?c)" => "(ne ?x ?y)" if is_const_zero(var("?c"))),
+        rewrite!("eq-add-zero"; "(eq (+ ?x ?y) ?c)" => "(eq ?x (neg ?y))" if is_const_zero(var("?c"))),
+        rewrite!("ne-add-zero"; "(ne (+ ?x ?y) ?c)" => "(ne ?x (neg ?y))" if is_const_zero(var("?c"))),
         rewrite!("eq-sub-zero"; "(eq (- ?x ?y) ?c)" => "(eq ?x ?y)" if is_const_zero(var("?c"))),
         rewrite!("ne-sub-zero"; "(ne (- ?x ?y) ?c)" => "(ne ?x ?y)" if is_const_zero(var("?c"))),
         rewrite!("eq-neg-zero"; "(eq (neg ?x) ?c)" => "(eq ?x ?c)" if is_const_zero(var("?c"))),
@@ -4552,6 +4554,13 @@ mod tests {
         )
     }
 
+    fn is_neg_named_symbol(egraph: &EGraph<SpirvLang, ()>, id: Id, name: &str) -> bool {
+        egraph[egraph.find(id)]
+            .nodes
+            .iter()
+            .any(|node| matches!(node, SpirvLang::Neg(child) if is_named_symbol(egraph, *child, name)))
+    }
+
     #[test]
     fn folds_addition() {
         let expr = RecExpr::from(vec![
@@ -7946,6 +7955,61 @@ mod tests {
             }
         }
         assert!(found_ne, "expected ne to compare y against zero");
+    }
+
+    #[test]
+    fn rewrites_add_zero_comparison_to_negated_rhs() {
+        let expr_eq = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),    // 0
+            SpirvLang::Symbol(Symbol::from("y")),    // 1
+            SpirvLang::Add([Id::from(0), Id::from(1)]),
+            SpirvLang::Const(ConstValue::new(0)),    // 3
+            SpirvLang::Eq([Id::from(2), Id::from(3)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr_eq).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found_eq = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::Eq([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_x = is_named_symbol(&runner.egraph, *lhs, "x");
+            let rhs_is_x = is_named_symbol(&runner.egraph, *rhs, "x");
+            let lhs_is_neg_y = is_neg_named_symbol(&runner.egraph, *lhs, "y");
+            let rhs_is_neg_y = is_neg_named_symbol(&runner.egraph, *rhs, "y");
+            if (lhs_is_x && rhs_is_neg_y) || (rhs_is_x && lhs_is_neg_y) {
+                found_eq = true;
+                break;
+            }
+        }
+        assert!(found_eq, "expected eq to compare x against -y");
+
+        let expr_ne = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),    // 0
+            SpirvLang::Symbol(Symbol::from("y")),    // 1
+            SpirvLang::Add([Id::from(0), Id::from(1)]),
+            SpirvLang::Const(ConstValue::new(0)),    // 3
+            SpirvLang::Ne([Id::from(2), Id::from(3)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr_ne).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found_ne = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::Ne([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_x = is_named_symbol(&runner.egraph, *lhs, "x");
+            let rhs_is_x = is_named_symbol(&runner.egraph, *rhs, "x");
+            let lhs_is_neg_y = is_neg_named_symbol(&runner.egraph, *lhs, "y");
+            let rhs_is_neg_y = is_neg_named_symbol(&runner.egraph, *rhs, "y");
+            if (lhs_is_x && rhs_is_neg_y) || (rhs_is_x && lhs_is_neg_y) {
+                found_ne = true;
+                break;
+            }
+        }
+        assert!(found_ne, "expected ne to compare x against -y");
     }
 
     #[test]
