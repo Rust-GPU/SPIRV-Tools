@@ -715,6 +715,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("bor-self"; "(bor ?x ?x)" => "?x"),
         rewrite!("bor-nested-idempotent-right"; "(bor ?x (bor ?x ?y))" => "(bor ?x ?y)"),
         rewrite!("bor-nested-idempotent-left"; "(bor (bor ?x ?y) ?x)" => "(bor ?x ?y)"),
+        rewrite!("bor-factor-nested-right"; "(bor (bor ?x ?y) (bor ?x ?z))" => "(bor ?x (bor ?y ?z))"),
         rewrite!("bor-absorb-right"; "(bor ?x (band ?x ?y))" => "?x"),
         rewrite!("bor-absorb-left"; "(bor (band ?x ?y) ?x)" => "?x"),
         rewrite!("bor-or-and-absorb-right"; "(bor (bor ?x ?y) (band ?x ?y))" => "(bor ?x ?y)"),
@@ -9096,6 +9097,31 @@ mod tests {
             }
         }
         assert!(found, "expected x | (x | y) to rewrite to x | y");
+    }
+
+    #[test]
+    fn rewrites_bor_factor_nested() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::Symbol(Symbol::from("z")), // 2
+            SpirvLang::BitOr([Id::from(0), Id::from(1)]),
+            SpirvLang::BitOr([Id::from(0), Id::from(2)]),
+            SpirvLang::BitOr([Id::from(3), Id::from(4)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let expected = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::Symbol(Symbol::from("z")), // 2
+            SpirvLang::BitOr([Id::from(1), Id::from(2)]),
+            SpirvLang::BitOr([Id::from(0), Id::from(3)]),
+        ]);
+        let Some(expected_id) = runner.egraph.lookup_expr(&expected) else {
+            panic!("expected x | (y | z) to be introduced by rewrites");
+        };
+        assert_eq!(runner.egraph.find(root), runner.egraph.find(expected_id));
     }
 
     #[test]

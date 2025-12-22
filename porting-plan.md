@@ -293,6 +293,7 @@ Planned tasks:
 - Added bxor rewrites so `~x ^ (x ^ y)` folds to `~y`, with Rust unit coverage.
 - Added bxor rewrites so `~x ^ ~(x ^ y)` folds to `y`, with Rust unit coverage.
 - Added bitwise idempotence rewrites so `x & (x & y)` folds to `x & y`, with Rust unit coverage.
+- Added bitwise rewrites so `(x | y) | (x | z)` factors to `x | (y | z)`, with Rust unit coverage.
 - Added bxor rewrites so `~x ^ (x | y)` folds to `x | ~y`, with Rust unit coverage.
 
 ## Upcoming Milestone: Optimizer Rewrite Stability & Extension
