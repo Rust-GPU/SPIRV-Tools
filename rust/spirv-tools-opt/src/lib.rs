@@ -1371,7 +1371,6 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("ne-comm"; "(ne ?a ?b)" => "(ne ?b ?a)"),
         rewrite!("logand-comm"; "(land ?a ?b)" => "(land ?b ?a)"),
         rewrite!("logor-comm"; "(lor ?a ?b)" => "(lor ?b ?a)"),
-        rewrite!("logor-assoc"; "(lor ?a (lor ?b ?c))" => "(lor (lor ?a ?b) ?c)"),
         rewrite!("logeq-comm"; "(leq ?a ?b)" => "(leq ?b ?a)"),
         rewrite!("logne-comm"; "(lne ?a ?b)" => "(lne ?b ?a)"),
         rewrite!("logeq-true-right"; "(leq ?a ?c)" => "?a" if is_const_true(var("?c"))),
@@ -14371,11 +14370,6 @@ mod tests {
     #[test]
     fn rewrites_lognot_logor_not_left() {
         assert_simplifies("(lnot (lor (lnot a) b))", "(land a (lnot b))");
-    }
-
-    #[test]
-    fn rewrites_logor_associates() {
-        assert_simplifies("(lor a (lor b c))", "(lor (lor a b) c)");
     }
 
     #[test]
