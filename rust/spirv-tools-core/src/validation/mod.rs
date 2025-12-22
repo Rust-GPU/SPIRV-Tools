@@ -21948,8 +21948,7 @@ mod tests {
         let entry = b.begin_block(None).unwrap();
         let lhs = b.constant_bit32(int, 0);
         let rhs = b.constant_bit32(int, 1);
-        b.vector_shuffle(vec2, None, lhs, rhs, [0, 1].into_iter())
-            .unwrap();
+        b.vector_shuffle(vec2, None, lhs, rhs, [0u32, 1]).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
         let binary = b.module().assemble();
@@ -21990,7 +21989,7 @@ mod tests {
         let entry = b.begin_block(None).unwrap();
         let v2i_id = b.undef(v2i, None);
         let v2f_id = b.undef(v2f, None);
-        b.vector_shuffle(v2i, None, v2i_id, v2f_id, [0, 1].into_iter())
+        b.vector_shuffle(v2i, None, v2i_id, v2f_id, [0u32, 1])
             .unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
@@ -22030,8 +22029,7 @@ mod tests {
             .unwrap();
         let entry = b.begin_block(None).unwrap();
         let v2_id = b.undef(v2, None);
-        b.vector_shuffle(v3, None, v2_id, v2_id, [0, 1].into_iter())
-            .unwrap();
+        b.vector_shuffle(v3, None, v2_id, v2_id, [0u32, 1]).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
         let binary = b.module().assemble();
@@ -22069,8 +22067,7 @@ mod tests {
             .unwrap();
         let entry = b.begin_block(None).unwrap();
         let v2_id = b.undef(v2, None);
-        b.vector_shuffle(v2, None, v2_id, v2_id, [0, 4].into_iter())
-            .unwrap();
+        b.vector_shuffle(v2, None, v2_id, v2_id, [0u32, 4]).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
         let binary = b.module().assemble();
