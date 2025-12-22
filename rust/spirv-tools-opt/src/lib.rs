@@ -1437,6 +1437,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("uge-zero-left"; "(uge ?c ?x)" => "(eq ?x ?c)" if is_const_zero(var("?c"))),
         rewrite!("uge-max-right"; "(uge ?x ?c)" => "(eq ?x ?c)" if is_const_all_ones(var("?c"))),
         rewrite!("uge-max-left"; "(uge ?c ?x)" => { BoolConst { value: true } } if is_const_all_ones(var("?c"))),
+        rewrite!("uge-one-right"; "(uge ?x ?c)" => { CmpZero { target: var("?x"), eq: false } } if is_const_one(var("?c"))),
         rewrite!("slt-min-right"; "(slt ?x ?c)" => { BoolConst { value: false } } if is_const_signed_min(var("?c"))),
         rewrite!("slt-min-left"; "(slt ?c ?x)" => "(ne ?x ?c)" if is_const_signed_min(var("?c"))),
         rewrite!("slt-max-right"; "(slt ?x ?c)" => "(ne ?x ?c)" if is_const_signed_max(var("?c"))),
@@ -13812,6 +13813,7 @@ mod tests {
     #[test]
     fn rewrites_unsigned_compare_near_extremes() {
         assert_simplifies("(ult x 1)", "(eq x 0)");
+        assert_simplifies("(uge x 1)", "(ne x 0)");
     }
 
     #[test]
