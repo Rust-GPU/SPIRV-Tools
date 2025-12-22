@@ -214,7 +214,7 @@ fn spirv_fuzz_cli_reports_errors_like_cpp() {
     let rust_fuzz = rust_bin("spirv-fuzz");
     let dir = tempdir().expect("tempdir");
     let invalid = dir.path().join("invalid.spv");
-    fs::write(&invalid, &[0u8, 1, 2, 3]).expect("write invalid spv");
+    fs::write(&invalid, [0u8, 1, 2, 3]).expect("write invalid spv");
 
     let rust = Command::new(&rust_fuzz)
         .arg(&invalid)

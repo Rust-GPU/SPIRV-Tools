@@ -8,18 +8,10 @@ use rspirv::dr::{load_words, Module};
 use thiserror::Error;
 
 /// Input selection for the size tool.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct SizeConfig {
     /// Where to read the module from.
     pub input: InputSource,
-}
-
-impl Default for SizeConfig {
-    fn default() -> Self {
-        Self {
-            input: InputSource::default(),
-        }
-    }
 }
 
 /// Summary statistics for a SPIR-V module.

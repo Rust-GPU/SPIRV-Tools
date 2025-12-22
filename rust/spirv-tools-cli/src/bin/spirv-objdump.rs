@@ -87,7 +87,7 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
-    let input = if args.input == PathBuf::from("-") {
+    let input = if args.input == std::path::Path::new("-") {
         InputSource::Stdin
     } else {
         InputSource::Path(args.input.clone())

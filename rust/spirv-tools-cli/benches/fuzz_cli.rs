@@ -19,7 +19,7 @@ fn build_minimal_module() -> Vec<u32> {
     b.begin_block(None).expect("begin block");
     b.ret().expect("ret");
     b.end_function().expect("end function");
-    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", &[]);
+    b.entry_point(rspirv::spirv::ExecutionModel::Vertex, func, "main", []);
     b.module().assemble()
 }
 

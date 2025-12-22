@@ -101,7 +101,7 @@ impl DisassembleOptions {
 }
 
 /// Source extraction output settings.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct ObjdumpSourceOptions {
     /// When true, only list the discovered source file names.
     pub list_only: bool,
@@ -109,16 +109,6 @@ pub struct ObjdumpSourceOptions {
     pub output_dir: Option<PathBuf>,
     /// Overwrite any existing files in the output directory.
     pub overwrite: bool,
-}
-
-impl Default for ObjdumpSourceOptions {
-    fn default() -> Self {
-        Self {
-            list_only: false,
-            output_dir: None,
-            overwrite: false,
-        }
-    }
 }
 
 /// Errors surfaced by the objdump CLI entry points.
@@ -230,10 +220,8 @@ fn run_entrypoint_dump(config: &ObjdumpConfig) -> Result<String, ObjdumpCliError
     let mut names = Vec::new();
     for entry in &module.entry_points {
         // OpEntryPoint: ExecutionModel | EntryPoint <id> | Name | ...interfaces
-        if let Some(name_operand) = entry.operands.get(2) {
-            if let rspirv::dr::Operand::LiteralString(name) = name_operand {
-                names.push(name.clone());
-            }
+        if let Some(rspirv::dr::Operand::LiteralString(name)) = entry.operands.get(2) {
+            names.push(name.clone());
         }
     }
     names.sort();
@@ -290,7 +278,7 @@ fn extract_sources(words: &[u32]) -> Result<Vec<SourceFile>, ObjdumpCliError> {
     for inst in &module.debug_string_source {
         match inst.class.opcode {
             Op::String => {
-                if let Some(rspirv::dr::Operand::LiteralString(value)) = inst.operands.get(0) {
+                if let Some(rspirv::dr::Operand::LiteralString(value)) = inst.operands.first() {
                     if let Some(id) = inst.result_id {
                         strings.entry(id).or_insert_with(|| value.clone());
                     }
@@ -302,10 +290,8 @@ fn extract_sources(words: &[u32]) -> Result<Vec<SourceFile>, ObjdumpCliError> {
                 // Operands: SourceLanguage, Version, optional File, optional Source
                 let mut file_id = None;
                 let mut source = String::new();
-                if let Some(file_operand) = inst.operands.get(2) {
-                    if let rspirv::dr::Operand::IdRef(id) = file_operand {
-                        file_id = Some(*id);
-                    }
+                if let Some(rspirv::dr::Operand::IdRef(id)) = inst.operands.get(2) {
+                    file_id = Some(*id);
                 }
                 if let Some(rspirv::dr::Operand::LiteralString(content)) = inst.operands.get(3) {
                     source.push_str(content);
@@ -314,7 +300,8 @@ fn extract_sources(words: &[u32]) -> Result<Vec<SourceFile>, ObjdumpCliError> {
             }
             Op::SourceContinued => {
                 if let Some((_, code)) = sources.last_mut() {
-                    if let Some(rspirv::dr::Operand::LiteralString(fragment)) = inst.operands.get(0)
+                    if let Some(rspirv::dr::Operand::LiteralString(fragment)) =
+                        inst.operands.first()
                     {
                         code.push_str(fragment);
                     } else {
@@ -520,7 +507,7 @@ mod tests {
         builder.begin_block(None).expect("begin block");
         builder.ret().expect("return");
         builder.end_function().expect("end function");
-        builder.entry_point(spirv::ExecutionModel::Fragment, func_id, "main", &[]);
+        builder.entry_point(spirv::ExecutionModel::Fragment, func_id, "main", []);
 
         builder.module().assemble()
     }
@@ -592,7 +579,7 @@ mod tests {
         b.begin_block(None).expect("entry block");
         b.ret().expect("ret");
         b.end_function().expect("end function");
-        b.entry_point(spirv::ExecutionModel::Fragment, func_id, "main", &[]);
+        b.entry_point(spirv::ExecutionModel::Fragment, func_id, "main", []);
         b.module().assemble()
     }
 }

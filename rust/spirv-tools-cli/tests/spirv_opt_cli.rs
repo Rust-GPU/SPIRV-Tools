@@ -2152,7 +2152,7 @@ fn spirv_opt_cli_factors_common_multiplicand() {
                 if result_id != add_id {
                     continue;
                 }
-                let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                     continue;
                 };
                 let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2232,7 +2232,7 @@ fn spirv_opt_cli_factors_shared_constant_from_sum() {
                 if inst.result_id != Some(add_id) {
                     continue;
                 }
-                let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                     continue;
                 };
                 let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2255,7 +2255,7 @@ fn spirv_opt_cli_factors_shared_constant_from_sum() {
                 if inst.result_id != Some(add_id) {
                     continue;
                 }
-                let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                     continue;
                 };
                 let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2342,7 +2342,7 @@ fn spirv_opt_cli_factors_shared_constant_from_sum_commuted_mul() {
                 if inst.result_id != Some(add_id) {
                     continue;
                 }
-                let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                     continue;
                 };
                 let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2365,7 +2365,7 @@ fn spirv_opt_cli_factors_shared_constant_from_sum_commuted_mul() {
                 if inst.result_id != Some(add_id) {
                     continue;
                 }
-                let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                     continue;
                 };
                 let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2449,7 +2449,7 @@ fn spirv_opt_cli_factors_shared_constant_from_sum_mixed_mul_order() {
                 if inst.result_id != Some(add_id) {
                     continue;
                 }
-                let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                     continue;
                 };
                 let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2472,7 +2472,7 @@ fn spirv_opt_cli_factors_shared_constant_from_sum_mixed_mul_order() {
                 if inst.result_id != Some(add_id) {
                     continue;
                 }
-                let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                     continue;
                 };
                 let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2561,7 +2561,7 @@ fn spirv_opt_cli_factors_shared_constant_from_sub() {
                 if inst.result_id != Some(sub_id) {
                     continue;
                 }
-                let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                     continue;
                 };
                 let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2585,7 +2585,7 @@ fn spirv_opt_cli_factors_shared_constant_from_sub() {
                 if inst.result_id != Some(sub_id) {
                     continue;
                 }
-                let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                     continue;
                 };
                 let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2666,7 +2666,7 @@ fn spirv_opt_cli_factors_shared_constant_from_sub_commuted_mul() {
                 if inst.result_id != Some(sub_id) {
                     continue;
                 }
-                let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                     continue;
                 };
                 let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2690,7 +2690,7 @@ fn spirv_opt_cli_factors_shared_constant_from_sub_commuted_mul() {
                 if inst.result_id != Some(sub_id) {
                     continue;
                 }
-                let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                     continue;
                 };
                 let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2774,7 +2774,7 @@ fn spirv_opt_cli_factors_shared_constant_from_sub_mixed_mul_order() {
                 if inst.result_id != Some(sub_id) {
                     continue;
                 }
-                let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                     continue;
                 };
                 let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2798,7 +2798,7 @@ fn spirv_opt_cli_factors_shared_constant_from_sub_mixed_mul_order() {
                 if inst.result_id != Some(sub_id) {
                     continue;
                 }
-                let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                     continue;
                 };
                 let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2904,7 +2904,7 @@ fn spirv_opt_cli_factors_symbolic_multiplicand_from_sub() {
         match inst.class.opcode {
             Op::ISub => {
                 diff_id = inst.result_id;
-                let Some(lhs_id) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                let Some(lhs_id) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                     continue;
                 };
                 let Some(rhs_id) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2919,7 +2919,7 @@ fn spirv_opt_cli_factors_symbolic_multiplicand_from_sub() {
                 if inst.result_id != Some(sub_id) {
                     continue;
                 }
-                let Some(lhs_id) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                let Some(lhs_id) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                     continue;
                 };
                 let Some(rhs_id) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -2986,7 +2986,7 @@ fn spirv_opt_cli_factors_symbolic_multiplicand_from_sub_commuted_mul() {
         match inst.class.opcode {
             Op::ISub => {
                 diff_id = inst.result_id;
-                let Some(lhs_id) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                let Some(lhs_id) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                     continue;
                 };
                 let Some(rhs_id) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -3001,7 +3001,7 @@ fn spirv_opt_cli_factors_symbolic_multiplicand_from_sub_commuted_mul() {
                 if inst.result_id != Some(sub_id) {
                     continue;
                 }
-                let Some(lhs_id) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                let Some(lhs_id) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                     continue;
                 };
                 let Some(rhs_id) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -3059,7 +3059,7 @@ fn spirv_opt_cli_factors_symbolic_multiplicand_from_sub_mixed_mul_order() {
         match inst.class.opcode {
             Op::ISub => {
                 diff_id = inst.result_id;
-                let Some(lhs_id) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                let Some(lhs_id) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                     continue;
                 };
                 let Some(rhs_id) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -3074,7 +3074,7 @@ fn spirv_opt_cli_factors_symbolic_multiplicand_from_sub_mixed_mul_order() {
                 if inst.result_id != Some(sub_id) {
                     continue;
                 }
-                let Some(lhs_id) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                let Some(lhs_id) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                     continue;
                 };
                 let Some(rhs_id) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -3138,7 +3138,7 @@ fn spirv_opt_cli_factors_symbolic_multiplicand_from_add() {
         match inst.class.opcode {
             Op::IAdd => {
                 sum_id = inst.result_id;
-                let Some(lhs_id) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                let Some(lhs_id) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                     continue;
                 };
                 let Some(rhs_id) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -3153,7 +3153,7 @@ fn spirv_opt_cli_factors_symbolic_multiplicand_from_add() {
                 if inst.result_id != Some(add_id) {
                     continue;
                 }
-                let Some(lhs_id) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                let Some(lhs_id) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                     continue;
                 };
                 let Some(rhs_id) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -3361,7 +3361,7 @@ fn spirv_opt_cli_factors_mixed_constant_difference_into_single_mul() {
             Op::IMul => {
                 mul_count += 1;
                 assert_eq!(inst.result_id, Some(sub_id), "mul should replace subtract");
-                let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                     continue;
                 };
                 let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -3434,7 +3434,7 @@ fn spirv_opt_cli_factors_mixed_constant_difference_commuted_into_single_mul() {
             Op::IMul => {
                 mul_count += 1;
                 assert_eq!(inst.result_id, Some(sub_id), "mul should replace subtract");
-                let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                     continue;
                 };
                 let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -3513,7 +3513,7 @@ fn assert_const_difference_factors_to_mul(
                     Some(expected_result),
                     "mul should replace subtract"
                 );
-                let Some(lhs) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                let Some(lhs) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                     continue;
                 };
                 let Some(rhs) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -3805,7 +3805,7 @@ fn spirv_opt_cli_factors_symbolic_multiplicand_from_add_commuted_mul() {
         match inst.class.opcode {
             Op::IAdd => {
                 sum_id = inst.result_id;
-                let Some(lhs_id) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                let Some(lhs_id) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                     continue;
                 };
                 let Some(rhs_id) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -3820,7 +3820,7 @@ fn spirv_opt_cli_factors_symbolic_multiplicand_from_add_commuted_mul() {
                 if inst.result_id != Some(add_id) {
                     continue;
                 }
-                let Some(lhs_id) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                let Some(lhs_id) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                     continue;
                 };
                 let Some(rhs_id) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -3878,7 +3878,7 @@ fn spirv_opt_cli_factors_symbolic_multiplicand_from_add_mixed_mul_order() {
         match inst.class.opcode {
             Op::IAdd => {
                 sum_id = inst.result_id;
-                let Some(lhs_id) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                let Some(lhs_id) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                     continue;
                 };
                 let Some(rhs_id) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {
@@ -3893,7 +3893,7 @@ fn spirv_opt_cli_factors_symbolic_multiplicand_from_add_mixed_mul_order() {
                 if inst.result_id != Some(add_id) {
                     continue;
                 }
-                let Some(lhs_id) = inst.operands.get(0).and_then(|op| op.id_ref_any()) else {
+                let Some(lhs_id) = inst.operands.first().and_then(|op| op.id_ref_any()) else {
                     continue;
                 };
                 let Some(rhs_id) = inst.operands.get(1).and_then(|op| op.id_ref_any()) else {

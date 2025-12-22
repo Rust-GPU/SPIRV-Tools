@@ -245,7 +245,7 @@ fn spirv_dis_reports_errors_like_cpp() {
     let dir = tempdir().expect("temp dir");
     let bad_path = dir.path().join("invalid.spv");
     // Write an invalid SPIR-V binary (wrong magic).
-    fs::write(&bad_path, &[0u8, 1, 2, 3]).expect("write invalid spv");
+    fs::write(&bad_path, [0u8, 1, 2, 3]).expect("write invalid spv");
 
     let rust = Command::new(env!("CARGO_BIN_EXE_spirv-dis"))
         .arg(&bad_path)
@@ -667,7 +667,7 @@ fn spirv_val_reports_errors_like_cpp() {
 
     let dir = tempdir().expect("temp dir");
     let bad_path = dir.path().join("invalid.spv");
-    fs::write(&bad_path, &[0u8, 1, 2, 3]).expect("write invalid spv");
+    fs::write(&bad_path, [0u8, 1, 2, 3]).expect("write invalid spv");
 
     let rust = Command::new(env!("CARGO_BIN_EXE_spirv-val"))
         .arg(&bad_path)
@@ -702,7 +702,7 @@ fn spirv_opt_reports_errors_like_cpp() {
 
     let dir = tempdir().expect("temp dir");
     let bad_path = dir.path().join("invalid.spv");
-    fs::write(&bad_path, &[0u8, 1, 2, 3]).expect("write invalid spv");
+    fs::write(&bad_path, [0u8, 1, 2, 3]).expect("write invalid spv");
 
     let rust = Command::new(env!("CARGO_BIN_EXE_spirv-opt"))
         .arg(&bad_path)
@@ -737,7 +737,7 @@ fn spirv_objdump_reports_errors_like_cpp() {
 
     let dir = tempdir().expect("temp dir");
     let bad_path = dir.path().join("invalid.spv");
-    fs::write(&bad_path, &[0u8, 1, 2, 3]).expect("write invalid spv");
+    fs::write(&bad_path, [0u8, 1, 2, 3]).expect("write invalid spv");
 
     let rust = Command::new(env!("CARGO_BIN_EXE_spirv-objdump"))
         .arg(&bad_path)

@@ -80,7 +80,7 @@ fn help_and_version_parity(rust_bin: &str, cpp_bin: &PathBuf, name: &str) {
 fn write_invalid_spirv() -> (tempfile::TempDir, PathBuf) {
     let dir = tempdir().expect("temp dir");
     let bad_path = dir.path().join("invalid.spv");
-    fs::write(&bad_path, &[0u8, 1, 2, 3]).expect("write invalid spv");
+    fs::write(&bad_path, [0u8, 1, 2, 3]).expect("write invalid spv");
     (dir, bad_path)
 }
 
@@ -106,10 +106,10 @@ fn write_source_module(path: &PathBuf) {
     b.begin_block(None).expect("entry block");
     b.ret().expect("ret");
     b.end_function().expect("end fn");
-    b.entry_point(spirv::ExecutionModel::Fragment, func, "main", &[]);
+    b.entry_point(spirv::ExecutionModel::Fragment, func, "main", []);
 
     let words = b.module().assemble();
-    fs::write(path, &words_to_bytes(&words)).expect("write module");
+    fs::write(path, words_to_bytes(&words)).expect("write module");
 }
 
 fn write_module_text(path: &PathBuf, text: &str) {
@@ -920,9 +920,9 @@ fn spirv_objdump_source_ignores_empty_like_cpp() {
     b.begin_block(None).expect("entry block");
     b.ret().expect("ret");
     b.end_function().expect("end fn");
-    b.entry_point(spirv::ExecutionModel::Fragment, func, "main", &[]);
+    b.entry_point(spirv::ExecutionModel::Fragment, func, "main", []);
     let words = b.module().assemble();
-    fs::write(&bin_path, &words_to_bytes(&words)).expect("write module");
+    fs::write(&bin_path, words_to_bytes(&words)).expect("write module");
 
     let rust = Command::new(rust_bin("spirv-objdump"))
         .arg("--source")

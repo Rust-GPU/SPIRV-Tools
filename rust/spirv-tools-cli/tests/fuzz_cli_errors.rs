@@ -16,7 +16,7 @@ fn spirv_fuzz_cli_rejects_empty_input() {
 
     let tmp = tempdir().expect("tempdir");
     let empty = tmp.path().join("empty.spv");
-    fs::write(&empty, &[]).expect("write empty file");
+    fs::write(&empty, []).expect("write empty file");
 
     let status = Command::new(&rust_bin)
         .arg(&empty)

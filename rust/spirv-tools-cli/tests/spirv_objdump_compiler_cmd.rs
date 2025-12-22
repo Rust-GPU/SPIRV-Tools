@@ -21,7 +21,7 @@ fn build_module_with_compiler_cmd(cmd: &str) -> Vec<u32> {
     b.begin_block(None).expect("begin block");
     b.ret().expect("ret");
     b.end_function().expect("end function");
-    b.entry_point(spirv::ExecutionModel::Fragment, func_id, "main", &[]);
+    b.entry_point(spirv::ExecutionModel::Fragment, func_id, "main", []);
     b.module().assemble()
 }
 
