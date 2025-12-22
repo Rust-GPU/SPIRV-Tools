@@ -735,6 +735,10 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("bor-absorbs-split-y-comm"; "(bor (band (bnot ?x) ?y) (band ?x ?y))" => "?y"),
         rewrite!("bor-absorbs-split-x"; "(bor (band ?x ?y) (band ?x (bnot ?y)))" => "?x"),
         rewrite!("bor-absorbs-split-x-comm"; "(bor (band ?x (bnot ?y)) (band ?x ?y))" => "?x"),
+        rewrite!("bor-minterms-to-xor-right"; "(bor (band ?x (bnot ?y)) (band (bnot ?x) ?y))" => "(bxor ?x ?y)"),
+        rewrite!("bor-minterms-to-xor-left"; "(bor (band (bnot ?y) ?x) (band (bnot ?x) ?y))" => "(bxor ?x ?y)"),
+        rewrite!("bor-minterms-to-xor-right-comm"; "(bor (band ?x (bnot ?y)) (band ?y (bnot ?x)))" => "(bxor ?x ?y)"),
+        rewrite!("bor-minterms-to-xor-left-comm"; "(bor (band (bnot ?y) ?x) (band ?y (bnot ?x)))" => "(bxor ?x ?y)"),
         rewrite!("bxor-absorbs-split-y"; "(bxor (band ?x ?y) (band (bnot ?x) ?y))" => "?y"),
         rewrite!("bxor-absorbs-split-y-comm"; "(bxor (band (bnot ?x) ?y) (band ?x ?y))" => "?y"),
         rewrite!("bxor-absorbs-split-x"; "(bxor (band ?x ?y) (band ?x (bnot ?y)))" => "?x"),
@@ -9613,6 +9617,40 @@ mod tests {
             }
         }
         assert!(found, "expected (x | y) | (x & y) to rewrite to x | y");
+    }
+
+    #[test]
+    fn rewrites_bor_minterms_to_xor() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::BitNot(Id::from(1)),
+            SpirvLang::BitAnd([Id::from(0), Id::from(2)]),
+            SpirvLang::BitNot(Id::from(0)),
+            SpirvLang::BitAnd([Id::from(4), Id::from(1)]),
+            SpirvLang::BitOr([Id::from(3), Id::from(5)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::BitXor([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_x = is_named_symbol(&runner.egraph, *lhs, "x");
+            let rhs_is_x = is_named_symbol(&runner.egraph, *rhs, "x");
+            let lhs_is_y = is_named_symbol(&runner.egraph, *lhs, "y");
+            let rhs_is_y = is_named_symbol(&runner.egraph, *rhs, "y");
+            if (lhs_is_x && rhs_is_y) || (lhs_is_y && rhs_is_x) {
+                found = true;
+                break;
+            }
+        }
+        assert!(
+            found,
+            "expected (x & ~y) | (~x & y) to rewrite to x ^ y"
+        );
     }
 
     #[test]
