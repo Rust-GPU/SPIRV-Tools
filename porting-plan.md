@@ -163,6 +163,7 @@ Planned tasks:
 - Added rewrite to collapse `(-x) + (-y)` into `-(x + y)` with Rust unit coverage.
 - Added `select` negated-condition rewrite so `select(!c, t, f)` becomes `select(c, f, t)` with Rust unit coverage.
 - Added `select` bool-arm rewrites to collapse `select(c, true, false)` into `c` and `select(c, false, true)` into `!c`, with Rust unit coverage.
+- Added comparison rewrites that drop paired negations in `eq`/`ne` operands, with Rust unit coverage.
 
 ## Upcoming Milestone: Optimizer Rewrite Stability & Extension
 - Broaden e-graph rewrites to additional algebraic/bitwise identities while preserving id stability (e.g., deeper shift/mask mixes, rotate-like sequences as supported).
