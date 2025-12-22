@@ -1149,6 +1149,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("ne-neg-neg"; "(ne (neg ?a) (neg ?b))" => "(ne ?a ?b)"),
         rewrite!("eq-bnot-bnot"; "(eq (bnot ?a) (bnot ?b))" => "(eq ?a ?b)"),
         rewrite!("ne-bnot-bnot"; "(ne (bnot ?a) (bnot ?b))" => "(ne ?a ?b)"),
+        rewrite!("eq-bnot-move-left"; "(eq (bnot ?a) ?b)" => "(eq ?a (bnot ?b))"),
+        rewrite!("ne-bnot-move-left"; "(ne (bnot ?a) ?b)" => "(ne ?a (bnot ?b))"),
         rewrite!("eq-bnot-self"; "(eq ?a (bnot ?a))" => { BoolConst { value: false } }),
         rewrite!("ne-bnot-self"; "(ne ?a (bnot ?a))" => { BoolConst { value: true } }),
         rewrite!("eq-add-cancel-left"; "(eq (+ ?x ?y) (+ ?x ?z))" => "(eq ?y ?z)"),
@@ -7067,6 +7069,62 @@ mod tests {
             (lhs_is_x && rhs_is_y) || (lhs_is_y && rhs_is_x),
             "expected ne between x and y, got {nodes:?}"
         );
+    }
+
+    #[test]
+    fn rewrites_eq_moves_bitnot_across_comparison() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::BitNot(Id::from(0)),        // 2 = ~x
+            SpirvLang::Eq([Id::from(2), Id::from(1)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::Eq([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_x = is_named_symbol(&runner.egraph, *lhs, "x");
+            let rhs_is_x = is_named_symbol(&runner.egraph, *rhs, "x");
+            let lhs_is_bnot_y = is_bnot_named_symbol(&runner.egraph, *lhs, "y");
+            let rhs_is_bnot_y = is_bnot_named_symbol(&runner.egraph, *rhs, "y");
+            if (lhs_is_x && rhs_is_bnot_y) || (rhs_is_x && lhs_is_bnot_y) {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected ~x == y to rewrite to x == ~y");
+    }
+
+    #[test]
+    fn rewrites_ne_moves_bitnot_across_comparison() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::BitNot(Id::from(0)),        // 2 = ~x
+            SpirvLang::Ne([Id::from(2), Id::from(1)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::Ne([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_x = is_named_symbol(&runner.egraph, *lhs, "x");
+            let rhs_is_x = is_named_symbol(&runner.egraph, *rhs, "x");
+            let lhs_is_bnot_y = is_bnot_named_symbol(&runner.egraph, *lhs, "y");
+            let rhs_is_bnot_y = is_bnot_named_symbol(&runner.egraph, *rhs, "y");
+            if (lhs_is_x && rhs_is_bnot_y) || (rhs_is_x && lhs_is_bnot_y) {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected ~x != y to rewrite to x != ~y");
     }
 
     #[test]
