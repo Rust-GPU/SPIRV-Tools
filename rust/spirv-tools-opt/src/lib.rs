@@ -774,6 +774,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("bxor-not-and-bnot-band-left"; "(bxor (bnot (band ?x ?y)) (bnot ?x))" => "(band ?x (bnot ?y))"),
         rewrite!("bxor-not-and-self-right"; "(bxor ?x (bnot (band ?x ?y)))" => "(bor (bnot ?x) ?y)"),
         rewrite!("bxor-not-and-self-left"; "(bxor (bnot (band ?x ?y)) ?x)" => "(bor (bnot ?x) ?y)"),
+        rewrite!("bxor-or-and-to-xor-right"; "(bxor (bor ?x ?y) (band ?x ?y))" => "(bxor ?x ?y)"),
+        rewrite!("bxor-or-and-to-xor-left"; "(bxor (band ?x ?y) (bor ?x ?y))" => "(bxor ?x ?y)"),
         rewrite!("bxor-cancel-nested-right"; "(bxor ?x (bxor ?x ?y))" => "?y"),
         rewrite!("bxor-cancel-nested-left"; "(bxor (bxor ?x ?y) ?x)" => "?y"),
         rewrite!("bxor-not-self-inner-right"; "(bxor (bnot ?x) (bxor ?x ?y))" => "(bnot ?y)"),
@@ -9394,6 +9396,35 @@ mod tests {
             }
         }
         assert!(found, "expected ~x ^ ~(x & y) to rewrite to x & ~y");
+    }
+
+    #[test]
+    fn rewrites_bxor_or_and_to_xor() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::BitOr([Id::from(0), Id::from(1)]),
+            SpirvLang::BitAnd([Id::from(0), Id::from(1)]),
+            SpirvLang::BitXor([Id::from(2), Id::from(3)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::BitXor([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_x = is_named_symbol(&runner.egraph, *lhs, "x");
+            let rhs_is_x = is_named_symbol(&runner.egraph, *rhs, "x");
+            let lhs_is_y = is_named_symbol(&runner.egraph, *lhs, "y");
+            let rhs_is_y = is_named_symbol(&runner.egraph, *rhs, "y");
+            if (lhs_is_x && rhs_is_y) || (lhs_is_y && rhs_is_x) {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected (x | y) ^ (x & y) to rewrite to x ^ y");
     }
 
     #[test]
