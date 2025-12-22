@@ -638,6 +638,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         }),
         rewrite!("band-not-and-self-right"; "(band ?x (bnot (band ?x ?y)))" => "(band ?x (bnot ?y))"),
         rewrite!("band-not-and-self-left"; "(band (bnot (band ?x ?y)) ?x)" => "(band ?x (bnot ?y))"),
+        rewrite!("band-not-and-bnot-right"; "(band (bnot ?x) (bnot (band ?x ?y)))" => "(bnot ?x)"),
+        rewrite!("band-not-and-bnot-left"; "(band (bnot (band ?x ?y)) (bnot ?x))" => "(bnot ?x)"),
         rewrite!("band-demorgan"; "(band (bnot ?a) (bnot ?b))" => "(bnot (bor ?a ?b))"),
         rewrite!("band-mask-to-umod"; "(band ?x ?c)" => {
             BitAndToUmod { x: var("?x"), c: var("?c") }
@@ -8659,6 +8661,26 @@ mod tests {
             }
         }
         assert!(found, "expected x | ~(x | y) to rewrite to x | ~y");
+    }
+
+    #[test]
+    fn rewrites_band_not_and_bnot_absorbs() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::BitAnd([Id::from(0), Id::from(1)]),
+            SpirvLang::BitNot(Id::from(2)),
+            SpirvLang::BitNot(Id::from(0)),
+            SpirvLang::BitAnd([Id::from(4), Id::from(3)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![
+                SpirvLang::Symbol(Symbol::from("x")),
+                SpirvLang::BitNot(Id::from(0))
+            ])
+        );
     }
 
     #[test]
