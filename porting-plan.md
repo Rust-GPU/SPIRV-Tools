@@ -1378,3 +1378,4 @@ Tasks for this milestone:
 - Introduce criterion benches for the new rewrites (small/medium blocks) to track performance vs. existing arithmetic passes; keep hyperfine smoke green.
 - Add a fuzz target exercising mixed arithmetic/bitwise blocks to guard the new rewrites against panics and misfolds. (Progress: added `arith_bitwise` cargo-fuzz target.)
 - Added e-graph rewrite for bitwise AND associativity (`x & (y & z) -> (x & y) & z`) with Rust coverage.
+- Added e-graph rewrite for logical AND associativity (`a && (b && c) -> (a && b) && c`) with Rust coverage.
