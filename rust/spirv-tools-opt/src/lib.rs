@@ -1484,6 +1484,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("logne-maxterm-dual"; "(lne (lor ?a (lnot ?b)) (lor (lnot ?a) ?b))" => "(lne ?a ?b)"),
         rewrite!("logeq-and-notor"; "(leq (land ?a ?b) (lor (lnot ?a) (lnot ?b)))" => { BoolConst { value: false } }),
         rewrite!("logne-and-notor"; "(lne (land ?a ?b) (lor (lnot ?a) (lnot ?b)))" => { BoolConst { value: true } }),
+        rewrite!("logeq-or-notand"; "(leq (lor ?a ?b) (land (lnot ?a) (lnot ?b)))" => { BoolConst { value: false } }),
         rewrite!("logeq-or-split-a-right"; "(leq (lor ?a ?b) (lor ?a (lnot ?b)))" => "?a"),
         rewrite!("logeq-or-split-a-left"; "(leq (lor ?a (lnot ?b)) (lor ?a ?b))" => "?a"),
         rewrite!("logeq-or-split-b-right"; "(leq (lor ?a ?b) (lor (lnot ?a) ?b))" => "?b"),
@@ -11213,6 +11214,7 @@ mod tests {
         assert_simplifies("(lne (lor a (lnot b)) (lor (lnot a) b))", "(lne a b)");
         assert_simplifies("(leq (land a b) (lor (lnot a) (lnot b)))", "false");
         assert_simplifies("(lne (land a b) (lor (lnot a) (lnot b)))", "true");
+        assert_simplifies("(leq (lor a b) (land (lnot a) (lnot b)))", "false");
     }
 
     #[test]
