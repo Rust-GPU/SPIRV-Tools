@@ -754,6 +754,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("bxor-self-not-inner-left"; "(bxor (bnot (bxor ?x ?y)) ?x)" => "(bnot ?y)"),
         rewrite!("bxor-not-or-self-right"; "(bxor ?x (bnot (bor ?x ?y)))" => "(bor ?x (bnot ?y))"),
         rewrite!("bxor-not-or-self-left"; "(bxor (bnot (bor ?x ?y)) ?x)" => "(bor ?x (bnot ?y))"),
+        rewrite!("bxor-not-or-bnot-right"; "(bxor (bnot ?x) (bnot (bor ?x ?y)))" => "(band (bnot ?x) ?y)"),
+        rewrite!("bxor-not-or-bnot-left"; "(bxor (bnot (bor ?x ?y)) (bnot ?x))" => "(band (bnot ?x) ?y)"),
         rewrite!("bxor-not-and-self-right"; "(bxor ?x (bnot (band ?x ?y)))" => "(bor (bnot ?x) ?y)"),
         rewrite!("bxor-not-and-self-left"; "(bxor (bnot (band ?x ?y)) ?x)" => "(bor (bnot ?x) ?y)"),
         rewrite!("bxor-cancel-nested-right"; "(bxor ?x (bxor ?x ?y))" => "?y"),
@@ -9110,6 +9112,36 @@ mod tests {
             }
         }
         assert!(found, "expected ~x ^ (~x | y) to rewrite to x & y");
+    }
+
+    #[test]
+    fn rewrites_bxor_not_or_bnot_to_and_mask() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::BitOr([Id::from(0), Id::from(1)]),
+            SpirvLang::BitNot(Id::from(2)),
+            SpirvLang::BitNot(Id::from(0)),
+            SpirvLang::BitXor([Id::from(4), Id::from(3)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::BitAnd([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_bnot_x = is_bnot_named_symbol(&runner.egraph, *lhs, "x");
+            let rhs_is_bnot_x = is_bnot_named_symbol(&runner.egraph, *rhs, "x");
+            let lhs_is_y = is_named_symbol(&runner.egraph, *lhs, "y");
+            let rhs_is_y = is_named_symbol(&runner.egraph, *rhs, "y");
+            if (lhs_is_bnot_x && rhs_is_y) || (rhs_is_bnot_x && lhs_is_y) {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected ~x ^ ~(x | y) to rewrite to ~x & y");
     }
 
     #[test]
