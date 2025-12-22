@@ -1456,6 +1456,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("logand-consensus-a"; "(land (lor ?a ?b) (lor ?a (lnot ?b)))" => "?a"),
         rewrite!("logand-consensus-b"; "(land (lor ?a ?b) (lor (lnot ?a) ?b))" => "?b"),
         rewrite!("logand-xnor-to-logeq"; "(land (lor ?a (lnot ?b)) (lor (lnot ?a) ?b))" => "(leq ?a ?b)"),
+        rewrite!("logand-contradiction-right"; "(land ?a (land (lnot ?a) ?b))" => { BoolConst { value: false } }),
+        rewrite!("logand-contradiction-left"; "(land (land (lnot ?a) ?b) ?a)" => { BoolConst { value: false } }),
         rewrite!("logand-absorb-complement-or"; "(land ?a (lor (lnot ?a) ?b))" => "(land ?a ?b)"),
         rewrite!(
             "logand-absorb-complement-or-comm";
@@ -11091,6 +11093,22 @@ mod tests {
         assert_eq!(
             optimized,
             RecExpr::from(vec![SpirvLang::Const(const_bool(true))])
+        );
+    }
+
+    #[test]
+    fn rewrites_logand_contradiction_nested() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("a")), // 0
+            SpirvLang::Symbol(Symbol::from("b")), // 1
+            SpirvLang::LogNot(Id::from(0)),
+            SpirvLang::LogAnd([Id::from(2), Id::from(1)]),
+            SpirvLang::LogAnd([Id::from(0), Id::from(3)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Const(const_bool(false))])
         );
     }
 
