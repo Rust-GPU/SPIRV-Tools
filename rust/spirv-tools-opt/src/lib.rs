@@ -810,6 +810,10 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
             "bor-absorb-nested-complement-and-comm";
             "(bor ?x (band ?y (bor ?z (bnot ?x))))" => "(bor ?x ?y)"
         ),
+        rewrite!(
+            "bor-absorb-nested-complement-and-invert";
+            "(bor (bnot ?x) (band ?y (bor ?x ?z)))" => "(bor (bnot ?x) ?y)"
+        ),
         rewrite!("bor-or-and-absorb-right"; "(bor (bor ?x ?y) (band ?x ?y))" => "(bor ?x ?y)"),
         rewrite!("bor-or-and-absorb-left"; "(bor (band ?x ?y) (bor ?x ?y))" => "(bor ?x ?y)"),
         rewrite!("band-absorbs-or"; "(band ?x (bor ?x ?y))" => "?x"),
@@ -14198,6 +14202,14 @@ mod tests {
         assert_simplifies(
             "(band (bnot x) (bor y (band x z)))",
             "(band (bnot x) y)",
+        );
+    }
+
+    #[test]
+    fn rewrites_bor_absorb_nested_complement_and_invert() {
+        assert_simplifies(
+            "(bor (bnot x) (band y (bor x z)))",
+            "(bor (bnot x) y)",
         );
     }
 
