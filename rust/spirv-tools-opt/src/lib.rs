@@ -2735,6 +2735,20 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
             "select-factor-umod-right";
             "(select ?c (umod ?x ?a) (umod ?y ?a))" => "(umod (select ?c ?x ?y) ?a)"
         ),
+        rewrite!(
+            "select-rotate-factor";
+            "(select ?c (bor (shl ?x ?s) (shr_u ?x ?t)) (bor (shl ?y ?s) (shr_u ?y ?t)))" =>
+            "(bor (shl (select ?c ?x ?y) ?s) (shr_u (select ?c ?x ?y) ?t))"
+        ),
+        rewrite!(
+            "select-rotate-factor-swapped";
+            "(select ?c (bor (shr_u ?x ?t) (shl ?x ?s)) (bor (shr_u ?y ?t) (shl ?y ?s)))" =>
+            "(bor (shl (select ?c ?x ?y) ?s) (shr_u (select ?c ?x ?y) ?t))"
+        ),
+        rewrite!(
+            "select-brev-factor";
+            "(select ?c (brev ?x) (brev ?y))" => "(brev (select ?c ?x ?y))"
+        ),
         rewrite!("phi-same"; "(phi ?a ?a)" => "?a"),
     ]
 }
@@ -16098,6 +16112,27 @@ mod tests {
             "(select c (umod x a) (umod y a))",
             "(umod (select c x y) a)",
         );
+    }
+
+    #[test]
+    fn rewrites_select_rotate_factoring() {
+        assert_simplifies(
+            "(select c (bor (shl x 8) (shr_u x 24)) (bor (shl y 8) (shr_u y 24)))",
+            "(bor (shl (select c x y) 8) (shr_u (select c x y) 24))",
+        );
+    }
+
+    #[test]
+    fn rewrites_select_rotate_factoring_swapped() {
+        assert_simplifies(
+            "(select c (bor (shr_u x 24) (shl x 8)) (bor (shr_u y 24) (shl y 8)))",
+            "(bor (shl (select c x y) 8) (shr_u (select c x y) 24))",
+        );
+    }
+
+    #[test]
+    fn rewrites_select_brev_factoring() {
+        assert_simplifies("(select c (brev x) (brev y))", "(brev (select c x y))");
     }
 
     #[test]

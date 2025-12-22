@@ -1433,6 +1433,8 @@ Tasks for this milestone:
 - Added bit-reverse factoring rewrite for AND (`brev(x) & brev(y) -> brev(x & y)`) with Rust coverage.
 - Added bit-reverse factoring rewrite for OR (`brev(x) | brev(y) -> brev(x | y)`) with Rust coverage.
 - Added bit-reverse factoring rewrite for XOR (`brev(x) ^ brev(y) -> brev(x ^ y)`) with Rust coverage.
+- Added select-level rotate factoring that hoists mirrored `(shl ... | shr_u ...)` patterns outside `select`, covering swapped `bor` orders to keep e-graph rewrites stable across rotate expressions.
+- Added select-level bit-reverse factoring so `(select c (brev x) (brev y))` collapses to `brev (select c x y)`, with targeted Rust unit tests confirming the simplification.
 - Added add/sub reassociation and cancellation rewrites to collapse shared minuends/subtrahends, convert mixed add/sub into direct sums, and surface `x+x` doubles for shift/mul folding with Rust coverage.
 - Added constant-left add/sub refactors that pull constants across nested add/sub nodes to expose folds with Rust coverage.
 - Added signed-compare negation normalization (e.g., `-x < -y` -> `x > y`) and unsigned `~x` compare normalizations with Rust coverage.
