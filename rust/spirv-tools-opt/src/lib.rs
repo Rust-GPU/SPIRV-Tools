@@ -1433,6 +1433,9 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("ugt-zero-left"; "(ugt ?c ?x)" => { BoolConst { value: false } } if is_const_zero(var("?c"))),
         rewrite!("ugt-max-right"; "(ugt ?x ?c)" => { BoolConst { value: false } } if is_const_all_ones(var("?c"))),
         rewrite!("ugt-max-left"; "(ugt ?c ?x)" => "(ne ?x ?c)" if is_const_all_ones(var("?c"))),
+        rewrite!("ugt-max-minus-one-right"; "(ugt ?x ?c)" => {
+            CmpConstOffset { x: var("?x"), c: var("?c"), offset: 1, eq: true }
+        } if is_const_unsigned_max_minus_one(var("?c"))),
         rewrite!("uge-zero-right"; "(uge ?x ?c)" => { BoolConst { value: true } } if is_const_zero(var("?c"))),
         rewrite!("uge-zero-left"; "(uge ?c ?x)" => "(eq ?x ?c)" if is_const_zero(var("?c"))),
         rewrite!("uge-max-right"; "(uge ?x ?c)" => "(eq ?x ?c)" if is_const_all_ones(var("?c"))),
@@ -2007,6 +2010,12 @@ struct CmpSubMoveConstLeft {
 }
 struct CmpZero {
     target: Var,
+    eq: bool,
+}
+struct CmpConstOffset {
+    x: Var,
+    c: Var,
+    offset: i64,
     eq: bool,
 }
 struct CmpXorSelfZero {
@@ -3138,6 +3147,40 @@ impl Applier<SpirvLang, ()> for CmpZero {
             egraph.add(SpirvLang::Eq([subst[self.target], const_zero]))
         } else {
             egraph.add(SpirvLang::Ne([subst[self.target], const_zero]))
+        };
+        egraph.union(eclass, cmp);
+        vec![cmp]
+    }
+}
+
+impl Applier<SpirvLang, ()> for CmpConstOffset {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(constant) = const_value(egraph, subst[self.c]) else {
+            return Vec::new();
+        };
+        let width = constant.width_bits();
+        let adjusted = if self.offset >= 0 {
+            constant
+                .get_u64()
+                .wrapping_add(self.offset as u64)
+        } else {
+            constant
+                .get_u64()
+                .wrapping_sub((-self.offset) as u64)
+        };
+        let adjusted_const = ConstValue::new_with_width(adjusted, width);
+        let const_id = egraph.add(SpirvLang::Const(adjusted_const));
+        let cmp = if self.eq {
+            egraph.add(SpirvLang::Eq([subst[self.x], const_id]))
+        } else {
+            egraph.add(SpirvLang::Ne([subst[self.x], const_id]))
         };
         egraph.union(eclass, cmp);
         vec![cmp]
@@ -4897,6 +4940,15 @@ fn is_const_one(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> 
 
 fn is_const_all_ones(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
     move |egraph, _, subst| const_value(egraph, subst[var]).is_some_and(ConstValue::is_all_ones)
+}
+
+fn is_const_unsigned_max_minus_one(
+    var: Var,
+) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
+    move |egraph, _, subst| {
+        const_value(egraph, subst[var])
+            .is_some_and(|c| c.get_u64() == c.mask().wrapping_sub(1))
+    }
 }
 
 fn signed_limits(value: ConstValue) -> Option<(u64, u64, u64)> {
@@ -13814,6 +13866,7 @@ mod tests {
     fn rewrites_unsigned_compare_near_extremes() {
         assert_simplifies("(ult x 1)", "(eq x 0)");
         assert_simplifies("(uge x 1)", "(ne x 0)");
+        assert_simplifies("(ugt x 4294967294)", "(eq x 4294967295)");
     }
 
     #[test]
