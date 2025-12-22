@@ -744,6 +744,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("bxor-not-or-self-left"; "(bxor (bnot (bor ?x ?y)) ?x)" => "(bor ?x (bnot ?y))"),
         rewrite!("bxor-not-and-self-right"; "(bxor ?x (bnot (band ?x ?y)))" => "(bor (bnot ?x) ?y)"),
         rewrite!("bxor-not-and-self-left"; "(bxor (bnot (band ?x ?y)) ?x)" => "(bor (bnot ?x) ?y)"),
+        rewrite!("bxor-cancel-nested-right"; "(bxor ?x (bxor ?x ?y))" => "?y"),
+        rewrite!("bxor-cancel-nested-left"; "(bxor (bxor ?x ?y) ?x)" => "?y"),
         // Rust-only improvement: factor shared masks out of OR/XOR to shrink DAG size.
         rewrite!("bor-factor-shared-mask"; "(bor (band ?x ?m) (band ?y ?m))" => "(band (bor ?x ?y) ?m)"),
         rewrite!("bor-factor-shared-mask-comm"; "(bor (band ?m ?x) (band ?m ?y))" => "(band (bor ?x ?y) ?m)"),
@@ -8765,6 +8767,33 @@ mod tests {
             }
         }
         assert!(found, "expected x ^ ~(x & y) to rewrite to ~x | y");
+    }
+
+    #[test]
+    fn rewrites_bxor_nested_cancel() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::BitXor([Id::from(0), Id::from(1)]),
+            SpirvLang::BitXor([Id::from(0), Id::from(2)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("y"))])
+        );
+
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::BitXor([Id::from(0), Id::from(1)]),
+            SpirvLang::BitXor([Id::from(2), Id::from(0)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("y"))])
+        );
     }
 
     #[test]
