@@ -1147,6 +1147,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("logne-not-not"; "(lne (lnot ?a) (lnot ?b))" => "(lne ?a ?b)"),
         rewrite!("eq-neg-neg"; "(eq (neg ?a) (neg ?b))" => "(eq ?a ?b)"),
         rewrite!("ne-neg-neg"; "(ne (neg ?a) (neg ?b))" => "(ne ?a ?b)"),
+        rewrite!("eq-neg-move-left"; "(eq (neg ?a) ?b)" => "(eq ?a (neg ?b))"),
+        rewrite!("ne-neg-move-left"; "(ne (neg ?a) ?b)" => "(ne ?a (neg ?b))"),
         rewrite!("eq-bnot-bnot"; "(eq (bnot ?a) (bnot ?b))" => "(eq ?a ?b)"),
         rewrite!("ne-bnot-bnot"; "(ne (bnot ?a) (bnot ?b))" => "(ne ?a ?b)"),
         rewrite!("eq-bnot-move-left"; "(eq (bnot ?a) ?b)" => "(eq ?a (bnot ?b))"),
@@ -7017,6 +7019,62 @@ mod tests {
             (lhs_is_x && rhs_is_y) || (lhs_is_y && rhs_is_x),
             "expected ne between x and y, got {nodes:?}"
         );
+    }
+
+    #[test]
+    fn rewrites_eq_moves_neg_across_comparison() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::Neg(Id::from(0)),          // 2 = -x
+            SpirvLang::Eq([Id::from(2), Id::from(1)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::Eq([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_x = is_named_symbol(&runner.egraph, *lhs, "x");
+            let rhs_is_x = is_named_symbol(&runner.egraph, *rhs, "x");
+            let lhs_is_neg_y = is_neg_named_symbol(&runner.egraph, *lhs, "y");
+            let rhs_is_neg_y = is_neg_named_symbol(&runner.egraph, *rhs, "y");
+            if (lhs_is_x && rhs_is_neg_y) || (rhs_is_x && lhs_is_neg_y) {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected -x == y to rewrite to x == -y");
+    }
+
+    #[test]
+    fn rewrites_ne_moves_neg_across_comparison() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::Neg(Id::from(0)),          // 2 = -x
+            SpirvLang::Ne([Id::from(2), Id::from(1)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::Ne([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_x = is_named_symbol(&runner.egraph, *lhs, "x");
+            let rhs_is_x = is_named_symbol(&runner.egraph, *rhs, "x");
+            let lhs_is_neg_y = is_neg_named_symbol(&runner.egraph, *lhs, "y");
+            let rhs_is_neg_y = is_neg_named_symbol(&runner.egraph, *rhs, "y");
+            if (lhs_is_x && rhs_is_neg_y) || (rhs_is_x && lhs_is_neg_y) {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected -x != y to rewrite to x != -y");
     }
 
     #[test]

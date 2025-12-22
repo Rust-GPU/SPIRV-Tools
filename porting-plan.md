@@ -224,6 +224,7 @@ Planned tasks:
 - Added bxor rewrites so `(~x) ^ (~x & y)` folds to `~(x | y)`, with Rust unit coverage.
 - Added bxor rewrites so `(~x) ^ (~x | y)` folds to `(x & y)`, with Rust unit coverage.
 - Added eq/ne rewrites that move bitwise-not across comparisons (`~x == y` -> `x == ~y`), with Rust unit coverage.
+- Added eq/ne rewrites that move negation across comparisons (`-x == y` -> `x == -y`), with Rust unit coverage.
 - Added bxor rewrites so `x ^ ~(x ^ y)` folds to `~y`, with Rust unit coverage.
 - Added bitwise rewrites so `x | ~(x | y)` folds to `x | ~y`, with Rust unit coverage.
 - Added bitwise rewrites so `~x & ~(x & y)` folds to `~x`, with Rust unit coverage.
