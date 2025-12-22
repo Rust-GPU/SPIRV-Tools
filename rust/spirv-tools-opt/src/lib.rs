@@ -1081,6 +1081,12 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("ne-bnot-bnot"; "(ne (bnot ?a) (bnot ?b))" => "(ne ?a ?b)"),
         rewrite!("eq-add-cancel-left"; "(eq (+ ?x ?y) (+ ?x ?z))" => "(eq ?y ?z)"),
         rewrite!("ne-add-cancel-left"; "(ne (+ ?x ?y) (+ ?x ?z))" => "(ne ?y ?z)"),
+        rewrite!("eq-add-self-zero"; "(eq (+ ?x ?y) ?x)" => {
+            CmpZero { target: var("?y"), eq: true }
+        }),
+        rewrite!("ne-add-self-zero"; "(ne (+ ?x ?y) ?x)" => {
+            CmpZero { target: var("?y"), eq: false }
+        }),
         rewrite!("eq-sub-cancel-left"; "(eq (- ?x ?y) (- ?x ?z))" => "(eq ?y ?z)"),
         rewrite!("ne-sub-cancel-left"; "(ne (- ?x ?y) (- ?x ?z))" => "(ne ?y ?z)"),
         rewrite!("eq-sub-cancel-right"; "(eq (- ?y ?x) (- ?z ?x))" => "(eq ?y ?z)"),
@@ -1628,6 +1634,10 @@ struct CmpSubMoveConstLeft {
     x: Var,
     c: Var,
     y: Var,
+    eq: bool,
+}
+struct CmpZero {
+    target: Var,
     eq: bool,
 }
 struct CmpXorSelfZero {
@@ -2736,6 +2746,29 @@ impl Applier<SpirvLang, ()> for CmpSubMoveConstLeft {
             egraph.add(SpirvLang::Eq([subst[self.x], sub]))
         } else {
             egraph.add(SpirvLang::Ne([subst[self.x], sub]))
+        };
+        egraph.union(eclass, cmp);
+        vec![cmp]
+    }
+}
+
+impl Applier<SpirvLang, ()> for CmpZero {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(width) = width_hint(egraph, eclass, [subst[self.target]]) else {
+            return Vec::new();
+        };
+        let const_zero = egraph.add(SpirvLang::Const(ConstValue::new_with_width(0, width)));
+        let cmp = if self.eq {
+            egraph.add(SpirvLang::Eq([subst[self.target], const_zero]))
+        } else {
+            egraph.add(SpirvLang::Ne([subst[self.target], const_zero]))
         };
         egraph.union(eclass, cmp);
         vec![cmp]
@@ -4505,6 +4538,13 @@ mod tests {
     use pretty_assertions::assert_eq;
     use rspirv::dr::{Builder, Instruction};
     use std::collections::HashMap;
+
+    fn is_named_symbol(egraph: &EGraph<SpirvLang, ()>, id: Id, name: &str) -> bool {
+        matches!(
+            egraph[egraph.find(id)].nodes.as_slice(),
+            [SpirvLang::Symbol(sym)] if *sym == Symbol::from(name)
+        )
+    }
 
     #[test]
     fn folds_addition() {
@@ -7794,6 +7834,59 @@ mod tests {
             panic!("expected x != (10 - y) to be introduced by rewrites");
         };
         assert_eq!(runner.egraph.find(root), runner.egraph.find(expected_id));
+    }
+
+    #[test]
+    fn rewrites_add_self_comparison_to_zero() {
+        let expr_eq = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::Add([Id::from(0), Id::from(1)]),
+            SpirvLang::Eq([Id::from(2), Id::from(0)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr_eq).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found_eq = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::Eq([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_y = is_named_symbol(&runner.egraph, *lhs, "y");
+            let rhs_is_y = is_named_symbol(&runner.egraph, *rhs, "y");
+            let lhs_zero = const_value(&runner.egraph, *lhs).is_some_and(ConstValue::is_zero);
+            let rhs_zero = const_value(&runner.egraph, *rhs).is_some_and(ConstValue::is_zero);
+            if (lhs_is_y && rhs_zero) || (rhs_is_y && lhs_zero) {
+                found_eq = true;
+                break;
+            }
+        }
+        assert!(found_eq, "expected eq to compare y against zero");
+
+        let expr_ne = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::Add([Id::from(0), Id::from(1)]),
+            SpirvLang::Ne([Id::from(2), Id::from(0)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr_ne).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found_ne = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::Ne([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_y = is_named_symbol(&runner.egraph, *lhs, "y");
+            let rhs_is_y = is_named_symbol(&runner.egraph, *rhs, "y");
+            let lhs_zero = const_value(&runner.egraph, *lhs).is_some_and(ConstValue::is_zero);
+            let rhs_zero = const_value(&runner.egraph, *rhs).is_some_and(ConstValue::is_zero);
+            if (lhs_is_y && rhs_zero) || (rhs_is_y && lhs_zero) {
+                found_ne = true;
+                break;
+            }
+        }
+        assert!(found_ne, "expected ne to compare y against zero");
     }
 
     #[test]
