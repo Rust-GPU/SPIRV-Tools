@@ -362,6 +362,7 @@ Planned tasks:
 - Added bxor rewrites so `~x ^ (x | y)` folds to `x | ~y`, with Rust unit coverage.
 - Added unsigned compare rewrite so `ult(x, 0)` folds to `false`, with Rust unit coverage.
 - Added unsigned compare rewrite so `ult(0, x)` folds to `x != 0`, with Rust unit coverage.
+- Added unsigned compare rewrite so `ult(x, max)` folds to `x != max`, with Rust unit coverage.
 
 ## Upcoming Milestone: Optimizer Rewrite Stability & Extension
 - Broaden e-graph rewrites to additional algebraic/bitwise identities while preserving id stability (e.g., deeper shift/mask mixes, rotate-like sequences as supported).
