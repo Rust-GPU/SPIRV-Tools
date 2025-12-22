@@ -409,6 +409,7 @@ Planned tasks:
 - Added select nesting rewrite so `select(c, x, select(c, y, z))` folds to `select(c, x, z)`, with Rust unit coverage.
 - Added select nesting rewrite so `select(c, select(c, x, y), z)` folds to `select(c, x, z)`, with Rust unit coverage.
 - Added select nesting rewrite so `select(c, select(c, x, y), select(c, z, w))` folds to `select(c, x, w)`, with Rust unit coverage.
+- Added select nesting rewrite so `select(c, x, select(!c, y, z))` folds to `select(c, x, y)`, with Rust unit coverage.
 
 ## Upcoming Milestone: Optimizer Rewrite Stability & Extension
 - Broaden e-graph rewrites to additional algebraic/bitwise identities while preserving id stability (e.g., deeper shift/mask mixes, rotate-like sequences as supported).
