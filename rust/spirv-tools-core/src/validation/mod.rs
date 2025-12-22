@@ -33602,7 +33602,7 @@ mod tests {
             "OpFunctionEnd",
         ]
         .join("\n");
-        let words = assemble_text(text).expect("assemble text");
+        let words = assemble_text(text.as_ref()).expect("assemble text");
         let reordered = reorder_opcode_to_end(words, rspirv::spirv::Op::Capability);
         let err = validate_module(&reordered, TargetEnv::Vulkan1_2).unwrap_err();
         assert_eq!(
@@ -33861,11 +33861,14 @@ mod tests {
         let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
         assert_eq!(error, ValidationError::MissingMemoryModel);
     }
-    fn assemble_and_validate_with_env(text: &str, env: TargetEnv) -> Result<(), ValidationError> {
-        let binary = assemble_text(text).expect("assemble text");
+    fn assemble_and_validate_with_env(
+        text: impl AsRef<str>,
+        env: TargetEnv,
+    ) -> Result<(), ValidationError> {
+        let binary = assemble_text(text.as_ref()).expect("assemble text");
         validate_module(&binary, env)
     }
-    fn assemble_and_validate(text: &str) -> Result<(), ValidationError> {
+    fn assemble_and_validate(text: impl AsRef<str>) -> Result<(), ValidationError> {
         assemble_and_validate_with_env(text, TargetEnv::Universal1_3)
     }
     #[test]
@@ -36862,10 +36865,10 @@ OpFunctionEnd
             "OpFunctionEnd",
         ]
         .join("\n");
-        assemble_and_validate_with_env(text, TargetEnv::Universal1_4)
+        assemble_and_validate_with_env(&text, TargetEnv::Universal1_4)
             .expect_err("extension gate should reject workgroup layout without allowed env");
 
-        assemble_and_validate_with_env(text, TargetEnv::Vulkan1_1Spirv1_4)
+        assemble_and_validate_with_env(&text, TargetEnv::Vulkan1_1Spirv1_4)
             .expect("WorkgroupMemoryExplicitLayout16BitAccessKHR should allow 16-bit workgroup");
     }
 
