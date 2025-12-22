@@ -181,6 +181,7 @@ Planned tasks:
 - Added bxor split-term absorption rewrites so `(x&y) ^ (~x&y)` folds to `y` and `(x&y) ^ (x&~y)` folds to `x`, with Rust unit coverage.
 - Added eq/ne rewrites that push negation into constant operands, with Rust unit coverage.
 - Added eq/ne rewrites that push bitwise-not into constant operands, with Rust unit coverage.
+- Added eq/ne rewrites that fold xor-with-constant comparisons into direct const comparisons, with Rust unit coverage.
 
 ## Upcoming Milestone: Optimizer Rewrite Stability & Extension
 - Broaden e-graph rewrites to additional algebraic/bitwise identities while preserving id stability (e.g., deeper shift/mask mixes, rotate-like sequences as supported).

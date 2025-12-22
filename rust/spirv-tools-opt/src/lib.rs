@@ -1097,6 +1097,12 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("ne-neg-const"; "(ne (neg ?x) ?c)" => { CmpNegConst { x: var("?x"), c: var("?c"), eq: false } }),
         rewrite!("eq-bnot-const"; "(eq (bnot ?x) ?c)" => { CmpBNotConst { x: var("?x"), c: var("?c"), eq: true } }),
         rewrite!("ne-bnot-const"; "(ne (bnot ?x) ?c)" => { CmpBNotConst { x: var("?x"), c: var("?c"), eq: false } }),
+        rewrite!("eq-bxor-const"; "(eq (bxor ?x ?c1) ?c2)" => {
+            CmpXorConst { x: var("?x"), c1: var("?c1"), c2: var("?c2"), eq: true }
+        }),
+        rewrite!("ne-bxor-const"; "(ne (bxor ?x ?c1) ?c2)" => {
+            CmpXorConst { x: var("?x"), c1: var("?c1"), c2: var("?c2"), eq: false }
+        }),
         rewrite!("slt-self"; "(slt ?a ?a)" => { BoolConst { value: false } }),
         rewrite!("sle-self"; "(sle ?a ?a)" => { BoolConst { value: true } }),
         rewrite!("sgt-self"; "(sgt ?a ?a)" => { BoolConst { value: false } }),
@@ -1500,6 +1506,12 @@ struct CmpNegConst {
 struct CmpBNotConst {
     x: Var,
     c: Var,
+    eq: bool,
+}
+struct CmpXorConst {
+    x: Var,
+    c1: Var,
+    c2: Var,
     eq: bool,
 }
 struct SelectConstCond {
@@ -2416,6 +2428,33 @@ impl Applier<SpirvLang, ()> for CmpBNotConst {
         };
         let inverted = map_const(constant, |value| !value);
         let const_id = egraph.add(SpirvLang::Const(inverted));
+        let cmp = if self.eq {
+            egraph.add(SpirvLang::Eq([subst[self.x], const_id]))
+        } else {
+            egraph.add(SpirvLang::Ne([subst[self.x], const_id]))
+        };
+        egraph.union(eclass, cmp);
+        vec![cmp]
+    }
+}
+
+impl Applier<SpirvLang, ()> for CmpXorConst {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(c1) = const_value(egraph, subst[self.c1]) else {
+            return Vec::new();
+        };
+        let Some(c2) = const_value(egraph, subst[self.c2]) else {
+            return Vec::new();
+        };
+        let merged = combine_consts(c1, c2, |a, b| a ^ b);
+        let const_id = egraph.add(SpirvLang::Const(merged));
         let cmp = if self.eq {
             egraph.add(SpirvLang::Eq([subst[self.x], const_id]))
         } else {
@@ -6954,6 +6993,70 @@ mod tests {
             }
         }
         assert!(found, "expected ne to compare x against bitnot const");
+    }
+
+    #[test]
+    fn rewrites_eq_bxor_with_constants() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),           // 0
+            SpirvLang::Const(ConstValue::new(5)),           // 1
+            SpirvLang::BitXor([Id::from(0), Id::from(1)]),  // 2 = x ^ 5
+            SpirvLang::Const(ConstValue::new(9)),           // 3
+            SpirvLang::Eq([Id::from(2), Id::from(3)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let expected_const = combine_consts(ConstValue::new(5), ConstValue::new(9), |a, b| a ^ b);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::Eq([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_x = has_symbol(&runner.egraph, *lhs);
+            let rhs_is_x = has_symbol(&runner.egraph, *rhs);
+            let lhs_const = const_value(&runner.egraph, *lhs);
+            let rhs_const = const_value(&runner.egraph, *rhs);
+            if (lhs_is_x && rhs_const == Some(expected_const))
+                || (rhs_is_x && lhs_const == Some(expected_const))
+            {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected eq to compare x against xor-folded const");
+    }
+
+    #[test]
+    fn rewrites_ne_bxor_with_constants() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),           // 0
+            SpirvLang::Const(ConstValue::new(3)),           // 1
+            SpirvLang::BitXor([Id::from(0), Id::from(1)]),  // 2 = x ^ 3
+            SpirvLang::Const(ConstValue::new(12)),          // 3
+            SpirvLang::Ne([Id::from(2), Id::from(3)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let expected_const = combine_consts(ConstValue::new(3), ConstValue::new(12), |a, b| a ^ b);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::Ne([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_x = has_symbol(&runner.egraph, *lhs);
+            let rhs_is_x = has_symbol(&runner.egraph, *rhs);
+            let lhs_const = const_value(&runner.egraph, *lhs);
+            let rhs_const = const_value(&runner.egraph, *rhs);
+            if (lhs_is_x && rhs_const == Some(expected_const))
+                || (rhs_is_x && lhs_const == Some(expected_const))
+            {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected ne to compare x against xor-folded const");
     }
 
     #[test]
