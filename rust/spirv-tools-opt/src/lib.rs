@@ -1119,6 +1119,12 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         }),
         rewrite!("eq-mul-odd-cancel"; "(eq (* ?x ?c) (* ?y ?c))" => "(eq ?x ?y)" if is_const_odd(var("?c"))),
         rewrite!("ne-mul-odd-cancel"; "(ne (* ?x ?c) (* ?y ?c))" => "(ne ?x ?y)" if is_const_odd(var("?c"))),
+        rewrite!("eq-mul-odd-zero"; "(eq (* ?x ?c) ?z)" => {
+            CmpZero { target: var("?x"), eq: true }
+        } if is_const_zero_and_odd(var("?z"), var("?c"))),
+        rewrite!("ne-mul-odd-zero"; "(ne (* ?x ?c) ?z)" => {
+            CmpZero { target: var("?x"), eq: false }
+        } if is_const_zero_and_odd(var("?z"), var("?c"))),
         rewrite!("eq-bxor-zero"; "(eq (bxor ?x ?y) ?c)" => "(eq ?x ?y)" if is_const_zero(var("?c"))),
         rewrite!("ne-bxor-zero"; "(ne (bxor ?x ?y) ?c)" => "(ne ?x ?y)" if is_const_zero(var("?c"))),
         rewrite!("eq-add-zero"; "(eq (+ ?x ?y) ?c)" => "(eq ?x (neg ?y))" if is_const_zero(var("?c"))),
@@ -4544,6 +4550,16 @@ fn is_const_all_ones(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst
 
 fn is_const_odd(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
     move |egraph, _, subst| const_value(egraph, subst[var]).is_some_and(|c| (c.get_u64() & 1) == 1)
+}
+
+fn is_const_zero_and_odd(
+    zero: Var,
+    odd: Var,
+) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
+    move |egraph, _, subst| {
+        const_value(egraph, subst[zero]).is_some_and(ConstValue::is_zero)
+            && const_value(egraph, subst[odd]).is_some_and(|c| (c.get_u64() & 1) == 1)
+    }
 }
 
 #[cfg(test)]
@@ -8139,6 +8155,61 @@ mod tests {
             }
         }
         assert!(found_ne, "expected ne to compare y against x + x");
+    }
+
+    #[test]
+    fn rewrites_mul_odd_zero_comparison_to_zero() {
+        let expr_eq = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Const(ConstValue::new(3)), // 1
+            SpirvLang::Mul([Id::from(0), Id::from(1)]),
+            SpirvLang::Const(ConstValue::new(0)), // 3
+            SpirvLang::Eq([Id::from(2), Id::from(3)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr_eq).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found_eq = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::Eq([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_x = is_named_symbol(&runner.egraph, *lhs, "x");
+            let rhs_is_x = is_named_symbol(&runner.egraph, *rhs, "x");
+            let lhs_zero = const_value(&runner.egraph, *lhs).is_some_and(ConstValue::is_zero);
+            let rhs_zero = const_value(&runner.egraph, *rhs).is_some_and(ConstValue::is_zero);
+            if (lhs_is_x && rhs_zero) || (rhs_is_x && lhs_zero) {
+                found_eq = true;
+                break;
+            }
+        }
+        assert!(found_eq, "expected eq to compare x against zero");
+
+        let expr_ne = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Const(ConstValue::new(3)), // 1
+            SpirvLang::Mul([Id::from(0), Id::from(1)]),
+            SpirvLang::Const(ConstValue::new(0)), // 3
+            SpirvLang::Ne([Id::from(2), Id::from(3)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr_ne).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found_ne = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::Ne([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_x = is_named_symbol(&runner.egraph, *lhs, "x");
+            let rhs_is_x = is_named_symbol(&runner.egraph, *rhs, "x");
+            let lhs_zero = const_value(&runner.egraph, *lhs).is_some_and(ConstValue::is_zero);
+            let rhs_zero = const_value(&runner.egraph, *rhs).is_some_and(ConstValue::is_zero);
+            if (lhs_is_x && rhs_zero) || (rhs_is_x && lhs_zero) {
+                found_ne = true;
+                break;
+            }
+        }
+        assert!(found_ne, "expected ne to compare x against zero");
     }
 
     #[test]
