@@ -1064,6 +1064,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("ne-self"; "(ne ?a ?a)" => { BoolConst { value: false } }),
         rewrite!("eq-neg-neg"; "(eq (neg ?a) (neg ?b))" => "(eq ?a ?b)"),
         rewrite!("ne-neg-neg"; "(ne (neg ?a) (neg ?b))" => "(ne ?a ?b)"),
+        rewrite!("eq-bnot-bnot"; "(eq (bnot ?a) (bnot ?b))" => "(eq ?a ?b)"),
+        rewrite!("ne-bnot-bnot"; "(ne (bnot ?a) (bnot ?b))" => "(ne ?a ?b)"),
         rewrite!("slt-self"; "(slt ?a ?a)" => { BoolConst { value: false } }),
         rewrite!("sle-self"; "(sle ?a ?a)" => { BoolConst { value: true } }),
         rewrite!("sgt-self"; "(sgt ?a ?a)" => { BoolConst { value: false } }),
@@ -6127,6 +6129,58 @@ mod tests {
             SpirvLang::Symbol(Symbol::from("y")), // 1
             SpirvLang::Neg(Id::from(0)),          // 2 = -x
             SpirvLang::Neg(Id::from(1)),          // 3 = -y
+            SpirvLang::Ne([Id::from(2), Id::from(3)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::Ne([lhs, rhs])) = nodes.last() else {
+            panic!("expected ne root, got {:?}", nodes.last());
+        };
+        let x = Symbol::from("x");
+        let y = Symbol::from("y");
+        let lhs_is_x = matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == x);
+        let rhs_is_y = matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(sym) if sym == y);
+        let lhs_is_y = matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == y);
+        let rhs_is_x = matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(sym) if sym == x);
+        assert!(
+            (lhs_is_x && rhs_is_y) || (lhs_is_y && rhs_is_x),
+            "expected ne between x and y, got {nodes:?}"
+        );
+    }
+
+    #[test]
+    fn rewrites_eq_with_bitnot_operands() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::BitNot(Id::from(0)),        // 2 = ~x
+            SpirvLang::BitNot(Id::from(1)),        // 3 = ~y
+            SpirvLang::Eq([Id::from(2), Id::from(3)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::Eq([lhs, rhs])) = nodes.last() else {
+            panic!("expected eq root, got {:?}", nodes.last());
+        };
+        let x = Symbol::from("x");
+        let y = Symbol::from("y");
+        let lhs_is_x = matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == x);
+        let rhs_is_y = matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(sym) if sym == y);
+        let lhs_is_y = matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == y);
+        let rhs_is_x = matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(sym) if sym == x);
+        assert!(
+            (lhs_is_x && rhs_is_y) || (lhs_is_y && rhs_is_x),
+            "expected eq between x and y, got {nodes:?}"
+        );
+    }
+
+    #[test]
+    fn rewrites_ne_with_bitnot_operands() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::BitNot(Id::from(0)),        // 2 = ~x
+            SpirvLang::BitNot(Id::from(1)),        // 3 = ~y
             SpirvLang::Ne([Id::from(2), Id::from(3)]),
         ]);
         let optimized = optimize_expr(&expr);
