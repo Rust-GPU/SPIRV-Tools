@@ -1099,6 +1099,12 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("ne-bxor-not-x"; "(ne (bxor ?x ?y) (bnot ?x))" => {
             CmpXorAllOnes { target: var("?y"), eq: false }
         }),
+        rewrite!("eq-bxor-not-y"; "(eq (bxor ?x ?y) (bnot ?y))" => {
+            CmpXorAllOnes { target: var("?x"), eq: true }
+        }),
+        rewrite!("ne-bxor-not-y"; "(ne (bxor ?x ?y) (bnot ?y))" => {
+            CmpXorAllOnes { target: var("?x"), eq: false }
+        }),
         rewrite!("eq-mul-odd-cancel"; "(eq (* ?x ?c) (* ?y ?c))" => "(eq ?x ?y)" if is_const_odd(var("?c"))),
         rewrite!("ne-mul-odd-cancel"; "(ne (* ?x ?c) (* ?y ?c))" => "(ne ?x ?y)" if is_const_odd(var("?c"))),
         rewrite!("eq-bxor-zero"; "(eq (bxor ?x ?y) ?c)" => "(eq ?x ?y)" if is_const_zero(var("?c"))),
@@ -8212,6 +8218,70 @@ mod tests {
             }
         }
         assert!(found, "expected ne(y, all_ones) from x^y != ~x");
+    }
+
+    #[test]
+    fn rewrites_eq_bxor_to_not_y_all_ones() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),          // 0
+            SpirvLang::Symbol(Symbol::from("y")),          // 1
+            SpirvLang::BitXor([Id::from(0), Id::from(1)]), // 2 = x ^ y
+            SpirvLang::BitNot(Id::from(1)),                // 3 = ~y
+            SpirvLang::Eq([Id::from(2), Id::from(3)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let expected_const = ConstValue::new_with_width(u32::MAX as u64, 32);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::Eq([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_x = has_symbol(&runner.egraph, *lhs);
+            let rhs_is_x = has_symbol(&runner.egraph, *rhs);
+            let lhs_const = const_value(&runner.egraph, *lhs);
+            let rhs_const = const_value(&runner.egraph, *rhs);
+            if (lhs_is_x && rhs_const == Some(expected_const))
+                || (rhs_is_x && lhs_const == Some(expected_const))
+            {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected eq(x, all_ones) from x^y == ~y");
+    }
+
+    #[test]
+    fn rewrites_ne_bxor_to_not_y_all_ones() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),          // 0
+            SpirvLang::Symbol(Symbol::from("y")),          // 1
+            SpirvLang::BitXor([Id::from(0), Id::from(1)]), // 2 = x ^ y
+            SpirvLang::BitNot(Id::from(1)),                // 3 = ~y
+            SpirvLang::Ne([Id::from(2), Id::from(3)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let expected_const = ConstValue::new_with_width(u32::MAX as u64, 32);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::Ne([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_x = has_symbol(&runner.egraph, *lhs);
+            let rhs_is_x = has_symbol(&runner.egraph, *rhs);
+            let lhs_const = const_value(&runner.egraph, *lhs);
+            let rhs_const = const_value(&runner.egraph, *rhs);
+            if (lhs_is_x && rhs_const == Some(expected_const))
+                || (rhs_is_x && lhs_const == Some(expected_const))
+            {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected ne(x, all_ones) from x^y != ~y");
     }
 
     #[test]
