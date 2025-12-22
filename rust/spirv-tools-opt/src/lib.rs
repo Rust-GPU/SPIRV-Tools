@@ -3378,13 +3378,9 @@ impl Applier<SpirvLang, ()> for CmpConstOffset {
         };
         let width = constant.width_bits();
         let adjusted = if self.offset >= 0 {
-            constant
-                .get_u64()
-                .wrapping_add(self.offset as u64)
+            constant.get_u64().wrapping_add(self.offset as u64)
         } else {
-            constant
-                .get_u64()
-                .wrapping_sub((-self.offset) as u64)
+            constant.get_u64().wrapping_sub((-self.offset) as u64)
         };
         let adjusted_const = ConstValue::new_with_width(adjusted, width);
         let const_id = egraph.add(SpirvLang::Const(adjusted_const));
@@ -3433,7 +3429,10 @@ impl Applier<SpirvLang, ()> for CmpXorAllOnes {
         let Some(width) = width_hint(egraph, eclass, [subst[self.target]]) else {
             return Vec::new();
         };
-        let all_ones = egraph.add(SpirvLang::Const(ConstValue::new_with_width(u64::MAX, width)));
+        let all_ones = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
+            u64::MAX,
+            width,
+        )));
         let cmp = if self.eq {
             egraph.add(SpirvLang::Eq([subst[self.target], all_ones]))
         } else {
@@ -5149,7 +5148,9 @@ fn is_const_one(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> 
     move |egraph, _, subst| const_value(egraph, subst[var]).is_some_and(ConstValue::is_one)
 }
 
-fn is_const_all_ones(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
+fn is_const_all_ones(
+    var: Var,
+) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
     move |egraph, _, subst| const_value(egraph, subst[var]).is_some_and(ConstValue::is_all_ones)
 }
 
@@ -5157,8 +5158,7 @@ fn is_const_unsigned_max_minus_one(
     var: Var,
 ) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
     move |egraph, _, subst| {
-        const_value(egraph, subst[var])
-            .is_some_and(|c| c.get_u64() == c.mask().wrapping_sub(1))
+        const_value(egraph, subst[var]).is_some_and(|c| c.get_u64() == c.mask().wrapping_sub(1))
     }
 }
 
@@ -5174,7 +5174,9 @@ fn signed_limits(value: ConstValue) -> Option<(u64, u64, u64)> {
     Some((min, max, mask))
 }
 
-fn is_const_signed_min(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
+fn is_const_signed_min(
+    var: Var,
+) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
     move |egraph, _, subst| {
         let Some(value) = const_value(egraph, subst[var]) else {
             return false;
@@ -5183,7 +5185,9 @@ fn is_const_signed_min(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Sub
     }
 }
 
-fn is_const_signed_max(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
+fn is_const_signed_max(
+    var: Var,
+) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
     move |egraph, _, subst| {
         let Some(value) = const_value(egraph, subst[var]) else {
             return false;
@@ -5255,10 +5259,9 @@ mod tests {
     }
 
     fn is_neg_named_symbol(egraph: &EGraph<SpirvLang, ()>, id: Id, name: &str) -> bool {
-        egraph[egraph.find(id)]
-            .nodes
-            .iter()
-            .any(|node| matches!(node, SpirvLang::Neg(child) if is_named_symbol(egraph, *child, name)))
+        egraph[egraph.find(id)].nodes.iter().any(
+            |node| matches!(node, SpirvLang::Neg(child) if is_named_symbol(egraph, *child, name)),
+        )
     }
 
     fn is_double_named_symbol(egraph: &EGraph<SpirvLang, ()>, id: Id, name: &str) -> bool {
@@ -6680,8 +6683,8 @@ mod tests {
         let expr = RecExpr::from(vec![
             SpirvLang::Symbol(Symbol::from("x")), // 0
             SpirvLang::Symbol(Symbol::from("y")), // 1
-            SpirvLang::BitNot(Id::from(0)),        // 2 = ~x
-            SpirvLang::BitNot(Id::from(1)),        // 3 = ~y
+            SpirvLang::BitNot(Id::from(0)),       // 2 = ~x
+            SpirvLang::BitNot(Id::from(1)),       // 3 = ~y
             SpirvLang::BitXor([Id::from(2), Id::from(3)]),
         ]);
         let optimized = optimize_expr(&expr);
@@ -6740,7 +6743,7 @@ mod tests {
         let expr = RecExpr::from(vec![
             SpirvLang::Symbol(Symbol::from("x")), // 0
             SpirvLang::Symbol(Symbol::from("y")), // 1
-            SpirvLang::BitNot(Id::from(0)),        // 2 = ~x
+            SpirvLang::BitNot(Id::from(0)),       // 2 = ~x
             SpirvLang::BitXor([Id::from(2), Id::from(1)]),
         ]);
         let runner = Runner::default().with_expr(&expr).run(&rewrites());
@@ -6777,7 +6780,7 @@ mod tests {
         let expr = RecExpr::from(vec![
             SpirvLang::Symbol(Symbol::from("x")), // 0
             SpirvLang::Symbol(Symbol::from("y")), // 1
-            SpirvLang::BitNot(Id::from(1)),        // 2 = ~y
+            SpirvLang::BitNot(Id::from(1)),       // 2 = ~y
             SpirvLang::BitXor([Id::from(0), Id::from(2)]),
         ]);
         let runner = Runner::default().with_expr(&expr).run(&rewrites());
@@ -6814,8 +6817,8 @@ mod tests {
         let expr = RecExpr::from(vec![
             SpirvLang::Symbol(Symbol::from("a")), // 0
             SpirvLang::Symbol(Symbol::from("b")), // 1
-            SpirvLang::BitNot(Id::from(0)),        // 2 = ~a
-            SpirvLang::BitNot(Id::from(1)),        // 3 = ~b
+            SpirvLang::BitNot(Id::from(0)),       // 2 = ~a
+            SpirvLang::BitNot(Id::from(1)),       // 3 = ~b
             SpirvLang::BitAnd([Id::from(2), Id::from(3)]),
         ]);
         let optimized = optimize_expr(&expr);
@@ -6824,7 +6827,10 @@ mod tests {
             panic!("expected bnot root, got {:?}", nodes.last());
         };
         let SpirvLang::BitOr([lhs, rhs]) = nodes[usize::from(*inner)] else {
-            panic!("expected bor under bnot, got {:?}", nodes[usize::from(*inner)]);
+            panic!(
+                "expected bor under bnot, got {:?}",
+                nodes[usize::from(*inner)]
+            );
         };
         let a = Symbol::from("a");
         let b = Symbol::from("b");
@@ -6840,10 +6846,7 @@ mod tests {
 
     #[test]
     fn rewrites_bor_of_bitnot_operands_to_negated_and() {
-        assert_simplifies(
-            "(bor (bnot a) (bnot b))",
-            "(bnot (band a b))",
-        );
+        assert_simplifies("(bor (bnot a) (bnot b))", "(bnot (band a b))");
     }
 
     #[test]
@@ -7486,9 +7489,12 @@ mod tests {
         let Some(SpirvLang::Select([cond, t, f])) = nodes.last() else {
             panic!("expected select root, got {:?}", nodes.last());
         };
-        let cond_sym = matches!(nodes[usize::from(*cond)], SpirvLang::Symbol(sym) if sym == Symbol::from("c"));
-        let t_sym = matches!(nodes[usize::from(*t)], SpirvLang::Symbol(sym) if sym == Symbol::from("y"));
-        let f_sym = matches!(nodes[usize::from(*f)], SpirvLang::Symbol(sym) if sym == Symbol::from("x"));
+        let cond_sym =
+            matches!(nodes[usize::from(*cond)], SpirvLang::Symbol(sym) if sym == Symbol::from("c"));
+        let t_sym =
+            matches!(nodes[usize::from(*t)], SpirvLang::Symbol(sym) if sym == Symbol::from("y"));
+        let f_sym =
+            matches!(nodes[usize::from(*f)], SpirvLang::Symbol(sym) if sym == Symbol::from("x"));
         assert!(
             cond_sym && t_sym && f_sym,
             "expected select c y x after negated cond rewrite, got {nodes:?}"
@@ -7680,8 +7686,8 @@ mod tests {
         let expr = RecExpr::from(vec![
             SpirvLang::Symbol(Symbol::from("x")), // 0
             SpirvLang::Symbol(Symbol::from("y")), // 1
-            SpirvLang::BitNot(Id::from(0)),        // 2 = ~x
-            SpirvLang::BitNot(Id::from(1)),        // 3 = ~y
+            SpirvLang::BitNot(Id::from(0)),       // 2 = ~x
+            SpirvLang::BitNot(Id::from(1)),       // 3 = ~y
             SpirvLang::Eq([Id::from(2), Id::from(3)]),
         ]);
         let optimized = optimize_expr(&expr);
@@ -7706,8 +7712,8 @@ mod tests {
         let expr = RecExpr::from(vec![
             SpirvLang::Symbol(Symbol::from("x")), // 0
             SpirvLang::Symbol(Symbol::from("y")), // 1
-            SpirvLang::BitNot(Id::from(0)),        // 2 = ~x
-            SpirvLang::BitNot(Id::from(1)),        // 3 = ~y
+            SpirvLang::BitNot(Id::from(0)),       // 2 = ~x
+            SpirvLang::BitNot(Id::from(1)),       // 3 = ~y
             SpirvLang::Ne([Id::from(2), Id::from(3)]),
         ]);
         let optimized = optimize_expr(&expr);
@@ -7732,7 +7738,7 @@ mod tests {
         let expr = RecExpr::from(vec![
             SpirvLang::Symbol(Symbol::from("x")), // 0
             SpirvLang::Symbol(Symbol::from("y")), // 1
-            SpirvLang::BitNot(Id::from(0)),        // 2 = ~x
+            SpirvLang::BitNot(Id::from(0)),       // 2 = ~x
             SpirvLang::Eq([Id::from(2), Id::from(1)]),
         ]);
         let runner = Runner::default().with_expr(&expr).run(&rewrites());
@@ -7760,7 +7766,7 @@ mod tests {
         let expr = RecExpr::from(vec![
             SpirvLang::Symbol(Symbol::from("x")), // 0
             SpirvLang::Symbol(Symbol::from("y")), // 1
-            SpirvLang::BitNot(Id::from(0)),        // 2 = ~x
+            SpirvLang::BitNot(Id::from(0)),       // 2 = ~x
             SpirvLang::Ne([Id::from(2), Id::from(1)]),
         ]);
         let runner = Runner::default().with_expr(&expr).run(&rewrites());
@@ -7930,11 +7936,11 @@ mod tests {
     #[test]
     fn rewrites_eq_with_shared_bxor_operand() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("x")),            // 0
-            SpirvLang::Symbol(Symbol::from("y")),            // 1
-            SpirvLang::Symbol(Symbol::from("z")),            // 2
-            SpirvLang::BitXor([Id::from(0), Id::from(1)]),   // 3 = x ^ y
-            SpirvLang::BitXor([Id::from(0), Id::from(2)]),   // 4 = x ^ z
+            SpirvLang::Symbol(Symbol::from("x")),          // 0
+            SpirvLang::Symbol(Symbol::from("y")),          // 1
+            SpirvLang::Symbol(Symbol::from("z")),          // 2
+            SpirvLang::BitXor([Id::from(0), Id::from(1)]), // 3 = x ^ y
+            SpirvLang::BitXor([Id::from(0), Id::from(2)]), // 4 = x ^ z
             SpirvLang::Eq([Id::from(3), Id::from(4)]),
         ]);
         let runner = Runner::default().with_expr(&expr).run(&rewrites());
@@ -7954,11 +7960,11 @@ mod tests {
     #[test]
     fn rewrites_ne_with_shared_bxor_operand() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("x")),            // 0
-            SpirvLang::Symbol(Symbol::from("y")),            // 1
-            SpirvLang::Symbol(Symbol::from("z")),            // 2
-            SpirvLang::BitXor([Id::from(0), Id::from(1)]),   // 3 = x ^ y
-            SpirvLang::BitXor([Id::from(0), Id::from(2)]),   // 4 = x ^ z
+            SpirvLang::Symbol(Symbol::from("x")),          // 0
+            SpirvLang::Symbol(Symbol::from("y")),          // 1
+            SpirvLang::Symbol(Symbol::from("z")),          // 2
+            SpirvLang::BitXor([Id::from(0), Id::from(1)]), // 3 = x ^ y
+            SpirvLang::BitXor([Id::from(0), Id::from(2)]), // 4 = x ^ z
             SpirvLang::Ne([Id::from(3), Id::from(4)]),
         ]);
         let runner = Runner::default().with_expr(&expr).run(&rewrites());
@@ -7978,10 +7984,10 @@ mod tests {
     #[test]
     fn rewrites_eq_bxor_zero_to_eq() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("x")),            // 0
-            SpirvLang::Symbol(Symbol::from("y")),            // 1
-            SpirvLang::BitXor([Id::from(0), Id::from(1)]),   // 2 = x ^ y
-            SpirvLang::Const(ConstValue::new(0)),            // 3
+            SpirvLang::Symbol(Symbol::from("x")),          // 0
+            SpirvLang::Symbol(Symbol::from("y")),          // 1
+            SpirvLang::BitXor([Id::from(0), Id::from(1)]), // 2 = x ^ y
+            SpirvLang::Const(ConstValue::new(0)),          // 3
             SpirvLang::Eq([Id::from(2), Id::from(3)]),
         ]);
         let runner = Runner::default().with_expr(&expr).run(&rewrites());
@@ -8001,10 +8007,10 @@ mod tests {
     #[test]
     fn rewrites_ne_bxor_zero_to_ne() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("x")),            // 0
-            SpirvLang::Symbol(Symbol::from("y")),            // 1
-            SpirvLang::BitXor([Id::from(0), Id::from(1)]),   // 2 = x ^ y
-            SpirvLang::Const(ConstValue::new(0)),            // 3
+            SpirvLang::Symbol(Symbol::from("x")),          // 0
+            SpirvLang::Symbol(Symbol::from("y")),          // 1
+            SpirvLang::BitXor([Id::from(0), Id::from(1)]), // 2 = x ^ y
+            SpirvLang::Const(ConstValue::new(0)),          // 3
             SpirvLang::Ne([Id::from(2), Id::from(3)]),
         ]);
         let runner = Runner::default().with_expr(&expr).run(&rewrites());
@@ -8114,9 +8120,9 @@ mod tests {
     #[test]
     fn rewrites_eq_bxor_all_ones_to_bnot() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("x")),                      // 0
-            SpirvLang::Symbol(Symbol::from("y")),                      // 1
-            SpirvLang::BitXor([Id::from(0), Id::from(1)]),             // 2 = x ^ y
+            SpirvLang::Symbol(Symbol::from("x")),          // 0
+            SpirvLang::Symbol(Symbol::from("y")),          // 1
+            SpirvLang::BitXor([Id::from(0), Id::from(1)]), // 2 = x ^ y
             SpirvLang::Const(ConstValue::new_with_width(u32::MAX as u64, 32)), // 3
             SpirvLang::Eq([Id::from(2), Id::from(3)]),
         ]);
@@ -8144,9 +8150,9 @@ mod tests {
     #[test]
     fn rewrites_ne_bxor_all_ones_to_bnot() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("x")),                      // 0
-            SpirvLang::Symbol(Symbol::from("y")),                      // 1
-            SpirvLang::BitXor([Id::from(0), Id::from(1)]),             // 2 = x ^ y
+            SpirvLang::Symbol(Symbol::from("x")),          // 0
+            SpirvLang::Symbol(Symbol::from("y")),          // 1
+            SpirvLang::BitXor([Id::from(0), Id::from(1)]), // 2 = x ^ y
             SpirvLang::Const(ConstValue::new_with_width(u32::MAX as u64, 32)), // 3
             SpirvLang::Ne([Id::from(2), Id::from(3)]),
         ]);
@@ -8174,9 +8180,9 @@ mod tests {
     #[test]
     fn rewrites_eq_negated_const_operand() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("x")),     // 0
-            SpirvLang::Const(ConstValue::new(5)),     // 1
-            SpirvLang::Neg(Id::from(0)),              // 2 = -x
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Const(ConstValue::new(5)), // 1
+            SpirvLang::Neg(Id::from(0)),          // 2 = -x
             SpirvLang::Eq([Id::from(2), Id::from(1)]),
         ]);
         let runner = Runner::default().with_expr(&expr).run(&rewrites());
@@ -8205,9 +8211,9 @@ mod tests {
     #[test]
     fn rewrites_ne_negated_const_operand() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("x")),     // 0
-            SpirvLang::Const(ConstValue::new(9)),     // 1
-            SpirvLang::Neg(Id::from(0)),              // 2 = -x
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Const(ConstValue::new(9)), // 1
+            SpirvLang::Neg(Id::from(0)),          // 2 = -x
             SpirvLang::Ne([Id::from(2), Id::from(1)]),
         ]);
         let runner = Runner::default().with_expr(&expr).run(&rewrites());
@@ -8236,9 +8242,9 @@ mod tests {
     #[test]
     fn rewrites_eq_bitnot_const_operand() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("x")),     // 0
-            SpirvLang::Const(ConstValue::new(6)),     // 1
-            SpirvLang::BitNot(Id::from(0)),           // 2 = ~x
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Const(ConstValue::new(6)), // 1
+            SpirvLang::BitNot(Id::from(0)),       // 2 = ~x
             SpirvLang::Eq([Id::from(2), Id::from(1)]),
         ]);
         let runner = Runner::default().with_expr(&expr).run(&rewrites());
@@ -8267,9 +8273,9 @@ mod tests {
     #[test]
     fn rewrites_ne_bitnot_const_operand() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("x")),     // 0
-            SpirvLang::Const(ConstValue::new(12)),    // 1
-            SpirvLang::BitNot(Id::from(0)),           // 2 = ~x
+            SpirvLang::Symbol(Symbol::from("x")),  // 0
+            SpirvLang::Const(ConstValue::new(12)), // 1
+            SpirvLang::BitNot(Id::from(0)),        // 2 = ~x
             SpirvLang::Ne([Id::from(2), Id::from(1)]),
         ]);
         let runner = Runner::default().with_expr(&expr).run(&rewrites());
@@ -8298,10 +8304,10 @@ mod tests {
     #[test]
     fn rewrites_eq_bxor_with_constants() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("x")),           // 0
-            SpirvLang::Const(ConstValue::new(5)),           // 1
-            SpirvLang::BitXor([Id::from(0), Id::from(1)]),  // 2 = x ^ 5
-            SpirvLang::Const(ConstValue::new(9)),           // 3
+            SpirvLang::Symbol(Symbol::from("x")),          // 0
+            SpirvLang::Const(ConstValue::new(5)),          // 1
+            SpirvLang::BitXor([Id::from(0), Id::from(1)]), // 2 = x ^ 5
+            SpirvLang::Const(ConstValue::new(9)),          // 3
             SpirvLang::Eq([Id::from(2), Id::from(3)]),
         ]);
         let runner = Runner::default().with_expr(&expr).run(&rewrites());
@@ -8330,10 +8336,10 @@ mod tests {
     #[test]
     fn rewrites_ne_bxor_with_constants() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("x")),           // 0
-            SpirvLang::Const(ConstValue::new(3)),           // 1
-            SpirvLang::BitXor([Id::from(0), Id::from(1)]),  // 2 = x ^ 3
-            SpirvLang::Const(ConstValue::new(12)),          // 3
+            SpirvLang::Symbol(Symbol::from("x")),          // 0
+            SpirvLang::Const(ConstValue::new(3)),          // 1
+            SpirvLang::BitXor([Id::from(0), Id::from(1)]), // 2 = x ^ 3
+            SpirvLang::Const(ConstValue::new(12)),         // 3
             SpirvLang::Ne([Id::from(2), Id::from(3)]),
         ]);
         let runner = Runner::default().with_expr(&expr).run(&rewrites());
@@ -8362,16 +8368,17 @@ mod tests {
     #[test]
     fn rewrites_eq_add_with_constants() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("x")),          // 0
-            SpirvLang::Const(ConstValue::new(7)),          // 1
-            SpirvLang::Add([Id::from(0), Id::from(1)]),    // 2 = x + 7
-            SpirvLang::Const(ConstValue::new(20)),         // 3
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Const(ConstValue::new(7)),       // 1
+            SpirvLang::Add([Id::from(0), Id::from(1)]), // 2 = x + 7
+            SpirvLang::Const(ConstValue::new(20)),      // 3
             SpirvLang::Eq([Id::from(2), Id::from(3)]),
         ]);
         let runner = Runner::default().with_expr(&expr).run(&rewrites());
         let root = runner.roots[0];
         let class = runner.egraph.find(root);
-        let expected_const = combine_consts(ConstValue::new(20), ConstValue::new(7), u64::wrapping_sub);
+        let expected_const =
+            combine_consts(ConstValue::new(20), ConstValue::new(7), u64::wrapping_sub);
         let mut found = false;
         for node in &runner.egraph[class].nodes {
             let SpirvLang::Eq([lhs, rhs]) = node else {
@@ -8394,16 +8401,17 @@ mod tests {
     #[test]
     fn rewrites_ne_add_with_constants() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("x")),          // 0
-            SpirvLang::Const(ConstValue::new(4)),          // 1
-            SpirvLang::Add([Id::from(0), Id::from(1)]),    // 2 = x + 4
-            SpirvLang::Const(ConstValue::new(1)),          // 3
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Const(ConstValue::new(4)),       // 1
+            SpirvLang::Add([Id::from(0), Id::from(1)]), // 2 = x + 4
+            SpirvLang::Const(ConstValue::new(1)),       // 3
             SpirvLang::Ne([Id::from(2), Id::from(3)]),
         ]);
         let runner = Runner::default().with_expr(&expr).run(&rewrites());
         let root = runner.roots[0];
         let class = runner.egraph.find(root);
-        let expected_const = combine_consts(ConstValue::new(1), ConstValue::new(4), u64::wrapping_sub);
+        let expected_const =
+            combine_consts(ConstValue::new(1), ConstValue::new(4), u64::wrapping_sub);
         let mut found = false;
         for node in &runner.egraph[class].nodes {
             let SpirvLang::Ne([lhs, rhs]) = node else {
@@ -8426,19 +8434,19 @@ mod tests {
     #[test]
     fn rewrites_eq_add_moves_const_across_comparison() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("x")),          // 0
-            SpirvLang::Symbol(Symbol::from("y")),          // 1
-            SpirvLang::Const(ConstValue::new(6)),          // 2
-            SpirvLang::Add([Id::from(0), Id::from(2)]),    // 3 = x + 6
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Symbol(Symbol::from("y")),       // 1
+            SpirvLang::Const(ConstValue::new(6)),       // 2
+            SpirvLang::Add([Id::from(0), Id::from(2)]), // 3 = x + 6
             SpirvLang::Eq([Id::from(3), Id::from(1)]),
         ]);
         let runner = Runner::default().with_expr(&expr).run(&rewrites());
         let root = runner.roots[0];
         let expected = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("x")),          // 0
-            SpirvLang::Symbol(Symbol::from("y")),          // 1
-            SpirvLang::Const(ConstValue::new(6)),          // 2
-            SpirvLang::Sub([Id::from(1), Id::from(2)]),    // 3 = y - 6
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Symbol(Symbol::from("y")),       // 1
+            SpirvLang::Const(ConstValue::new(6)),       // 2
+            SpirvLang::Sub([Id::from(1), Id::from(2)]), // 3 = y - 6
             SpirvLang::Eq([Id::from(0), Id::from(3)]),
         ]);
         let Some(expected_id) = runner.egraph.lookup_expr(&expected) else {
@@ -8450,19 +8458,19 @@ mod tests {
     #[test]
     fn rewrites_ne_add_moves_const_across_comparison() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("x")),          // 0
-            SpirvLang::Symbol(Symbol::from("y")),          // 1
-            SpirvLang::Const(ConstValue::new(6)),          // 2
-            SpirvLang::Add([Id::from(0), Id::from(2)]),    // 3 = x + 6
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Symbol(Symbol::from("y")),       // 1
+            SpirvLang::Const(ConstValue::new(6)),       // 2
+            SpirvLang::Add([Id::from(0), Id::from(2)]), // 3 = x + 6
             SpirvLang::Ne([Id::from(3), Id::from(1)]),
         ]);
         let runner = Runner::default().with_expr(&expr).run(&rewrites());
         let root = runner.roots[0];
         let expected = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("x")),          // 0
-            SpirvLang::Symbol(Symbol::from("y")),          // 1
-            SpirvLang::Const(ConstValue::new(6)),          // 2
-            SpirvLang::Sub([Id::from(1), Id::from(2)]),    // 3 = y - 6
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Symbol(Symbol::from("y")),       // 1
+            SpirvLang::Const(ConstValue::new(6)),       // 2
+            SpirvLang::Sub([Id::from(1), Id::from(2)]), // 3 = y - 6
             SpirvLang::Ne([Id::from(0), Id::from(3)]),
         ]);
         let Some(expected_id) = runner.egraph.lookup_expr(&expected) else {
@@ -8474,16 +8482,17 @@ mod tests {
     #[test]
     fn rewrites_eq_sub_with_constants() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("x")),          // 0
-            SpirvLang::Const(ConstValue::new(2)),          // 1
-            SpirvLang::Sub([Id::from(0), Id::from(1)]),    // 2 = x - 2
-            SpirvLang::Const(ConstValue::new(5)),          // 3
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Const(ConstValue::new(2)),       // 1
+            SpirvLang::Sub([Id::from(0), Id::from(1)]), // 2 = x - 2
+            SpirvLang::Const(ConstValue::new(5)),       // 3
             SpirvLang::Eq([Id::from(2), Id::from(3)]),
         ]);
         let runner = Runner::default().with_expr(&expr).run(&rewrites());
         let root = runner.roots[0];
         let class = runner.egraph.find(root);
-        let expected_const = combine_consts(ConstValue::new(5), ConstValue::new(2), u64::wrapping_add);
+        let expected_const =
+            combine_consts(ConstValue::new(5), ConstValue::new(2), u64::wrapping_add);
         let mut found = false;
         for node in &runner.egraph[class].nodes {
             let SpirvLang::Eq([lhs, rhs]) = node else {
@@ -8506,16 +8515,17 @@ mod tests {
     #[test]
     fn rewrites_ne_sub_with_constants() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("x")),          // 0
-            SpirvLang::Const(ConstValue::new(9)),          // 1
-            SpirvLang::Sub([Id::from(0), Id::from(1)]),    // 2 = x - 9
-            SpirvLang::Const(ConstValue::new(1)),          // 3
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Const(ConstValue::new(9)),       // 1
+            SpirvLang::Sub([Id::from(0), Id::from(1)]), // 2 = x - 9
+            SpirvLang::Const(ConstValue::new(1)),       // 3
             SpirvLang::Ne([Id::from(2), Id::from(3)]),
         ]);
         let runner = Runner::default().with_expr(&expr).run(&rewrites());
         let root = runner.roots[0];
         let class = runner.egraph.find(root);
-        let expected_const = combine_consts(ConstValue::new(1), ConstValue::new(9), u64::wrapping_add);
+        let expected_const =
+            combine_consts(ConstValue::new(1), ConstValue::new(9), u64::wrapping_add);
         let mut found = false;
         for node in &runner.egraph[class].nodes {
             let SpirvLang::Ne([lhs, rhs]) = node else {
@@ -8538,19 +8548,19 @@ mod tests {
     #[test]
     fn rewrites_eq_sub_moves_const_across_comparison() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("x")),          // 0
-            SpirvLang::Symbol(Symbol::from("y")),          // 1
-            SpirvLang::Const(ConstValue::new(4)),          // 2
-            SpirvLang::Sub([Id::from(0), Id::from(2)]),    // 3 = x - 4
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Symbol(Symbol::from("y")),       // 1
+            SpirvLang::Const(ConstValue::new(4)),       // 2
+            SpirvLang::Sub([Id::from(0), Id::from(2)]), // 3 = x - 4
             SpirvLang::Eq([Id::from(3), Id::from(1)]),
         ]);
         let runner = Runner::default().with_expr(&expr).run(&rewrites());
         let root = runner.roots[0];
         let expected = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("x")),          // 0
-            SpirvLang::Symbol(Symbol::from("y")),          // 1
-            SpirvLang::Const(ConstValue::new(4)),          // 2
-            SpirvLang::Add([Id::from(1), Id::from(2)]),    // 3 = y + 4
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Symbol(Symbol::from("y")),       // 1
+            SpirvLang::Const(ConstValue::new(4)),       // 2
+            SpirvLang::Add([Id::from(1), Id::from(2)]), // 3 = y + 4
             SpirvLang::Eq([Id::from(0), Id::from(3)]),
         ]);
         let Some(expected_id) = runner.egraph.lookup_expr(&expected) else {
@@ -8562,19 +8572,19 @@ mod tests {
     #[test]
     fn rewrites_ne_sub_moves_const_across_comparison() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("x")),          // 0
-            SpirvLang::Symbol(Symbol::from("y")),          // 1
-            SpirvLang::Const(ConstValue::new(4)),          // 2
-            SpirvLang::Sub([Id::from(0), Id::from(2)]),    // 3 = x - 4
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Symbol(Symbol::from("y")),       // 1
+            SpirvLang::Const(ConstValue::new(4)),       // 2
+            SpirvLang::Sub([Id::from(0), Id::from(2)]), // 3 = x - 4
             SpirvLang::Ne([Id::from(3), Id::from(1)]),
         ]);
         let runner = Runner::default().with_expr(&expr).run(&rewrites());
         let root = runner.roots[0];
         let expected = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("x")),          // 0
-            SpirvLang::Symbol(Symbol::from("y")),          // 1
-            SpirvLang::Const(ConstValue::new(4)),          // 2
-            SpirvLang::Add([Id::from(1), Id::from(2)]),    // 3 = y + 4
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Symbol(Symbol::from("y")),       // 1
+            SpirvLang::Const(ConstValue::new(4)),       // 2
+            SpirvLang::Add([Id::from(1), Id::from(2)]), // 3 = y + 4
             SpirvLang::Ne([Id::from(0), Id::from(3)]),
         ]);
         let Some(expected_id) = runner.egraph.lookup_expr(&expected) else {
@@ -8586,16 +8596,17 @@ mod tests {
     #[test]
     fn rewrites_eq_sub_left_const() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Const(ConstValue::new(20)),         // 0
-            SpirvLang::Symbol(Symbol::from("x")),          // 1
-            SpirvLang::Sub([Id::from(0), Id::from(1)]),    // 2 = 20 - x
-            SpirvLang::Const(ConstValue::new(7)),          // 3
+            SpirvLang::Const(ConstValue::new(20)),      // 0
+            SpirvLang::Symbol(Symbol::from("x")),       // 1
+            SpirvLang::Sub([Id::from(0), Id::from(1)]), // 2 = 20 - x
+            SpirvLang::Const(ConstValue::new(7)),       // 3
             SpirvLang::Eq([Id::from(2), Id::from(3)]),
         ]);
         let runner = Runner::default().with_expr(&expr).run(&rewrites());
         let root = runner.roots[0];
         let class = runner.egraph.find(root);
-        let expected_const = combine_consts(ConstValue::new(20), ConstValue::new(7), u64::wrapping_sub);
+        let expected_const =
+            combine_consts(ConstValue::new(20), ConstValue::new(7), u64::wrapping_sub);
         let mut found = false;
         for node in &runner.egraph[class].nodes {
             let SpirvLang::Eq([lhs, rhs]) = node else {
@@ -8612,22 +8623,26 @@ mod tests {
                 break;
             }
         }
-        assert!(found, "expected eq to compare x against left-sub folded const");
+        assert!(
+            found,
+            "expected eq to compare x against left-sub folded const"
+        );
     }
 
     #[test]
     fn rewrites_ne_sub_left_const() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Const(ConstValue::new(12)),         // 0
-            SpirvLang::Symbol(Symbol::from("x")),          // 1
-            SpirvLang::Sub([Id::from(0), Id::from(1)]),    // 2 = 12 - x
-            SpirvLang::Const(ConstValue::new(3)),          // 3
+            SpirvLang::Const(ConstValue::new(12)),      // 0
+            SpirvLang::Symbol(Symbol::from("x")),       // 1
+            SpirvLang::Sub([Id::from(0), Id::from(1)]), // 2 = 12 - x
+            SpirvLang::Const(ConstValue::new(3)),       // 3
             SpirvLang::Ne([Id::from(2), Id::from(3)]),
         ]);
         let runner = Runner::default().with_expr(&expr).run(&rewrites());
         let root = runner.roots[0];
         let class = runner.egraph.find(root);
-        let expected_const = combine_consts(ConstValue::new(12), ConstValue::new(3), u64::wrapping_sub);
+        let expected_const =
+            combine_consts(ConstValue::new(12), ConstValue::new(3), u64::wrapping_sub);
         let mut found = false;
         for node in &runner.egraph[class].nodes {
             let SpirvLang::Ne([lhs, rhs]) = node else {
@@ -8644,25 +8659,28 @@ mod tests {
                 break;
             }
         }
-        assert!(found, "expected ne to compare x against left-sub folded const");
+        assert!(
+            found,
+            "expected ne to compare x against left-sub folded const"
+        );
     }
 
     #[test]
     fn rewrites_eq_sub_left_moves_const_across_comparison() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Const(ConstValue::new(10)),         // 0
-            SpirvLang::Symbol(Symbol::from("x")),          // 1
-            SpirvLang::Symbol(Symbol::from("y")),          // 2
-            SpirvLang::Sub([Id::from(0), Id::from(1)]),    // 3 = 10 - x
+            SpirvLang::Const(ConstValue::new(10)),      // 0
+            SpirvLang::Symbol(Symbol::from("x")),       // 1
+            SpirvLang::Symbol(Symbol::from("y")),       // 2
+            SpirvLang::Sub([Id::from(0), Id::from(1)]), // 3 = 10 - x
             SpirvLang::Eq([Id::from(3), Id::from(2)]),
         ]);
         let runner = Runner::default().with_expr(&expr).run(&rewrites());
         let root = runner.roots[0];
         let expected = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("x")),          // 0
-            SpirvLang::Symbol(Symbol::from("y")),          // 1
-            SpirvLang::Const(ConstValue::new(10)),         // 2
-            SpirvLang::Sub([Id::from(2), Id::from(1)]),    // 3 = 10 - y
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Symbol(Symbol::from("y")),       // 1
+            SpirvLang::Const(ConstValue::new(10)),      // 2
+            SpirvLang::Sub([Id::from(2), Id::from(1)]), // 3 = 10 - y
             SpirvLang::Eq([Id::from(0), Id::from(3)]),
         ]);
         let Some(expected_id) = runner.egraph.lookup_expr(&expected) else {
@@ -8674,19 +8692,19 @@ mod tests {
     #[test]
     fn rewrites_ne_sub_left_moves_const_across_comparison() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Const(ConstValue::new(10)),         // 0
-            SpirvLang::Symbol(Symbol::from("x")),          // 1
-            SpirvLang::Symbol(Symbol::from("y")),          // 2
-            SpirvLang::Sub([Id::from(0), Id::from(1)]),    // 3 = 10 - x
+            SpirvLang::Const(ConstValue::new(10)),      // 0
+            SpirvLang::Symbol(Symbol::from("x")),       // 1
+            SpirvLang::Symbol(Symbol::from("y")),       // 2
+            SpirvLang::Sub([Id::from(0), Id::from(1)]), // 3 = 10 - x
             SpirvLang::Ne([Id::from(3), Id::from(2)]),
         ]);
         let runner = Runner::default().with_expr(&expr).run(&rewrites());
         let root = runner.roots[0];
         let expected = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("x")),          // 0
-            SpirvLang::Symbol(Symbol::from("y")),          // 1
-            SpirvLang::Const(ConstValue::new(10)),         // 2
-            SpirvLang::Sub([Id::from(2), Id::from(1)]),    // 3 = 10 - y
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Symbol(Symbol::from("y")),       // 1
+            SpirvLang::Const(ConstValue::new(10)),      // 2
+            SpirvLang::Sub([Id::from(2), Id::from(1)]), // 3 = 10 - y
             SpirvLang::Ne([Id::from(0), Id::from(3)]),
         ]);
         let Some(expected_id) = runner.egraph.lookup_expr(&expected) else {
@@ -8804,10 +8822,10 @@ mod tests {
     #[test]
     fn rewrites_add_zero_comparison_to_negated_rhs() {
         let expr_eq = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("x")),    // 0
-            SpirvLang::Symbol(Symbol::from("y")),    // 1
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
             SpirvLang::Add([Id::from(0), Id::from(1)]),
-            SpirvLang::Const(ConstValue::new(0)),    // 3
+            SpirvLang::Const(ConstValue::new(0)), // 3
             SpirvLang::Eq([Id::from(2), Id::from(3)]),
         ]);
         let runner = Runner::default().with_expr(&expr_eq).run(&rewrites());
@@ -8830,10 +8848,10 @@ mod tests {
         assert!(found_eq, "expected eq to compare x against -y");
 
         let expr_ne = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("x")),    // 0
-            SpirvLang::Symbol(Symbol::from("y")),    // 1
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
             SpirvLang::Add([Id::from(0), Id::from(1)]),
-            SpirvLang::Const(ConstValue::new(0)),    // 3
+            SpirvLang::Const(ConstValue::new(0)), // 3
             SpirvLang::Ne([Id::from(2), Id::from(3)]),
         ]);
         let runner = Runner::default().with_expr(&expr_ne).run(&rewrites());
@@ -9937,10 +9955,7 @@ mod tests {
                 }
             }
         }
-        assert!(
-            found,
-            "expected ~(x ^ y) & ~(x & y) to rewrite to ~(x | y)"
-        );
+        assert!(found, "expected ~(x ^ y) & ~(x & y) to rewrite to ~(x | y)");
     }
 
     #[test]
@@ -10332,10 +10347,7 @@ mod tests {
                 }
             }
         }
-        assert!(
-            found,
-            "expected (x & y) ^ (~x & ~y) to rewrite to ~(x ^ y)"
-        );
+        assert!(found, "expected (x & y) ^ (~x & ~y) to rewrite to ~(x ^ y)");
     }
 
     #[test]
@@ -10425,10 +10437,7 @@ mod tests {
                 break;
             }
         }
-        assert!(
-            found,
-            "expected (x & ~y) | (~x & y) to rewrite to x ^ y"
-        );
+        assert!(found, "expected (x & ~y) | (~x & y) to rewrite to x ^ y");
     }
 
     #[test]
@@ -10494,10 +10503,7 @@ mod tests {
                 }
             }
         }
-        assert!(
-            found,
-            "expected (x | ~y) & (~x | y) to rewrite to ~(x ^ y)"
-        );
+        assert!(found, "expected (x | ~y) & (~x | y) to rewrite to ~(x ^ y)");
     }
 
     #[test]
@@ -11467,9 +11473,9 @@ mod tests {
     #[test]
     fn rewrites_logical_eq_ne_with_constants() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("x")),          // 0
+            SpirvLang::Symbol(Symbol::from("x")),         // 0
             SpirvLang::Const(const_bool(true)),           // 1
-            SpirvLang::LogEq([Id::from(0), Id::from(1)]),  // 2
+            SpirvLang::LogEq([Id::from(0), Id::from(1)]), // 2
         ]);
         let optimized = optimize_expr(&expr);
         assert_eq!(
@@ -11478,9 +11484,9 @@ mod tests {
         );
 
         let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("x")),          // 0
+            SpirvLang::Symbol(Symbol::from("x")),         // 0
             SpirvLang::Const(const_bool(false)),          // 1
-            SpirvLang::LogEq([Id::from(0), Id::from(1)]),  // 2
+            SpirvLang::LogEq([Id::from(0), Id::from(1)]), // 2
         ]);
         let optimized = optimize_expr(&expr);
         assert_eq!(
@@ -11492,9 +11498,9 @@ mod tests {
         );
 
         let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("x")),          // 0
+            SpirvLang::Symbol(Symbol::from("x")),         // 0
             SpirvLang::Const(const_bool(true)),           // 1
-            SpirvLang::LogNe([Id::from(0), Id::from(1)]),  // 2
+            SpirvLang::LogNe([Id::from(0), Id::from(1)]), // 2
         ]);
         let optimized = optimize_expr(&expr);
         assert_eq!(
@@ -11506,9 +11512,9 @@ mod tests {
         );
 
         let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("x")),          // 0
+            SpirvLang::Symbol(Symbol::from("x")),         // 0
             SpirvLang::Const(const_bool(false)),          // 1
-            SpirvLang::LogNe([Id::from(0), Id::from(1)]),  // 2
+            SpirvLang::LogNe([Id::from(0), Id::from(1)]), // 2
         ]);
         let optimized = optimize_expr(&expr);
         assert_eq!(
@@ -11520,8 +11526,8 @@ mod tests {
     #[test]
     fn rewrites_logand_leq_lne_to_false() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("a")),         // 0
-            SpirvLang::Symbol(Symbol::from("b")),         // 1
+            SpirvLang::Symbol(Symbol::from("a")),          // 0
+            SpirvLang::Symbol(Symbol::from("b")),          // 1
             SpirvLang::LogEq([Id::from(0), Id::from(1)]),  // 2
             SpirvLang::LogNe([Id::from(0), Id::from(1)]),  // 3
             SpirvLang::LogAnd([Id::from(2), Id::from(3)]), // 4
@@ -11602,10 +11608,10 @@ mod tests {
         let expr = RecExpr::from(vec![
             SpirvLang::Symbol(Symbol::from("a")),         // 0
             SpirvLang::Symbol(Symbol::from("b")),         // 1
-            SpirvLang::LogOr([Id::from(0), Id::from(1)]),  // 2
+            SpirvLang::LogOr([Id::from(0), Id::from(1)]), // 2
             SpirvLang::LogNot(Id::from(1)),               // 3
-            SpirvLang::LogOr([Id::from(0), Id::from(3)]),  // 4
-            SpirvLang::LogEq([Id::from(2), Id::from(4)]),  // 5
+            SpirvLang::LogOr([Id::from(0), Id::from(3)]), // 4
+            SpirvLang::LogEq([Id::from(2), Id::from(4)]), // 5
         ]);
         let optimized = optimize_expr(&expr);
         assert_eq!(
@@ -11619,10 +11625,10 @@ mod tests {
         let expr = RecExpr::from(vec![
             SpirvLang::Symbol(Symbol::from("a")),         // 0
             SpirvLang::Symbol(Symbol::from("b")),         // 1
-            SpirvLang::LogOr([Id::from(0), Id::from(1)]),  // 2
+            SpirvLang::LogOr([Id::from(0), Id::from(1)]), // 2
             SpirvLang::LogNot(Id::from(0)),               // 3
-            SpirvLang::LogOr([Id::from(3), Id::from(1)]),  // 4
-            SpirvLang::LogEq([Id::from(2), Id::from(4)]),  // 5
+            SpirvLang::LogOr([Id::from(3), Id::from(1)]), // 4
+            SpirvLang::LogEq([Id::from(2), Id::from(4)]), // 5
         ]);
         let optimized = optimize_expr(&expr);
         assert_eq!(
@@ -11636,10 +11642,10 @@ mod tests {
         let expr = RecExpr::from(vec![
             SpirvLang::Symbol(Symbol::from("a")),         // 0
             SpirvLang::Symbol(Symbol::from("b")),         // 1
-            SpirvLang::LogOr([Id::from(0), Id::from(1)]),  // 2
+            SpirvLang::LogOr([Id::from(0), Id::from(1)]), // 2
             SpirvLang::LogNot(Id::from(1)),               // 3
-            SpirvLang::LogOr([Id::from(0), Id::from(3)]),  // 4
-            SpirvLang::LogNe([Id::from(2), Id::from(4)]),  // 5
+            SpirvLang::LogOr([Id::from(0), Id::from(3)]), // 4
+            SpirvLang::LogNe([Id::from(2), Id::from(4)]), // 5
         ]);
         let optimized = optimize_expr(&expr);
         assert_eq!(
@@ -11656,10 +11662,10 @@ mod tests {
         let expr = RecExpr::from(vec![
             SpirvLang::Symbol(Symbol::from("a")),         // 0
             SpirvLang::Symbol(Symbol::from("b")),         // 1
-            SpirvLang::LogOr([Id::from(0), Id::from(1)]),  // 2
+            SpirvLang::LogOr([Id::from(0), Id::from(1)]), // 2
             SpirvLang::LogNot(Id::from(0)),               // 3
-            SpirvLang::LogOr([Id::from(3), Id::from(1)]),  // 4
-            SpirvLang::LogNe([Id::from(2), Id::from(4)]),  // 5
+            SpirvLang::LogOr([Id::from(3), Id::from(1)]), // 4
+            SpirvLang::LogNe([Id::from(2), Id::from(4)]), // 5
         ]);
         let optimized = optimize_expr(&expr);
         assert_eq!(
@@ -12034,9 +12040,9 @@ mod tests {
     #[test]
     fn rewrites_logand_absorbs_logor() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("a")), // 0
-            SpirvLang::Symbol(Symbol::from("b")), // 1
-            SpirvLang::LogOr([Id::from(0), Id::from(1)]), // 2 = a || b
+            SpirvLang::Symbol(Symbol::from("a")),          // 0
+            SpirvLang::Symbol(Symbol::from("b")),          // 1
+            SpirvLang::LogOr([Id::from(0), Id::from(1)]),  // 2 = a || b
             SpirvLang::LogAnd([Id::from(0), Id::from(2)]), // 3 = a && (a || b)
         ]);
         let optimized = optimize_expr(&expr);
@@ -12049,9 +12055,9 @@ mod tests {
     #[test]
     fn rewrites_logand_absorbs_logor_commuted() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("a")), // 0
-            SpirvLang::Symbol(Symbol::from("b")), // 1
-            SpirvLang::LogOr([Id::from(1), Id::from(0)]), // 2 = b || a
+            SpirvLang::Symbol(Symbol::from("a")),          // 0
+            SpirvLang::Symbol(Symbol::from("b")),          // 1
+            SpirvLang::LogOr([Id::from(1), Id::from(0)]),  // 2 = b || a
             SpirvLang::LogAnd([Id::from(2), Id::from(0)]), // 3 = (b || a) && a
         ]);
         let optimized = optimize_expr(&expr);
@@ -12064,10 +12070,10 @@ mod tests {
     #[test]
     fn rewrites_logor_absorbs_logand() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("a")), // 0
-            SpirvLang::Symbol(Symbol::from("b")), // 1
+            SpirvLang::Symbol(Symbol::from("a")),          // 0
+            SpirvLang::Symbol(Symbol::from("b")),          // 1
             SpirvLang::LogAnd([Id::from(0), Id::from(1)]), // 2 = a && b
-            SpirvLang::LogOr([Id::from(0), Id::from(2)]), // 3 = a || (a && b)
+            SpirvLang::LogOr([Id::from(0), Id::from(2)]),  // 3 = a || (a && b)
         ]);
         let optimized = optimize_expr(&expr);
         assert_eq!(
@@ -12079,10 +12085,10 @@ mod tests {
     #[test]
     fn rewrites_logor_absorbs_logand_commuted() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("a")), // 0
-            SpirvLang::Symbol(Symbol::from("b")), // 1
+            SpirvLang::Symbol(Symbol::from("a")),          // 0
+            SpirvLang::Symbol(Symbol::from("b")),          // 1
             SpirvLang::LogAnd([Id::from(1), Id::from(0)]), // 2 = b && a
-            SpirvLang::LogOr([Id::from(2), Id::from(0)]), // 3 = (b && a) || a
+            SpirvLang::LogOr([Id::from(2), Id::from(0)]),  // 3 = (b && a) || a
         ]);
         let optimized = optimize_expr(&expr);
         assert_eq!(
@@ -12094,10 +12100,10 @@ mod tests {
     #[test]
     fn rewrites_logand_absorbs_complement_or() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("a")), // 0
-            SpirvLang::Symbol(Symbol::from("b")), // 1
-            SpirvLang::LogNot(Id::from(0)),       // 2 = !a
-            SpirvLang::LogOr([Id::from(2), Id::from(1)]), // 3 = !a || b
+            SpirvLang::Symbol(Symbol::from("a")),          // 0
+            SpirvLang::Symbol(Symbol::from("b")),          // 1
+            SpirvLang::LogNot(Id::from(0)),                // 2 = !a
+            SpirvLang::LogOr([Id::from(2), Id::from(1)]),  // 3 = !a || b
             SpirvLang::LogAnd([Id::from(0), Id::from(3)]), // 4 = a && (!a || b)
         ]);
         let optimized = optimize_expr(&expr);
@@ -12105,10 +12111,14 @@ mod tests {
         let Some(SpirvLang::LogAnd([lhs, rhs])) = nodes.last() else {
             panic!("expected logand root, got {:?}", nodes.last());
         };
-        let lhs_is_a = matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("a"));
-        let rhs_is_b = matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("b"));
-        let lhs_is_b = matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("b"));
-        let rhs_is_a = matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("a"));
+        let lhs_is_a =
+            matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("a"));
+        let rhs_is_b =
+            matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("b"));
+        let lhs_is_b =
+            matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("b"));
+        let rhs_is_a =
+            matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("a"));
         assert!(
             (lhs_is_a && rhs_is_b) || (lhs_is_b && rhs_is_a),
             "expected logand between a and b, got {nodes:?}"
@@ -12118,10 +12128,10 @@ mod tests {
     #[test]
     fn rewrites_logand_absorbs_complement_or_commuted() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("a")), // 0
-            SpirvLang::Symbol(Symbol::from("b")), // 1
-            SpirvLang::LogNot(Id::from(0)),       // 2 = !a
-            SpirvLang::LogOr([Id::from(2), Id::from(1)]), // 3 = !a || b
+            SpirvLang::Symbol(Symbol::from("a")),          // 0
+            SpirvLang::Symbol(Symbol::from("b")),          // 1
+            SpirvLang::LogNot(Id::from(0)),                // 2 = !a
+            SpirvLang::LogOr([Id::from(2), Id::from(1)]),  // 3 = !a || b
             SpirvLang::LogAnd([Id::from(3), Id::from(0)]), // 4 = (!a || b) && a
         ]);
         let optimized = optimize_expr(&expr);
@@ -12129,10 +12139,14 @@ mod tests {
         let Some(SpirvLang::LogAnd([lhs, rhs])) = nodes.last() else {
             panic!("expected logand root, got {:?}", nodes.last());
         };
-        let lhs_is_a = matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("a"));
-        let rhs_is_b = matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("b"));
-        let lhs_is_b = matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("b"));
-        let rhs_is_a = matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("a"));
+        let lhs_is_a =
+            matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("a"));
+        let rhs_is_b =
+            matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("b"));
+        let lhs_is_b =
+            matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("b"));
+        let rhs_is_a =
+            matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("a"));
         assert!(
             (lhs_is_a && rhs_is_b) || (lhs_is_b && rhs_is_a),
             "expected logand between a and b, got {nodes:?}"
@@ -12142,21 +12156,25 @@ mod tests {
     #[test]
     fn rewrites_logor_absorbs_complement_and() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("a")), // 0
-            SpirvLang::Symbol(Symbol::from("b")), // 1
-            SpirvLang::LogNot(Id::from(0)),       // 2 = !a
+            SpirvLang::Symbol(Symbol::from("a")),          // 0
+            SpirvLang::Symbol(Symbol::from("b")),          // 1
+            SpirvLang::LogNot(Id::from(0)),                // 2 = !a
             SpirvLang::LogAnd([Id::from(2), Id::from(1)]), // 3 = !a && b
-            SpirvLang::LogOr([Id::from(0), Id::from(3)]), // 4 = a || (!a && b)
+            SpirvLang::LogOr([Id::from(0), Id::from(3)]),  // 4 = a || (!a && b)
         ]);
         let optimized = optimize_expr(&expr);
         let nodes = optimized.as_ref();
         let Some(SpirvLang::LogOr([lhs, rhs])) = nodes.last() else {
             panic!("expected logor root, got {:?}", nodes.last());
         };
-        let lhs_is_a = matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("a"));
-        let rhs_is_b = matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("b"));
-        let lhs_is_b = matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("b"));
-        let rhs_is_a = matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("a"));
+        let lhs_is_a =
+            matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("a"));
+        let rhs_is_b =
+            matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("b"));
+        let lhs_is_b =
+            matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("b"));
+        let rhs_is_a =
+            matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("a"));
         assert!(
             (lhs_is_a && rhs_is_b) || (lhs_is_b && rhs_is_a),
             "expected logor between a and b, got {nodes:?}"
@@ -12166,21 +12184,25 @@ mod tests {
     #[test]
     fn rewrites_logor_absorbs_complement_and_commuted() {
         let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("a")), // 0
-            SpirvLang::Symbol(Symbol::from("b")), // 1
-            SpirvLang::LogNot(Id::from(0)),       // 2 = !a
+            SpirvLang::Symbol(Symbol::from("a")),          // 0
+            SpirvLang::Symbol(Symbol::from("b")),          // 1
+            SpirvLang::LogNot(Id::from(0)),                // 2 = !a
             SpirvLang::LogAnd([Id::from(2), Id::from(1)]), // 3 = !a && b
-            SpirvLang::LogOr([Id::from(3), Id::from(0)]), // 4 = (!a && b) || a
+            SpirvLang::LogOr([Id::from(3), Id::from(0)]),  // 4 = (!a && b) || a
         ]);
         let optimized = optimize_expr(&expr);
         let nodes = optimized.as_ref();
         let Some(SpirvLang::LogOr([lhs, rhs])) = nodes.last() else {
             panic!("expected logor root, got {:?}", nodes.last());
         };
-        let lhs_is_a = matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("a"));
-        let rhs_is_b = matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("b"));
-        let lhs_is_b = matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("b"));
-        let rhs_is_a = matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("a"));
+        let lhs_is_a =
+            matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("a"));
+        let rhs_is_b =
+            matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("b"));
+        let lhs_is_b =
+            matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("b"));
+        let rhs_is_a =
+            matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("a"));
         assert!(
             (lhs_is_a && rhs_is_b) || (lhs_is_b && rhs_is_a),
             "expected logor between a and b, got {nodes:?}"
@@ -12613,7 +12635,10 @@ mod tests {
             panic!("expected lognot root, got {:?}", nodes.last());
         };
         let SpirvLang::LogOr([lhs, rhs]) = nodes[usize::from(*inner)] else {
-            panic!("expected logor under lognot, got {:?}", nodes[usize::from(*inner)]);
+            panic!(
+                "expected logor under lognot, got {:?}",
+                nodes[usize::from(*inner)]
+            );
         };
         let a = Symbol::from("a");
         let b = Symbol::from("b");
@@ -12642,7 +12667,10 @@ mod tests {
             panic!("expected lognot root, got {:?}", nodes.last());
         };
         let SpirvLang::LogAnd([lhs, rhs]) = nodes[usize::from(*inner)] else {
-            panic!("expected logand under lognot, got {:?}", nodes[usize::from(*inner)]);
+            panic!(
+                "expected logand under lognot, got {:?}",
+                nodes[usize::from(*inner)]
+            );
         };
         let a = Symbol::from("a");
         let b = Symbol::from("b");
@@ -14184,178 +14212,112 @@ mod tests {
 
     #[test]
     fn rewrites_band_absorb_nested_or() {
-        assert_simplifies(
-            "(band x (bor y (band x z)))",
-            "(band x (bor y z))",
-        );
+        assert_simplifies("(band x (bor y (band x z)))", "(band x (bor y z))");
     }
 
     #[test]
     fn rewrites_band_absorb_nested_or_comm() {
-        assert_simplifies(
-            "(band x (bor y (band z x)))",
-            "(band x (bor y z))",
-        );
+        assert_simplifies("(band x (bor y (band z x)))", "(band x (bor y z))");
     }
 
     #[test]
     fn rewrites_band_absorb_nested_or_left() {
-        assert_simplifies(
-            "(band (bor y (band x z)) x)",
-            "(band x (bor y z))",
-        );
+        assert_simplifies("(band (bor y (band x z)) x)", "(band x (bor y z))");
     }
 
     #[test]
     fn rewrites_bor_absorb_nested_and() {
-        assert_simplifies(
-            "(bor x (band y (bor x z)))",
-            "(bor x (band y z))",
-        );
+        assert_simplifies("(bor x (band y (bor x z)))", "(bor x (band y z))");
     }
 
     #[test]
     fn rewrites_bor_absorb_nested_and_comm() {
-        assert_simplifies(
-            "(bor x (band y (bor z x)))",
-            "(bor x (band y z))",
-        );
+        assert_simplifies("(bor x (band y (bor z x)))", "(bor x (band y z))");
     }
 
     #[test]
     fn rewrites_bor_absorb_nested_and_left() {
-        assert_simplifies(
-            "(bor (band y (bor x z)) x)",
-            "(bor x (band y z))",
-        );
+        assert_simplifies("(bor (band y (bor x z)) x)", "(bor x (band y z))");
     }
 
     #[test]
     fn rewrites_band_absorb_nested_complement_or() {
-        assert_simplifies(
-            "(band x (bor y (band (bnot x) z)))",
-            "(band x y)",
-        );
+        assert_simplifies("(band x (bor y (band (bnot x) z)))", "(band x y)");
     }
 
     #[test]
     fn rewrites_band_absorb_nested_complement_or_comm() {
-        assert_simplifies(
-            "(band x (bor y (band z (bnot x))))",
-            "(band x y)",
-        );
+        assert_simplifies("(band x (bor y (band z (bnot x))))", "(band x y)");
     }
 
     #[test]
     fn rewrites_bor_absorb_nested_complement_and() {
-        assert_simplifies(
-            "(bor x (band y (bor (bnot x) z)))",
-            "(bor x y)",
-        );
+        assert_simplifies("(bor x (band y (bor (bnot x) z)))", "(bor x y)");
     }
 
     #[test]
     fn rewrites_bor_absorb_nested_complement_and_comm() {
-        assert_simplifies(
-            "(bor x (band y (bor z (bnot x))))",
-            "(bor x y)",
-        );
+        assert_simplifies("(bor x (band y (bor z (bnot x))))", "(bor x y)");
     }
 
     #[test]
     fn rewrites_band_absorb_nested_complement_or_invert() {
-        assert_simplifies(
-            "(band (bnot x) (bor y (band x z)))",
-            "(band (bnot x) y)",
-        );
+        assert_simplifies("(band (bnot x) (bor y (band x z)))", "(band (bnot x) y)");
     }
 
     #[test]
     fn rewrites_bor_absorb_nested_complement_and_invert() {
-        assert_simplifies(
-            "(bor (bnot x) (band y (bor x z)))",
-            "(bor (bnot x) y)",
-        );
+        assert_simplifies("(bor (bnot x) (band y (bor x z)))", "(bor (bnot x) y)");
     }
 
     #[test]
     fn rewrites_logand_absorb_nested_or() {
-        assert_simplifies(
-            "(land a (lor b (land a c)))",
-            "(land a (lor b c))",
-        );
+        assert_simplifies("(land a (lor b (land a c)))", "(land a (lor b c))");
     }
 
     #[test]
     fn rewrites_logand_absorb_nested_or_comm() {
-        assert_simplifies(
-            "(land a (lor b (land c a)))",
-            "(land a (lor b c))",
-        );
+        assert_simplifies("(land a (lor b (land c a)))", "(land a (lor b c))");
     }
 
     #[test]
     fn rewrites_logor_absorb_nested_and() {
-        assert_simplifies(
-            "(lor a (land b (lor a c)))",
-            "(lor a (land b c))",
-        );
+        assert_simplifies("(lor a (land b (lor a c)))", "(lor a (land b c))");
     }
 
     #[test]
     fn rewrites_logor_absorb_nested_and_comm() {
-        assert_simplifies(
-            "(lor a (land b (lor c a)))",
-            "(lor a (land b c))",
-        );
+        assert_simplifies("(lor a (land b (lor c a)))", "(lor a (land b c))");
     }
 
     #[test]
     fn rewrites_logand_absorb_nested_complement_or() {
-        assert_simplifies(
-            "(land a (lor b (land (lnot a) c)))",
-            "(land a b)",
-        );
+        assert_simplifies("(land a (lor b (land (lnot a) c)))", "(land a b)");
     }
 
     #[test]
     fn rewrites_logand_absorb_nested_complement_or_comm() {
-        assert_simplifies(
-            "(land a (lor b (land c (lnot a))))",
-            "(land a b)",
-        );
+        assert_simplifies("(land a (lor b (land c (lnot a))))", "(land a b)");
     }
 
     #[test]
     fn rewrites_logor_absorb_nested_complement_and() {
-        assert_simplifies(
-            "(lor a (land b (lor (lnot a) c)))",
-            "(lor a b)",
-        );
+        assert_simplifies("(lor a (land b (lor (lnot a) c)))", "(lor a b)");
     }
 
     #[test]
     fn rewrites_logor_absorb_nested_complement_and_comm() {
-        assert_simplifies(
-            "(lor a (land b (lor c (lnot a))))",
-            "(lor a b)",
-        );
+        assert_simplifies("(lor a (land b (lor c (lnot a))))", "(lor a b)");
     }
 
     #[test]
     fn rewrites_logand_absorb_nested_complement_or_invert() {
-        assert_simplifies(
-            "(land (lnot a) (lor b (land a c)))",
-            "(land (lnot a) b)",
-        );
+        assert_simplifies("(land (lnot a) (lor b (land a c)))", "(land (lnot a) b)");
     }
 
     #[test]
     fn rewrites_logor_absorb_nested_complement_and_invert() {
-        assert_simplifies(
-            "(lor (lnot a) (land b (lor a c)))",
-            "(lor (lnot a) b)",
-        );
+        assert_simplifies("(lor (lnot a) (land b (lor a c)))", "(lor (lnot a) b)");
     }
 
     #[test]

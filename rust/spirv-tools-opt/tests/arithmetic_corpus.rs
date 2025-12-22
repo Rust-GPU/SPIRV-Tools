@@ -118,12 +118,7 @@ fn corpus_folds_bitreverse_const_32() {
             1,
             vec![rspirv::dr::Operand::LiteralBit32(value)],
         );
-        let bitrev = inst(
-            Op::BitReverse,
-            int,
-            2,
-            vec![rspirv::dr::Operand::IdRef(1)],
-        );
+        let bitrev = inst(Op::BitReverse, int, 2, vec![rspirv::dr::Operand::IdRef(1)]);
         let optimized = optimize_arith_block(&[c, bitrev]).expect("optimize");
         assert_eq!(optimized.len(), 1);
         let folded = &optimized[0];
@@ -146,15 +141,9 @@ fn corpus_folds_bitreverse_const_64() {
         1,
         vec![rspirv::dr::Operand::LiteralBit64(0x0000_0000_0000_000F)],
     );
-    let bitrev = inst(
-        Op::BitReverse,
-        int,
-        2,
-        vec![rspirv::dr::Operand::IdRef(1)],
-    );
+    let bitrev = inst(Op::BitReverse, int, 2, vec![rspirv::dr::Operand::IdRef(1)]);
     let type_widths = HashMap::from([(int, 64u32)]);
-    let optimized =
-        optimize_arith_block_with_types(&[c, bitrev], &type_widths).expect("optimize");
+    let optimized = optimize_arith_block_with_types(&[c, bitrev], &type_widths).expect("optimize");
     assert_eq!(optimized.len(), 1);
     let folded = &optimized[0];
     assert_eq!(folded.class.opcode, Op::Constant);
