@@ -1448,6 +1448,10 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("logeq-or-split-a-left"; "(leq (lor ?a (lnot ?b)) (lor ?a ?b))" => "?a"),
         rewrite!("logeq-or-split-b-right"; "(leq (lor ?a ?b) (lor (lnot ?a) ?b))" => "?b"),
         rewrite!("logeq-or-split-b-left"; "(leq (lor (lnot ?a) ?b) (lor ?a ?b))" => "?b"),
+        rewrite!("logne-or-split-a-right"; "(lne (lor ?a ?b) (lor ?a (lnot ?b)))" => "(lnot ?a)"),
+        rewrite!("logne-or-split-a-left"; "(lne (lor ?a (lnot ?b)) (lor ?a ?b))" => "(lnot ?a)"),
+        rewrite!("logne-or-split-b-right"; "(lne (lor ?a ?b) (lor (lnot ?a) ?b))" => "(lnot ?b)"),
+        rewrite!("logne-or-split-b-left"; "(lne (lor (lnot ?a) ?b) (lor ?a ?b))" => "(lnot ?b)"),
         rewrite!("lognot-double"; "(lnot (lnot ?a))" => "?a"),
         rewrite!("logand-idem"; "(land ?a ?a)" => "?a"),
         rewrite!("logor-idem"; "(lor ?a ?a)" => "?a"),
@@ -11143,6 +11147,46 @@ mod tests {
         assert_eq!(
             optimized,
             RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("b"))])
+        );
+    }
+
+    #[test]
+    fn rewrites_logne_or_split_to_not_a() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("a")),         // 0
+            SpirvLang::Symbol(Symbol::from("b")),         // 1
+            SpirvLang::LogOr([Id::from(0), Id::from(1)]),  // 2
+            SpirvLang::LogNot(Id::from(1)),               // 3
+            SpirvLang::LogOr([Id::from(0), Id::from(3)]),  // 4
+            SpirvLang::LogNe([Id::from(2), Id::from(4)]),  // 5
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![
+                SpirvLang::Symbol(Symbol::from("a")),
+                SpirvLang::LogNot(Id::from(0))
+            ])
+        );
+    }
+
+    #[test]
+    fn rewrites_logne_or_split_to_not_b() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("a")),         // 0
+            SpirvLang::Symbol(Symbol::from("b")),         // 1
+            SpirvLang::LogOr([Id::from(0), Id::from(1)]),  // 2
+            SpirvLang::LogNot(Id::from(0)),               // 3
+            SpirvLang::LogOr([Id::from(3), Id::from(1)]),  // 4
+            SpirvLang::LogNe([Id::from(2), Id::from(4)]),  // 5
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![
+                SpirvLang::Symbol(Symbol::from("b")),
+                SpirvLang::LogNot(Id::from(0))
+            ])
         );
     }
 
