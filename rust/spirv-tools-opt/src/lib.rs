@@ -454,6 +454,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("sub-add-cancel-left-simple"; "(- (+ ?b ?a) ?b)" => "?a"),
         rewrite!("sub-add-cancel-right-symmetric-simple"; "(- (+ ?a ?b) ?a)" => "?b"),
         rewrite!("sub-add-cancel-left-symmetric-simple"; "(- (+ ?b ?a) ?a)" => "?b"),
+        rewrite!("sub-add-cancel-left"; "(- ?x (+ ?x ?y))" => "(neg ?y)"),
+        rewrite!("sub-add-cancel-left-comm"; "(- ?x (+ ?y ?x))" => "(neg ?y)"),
         rewrite!("add-fold"; "(+ ?a ?b)" => { FoldAdd }),
         rewrite!("mul-fold"; "(* ?a ?b)" => { FoldMul }),
         rewrite!("sub-fold"; "(- ?a ?b)" => { FoldSub }),
@@ -4706,6 +4708,42 @@ mod tests {
             SpirvLang::Symbol(Symbol::from("y")),       // 1
             SpirvLang::Sub([Id::from(0), Id::from(1)]), // 2 = x - y
             SpirvLang::Sub([Id::from(2), Id::from(0)]), // 3 = (x - y) - x
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![
+                SpirvLang::Symbol(Symbol::from("y")),
+                SpirvLang::Neg(Id::from(0)),
+            ])
+        );
+    }
+
+    #[test]
+    fn rewrites_subtract_additive_self_to_negated_other() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Symbol(Symbol::from("y")),       // 1
+            SpirvLang::Add([Id::from(0), Id::from(1)]), // 2 = x + y
+            SpirvLang::Sub([Id::from(0), Id::from(2)]), // 3 = x - (x + y)
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![
+                SpirvLang::Symbol(Symbol::from("y")),
+                SpirvLang::Neg(Id::from(0)),
+            ])
+        );
+    }
+
+    #[test]
+    fn rewrites_subtract_commuted_additive_self_to_negated_other() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Symbol(Symbol::from("y")),       // 1
+            SpirvLang::Add([Id::from(1), Id::from(0)]), // 2 = y + x
+            SpirvLang::Sub([Id::from(0), Id::from(2)]), // 3 = x - (y + x)
         ]);
         let optimized = optimize_expr(&expr);
         assert_eq!(
