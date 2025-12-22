@@ -1386,3 +1386,4 @@ Tasks for this milestone:
 - Added select nesting rewrite when both inner conditions are negated (`select c (select !c x y) (select !c z w) -> select c y z`) with Rust coverage.
 - Added select nesting rewrite for negated outer condition with nested else (`select !c x (select c y z) -> select c y x`) with Rust coverage.
 - Added select nesting rewrite for negated outer condition with nested then (`select !c (select c x y) z -> select c z y`) with Rust coverage.
+- Added select nesting rewrite for negated outer condition with nested then/else (`select !c (select c x y) (select c z w) -> select c z y`) with Rust coverage.
