@@ -925,6 +925,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("bxor-or-or-notx-left"; "(bxor (bor (bnot ?x) ?y) (bor ?x ?y))" => "(bnot ?y)"),
         rewrite!("bxor-or-band-noty-right"; "(bxor (bor ?x ?y) (band ?x (bnot ?y)))" => "?y"),
         rewrite!("bxor-or-band-noty-left"; "(bxor (bor ?x ?y) (band (bnot ?y) ?x))" => "?y"),
+        rewrite!("bxor-or-band-notx-right"; "(bxor (bor ?x ?y) (band (bnot ?x) ?y))" => "?x"),
+        rewrite!("bxor-or-band-notx-left"; "(bxor (bor ?x ?y) (band ?y (bnot ?x)))" => "?x"),
         rewrite!("bxor-band-bnot-bnot-right"; "(bxor (band ?x ?y) (band (bnot ?x) (bnot ?y)))" => "(bnot (bxor ?x ?y))"),
         rewrite!("bxor-band-bnot-bnot-left"; "(bxor (band ?x ?y) (band (bnot ?y) (bnot ?x)))" => "(bnot (bxor ?x ?y))"),
         rewrite!("bxor-bnot-bnot"; "(bxor (bnot ?x) (bnot ?y))" => "(bxor ?x ?y)"),
@@ -10098,6 +10100,23 @@ mod tests {
         assert_eq!(
             optimized,
             RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("y"))])
+        );
+    }
+
+    #[test]
+    fn rewrites_bxor_or_band_notx_to_x() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::BitOr([Id::from(0), Id::from(1)]),
+            SpirvLang::BitNot(Id::from(0)),
+            SpirvLang::BitAnd([Id::from(3), Id::from(1)]),
+            SpirvLang::BitXor([Id::from(2), Id::from(4)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("x"))])
         );
     }
 
