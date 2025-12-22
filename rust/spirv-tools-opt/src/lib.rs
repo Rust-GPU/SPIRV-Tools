@@ -1164,6 +1164,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("lognot-double"; "(lnot (lnot ?a))" => "?a"),
         rewrite!("logand-idem"; "(land ?a ?a)" => "?a"),
         rewrite!("logor-idem"; "(lor ?a ?a)" => "?a"),
+        rewrite!("logand-absorb-lor"; "(land ?a (lor ?a ?b))" => "?a"),
+        rewrite!("logand-absorb-lor-comm"; "(land (lor ?a ?b) ?a)" => "?a"),
         rewrite!("select-same"; "(select ?c ?a ?a)" => "?a"),
         rewrite!("select-neg-cond"; "(select (lnot ?c) ?t ?f)" => "(select ?c ?f ?t)"),
         rewrite!(
@@ -7539,6 +7541,36 @@ mod tests {
         assert_eq!(
             optimized,
             RecExpr::from(vec![SpirvLang::Const(const_bool(true))])
+        );
+    }
+
+    #[test]
+    fn rewrites_logand_absorbs_logor() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("a")), // 0
+            SpirvLang::Symbol(Symbol::from("b")), // 1
+            SpirvLang::LogOr([Id::from(0), Id::from(1)]), // 2 = a || b
+            SpirvLang::LogAnd([Id::from(0), Id::from(2)]), // 3 = a && (a || b)
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("a"))])
+        );
+    }
+
+    #[test]
+    fn rewrites_logand_absorbs_logor_commuted() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("a")), // 0
+            SpirvLang::Symbol(Symbol::from("b")), // 1
+            SpirvLang::LogOr([Id::from(1), Id::from(0)]), // 2 = b || a
+            SpirvLang::LogAnd([Id::from(2), Id::from(0)]), // 3 = (b || a) && a
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("a"))])
         );
     }
 
