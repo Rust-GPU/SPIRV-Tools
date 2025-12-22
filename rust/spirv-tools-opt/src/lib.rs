@@ -1482,6 +1482,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("logne-minterm-dual"; "(lne (land ?a (lnot ?b)) (land (lnot ?a) ?b))" => "(lne ?a ?b)"),
         rewrite!("logeq-maxterm-dual"; "(leq (lor ?a (lnot ?b)) (lor (lnot ?a) ?b))" => "(leq ?a ?b)"),
         rewrite!("logne-maxterm-dual"; "(lne (lor ?a (lnot ?b)) (lor (lnot ?a) ?b))" => "(lne ?a ?b)"),
+        rewrite!("logeq-and-notor"; "(leq (land ?a ?b) (lor (lnot ?a) (lnot ?b)))" => { BoolConst { value: false } }),
         rewrite!("logeq-or-split-a-right"; "(leq (lor ?a ?b) (lor ?a (lnot ?b)))" => "?a"),
         rewrite!("logeq-or-split-a-left"; "(leq (lor ?a (lnot ?b)) (lor ?a ?b))" => "?a"),
         rewrite!("logeq-or-split-b-right"; "(leq (lor ?a ?b) (lor (lnot ?a) ?b))" => "?b"),
@@ -4915,8 +4916,16 @@ mod tests {
     }
 
     fn assert_simplifies(expr: &str, expected: &str) {
-        let expr: RecExpr<SpirvLang> = expr.parse().unwrap();
-        let expected: RecExpr<SpirvLang> = expected.parse().unwrap();
+        let expr: RecExpr<SpirvLang> = match expr {
+            "true" => RecExpr::from(vec![SpirvLang::Const(const_bool(true))]),
+            "false" => RecExpr::from(vec![SpirvLang::Const(const_bool(false))]),
+            _ => expr.parse().unwrap(),
+        };
+        let expected: RecExpr<SpirvLang> = match expected {
+            "true" => RecExpr::from(vec![SpirvLang::Const(const_bool(true))]),
+            "false" => RecExpr::from(vec![SpirvLang::Const(const_bool(false))]),
+            _ => expected.parse().unwrap(),
+        };
         let optimized = optimize_expr(&expr);
         assert_eq!(optimized, expected);
     }
@@ -11201,6 +11210,7 @@ mod tests {
         assert_simplifies("(lne (land a (lnot b)) (land (lnot a) b))", "(lne a b)");
         assert_simplifies("(leq (lor a (lnot b)) (lor (lnot a) b))", "(leq a b)");
         assert_simplifies("(lne (lor a (lnot b)) (lor (lnot a) b))", "(lne a b)");
+        assert_simplifies("(leq (land a b) (lor (lnot a) (lnot b)))", "false");
     }
 
     #[test]
