@@ -1173,6 +1173,11 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
             "logand-absorb-complement-or-comm";
             "(land (lor (lnot ?a) ?b) ?a)" => "(land ?a ?b)"
         ),
+        rewrite!("logor-absorb-complement-and"; "(lor ?a (land (lnot ?a) ?b))" => "(lor ?a ?b)"),
+        rewrite!(
+            "logor-absorb-complement-and-comm";
+            "(lor (land (lnot ?a) ?b) ?a)" => "(lor ?a ?b)"
+        ),
         rewrite!("select-same"; "(select ?c ?a ?a)" => "?a"),
         rewrite!("select-neg-cond"; "(select (lnot ?c) ?t ?f)" => "(select ?c ?f ?t)"),
         rewrite!(
@@ -7656,6 +7661,54 @@ mod tests {
         assert!(
             (lhs_is_a && rhs_is_b) || (lhs_is_b && rhs_is_a),
             "expected logand between a and b, got {nodes:?}"
+        );
+    }
+
+    #[test]
+    fn rewrites_logor_absorbs_complement_and() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("a")), // 0
+            SpirvLang::Symbol(Symbol::from("b")), // 1
+            SpirvLang::LogNot(Id::from(0)),       // 2 = !a
+            SpirvLang::LogAnd([Id::from(2), Id::from(1)]), // 3 = !a && b
+            SpirvLang::LogOr([Id::from(0), Id::from(3)]), // 4 = a || (!a && b)
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::LogOr([lhs, rhs])) = nodes.last() else {
+            panic!("expected logor root, got {:?}", nodes.last());
+        };
+        let lhs_is_a = matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("a"));
+        let rhs_is_b = matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("b"));
+        let lhs_is_b = matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("b"));
+        let rhs_is_a = matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("a"));
+        assert!(
+            (lhs_is_a && rhs_is_b) || (lhs_is_b && rhs_is_a),
+            "expected logor between a and b, got {nodes:?}"
+        );
+    }
+
+    #[test]
+    fn rewrites_logor_absorbs_complement_and_commuted() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("a")), // 0
+            SpirvLang::Symbol(Symbol::from("b")), // 1
+            SpirvLang::LogNot(Id::from(0)),       // 2 = !a
+            SpirvLang::LogAnd([Id::from(2), Id::from(1)]), // 3 = !a && b
+            SpirvLang::LogOr([Id::from(3), Id::from(0)]), // 4 = (!a && b) || a
+        ]);
+        let optimized = optimize_expr(&expr);
+        let nodes = optimized.as_ref();
+        let Some(SpirvLang::LogOr([lhs, rhs])) = nodes.last() else {
+            panic!("expected logor root, got {:?}", nodes.last());
+        };
+        let lhs_is_a = matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("a"));
+        let rhs_is_b = matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("b"));
+        let lhs_is_b = matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("b"));
+        let rhs_is_a = matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(sym) if sym == Symbol::from("a"));
+        assert!(
+            (lhs_is_a && rhs_is_b) || (lhs_is_b && rhs_is_a),
+            "expected logor between a and b, got {nodes:?}"
         );
     }
 
