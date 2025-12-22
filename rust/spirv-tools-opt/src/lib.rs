@@ -1081,6 +1081,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("ne-sub-cancel-right"; "(ne (- ?y ?x) (- ?z ?x))" => "(ne ?y ?z)"),
         rewrite!("eq-bxor-cancel-left"; "(eq (bxor ?x ?y) (bxor ?x ?z))" => "(eq ?y ?z)"),
         rewrite!("ne-bxor-cancel-left"; "(ne (bxor ?x ?y) (bxor ?x ?z))" => "(ne ?y ?z)"),
+        rewrite!("eq-bxor-zero"; "(eq (bxor ?x ?y) ?c)" => "(eq ?x ?y)" if is_const_zero(var("?c"))),
+        rewrite!("ne-bxor-zero"; "(ne (bxor ?x ?y) ?c)" => "(ne ?x ?y)" if is_const_zero(var("?c"))),
         rewrite!("slt-self"; "(slt ?a ?a)" => { BoolConst { value: false } }),
         rewrite!("sle-self"; "(sle ?a ?a)" => { BoolConst { value: true } }),
         rewrite!("sgt-self"; "(sgt ?a ?a)" => { BoolConst { value: false } }),
@@ -6520,6 +6522,52 @@ mod tests {
             .or_else(|| runner.egraph.lookup_expr(&expected_comm))
         else {
             panic!("expected ne between y and z to be introduced by rewrites");
+        };
+        assert_eq!(runner.egraph.find(root), runner.egraph.find(expected_id));
+    }
+
+    #[test]
+    fn rewrites_eq_bxor_zero_to_eq() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),            // 0
+            SpirvLang::Symbol(Symbol::from("y")),            // 1
+            SpirvLang::BitXor([Id::from(0), Id::from(1)]),   // 2 = x ^ y
+            SpirvLang::Const(ConstValue::new(0)),            // 3
+            SpirvLang::Eq([Id::from(2), Id::from(3)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let expected: RecExpr<SpirvLang> = "(eq x y)".parse().unwrap();
+        let expected_comm: RecExpr<SpirvLang> = "(eq y x)".parse().unwrap();
+        let Some(expected_id) = runner
+            .egraph
+            .lookup_expr(&expected)
+            .or_else(|| runner.egraph.lookup_expr(&expected_comm))
+        else {
+            panic!("expected eq between x and y to be introduced by rewrites");
+        };
+        assert_eq!(runner.egraph.find(root), runner.egraph.find(expected_id));
+    }
+
+    #[test]
+    fn rewrites_ne_bxor_zero_to_ne() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),            // 0
+            SpirvLang::Symbol(Symbol::from("y")),            // 1
+            SpirvLang::BitXor([Id::from(0), Id::from(1)]),   // 2 = x ^ y
+            SpirvLang::Const(ConstValue::new(0)),            // 3
+            SpirvLang::Ne([Id::from(2), Id::from(3)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let expected: RecExpr<SpirvLang> = "(ne x y)".parse().unwrap();
+        let expected_comm: RecExpr<SpirvLang> = "(ne y x)".parse().unwrap();
+        let Some(expected_id) = runner
+            .egraph
+            .lookup_expr(&expected)
+            .or_else(|| runner.egraph.lookup_expr(&expected_comm))
+        else {
+            panic!("expected ne between x and y to be introduced by rewrites");
         };
         assert_eq!(runner.egraph.find(root), runner.egraph.find(expected_id));
     }
