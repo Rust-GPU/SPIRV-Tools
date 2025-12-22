@@ -649,6 +649,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("band-self"; "(band ?x ?x)" => "?x"),
         rewrite!("band-nested-idempotent-right"; "(band ?x (band ?x ?y))" => "(band ?x ?y)"),
         rewrite!("band-nested-idempotent-left"; "(band (band ?x ?y) ?x)" => "(band ?x ?y)"),
+        rewrite!("band-nested-idempotent-swap-right"; "(band ?x (band ?y ?x))" => "(band ?x ?y)"),
+        rewrite!("band-nested-idempotent-swap-left"; "(band (band ?y ?x) ?x)" => "(band ?x ?y)"),
         rewrite!("band-absorb-right"; "(band ?x (bor ?x ?y))" => "?x"),
         rewrite!("band-absorb-left"; "(band (bor ?x ?y) ?x)" => "?x"),
         rewrite!("band-distribute-over-or-right"; "(band ?x (bor ?y ?z))" => "(bor (band ?x ?y) (band ?x ?z))"),
@@ -8977,6 +8979,34 @@ mod tests {
             }
         }
         assert!(found, "expected x & (x & y) to rewrite to x & y");
+    }
+
+    #[test]
+    fn rewrites_band_nested_idempotence_swapped() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::BitAnd([Id::from(1), Id::from(0)]),
+            SpirvLang::BitAnd([Id::from(0), Id::from(2)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::BitAnd([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_x = is_named_symbol(&runner.egraph, *lhs, "x");
+            let rhs_is_x = is_named_symbol(&runner.egraph, *rhs, "x");
+            let lhs_is_y = is_named_symbol(&runner.egraph, *lhs, "y");
+            let rhs_is_y = is_named_symbol(&runner.egraph, *rhs, "y");
+            if (lhs_is_x && rhs_is_y) || (lhs_is_y && rhs_is_x) {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected x & (y & x) to rewrite to x & y");
     }
 
     #[test]
