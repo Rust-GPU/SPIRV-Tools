@@ -1427,3 +1427,8 @@ Tasks for this milestone:
 - Added bit-reverse factoring rewrite for AND (`brev(x) & brev(y) -> brev(x & y)`) with Rust coverage.
 - Added bit-reverse factoring rewrite for OR (`brev(x) | brev(y) -> brev(x | y)`) with Rust coverage.
 - Added bit-reverse factoring rewrite for XOR (`brev(x) ^ brev(y) -> brev(x ^ y)`) with Rust coverage.
+- Added add/sub reassociation and cancellation rewrites to collapse shared minuends/subtrahends, convert mixed add/sub into direct sums, and surface `x+x` doubles for shift/mul folding with Rust coverage.
+- Added constant-left add/sub refactors that pull constants across nested add/sub nodes to expose folds with Rust coverage.
+- Added signed-compare negation normalization (e.g., `-x < -y` -> `x > y`) and unsigned `~x` compare normalizations with Rust coverage.
+- Added boolean select lowering to `lor`/`land` for constant arms plus unary-arm factoring (`neg`/`bnot`/`lnot`) with Rust tests; expect Rust-only divergence from C++ select folding.
+- Added `sdiv`/`srem` negation normalizations and negative power-of-two multiply to `neg (shl x k)` strength reduction with Rust coverage.

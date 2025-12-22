@@ -466,6 +466,41 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("sub-neg-left-to-neg-add"; "(- (neg ?a) ?b)" => "(neg (+ ?a ?b))"),
         rewrite!("sub-sub-cancel-left"; "(- ?a (- ?a ?b))" => "?b"),
         rewrite!("sub-sub-cancel-right"; "(- (- ?x ?y) ?x)" => "(neg ?y)"),
+        rewrite!("sub-add-reassociate-left"; "(- ?a (+ ?b ?c))" => "(- (- ?a ?b) ?c)"),
+        rewrite!("sub-add-reassociate-right"; "(- ?a (+ ?b ?c))" => "(- (- ?a ?c) ?b)"),
+        rewrite!("sub-sub-reassociate-left"; "(- ?a (- ?b ?c))" => "(- (+ ?a ?c) ?b)"),
+        rewrite!("sub-sub-reassociate-right"; "(- ?a (- ?b ?c))" => "(+ (- ?a ?b) ?c)"),
+        rewrite!("add-sub-reassociate-left"; "(+ ?a (- ?b ?c))" => "(- (+ ?a ?b) ?c)"),
+        rewrite!("add-sub-reassociate-left-comm"; "(+ (- ?b ?c) ?a)" => "(- (+ ?a ?b) ?c)"),
+        rewrite!("add-sub-reassociate-right"; "(+ ?a (- ?b ?c))" => "(+ (- ?a ?c) ?b)"),
+        rewrite!("add-sub-reassociate-right-comm"; "(+ (- ?b ?c) ?a)" => "(+ (- ?a ?c) ?b)"),
+        rewrite!("sub-add-reassociate-into-add"; "(- (+ ?a ?b) ?c)" => "(+ (- ?a ?c) ?b)"),
+        rewrite!("sub-add-reassociate-into-add-right"; "(- (+ ?a ?b) ?c)" => "(+ ?a (- ?b ?c))"),
+        rewrite!("sub-add-reassociate-into-add-comm"; "(- (+ ?a ?b) ?c)" => "(+ (- ?b ?c) ?a)"),
+        rewrite!("sub-sub-shared-minuend"; "(- (- ?x ?y) (- ?x ?z))" => "(- ?z ?y)"),
+        rewrite!("sub-sub-shared-subtrahend"; "(- (- ?x ?y) (- ?z ?y))" => "(- ?x ?z)"),
+        rewrite!("sub-add-shared-minuend"; "(- (+ ?x ?y) (- ?x ?z))" => "(+ ?y ?z)"),
+        rewrite!("sub-add-flip-double-x"; "(- (+ ?x ?y) (- ?y ?x))" => "(+ ?x ?x)"),
+        rewrite!("sub-add-flip-double-y"; "(- (+ ?x ?y) (- ?x ?y))" => "(+ ?y ?y)"),
+        rewrite!("sub-sub-flip-to-double"; "(- (- ?x ?y) (- ?y ?x))" => "(+ (- ?x ?y) (- ?x ?y))"),
+        rewrite!("sub-sub-shared-minuend-to-neg-sum"; "(- (- ?x ?y) (+ ?x ?z))" => "(neg (+ ?y ?z))"),
+        rewrite!("sub-sub-shared-minuend-to-neg-sum-comm"; "(- (- ?x ?y) (+ ?z ?x))" => "(neg (+ ?y ?z))"),
+        rewrite!("add-sub-cancel-to-sum"; "(+ (- ?x ?y) (+ ?y ?z))" => "(+ ?x ?z)"),
+        rewrite!("add-sub-cancel-to-sum-comm"; "(+ (+ ?y ?z) (- ?x ?y))" => "(+ ?x ?z)"),
+        rewrite!("add-sub-cancel-to-sum-right"; "(+ (- ?x ?y) (+ ?z ?y))" => "(+ ?x ?z)"),
+        rewrite!("add-sub-cancel-to-sum-right-comm"; "(+ (+ ?z ?y) (- ?x ?y))" => "(+ ?x ?z)"),
+        rewrite!("add-add-sub-double-left"; "(+ (+ ?x ?y) (- ?x ?y))" => "(+ ?x ?x)"),
+        rewrite!("add-add-sub-double-left-comm"; "(+ (- ?x ?y) (+ ?x ?y))" => "(+ ?x ?x)"),
+        rewrite!("add-add-sub-double-right"; "(+ (+ ?x ?y) (- ?y ?x))" => "(+ ?y ?y)"),
+        rewrite!("add-add-sub-double-right-comm"; "(+ (- ?y ?x) (+ ?x ?y))" => "(+ ?y ?y)"),
+        rewrite!("add-sub-cancel-to-sum-alt"; "(+ (+ ?x ?y) (- ?z ?x))" => "(+ ?y ?z)"),
+        rewrite!("add-sub-cancel-to-sum-alt-comm"; "(+ (- ?z ?x) (+ ?x ?y))" => "(+ ?y ?z)"),
+        rewrite!("sub-const-add"; "(- ?c (+ ?x ?k))" => "(- (- ?c ?k) ?x)"),
+        rewrite!("sub-const-add-comm"; "(- ?c (+ ?k ?x))" => "(- (- ?c ?k) ?x)"),
+        rewrite!("sub-const-sub"; "(- ?c (- ?x ?k))" => "(- (+ ?c ?k) ?x)"),
+        rewrite!("sub-const-sub-comm"; "(- ?c (- ?k ?x))" => "(+ ?x (- ?c ?k))"),
+        rewrite!("add-const-sub"; "(+ ?c (- ?x ?k))" => "(+ (- ?c ?k) ?x)"),
+        rewrite!("add-const-sub-comm"; "(+ ?c (- ?k ?x))" => "(- (+ ?c ?k) ?x)"),
         rewrite!("add-dup-to-mul"; "(+ ?x ?x)" => { AddDuplicateToMul { x: var("?x") } }),
         rewrite!("add-triple-left"; "(+ (+ ?x ?x) ?x)" => {
             AddTripleToMul { x: var("?x") }
@@ -595,6 +630,12 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("mul-power-of-two-right"; "(* ?x ?c)" => {
             MulPowerOfTwo { x: var("?x"), c: var("?c") }
         }),
+        rewrite!("mul-neg-power-of-two-left"; "(* ?c ?x)" => {
+            MulNegPowerOfTwo { x: var("?x"), c: var("?c") }
+        }),
+        rewrite!("mul-neg-power-of-two-right"; "(* ?x ?c)" => {
+            MulNegPowerOfTwo { x: var("?x"), c: var("?c") }
+        }),
         rewrite!("sdiv-power-of-two"; "(sdiv ?x ?c)" => {
             DivPowerOfTwo { x: var("?x"), c: var("?c"), signed: true }
         }),
@@ -653,6 +694,22 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         ),
         rewrite!("band-comm"; "(band ?a ?b)" => "(band ?b ?a)"),
         rewrite!("band-assoc"; "(band ?a (band ?b ?c))" => "(band (band ?a ?b) ?c)"),
+        rewrite!("band-reassociate-const-right"; "(band ?c1 (band ?x ?c2))" => {
+            BitwiseConstReassociate {
+                op: BitwiseOp::And,
+                x: var("?x"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+            }
+        }),
+        rewrite!("band-reassociate-const-left"; "(band (band ?x ?c2) ?c1)" => {
+            BitwiseConstReassociate {
+                op: BitwiseOp::And,
+                x: var("?x"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+            }
+        }),
         rewrite!("band-const-fold"; "(band ?a ?b)" => { BitAndFold { a: var("?a"), b: var("?b") } }),
         rewrite!("band-one-left"; "(band ?x ?c)" => {
             BitAndConstSimplify { x: var("?x"), c: var("?c") }
@@ -1312,8 +1369,15 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("neg-sub-swap"; "(neg (- ?a ?b))" => "(- ?b ?a)"),
         rewrite!("neg-add-const"; "(neg (+ ?a ?b))" => { NegAddConst { a: var("?a"), b: var("?b") } }),
         rewrite!("neg-sdiv-const"; "(neg (sdiv ?a ?b))" => { NegDivConst { a: var("?a"), b: var("?b") } }),
+        rewrite!("neg-add-distribute"; "(neg (+ ?x ?y))" => "(+ (neg ?x) (neg ?y))"),
+        rewrite!("neg-mul-distribute-left"; "(neg (* ?x ?y))" => "(* (neg ?x) ?y)"),
+        rewrite!("neg-mul-distribute-right"; "(neg (* ?x ?y))" => "(* ?x (neg ?y))"),
+        rewrite!("neg-shl-distribute"; "(neg (shl ?x ?c))" => "(shl (neg ?x) ?c)"),
         rewrite!("neg-fold"; "(neg ?a)" => { FoldNeg }),
         rewrite!("double-neg"; "(neg (neg ?a))" => "?a"),
+        rewrite!("sdiv-neg-left"; "(sdiv (neg ?x) ?y)" => "(neg (sdiv ?x ?y))"),
+        rewrite!("sdiv-neg-right"; "(sdiv ?x (neg ?y))" => "(neg (sdiv ?x ?y))"),
+        rewrite!("sdiv-neg-both"; "(sdiv (neg ?x) (neg ?y))" => "(sdiv ?x ?y)"),
         rewrite!("sdiv-fold"; "(sdiv ?a ?b)" => { FoldDiv { signed: true } }),
         rewrite!("udiv-fold"; "(udiv ?a ?b)" => { FoldDiv { signed: false } }),
         rewrite!("sdiv-one"; "(sdiv ?a ?b)" => { DivOne { a: var("?a"), b: var("?b") } }),
@@ -1321,6 +1385,9 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("srem-fold"; "(srem ?a ?b)" => { FoldRem { signed: true } }),
         rewrite!("smod-fold"; "(smod ?a ?b)" => { FoldSMod { a: var("?a"), b: var("?b") } }),
         rewrite!("umod-fold"; "(umod ?a ?b)" => { FoldRem { signed: false } }),
+        rewrite!("srem-neg-left"; "(srem (neg ?x) ?y)" => "(neg (srem ?x ?y))"),
+        rewrite!("srem-neg-right"; "(srem ?x (neg ?y))" => "(srem ?x ?y)"),
+        rewrite!("srem-neg-both"; "(srem (neg ?x) (neg ?y))" => "(neg (srem ?x ?y))"),
         rewrite!("srem-one"; "(srem ?a ?b)" => { RemOne { b: var("?b") } }),
         rewrite!("smod-one"; "(smod ?a ?b)" => { RemOne { b: var("?b") } }),
         rewrite!("umod-one"; "(umod ?a ?b)" => { RemOne { b: var("?b") } }),
@@ -1375,6 +1442,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("ne-comm"; "(ne ?a ?b)" => "(ne ?b ?a)"),
         rewrite!("logand-comm"; "(land ?a ?b)" => "(land ?b ?a)"),
         rewrite!("logor-comm"; "(lor ?a ?b)" => "(lor ?b ?a)"),
+        rewrite!("logand-assoc"; "(land ?a (land ?b ?c))" => "(land (land ?a ?b) ?c)"),
+        rewrite!("logor-assoc"; "(lor ?a (lor ?b ?c))" => "(lor (lor ?a ?b) ?c)"),
         rewrite!("logeq-comm"; "(leq ?a ?b)" => "(leq ?b ?a)"),
         rewrite!("logne-comm"; "(lne ?a ?b)" => "(lne ?b ?a)"),
         rewrite!("logeq-true-right"; "(leq ?a ?c)" => "?a" if is_const_true(var("?c"))),
@@ -1405,6 +1474,22 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("ne-bnot-move-left"; "(ne (bnot ?a) ?b)" => "(ne ?a (bnot ?b))"),
         rewrite!("eq-bnot-self"; "(eq ?a (bnot ?a))" => { BoolConst { value: false } }),
         rewrite!("ne-bnot-self"; "(ne ?a (bnot ?a))" => { BoolConst { value: true } }),
+        rewrite!("slt-neg-neg"; "(slt (neg ?x) (neg ?y))" => "(sgt ?x ?y)"),
+        rewrite!("sle-neg-neg"; "(sle (neg ?x) (neg ?y))" => "(sge ?x ?y)"),
+        rewrite!("sgt-neg-neg"; "(sgt (neg ?x) (neg ?y))" => "(slt ?x ?y)"),
+        rewrite!("sge-neg-neg"; "(sge (neg ?x) (neg ?y))" => "(sle ?x ?y)"),
+        rewrite!("ult-bnot-bnot"; "(ult (bnot ?x) (bnot ?y))" => "(ugt ?x ?y)"),
+        rewrite!("ule-bnot-bnot"; "(ule (bnot ?x) (bnot ?y))" => "(uge ?x ?y)"),
+        rewrite!("ugt-bnot-bnot"; "(ugt (bnot ?x) (bnot ?y))" => "(ult ?x ?y)"),
+        rewrite!("uge-bnot-bnot"; "(uge (bnot ?x) (bnot ?y))" => "(ule ?x ?y)"),
+        rewrite!("slt-neg-left"; "(slt (neg ?x) ?y)" => "(sgt ?x (neg ?y))"),
+        rewrite!("sle-neg-left"; "(sle (neg ?x) ?y)" => "(sge ?x (neg ?y))"),
+        rewrite!("sgt-neg-left"; "(sgt (neg ?x) ?y)" => "(slt ?x (neg ?y))"),
+        rewrite!("sge-neg-left"; "(sge (neg ?x) ?y)" => "(sle ?x (neg ?y))"),
+        rewrite!("slt-neg-right"; "(slt ?x (neg ?y))" => "(sgt (neg ?x) ?y)"),
+        rewrite!("sle-neg-right"; "(sle ?x (neg ?y))" => "(sge (neg ?x) ?y)"),
+        rewrite!("sgt-neg-right"; "(sgt ?x (neg ?y))" => "(slt (neg ?x) ?y)"),
+        rewrite!("sge-neg-right"; "(sge ?x (neg ?y))" => "(sle (neg ?x) ?y)"),
         rewrite!("eq-add-cancel-left"; "(eq (+ ?x ?y) (+ ?x ?z))" => "(eq ?y ?z)"),
         rewrite!("ne-add-cancel-left"; "(ne (+ ?x ?y) (+ ?x ?z))" => "(ne ?y ?z)"),
         rewrite!("eq-add-self-zero"; "(eq (+ ?x ?y) ?x)" => {
@@ -1651,10 +1736,16 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("logne-land-self"; "(lne ?a (land ?a ?b))" => "(land ?a (lnot ?b))"),
         rewrite!("logeq-lor-self"; "(leq ?a (lor ?a ?b))" => "(lor ?a (lnot ?b))"),
         rewrite!("logne-lor-self"; "(lne ?a (lor ?a ?b))" => "(land (lnot ?a) ?b)"),
-        rewrite!("logeq-land-negself"; "(leq ?a (land (lnot ?a) ?b))" => "(land (lnot ?a) ?b)"),
-        rewrite!("logne-land-negself"; "(lne ?a (land (lnot ?a) ?b))" => "(lor ?a (lnot ?b))"),
+        rewrite!(
+            "logeq-land-negself";
+            "(leq ?a (land (lnot ?a) ?b))" => "(land (lnot ?a) (lnot ?b))"
+        ),
+        rewrite!("logne-land-negself"; "(lne ?a (land (lnot ?a) ?b))" => "(lor ?a ?b)"),
         rewrite!("logeq-lor-negself"; "(leq ?a (lor (lnot ?a) ?b))" => "(land ?a ?b)"),
-        rewrite!("logne-lor-negself"; "(lne ?a (lor (lnot ?a) ?b))" => "(lor (lnot ?a) (lnot ?b))"),
+        rewrite!(
+            "logne-lor-negself";
+            "(lne ?a (lor (lnot ?a) ?b))" => "(lor (lnot ?a) (lnot ?b))"
+        ),
         rewrite!("logeq-land-split-notb"; "(leq (land ?a ?b) (land ?a (lnot ?b)))" => "(lnot ?a)"),
         rewrite!("logne-land-split-notb"; "(lne (land ?a ?b) (land ?a (lnot ?b)))" => "?a"),
         rewrite!("logeq-land-split-nota"; "(leq (land ?a ?b) (land (lnot ?a) ?b))" => "(lnot ?b)"),
@@ -1805,6 +1896,38 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
             "(select (lnot ?c) (select ?c ?x ?y) (select ?c ?z ?w))" => "(select ?c ?z ?y)"
         ),
         rewrite!("select-neg-cond"; "(select (lnot ?c) ?t ?f)" => "(select ?c ?f ?t)"),
+        rewrite!(
+            "select-true-then";
+            "(select ?c ?t ?f)" => "(lor ?c ?f)" if is_const_true(var("?t"))
+        ),
+        rewrite!(
+            "select-false-then";
+            "(select ?c ?t ?f)" => "(land (lnot ?c) ?f)" if is_const_false(var("?t"))
+        ),
+        rewrite!(
+            "select-true-else";
+            "(select ?c ?t ?f)" => "(lor (lnot ?c) ?t)" if is_const_true(var("?f"))
+        ),
+        rewrite!(
+            "select-false-else";
+            "(select ?c ?t ?f)" => "(land ?c ?t)" if is_const_false(var("?f"))
+        ),
+        rewrite!(
+            "select-lnot-arms";
+            "(select ?c (lnot ?t) (lnot ?f))" => "(lnot (select ?c ?t ?f))"
+        ),
+        rewrite!(
+            "select-bnot-arms";
+            "(select ?c (bnot ?t) (bnot ?f))" => "(bnot (select ?c ?t ?f))"
+        ),
+        rewrite!(
+            "select-neg-arms";
+            "(select ?c (neg ?t) (neg ?f))" => "(neg (select ?c ?t ?f))"
+        ),
+        rewrite!(
+            "neg-select-distribute";
+            "(neg (select ?c ?t ?f))" => "(select ?c (neg ?t) (neg ?f))"
+        ),
         rewrite!(
             "select-const";
             "(select ?c ?t ?f)" => { SelectConstCond { cond: var("?c"), t: var("?t"), f: var("?f") } }
@@ -1990,10 +2113,15 @@ enum ShiftKind {
     RightSigned,
 }
 enum BitwiseOp {
+    And,
     Or,
     Xor,
 }
 struct MulPowerOfTwo {
+    x: Var,
+    c: Var,
+}
+struct MulNegPowerOfTwo {
     x: Var,
     c: Var,
 }
@@ -3962,6 +4090,36 @@ impl Applier<SpirvLang, ()> for MulPowerOfTwo {
     }
 }
 
+impl Applier<SpirvLang, ()> for MulNegPowerOfTwo {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(constant) = const_value(egraph, subst[self.c]) else {
+            return Vec::new();
+        };
+        let Some(shift) = is_neg_power_of_two(constant) else {
+            return Vec::new();
+        };
+        let width = u32::from(constant.width_bits());
+        if shift == 0 || shift >= width {
+            return Vec::new();
+        }
+        let shift_const = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
+            shift as u64,
+            constant.width_bits(),
+        )));
+        let shl = egraph.add(SpirvLang::Shl([subst[self.x], shift_const]));
+        let neg = egraph.add(SpirvLang::Neg(shl));
+        egraph.union(eclass, neg);
+        vec![neg]
+    }
+}
+
 impl Applier<SpirvLang, ()> for DivPowerOfTwo {
     fn apply_one(
         &self,
@@ -4294,11 +4452,13 @@ impl Applier<SpirvLang, ()> for BitwiseConstReassociate {
             return Vec::new();
         };
         let merged = match self.op {
+            BitwiseOp::And => combine_consts(c1, c2, |x, y| x & y),
             BitwiseOp::Or => combine_consts(c1, c2, |x, y| x | y),
             BitwiseOp::Xor => combine_consts(c1, c2, |x, y| x ^ y),
         };
         let const_id = egraph.add(SpirvLang::Const(merged));
         let node = match self.op {
+            BitwiseOp::And => egraph.add(SpirvLang::BitAnd([subst[self.x], const_id])),
             BitwiseOp::Or => egraph.add(SpirvLang::BitOr([subst[self.x], const_id])),
             BitwiseOp::Xor => egraph.add(SpirvLang::BitXor([subst[self.x], const_id])),
         };
@@ -5121,6 +5281,16 @@ fn is_power_of_two(value: u64) -> Option<u32> {
         return None;
     }
     Some(value.trailing_zeros())
+}
+
+fn is_neg_power_of_two(value: ConstValue) -> Option<u32> {
+    let width = value.width_bits();
+    let signed = sign_extend_bits(value, width);
+    if signed >= 0 {
+        return None;
+    }
+    let magnitude = (-signed) as u64;
+    is_power_of_two(magnitude)
 }
 
 fn has_symbol(egraph: &EGraph<SpirvLang, ()>, id: Id) -> bool {
@@ -6016,6 +6186,142 @@ mod tests {
     }
 
     #[test]
+    fn rewrites_sub_sub_shared_minuend() {
+        assert_simplifies("(- (- x y) (- x z))", "(- z y)");
+    }
+
+    #[test]
+    fn rewrites_sub_sub_shared_subtrahend() {
+        assert_simplifies("(- (- x y) (- z y))", "(- x z)");
+    }
+
+    #[test]
+    fn rewrites_sub_add_shared_minuend() {
+        assert_simplifies("(- (+ x y) (- x z))", "(+ y z)");
+    }
+
+    #[test]
+    fn rewrites_add_sub_cancel_to_sum() {
+        assert_simplifies("(+ (- x y) (+ y z))", "(+ x z)");
+    }
+
+    #[test]
+    fn rewrites_add_add_sub_double_left() {
+        let expr: RecExpr<SpirvLang> = "(+ (+ x y) (- x y))".parse().unwrap();
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let expected: RecExpr<SpirvLang> = "(+ x x)".parse().unwrap();
+        let Some(expected_id) = runner.egraph.lookup_expr(&expected) else {
+            panic!("expected x+x to be introduced");
+        };
+        assert_eq!(runner.egraph.find(root), runner.egraph.find(expected_id));
+    }
+
+    #[test]
+    fn rewrites_const_left_sub_add() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new(10)),      // 0
+            SpirvLang::Symbol(Symbol::from("x")),       // 1
+            SpirvLang::Const(ConstValue::new(3)),       // 2
+            SpirvLang::Add([Id::from(1), Id::from(2)]), // 3 = x + 3
+            SpirvLang::Sub([Id::from(0), Id::from(3)]), // 4 = 10 - (x + 3)
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let expected = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new(7)),       // 0
+            SpirvLang::Symbol(Symbol::from("x")),       // 1
+            SpirvLang::Sub([Id::from(0), Id::from(1)]), // 2 = 7 - x
+        ]);
+        let Some(expected_id) = runner.egraph.lookup_expr(&expected) else {
+            panic!("expected 7 - x to be introduced");
+        };
+        assert_eq!(runner.egraph.find(root), runner.egraph.find(expected_id));
+    }
+
+    #[test]
+    fn rewrites_sdiv_neg_left() {
+        assert_simplifies("(sdiv (neg x) y)", "(neg (sdiv x y))");
+    }
+
+    #[test]
+    fn rewrites_slt_neg_neg_to_sgt() {
+        assert_simplifies("(slt (neg x) (neg y))", "(sgt x y)");
+    }
+
+    #[test]
+    fn rewrites_ult_bnot_bnot_to_ugt() {
+        assert_simplifies("(ult (bnot x) (bnot y))", "(ugt x y)");
+    }
+
+    #[test]
+    fn rewrites_select_true_then_to_logor() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("c")), // 0
+            SpirvLang::Const(const_bool(true)),   // 1
+            SpirvLang::Symbol(Symbol::from("f")), // 2
+            SpirvLang::Select([Id::from(0), Id::from(1), Id::from(2)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let expected = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("c")), // 0
+            SpirvLang::Symbol(Symbol::from("f")), // 1
+            SpirvLang::LogOr([Id::from(0), Id::from(1)]),
+        ]);
+        let Some(expected_id) = runner.egraph.lookup_expr(&expected) else {
+            panic!("expected lor(c, f) to be introduced");
+        };
+        assert_eq!(runner.egraph.find(root), runner.egraph.find(expected_id));
+    }
+
+    #[test]
+    fn rewrites_select_neg_arms_to_neg_select() {
+        assert_simplifies("(select c (neg x) (neg y))", "(neg (select c x y))");
+    }
+
+    #[test]
+    fn rewrites_mul_neg_power_of_two_to_neg_shift() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),              // 0
+            SpirvLang::Const(ConstValue::new((-8i32) as u32)), // 1
+            SpirvLang::Mul([Id::from(0), Id::from(1)]),        // 2
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let neg_shl = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Const(ConstValue::new(3)),       // 1
+            SpirvLang::Shl([Id::from(0), Id::from(1)]), // 2
+            SpirvLang::Neg(Id::from(2)),                // 3
+        ]);
+        let shl_neg = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Neg(Id::from(0)),                // 1
+            SpirvLang::Const(ConstValue::new(3)),       // 2
+            SpirvLang::Shl([Id::from(1), Id::from(2)]), // 3
+        ]);
+        let target_id = runner
+            .egraph
+            .lookup_expr(&neg_shl)
+            .or_else(|| runner.egraph.lookup_expr(&shl_neg))
+            .expect("expected negated shift to be introduced");
+        assert_eq!(runner.egraph.find(root), runner.egraph.find(target_id));
+    }
+
+    #[test]
+    fn rewrites_neg_select_distributes() {
+        let expr: RecExpr<SpirvLang> = "(neg (select c x y))".parse().unwrap();
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let expected: RecExpr<SpirvLang> = "(select c (neg x) (neg y))".parse().unwrap();
+        let Some(expected_id) = runner.egraph.lookup_expr(&expected) else {
+            panic!("expected select with negated arms to be introduced");
+        };
+        assert_eq!(runner.egraph.find(root), runner.egraph.find(expected_id));
+    }
+
+    #[test]
     fn merges_add_then_sub_constants_into_single_offset() {
         let expr = RecExpr::from(vec![
             SpirvLang::Symbol(Symbol::from("x")),       // 0
@@ -6026,17 +6332,30 @@ mod tests {
         ]);
         let optimized = optimize_expr(&expr);
         let nodes = optimized.as_ref();
-        let SpirvLang::Add([lhs, rhs]) = nodes.last().expect("optimized root") else {
-            panic!("expected add root, got {:?}", nodes.last());
-        };
-        let lhs_const = matches!(nodes[usize::from(*lhs)], SpirvLang::Const(v) if v.get() == 2);
-        let rhs_const = matches!(nodes[usize::from(*rhs)], SpirvLang::Const(v) if v.get() == 2);
-        let lhs_sym = matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(_));
-        let rhs_sym = matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(_));
-        assert!(
-            (lhs_const && rhs_sym) || (rhs_const && lhs_sym),
-            "expected x plus folded const 2, got {nodes:?}"
-        );
+        let neg_two = ConstValue::new(u32::MAX - 1);
+        match nodes.last().expect("optimized root") {
+            SpirvLang::Add([lhs, rhs]) => {
+                let lhs_const =
+                    matches!(nodes[usize::from(*lhs)], SpirvLang::Const(v) if v.get() == 2);
+                let rhs_const =
+                    matches!(nodes[usize::from(*rhs)], SpirvLang::Const(v) if v.get() == 2);
+                let lhs_sym = matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(_));
+                let rhs_sym = matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(_));
+                assert!(
+                    (lhs_const && rhs_sym) || (rhs_const && lhs_sym),
+                    "expected x plus folded const 2, got {nodes:?}"
+                );
+            }
+            SpirvLang::Sub([lhs, rhs]) => {
+                let lhs_sym = matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(_));
+                let rhs_const = matches!(
+                    nodes[usize::from(*rhs)],
+                    SpirvLang::Const(v) if v.get() == neg_two.get()
+                );
+                assert!(lhs_sym && rhs_const, "expected x - (-2), got {nodes:?}");
+            }
+            other => panic!("expected add/sub root, got {other:?}"),
+        }
     }
 
     #[test]
@@ -6071,17 +6390,30 @@ mod tests {
         ]);
         let optimized = optimize_expr(&expr);
         let nodes = optimized.as_ref();
-        let SpirvLang::Add([lhs, rhs]) = nodes.last().expect("optimized root") else {
-            panic!("expected add root, got {:?}", nodes.last());
-        };
-        let lhs_const = matches!(nodes[usize::from(*lhs)], SpirvLang::Const(v) if v.get() == 2);
-        let rhs_const = matches!(nodes[usize::from(*rhs)], SpirvLang::Const(v) if v.get() == 2);
-        let lhs_sym = matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(_));
-        let rhs_sym = matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(_));
-        assert!(
-            (lhs_const && rhs_sym) || (rhs_const && lhs_sym),
-            "expected x plus folded const 2, got {nodes:?}"
-        );
+        let neg_two = ConstValue::new(u32::MAX - 1);
+        match nodes.last().expect("optimized root") {
+            SpirvLang::Add([lhs, rhs]) => {
+                let lhs_const =
+                    matches!(nodes[usize::from(*lhs)], SpirvLang::Const(v) if v.get() == 2);
+                let rhs_const =
+                    matches!(nodes[usize::from(*rhs)], SpirvLang::Const(v) if v.get() == 2);
+                let lhs_sym = matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(_));
+                let rhs_sym = matches!(nodes[usize::from(*rhs)], SpirvLang::Symbol(_));
+                assert!(
+                    (lhs_const && rhs_sym) || (rhs_const && lhs_sym),
+                    "expected x plus folded const 2, got {nodes:?}"
+                );
+            }
+            SpirvLang::Sub([lhs, rhs]) => {
+                let lhs_sym = matches!(nodes[usize::from(*lhs)], SpirvLang::Symbol(_));
+                let rhs_const = matches!(
+                    nodes[usize::from(*rhs)],
+                    SpirvLang::Const(v) if v.get() == neg_two.get()
+                );
+                assert!(lhs_sym && rhs_const, "expected x - (-2), got {nodes:?}");
+            }
+            other => panic!("expected add/sub root, got {other:?}"),
+        }
     }
 
     #[test]
@@ -11561,8 +11893,8 @@ mod tests {
         assert_simplifies("(lne a (land a b))", "(land a (lnot b))");
         assert_simplifies("(leq a (lor a b))", "(lor a (lnot b))");
         assert_simplifies("(lne a (lor a b))", "(land (lnot a) b)");
-        assert_simplifies("(leq a (land (lnot a) b))", "(land (lnot a) b)");
-        assert_simplifies("(lne a (land (lnot a) b))", "(lor a (lnot b))");
+        assert_simplifies("(leq a (land (lnot a) b))", "(land (lnot a) (lnot b))");
+        assert_simplifies("(lne a (land (lnot a) b))", "(lor a b)");
         assert_simplifies("(leq a (lor (lnot a) b))", "(land a b)");
         assert_simplifies("(lne a (lor (lnot a) b))", "(lor (lnot a) (lnot b))");
         assert_simplifies("(leq (land a b) (land a (lnot b)))", "(lnot a)");
@@ -11675,6 +12007,74 @@ mod tests {
                 SpirvLang::LogNot(Id::from(0))
             ])
         );
+    }
+
+    #[test]
+    fn rewrites_logeq_land_negself() {
+        let expr: RecExpr<SpirvLang> = "(leq a (land (lnot a) b))".parse().unwrap();
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let expected: RecExpr<SpirvLang> = "(land (lnot a) (lnot b))".parse().unwrap();
+        let expected_comm: RecExpr<SpirvLang> = "(land (lnot b) (lnot a))".parse().unwrap();
+        let Some(expected_id) = runner
+            .egraph
+            .lookup_expr(&expected)
+            .or_else(|| runner.egraph.lookup_expr(&expected_comm))
+        else {
+            panic!("expected !a & !b to be introduced by rewrites");
+        };
+        assert_eq!(runner.egraph.find(root), runner.egraph.find(expected_id));
+    }
+
+    #[test]
+    fn rewrites_logne_land_negself() {
+        let expr: RecExpr<SpirvLang> = "(lne a (land (lnot a) b))".parse().unwrap();
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let expected: RecExpr<SpirvLang> = "(lor a b)".parse().unwrap();
+        let expected_comm: RecExpr<SpirvLang> = "(lor b a)".parse().unwrap();
+        let Some(expected_id) = runner
+            .egraph
+            .lookup_expr(&expected)
+            .or_else(|| runner.egraph.lookup_expr(&expected_comm))
+        else {
+            panic!("expected a || b to be introduced by rewrites");
+        };
+        assert_eq!(runner.egraph.find(root), runner.egraph.find(expected_id));
+    }
+
+    #[test]
+    fn rewrites_logeq_lor_negself() {
+        let expr: RecExpr<SpirvLang> = "(leq a (lor (lnot a) b))".parse().unwrap();
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let expected: RecExpr<SpirvLang> = "(land a b)".parse().unwrap();
+        let expected_comm: RecExpr<SpirvLang> = "(land b a)".parse().unwrap();
+        let Some(expected_id) = runner
+            .egraph
+            .lookup_expr(&expected)
+            .or_else(|| runner.egraph.lookup_expr(&expected_comm))
+        else {
+            panic!("expected a & b to be introduced by rewrites");
+        };
+        assert_eq!(runner.egraph.find(root), runner.egraph.find(expected_id));
+    }
+
+    #[test]
+    fn rewrites_logne_lor_negself() {
+        let expr: RecExpr<SpirvLang> = "(lne a (lor (lnot a) b))".parse().unwrap();
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let expected: RecExpr<SpirvLang> = "(lor (lnot a) (lnot b))".parse().unwrap();
+        let expected_comm: RecExpr<SpirvLang> = "(lor (lnot b) (lnot a))".parse().unwrap();
+        let Some(expected_id) = runner
+            .egraph
+            .lookup_expr(&expected)
+            .or_else(|| runner.egraph.lookup_expr(&expected_comm))
+        else {
+            panic!("expected !a || !b to be introduced by rewrites");
+        };
+        assert_eq!(runner.egraph.find(root), runner.egraph.find(expected_id));
     }
 
     #[test]
