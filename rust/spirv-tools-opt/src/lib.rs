@@ -1454,6 +1454,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("logor-lne-absorb-not"; "(lor (lnot ?a) (lne ?a ?b))" => "(lor (lnot ?a) (lnot ?b))"),
         rewrite!("logand-leq-absorb-comm"; "(land ?a (leq ?b ?a))" => "(land ?a ?b)"),
         rewrite!("logand-lne-absorb-comm"; "(land ?a (lne ?b ?a))" => "(land ?a (lnot ?b))"),
+        rewrite!("logand-leq-absorb-not-comm"; "(land (lnot ?a) (leq ?b ?a))" => "(land (lnot ?a) (lnot ?b))"),
         rewrite!("logeq-or-split-a-right"; "(leq (lor ?a ?b) (lor ?a (lnot ?b)))" => "?a"),
         rewrite!("logeq-or-split-a-left"; "(leq (lor ?a (lnot ?b)) (lor ?a ?b))" => "?a"),
         rewrite!("logeq-or-split-b-right"; "(leq (lor ?a ?b) (lor (lnot ?a) ?b))" => "?b"),
@@ -11145,6 +11146,7 @@ mod tests {
         assert_simplifies("(lor (lnot a) (lne a b))", "(lor (lnot a) (lnot b))");
         assert_simplifies("(land a (leq b a))", "(land a b)");
         assert_simplifies("(land a (lne b a))", "(land a (lnot b))");
+        assert_simplifies("(land (lnot a) (leq b a))", "(land (lnot a) (lnot b))");
     }
 
     #[test]
