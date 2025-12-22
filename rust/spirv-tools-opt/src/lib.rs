@@ -1421,6 +1421,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("ugt-self"; "(ugt ?a ?a)" => { BoolConst { value: false } }),
         rewrite!("uge-self"; "(uge ?a ?a)" => { BoolConst { value: true } }),
         rewrite!("ult-zero-right"; "(ult ?x ?c)" => { BoolConst { value: false } } if is_const_zero(var("?c"))),
+        rewrite!("ult-zero-left"; "(ult ?c ?x)" => "(ne ?x ?c)" if is_const_zero(var("?c"))),
         rewrite!("logeq-self"; "(leq ?a ?a)" => { BoolConst { value: true } }),
         rewrite!("logne-self"; "(lne ?a ?a)" => { BoolConst { value: false } }),
         rewrite!("logand-neg"; "(land ?a (lnot ?a))" => { BoolConst { value: false } }),
@@ -13726,5 +13727,6 @@ mod tests {
     #[test]
     fn rewrites_unsigned_compare_zero_bounds() {
         assert_simplifies("(ult x 0)", "false");
+        assert_simplifies("(ult 0 x)", "(ne x 0)");
     }
 }
