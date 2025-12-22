@@ -1097,6 +1097,10 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
             "select-const";
             "(select ?c ?t ?f)" => { SelectConstCond { cond: var("?c"), t: var("?t"), f: var("?f") } }
         ),
+        rewrite!(
+            "select-bool-arms";
+            "(select ?c ?t ?f)" => { SelectBoolArms { cond: var("?c"), t: var("?t"), f: var("?f") } }
+        ),
         rewrite!("phi-same"; "(phi ?a ?a)" => "?a"),
     ]
 }
@@ -1452,6 +1456,11 @@ struct NegDivConst {
     b: Var,
 }
 struct SelectConstCond {
+    cond: Var,
+    t: Var,
+    f: Var,
+}
+struct SelectBoolArms {
     cond: Var,
     t: Var,
     f: Var,
@@ -2340,6 +2349,32 @@ impl Applier<SpirvLang, ()> for SelectConstCond {
         let chosen = if cond { subst[self.t] } else { subst[self.f] };
         egraph.union(eclass, chosen);
         vec![chosen]
+    }
+}
+
+impl Applier<SpirvLang, ()> for SelectBoolArms {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(true_arm) = const_value(egraph, subst[self.t]).and_then(bool_const) else {
+            return Vec::new();
+        };
+        let Some(false_arm) = const_value(egraph, subst[self.f]).and_then(bool_const) else {
+            return Vec::new();
+        };
+        let cond = subst[self.cond];
+        let rewritten = match (true_arm, false_arm) {
+            (true, false) => cond,
+            (false, true) => egraph.add(SpirvLang::LogNot(cond)),
+            _ => return Vec::new(),
+        };
+        egraph.union(eclass, rewritten);
+        vec![rewritten]
     }
 }
 
@@ -5982,6 +6017,39 @@ mod tests {
         assert!(
             cond_sym && t_sym && f_sym,
             "expected select c y x after negated cond rewrite, got {nodes:?}"
+        );
+    }
+
+    #[test]
+    fn rewrites_select_bool_arms_to_condition() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("c")), // 0
+            SpirvLang::Const(const_bool(true)),   // 1
+            SpirvLang::Const(const_bool(false)),  // 2
+            SpirvLang::Select([Id::from(0), Id::from(1), Id::from(2)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("c"))])
+        );
+    }
+
+    #[test]
+    fn rewrites_select_bool_arms_to_negated_condition() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("c")), // 0
+            SpirvLang::Const(const_bool(false)),  // 1
+            SpirvLang::Const(const_bool(true)),   // 2
+            SpirvLang::Select([Id::from(0), Id::from(1), Id::from(2)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![
+                SpirvLang::Symbol(Symbol::from("c")),
+                SpirvLang::LogNot(Id::from(0))
+            ])
         );
     }
 
