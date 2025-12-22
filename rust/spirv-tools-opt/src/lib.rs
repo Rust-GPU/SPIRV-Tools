@@ -1099,6 +1099,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("logor-comm"; "(lor ?a ?b)" => "(lor ?b ?a)"),
         rewrite!("logeq-comm"; "(leq ?a ?b)" => "(leq ?b ?a)"),
         rewrite!("logne-comm"; "(lne ?a ?b)" => "(lne ?b ?a)"),
+        rewrite!("logand-self"; "(land ?a ?a)" => "?a"),
+        rewrite!("logor-self"; "(lor ?a ?a)" => "?a"),
         rewrite!("eq-self"; "(eq ?a ?a)" => { BoolConst { value: true } }),
         rewrite!("ne-self"; "(ne ?a ?a)" => { BoolConst { value: false } }),
         rewrite!("logeq-not-not"; "(leq (lnot ?a) (lnot ?b))" => "(leq ?a ?b)"),
@@ -8666,6 +8668,29 @@ mod tests {
         assert_eq!(
             optimized,
             RecExpr::from(vec![SpirvLang::Const(const_bool(true))])
+        );
+    }
+
+    #[test]
+    fn rewrites_logical_idempotence() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("a")), // 0
+            SpirvLang::LogAnd([Id::from(0), Id::from(0)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("a"))])
+        );
+
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("b")), // 0
+            SpirvLang::LogOr([Id::from(0), Id::from(0)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("b"))])
         );
     }
 
