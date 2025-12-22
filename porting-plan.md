@@ -360,6 +360,7 @@ Planned tasks:
 - Added bitwise idempotence rewrites so `x & (x & y)` folds to `x & y`, with Rust unit coverage.
 - Added bitwise rewrites so `(x | y) | (x | z)` factors to `x | (y | z)`, with Rust unit coverage.
 - Added bxor rewrites so `~x ^ (x | y)` folds to `x | ~y`, with Rust unit coverage.
+- Added unsigned compare rewrite so `ult(x, 0)` folds to `false`, with Rust unit coverage.
 
 ## Upcoming Milestone: Optimizer Rewrite Stability & Extension
 - Broaden e-graph rewrites to additional algebraic/bitwise identities while preserving id stability (e.g., deeper shift/mask mixes, rotate-like sequences as supported).

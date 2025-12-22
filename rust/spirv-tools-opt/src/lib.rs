@@ -1420,6 +1420,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("ule-self"; "(ule ?a ?a)" => { BoolConst { value: true } }),
         rewrite!("ugt-self"; "(ugt ?a ?a)" => { BoolConst { value: false } }),
         rewrite!("uge-self"; "(uge ?a ?a)" => { BoolConst { value: true } }),
+        rewrite!("ult-zero-right"; "(ult ?x ?c)" => { BoolConst { value: false } } if is_const_zero(var("?c"))),
         rewrite!("logeq-self"; "(leq ?a ?a)" => { BoolConst { value: true } }),
         rewrite!("logne-self"; "(lne ?a ?a)" => { BoolConst { value: false } }),
         rewrite!("logand-neg"; "(land ?a (lnot ?a))" => { BoolConst { value: false } }),
@@ -13720,5 +13721,10 @@ mod tests {
                 vec![rspirv::dr::Operand::LiteralBit32(0u32.wrapping_sub(5))]
             )
         );
+    }
+
+    #[test]
+    fn rewrites_unsigned_compare_zero_bounds() {
+        assert_simplifies("(ult x 0)", "false");
     }
 }
