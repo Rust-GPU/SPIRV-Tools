@@ -383,6 +383,7 @@ Planned tasks:
 - Added signed compare rewrite so `sle(x, min)` folds to `x == min`, with Rust unit coverage.
 - Added signed compare rewrite so `sle(min, x)` folds to `true`, with Rust unit coverage.
 - Added signed compare rewrite so `sle(x, max)` folds to `true`, with Rust unit coverage.
+- Added signed compare rewrite so `sle(max, x)` folds to `x == max`, with Rust unit coverage.
 
 ## Upcoming Milestone: Optimizer Rewrite Stability & Extension
 - Broaden e-graph rewrites to additional algebraic/bitwise identities while preserving id stability (e.g., deeper shift/mask mixes, rotate-like sequences as supported).
