@@ -1109,6 +1109,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("ne-sub-cancel-left"; "(ne (- ?x ?y) (- ?x ?z))" => "(ne ?y ?z)"),
         rewrite!("eq-sub-cancel-right"; "(eq (- ?y ?x) (- ?z ?x))" => "(eq ?y ?z)"),
         rewrite!("ne-sub-cancel-right"; "(ne (- ?y ?x) (- ?z ?x))" => "(ne ?y ?z)"),
+        rewrite!("eq-sub-right-double"; "(eq (- ?x ?y) ?y)" => "(eq ?x (+ ?y ?y))"),
+        rewrite!("ne-sub-right-double"; "(ne (- ?x ?y) ?y)" => "(ne ?x (+ ?y ?y))"),
         rewrite!("eq-bxor-cancel-left"; "(eq (bxor ?x ?y) (bxor ?x ?z))" => "(eq ?y ?z)"),
         rewrite!("ne-bxor-cancel-left"; "(ne (bxor ?x ?y) (bxor ?x ?z))" => "(ne ?y ?z)"),
         rewrite!("eq-bxor-self-zero"; "(eq (bxor ?x ?y) ?x)" => {
@@ -8176,6 +8178,59 @@ mod tests {
             }
         }
         assert!(found_ne, "expected ne to compare y against x + x");
+    }
+
+    #[test]
+    fn rewrites_sub_rhs_comparison_to_double_rhs() {
+        let expr_eq = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::Sub([Id::from(0), Id::from(1)]),
+            SpirvLang::Eq([Id::from(2), Id::from(1)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr_eq).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found_eq = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::Eq([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_x = is_named_symbol(&runner.egraph, *lhs, "x");
+            let rhs_is_x = is_named_symbol(&runner.egraph, *rhs, "x");
+            let lhs_is_double_y = is_double_named_symbol(&runner.egraph, *lhs, "y");
+            let rhs_is_double_y = is_double_named_symbol(&runner.egraph, *rhs, "y");
+            if (lhs_is_x && rhs_is_double_y) || (rhs_is_x && lhs_is_double_y) {
+                found_eq = true;
+                break;
+            }
+        }
+        assert!(found_eq, "expected eq to compare x against y + y");
+
+        let expr_ne = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::Sub([Id::from(0), Id::from(1)]),
+            SpirvLang::Ne([Id::from(2), Id::from(1)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr_ne).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found_ne = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::Ne([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_x = is_named_symbol(&runner.egraph, *lhs, "x");
+            let rhs_is_x = is_named_symbol(&runner.egraph, *rhs, "x");
+            let lhs_is_double_y = is_double_named_symbol(&runner.egraph, *lhs, "y");
+            let rhs_is_double_y = is_double_named_symbol(&runner.egraph, *rhs, "y");
+            if (lhs_is_x && rhs_is_double_y) || (rhs_is_x && lhs_is_double_y) {
+                found_ne = true;
+                break;
+            }
+        }
+        assert!(found_ne, "expected ne to compare x against y + y");
     }
 
     #[test]
