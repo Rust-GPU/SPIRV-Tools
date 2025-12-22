@@ -703,6 +703,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("bor-not-and-self-left"; "(bor (bnot (band ?x ?y)) ?x)" => {
             BitOrComplement { _x: var("?x") }
         }),
+        rewrite!("bor-not-or-self-right"; "(bor ?x (bnot (bor ?x ?y)))" => "(bor ?x (bnot ?y))"),
+        rewrite!("bor-not-or-self-left"; "(bor (bnot (bor ?x ?y)) ?x)" => "(bor ?x (bnot ?y))"),
         rewrite!("bor-absorbs-split-y"; "(bor (band ?x ?y) (band (bnot ?x) ?y))" => "?y"),
         rewrite!("bor-absorbs-split-y-comm"; "(bor (band (bnot ?x) ?y) (band ?x ?y))" => "?y"),
         rewrite!("bor-absorbs-split-x"; "(bor (band ?x ?y) (band ?x (bnot ?y)))" => "?x"),
@@ -8628,6 +8630,35 @@ mod tests {
             }
         }
         assert!(found, "expected x ^ ~(x ^ y) to rewrite to ~y");
+    }
+
+    #[test]
+    fn rewrites_bor_not_or_self_to_or_not() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::BitOr([Id::from(0), Id::from(1)]),
+            SpirvLang::BitNot(Id::from(2)),
+            SpirvLang::BitOr([Id::from(0), Id::from(3)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::BitOr([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_x = is_named_symbol(&runner.egraph, *lhs, "x");
+            let rhs_is_x = is_named_symbol(&runner.egraph, *rhs, "x");
+            let lhs_is_bnot_y = is_bnot_named_symbol(&runner.egraph, *lhs, "y");
+            let rhs_is_bnot_y = is_bnot_named_symbol(&runner.egraph, *rhs, "y");
+            if (lhs_is_x && rhs_is_bnot_y) || (rhs_is_x && lhs_is_bnot_y) {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected x | ~(x | y) to rewrite to x | ~y");
     }
 
     #[test]
