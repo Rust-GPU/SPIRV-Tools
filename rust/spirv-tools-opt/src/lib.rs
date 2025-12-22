@@ -1480,6 +1480,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
                 "(land (lor ?a ?b) (lor (lnot ?a) ?c))"
         ),
         rewrite!("logand-factor-or"; "(land (lor ?a ?b) (lor ?a ?c))" => "(lor ?a (land ?b ?c))"),
+        rewrite!("logand-xor-to-logne"; "(land (lor ?a ?b) (lor (lnot ?a) (lnot ?b)))" => "(lne ?a ?b)"),
         rewrite!("logand-absorb-complement-or"; "(land ?a (lor (lnot ?a) ?b))" => "(land ?a ?b)"),
         rewrite!(
             "logand-absorb-complement-or-comm";
@@ -11366,6 +11367,31 @@ mod tests {
         ]);
         let Some(expected_id) = runner.egraph.lookup_expr(&expected) else {
             panic!("expected a || (b && c) to be introduced by rewrites");
+        };
+        assert_eq!(runner.egraph.find(root), runner.egraph.find(expected_id));
+    }
+
+    #[test]
+    fn rewrites_logand_xor_to_logne() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("a")), // 0
+            SpirvLang::Symbol(Symbol::from("b")), // 1
+            SpirvLang::LogOr([Id::from(0), Id::from(1)]),
+            SpirvLang::LogNot(Id::from(0)),
+            SpirvLang::LogNot(Id::from(1)),
+            SpirvLang::LogOr([Id::from(3), Id::from(4)]),
+            SpirvLang::LogAnd([Id::from(2), Id::from(5)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let expected: RecExpr<SpirvLang> = "(lne a b)".parse().unwrap();
+        let expected_comm: RecExpr<SpirvLang> = "(lne b a)".parse().unwrap();
+        let Some(expected_id) = runner
+            .egraph
+            .lookup_expr(&expected)
+            .or_else(|| runner.egraph.lookup_expr(&expected_comm))
+        else {
+            panic!("expected lne to be introduced by rewrites");
         };
         assert_eq!(runner.egraph.find(root), runner.egraph.find(expected_id));
     }
