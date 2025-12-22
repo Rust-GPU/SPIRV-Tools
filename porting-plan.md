@@ -217,6 +217,7 @@ Planned tasks:
 - Added eq/ne rewrites that move symbolic addends across comparisons (`x + y == z` -> `x == z - y`), with Rust unit coverage.
 - Added eq/ne rewrites that move symbolic subtrahends across comparisons (`x - y == z` -> `x == z + y`), with Rust unit coverage.
 - Added logical idempotence rewrites so `a && a` and `a || a` fold to `a`, with Rust unit coverage.
+- Added logical eq/ne rewrites that fold comparisons against `true`/`false`, with Rust unit coverage.
 
 ## Upcoming Milestone: Optimizer Rewrite Stability & Extension
 - Broaden e-graph rewrites to additional algebraic/bitwise identities while preserving id stability (e.g., deeper shift/mask mixes, rotate-like sequences as supported).

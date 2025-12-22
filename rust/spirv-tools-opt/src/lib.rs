@@ -1099,6 +1099,14 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("logor-comm"; "(lor ?a ?b)" => "(lor ?b ?a)"),
         rewrite!("logeq-comm"; "(leq ?a ?b)" => "(leq ?b ?a)"),
         rewrite!("logne-comm"; "(lne ?a ?b)" => "(lne ?b ?a)"),
+        rewrite!("logeq-true-right"; "(leq ?a ?c)" => "?a" if is_const_true(var("?c"))),
+        rewrite!("logeq-false-right"; "(leq ?a ?c)" => "(lnot ?a)" if is_const_false(var("?c"))),
+        rewrite!("logeq-true-left"; "(leq ?c ?a)" => "?a" if is_const_true(var("?c"))),
+        rewrite!("logeq-false-left"; "(leq ?c ?a)" => "(lnot ?a)" if is_const_false(var("?c"))),
+        rewrite!("logne-true-right"; "(lne ?a ?c)" => "(lnot ?a)" if is_const_true(var("?c"))),
+        rewrite!("logne-false-right"; "(lne ?a ?c)" => "?a" if is_const_false(var("?c"))),
+        rewrite!("logne-true-left"; "(lne ?c ?a)" => "(lnot ?a)" if is_const_true(var("?c"))),
+        rewrite!("logne-false-left"; "(lne ?c ?a)" => "?a" if is_const_false(var("?c"))),
         rewrite!("logand-self"; "(land ?a ?a)" => "?a"),
         rewrite!("logor-self"; "(lor ?a ?a)" => "?a"),
         rewrite!("eq-self"; "(eq ?a ?a)" => { BoolConst { value: true } }),
@@ -4588,6 +4596,14 @@ fn is_const_all_ones(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst
 
 fn is_const_odd(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
     move |egraph, _, subst| const_value(egraph, subst[var]).is_some_and(|c| (c.get_u64() & 1) == 1)
+}
+
+fn is_const_true(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
+    move |egraph, _, subst| const_value(egraph, subst[var]).and_then(bool_const) == Some(true)
+}
+
+fn is_const_false(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
+    move |egraph, _, subst| const_value(egraph, subst[var]).and_then(bool_const) == Some(false)
 }
 
 fn is_const_zero_and_odd(
@@ -8691,6 +8707,59 @@ mod tests {
         assert_eq!(
             optimized,
             RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("b"))])
+        );
+    }
+
+    #[test]
+    fn rewrites_logical_eq_ne_with_constants() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),          // 0
+            SpirvLang::Const(const_bool(true)),           // 1
+            SpirvLang::LogEq([Id::from(0), Id::from(1)]),  // 2
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("x"))])
+        );
+
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),          // 0
+            SpirvLang::Const(const_bool(false)),          // 1
+            SpirvLang::LogEq([Id::from(0), Id::from(1)]),  // 2
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![
+                SpirvLang::Symbol(Symbol::from("x")),
+                SpirvLang::LogNot(Id::from(0))
+            ])
+        );
+
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),          // 0
+            SpirvLang::Const(const_bool(true)),           // 1
+            SpirvLang::LogNe([Id::from(0), Id::from(1)]),  // 2
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![
+                SpirvLang::Symbol(Symbol::from("x")),
+                SpirvLang::LogNot(Id::from(0))
+            ])
+        );
+
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),          // 0
+            SpirvLang::Const(const_bool(false)),          // 1
+            SpirvLang::LogNe([Id::from(0), Id::from(1)]),  // 2
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("x"))])
         );
     }
 
