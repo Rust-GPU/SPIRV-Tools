@@ -218,6 +218,7 @@ Planned tasks:
 - Added bitwise rewrites so `x & ~(x | y)` folds to zero, with Rust unit coverage.
 - Added bitwise rewrites so `x & ~(x & y)` folds to `x & ~y`, with Rust unit coverage.
 - Added bitwise rewrites so `x | ~(x & y)` folds to all-ones, with Rust unit coverage.
+- Added bitwise rewrites so `x & (~x & y)` folds to zero, with Rust unit coverage.
 - Added bitwise consensus rewrites so `(x & y) | (x & z)` factors to `x & (y | z)`, with Rust unit coverage.
 - Added eq/ne rewrites that move symbolic addends across comparisons (`x + y == z` -> `x == z - y`), with Rust unit coverage.
 - Added eq/ne rewrites that move symbolic subtrahends across comparisons (`x - y == z` -> `x == z + y`), with Rust unit coverage.

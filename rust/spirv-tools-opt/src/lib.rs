@@ -630,6 +630,12 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("band-complement-nested-left"; "(band (band ?x ?y) (bnot ?x))" => {
             BitAndComplement { _x: var("?x") }
         }),
+        rewrite!("band-complement-nested-inner-right"; "(band ?x (band (bnot ?x) ?y))" => {
+            BitAndComplement { _x: var("?x") }
+        }),
+        rewrite!("band-complement-nested-inner-left"; "(band (band (bnot ?x) ?y) ?x)" => {
+            BitAndComplement { _x: var("?x") }
+        }),
         rewrite!("band-not-or-self-right"; "(band ?x (bnot (bor ?x ?y)))" => {
             BitAndComplement { _x: var("?x") }
         }),
@@ -8764,6 +8770,22 @@ mod tests {
             SpirvLang::BitNot(Id::from(0)),
             SpirvLang::BitAnd([Id::from(0), Id::from(1)]),
             SpirvLang::BitAnd([Id::from(2), Id::from(3)]),
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Const(ConstValue::new(0))])
+        );
+    }
+
+    #[test]
+    fn rewrites_band_complement_nested_inner_to_zero() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::BitNot(Id::from(0)),
+            SpirvLang::BitAnd([Id::from(2), Id::from(1)]),
+            SpirvLang::BitAnd([Id::from(0), Id::from(3)]),
         ]);
         let optimized = optimize_expr(&expr);
         assert_eq!(
