@@ -1423,6 +1423,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("ult-zero-right"; "(ult ?x ?c)" => { BoolConst { value: false } } if is_const_zero(var("?c"))),
         rewrite!("ult-zero-left"; "(ult ?c ?x)" => "(ne ?x ?c)" if is_const_zero(var("?c"))),
         rewrite!("ult-max-right"; "(ult ?x ?c)" => "(ne ?x ?c)" if is_const_all_ones(var("?c"))),
+        rewrite!("ult-max-left"; "(ult ?c ?x)" => { BoolConst { value: false } } if is_const_all_ones(var("?c"))),
         rewrite!("logeq-self"; "(leq ?a ?a)" => { BoolConst { value: true } }),
         rewrite!("logne-self"; "(lne ?a ?a)" => { BoolConst { value: false } }),
         rewrite!("logand-neg"; "(land ?a (lnot ?a))" => { BoolConst { value: false } }),
@@ -13730,5 +13731,6 @@ mod tests {
         assert_simplifies("(ult x 0)", "false");
         assert_simplifies("(ult 0 x)", "(ne x 0)");
         assert_simplifies("(ult x 4294967295)", "(ne x 4294967295)");
+        assert_simplifies("(ult 4294967295 x)", "false");
     }
 }
