@@ -198,6 +198,11 @@ Planned tasks:
 - Added eq/ne rewrites that push negation into constant operands, with Rust unit coverage.
 - Added eq/ne rewrites that push bitwise-not into constant operands, with Rust unit coverage.
 - Added eq/ne rewrites that fold xor-with-constant comparisons into direct const comparisons, with Rust unit coverage.
+- Added offset-comparison rewrites for add/sub const pairs (including commuted forms) so eq/ne can cancel constants globally, with Rust unit coverage.
+- Added band/bor self-comparison rewrites plus mask-impossible comparisons that fold to true/false for eq/ne with const masks, with Rust unit coverage.
+- Added unsigned compare normalization around bitwise-not and canonicalized greater-than compares to less-than forms, with Rust unit coverage.
+- Added shift distribution over bitwise ops for constant shifts plus shift-to-mul/udiv pow2 rewrites, with Rust unit coverage.
+- Added reverse negation rules for signed div/rem to expose cancellations in the e-graph, with Rust unit coverage.
 - Added logical eq/ne contradiction rewrite so `(a == b) && (a != b)` folds to `false`, with Rust unit coverage.
 - Added logical eq split-or rewrite so `leq(a | b, a | !b)` folds to `a`, with Rust unit coverage.
 - Added logical eq split-or rewrite so `leq(a | b, !a | b)` folds to `b`, with Rust unit coverage.

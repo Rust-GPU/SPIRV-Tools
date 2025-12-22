@@ -464,6 +464,10 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("sub-self"; "(- ?a ?a)" => { SubSelf }),
         rewrite!("sub-neg-right-to-add"; "(- ?a (neg ?b))" => "(+ ?a ?b)"),
         rewrite!("sub-neg-left-to-neg-add"; "(- (neg ?a) ?b)" => "(neg (+ ?a ?b))"),
+        rewrite!(
+            "sub-const-left-to-neg-sub";
+            "(- ?c ?x)" => "(neg (- ?x ?c))" if is_const(var("?c"))
+        ),
         rewrite!("sub-sub-cancel-left"; "(- ?a (- ?a ?b))" => "?b"),
         rewrite!("sub-sub-cancel-right"; "(- (- ?x ?y) ?x)" => "(neg ?y)"),
         rewrite!("sub-add-reassociate-left"; "(- ?a (+ ?b ?c))" => "(- (- ?a ?b) ?c)"),
@@ -540,6 +544,10 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("shl-const-fold"; "(shl ?a ?b)" => { ShlFoldConst { a: var("?a"), b: var("?b") } }),
         rewrite!("shr-u-const-fold"; "(shr_u ?a ?b)" => { ShrUFoldConst { a: var("?a"), b: var("?b") } }),
         rewrite!("shr-s-const-fold"; "(shr_s ?a ?b)" => { ShrSFoldConst { a: var("?a"), b: var("?b") } }),
+        rewrite!("shl-to-mul-pow2"; "(shl ?x ?c)" => { ShiftToMulPow2 { x: var("?x"), c: var("?c") } }),
+        rewrite!("shr-u-to-udiv-pow2"; "(shr_u ?x ?c)" => {
+            ShiftToUdivPow2 { x: var("?x"), c: var("?c") }
+        }),
         rewrite!("shl-zero"; "(shl ?x ?c)" => "?x" if is_const_zero(var("?c"))),
         rewrite!("shr-u-zero"; "(shr_u ?x ?c)" => "?x" if is_const_zero(var("?c"))),
         rewrite!("shr-s-zero"; "(shr_s ?x ?c)" => "?x" if is_const_zero(var("?c"))),
@@ -691,6 +699,42 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!(
             "bxor-shrs-factor";
             "(bxor (shr_s ?x ?c) (shr_s ?y ?c))" => "(shr_s (bxor ?x ?y) ?c)"
+        ),
+        rewrite!(
+            "shl-distribute-band";
+            "(shl (band ?x ?y) ?c)" => "(band (shl ?x ?c) (shl ?y ?c))" if is_const(var("?c"))
+        ),
+        rewrite!(
+            "shl-distribute-bor";
+            "(shl (bor ?x ?y) ?c)" => "(bor (shl ?x ?c) (shl ?y ?c))" if is_const(var("?c"))
+        ),
+        rewrite!(
+            "shl-distribute-bxor";
+            "(shl (bxor ?x ?y) ?c)" => "(bxor (shl ?x ?c) (shl ?y ?c))" if is_const(var("?c"))
+        ),
+        rewrite!(
+            "shru-distribute-band";
+            "(shr_u (band ?x ?y) ?c)" => "(band (shr_u ?x ?c) (shr_u ?y ?c))" if is_const(var("?c"))
+        ),
+        rewrite!(
+            "shru-distribute-bor";
+            "(shr_u (bor ?x ?y) ?c)" => "(bor (shr_u ?x ?c) (shr_u ?y ?c))" if is_const(var("?c"))
+        ),
+        rewrite!(
+            "shru-distribute-bxor";
+            "(shr_u (bxor ?x ?y) ?c)" => "(bxor (shr_u ?x ?c) (shr_u ?y ?c))" if is_const(var("?c"))
+        ),
+        rewrite!(
+            "shrs-distribute-band";
+            "(shr_s (band ?x ?y) ?c)" => "(band (shr_s ?x ?c) (shr_s ?y ?c))" if is_const(var("?c"))
+        ),
+        rewrite!(
+            "shrs-distribute-bor";
+            "(shr_s (bor ?x ?y) ?c)" => "(bor (shr_s ?x ?c) (shr_s ?y ?c))" if is_const(var("?c"))
+        ),
+        rewrite!(
+            "shrs-distribute-bxor";
+            "(shr_s (bxor ?x ?y) ?c)" => "(bxor (shr_s ?x ?c) (shr_s ?y ?c))" if is_const(var("?c"))
         ),
         rewrite!("band-comm"; "(band ?a ?b)" => "(band ?b ?a)"),
         rewrite!("band-assoc"; "(band ?a (band ?b ?c))" => "(band (band ?a ?b) ?c)"),
@@ -1369,6 +1413,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("neg-sub-swap"; "(neg (- ?a ?b))" => "(- ?b ?a)"),
         rewrite!("neg-add-const"; "(neg (+ ?a ?b))" => { NegAddConst { a: var("?a"), b: var("?b") } }),
         rewrite!("neg-sdiv-const"; "(neg (sdiv ?a ?b))" => { NegDivConst { a: var("?a"), b: var("?b") } }),
+        rewrite!("neg-sdiv-left"; "(neg (sdiv ?x ?y))" => "(sdiv (neg ?x) ?y)"),
+        rewrite!("neg-sdiv-right"; "(neg (sdiv ?x ?y))" => "(sdiv ?x (neg ?y))"),
         rewrite!("neg-add-distribute"; "(neg (+ ?x ?y))" => "(+ (neg ?x) (neg ?y))"),
         rewrite!("neg-mul-distribute-left"; "(neg (* ?x ?y))" => "(* (neg ?x) ?y)"),
         rewrite!("neg-mul-distribute-right"; "(neg (* ?x ?y))" => "(* ?x (neg ?y))"),
@@ -1388,6 +1434,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("srem-neg-left"; "(srem (neg ?x) ?y)" => "(neg (srem ?x ?y))"),
         rewrite!("srem-neg-right"; "(srem ?x (neg ?y))" => "(srem ?x ?y)"),
         rewrite!("srem-neg-both"; "(srem (neg ?x) (neg ?y))" => "(neg (srem ?x ?y))"),
+        rewrite!("neg-srem-left"; "(neg (srem ?x ?y))" => "(srem (neg ?x) ?y)"),
         rewrite!("srem-one"; "(srem ?a ?b)" => { RemOne { b: var("?b") } }),
         rewrite!("smod-one"; "(smod ?a ?b)" => { RemOne { b: var("?b") } }),
         rewrite!("umod-one"; "(umod ?a ?b)" => { RemOne { b: var("?b") } }),
@@ -1482,6 +1529,18 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("ule-bnot-bnot"; "(ule (bnot ?x) (bnot ?y))" => "(uge ?x ?y)"),
         rewrite!("ugt-bnot-bnot"; "(ugt (bnot ?x) (bnot ?y))" => "(ult ?x ?y)"),
         rewrite!("uge-bnot-bnot"; "(uge (bnot ?x) (bnot ?y))" => "(ule ?x ?y)"),
+        rewrite!("sgt-to-slt"; "(sgt ?x ?y)" => "(slt ?y ?x)"),
+        rewrite!("sge-to-sle"; "(sge ?x ?y)" => "(sle ?y ?x)"),
+        rewrite!("ugt-to-ult"; "(ugt ?x ?y)" => "(ult ?y ?x)"),
+        rewrite!("uge-to-ule"; "(uge ?x ?y)" => "(ule ?y ?x)"),
+        rewrite!("ult-bnot-left"; "(ult (bnot ?x) ?y)" => "(ugt ?x (bnot ?y))"),
+        rewrite!("ule-bnot-left"; "(ule (bnot ?x) ?y)" => "(uge ?x (bnot ?y))"),
+        rewrite!("ugt-bnot-left"; "(ugt (bnot ?x) ?y)" => "(ult ?x (bnot ?y))"),
+        rewrite!("uge-bnot-left"; "(uge (bnot ?x) ?y)" => "(ule ?x (bnot ?y))"),
+        rewrite!("ult-bnot-right"; "(ult ?x (bnot ?y))" => "(ugt (bnot ?x) ?y)"),
+        rewrite!("ule-bnot-right"; "(ule ?x (bnot ?y))" => "(uge (bnot ?x) ?y)"),
+        rewrite!("ugt-bnot-right"; "(ugt ?x (bnot ?y))" => "(ult (bnot ?x) ?y)"),
+        rewrite!("uge-bnot-right"; "(uge ?x (bnot ?y))" => "(ule (bnot ?x) ?y)"),
         rewrite!("slt-neg-left"; "(slt (neg ?x) ?y)" => "(sgt ?x (neg ?y))"),
         rewrite!("sle-neg-left"; "(sle (neg ?x) ?y)" => "(sge ?x (neg ?y))"),
         rewrite!("sgt-neg-left"; "(sgt (neg ?x) ?y)" => "(slt ?x (neg ?y))"),
@@ -1508,10 +1567,474 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("ne-sub-cancel-left"; "(ne (- ?x ?y) (- ?x ?z))" => "(ne ?y ?z)"),
         rewrite!("eq-sub-cancel-right"; "(eq (- ?y ?x) (- ?z ?x))" => "(eq ?y ?z)"),
         rewrite!("ne-sub-cancel-right"; "(ne (- ?y ?x) (- ?z ?x))" => "(ne ?y ?z)"),
+        rewrite!("eq-offset-addr-addr"; "(eq (+ ?x ?c1) (+ ?y ?c2))" => {
+            CmpAffineConstBoth {
+                x: var("?x"),
+                y: var("?y"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+                lhs_var_neg: false,
+                lhs_const_neg: false,
+                rhs_var_neg: false,
+                rhs_const_neg: false,
+                eq: true,
+            }
+        }),
+        rewrite!("ne-offset-addr-addr"; "(ne (+ ?x ?c1) (+ ?y ?c2))" => {
+            CmpAffineConstBoth {
+                x: var("?x"),
+                y: var("?y"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+                lhs_var_neg: false,
+                lhs_const_neg: false,
+                rhs_var_neg: false,
+                rhs_const_neg: false,
+                eq: false,
+            }
+        }),
+        rewrite!("eq-offset-addr-addl"; "(eq (+ ?x ?c1) (+ ?c2 ?y))" => {
+            CmpAffineConstBoth {
+                x: var("?x"),
+                y: var("?y"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+                lhs_var_neg: false,
+                lhs_const_neg: false,
+                rhs_var_neg: false,
+                rhs_const_neg: false,
+                eq: true,
+            }
+        }),
+        rewrite!("ne-offset-addr-addl"; "(ne (+ ?x ?c1) (+ ?c2 ?y))" => {
+            CmpAffineConstBoth {
+                x: var("?x"),
+                y: var("?y"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+                lhs_var_neg: false,
+                lhs_const_neg: false,
+                rhs_var_neg: false,
+                rhs_const_neg: false,
+                eq: false,
+            }
+        }),
+        rewrite!("eq-offset-addr-subr"; "(eq (+ ?x ?c1) (- ?y ?c2))" => {
+            CmpAffineConstBoth {
+                x: var("?x"),
+                y: var("?y"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+                lhs_var_neg: false,
+                lhs_const_neg: false,
+                rhs_var_neg: false,
+                rhs_const_neg: true,
+                eq: true,
+            }
+        }),
+        rewrite!("ne-offset-addr-subr"; "(ne (+ ?x ?c1) (- ?y ?c2))" => {
+            CmpAffineConstBoth {
+                x: var("?x"),
+                y: var("?y"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+                lhs_var_neg: false,
+                lhs_const_neg: false,
+                rhs_var_neg: false,
+                rhs_const_neg: true,
+                eq: false,
+            }
+        }),
+        rewrite!("eq-offset-addr-subl"; "(eq (+ ?x ?c1) (- ?c2 ?y))" => {
+            CmpAffineConstBoth {
+                x: var("?x"),
+                y: var("?y"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+                lhs_var_neg: false,
+                lhs_const_neg: false,
+                rhs_var_neg: true,
+                rhs_const_neg: false,
+                eq: true,
+            }
+        }),
+        rewrite!("ne-offset-addr-subl"; "(ne (+ ?x ?c1) (- ?c2 ?y))" => {
+            CmpAffineConstBoth {
+                x: var("?x"),
+                y: var("?y"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+                lhs_var_neg: false,
+                lhs_const_neg: false,
+                rhs_var_neg: true,
+                rhs_const_neg: false,
+                eq: false,
+            }
+        }),
+        rewrite!("eq-offset-addl-addr"; "(eq (+ ?c1 ?x) (+ ?y ?c2))" => {
+            CmpAffineConstBoth {
+                x: var("?x"),
+                y: var("?y"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+                lhs_var_neg: false,
+                lhs_const_neg: false,
+                rhs_var_neg: false,
+                rhs_const_neg: false,
+                eq: true,
+            }
+        }),
+        rewrite!("ne-offset-addl-addr"; "(ne (+ ?c1 ?x) (+ ?y ?c2))" => {
+            CmpAffineConstBoth {
+                x: var("?x"),
+                y: var("?y"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+                lhs_var_neg: false,
+                lhs_const_neg: false,
+                rhs_var_neg: false,
+                rhs_const_neg: false,
+                eq: false,
+            }
+        }),
+        rewrite!("eq-offset-addl-addl"; "(eq (+ ?c1 ?x) (+ ?c2 ?y))" => {
+            CmpAffineConstBoth {
+                x: var("?x"),
+                y: var("?y"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+                lhs_var_neg: false,
+                lhs_const_neg: false,
+                rhs_var_neg: false,
+                rhs_const_neg: false,
+                eq: true,
+            }
+        }),
+        rewrite!("ne-offset-addl-addl"; "(ne (+ ?c1 ?x) (+ ?c2 ?y))" => {
+            CmpAffineConstBoth {
+                x: var("?x"),
+                y: var("?y"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+                lhs_var_neg: false,
+                lhs_const_neg: false,
+                rhs_var_neg: false,
+                rhs_const_neg: false,
+                eq: false,
+            }
+        }),
+        rewrite!("eq-offset-addl-subr"; "(eq (+ ?c1 ?x) (- ?y ?c2))" => {
+            CmpAffineConstBoth {
+                x: var("?x"),
+                y: var("?y"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+                lhs_var_neg: false,
+                lhs_const_neg: false,
+                rhs_var_neg: false,
+                rhs_const_neg: true,
+                eq: true,
+            }
+        }),
+        rewrite!("ne-offset-addl-subr"; "(ne (+ ?c1 ?x) (- ?y ?c2))" => {
+            CmpAffineConstBoth {
+                x: var("?x"),
+                y: var("?y"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+                lhs_var_neg: false,
+                lhs_const_neg: false,
+                rhs_var_neg: false,
+                rhs_const_neg: true,
+                eq: false,
+            }
+        }),
+        rewrite!("eq-offset-addl-subl"; "(eq (+ ?c1 ?x) (- ?c2 ?y))" => {
+            CmpAffineConstBoth {
+                x: var("?x"),
+                y: var("?y"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+                lhs_var_neg: false,
+                lhs_const_neg: false,
+                rhs_var_neg: true,
+                rhs_const_neg: false,
+                eq: true,
+            }
+        }),
+        rewrite!("ne-offset-addl-subl"; "(ne (+ ?c1 ?x) (- ?c2 ?y))" => {
+            CmpAffineConstBoth {
+                x: var("?x"),
+                y: var("?y"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+                lhs_var_neg: false,
+                lhs_const_neg: false,
+                rhs_var_neg: true,
+                rhs_const_neg: false,
+                eq: false,
+            }
+        }),
+        rewrite!("eq-offset-subr-addr"; "(eq (- ?x ?c1) (+ ?y ?c2))" => {
+            CmpAffineConstBoth {
+                x: var("?x"),
+                y: var("?y"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+                lhs_var_neg: false,
+                lhs_const_neg: true,
+                rhs_var_neg: false,
+                rhs_const_neg: false,
+                eq: true,
+            }
+        }),
+        rewrite!("ne-offset-subr-addr"; "(ne (- ?x ?c1) (+ ?y ?c2))" => {
+            CmpAffineConstBoth {
+                x: var("?x"),
+                y: var("?y"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+                lhs_var_neg: false,
+                lhs_const_neg: true,
+                rhs_var_neg: false,
+                rhs_const_neg: false,
+                eq: false,
+            }
+        }),
+        rewrite!("eq-offset-subr-addl"; "(eq (- ?x ?c1) (+ ?c2 ?y))" => {
+            CmpAffineConstBoth {
+                x: var("?x"),
+                y: var("?y"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+                lhs_var_neg: false,
+                lhs_const_neg: true,
+                rhs_var_neg: false,
+                rhs_const_neg: false,
+                eq: true,
+            }
+        }),
+        rewrite!("ne-offset-subr-addl"; "(ne (- ?x ?c1) (+ ?c2 ?y))" => {
+            CmpAffineConstBoth {
+                x: var("?x"),
+                y: var("?y"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+                lhs_var_neg: false,
+                lhs_const_neg: true,
+                rhs_var_neg: false,
+                rhs_const_neg: false,
+                eq: false,
+            }
+        }),
+        rewrite!("eq-offset-subr-subr"; "(eq (- ?x ?c1) (- ?y ?c2))" => {
+            CmpAffineConstBoth {
+                x: var("?x"),
+                y: var("?y"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+                lhs_var_neg: false,
+                lhs_const_neg: true,
+                rhs_var_neg: false,
+                rhs_const_neg: true,
+                eq: true,
+            }
+        }),
+        rewrite!("ne-offset-subr-subr"; "(ne (- ?x ?c1) (- ?y ?c2))" => {
+            CmpAffineConstBoth {
+                x: var("?x"),
+                y: var("?y"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+                lhs_var_neg: false,
+                lhs_const_neg: true,
+                rhs_var_neg: false,
+                rhs_const_neg: true,
+                eq: false,
+            }
+        }),
+        rewrite!("eq-offset-subr-subl"; "(eq (- ?x ?c1) (- ?c2 ?y))" => {
+            CmpAffineConstBoth {
+                x: var("?x"),
+                y: var("?y"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+                lhs_var_neg: false,
+                lhs_const_neg: true,
+                rhs_var_neg: true,
+                rhs_const_neg: false,
+                eq: true,
+            }
+        }),
+        rewrite!("ne-offset-subr-subl"; "(ne (- ?x ?c1) (- ?c2 ?y))" => {
+            CmpAffineConstBoth {
+                x: var("?x"),
+                y: var("?y"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+                lhs_var_neg: false,
+                lhs_const_neg: true,
+                rhs_var_neg: true,
+                rhs_const_neg: false,
+                eq: false,
+            }
+        }),
+        rewrite!("eq-offset-subl-addr"; "(eq (- ?c1 ?x) (+ ?y ?c2))" => {
+            CmpAffineConstBoth {
+                x: var("?x"),
+                y: var("?y"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+                lhs_var_neg: true,
+                lhs_const_neg: false,
+                rhs_var_neg: false,
+                rhs_const_neg: false,
+                eq: true,
+            }
+        }),
+        rewrite!("ne-offset-subl-addr"; "(ne (- ?c1 ?x) (+ ?y ?c2))" => {
+            CmpAffineConstBoth {
+                x: var("?x"),
+                y: var("?y"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+                lhs_var_neg: true,
+                lhs_const_neg: false,
+                rhs_var_neg: false,
+                rhs_const_neg: false,
+                eq: false,
+            }
+        }),
+        rewrite!("eq-offset-subl-addl"; "(eq (- ?c1 ?x) (+ ?c2 ?y))" => {
+            CmpAffineConstBoth {
+                x: var("?x"),
+                y: var("?y"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+                lhs_var_neg: true,
+                lhs_const_neg: false,
+                rhs_var_neg: false,
+                rhs_const_neg: false,
+                eq: true,
+            }
+        }),
+        rewrite!("ne-offset-subl-addl"; "(ne (- ?c1 ?x) (+ ?c2 ?y))" => {
+            CmpAffineConstBoth {
+                x: var("?x"),
+                y: var("?y"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+                lhs_var_neg: true,
+                lhs_const_neg: false,
+                rhs_var_neg: false,
+                rhs_const_neg: false,
+                eq: false,
+            }
+        }),
+        rewrite!("eq-offset-subl-subr"; "(eq (- ?c1 ?x) (- ?y ?c2))" => {
+            CmpAffineConstBoth {
+                x: var("?x"),
+                y: var("?y"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+                lhs_var_neg: true,
+                lhs_const_neg: false,
+                rhs_var_neg: false,
+                rhs_const_neg: true,
+                eq: true,
+            }
+        }),
+        rewrite!("ne-offset-subl-subr"; "(ne (- ?c1 ?x) (- ?y ?c2))" => {
+            CmpAffineConstBoth {
+                x: var("?x"),
+                y: var("?y"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+                lhs_var_neg: true,
+                lhs_const_neg: false,
+                rhs_var_neg: false,
+                rhs_const_neg: true,
+                eq: false,
+            }
+        }),
+        rewrite!("eq-offset-subl-subl"; "(eq (- ?c1 ?x) (- ?c2 ?y))" => {
+            CmpAffineConstBoth {
+                x: var("?x"),
+                y: var("?y"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+                lhs_var_neg: true,
+                lhs_const_neg: false,
+                rhs_var_neg: true,
+                rhs_const_neg: false,
+                eq: true,
+            }
+        }),
+        rewrite!("ne-offset-subl-subl"; "(ne (- ?c1 ?x) (- ?c2 ?y))" => {
+            CmpAffineConstBoth {
+                x: var("?x"),
+                y: var("?y"),
+                c1: var("?c1"),
+                c2: var("?c2"),
+                lhs_var_neg: true,
+                lhs_const_neg: false,
+                rhs_var_neg: true,
+                rhs_const_neg: false,
+                eq: false,
+            }
+        }),
         rewrite!("eq-sub-right-double"; "(eq (- ?x ?y) ?y)" => "(eq ?x (+ ?y ?y))"),
         rewrite!("ne-sub-right-double"; "(ne (- ?x ?y) ?y)" => "(ne ?x (+ ?y ?y))"),
         rewrite!("eq-bxor-cancel-left"; "(eq (bxor ?x ?y) (bxor ?x ?z))" => "(eq ?y ?z)"),
         rewrite!("ne-bxor-cancel-left"; "(ne (bxor ?x ?y) (bxor ?x ?z))" => "(ne ?y ?z)"),
+        rewrite!("eq-band-self-right"; "(eq (band ?x ?y) ?x)" => {
+            CmpBandSelf { x: var("?x"), y: var("?y"), eq: true }
+        }),
+        rewrite!("ne-band-self-right"; "(ne (band ?x ?y) ?x)" => {
+            CmpBandSelf { x: var("?x"), y: var("?y"), eq: false }
+        }),
+        rewrite!("eq-band-self-left"; "(eq (band ?x ?y) ?y)" => {
+            CmpBandSelf { x: var("?y"), y: var("?x"), eq: true }
+        }),
+        rewrite!("ne-band-self-left"; "(ne (band ?x ?y) ?y)" => {
+            CmpBandSelf { x: var("?y"), y: var("?x"), eq: false }
+        }),
+        rewrite!("eq-bor-self-right"; "(eq (bor ?x ?y) ?x)" => {
+            CmpBorSelf { x: var("?x"), y: var("?y"), eq: true }
+        }),
+        rewrite!("ne-bor-self-right"; "(ne (bor ?x ?y) ?x)" => {
+            CmpBorSelf { x: var("?x"), y: var("?y"), eq: false }
+        }),
+        rewrite!("eq-bor-self-left"; "(eq (bor ?x ?y) ?y)" => {
+            CmpBorSelf { x: var("?y"), y: var("?x"), eq: true }
+        }),
+        rewrite!("ne-bor-self-left"; "(ne (bor ?x ?y) ?y)" => {
+            CmpBorSelf { x: var("?y"), y: var("?x"), eq: false }
+        }),
+        rewrite!("eq-band-mask-impossible"; "(eq (band ?x ?m) ?c)" => {
+            CmpMaskImpossible { mask: var("?m"), value: var("?c"), op: MaskCmpOp::And, eq: true }
+        }),
+        rewrite!("eq-band-mask-impossible-comm"; "(eq (band ?m ?x) ?c)" => {
+            CmpMaskImpossible { mask: var("?m"), value: var("?c"), op: MaskCmpOp::And, eq: true }
+        }),
+        rewrite!("ne-band-mask-impossible"; "(ne (band ?x ?m) ?c)" => {
+            CmpMaskImpossible { mask: var("?m"), value: var("?c"), op: MaskCmpOp::And, eq: false }
+        }),
+        rewrite!("ne-band-mask-impossible-comm"; "(ne (band ?m ?x) ?c)" => {
+            CmpMaskImpossible { mask: var("?m"), value: var("?c"), op: MaskCmpOp::And, eq: false }
+        }),
+        rewrite!("eq-bor-mask-impossible"; "(eq (bor ?x ?m) ?c)" => {
+            CmpMaskImpossible { mask: var("?m"), value: var("?c"), op: MaskCmpOp::Or, eq: true }
+        }),
+        rewrite!("eq-bor-mask-impossible-comm"; "(eq (bor ?m ?x) ?c)" => {
+            CmpMaskImpossible { mask: var("?m"), value: var("?c"), op: MaskCmpOp::Or, eq: true }
+        }),
+        rewrite!("ne-bor-mask-impossible"; "(ne (bor ?x ?m) ?c)" => {
+            CmpMaskImpossible { mask: var("?m"), value: var("?c"), op: MaskCmpOp::Or, eq: false }
+        }),
+        rewrite!("ne-bor-mask-impossible-comm"; "(ne (bor ?m ?x) ?c)" => {
+            CmpMaskImpossible { mask: var("?m"), value: var("?c"), op: MaskCmpOp::Or, eq: false }
+        }),
         rewrite!("eq-bxor-self-zero"; "(eq (bxor ?x ?y) ?x)" => {
             CmpXorSelfZero { other: var("?y"), eq: true }
         }),
@@ -2271,6 +2794,14 @@ struct ShrSFoldConst {
     a: Var,
     b: Var,
 }
+struct ShiftToMulPow2 {
+    x: Var,
+    c: Var,
+}
+struct ShiftToUdivPow2 {
+    x: Var,
+    c: Var,
+}
 struct CancelMulDiv {
     x: Var,
     c: Var,
@@ -2294,6 +2825,37 @@ struct NegAddConst {
 struct NegDivConst {
     a: Var,
     b: Var,
+}
+struct CmpAffineConstBoth {
+    x: Var,
+    y: Var,
+    c1: Var,
+    c2: Var,
+    lhs_var_neg: bool,
+    lhs_const_neg: bool,
+    rhs_var_neg: bool,
+    rhs_const_neg: bool,
+    eq: bool,
+}
+struct CmpBandSelf {
+    x: Var,
+    y: Var,
+    eq: bool,
+}
+struct CmpBorSelf {
+    x: Var,
+    y: Var,
+    eq: bool,
+}
+enum MaskCmpOp {
+    And,
+    Or,
+}
+struct CmpMaskImpossible {
+    mask: Var,
+    value: Var,
+    op: MaskCmpOp,
+    eq: bool,
 }
 struct CmpNegConst {
     x: Var,
@@ -3238,6 +3800,138 @@ impl Applier<SpirvLang, ()> for NegDivConst {
         };
         egraph.union(eclass, div);
         vec![div]
+    }
+}
+
+impl Applier<SpirvLang, ()> for CmpAffineConstBoth {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(c1) = const_value(egraph, subst[self.c1]) else {
+            return Vec::new();
+        };
+        let Some(c2) = const_value(egraph, subst[self.c2]) else {
+            return Vec::new();
+        };
+        let c1 = if self.lhs_const_neg {
+            map_const(c1, u64::wrapping_neg)
+        } else {
+            c1
+        };
+        let c2 = if self.rhs_const_neg {
+            map_const(c2, u64::wrapping_neg)
+        } else {
+            c2
+        };
+        let lhs = if self.lhs_var_neg {
+            egraph.add(SpirvLang::Neg(subst[self.x]))
+        } else {
+            subst[self.x]
+        };
+        let rhs = if self.rhs_var_neg {
+            egraph.add(SpirvLang::Neg(subst[self.y]))
+        } else {
+            subst[self.y]
+        };
+        let diff = combine_consts(c2, c1, u64::wrapping_sub);
+        let diff_id = egraph.add(SpirvLang::Const(diff));
+        let sub = egraph.add(SpirvLang::Sub([lhs, rhs]));
+        let cmp = if self.eq {
+            egraph.add(SpirvLang::Eq([sub, diff_id]))
+        } else {
+            egraph.add(SpirvLang::Ne([sub, diff_id]))
+        };
+        egraph.union(eclass, cmp);
+        vec![cmp]
+    }
+}
+
+impl Applier<SpirvLang, ()> for CmpBandSelf {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(width) = width_hint(egraph, eclass, [subst[self.x], subst[self.y]]) else {
+            return Vec::new();
+        };
+        let zero = egraph.add(SpirvLang::Const(ConstValue::new_with_width(0, width)));
+        let not_y = egraph.add(SpirvLang::BitNot(subst[self.y]));
+        let band = egraph.add(SpirvLang::BitAnd([subst[self.x], not_y]));
+        let cmp = if self.eq {
+            egraph.add(SpirvLang::Eq([band, zero]))
+        } else {
+            egraph.add(SpirvLang::Ne([band, zero]))
+        };
+        egraph.union(eclass, cmp);
+        vec![cmp]
+    }
+}
+
+impl Applier<SpirvLang, ()> for CmpBorSelf {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(width) = width_hint(egraph, eclass, [subst[self.x], subst[self.y]]) else {
+            return Vec::new();
+        };
+        let zero = egraph.add(SpirvLang::Const(ConstValue::new_with_width(0, width)));
+        let not_x = egraph.add(SpirvLang::BitNot(subst[self.x]));
+        let band = egraph.add(SpirvLang::BitAnd([subst[self.y], not_x]));
+        let cmp = if self.eq {
+            egraph.add(SpirvLang::Eq([band, zero]))
+        } else {
+            egraph.add(SpirvLang::Ne([band, zero]))
+        };
+        egraph.union(eclass, cmp);
+        vec![cmp]
+    }
+}
+
+impl Applier<SpirvLang, ()> for CmpMaskImpossible {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(mask_val) = const_value(egraph, subst[self.mask]) else {
+            return Vec::new();
+        };
+        let Some(c_val) = const_value(egraph, subst[self.value]) else {
+            return Vec::new();
+        };
+        let width = max_width(mask_val, c_val);
+        if width > 64 {
+            return Vec::new();
+        }
+        let mask = ConstValue::new_with_width(mask_val.get_u64(), width).get_u64();
+        let c = ConstValue::new_with_width(c_val.get_u64(), width).get_u64();
+        let impossible = match self.op {
+            MaskCmpOp::And => (c & !mask) != 0,
+            MaskCmpOp::Or => (c & mask) != mask,
+        };
+        if !impossible {
+            return Vec::new();
+        }
+        let id = egraph.add(SpirvLang::Const(const_bool(!self.eq)));
+        egraph.union(eclass, id);
+        vec![id]
     }
 }
 
@@ -5091,6 +5785,66 @@ impl Applier<SpirvLang, ()> for ShrSFoldConst {
     }
 }
 
+impl Applier<SpirvLang, ()> for ShiftToMulPow2 {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(shift_val) = const_value(egraph, subst[self.c]) else {
+            return Vec::new();
+        };
+        let Some(width) = width_hint(egraph, eclass, [subst[self.x]]) else {
+            return Vec::new();
+        };
+        if width > 64 {
+            return Vec::new();
+        }
+        let shift = shift_val.get_u64();
+        if shift >= u64::from(width) {
+            return Vec::new();
+        }
+        let pow = ConstValue::new_with_width(1u64.wrapping_shl(shift as u32), width);
+        let pow_id = egraph.add(SpirvLang::Const(pow));
+        let mul = egraph.add(SpirvLang::Mul([subst[self.x], pow_id]));
+        egraph.union(eclass, mul);
+        vec![mul]
+    }
+}
+
+impl Applier<SpirvLang, ()> for ShiftToUdivPow2 {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(shift_val) = const_value(egraph, subst[self.c]) else {
+            return Vec::new();
+        };
+        let Some(width) = width_hint(egraph, eclass, [subst[self.x]]) else {
+            return Vec::new();
+        };
+        if width > 64 {
+            return Vec::new();
+        }
+        let shift = shift_val.get_u64();
+        if shift >= u64::from(width) {
+            return Vec::new();
+        }
+        let pow = ConstValue::new_with_width(1u64.wrapping_shl(shift as u32), width);
+        let pow_id = egraph.add(SpirvLang::Const(pow));
+        let div = egraph.add(SpirvLang::UDiv([subst[self.x], pow_id]));
+        egraph.union(eclass, div);
+        vec![div]
+    }
+}
+
 impl Applier<SpirvLang, ()> for MulMergeConst {
     fn apply_one(
         &self,
@@ -5310,6 +6064,10 @@ fn var(name: &str) -> Var {
     Var::from_str(&formatted).expect("valid e-graph variable name")
 }
 
+fn is_const(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
+    move |egraph, _, subst| const_value(egraph, subst[var]).is_some()
+}
+
 fn is_const_zero(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
     move |egraph, _, subst| const_value(egraph, subst[var]).is_some_and(|c| c.get_u64() == 0)
 }
@@ -5451,6 +6209,97 @@ mod tests {
                 node,
                 SpirvLang::BitNot(child) if is_named_symbol(egraph, *child, name)
             )
+        })
+    }
+
+    fn is_const_value(egraph: &EGraph<SpirvLang, ()>, id: Id, value: u64) -> bool {
+        egraph[egraph.find(id)]
+            .nodes
+            .iter()
+            .any(|node| matches!(node, SpirvLang::Const(c) if c.get_u64() == value))
+    }
+
+    fn is_zero_const(egraph: &EGraph<SpirvLang, ()>, id: Id) -> bool {
+        egraph[egraph.find(id)]
+            .nodes
+            .iter()
+            .any(|node| matches!(node, SpirvLang::Const(c) if c.is_zero()))
+    }
+
+    fn is_sub_named_symbols(egraph: &EGraph<SpirvLang, ()>, id: Id, lhs: &str, rhs: &str) -> bool {
+        egraph[egraph.find(id)].nodes.iter().any(|node| {
+            matches!(
+                node,
+                SpirvLang::Sub([left, right])
+                    if is_named_symbol(egraph, *left, lhs)
+                        && is_named_symbol(egraph, *right, rhs)
+            )
+        })
+    }
+
+    fn is_band_symbol_bnot(
+        egraph: &EGraph<SpirvLang, ()>,
+        id: Id,
+        sym: &str,
+        neg_sym: &str,
+    ) -> bool {
+        egraph[egraph.find(id)].nodes.iter().any(|node| {
+            let SpirvLang::BitAnd([lhs, rhs]) = node else {
+                return false;
+            };
+            let lhs_sym = is_named_symbol(egraph, *lhs, sym);
+            let rhs_sym = is_named_symbol(egraph, *rhs, sym);
+            let lhs_bnot = is_bnot_named_symbol(egraph, *lhs, neg_sym);
+            let rhs_bnot = is_bnot_named_symbol(egraph, *rhs, neg_sym);
+            (lhs_sym && rhs_bnot) || (rhs_sym && lhs_bnot)
+        })
+    }
+
+    fn is_shl_named_symbol_const(
+        egraph: &EGraph<SpirvLang, ()>,
+        id: Id,
+        name: &str,
+        shift: u64,
+    ) -> bool {
+        egraph[egraph.find(id)].nodes.iter().any(|node| {
+            matches!(
+                node,
+                SpirvLang::Shl([lhs, rhs])
+                    if is_named_symbol(egraph, *lhs, name)
+                        && is_const_value(egraph, *rhs, shift)
+            )
+        })
+    }
+
+    fn is_mul_named_symbol_const(
+        egraph: &EGraph<SpirvLang, ()>,
+        id: Id,
+        name: &str,
+        factor: u64,
+    ) -> bool {
+        egraph[egraph.find(id)].nodes.iter().any(|node| {
+            let SpirvLang::Mul([lhs, rhs]) = node else {
+                return false;
+            };
+            let lhs_sym = is_named_symbol(egraph, *lhs, name);
+            let rhs_sym = is_named_symbol(egraph, *rhs, name);
+            let lhs_const = is_const_value(egraph, *lhs, factor);
+            let rhs_const = is_const_value(egraph, *rhs, factor);
+            (lhs_sym && rhs_const) || (rhs_sym && lhs_const)
+        })
+    }
+
+    fn is_udiv_named_symbol_const(
+        egraph: &EGraph<SpirvLang, ()>,
+        id: Id,
+        name: &str,
+        divisor: u64,
+    ) -> bool {
+        egraph[egraph.find(id)].nodes.iter().any(|node| {
+            let SpirvLang::UDiv([lhs, rhs]) = node else {
+                return false;
+            };
+            is_named_symbol(egraph, *lhs, name) && is_const_value(egraph, *rhs, divisor)
         })
     }
 
@@ -13121,16 +13970,27 @@ mod tests {
         ]);
         let optimized = optimize_expr(&expr);
         let nodes = optimized.as_ref();
-        let Some(SpirvLang::SGe([lhs, rhs])) = nodes.last() else {
-            panic!("expected optimized expr to end in sge, got {nodes:?}");
-        };
-        let lhs_node = &nodes[usize::from(*lhs)];
-        let rhs_node = &nodes[usize::from(*rhs)];
-        assert!(
-            matches!(lhs_node, SpirvLang::Symbol(sym) if *sym == Symbol::from("x"))
-                && matches!(rhs_node, SpirvLang::Symbol(sym) if *sym == Symbol::from("y")),
-            "expected sge to compare x >= y, got lhs={lhs_node:?} rhs={rhs_node:?}"
-        );
+        match nodes.last() {
+            Some(SpirvLang::SGe([lhs, rhs])) => {
+                let lhs_node = &nodes[usize::from(*lhs)];
+                let rhs_node = &nodes[usize::from(*rhs)];
+                assert!(
+                    matches!(lhs_node, SpirvLang::Symbol(sym) if *sym == Symbol::from("x"))
+                        && matches!(rhs_node, SpirvLang::Symbol(sym) if *sym == Symbol::from("y")),
+                    "expected sge to compare x >= y, got lhs={lhs_node:?} rhs={rhs_node:?}"
+                );
+            }
+            Some(SpirvLang::SLe([lhs, rhs])) => {
+                let lhs_node = &nodes[usize::from(*lhs)];
+                let rhs_node = &nodes[usize::from(*rhs)];
+                assert!(
+                    matches!(lhs_node, SpirvLang::Symbol(sym) if *sym == Symbol::from("y"))
+                        && matches!(rhs_node, SpirvLang::Symbol(sym) if *sym == Symbol::from("x")),
+                    "expected sle to compare y <= x, got lhs={lhs_node:?} rhs={rhs_node:?}"
+                );
+            }
+            other => panic!("expected optimized expr to end in sge/sle, got {other:?}"),
+        }
     }
 
     #[test]
@@ -14823,6 +15683,217 @@ mod tests {
         assert_simplifies(
             "(select (lnot c) (select c x y) (select c z w))",
             "(select c z y)",
+        );
+    }
+
+    #[test]
+    fn rewrites_eq_offset_add_sub_consts() {
+        let expr: RecExpr<SpirvLang> = "(eq (- x 1) (+ y 4))".parse().unwrap();
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::Eq([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_sub = is_sub_named_symbols(&runner.egraph, *lhs, "x", "y");
+            let rhs_sub = is_sub_named_symbols(&runner.egraph, *rhs, "x", "y");
+            let lhs_const = is_const_value(&runner.egraph, *lhs, 5);
+            let rhs_const = is_const_value(&runner.egraph, *rhs, 5);
+            if (lhs_sub && rhs_const) || (rhs_sub && lhs_const) {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected eq between (x - y) and 5");
+    }
+
+    #[test]
+    fn rewrites_ne_offset_add_sub_consts() {
+        let expr: RecExpr<SpirvLang> = "(ne (- x 4) (+ y 1))".parse().unwrap();
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::Ne([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_sub = is_sub_named_symbols(&runner.egraph, *lhs, "x", "y");
+            let rhs_sub = is_sub_named_symbols(&runner.egraph, *rhs, "x", "y");
+            let lhs_const = is_const_value(&runner.egraph, *lhs, 5);
+            let rhs_const = is_const_value(&runner.egraph, *rhs, 5);
+            if (lhs_sub && rhs_const) || (rhs_sub && lhs_const) {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected ne between (x - y) and 5");
+    }
+
+    #[test]
+    fn rewrites_band_self_comparison_to_zero() {
+        let expr: RecExpr<SpirvLang> = "(eq (band x y) x)".parse().unwrap();
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::Eq([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_band = is_band_symbol_bnot(&runner.egraph, *lhs, "x", "y");
+            let rhs_band = is_band_symbol_bnot(&runner.egraph, *rhs, "x", "y");
+            let lhs_zero = is_zero_const(&runner.egraph, *lhs);
+            let rhs_zero = is_zero_const(&runner.egraph, *rhs);
+            if (lhs_band && rhs_zero) || (rhs_band && lhs_zero) {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected x & ~y == 0 from (x & y) == x");
+    }
+
+    #[test]
+    fn rewrites_bor_self_comparison_to_zero() {
+        let expr: RecExpr<SpirvLang> = "(eq (bor x y) x)".parse().unwrap();
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::Eq([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_band = is_band_symbol_bnot(&runner.egraph, *lhs, "y", "x");
+            let rhs_band = is_band_symbol_bnot(&runner.egraph, *rhs, "y", "x");
+            let lhs_zero = is_zero_const(&runner.egraph, *lhs);
+            let rhs_zero = is_zero_const(&runner.egraph, *rhs);
+            if (lhs_band && rhs_zero) || (rhs_band && lhs_zero) {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected y & ~x == 0 from (x | y) == x");
+    }
+
+    #[test]
+    fn rewrites_mask_compare_impossible() {
+        assert_simplifies("(eq (band x 2) 1)", "false");
+        assert_simplifies("(ne (bor x 1) 0)", "true");
+    }
+
+    #[test]
+    fn rewrites_unsigned_compare_bnot_moves_across() {
+        let expr: RecExpr<SpirvLang> = "(ult (bnot x) y)".parse().unwrap();
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::UGt([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_x = is_named_symbol(&runner.egraph, *lhs, "x");
+            let rhs_is_bnot_y = is_bnot_named_symbol(&runner.egraph, *rhs, "y");
+            if lhs_is_x && rhs_is_bnot_y {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected ugt(x, ~y) from ult(~x, y)");
+    }
+
+    #[test]
+    fn rewrites_compare_canonicalizes_gt() {
+        let expr: RecExpr<SpirvLang> = "(sgt x y)".parse().unwrap();
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::SLt([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_y = is_named_symbol(&runner.egraph, *lhs, "y");
+            let rhs_is_x = is_named_symbol(&runner.egraph, *rhs, "x");
+            if lhs_is_y && rhs_is_x {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected slt(y, x) from sgt(x, y)");
+    }
+
+    #[test]
+    fn rewrites_shift_distributes_over_band() {
+        let expr: RecExpr<SpirvLang> = "(shl (band x y) 2)".parse().unwrap();
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::BitAnd([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_ok = is_shl_named_symbol_const(&runner.egraph, *lhs, "x", 2);
+            let rhs_ok = is_shl_named_symbol_const(&runner.egraph, *rhs, "y", 2);
+            let lhs_swap = is_shl_named_symbol_const(&runner.egraph, *lhs, "y", 2);
+            let rhs_swap = is_shl_named_symbol_const(&runner.egraph, *rhs, "x", 2);
+            if (lhs_ok && rhs_ok) || (lhs_swap && rhs_swap) {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected (x << 2) & (y << 2) from shl(band(x,y),2)");
+    }
+
+    #[test]
+    fn rewrites_shl_to_mul_pow2() {
+        let expr: RecExpr<SpirvLang> = "(shl x 3)".parse().unwrap();
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        assert!(
+            is_mul_named_symbol_const(&runner.egraph, root, "x", 8),
+            "expected mul by 8 from shl(x, 3)"
+        );
+    }
+
+    #[test]
+    fn rewrites_shru_to_udiv_pow2() {
+        let expr: RecExpr<SpirvLang> = "(shr_u x 3)".parse().unwrap();
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        assert!(
+            is_udiv_named_symbol_const(&runner.egraph, root, "x", 8),
+            "expected udiv by 8 from shr_u(x, 3)"
+        );
+    }
+
+    #[test]
+    fn rewrites_neg_sdiv_reverse() {
+        let expr: RecExpr<SpirvLang> = "(neg (sdiv x y))".parse().unwrap();
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::SDiv([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_neg_x = is_neg_named_symbol(&runner.egraph, *lhs, "x");
+            let rhs_is_y = is_named_symbol(&runner.egraph, *rhs, "y");
+            let lhs_is_x = is_named_symbol(&runner.egraph, *lhs, "x");
+            let rhs_is_neg_y = is_neg_named_symbol(&runner.egraph, *rhs, "y");
+            if (lhs_is_neg_x && rhs_is_y) || (lhs_is_x && rhs_is_neg_y) {
+                found = true;
+                break;
+            }
+        }
+        assert!(
+            found,
+            "expected sdiv with negated operand from neg(sdiv(x,y))"
         );
     }
 }
