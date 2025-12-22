@@ -1439,6 +1439,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("slt-min-right"; "(slt ?x ?c)" => { BoolConst { value: false } } if is_const_signed_min(var("?c"))),
         rewrite!("slt-min-left"; "(slt ?c ?x)" => "(ne ?x ?c)" if is_const_signed_min(var("?c"))),
         rewrite!("slt-max-right"; "(slt ?x ?c)" => "(ne ?x ?c)" if is_const_signed_max(var("?c"))),
+        rewrite!("slt-max-left"; "(slt ?c ?x)" => { BoolConst { value: false } } if is_const_signed_max(var("?c"))),
         rewrite!("logeq-self"; "(leq ?a ?a)" => { BoolConst { value: true } }),
         rewrite!("logne-self"; "(lne ?a ?a)" => { BoolConst { value: false } }),
         rewrite!("logand-neg"; "(land ?a (lnot ?a))" => { BoolConst { value: false } }),
@@ -13796,5 +13797,6 @@ mod tests {
         assert_simplifies("(slt x 2147483648)", "false");
         assert_simplifies("(slt 2147483648 x)", "(ne x 2147483648)");
         assert_simplifies("(slt x 2147483647)", "(ne x 2147483647)");
+        assert_simplifies("(slt 2147483647 x)", "false");
     }
 }
