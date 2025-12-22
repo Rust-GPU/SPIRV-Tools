@@ -246,6 +246,7 @@ Planned tasks:
 - Added bitwise consensus rewrites so `(x | y) & (x | ~y)` collapses to `x`, with Rust unit coverage.
 - Added bitwise rewrites so `(x & y) | (~x & ~y)` collapses to `~(x ^ y)`, with Rust unit coverage.
 - Added bitwise consensus rewrites so `(x & y) | (~x & z) | (y & z)` folds to `(x & y) | (~x & z)`, with Rust unit coverage.
+- Added bitwise consensus rewrites so `(x | y) & (~x | z) & (y | z)` folds to `(x | y) & (~x | z)`, with Rust unit coverage.
 - Added bitwise rewrites so `(x | y) & (~x | ~y)` collapses to `x ^ y`, with Rust unit coverage.
 - Added bitwise rewrites so `(x | y) & ~(x & y)` collapses to `x ^ y`, with Rust unit coverage.
 - Added bitwise rewrites so `(x & y) | ~(x | y)` collapses to `~(x ^ y)`, with Rust unit coverage.

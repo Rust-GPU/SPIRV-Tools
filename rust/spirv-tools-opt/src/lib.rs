@@ -863,6 +863,16 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         // Rust-only improvement: consensus theorem for shared OR terms.
         rewrite!("band-consensus-or"; "(band (bor ?x ?y) (bor ?x ?z))" => "(bor ?x (band ?y ?z))"),
         rewrite!("band-consensus-or-comm"; "(band (bor ?y ?x) (bor ?z ?x))" => "(bor ?x (band ?y ?z))"),
+        rewrite!(
+            "band-consensus-term-right";
+            "(band (band (bor ?x ?y) (bor (bnot ?x) ?z)) (bor ?y ?z))" =>
+                "(band (bor ?x ?y) (bor (bnot ?x) ?z))"
+        ),
+        rewrite!(
+            "band-consensus-term-left";
+            "(band (bor ?y ?z) (band (bor ?x ?y) (bor (bnot ?x) ?z)))" =>
+                "(band (bor ?x ?y) (bor (bnot ?x) ?z))"
+        ),
         rewrite!("band-redundant-or-const"; "(band ?m (bor ?x ?c))" => {
             BandRedundantOr { mask: var("?m"), x: var("?x"), c: var("?c") }
         }),
@@ -9415,6 +9425,36 @@ mod tests {
             is_named_symbol(&runner.egraph, root, "x"),
             "expected (x | y) & (x | ~y) to rewrite to x"
         );
+    }
+
+    #[test]
+    fn rewrites_band_consensus_term_elim() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::Symbol(Symbol::from("z")), // 2
+            SpirvLang::BitOr([Id::from(0), Id::from(1)]),
+            SpirvLang::BitNot(Id::from(0)),
+            SpirvLang::BitOr([Id::from(4), Id::from(2)]),
+            SpirvLang::BitAnd([Id::from(3), Id::from(5)]),
+            SpirvLang::BitOr([Id::from(1), Id::from(2)]),
+            SpirvLang::BitAnd([Id::from(6), Id::from(7)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let expected = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::Symbol(Symbol::from("z")), // 2
+            SpirvLang::BitOr([Id::from(0), Id::from(1)]),
+            SpirvLang::BitNot(Id::from(0)),
+            SpirvLang::BitOr([Id::from(4), Id::from(2)]),
+            SpirvLang::BitAnd([Id::from(3), Id::from(5)]),
+        ]);
+        let Some(expected_id) = runner.egraph.lookup_expr(&expected) else {
+            panic!("expected (x | y) & (~x | z) to be introduced by rewrites");
+        };
+        assert_eq!(runner.egraph.find(root), runner.egraph.find(expected_id));
     }
 
     #[test]
