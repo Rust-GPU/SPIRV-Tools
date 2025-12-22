@@ -702,6 +702,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         // Rust-only improvement: x & (x ^ y) == x & ~y, removing the xor.
         rewrite!("band-bxor-self-right"; "(band ?x (bxor ?x ?y))" => "(band ?x (bnot ?y))"),
         rewrite!("band-bxor-self-left"; "(band (bxor ?x ?y) ?x)" => "(band ?x (bnot ?y))"),
+        rewrite!("bxor-bnot-left"; "(bxor (bnot ?x) ?y)" => "(bnot (bxor ?x ?y))"),
+        rewrite!("bxor-bnot-right"; "(bxor ?x (bnot ?y))" => "(bnot (bxor ?x ?y))"),
         // Rust-only improvement: factor shared masks out of OR/XOR to shrink DAG size.
         rewrite!("bor-factor-shared-mask"; "(bor (band ?x ?m) (band ?y ?m))" => "(band (bor ?x ?y) ?m)"),
         rewrite!("bor-factor-shared-mask-comm"; "(bor (band ?m ?x) (band ?m ?y))" => "(band (bor ?x ?y) ?m)"),
@@ -5715,6 +5717,80 @@ mod tests {
             optimized,
             RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("x"))])
         );
+    }
+
+    #[test]
+    fn rewrites_bxor_with_bitnot_left_to_bnot_bxor() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::BitNot(Id::from(0)),        // 2 = ~x
+            SpirvLang::BitXor([Id::from(2), Id::from(1)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::BitNot(inner) = node else {
+                continue;
+            };
+            let inner_class = runner.egraph.find(*inner);
+            for inner_node in &runner.egraph[inner_class].nodes {
+                let SpirvLang::BitXor([lhs, rhs]) = inner_node else {
+                    continue;
+                };
+                let lhs_is_x = has_symbol(&runner.egraph, *lhs);
+                let rhs_is_y = has_symbol(&runner.egraph, *rhs);
+                let lhs_is_y = has_symbol(&runner.egraph, *lhs);
+                let rhs_is_x = has_symbol(&runner.egraph, *rhs);
+                if (lhs_is_x && rhs_is_y) || (lhs_is_y && rhs_is_x) {
+                    found = true;
+                    break;
+                }
+            }
+            if found {
+                break;
+            }
+        }
+        assert!(found, "expected bnot(bxor(x, y)) to be introduced");
+    }
+
+    #[test]
+    fn rewrites_bxor_with_bitnot_right_to_bnot_bxor() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::BitNot(Id::from(1)),        // 2 = ~y
+            SpirvLang::BitXor([Id::from(0), Id::from(2)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::BitNot(inner) = node else {
+                continue;
+            };
+            let inner_class = runner.egraph.find(*inner);
+            for inner_node in &runner.egraph[inner_class].nodes {
+                let SpirvLang::BitXor([lhs, rhs]) = inner_node else {
+                    continue;
+                };
+                let lhs_is_x = has_symbol(&runner.egraph, *lhs);
+                let rhs_is_y = has_symbol(&runner.egraph, *rhs);
+                let lhs_is_y = has_symbol(&runner.egraph, *lhs);
+                let rhs_is_x = has_symbol(&runner.egraph, *rhs);
+                if (lhs_is_x && rhs_is_y) || (lhs_is_y && rhs_is_x) {
+                    found = true;
+                    break;
+                }
+            }
+            if found {
+                break;
+            }
+        }
+        assert!(found, "expected bnot(bxor(x, y)) to be introduced");
     }
 
     #[test]
