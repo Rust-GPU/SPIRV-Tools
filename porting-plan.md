@@ -1383,3 +1383,4 @@ Tasks for this milestone:
 - Added select nesting rewrite for negated inner condition on the left arm (`select c (select !c x y) z -> select c y z`) with Rust coverage.
 - Added select nesting rewrite for mixed negated/positive inner conditions (`select c (select !c x y) (select c z w) -> select c y w`) with Rust coverage.
 - Added select nesting rewrite for mixed negated/positive inner conditions (`select c (select c x y) (select !c z w) -> select c x z`) with Rust coverage.
+- Added select nesting rewrite when both inner conditions are negated (`select c (select !c x y) (select !c z w) -> select c y z`) with Rust coverage.
