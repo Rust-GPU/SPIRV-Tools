@@ -827,6 +827,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("band-xnor-with-y"; "(band ?y (bnot (bxor ?x ?y)))" => "(band ?x ?y)"),
         rewrite!("band-xnor-with-not-x"; "(band (bnot ?x) (bnot (bxor ?x ?y)))" => "(band (bnot ?x) (bnot ?y))"),
         rewrite!("band-xnor-with-not-y"; "(band (bnot ?y) (bnot (bxor ?x ?y)))" => "(band (bnot ?x) (bnot ?y))"),
+        rewrite!("bor-xnor-with-x"; "(bor ?x (bnot (bxor ?x ?y)))" => "(bor ?x (bnot ?y))"),
         rewrite!("band-xnor-notand-to-nor-right"; "(band (bnot (bxor ?x ?y)) (bnot (band ?x ?y)))" => "(bnot (bor ?x ?y))"),
         rewrite!("band-xnor-notand-to-nor-left"; "(band (bnot (band ?x ?y)) (bnot (bxor ?x ?y)))" => "(bnot (bor ?x ?y))"),
         rewrite!("band-xnor-nor-absorb-right"; "(band (bnot (bxor ?x ?y)) (bnot (bor ?x ?y)))" => "(bnot (bor ?x ?y))"),
@@ -11235,6 +11236,7 @@ mod tests {
             "(band (bnot y) (bnot (bxor x y)))",
             "(band (bnot x) (bnot y))",
         );
+        assert_simplifies("(bor x (bnot (bxor x y)))", "(bor x (bnot y))");
     }
 
     #[test]
