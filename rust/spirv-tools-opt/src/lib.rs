@@ -830,6 +830,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("bor-xnor-with-x"; "(bor ?x (bnot (bxor ?x ?y)))" => "(bor ?x (bnot ?y))"),
         rewrite!("bor-xnor-with-y"; "(bor ?y (bnot (bxor ?x ?y)))" => "(bor ?y (bnot ?x))"),
         rewrite!("bor-xnor-with-not-x"; "(bor (bnot ?x) (bnot (bxor ?x ?y)))" => "(bor (bnot ?x) ?y)"),
+        rewrite!("bor-xnor-with-not-y"; "(bor (bnot ?y) (bnot (bxor ?x ?y)))" => "(bor (bnot ?y) ?x)"),
         rewrite!("band-xnor-notand-to-nor-right"; "(band (bnot (bxor ?x ?y)) (bnot (band ?x ?y)))" => "(bnot (bor ?x ?y))"),
         rewrite!("band-xnor-notand-to-nor-left"; "(band (bnot (band ?x ?y)) (bnot (bxor ?x ?y)))" => "(bnot (bor ?x ?y))"),
         rewrite!("band-xnor-nor-absorb-right"; "(band (bnot (bxor ?x ?y)) (bnot (bor ?x ?y)))" => "(bnot (bor ?x ?y))"),
@@ -11241,6 +11242,7 @@ mod tests {
         assert_simplifies("(bor x (bnot (bxor x y)))", "(bor x (bnot y))");
         assert_simplifies("(bor y (bnot (bxor x y)))", "(bor y (bnot x))");
         assert_simplifies("(bor (bnot x) (bnot (bxor x y)))", "(bor (bnot x) y)");
+        assert_simplifies("(bor (bnot y) (bnot (bxor x y)))", "(bor (bnot y) x)");
     }
 
     #[test]
