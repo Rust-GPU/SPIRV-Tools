@@ -1381,3 +1381,4 @@ Tasks for this milestone:
 - Added e-graph rewrite for logical AND associativity (`a && (b && c) -> (a && b) && c`) with Rust coverage.
 - Added e-graph rewrite for logical OR associativity (`a || (b || c) -> (a || b) || c`) with Rust coverage.
 - Added select nesting rewrite for negated inner condition on the left arm (`select c (select !c x y) z -> select c y z`) with Rust coverage.
+- Added select nesting rewrite for mixed negated/positive inner conditions (`select c (select !c x y) (select c z w) -> select c y w`) with Rust coverage.
