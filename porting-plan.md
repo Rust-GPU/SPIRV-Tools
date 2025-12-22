@@ -225,6 +225,7 @@ Planned tasks:
 - Added bxor rewrites so `x ^ ~(x | y)` folds to `x | ~y`, with Rust unit coverage.
 - Added bxor rewrites so `x ^ ~(x & y)` folds to `~x | y`, with Rust unit coverage.
 - Added bxor rewrites that cancel nested operands (`x ^ (x ^ y)`), with Rust unit coverage.
+- Added bxor rewrites so `~x ^ (x ^ y)` folds to `~y`, with Rust unit coverage.
 
 ## Upcoming Milestone: Optimizer Rewrite Stability & Extension
 - Broaden e-graph rewrites to additional algebraic/bitwise identities while preserving id stability (e.g., deeper shift/mask mixes, rotate-like sequences as supported).
