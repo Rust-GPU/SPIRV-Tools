@@ -732,6 +732,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("band-bxor-self-left"; "(band (bxor ?x ?y) ?x)" => "(band ?x (bnot ?y))"),
         rewrite!("bxor-bnot-left"; "(bxor (bnot ?x) ?y)" => "(bnot (bxor ?x ?y))"),
         rewrite!("bxor-bnot-right"; "(bxor ?x (bnot ?y))" => "(bnot (bxor ?x ?y))"),
+        rewrite!("bxor-self-not-inner-right"; "(bxor ?x (bnot (bxor ?x ?y)))" => "(bnot ?y)"),
+        rewrite!("bxor-self-not-inner-left"; "(bxor (bnot (bxor ?x ?y)) ?x)" => "(bnot ?y)"),
         // Rust-only improvement: factor shared masks out of OR/XOR to shrink DAG size.
         rewrite!("bor-factor-shared-mask"; "(bor (band ?x ?m) (band ?y ?m))" => "(band (bor ?x ?y) ?m)"),
         rewrite!("bor-factor-shared-mask-comm"; "(bor (band ?m ?x) (band ?m ?y))" => "(band (bor ?x ?y) ?m)"),
@@ -8601,6 +8603,31 @@ mod tests {
             panic!("expected x & (y | z) to be introduced by consensus rewrites");
         };
         assert_eq!(runner.egraph.find(root), runner.egraph.find(expected_id));
+    }
+
+    #[test]
+    fn rewrites_bxor_self_not_inner_to_not_other() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::BitXor([Id::from(0), Id::from(1)]),
+            SpirvLang::BitNot(Id::from(2)),
+            SpirvLang::BitXor([Id::from(0), Id::from(3)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::BitNot(child) = node else {
+                continue;
+            };
+            if is_named_symbol(&runner.egraph, *child, "y") {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected x ^ ~(x ^ y) to rewrite to ~y");
     }
 
     #[test]
