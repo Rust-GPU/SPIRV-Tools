@@ -190,6 +190,7 @@ Planned tasks:
 - Added logical eq/ne rewrites that fold comparisons against a negated self to constants, with Rust unit coverage.
 - Added eq/ne rewrites that cancel odd constant multipliers in comparisons, with Rust unit coverage.
 - Added logical absorption rewrites for `a && (a || b)`, with Rust unit coverage.
+- Added logical absorption rewrites for `a || (a && b)`, with Rust unit coverage.
 
 ## Upcoming Milestone: Optimizer Rewrite Stability & Extension
 - Broaden e-graph rewrites to additional algebraic/bitwise identities while preserving id stability (e.g., deeper shift/mask mixes, rotate-like sequences as supported).
