@@ -1102,6 +1102,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("brev-const-fold"; "(brev ?x)" => { BitReverseFold { x: var("?x") } }),
         rewrite!("brev-brev"; "(brev (brev ?x))" => "?x"),
         rewrite!("brev-bnot"; "(brev (bnot ?x))" => "(bnot (brev ?x))"),
+        rewrite!("band-brev-factor"; "(band (brev ?x) (brev ?y))" => "(brev (band ?x ?y))"),
         rewrite!("rotate-const-pattern"; "(bor (shl ?x ?s) (shr_u ?x ?t))" => {
             RotatePatternFold { x: var("?x"), s: var("?s"), t: var("?t") }
         }),
@@ -14377,6 +14378,11 @@ mod tests {
     #[test]
     fn rewrites_brev_bnot_commute() {
         assert_simplifies("(brev (bnot x))", "(bnot (brev x))");
+    }
+
+    #[test]
+    fn rewrites_band_brev_factor() {
+        assert_simplifies("(band (brev x) (brev y))", "(brev (band x y))");
     }
 
     #[test]
