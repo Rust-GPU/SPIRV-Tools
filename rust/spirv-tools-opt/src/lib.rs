@@ -1455,6 +1455,9 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("sle-min-left"; "(sle ?c ?x)" => { BoolConst { value: true } } if is_const_signed_min(var("?c"))),
         rewrite!("sle-max-right"; "(sle ?x ?c)" => { BoolConst { value: true } } if is_const_signed_max(var("?c"))),
         rewrite!("sle-max-left"; "(sle ?c ?x)" => "(eq ?x ?c)" if is_const_signed_max(var("?c"))),
+        rewrite!("sle-max-minus-one-right"; "(sle ?x ?c)" => {
+            CmpConstOffset { x: var("?x"), c: var("?c"), offset: 1, eq: false }
+        } if is_const_signed_max_minus_one(var("?c"))),
         rewrite!("sgt-min-right"; "(sgt ?x ?c)" => "(ne ?x ?c)" if is_const_signed_min(var("?c"))),
         rewrite!("sgt-min-left"; "(sgt ?c ?x)" => { BoolConst { value: false } } if is_const_signed_min(var("?c"))),
         rewrite!("sgt-max-right"; "(sgt ?x ?c)" => { BoolConst { value: false } } if is_const_signed_max(var("?c"))),
@@ -13931,5 +13934,6 @@ mod tests {
         assert_simplifies("(slt x 2147483649)", "(eq x 2147483648)");
         assert_simplifies("(sge x 2147483649)", "(ne x 2147483648)");
         assert_simplifies("(sgt x 2147483646)", "(eq x 2147483647)");
+        assert_simplifies("(sle x 2147483646)", "(ne x 2147483647)");
     }
 }
