@@ -653,6 +653,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("band-nested-idempotent-swap-left"; "(band (band ?y ?x) ?x)" => "(band ?x ?y)"),
         rewrite!("band-absorb-right"; "(band ?x (bor ?x ?y))" => "?x"),
         rewrite!("band-absorb-left"; "(band (bor ?x ?y) ?x)" => "?x"),
+        rewrite!("band-consensus-or-y-right"; "(band (bor ?x ?y) (bor (bnot ?x) ?y))" => "?y"),
+        rewrite!("band-consensus-or-y-left"; "(band (bor (bnot ?x) ?y) (bor ?x ?y))" => "?y"),
         rewrite!("band-distribute-over-or-right"; "(band ?x (bor ?y ?z))" => "(bor (band ?x ?y) (band ?x ?z))"),
         rewrite!("band-distribute-over-or-left"; "(band (bor ?y ?z) ?x)" => "(bor (band ?x ?y) (band ?x ?z))"),
         rewrite!("mask-then-shift-to-shift-and-umod";
@@ -9079,6 +9081,24 @@ mod tests {
             }
         }
         assert!(found, "expected x & (~x ^ y) to rewrite to x & y");
+    }
+
+    #[test]
+    fn rewrites_band_consensus_or_y() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::BitOr([Id::from(0), Id::from(1)]),
+            SpirvLang::BitNot(Id::from(0)),
+            SpirvLang::BitOr([Id::from(3), Id::from(1)]),
+            SpirvLang::BitAnd([Id::from(2), Id::from(4)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        assert!(
+            is_named_symbol(&runner.egraph, root, "y"),
+            "expected (x | y) & (~x | y) to rewrite to y"
+        );
     }
 
     #[test]
