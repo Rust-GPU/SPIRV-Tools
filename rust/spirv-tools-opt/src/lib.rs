@@ -462,6 +462,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("sub-neg-right-to-add"; "(- ?a (neg ?b))" => "(+ ?a ?b)"),
         rewrite!("sub-neg-left-to-neg-add"; "(- (neg ?a) ?b)" => "(neg (+ ?a ?b))"),
         rewrite!("sub-sub-cancel-left"; "(- ?a (- ?a ?b))" => "?b"),
+        rewrite!("sub-sub-cancel-right"; "(- (- ?x ?y) ?x)" => "(neg ?y)"),
         rewrite!("add-dup-to-mul"; "(+ ?x ?x)" => { AddDuplicateToMul { x: var("?x") } }),
         rewrite!("add-triple-left"; "(+ (+ ?x ?x) ?x)" => {
             AddTripleToMul { x: var("?x") }
@@ -4620,6 +4621,24 @@ mod tests {
         assert_eq!(
             optimized,
             RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("x"))])
+        );
+    }
+
+    #[test]
+    fn cancels_sub_subtracting_original_lhs() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")),       // 0
+            SpirvLang::Symbol(Symbol::from("y")),       // 1
+            SpirvLang::Sub([Id::from(0), Id::from(1)]), // 2 = x - y
+            SpirvLang::Sub([Id::from(2), Id::from(0)]), // 3 = (x - y) - x
+        ]);
+        let optimized = optimize_expr(&expr);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![
+                SpirvLang::Symbol(Symbol::from("y")),
+                SpirvLang::Neg(Id::from(0)),
+            ])
         );
     }
 
