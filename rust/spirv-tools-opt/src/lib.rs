@@ -698,6 +698,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("band-absorb-complement-or-left"; "(band (bor (bnot ?x) ?y) ?x)" => "(band ?x ?y)"),
         rewrite!("band-absorb-complement-or-right-invert"; "(band (bnot ?x) (bor ?x ?y))" => "(band (bnot ?x) ?y)"),
         rewrite!("band-absorb-complement-or-left-invert"; "(band (bor ?x ?y) (bnot ?x))" => "(band (bnot ?x) ?y)"),
+        rewrite!("bor-absorb-complement-and-right-invert"; "(bor (bnot ?x) (band ?x ?y))" => "(bor (bnot ?x) ?y)"),
+        rewrite!("bor-absorb-complement-and-left-invert"; "(bor (band ?x ?y) (bnot ?x))" => "(bor (bnot ?x) ?y)"),
         rewrite!("bxor-absorb-complement-mask-right"; "(bxor ?x (band (bnot ?x) ?y))" => "(bor ?x ?y)"),
         rewrite!("bxor-absorb-complement-mask-right-comm"; "(bxor ?x (band ?y (bnot ?x)))" => "(bor ?x ?y)"),
         rewrite!("bor-absorb-xor"; "(bor ?x (bxor ?x ?y))" => "(bor ?x ?y)"),
@@ -8250,6 +8252,35 @@ mod tests {
             }
         }
         assert!(found, "expected (~x & (x | y)) to absorb to (~x & y)");
+    }
+
+    #[test]
+    fn rewrites_bor_complement_absorbs_and() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::BitNot(Id::from(0)),
+            SpirvLang::BitAnd([Id::from(0), Id::from(1)]),
+            SpirvLang::BitOr([Id::from(2), Id::from(3)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::BitOr([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_bnot_x = is_bnot_named_symbol(&runner.egraph, *lhs, "x");
+            let rhs_is_bnot_x = is_bnot_named_symbol(&runner.egraph, *rhs, "x");
+            let lhs_is_y = is_named_symbol(&runner.egraph, *lhs, "y");
+            let rhs_is_y = is_named_symbol(&runner.egraph, *rhs, "y");
+            if (lhs_is_bnot_x && rhs_is_y) || (rhs_is_bnot_x && lhs_is_y) {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected (~x | (x & y)) to absorb to (~x | y)");
     }
 
     #[test]
