@@ -1639,6 +1639,10 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
             "select-neg-nest-right";
             "(select (lnot ?c) ?x (select ?c ?y ?z))" => "(select ?c ?y ?x)"
         ),
+        rewrite!(
+            "select-neg-nest-left";
+            "(select (lnot ?c) (select ?c ?x ?y) ?z)" => "(select ?c ?z ?y)"
+        ),
         rewrite!("select-neg-cond"; "(select (lnot ?c) ?t ?f)" => "(select ?c ?f ?t)"),
         rewrite!(
             "select-const";
@@ -14018,5 +14022,10 @@ mod tests {
     #[test]
     fn rewrites_select_negated_outer_with_nested_else() {
         assert_simplifies("(select (lnot c) x (select c y z))", "(select c y x)");
+    }
+
+    #[test]
+    fn rewrites_select_negated_outer_with_nested_then() {
+        assert_simplifies("(select (lnot c) (select c x y) z)", "(select c z y)");
     }
 }
