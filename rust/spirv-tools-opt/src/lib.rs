@@ -1083,6 +1083,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("ne-neg-neg"; "(ne (neg ?a) (neg ?b))" => "(ne ?a ?b)"),
         rewrite!("eq-bnot-bnot"; "(eq (bnot ?a) (bnot ?b))" => "(eq ?a ?b)"),
         rewrite!("ne-bnot-bnot"; "(ne (bnot ?a) (bnot ?b))" => "(ne ?a ?b)"),
+        rewrite!("eq-bnot-self"; "(eq ?a (bnot ?a))" => { BoolConst { value: false } }),
+        rewrite!("ne-bnot-self"; "(ne ?a (bnot ?a))" => { BoolConst { value: true } }),
         rewrite!("eq-add-cancel-left"; "(eq (+ ?x ?y) (+ ?x ?z))" => "(eq ?y ?z)"),
         rewrite!("ne-add-cancel-left"; "(ne (+ ?x ?y) (+ ?x ?z))" => "(ne ?y ?z)"),
         rewrite!("eq-add-self-zero"; "(eq (+ ?x ?y) ?x)" => {
@@ -8281,6 +8283,31 @@ mod tests {
             }
         }
         assert!(found, "expected (~x | (x & y)) to absorb to (~x | y)");
+    }
+
+    #[test]
+    fn rewrites_bnot_self_comparison_to_bool_const() {
+        let expr_eq = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::BitNot(Id::from(0)),       // 1 = ~x
+            SpirvLang::Eq([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr_eq);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Const(const_bool(false))])
+        );
+
+        let expr_ne = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::BitNot(Id::from(0)),       // 1 = ~x
+            SpirvLang::Ne([Id::from(0), Id::from(1)]),
+        ]);
+        let optimized = optimize_expr(&expr_ne);
+        assert_eq!(
+            optimized,
+            RecExpr::from(vec![SpirvLang::Const(const_bool(true))])
+        );
     }
 
     #[test]
