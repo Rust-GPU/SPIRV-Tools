@@ -1418,3 +1418,4 @@ Tasks for this milestone:
 - Added nested absorption rewrite for logical AND over OR with commuted AND (`a && (b || (c && a)) -> a && (b || c)`) with Rust coverage.
 - Added nested absorption rewrite for logical OR over AND (`a || (b && (a || c)) -> a || (b && c)`) with Rust coverage.
 - Added nested absorption rewrite for logical OR over AND with commuted OR (`a || (b && (c || a)) -> a || (b && c)`) with Rust coverage.
+- Added nested complement absorption for logical AND over OR (`a && (b || (!a && c)) -> a && b`) with Rust coverage.
