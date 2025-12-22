@@ -1115,6 +1115,12 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("ne-sub-const"; "(ne (- ?x ?c1) ?c2)" => {
             CmpSubConstRight { x: var("?x"), c1: var("?c1"), c2: var("?c2"), eq: false }
         }),
+        rewrite!("eq-sub-const-left"; "(eq (- ?c1 ?x) ?c2)" => {
+            CmpSubConstLeft { x: var("?x"), c1: var("?c1"), c2: var("?c2"), eq: true }
+        }),
+        rewrite!("ne-sub-const-left"; "(ne (- ?c1 ?x) ?c2)" => {
+            CmpSubConstLeft { x: var("?x"), c1: var("?c1"), c2: var("?c2"), eq: false }
+        }),
         rewrite!("slt-self"; "(slt ?a ?a)" => { BoolConst { value: false } }),
         rewrite!("sle-self"; "(sle ?a ?a)" => { BoolConst { value: true } }),
         rewrite!("sgt-self"; "(sgt ?a ?a)" => { BoolConst { value: false } }),
@@ -1533,6 +1539,12 @@ struct CmpAddConst {
     eq: bool,
 }
 struct CmpSubConstRight {
+    x: Var,
+    c1: Var,
+    c2: Var,
+    eq: bool,
+}
+struct CmpSubConstLeft {
     x: Var,
     c1: Var,
     c2: Var,
@@ -2532,6 +2544,33 @@ impl Applier<SpirvLang, ()> for CmpSubConstRight {
             return Vec::new();
         };
         let merged = combine_consts(c2, c1, u64::wrapping_add);
+        let const_id = egraph.add(SpirvLang::Const(merged));
+        let cmp = if self.eq {
+            egraph.add(SpirvLang::Eq([subst[self.x], const_id]))
+        } else {
+            egraph.add(SpirvLang::Ne([subst[self.x], const_id]))
+        };
+        egraph.union(eclass, cmp);
+        vec![cmp]
+    }
+}
+
+impl Applier<SpirvLang, ()> for CmpSubConstLeft {
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<SpirvLang, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _pat: Option<&PatternAst<SpirvLang>>,
+        _symbol: Symbol,
+    ) -> Vec<Id> {
+        let Some(c1) = const_value(egraph, subst[self.c1]) else {
+            return Vec::new();
+        };
+        let Some(c2) = const_value(egraph, subst[self.c2]) else {
+            return Vec::new();
+        };
+        let merged = combine_consts(c1, c2, u64::wrapping_sub);
         let const_id = egraph.add(SpirvLang::Const(merged));
         let cmp = if self.eq {
             egraph.add(SpirvLang::Eq([subst[self.x], const_id]))
@@ -7263,6 +7302,70 @@ mod tests {
             }
         }
         assert!(found, "expected ne to compare x against add-folded const");
+    }
+
+    #[test]
+    fn rewrites_eq_sub_left_const() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new(20)),         // 0
+            SpirvLang::Symbol(Symbol::from("x")),          // 1
+            SpirvLang::Sub([Id::from(0), Id::from(1)]),    // 2 = 20 - x
+            SpirvLang::Const(ConstValue::new(7)),          // 3
+            SpirvLang::Eq([Id::from(2), Id::from(3)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let expected_const = combine_consts(ConstValue::new(20), ConstValue::new(7), u64::wrapping_sub);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::Eq([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_x = has_symbol(&runner.egraph, *lhs);
+            let rhs_is_x = has_symbol(&runner.egraph, *rhs);
+            let lhs_const = const_value(&runner.egraph, *lhs);
+            let rhs_const = const_value(&runner.egraph, *rhs);
+            if (lhs_is_x && rhs_const == Some(expected_const))
+                || (rhs_is_x && lhs_const == Some(expected_const))
+            {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected eq to compare x against left-sub folded const");
+    }
+
+    #[test]
+    fn rewrites_ne_sub_left_const() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Const(ConstValue::new(12)),         // 0
+            SpirvLang::Symbol(Symbol::from("x")),          // 1
+            SpirvLang::Sub([Id::from(0), Id::from(1)]),    // 2 = 12 - x
+            SpirvLang::Const(ConstValue::new(3)),          // 3
+            SpirvLang::Ne([Id::from(2), Id::from(3)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let expected_const = combine_consts(ConstValue::new(12), ConstValue::new(3), u64::wrapping_sub);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::Ne([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_x = has_symbol(&runner.egraph, *lhs);
+            let rhs_is_x = has_symbol(&runner.egraph, *rhs);
+            let lhs_const = const_value(&runner.egraph, *lhs);
+            let rhs_const = const_value(&runner.egraph, *rhs);
+            if (lhs_is_x && rhs_const == Some(expected_const))
+                || (rhs_is_x && lhs_const == Some(expected_const))
+            {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected ne to compare x against left-sub folded const");
     }
 
     #[test]
