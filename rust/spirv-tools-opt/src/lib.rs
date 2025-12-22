@@ -1151,6 +1151,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("logand-nested-idempotent-left"; "(land (land ?a ?b) ?a)" => "(land ?a ?b)"),
         rewrite!("logand-self"; "(land ?a ?a)" => "?a"),
         rewrite!("logor-self"; "(lor ?a ?a)" => "?a"),
+        rewrite!("logor-nested-idempotent-right"; "(lor ?a (lor ?a ?b))" => "(lor ?a ?b)"),
+        rewrite!("logor-nested-idempotent-left"; "(lor (lor ?a ?b) ?a)" => "(lor ?a ?b)"),
         rewrite!("eq-self"; "(eq ?a ?a)" => { BoolConst { value: true } }),
         rewrite!("ne-self"; "(ne ?a ?a)" => { BoolConst { value: false } }),
         rewrite!("logeq-not-not"; "(leq (lnot ?a) (lnot ?b))" => "(leq ?a ?b)"),
@@ -9438,6 +9440,34 @@ mod tests {
             }
         }
         assert!(found, "expected a && (a && b) to rewrite to a && b");
+    }
+
+    #[test]
+    fn rewrites_logor_nested_idempotence() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("a")), // 0
+            SpirvLang::Symbol(Symbol::from("b")), // 1
+            SpirvLang::LogOr([Id::from(0), Id::from(1)]),
+            SpirvLang::LogOr([Id::from(0), Id::from(2)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let class = runner.egraph.find(root);
+        let mut found = false;
+        for node in &runner.egraph[class].nodes {
+            let SpirvLang::LogOr([lhs, rhs]) = node else {
+                continue;
+            };
+            let lhs_is_a = is_named_symbol(&runner.egraph, *lhs, "a");
+            let rhs_is_a = is_named_symbol(&runner.egraph, *rhs, "a");
+            let lhs_is_b = is_named_symbol(&runner.egraph, *lhs, "b");
+            let rhs_is_b = is_named_symbol(&runner.egraph, *rhs, "b");
+            if (lhs_is_a && rhs_is_b) || (lhs_is_b && rhs_is_a) {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected a || (a || b) to rewrite to a || b");
     }
 
     #[test]
