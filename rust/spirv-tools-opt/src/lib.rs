@@ -764,6 +764,8 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("band-merge-nested"; "(band (band ?x ?m) ?n)" => "(band ?x (band ?m ?n))"),
         rewrite!("band-merge-nested-comm-left"; "(band ?n (band ?x ?m))" => "(band ?x (band ?m ?n))"),
         rewrite!("band-merge-nested-comm-right"; "(band (band ?m ?x) ?n)" => "(band ?x (band ?m ?n))"),
+        rewrite!("band-idem-right"; "(band ?x (band ?x ?y))" => "(band ?x ?y)"),
+        rewrite!("band-idem-left"; "(band (band ?x ?y) ?x)" => "(band ?x ?y)"),
         // Rust-only improvement: consensus theorem for shared OR terms.
         rewrite!("band-consensus-or"; "(band (bor ?x ?y) (bor ?x ?z))" => "(bor ?x (band ?y ?z))"),
         rewrite!("band-consensus-or-comm"; "(band (bor ?y ?x) (bor ?z ?x))" => "(bor ?x (band ?y ?z))"),
@@ -8834,6 +8836,27 @@ mod tests {
             optimized,
             RecExpr::from(vec![SpirvLang::Symbol(Symbol::from("y"))])
         );
+    }
+
+    #[test]
+    fn rewrites_band_idempotence_nested() {
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::BitAnd([Id::from(0), Id::from(1)]),
+            SpirvLang::BitAnd([Id::from(0), Id::from(2)]),
+        ]);
+        let runner = Runner::default().with_expr(&expr).run(&rewrites());
+        let root = runner.roots[0];
+        let expected = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("x")), // 0
+            SpirvLang::Symbol(Symbol::from("y")), // 1
+            SpirvLang::BitAnd([Id::from(0), Id::from(1)]),
+        ]);
+        let Some(expected_id) = runner.egraph.lookup_expr(&expected) else {
+            panic!("expected x & y to be introduced by idempotence rewrites");
+        };
+        assert_eq!(runner.egraph.find(root), runner.egraph.find(expected_id));
     }
 
     #[test]
