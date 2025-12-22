@@ -402,6 +402,7 @@ Planned tasks:
 - Added signed compare rewrite so `sle(x, max-1)` folds to `x != max`, with Rust unit coverage.
 - Added bitwise De Morgan rewrite so `~(x & y)` folds to `~x | ~y`, with Rust unit coverage.
 - Added bitwise De Morgan rewrite so `~(x | y)` folds to `~x & ~y`, with Rust unit coverage.
+- Added logical De Morgan rewrite so `!(a && b)` folds to `!a || !b`, with Rust unit coverage.
 
 ## Upcoming Milestone: Optimizer Rewrite Stability & Extension
 - Broaden e-graph rewrites to additional algebraic/bitwise identities while preserving id stability (e.g., deeper shift/mask mixes, rotate-like sequences as supported).

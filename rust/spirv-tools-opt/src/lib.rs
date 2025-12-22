@@ -1481,6 +1481,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("logor-neg"; "(lor ?a (lnot ?a))" => { BoolConst { value: true } }),
         rewrite!("logor-neg-comm"; "(lor (lnot ?a) ?a)" => { BoolConst { value: true } }),
         rewrite!("logand-demorgan"; "(land (lnot ?a) (lnot ?b))" => "(lnot (lor ?a ?b))"),
+        rewrite!("lognot-logand-demorgan"; "(lnot (land ?a ?b))" => "(lor (lnot ?a) (lnot ?b))"),
         rewrite!("logor-demorgan"; "(lor (lnot ?a) (lnot ?b))" => "(lnot (land ?a ?b))"),
         rewrite!("lognot-eq"; "(lnot (eq ?a ?b))" => "(ne ?a ?b)"),
         rewrite!("lognot-ne"; "(lnot (ne ?a ?b))" => "(eq ?a ?b)"),
@@ -13943,5 +13944,10 @@ mod tests {
     fn rewrites_bitwise_demorgan_from_not() {
         assert_simplifies("(bnot (band x y))", "(bor (bnot x) (bnot y))");
         assert_simplifies("(bnot (bor x y))", "(band (bnot x) (bnot y))");
+    }
+
+    #[test]
+    fn rewrites_logical_demorgan_from_not() {
+        assert_simplifies("(lnot (land a b))", "(lor (lnot a) (lnot b))");
     }
 }
