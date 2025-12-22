@@ -6655,30 +6655,9 @@ mod tests {
 
     #[test]
     fn rewrites_bor_of_bitnot_operands_to_negated_and() {
-        let expr = RecExpr::from(vec![
-            SpirvLang::Symbol(Symbol::from("a")), // 0
-            SpirvLang::Symbol(Symbol::from("b")), // 1
-            SpirvLang::BitNot(Id::from(0)),        // 2 = ~a
-            SpirvLang::BitNot(Id::from(1)),        // 3 = ~b
-            SpirvLang::BitOr([Id::from(2), Id::from(3)]),
-        ]);
-        let optimized = optimize_expr(&expr);
-        let nodes = optimized.as_ref();
-        let Some(SpirvLang::BitNot(inner)) = nodes.last() else {
-            panic!("expected bnot root, got {:?}", nodes.last());
-        };
-        let SpirvLang::BitAnd([lhs, rhs]) = nodes[usize::from(*inner)] else {
-            panic!("expected band under bnot, got {:?}", nodes[usize::from(*inner)]);
-        };
-        let a = Symbol::from("a");
-        let b = Symbol::from("b");
-        let lhs_is_a = matches!(nodes[usize::from(lhs)], SpirvLang::Symbol(sym) if sym == a);
-        let rhs_is_b = matches!(nodes[usize::from(rhs)], SpirvLang::Symbol(sym) if sym == b);
-        let lhs_is_b = matches!(nodes[usize::from(lhs)], SpirvLang::Symbol(sym) if sym == b);
-        let rhs_is_a = matches!(nodes[usize::from(rhs)], SpirvLang::Symbol(sym) if sym == a);
-        assert!(
-            (lhs_is_a && rhs_is_b) || (lhs_is_b && rhs_is_a),
-            "expected band between a and b, got {nodes:?}"
+        assert_simplifies(
+            "(bor (bnot a) (bnot b))",
+            "(bnot (band a b))",
         );
     }
 
