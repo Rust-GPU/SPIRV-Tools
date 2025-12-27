@@ -1,4 +1,4 @@
-use crate::SpirvLang;
+use crate::{SpirvAnalysis, SpirvLang};
 use egg::{
     rewrite, AstSize, CostFunction, EGraph, Extractor, Id, RecExpr, Rewrite, Runner, Symbol,
 };
@@ -211,7 +211,7 @@ pub fn merge_return_switches_egraph(func: &mut Function, next_id: &mut u32) -> b
     changed
 }
 
-pub fn control_rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
+pub fn control_rewrites() -> Vec<Rewrite<SpirvLang, SpirvAnalysis>> {
     vec![
         rewrite!("merge-return-void"; "(if ?c ret ret)" => "ret"),
         rewrite!(
@@ -226,7 +226,7 @@ pub fn control_rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
     ]
 }
 
-pub fn add_control_roots(func: &Function, egraph: &mut EGraph<SpirvLang, ()>) -> Vec<ControlRoot> {
+pub fn add_control_roots(func: &Function, egraph: &mut EGraph<SpirvLang, SpirvAnalysis>) -> Vec<ControlRoot> {
     let mut roots = Vec::new();
     let Some(mut candidates) = selection_candidates(func) else {
         return roots;
@@ -251,7 +251,7 @@ pub fn add_control_roots(func: &Function, egraph: &mut EGraph<SpirvLang, ()>) ->
 
 pub fn apply_control_roots<CF: CostFunction<SpirvLang>>(
     func: &mut Function,
-    extractor: &Extractor<CF, SpirvLang, ()>,
+    extractor: &Extractor<CF, SpirvLang, SpirvAnalysis>,
     roots: &[ControlRoot],
     next_id: &mut u32,
 ) -> bool {

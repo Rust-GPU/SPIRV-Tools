@@ -6,8 +6,8 @@
 //! SPIR-V modules and expose the optimizer through FFI/CLI surfaces.
 
 use egg::{
-    define_language, rewrite, Applier, EGraph, Id, Language, PatternAst, RecExpr, Rewrite, Runner,
-    Subst, Symbol, Var,
+    define_language, rewrite, Analysis, Applier, DidMerge, EGraph, Id, Language, PatternAst,
+    RecExpr, Rewrite, Runner, Subst, Symbol, Var,
 };
 use std::{
     cell::RefCell,
@@ -276,6 +276,309 @@ impl egg::LanguageChildren for ConstValue {
     }
 }
 
+// =============================================================================
+// E-Graph Analysis: Abstract Interpretation for Global Optimization
+// =============================================================================
+
+/// Constant lattice for tracking known constant values.
+///
+/// Lattice ordering: Bottom < Known(x) < Top
+/// - `Top`: Unknown value
+/// - `Known(x)`: Definitely this constant
+/// - `Bottom`: Contradiction (different constants unified - indicates bug!)
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum ConstLattice {
+    /// Unknown value - no constant information available
+    #[default]
+    Top,
+    /// Known constant value
+    Known(ConstValue),
+    /// Contradiction: different constants were unified (bug detected!)
+    Bottom,
+}
+
+impl ConstLattice {
+    /// Returns the known constant value, if any.
+    pub fn as_known(&self) -> Option<ConstValue> {
+        match self {
+            ConstLattice::Known(c) => Some(*c),
+            _ => None,
+        }
+    }
+
+    /// Returns true if this is a known constant.
+    pub fn is_known(&self) -> bool {
+        matches!(self, ConstLattice::Known(_))
+    }
+
+    /// Returns true if this is a contradiction (Bottom).
+    pub fn is_bottom(&self) -> bool {
+        matches!(self, ConstLattice::Bottom)
+    }
+
+    /// Lattice meet operation: combines two constant lattice values.
+    /// Returns (result, changed) where changed is true if self was modified.
+    pub fn meet(&mut self, other: &ConstLattice) -> bool {
+        match (&self, other) {
+            // Bottom absorbs everything
+            (ConstLattice::Bottom, _) => false,
+            (_, ConstLattice::Bottom) => {
+                *self = ConstLattice::Bottom;
+                true
+            }
+            // Top is absorbed by everything
+            (ConstLattice::Top, ConstLattice::Top) => false,
+            (ConstLattice::Top, ConstLattice::Known(c)) => {
+                *self = ConstLattice::Known(*c);
+                true
+            }
+            (ConstLattice::Known(_), ConstLattice::Top) => false,
+            // Two known values: must match or become Bottom
+            (ConstLattice::Known(a), ConstLattice::Known(b)) => {
+                if a == b {
+                    false
+                } else {
+                    // CONTRADICTION! Different constants unified.
+                    // This indicates an unsound rewrite rule.
+                    #[cfg(debug_assertions)]
+                    eprintln!(
+                        "[ANALYSIS BUG] ConstLattice contradiction: tried to unify {} with {}",
+                        a.get_u64(),
+                        b.get_u64()
+                    );
+                    *self = ConstLattice::Bottom;
+                    true
+                }
+            }
+        }
+    }
+}
+
+/// Semantic origin tracking for expression domains.
+///
+/// Tracks where an expression "comes from" to help rules make sound decisions.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum Origin {
+    /// Pure arithmetic - no special restrictions
+    #[default]
+    Pure,
+    /// Derived from bitwise operations
+    Bitwise,
+    /// Derived from division/modulo operations
+    Division,
+    /// Mixed origins - conservative handling needed
+    Mixed,
+}
+
+impl Origin {
+    /// Combine two origins (used when merging e-classes).
+    pub fn join(&self, other: &Origin) -> Origin {
+        match (self, other) {
+            (Origin::Pure, o) | (o, Origin::Pure) => o.clone(),
+            (a, b) if a == b => a.clone(),
+            _ => Origin::Mixed,
+        }
+    }
+
+    /// Returns true if this origin includes bitwise operations.
+    pub fn has_bitwise(&self) -> bool {
+        matches!(self, Origin::Bitwise | Origin::Mixed)
+    }
+
+    /// Returns true if this origin includes division operations.
+    pub fn has_division(&self) -> bool {
+        matches!(self, Origin::Division | Origin::Mixed)
+    }
+}
+
+/// Rich abstract interpretation analysis for SPIR-V expressions.
+///
+/// This analysis is computed per e-class and enables global optimization
+/// by giving rewrite rules enough information to make sound decisions
+/// without needing guards or multiple passes.
+#[derive(Clone, Debug, Default)]
+pub struct SpirvAnalysis {
+    /// Constant value lattice - tracks known constant values
+    pub constant: ConstLattice,
+
+    /// Known-bits analysis: bits that are proven to be 0
+    /// Invariant: (known_zeros & known_ones) == 0
+    pub known_zeros: u64,
+
+    /// Known-bits analysis: bits that are proven to be 1
+    /// Invariant: (known_zeros & known_ones) == 0
+    pub known_ones: u64,
+
+    /// Bit width of the value (for proper masking)
+    pub bit_width: Option<u32>,
+
+    /// Minimum possible value (for range analysis)
+    pub min_value: Option<u64>,
+
+    /// Maximum possible value (for range analysis)
+    pub max_value: Option<u64>,
+
+    /// Known divisibility factor (value is known multiple of this)
+    pub known_factor: Option<u64>,
+
+    /// Semantic origin of the expression
+    pub origin: Origin,
+}
+
+impl SpirvAnalysis {
+    /// Create analysis for a known constant.
+    pub fn from_const(c: ConstValue) -> Self {
+        let value = c.get_u64();
+        let width = c.width_bits() as u32;
+        let mask = c.mask();
+        Self {
+            constant: ConstLattice::Known(c),
+            known_zeros: !value & mask,
+            known_ones: value,
+            bit_width: Some(width),
+            min_value: Some(value),
+            max_value: Some(value),
+            known_factor: if value == 0 {
+                None // 0 is divisible by everything, not useful
+            } else {
+                // Find largest power of 2 that divides value
+                Some(1u64 << value.trailing_zeros())
+            },
+            origin: Origin::Pure,
+        }
+    }
+
+    /// Create analysis for an unknown value with given bit width.
+    pub fn unknown_with_width(width: u32) -> Self {
+        let mask = if width >= 64 {
+            u64::MAX
+        } else {
+            (1u64 << width) - 1
+        };
+        Self {
+            constant: ConstLattice::Top,
+            known_zeros: !mask, // Bits above width are known to be 0
+            known_ones: 0,
+            bit_width: Some(width),
+            min_value: Some(0),
+            max_value: Some(mask),
+            known_factor: None,
+            origin: Origin::Pure,
+        }
+    }
+
+    /// Returns true if this e-class has a known constant value.
+    pub fn is_const(&self) -> bool {
+        self.constant.is_known()
+    }
+
+    /// Returns the known constant value, if any.
+    pub fn const_value(&self) -> Option<ConstValue> {
+        self.constant.as_known()
+    }
+
+    /// Returns the value of any bit that is known (either 0 or 1).
+    /// The result has 1s where bits are known.
+    pub fn known_bits_mask(&self) -> u64 {
+        self.known_zeros | self.known_ones
+    }
+
+    /// Merge analysis data when e-classes are unified.
+    /// Returns DidMerge indicating what changed.
+    pub fn merge(&mut self, other: &SpirvAnalysis) -> DidMerge {
+        let mut changed = false;
+
+        // Merge constant lattice
+        if self.constant.meet(&other.constant) {
+            changed = true;
+        }
+
+        // Merge known bits: intersection of knowledge
+        let new_known_zeros = self.known_zeros & other.known_zeros;
+        let new_known_ones = self.known_ones & other.known_ones;
+        if new_known_zeros != self.known_zeros || new_known_ones != self.known_ones {
+            self.known_zeros = new_known_zeros;
+            self.known_ones = new_known_ones;
+            changed = true;
+        }
+
+        // Merge bit width: must agree or become None
+        if self.bit_width != other.bit_width {
+            if self.bit_width.is_some() && other.bit_width.is_some() {
+                self.bit_width = None; // Conflict
+            } else if other.bit_width.is_some() {
+                self.bit_width = other.bit_width;
+            }
+            changed = true;
+        }
+
+        // Merge value range: union of ranges
+        match (self.min_value, other.min_value) {
+            (Some(a), Some(b)) => {
+                let new_min = a.min(b);
+                if self.min_value != Some(new_min) {
+                    self.min_value = Some(new_min);
+                    changed = true;
+                }
+            }
+            (None, Some(b)) => {
+                self.min_value = Some(b);
+                changed = true;
+            }
+            _ => {}
+        }
+        match (self.max_value, other.max_value) {
+            (Some(a), Some(b)) => {
+                let new_max = a.max(b);
+                if self.max_value != Some(new_max) {
+                    self.max_value = Some(new_max);
+                    changed = true;
+                }
+            }
+            (None, Some(b)) => {
+                self.max_value = Some(b);
+                changed = true;
+            }
+            _ => {}
+        }
+
+        // Merge known factor: GCD of factors
+        match (self.known_factor, other.known_factor) {
+            (Some(a), Some(b)) => {
+                let gcd = gcd(a, b);
+                if self.known_factor != Some(gcd) {
+                    self.known_factor = Some(gcd);
+                    changed = true;
+                }
+            }
+            (None, Some(b)) => {
+                self.known_factor = Some(b);
+                changed = true;
+            }
+            _ => {}
+        }
+
+        // Merge origin
+        let new_origin = self.origin.join(&other.origin);
+        if self.origin != new_origin {
+            self.origin = new_origin;
+            changed = true;
+        }
+
+        DidMerge(changed, changed)
+    }
+}
+
+/// Compute GCD using Euclidean algorithm.
+fn gcd(mut a: u64, mut b: u64) -> u64 {
+    while b != 0 {
+        let t = b;
+        b = a % b;
+        a = t;
+    }
+    a
+}
+
 define_language! {
     /// Minimal language for algebraic SPIR-V expressions.
     pub enum SpirvLang {
@@ -322,6 +625,422 @@ define_language! {
         "pair" = Pair([Id; 2]),
         Const(ConstValue),
         Symbol(egg::Symbol),
+    }
+}
+
+// =============================================================================
+// Analysis Implementation: Compute abstract values for each node
+// =============================================================================
+
+impl Analysis<SpirvLang> for SpirvAnalysis {
+    type Data = SpirvAnalysis;
+
+    fn make(egraph: &EGraph<SpirvLang, Self>, enode: &SpirvLang) -> Self::Data {
+        let get = |id: &Id| &egraph[*id].data;
+
+        match enode {
+            // Constants: fully known
+            SpirvLang::Const(c) => SpirvAnalysis::from_const(*c),
+
+            // Symbols: unknown value, may have width hint
+            SpirvLang::Symbol(sym) => {
+                let width = symbol_width(sym).unwrap_or(32) as u32;
+                SpirvAnalysis::unknown_with_width(width)
+            }
+
+            // Arithmetic operations
+            SpirvLang::Add([a, b]) => {
+                let a_data = get(a);
+                let b_data = get(b);
+                let mut result = SpirvAnalysis::default();
+                result.bit_width = a_data.bit_width.or(b_data.bit_width);
+
+                // Constant folding
+                if let (Some(av), Some(bv)) = (a_data.const_value(), b_data.const_value()) {
+                    let width = av.width_bits().max(bv.width_bits());
+                    let sum = av.get_u64().wrapping_add(bv.get_u64());
+                    result = SpirvAnalysis::from_const(ConstValue::new_with_width(sum, width));
+                }
+
+                // Origin propagation
+                result.origin = a_data.origin.join(&b_data.origin);
+                result
+            }
+
+            SpirvLang::Sub([a, b]) => {
+                let a_data = get(a);
+                let b_data = get(b);
+                let mut result = SpirvAnalysis::default();
+                result.bit_width = a_data.bit_width.or(b_data.bit_width);
+
+                if let (Some(av), Some(bv)) = (a_data.const_value(), b_data.const_value()) {
+                    let width = av.width_bits().max(bv.width_bits());
+                    let diff = av.get_u64().wrapping_sub(bv.get_u64());
+                    result = SpirvAnalysis::from_const(ConstValue::new_with_width(diff, width));
+                }
+
+                result.origin = a_data.origin.join(&b_data.origin);
+                result
+            }
+
+            SpirvLang::Mul([a, b]) => {
+                let a_data = get(a);
+                let b_data = get(b);
+                let mut result = SpirvAnalysis::default();
+                result.bit_width = a_data.bit_width.or(b_data.bit_width);
+
+                if let (Some(av), Some(bv)) = (a_data.const_value(), b_data.const_value()) {
+                    let width = av.width_bits().max(bv.width_bits());
+                    let prod = av.get_u64().wrapping_mul(bv.get_u64());
+                    result = SpirvAnalysis::from_const(ConstValue::new_with_width(prod, width));
+                }
+
+                result.origin = a_data.origin.join(&b_data.origin);
+                result
+            }
+
+            SpirvLang::Neg(a) => {
+                let a_data = get(a);
+                let mut result = SpirvAnalysis::default();
+                result.bit_width = a_data.bit_width;
+
+                if let Some(av) = a_data.const_value() {
+                    let neg = 0u64.wrapping_sub(av.get_u64());
+                    result = SpirvAnalysis::from_const(ConstValue::new_with_width(neg, av.width_bits()));
+                }
+
+                result.origin = a_data.origin.clone();
+                result
+            }
+
+            // Division operations
+            SpirvLang::UDiv([a, b]) | SpirvLang::SDiv([a, b]) => {
+                let a_data = get(a);
+                let b_data = get(b);
+                let mut result = SpirvAnalysis::default();
+                result.bit_width = a_data.bit_width.or(b_data.bit_width);
+                result.origin = Origin::Division;
+                // Note: We mark as Division origin so rules can handle carefully
+                result
+            }
+
+            SpirvLang::UMod([a, b]) | SpirvLang::SRem([a, b]) | SpirvLang::SMod([a, b]) => {
+                let a_data = get(a);
+                let b_data = get(b);
+                let mut result = SpirvAnalysis::default();
+                result.bit_width = a_data.bit_width.or(b_data.bit_width);
+                result.origin = Origin::Division;
+                result
+            }
+
+            // Bitwise operations - mark origin as Bitwise
+            SpirvLang::BitAnd([a, b]) => {
+                let a_data = get(a);
+                let b_data = get(b);
+                let mut result = SpirvAnalysis::default();
+                result.bit_width = a_data.bit_width.or(b_data.bit_width);
+                result.origin = Origin::Bitwise;
+
+                // Known-bits: AND propagation
+                // known_zeros: if either operand has a known 0, result has known 0
+                result.known_zeros = a_data.known_zeros | b_data.known_zeros;
+                // known_ones: both operands must have known 1 for result to have known 1
+                result.known_ones = a_data.known_ones & b_data.known_ones;
+
+                // Constant folding
+                if let (Some(av), Some(bv)) = (a_data.const_value(), b_data.const_value()) {
+                    let width = av.width_bits().max(bv.width_bits());
+                    let val = av.get_u64() & bv.get_u64();
+                    result = SpirvAnalysis::from_const(ConstValue::new_with_width(val, width));
+                    result.origin = Origin::Bitwise;
+                }
+
+                result
+            }
+
+            SpirvLang::BitOr([a, b]) => {
+                let a_data = get(a);
+                let b_data = get(b);
+                let mut result = SpirvAnalysis::default();
+                result.bit_width = a_data.bit_width.or(b_data.bit_width);
+                result.origin = Origin::Bitwise;
+
+                // Known-bits: OR propagation
+                // known_zeros: both operands must have known 0 for result to have known 0
+                result.known_zeros = a_data.known_zeros & b_data.known_zeros;
+                // known_ones: if either operand has known 1, result has known 1
+                result.known_ones = a_data.known_ones | b_data.known_ones;
+
+                if let (Some(av), Some(bv)) = (a_data.const_value(), b_data.const_value()) {
+                    let width = av.width_bits().max(bv.width_bits());
+                    let val = av.get_u64() | bv.get_u64();
+                    result = SpirvAnalysis::from_const(ConstValue::new_with_width(val, width));
+                    result.origin = Origin::Bitwise;
+                }
+
+                result
+            }
+
+            SpirvLang::BitXor([a, b]) => {
+                let a_data = get(a);
+                let b_data = get(b);
+                let mut result = SpirvAnalysis::default();
+                result.bit_width = a_data.bit_width.or(b_data.bit_width);
+                result.origin = Origin::Bitwise;
+
+                // Known-bits for XOR: only known where both inputs are known
+                let both_known = (a_data.known_zeros | a_data.known_ones)
+                               & (b_data.known_zeros | b_data.known_ones);
+                result.known_zeros = ((a_data.known_zeros & b_data.known_zeros)
+                                    | (a_data.known_ones & b_data.known_ones)) & both_known;
+                result.known_ones = ((a_data.known_zeros & b_data.known_ones)
+                                   | (a_data.known_ones & b_data.known_zeros)) & both_known;
+
+                if let (Some(av), Some(bv)) = (a_data.const_value(), b_data.const_value()) {
+                    let width = av.width_bits().max(bv.width_bits());
+                    let val = av.get_u64() ^ bv.get_u64();
+                    result = SpirvAnalysis::from_const(ConstValue::new_with_width(val, width));
+                    result.origin = Origin::Bitwise;
+                }
+
+                result
+            }
+
+            SpirvLang::BitNot(a) => {
+                let a_data = get(a);
+                let mut result = SpirvAnalysis::default();
+                result.bit_width = a_data.bit_width;
+                result.origin = Origin::Bitwise;
+
+                // Known-bits: flip zeros and ones
+                result.known_zeros = a_data.known_ones;
+                result.known_ones = a_data.known_zeros;
+
+                if let Some(av) = a_data.const_value() {
+                    let val = !av.get_u64() & av.mask();
+                    result = SpirvAnalysis::from_const(ConstValue::new_with_width(val, av.width_bits()));
+                    result.origin = Origin::Bitwise;
+                }
+
+                result
+            }
+
+            SpirvLang::BitReverse(a) => {
+                let a_data = get(a);
+                let mut result = SpirvAnalysis::default();
+                result.bit_width = a_data.bit_width;
+                result.origin = Origin::Bitwise;
+                result
+            }
+
+            // Shift operations
+            SpirvLang::Shl([a, b]) => {
+                let a_data = get(a);
+                let b_data = get(b);
+                let mut result = SpirvAnalysis::default();
+                result.bit_width = a_data.bit_width;
+                result.origin = a_data.origin.join(&b_data.origin);
+
+                // Constant folding
+                if let (Some(av), Some(bv)) = (a_data.const_value(), b_data.const_value()) {
+                    let shift = bv.get_u64() as u32;
+                    let width = av.width_bits();
+                    if shift < width as u32 {
+                        let val = av.get_u64() << shift;
+                        result = SpirvAnalysis::from_const(ConstValue::new_with_width(val, width));
+                    } else {
+                        result = SpirvAnalysis::from_const(ConstValue::new_with_width(0, width));
+                    }
+                    result.origin = a_data.origin.join(&b_data.origin);
+                } else if let Some(bv) = b_data.const_value() {
+                    // Known-bits propagation when shift amount is known
+                    let shift = bv.get_u64() as u32;
+                    let width = a_data.bit_width.unwrap_or(32);
+                    if shift < width {
+                        let mask = if width >= 64 { u64::MAX } else { (1u64 << width) - 1 };
+                        // Shift known bits left, bottom bits become known zeros
+                        result.known_zeros = ((a_data.known_zeros << shift) | ((1u64 << shift) - 1)) & mask;
+                        result.known_ones = (a_data.known_ones << shift) & mask;
+                    } else {
+                        // Shift >= width means result is 0
+                        let mask = if width >= 64 { u64::MAX } else { (1u64 << width) - 1 };
+                        result.known_zeros = mask;
+                        result.known_ones = 0;
+                    }
+                }
+
+                result
+            }
+
+            SpirvLang::ShrU([a, b]) => {
+                let a_data = get(a);
+                let b_data = get(b);
+                let mut result = SpirvAnalysis::default();
+                result.bit_width = a_data.bit_width;
+                result.origin = a_data.origin.join(&b_data.origin);
+
+                // Constant folding
+                if let (Some(av), Some(bv)) = (a_data.const_value(), b_data.const_value()) {
+                    let shift = bv.get_u64() as u32;
+                    let width = av.width_bits();
+                    if shift < width as u32 {
+                        let val = av.get_u64() >> shift;
+                        result = SpirvAnalysis::from_const(ConstValue::new_with_width(val, width));
+                    } else {
+                        result = SpirvAnalysis::from_const(ConstValue::new_with_width(0, width));
+                    }
+                    result.origin = a_data.origin.join(&b_data.origin);
+                } else if let Some(bv) = b_data.const_value() {
+                    // Known-bits propagation when shift amount is known
+                    let shift = bv.get_u64() as u32;
+                    let width = a_data.bit_width.unwrap_or(32);
+                    if shift < width {
+                        let mask = if width >= 64 { u64::MAX } else { (1u64 << width) - 1 };
+                        // Shift known bits right, top bits become known zeros
+                        let top_zeros = if shift == 0 { 0 } else { mask & !((1u64 << (width - shift)) - 1) };
+                        result.known_zeros = ((a_data.known_zeros >> shift) | top_zeros) & mask;
+                        result.known_ones = (a_data.known_ones >> shift) & mask;
+                    } else {
+                        // Shift >= width means result is 0
+                        let mask = if width >= 64 { u64::MAX } else { (1u64 << width) - 1 };
+                        result.known_zeros = mask;
+                        result.known_ones = 0;
+                    }
+                }
+
+                result
+            }
+
+            SpirvLang::ShrS([a, b]) => {
+                let a_data = get(a);
+                let b_data = get(b);
+                let mut result = SpirvAnalysis::default();
+                result.bit_width = a_data.bit_width;
+                result.origin = a_data.origin.join(&b_data.origin);
+
+                if let (Some(av), Some(bv)) = (a_data.const_value(), b_data.const_value()) {
+                    let shift = bv.get_u64() as u32;
+                    let width = av.width_bits();
+                    if shift < width as u32 {
+                        // Arithmetic shift - sign extend
+                        let val = av.get_u64();
+                        let signed: u64 = if width == 64 {
+                            ((val as i64) >> shift) as u64
+                        } else {
+                            let sign_bit = 1u64 << (width - 1);
+                            let is_negative = (val & sign_bit) != 0;
+                            if is_negative {
+                                let extended = val | !((1u64 << width) - 1);
+                                ((extended as i64) >> shift) as u64
+                            } else {
+                                val >> shift
+                            }
+                        };
+                        result = SpirvAnalysis::from_const(ConstValue::new_with_width(signed, width));
+                    }
+                }
+
+                result
+            }
+
+            SpirvLang::RotL([a, b]) | SpirvLang::RotR([a, b]) => {
+                let a_data = get(a);
+                let b_data = get(b);
+                let mut result = SpirvAnalysis::default();
+                result.bit_width = a_data.bit_width;
+                result.origin = a_data.origin.join(&b_data.origin);
+                result
+            }
+
+            // Comparison operations - result is boolean
+            SpirvLang::Eq([a, b]) | SpirvLang::Ne([a, b]) |
+            SpirvLang::SLt([a, b]) | SpirvLang::SLe([a, b]) |
+            SpirvLang::SGt([a, b]) | SpirvLang::SGe([a, b]) |
+            SpirvLang::ULt([a, b]) | SpirvLang::ULe([a, b]) |
+            SpirvLang::UGt([a, b]) | SpirvLang::UGe([a, b]) => {
+                let a_data = get(a);
+                let b_data = get(b);
+                let mut result = SpirvAnalysis::default();
+                result.bit_width = Some(1); // Boolean result
+                result.origin = a_data.origin.join(&b_data.origin);
+                result
+            }
+
+            // Logical operations
+            SpirvLang::LogNot(a) => {
+                let a_data = get(a);
+                let mut result = SpirvAnalysis::default();
+                result.bit_width = Some(1);
+                result.origin = a_data.origin.clone();
+                result
+            }
+
+            SpirvLang::LogAnd([a, b]) | SpirvLang::LogOr([a, b]) |
+            SpirvLang::LogEq([a, b]) | SpirvLang::LogNe([a, b]) => {
+                let a_data = get(a);
+                let b_data = get(b);
+                let mut result = SpirvAnalysis::default();
+                result.bit_width = Some(1);
+                result.origin = a_data.origin.join(&b_data.origin);
+                result
+            }
+
+            // Select - propagate from arms
+            SpirvLang::Select([_cond, t, f]) => {
+                let t_data = get(t);
+                let f_data = get(f);
+                let mut result = SpirvAnalysis::default();
+                result.bit_width = t_data.bit_width.or(f_data.bit_width);
+                result.origin = t_data.origin.join(&f_data.origin);
+
+                // If both arms have same constant, result is that constant
+                if let (Some(tv), Some(fv)) = (t_data.const_value(), f_data.const_value()) {
+                    if tv == fv {
+                        result = SpirvAnalysis::from_const(tv);
+                    }
+                }
+
+                result
+            }
+
+            // Control flow - mostly unknown
+            SpirvLang::If([_cond, _t, _f]) => SpirvAnalysis::default(),
+            SpirvLang::Merge([a, b]) => {
+                let a_data = get(a);
+                let b_data = get(b);
+                let mut result = SpirvAnalysis::default();
+                result.bit_width = a_data.bit_width.or(b_data.bit_width);
+                result.origin = a_data.origin.join(&b_data.origin);
+                result
+            }
+            SpirvLang::Phi([a, b]) => {
+                let a_data = get(a);
+                let b_data = get(b);
+                let mut result = SpirvAnalysis::default();
+                result.bit_width = a_data.bit_width.or(b_data.bit_width);
+                result.origin = a_data.origin.join(&b_data.origin);
+                result
+            }
+            SpirvLang::Pair([a, b]) => {
+                let a_data = get(a);
+                let b_data = get(b);
+                let mut result = SpirvAnalysis::default();
+                result.origin = a_data.origin.join(&b_data.origin);
+                result
+            }
+            SpirvLang::Ret => SpirvAnalysis::default(),
+            SpirvLang::RetVal(a) => {
+                let a_data = get(a);
+                let mut result = SpirvAnalysis::default();
+                result.bit_width = a_data.bit_width;
+                result.origin = a_data.origin.clone();
+                result
+            }
+        }
+    }
+
+    fn merge(&mut self, a: &mut Self::Data, b: Self::Data) -> DidMerge {
+        a.merge(&b)
     }
 }
 
@@ -386,42 +1105,12 @@ impl egg::CostFunction<SpirvLang> for ExprCost {
 /// The returned expression is the cheapest representative (per `ExprCost`) of
 /// the root e-class after saturation.
 pub fn optimize_expr(expr: &RecExpr<SpirvLang>) -> RecExpr<SpirvLang> {
-    let mut rewrites = rewrites();
-    if expr_has_bitwise(expr) {
-        // Avoid remainder decomposition in mixed bitwise expressions; it can
-        // combine with mask/shift rewrites to drop masked symbols to constants.
-        rewrites.retain(|rw| {
-            let name = rw.name.as_str();
-            !name.contains("affine")
-                && !name.contains("gcd")
-                && !name.contains("cancel-common-factor")
-                && !name.contains("mul-const-zero")
-                && !name.contains("rem-const-decompose")
-                && !name.contains("mod-const-decompose")
-                && !name.contains("umod-power-of-two")
-        });
-    }
+    let rewrites = rewrites();
     let runner = Runner::default().with_expr(expr).run(&rewrites);
     let root = runner.roots[0];
     let extractor = egg::Extractor::new(&runner.egraph, ExprCost);
     let (_cost, best) = extractor.find_best(root);
     best
-}
-
-fn expr_has_bitwise(expr: &RecExpr<SpirvLang>) -> bool {
-    expr.as_ref().iter().any(|node| {
-        matches!(
-            node,
-            SpirvLang::BitAnd(_)
-                | SpirvLang::BitOr(_)
-                | SpirvLang::BitXor(_)
-                | SpirvLang::BitNot(_)
-                | SpirvLang::BitReverse(_)
-                | SpirvLang::Shl(_)
-                | SpirvLang::ShrS(_)
-                | SpirvLang::ShrU(_)
-        )
-    })
 }
 
 /// Optimize the root of a translated SPIR-V arithmetic expression.
@@ -430,7 +1119,7 @@ pub fn optimize_translated(expr: &crate::translate::TranslatedExpr) -> RecExpr<S
 }
 
 /// Returns the full set of algebraic rewrites used by the optimizer.
-pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
+pub fn rewrites() -> Vec<Rewrite<SpirvLang, SpirvAnalysis>> {
     vec![
         rewrite!("add-comm"; "(+ ?a ?b)" => "(+ ?b ?a)"),
         rewrite!("mul-comm"; "(* ?a ?b)" => "(* ?b ?a)"),
@@ -1200,7 +1889,7 @@ pub fn rewrites() -> Vec<Rewrite<SpirvLang, ()>> {
         rewrite!("bxor-self"; "(bxor ?x ?x)" => { BitXorSelf { _x: var("?x") } }),
         rewrite!("bor-absorbs-band"; "(bor ?x (band ?x ?y))" => "?x"),
         rewrite!("bor-absorbs-band-commuted"; "(bor (band ?x ?y) ?x)" => "?x"),
-        rewrite!("sub-mask-absorb"; "(- (band ?x ?mask) ?x)" => { SubMaskAbsorb { x: var("?x"), mask: var("?mask") } }),
+        rewrite!("sub-mask-absorb"; "(- (band ?x ?mask) ?x)" => { SubMaskAbsorb { _x: var("?x"), mask: var("?mask") } }),
         rewrite!("bxor-absorbs-and"; "(bxor ?x (band ?x ?mask))" => {
             BitXorAbsorb { x: var("?x"), mask: var("?mask") }
         }),
@@ -3006,7 +3695,7 @@ struct BitXorSelf {
     _x: Var,
 }
 struct SubMaskAbsorb {
-    x: Var,
+    _x: Var,
     mask: Var,
 }
 struct BitXorAbsorb {
@@ -3264,10 +3953,10 @@ struct BoolConst {
     value: bool,
 }
 
-impl Applier<SpirvLang, ()> for FoldAdd {
+impl Applier<SpirvLang, SpirvAnalysis> for FoldAdd {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -3286,10 +3975,10 @@ impl Applier<SpirvLang, ()> for FoldAdd {
     }
 }
 
-impl Applier<SpirvLang, ()> for FoldMul {
+impl Applier<SpirvLang, SpirvAnalysis> for FoldMul {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -3308,10 +3997,10 @@ impl Applier<SpirvLang, ()> for FoldMul {
     }
 }
 
-impl Applier<SpirvLang, ()> for FoldSub {
+impl Applier<SpirvLang, SpirvAnalysis> for FoldSub {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -3330,10 +4019,10 @@ impl Applier<SpirvLang, ()> for FoldSub {
     }
 }
 
-impl Applier<SpirvLang, ()> for FoldNeg {
+impl Applier<SpirvLang, SpirvAnalysis> for FoldNeg {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -3349,10 +4038,10 @@ impl Applier<SpirvLang, ()> for FoldNeg {
     }
 }
 
-impl Applier<SpirvLang, ()> for FoldDiv {
+impl Applier<SpirvLang, SpirvAnalysis> for FoldDiv {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -3378,10 +4067,10 @@ impl Applier<SpirvLang, ()> for FoldDiv {
     }
 }
 
-impl Applier<SpirvLang, ()> for FoldRem {
+impl Applier<SpirvLang, SpirvAnalysis> for FoldRem {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -3407,10 +4096,10 @@ impl Applier<SpirvLang, ()> for FoldRem {
     }
 }
 
-impl Applier<SpirvLang, ()> for FoldSMod {
+impl Applier<SpirvLang, SpirvAnalysis> for FoldSMod {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -3432,10 +4121,10 @@ impl Applier<SpirvLang, ()> for FoldSMod {
     }
 }
 
-impl Applier<SpirvLang, ()> for DivOne {
+impl Applier<SpirvLang, SpirvAnalysis> for DivOne {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -3449,10 +4138,10 @@ impl Applier<SpirvLang, ()> for DivOne {
     }
 }
 
-impl Applier<SpirvLang, ()> for RemOne {
+impl Applier<SpirvLang, SpirvAnalysis> for RemOne {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -3472,10 +4161,10 @@ impl Applier<SpirvLang, ()> for RemOne {
     }
 }
 
-impl Applier<SpirvLang, ()> for SubSelf {
+impl Applier<SpirvLang, SpirvAnalysis> for SubSelf {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -3490,10 +4179,10 @@ impl Applier<SpirvLang, ()> for SubSelf {
     }
 }
 
-impl Applier<SpirvLang, ()> for AddNegZero {
+impl Applier<SpirvLang, SpirvAnalysis> for AddNegZero {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -3508,10 +4197,10 @@ impl Applier<SpirvLang, ()> for AddNegZero {
     }
 }
 
-impl Applier<SpirvLang, ()> for AddZero {
+impl Applier<SpirvLang, SpirvAnalysis> for AddZero {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -3529,10 +4218,10 @@ impl Applier<SpirvLang, ()> for AddZero {
     }
 }
 
-impl Applier<SpirvLang, ()> for MulOne {
+impl Applier<SpirvLang, SpirvAnalysis> for MulOne {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -3550,10 +4239,10 @@ impl Applier<SpirvLang, ()> for MulOne {
     }
 }
 
-impl Applier<SpirvLang, ()> for MulZero {
+impl Applier<SpirvLang, SpirvAnalysis> for MulZero {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -3577,10 +4266,10 @@ impl Applier<SpirvLang, ()> for MulZero {
     }
 }
 
-impl Applier<SpirvLang, ()> for SubZeroLeft {
+impl Applier<SpirvLang, SpirvAnalysis> for SubZeroLeft {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -3595,10 +4284,10 @@ impl Applier<SpirvLang, ()> for SubZeroLeft {
     }
 }
 
-impl Applier<SpirvLang, ()> for MulNegOne {
+impl Applier<SpirvLang, SpirvAnalysis> for MulNegOne {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -3620,10 +4309,10 @@ impl Applier<SpirvLang, ()> for MulNegOne {
     }
 }
 
-impl Applier<SpirvLang, ()> for AddMergeConst {
+impl Applier<SpirvLang, SpirvAnalysis> for AddMergeConst {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -3643,10 +4332,10 @@ impl Applier<SpirvLang, ()> for AddMergeConst {
     }
 }
 
-impl Applier<SpirvLang, ()> for AddSubMerge {
+impl Applier<SpirvLang, SpirvAnalysis> for AddSubMerge {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -3666,10 +4355,10 @@ impl Applier<SpirvLang, ()> for AddSubMerge {
     }
 }
 
-impl Applier<SpirvLang, ()> for SubAddConstMerge {
+impl Applier<SpirvLang, SpirvAnalysis> for SubAddConstMerge {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -3689,10 +4378,10 @@ impl Applier<SpirvLang, ()> for SubAddConstMerge {
     }
 }
 
-impl Applier<SpirvLang, ()> for SubChainConstMerge {
+impl Applier<SpirvLang, SpirvAnalysis> for SubChainConstMerge {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -3712,10 +4401,10 @@ impl Applier<SpirvLang, ()> for SubChainConstMerge {
     }
 }
 
-impl Applier<SpirvLang, ()> for SubSharedConstAddend {
+impl Applier<SpirvLang, SpirvAnalysis> for SubSharedConstAddend {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -3736,10 +4425,10 @@ impl Applier<SpirvLang, ()> for SubSharedConstAddend {
     }
 }
 
-impl Applier<SpirvLang, ()> for SubSharedAddendEq {
+impl Applier<SpirvLang, SpirvAnalysis> for SubSharedAddendEq {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -3754,10 +4443,10 @@ impl Applier<SpirvLang, ()> for SubSharedAddendEq {
     }
 }
 
-impl Applier<SpirvLang, ()> for FactorSharedAnyOrder {
+impl Applier<SpirvLang, SpirvAnalysis> for FactorSharedAnyOrder {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -3774,10 +4463,10 @@ impl Applier<SpirvLang, ()> for FactorSharedAnyOrder {
     }
 }
 
-impl Applier<SpirvLang, ()> for SubConstLhsChain {
+impl Applier<SpirvLang, SpirvAnalysis> for SubConstLhsChain {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -3797,10 +4486,10 @@ impl Applier<SpirvLang, ()> for SubConstLhsChain {
     }
 }
 
-impl Applier<SpirvLang, ()> for AddSubConstLhs {
+impl Applier<SpirvLang, SpirvAnalysis> for AddSubConstLhs {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -3820,10 +4509,10 @@ impl Applier<SpirvLang, ()> for AddSubConstLhs {
     }
 }
 
-impl Applier<SpirvLang, ()> for DivMergeConst {
+impl Applier<SpirvLang, SpirvAnalysis> for DivMergeConst {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -3854,10 +4543,10 @@ impl Applier<SpirvLang, ()> for DivMergeConst {
     }
 }
 
-impl Applier<SpirvLang, ()> for AddCommonFactor {
+impl Applier<SpirvLang, SpirvAnalysis> for AddCommonFactor {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -3877,10 +4566,10 @@ impl Applier<SpirvLang, ()> for AddCommonFactor {
     }
 }
 
-impl Applier<SpirvLang, ()> for AddCommonFactorGeneral {
+impl Applier<SpirvLang, SpirvAnalysis> for AddCommonFactorGeneral {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -3893,10 +4582,10 @@ impl Applier<SpirvLang, ()> for AddCommonFactorGeneral {
     }
 }
 
-impl Applier<SpirvLang, ()> for AddFactorWithOne {
+impl Applier<SpirvLang, SpirvAnalysis> for AddFactorWithOne {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -3913,10 +4602,10 @@ impl Applier<SpirvLang, ()> for AddFactorWithOne {
     }
 }
 
-impl Applier<SpirvLang, ()> for SubFactorWithOne {
+impl Applier<SpirvLang, SpirvAnalysis> for SubFactorWithOne {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -3937,10 +4626,10 @@ impl Applier<SpirvLang, ()> for SubFactorWithOne {
     }
 }
 
-impl Applier<SpirvLang, ()> for SubCommonFactor {
+impl Applier<SpirvLang, SpirvAnalysis> for SubCommonFactor {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -3960,10 +4649,10 @@ impl Applier<SpirvLang, ()> for SubCommonFactor {
     }
 }
 
-impl Applier<SpirvLang, ()> for SubCommonFactorGeneral {
+impl Applier<SpirvLang, SpirvAnalysis> for SubCommonFactorGeneral {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -3976,10 +4665,10 @@ impl Applier<SpirvLang, ()> for SubCommonFactorGeneral {
     }
 }
 
-impl Applier<SpirvLang, ()> for CancelMulDiv {
+impl Applier<SpirvLang, SpirvAnalysis> for CancelMulDiv {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -3996,10 +4685,10 @@ impl Applier<SpirvLang, ()> for CancelMulDiv {
     }
 }
 
-impl Applier<SpirvLang, ()> for RemMulConstZero {
+impl Applier<SpirvLang, SpirvAnalysis> for RemMulConstZero {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -4020,10 +4709,10 @@ impl Applier<SpirvLang, ()> for RemMulConstZero {
     }
 }
 
-impl Applier<SpirvLang, ()> for NegMulConst {
+impl Applier<SpirvLang, SpirvAnalysis> for NegMulConst {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -4041,10 +4730,10 @@ impl Applier<SpirvLang, ()> for NegMulConst {
     }
 }
 
-impl Applier<SpirvLang, ()> for NegAddConst {
+impl Applier<SpirvLang, SpirvAnalysis> for NegAddConst {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -4065,10 +4754,10 @@ impl Applier<SpirvLang, ()> for NegAddConst {
     }
 }
 
-impl Applier<SpirvLang, ()> for NegDivConst {
+impl Applier<SpirvLang, SpirvAnalysis> for NegDivConst {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -4093,10 +4782,10 @@ impl Applier<SpirvLang, ()> for NegDivConst {
     }
 }
 
-impl Applier<SpirvLang, ()> for CmpAffineConstBoth {
+impl Applier<SpirvLang, SpirvAnalysis> for CmpAffineConstBoth {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -4141,10 +4830,10 @@ impl Applier<SpirvLang, ()> for CmpAffineConstBoth {
     }
 }
 
-impl Applier<SpirvLang, ()> for CmpBandSelf {
+impl Applier<SpirvLang, SpirvAnalysis> for CmpBandSelf {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -4166,10 +4855,10 @@ impl Applier<SpirvLang, ()> for CmpBandSelf {
     }
 }
 
-impl Applier<SpirvLang, ()> for CmpBorSelf {
+impl Applier<SpirvLang, SpirvAnalysis> for CmpBorSelf {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -4191,10 +4880,10 @@ impl Applier<SpirvLang, ()> for CmpBorSelf {
     }
 }
 
-impl Applier<SpirvLang, ()> for CmpMaskImpossible {
+impl Applier<SpirvLang, SpirvAnalysis> for CmpMaskImpossible {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -4225,10 +4914,10 @@ impl Applier<SpirvLang, ()> for CmpMaskImpossible {
     }
 }
 
-impl Applier<SpirvLang, ()> for CmpNegConst {
+impl Applier<SpirvLang, SpirvAnalysis> for CmpNegConst {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -4249,10 +4938,10 @@ impl Applier<SpirvLang, ()> for CmpNegConst {
     }
 }
 
-impl Applier<SpirvLang, ()> for CmpBNotConst {
+impl Applier<SpirvLang, SpirvAnalysis> for CmpBNotConst {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -4273,10 +4962,10 @@ impl Applier<SpirvLang, ()> for CmpBNotConst {
     }
 }
 
-impl Applier<SpirvLang, ()> for CmpXorConst {
+impl Applier<SpirvLang, SpirvAnalysis> for CmpXorConst {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -4300,10 +4989,10 @@ impl Applier<SpirvLang, ()> for CmpXorConst {
     }
 }
 
-impl Applier<SpirvLang, ()> for CmpAddConst {
+impl Applier<SpirvLang, SpirvAnalysis> for CmpAddConst {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -4327,10 +5016,10 @@ impl Applier<SpirvLang, ()> for CmpAddConst {
     }
 }
 
-impl Applier<SpirvLang, ()> for CmpAddMoveConst {
+impl Applier<SpirvLang, SpirvAnalysis> for CmpAddMoveConst {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -4351,10 +5040,10 @@ impl Applier<SpirvLang, ()> for CmpAddMoveConst {
     }
 }
 
-impl Applier<SpirvLang, ()> for CmpSubConstRight {
+impl Applier<SpirvLang, SpirvAnalysis> for CmpSubConstRight {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -4378,10 +5067,10 @@ impl Applier<SpirvLang, ()> for CmpSubConstRight {
     }
 }
 
-impl Applier<SpirvLang, ()> for CmpSubMoveConstRight {
+impl Applier<SpirvLang, SpirvAnalysis> for CmpSubMoveConstRight {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -4402,10 +5091,10 @@ impl Applier<SpirvLang, ()> for CmpSubMoveConstRight {
     }
 }
 
-impl Applier<SpirvLang, ()> for CmpSubConstLeft {
+impl Applier<SpirvLang, SpirvAnalysis> for CmpSubConstLeft {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -4429,10 +5118,10 @@ impl Applier<SpirvLang, ()> for CmpSubConstLeft {
     }
 }
 
-impl Applier<SpirvLang, ()> for CmpSubMoveConstLeft {
+impl Applier<SpirvLang, SpirvAnalysis> for CmpSubMoveConstLeft {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -4453,10 +5142,10 @@ impl Applier<SpirvLang, ()> for CmpSubMoveConstLeft {
     }
 }
 
-impl Applier<SpirvLang, ()> for CmpZero {
+impl Applier<SpirvLang, SpirvAnalysis> for CmpZero {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -4476,10 +5165,10 @@ impl Applier<SpirvLang, ()> for CmpZero {
     }
 }
 
-impl Applier<SpirvLang, ()> for CmpConstOffset {
+impl Applier<SpirvLang, SpirvAnalysis> for CmpConstOffset {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -4506,10 +5195,10 @@ impl Applier<SpirvLang, ()> for CmpConstOffset {
     }
 }
 
-impl Applier<SpirvLang, ()> for CmpXorSelfZero {
+impl Applier<SpirvLang, SpirvAnalysis> for CmpXorSelfZero {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -4529,10 +5218,10 @@ impl Applier<SpirvLang, ()> for CmpXorSelfZero {
     }
 }
 
-impl Applier<SpirvLang, ()> for CmpXorAllOnes {
+impl Applier<SpirvLang, SpirvAnalysis> for CmpXorAllOnes {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -4555,10 +5244,10 @@ impl Applier<SpirvLang, ()> for CmpXorAllOnes {
     }
 }
 
-impl Applier<SpirvLang, ()> for SelectConstCond {
+impl Applier<SpirvLang, SpirvAnalysis> for SelectConstCond {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -4576,10 +5265,10 @@ impl Applier<SpirvLang, ()> for SelectConstCond {
     }
 }
 
-impl Applier<SpirvLang, ()> for SelectBoolArms {
+impl Applier<SpirvLang, SpirvAnalysis> for SelectBoolArms {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -4602,10 +5291,10 @@ impl Applier<SpirvLang, ()> for SelectBoolArms {
     }
 }
 
-impl Applier<SpirvLang, ()> for BoolConst {
+impl Applier<SpirvLang, SpirvAnalysis> for BoolConst {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         _subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -4617,10 +5306,10 @@ impl Applier<SpirvLang, ()> for BoolConst {
     }
 }
 
-impl Applier<SpirvLang, ()> for FoldCmp {
+impl Applier<SpirvLang, SpirvAnalysis> for FoldCmp {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -4708,10 +5397,10 @@ impl Applier<SpirvLang, ()> for FoldCmp {
     }
 }
 
-impl Applier<SpirvLang, ()> for FoldLogical {
+impl Applier<SpirvLang, SpirvAnalysis> for FoldLogical {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -4775,10 +5464,10 @@ impl Applier<SpirvLang, ()> for FoldLogical {
     }
 }
 
-impl Applier<SpirvLang, ()> for FoldLogicalNot {
+impl Applier<SpirvLang, SpirvAnalysis> for FoldLogicalNot {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -4793,10 +5482,10 @@ impl Applier<SpirvLang, ()> for FoldLogicalNot {
     }
 }
 
-impl Applier<SpirvLang, ()> for DivPullConst {
+impl Applier<SpirvLang, SpirvAnalysis> for DivPullConst {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -4832,10 +5521,10 @@ impl Applier<SpirvLang, ()> for DivPullConst {
     }
 }
 
-impl Applier<SpirvLang, ()> for DistConstMulAdd {
+impl Applier<SpirvLang, SpirvAnalysis> for DistConstMulAdd {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -4856,10 +5545,10 @@ impl Applier<SpirvLang, ()> for DistConstMulAdd {
     }
 }
 
-impl Applier<SpirvLang, ()> for DistConstMulSub {
+impl Applier<SpirvLang, SpirvAnalysis> for DistConstMulSub {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -4884,10 +5573,10 @@ impl Applier<SpirvLang, ()> for DistConstMulSub {
     }
 }
 
-impl Applier<SpirvLang, ()> for FoldAffineConst {
+impl Applier<SpirvLang, SpirvAnalysis> for FoldAffineConst {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -4926,10 +5615,10 @@ impl Applier<SpirvLang, ()> for FoldAffineConst {
     }
 }
 
-impl Applier<SpirvLang, ()> for FoldAffineGcd {
+impl Applier<SpirvLang, SpirvAnalysis> for FoldAffineGcd {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -4988,10 +5677,10 @@ impl Applier<SpirvLang, ()> for FoldAffineGcd {
     }
 }
 
-impl Applier<SpirvLang, ()> for AddDuplicateToMul {
+impl Applier<SpirvLang, SpirvAnalysis> for AddDuplicateToMul {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -5007,10 +5696,10 @@ impl Applier<SpirvLang, ()> for AddDuplicateToMul {
     }
 }
 
-impl Applier<SpirvLang, ()> for AddTripleToMul {
+impl Applier<SpirvLang, SpirvAnalysis> for AddTripleToMul {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -5026,10 +5715,10 @@ impl Applier<SpirvLang, ()> for AddTripleToMul {
     }
 }
 
-impl Applier<SpirvLang, ()> for AddQuadrupleToShift {
+impl Applier<SpirvLang, SpirvAnalysis> for AddQuadrupleToShift {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -5045,10 +5734,10 @@ impl Applier<SpirvLang, ()> for AddQuadrupleToShift {
     }
 }
 
-impl Applier<SpirvLang, ()> for MulPowerOfTwo {
+impl Applier<SpirvLang, SpirvAnalysis> for MulPowerOfTwo {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -5074,10 +5763,10 @@ impl Applier<SpirvLang, ()> for MulPowerOfTwo {
     }
 }
 
-impl Applier<SpirvLang, ()> for MulNegPowerOfTwo {
+impl Applier<SpirvLang, SpirvAnalysis> for MulNegPowerOfTwo {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -5104,10 +5793,10 @@ impl Applier<SpirvLang, ()> for MulNegPowerOfTwo {
     }
 }
 
-impl Applier<SpirvLang, ()> for DivPowerOfTwo {
+impl Applier<SpirvLang, SpirvAnalysis> for DivPowerOfTwo {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -5161,15 +5850,20 @@ impl Applier<SpirvLang, ()> for DivPowerOfTwo {
     }
 }
 
-impl Applier<SpirvLang, ()> for UModPowerOfTwo {
+impl Applier<SpirvLang, SpirvAnalysis> for UModPowerOfTwo {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
         _symbol: Symbol,
     ) -> Vec<Id> {
+        // Use per-class origin analysis instead of global scan
+        // Skip if the operand has bitwise origin to avoid unsound interactions
+        if egraph[subst[self.x]].data.origin.has_bitwise() {
+            return Vec::new();
+        }
         let Some(constant) = const_value(egraph, subst[self.c]) else {
             return Vec::new();
         };
@@ -5192,15 +5886,19 @@ impl Applier<SpirvLang, ()> for UModPowerOfTwo {
     }
 }
 
-impl Applier<SpirvLang, ()> for SRemConstDecompose {
+impl Applier<SpirvLang, SpirvAnalysis> for SRemConstDecompose {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
         _symbol: Symbol,
     ) -> Vec<Id> {
+        // Use per-class origin analysis instead of global scan
+        if egraph[subst[self.x]].data.origin.has_bitwise() {
+            return Vec::new();
+        }
         let Some(constant) = const_value(egraph, subst[self.c]) else {
             return Vec::new();
         };
@@ -5216,15 +5914,19 @@ impl Applier<SpirvLang, ()> for SRemConstDecompose {
     }
 }
 
-impl Applier<SpirvLang, ()> for UModConstDecompose {
+impl Applier<SpirvLang, SpirvAnalysis> for UModConstDecompose {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
         _symbol: Symbol,
     ) -> Vec<Id> {
+        // Use per-class origin analysis instead of global scan
+        if egraph[subst[self.x]].data.origin.has_bitwise() {
+            return Vec::new();
+        }
         let Some(constant) = const_value(egraph, subst[self.c]) else {
             return Vec::new();
         };
@@ -5240,10 +5942,10 @@ impl Applier<SpirvLang, ()> for UModConstDecompose {
     }
 }
 
-impl Applier<SpirvLang, ()> for BitAndFold {
+impl Applier<SpirvLang, SpirvAnalysis> for BitAndFold {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -5262,10 +5964,10 @@ impl Applier<SpirvLang, ()> for BitAndFold {
     }
 }
 
-impl Applier<SpirvLang, ()> for BitAndConstSimplify {
+impl Applier<SpirvLang, SpirvAnalysis> for BitAndConstSimplify {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -5274,11 +5976,16 @@ impl Applier<SpirvLang, ()> for BitAndConstSimplify {
         let Some(constant) = const_value(egraph, subst[self.c]) else {
             return Vec::new();
         };
-        if constant.get_u64() == constant.mask() {
+        let mask = constant.get_u64();
+
+        // x & ~0 = x (all bits set)
+        if mask == constant.mask() {
             egraph.union(eclass, subst[self.x]);
             return vec![subst[self.x]];
         }
-        if constant.get_u64() == 0 {
+
+        // x & 0 = 0
+        if mask == 0 {
             let zero = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
                 0,
                 constant.width_bits(),
@@ -5286,14 +5993,41 @@ impl Applier<SpirvLang, ()> for BitAndConstSimplify {
             egraph.union(eclass, zero);
             return vec![zero];
         }
+
+        // Known-bits optimization: x & mask = x when all possibly-1 bits are in mask
+        // If every bit that could be 1 (i.e., not known_zeros) is covered by the mask,
+        // then the AND is a no-op.
+        let x_data = &egraph[egraph.find(subst[self.x])].data;
+        let possibly_one = !x_data.known_zeros & constant.mask();
+        if possibly_one & !mask == 0 {
+            // All possibly-1 bits are within the mask, so x & mask = x
+            egraph.union(eclass, subst[self.x]);
+            return vec![subst[self.x]];
+        }
+
+        // Known-bits optimization: x & mask = 0 when x's known-ones don't overlap with mask
+        // If every bit that is known to be 1 in x is outside the mask, result is 0.
+        // This is: x_data.known_ones & mask == 0 AND (possibly_one & mask) == x_data.known_ones & mask
+        // Simpler: if all possibly-one bits are known-zeros-in-mask-positions
+        let known_result = x_data.known_ones & mask;
+        if known_result == 0 && possibly_one & mask == 0 {
+            // x has no bits that could be 1 in mask positions
+            let zero = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
+                0,
+                constant.width_bits(),
+            )));
+            egraph.union(eclass, zero);
+            return vec![zero];
+        }
+
         Vec::new()
     }
 }
 
-impl Applier<SpirvLang, ()> for BitAndToUmod {
+impl Applier<SpirvLang, SpirvAnalysis> for BitAndToUmod {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -5320,10 +6054,10 @@ impl Applier<SpirvLang, ()> for BitAndToUmod {
     }
 }
 
-impl Applier<SpirvLang, ()> for BitAndComplement {
+impl Applier<SpirvLang, SpirvAnalysis> for BitAndComplement {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -5338,10 +6072,10 @@ impl Applier<SpirvLang, ()> for BitAndComplement {
     }
 }
 
-impl Applier<SpirvLang, ()> for UModPowerOfTwoMask {
+impl Applier<SpirvLang, SpirvAnalysis> for UModPowerOfTwoMask {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -5368,10 +6102,10 @@ impl Applier<SpirvLang, ()> for UModPowerOfTwoMask {
     }
 }
 
-impl Applier<SpirvLang, ()> for BitOrFold {
+impl Applier<SpirvLang, SpirvAnalysis> for BitOrFold {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -5390,10 +6124,10 @@ impl Applier<SpirvLang, ()> for BitOrFold {
     }
 }
 
-impl Applier<SpirvLang, ()> for BitOrConstSimplify {
+impl Applier<SpirvLang, SpirvAnalysis> for BitOrConstSimplify {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -5402,28 +6136,52 @@ impl Applier<SpirvLang, ()> for BitOrConstSimplify {
         let Some(c) = const_value(egraph, subst[self.c]) else {
             return Vec::new();
         };
-        match c.get_u64() {
-            0 => {
-                egraph.union(eclass, subst[self.x]);
-                vec![subst[self.x]]
-            }
-            v if v == c.mask() => {
-                let ones = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
-                    c.mask(),
-                    c.width_bits(),
-                )));
-                egraph.union(eclass, ones);
-                vec![ones]
-            }
-            _ => Vec::new(),
+        let or_val = c.get_u64();
+        let type_mask = c.mask();
+
+        // x | 0 = x
+        if or_val == 0 {
+            egraph.union(eclass, subst[self.x]);
+            return vec![subst[self.x]];
         }
+
+        // x | ~0 = ~0
+        if or_val == type_mask {
+            let ones = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
+                type_mask,
+                c.width_bits(),
+            )));
+            egraph.union(eclass, ones);
+            return vec![ones];
+        }
+
+        // Known-bits optimization: x | c = x when all bits in c are already known-ones in x
+        let x_data = &egraph[egraph.find(subst[self.x])].data;
+        if (x_data.known_ones & or_val) == or_val {
+            // All bits set in c are already known to be 1 in x, so x | c = x
+            egraph.union(eclass, subst[self.x]);
+            return vec![subst[self.x]];
+        }
+
+        // Known-bits optimization: x | c = ~0 when x's known-ones combined with c covers all bits
+        if (x_data.known_ones | or_val) == type_mask {
+            // Combined with c, all bits are 1
+            let ones = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
+                type_mask,
+                c.width_bits(),
+            )));
+            egraph.union(eclass, ones);
+            return vec![ones];
+        }
+
+        Vec::new()
     }
 }
 
-impl Applier<SpirvLang, ()> for BitwiseConstReassociate {
+impl Applier<SpirvLang, SpirvAnalysis> for BitwiseConstReassociate {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -5451,10 +6209,10 @@ impl Applier<SpirvLang, ()> for BitwiseConstReassociate {
     }
 }
 
-impl Applier<SpirvLang, ()> for BitOrComplement {
+impl Applier<SpirvLang, SpirvAnalysis> for BitOrComplement {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -5472,10 +6230,10 @@ impl Applier<SpirvLang, ()> for BitOrComplement {
     }
 }
 
-impl Applier<SpirvLang, ()> for BitXorComplement {
+impl Applier<SpirvLang, SpirvAnalysis> for BitXorComplement {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -5493,10 +6251,10 @@ impl Applier<SpirvLang, ()> for BitXorComplement {
     }
 }
 
-impl Applier<SpirvLang, ()> for BitXorFold {
+impl Applier<SpirvLang, SpirvAnalysis> for BitXorFold {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -5515,10 +6273,10 @@ impl Applier<SpirvLang, ()> for BitXorFold {
     }
 }
 
-impl Applier<SpirvLang, ()> for BitXorConstSimplify {
+impl Applier<SpirvLang, SpirvAnalysis> for BitXorConstSimplify {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -5540,10 +6298,10 @@ impl Applier<SpirvLang, ()> for BitXorConstSimplify {
     }
 }
 
-impl Applier<SpirvLang, ()> for BitXorSelf {
+impl Applier<SpirvLang, SpirvAnalysis> for BitXorSelf {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -5558,10 +6316,10 @@ impl Applier<SpirvLang, ()> for BitXorSelf {
     }
 }
 
-impl Applier<SpirvLang, ()> for SubMaskAbsorb {
+impl Applier<SpirvLang, SpirvAnalysis> for SubMaskAbsorb {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _ast: Option<&PatternAst<SpirvLang>>,
@@ -5569,17 +6327,23 @@ impl Applier<SpirvLang, ()> for SubMaskAbsorb {
     ) -> Vec<Id> {
         if let Some(mask_val) = const_value(egraph, subst[self.mask]) {
             if mask_val.is_all_ones() {
-                egraph.union(eclass, subst[self.x]);
+                // band(x, all_ones) = x, so sub(band(x, all_ones), x) = sub(x, x) = 0
+                let zero = egraph.add(SpirvLang::Const(ConstValue::new_with_width(
+                    0,
+                    mask_val.width_bits(),
+                )));
+                egraph.union(eclass, zero);
+                return vec![zero];
             }
         }
         Vec::new()
     }
 }
 
-impl Applier<SpirvLang, ()> for BitXorAbsorb {
+impl Applier<SpirvLang, SpirvAnalysis> for BitXorAbsorb {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _ast: Option<&PatternAst<SpirvLang>>,
@@ -5594,10 +6358,10 @@ impl Applier<SpirvLang, ()> for BitXorAbsorb {
     }
 }
 
-impl Applier<SpirvLang, ()> for BitXorAllOnes {
+impl Applier<SpirvLang, SpirvAnalysis> for BitXorAllOnes {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _ast: Option<&PatternAst<SpirvLang>>,
@@ -5615,10 +6379,10 @@ impl Applier<SpirvLang, ()> for BitXorAllOnes {
     }
 }
 
-impl Applier<SpirvLang, ()> for BandRedundantOr {
+impl Applier<SpirvLang, SpirvAnalysis> for BandRedundantOr {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _ast: Option<&PatternAst<SpirvLang>>,
@@ -5652,10 +6416,10 @@ impl Applier<SpirvLang, ()> for BandRedundantOr {
     }
 }
 
-impl Applier<SpirvLang, ()> for BandRedundantXor {
+impl Applier<SpirvLang, SpirvAnalysis> for BandRedundantXor {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _ast: Option<&PatternAst<SpirvLang>>,
@@ -5683,10 +6447,10 @@ impl Applier<SpirvLang, ()> for BandRedundantXor {
     }
 }
 
-impl Applier<SpirvLang, ()> for BandRedundantAdd {
+impl Applier<SpirvLang, SpirvAnalysis> for BandRedundantAdd {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _ast: Option<&PatternAst<SpirvLang>>,
@@ -5715,10 +6479,10 @@ impl Applier<SpirvLang, ()> for BandRedundantAdd {
     }
 }
 
-impl Applier<SpirvLang, ()> for BandRedundantSub {
+impl Applier<SpirvLang, SpirvAnalysis> for BandRedundantSub {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _ast: Option<&PatternAst<SpirvLang>>,
@@ -5747,10 +6511,10 @@ impl Applier<SpirvLang, ()> for BandRedundantSub {
     }
 }
 
-impl Applier<SpirvLang, ()> for BandRedundantShift {
+impl Applier<SpirvLang, SpirvAnalysis> for BandRedundantShift {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _ast: Option<&PatternAst<SpirvLang>>,
@@ -5791,10 +6555,10 @@ impl Applier<SpirvLang, ()> for BandRedundantShift {
     }
 }
 
-impl Applier<SpirvLang, ()> for BitNotFold {
+impl Applier<SpirvLang, SpirvAnalysis> for BitNotFold {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -5810,10 +6574,10 @@ impl Applier<SpirvLang, ()> for BitNotFold {
     }
 }
 
-impl Applier<SpirvLang, ()> for BitNotDouble {
+impl Applier<SpirvLang, SpirvAnalysis> for BitNotDouble {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -5824,10 +6588,10 @@ impl Applier<SpirvLang, ()> for BitNotDouble {
     }
 }
 
-impl Applier<SpirvLang, ()> for BitReverseFold {
+impl Applier<SpirvLang, SpirvAnalysis> for BitReverseFold {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -5852,10 +6616,10 @@ impl Applier<SpirvLang, ()> for BitReverseFold {
     }
 }
 
-impl Applier<SpirvLang, ()> for RotatePatternFold {
+impl Applier<SpirvLang, SpirvAnalysis> for RotatePatternFold {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -5891,10 +6655,10 @@ impl Applier<SpirvLang, ()> for RotatePatternFold {
     }
 }
 
-impl Applier<SpirvLang, ()> for MaskThenShift {
+impl Applier<SpirvLang, SpirvAnalysis> for MaskThenShift {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -5933,10 +6697,10 @@ impl Applier<SpirvLang, ()> for MaskThenShift {
     }
 }
 
-impl Applier<SpirvLang, ()> for MaskThenShiftSigned {
+impl Applier<SpirvLang, SpirvAnalysis> for MaskThenShiftSigned {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -5974,10 +6738,10 @@ impl Applier<SpirvLang, ()> for MaskThenShiftSigned {
     }
 }
 
-impl Applier<SpirvLang, ()> for MergeShift {
+impl Applier<SpirvLang, SpirvAnalysis> for MergeShift {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -6001,10 +6765,10 @@ impl Applier<SpirvLang, ()> for MergeShift {
     }
 }
 
-impl Applier<SpirvLang, ()> for ShlFoldConst {
+impl Applier<SpirvLang, SpirvAnalysis> for ShlFoldConst {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -6025,10 +6789,10 @@ impl Applier<SpirvLang, ()> for ShlFoldConst {
     }
 }
 
-impl Applier<SpirvLang, ()> for ShrUFoldConst {
+impl Applier<SpirvLang, SpirvAnalysis> for ShrUFoldConst {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -6049,10 +6813,10 @@ impl Applier<SpirvLang, ()> for ShrUFoldConst {
     }
 }
 
-impl Applier<SpirvLang, ()> for ShrSFoldConst {
+impl Applier<SpirvLang, SpirvAnalysis> for ShrSFoldConst {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -6075,10 +6839,10 @@ impl Applier<SpirvLang, ()> for ShrSFoldConst {
     }
 }
 
-impl Applier<SpirvLang, ()> for ShiftToMulPow2 {
+impl Applier<SpirvLang, SpirvAnalysis> for ShiftToMulPow2 {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -6105,10 +6869,10 @@ impl Applier<SpirvLang, ()> for ShiftToMulPow2 {
     }
 }
 
-impl Applier<SpirvLang, ()> for ShiftToUdivPow2 {
+impl Applier<SpirvLang, SpirvAnalysis> for ShiftToUdivPow2 {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -6135,10 +6899,10 @@ impl Applier<SpirvLang, ()> for ShiftToUdivPow2 {
     }
 }
 
-impl Applier<SpirvLang, ()> for MulMergeConst {
+impl Applier<SpirvLang, SpirvAnalysis> for MulMergeConst {
     fn apply_one(
         &self,
-        egraph: &mut EGraph<SpirvLang, ()>,
+        egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
         eclass: Id,
         subst: &Subst,
         _pat: Option<&PatternAst<SpirvLang>>,
@@ -6158,11 +6922,13 @@ impl Applier<SpirvLang, ()> for MulMergeConst {
     }
 }
 
-fn const_value(egraph: &EGraph<SpirvLang, ()>, id: Id) -> Option<ConstValue> {
-    unique_const_value(egraph, id)
+/// Get the constant value for an e-class using analysis data.
+/// This is O(1) instead of O(n) iteration through nodes.
+fn const_value(egraph: &EGraph<SpirvLang, SpirvAnalysis>, id: Id) -> Option<ConstValue> {
+    egraph[egraph.find(id)].data.const_value()
 }
 
-fn pure_const_value(egraph: &EGraph<SpirvLang, ()>, id: Id) -> Option<ConstValue> {
+fn pure_const_value(egraph: &EGraph<SpirvLang, SpirvAnalysis>, id: Id) -> Option<ConstValue> {
     let class = egraph.find(id);
     let mut value: Option<ConstValue> = None;
     for node in &egraph[class].nodes {
@@ -6195,7 +6961,7 @@ fn const_bool(value: bool) -> ConstValue {
 }
 
 fn width_from_eclass(
-    egraph: &EGraph<SpirvLang, ()>,
+    egraph: &EGraph<SpirvLang, SpirvAnalysis>,
     id: Id,
     visited: &mut HashSet<Id>,
 ) -> Option<u8> {
@@ -6225,7 +6991,7 @@ fn width_from_eclass(
 }
 
 fn width_hint(
-    egraph: &EGraph<SpirvLang, ()>,
+    egraph: &EGraph<SpirvLang, SpirvAnalysis>,
     eclass: Id,
     ids: impl IntoIterator<Item = Id>,
 ) -> Option<u8> {
@@ -6248,7 +7014,7 @@ fn width_hint(
     width.or(Some(32))
 }
 
-fn unique_const_value(egraph: &EGraph<SpirvLang, ()>, id: Id) -> Option<ConstValue> {
+fn unique_const_value(egraph: &EGraph<SpirvLang, SpirvAnalysis>, id: Id) -> Option<ConstValue> {
     let mut constants = egraph[egraph.find(id)]
         .nodes
         .iter()
@@ -6337,7 +7103,7 @@ fn is_neg_power_of_two(value: ConstValue) -> Option<u32> {
     is_power_of_two(magnitude)
 }
 
-fn has_symbol(egraph: &EGraph<SpirvLang, ()>, id: Id) -> bool {
+fn has_symbol(egraph: &EGraph<SpirvLang, SpirvAnalysis>, id: Id) -> bool {
     let class = egraph.find(id);
     egraph[class]
         .nodes
@@ -6354,27 +7120,27 @@ fn var(name: &str) -> Var {
     Var::from_str(&formatted).expect("valid e-graph variable name")
 }
 
-fn is_const(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
+fn is_const(var: Var) -> impl Fn(&mut EGraph<SpirvLang, SpirvAnalysis>, Id, &Subst) -> bool + 'static {
     move |egraph, _, subst| const_value(egraph, subst[var]).is_some()
 }
 
-fn is_const_zero(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
+fn is_const_zero(var: Var) -> impl Fn(&mut EGraph<SpirvLang, SpirvAnalysis>, Id, &Subst) -> bool + 'static {
     move |egraph, _, subst| const_value(egraph, subst[var]).is_some_and(|c| c.get_u64() == 0)
 }
 
-fn is_const_one(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
+fn is_const_one(var: Var) -> impl Fn(&mut EGraph<SpirvLang, SpirvAnalysis>, Id, &Subst) -> bool + 'static {
     move |egraph, _, subst| const_value(egraph, subst[var]).is_some_and(ConstValue::is_one)
 }
 
 fn is_const_all_ones(
     var: Var,
-) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
+) -> impl Fn(&mut EGraph<SpirvLang, SpirvAnalysis>, Id, &Subst) -> bool + 'static {
     move |egraph, _, subst| const_value(egraph, subst[var]).is_some_and(ConstValue::is_all_ones)
 }
 
 fn is_const_unsigned_max_minus_one(
     var: Var,
-) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
+) -> impl Fn(&mut EGraph<SpirvLang, SpirvAnalysis>, Id, &Subst) -> bool + 'static {
     move |egraph, _, subst| {
         const_value(egraph, subst[var]).is_some_and(|c| c.get_u64() == c.mask().wrapping_sub(1))
     }
@@ -6394,7 +7160,7 @@ fn signed_limits(value: ConstValue) -> Option<(u64, u64, u64)> {
 
 fn is_const_signed_min(
     var: Var,
-) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
+) -> impl Fn(&mut EGraph<SpirvLang, SpirvAnalysis>, Id, &Subst) -> bool + 'static {
     move |egraph, _, subst| {
         let Some(value) = const_value(egraph, subst[var]) else {
             return false;
@@ -6405,7 +7171,7 @@ fn is_const_signed_min(
 
 fn is_const_signed_max(
     var: Var,
-) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
+) -> impl Fn(&mut EGraph<SpirvLang, SpirvAnalysis>, Id, &Subst) -> bool + 'static {
     move |egraph, _, subst| {
         let Some(value) = const_value(egraph, subst[var]) else {
             return false;
@@ -6416,7 +7182,7 @@ fn is_const_signed_max(
 
 fn is_const_signed_min_plus_one(
     var: Var,
-) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
+) -> impl Fn(&mut EGraph<SpirvLang, SpirvAnalysis>, Id, &Subst) -> bool + 'static {
     move |egraph, _, subst| {
         let Some(value) = const_value(egraph, subst[var]) else {
             return false;
@@ -6428,7 +7194,7 @@ fn is_const_signed_min_plus_one(
 
 fn is_const_signed_max_minus_one(
     var: Var,
-) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
+) -> impl Fn(&mut EGraph<SpirvLang, SpirvAnalysis>, Id, &Subst) -> bool + 'static {
     move |egraph, _, subst| {
         let Some(value) = const_value(egraph, subst[var]) else {
             return false;
@@ -6438,22 +7204,22 @@ fn is_const_signed_max_minus_one(
     }
 }
 
-fn is_const_odd(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
+fn is_const_odd(var: Var) -> impl Fn(&mut EGraph<SpirvLang, SpirvAnalysis>, Id, &Subst) -> bool + 'static {
     move |egraph, _, subst| const_value(egraph, subst[var]).is_some_and(|c| (c.get_u64() & 1) == 1)
 }
 
-fn is_const_true(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
+fn is_const_true(var: Var) -> impl Fn(&mut EGraph<SpirvLang, SpirvAnalysis>, Id, &Subst) -> bool + 'static {
     move |egraph, _, subst| const_value(egraph, subst[var]).and_then(bool_const) == Some(true)
 }
 
-fn is_const_false(var: Var) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
+fn is_const_false(var: Var) -> impl Fn(&mut EGraph<SpirvLang, SpirvAnalysis>, Id, &Subst) -> bool + 'static {
     move |egraph, _, subst| const_value(egraph, subst[var]).and_then(bool_const) == Some(false)
 }
 
 fn is_const_zero_and_odd(
     zero: Var,
     odd: Var,
-) -> impl Fn(&mut EGraph<SpirvLang, ()>, Id, &Subst) -> bool + 'static {
+) -> impl Fn(&mut EGraph<SpirvLang, SpirvAnalysis>, Id, &Subst) -> bool + 'static {
     move |egraph, _, subst| {
         const_value(egraph, subst[zero]).is_some_and(ConstValue::is_zero)
             && const_value(egraph, subst[odd]).is_some_and(|c| (c.get_u64() & 1) == 1)
@@ -6469,20 +7235,20 @@ mod tests {
     use rspirv::dr::{Builder, Instruction};
     use std::collections::HashMap;
 
-    fn is_named_symbol(egraph: &EGraph<SpirvLang, ()>, id: Id, name: &str) -> bool {
+    fn is_named_symbol(egraph: &EGraph<SpirvLang, SpirvAnalysis>, id: Id, name: &str) -> bool {
         egraph[egraph.find(id)]
             .nodes
             .iter()
             .any(|node| matches!(node, SpirvLang::Symbol(sym) if *sym == Symbol::from(name)))
     }
 
-    fn is_neg_named_symbol(egraph: &EGraph<SpirvLang, ()>, id: Id, name: &str) -> bool {
+    fn is_neg_named_symbol(egraph: &EGraph<SpirvLang, SpirvAnalysis>, id: Id, name: &str) -> bool {
         egraph[egraph.find(id)].nodes.iter().any(
             |node| matches!(node, SpirvLang::Neg(child) if is_named_symbol(egraph, *child, name)),
         )
     }
 
-    fn is_double_named_symbol(egraph: &EGraph<SpirvLang, ()>, id: Id, name: &str) -> bool {
+    fn is_double_named_symbol(egraph: &EGraph<SpirvLang, SpirvAnalysis>, id: Id, name: &str) -> bool {
         egraph[egraph.find(id)].nodes.iter().any(|node| {
             matches!(
                 node,
@@ -6493,7 +7259,7 @@ mod tests {
         })
     }
 
-    fn is_bnot_named_symbol(egraph: &EGraph<SpirvLang, ()>, id: Id, name: &str) -> bool {
+    fn is_bnot_named_symbol(egraph: &EGraph<SpirvLang, SpirvAnalysis>, id: Id, name: &str) -> bool {
         egraph[egraph.find(id)].nodes.iter().any(|node| {
             matches!(
                 node,
@@ -6502,21 +7268,21 @@ mod tests {
         })
     }
 
-    fn is_const_value(egraph: &EGraph<SpirvLang, ()>, id: Id, value: u64) -> bool {
+    fn is_const_value(egraph: &EGraph<SpirvLang, SpirvAnalysis>, id: Id, value: u64) -> bool {
         egraph[egraph.find(id)]
             .nodes
             .iter()
             .any(|node| matches!(node, SpirvLang::Const(c) if c.get_u64() == value))
     }
 
-    fn is_zero_const(egraph: &EGraph<SpirvLang, ()>, id: Id) -> bool {
+    fn is_zero_const(egraph: &EGraph<SpirvLang, SpirvAnalysis>, id: Id) -> bool {
         egraph[egraph.find(id)]
             .nodes
             .iter()
             .any(|node| matches!(node, SpirvLang::Const(c) if c.is_zero()))
     }
 
-    fn is_sub_named_symbols(egraph: &EGraph<SpirvLang, ()>, id: Id, lhs: &str, rhs: &str) -> bool {
+    fn is_sub_named_symbols(egraph: &EGraph<SpirvLang, SpirvAnalysis>, id: Id, lhs: &str, rhs: &str) -> bool {
         egraph[egraph.find(id)].nodes.iter().any(|node| {
             matches!(
                 node,
@@ -6528,7 +7294,7 @@ mod tests {
     }
 
     fn is_band_symbol_bnot(
-        egraph: &EGraph<SpirvLang, ()>,
+        egraph: &EGraph<SpirvLang, SpirvAnalysis>,
         id: Id,
         sym: &str,
         neg_sym: &str,
@@ -6546,7 +7312,7 @@ mod tests {
     }
 
     fn is_shl_named_symbol_const(
-        egraph: &EGraph<SpirvLang, ()>,
+        egraph: &EGraph<SpirvLang, SpirvAnalysis>,
         id: Id,
         name: &str,
         shift: u64,
@@ -6562,7 +7328,7 @@ mod tests {
     }
 
     fn is_mul_named_symbol_const(
-        egraph: &EGraph<SpirvLang, ()>,
+        egraph: &EGraph<SpirvLang, SpirvAnalysis>,
         id: Id,
         name: &str,
         factor: u64,
@@ -6580,7 +7346,7 @@ mod tests {
     }
 
     fn is_udiv_named_symbol_const(
-        egraph: &EGraph<SpirvLang, ()>,
+        egraph: &EGraph<SpirvLang, SpirvAnalysis>,
         id: Id,
         name: &str,
         divisor: u64,
@@ -16344,5 +17110,31 @@ mod tests {
             found,
             "expected sdiv with negated operand from neg(sdiv(x,y))"
         );
+    }
+
+    #[test]
+    fn band_bxor_does_not_fold_to_zero() {
+        // Regression test: band(0x0F, bxor(symbol, 0xF0)) should NOT become 0.
+        // The XOR constant 0xF0 has no overlap with mask 0x0F, so the XOR
+        // should be dropped, leaving band(0x0F, symbol).
+        use egg::Id;
+
+        let expr = RecExpr::from(vec![
+            SpirvLang::Symbol(Symbol::from("var99")),
+            SpirvLang::Const(ConstValue::new(0x0F)),       // 1: mask 0x0F
+            SpirvLang::Const(ConstValue::new(0xF0)),       // 2: xor constant 0xF0
+            SpirvLang::BitXor([Id::from(0), Id::from(2)]), // 3: bxor(symbol, 0xF0)
+            SpirvLang::BitAnd([Id::from(1), Id::from(3)]), // 4: band(0x0F, bxor(...))
+        ]);
+
+        let optimized = optimize_expr(&expr);
+
+        // The result should contain the symbol, not be a constant 0
+        let has_symbol = optimized.as_ref().iter().any(|n| matches!(n, SpirvLang::Symbol(_)));
+        let is_zero = optimized.as_ref().len() == 1
+            && matches!(&optimized.as_ref()[0], SpirvLang::Const(c) if c.get_u64() == 0);
+
+        assert!(has_symbol, "optimized expression should contain the symbol");
+        assert!(!is_zero, "optimized expression should not be Const(0)");
     }
 }

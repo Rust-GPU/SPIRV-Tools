@@ -7,7 +7,7 @@ use spirv_tools_opt::control::{add_control_roots, apply_control_roots, control_r
 use spirv_tools_opt::translate::{
     optimize_arith_block_with_types, translate_arith_with_types, type_widths_from_module,
 };
-use spirv_tools_opt::{with_symbol_widths, ExprCost, SpirvLang};
+use spirv_tools_opt::{with_symbol_widths, ExprCost, SpirvAnalysis, SpirvLang};
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::env;
@@ -459,7 +459,7 @@ fn symbol_id(sym: &egg::Symbol) -> Option<u32> {
 
 fn add_expr_to_egraph(
     expr: &egg::RecExpr<SpirvLang>,
-    egraph: &mut EGraph<SpirvLang, ()>,
+    egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
 ) -> Vec<Id> {
     let mut ids = Vec::with_capacity(expr.as_ref().len());
     for node in expr.as_ref() {
@@ -479,7 +479,7 @@ struct PhiRoot {
 
 fn add_phi_roots(
     func: &rspirv::dr::Function,
-    egraph: &mut EGraph<SpirvLang, ()>,
+    egraph: &mut EGraph<SpirvLang, SpirvAnalysis>,
     id_to_class: &HashMap<u32, Id>,
 ) -> Vec<PhiRoot> {
     let mut roots = Vec::new();
@@ -536,13 +536,13 @@ fn add_phi_roots(
 }
 
 fn build_best_rec_expr(
-    egraph: &EGraph<SpirvLang, ()>,
-    extractor: &Extractor<ExprCost, SpirvLang, ()>,
+    egraph: &EGraph<SpirvLang, SpirvAnalysis>,
+    extractor: &Extractor<ExprCost, SpirvLang, SpirvAnalysis>,
     roots: &[Id],
 ) -> (egg::RecExpr<SpirvLang>, HashMap<Id, Id>, Vec<Id>) {
     fn build_node(
-        egraph: &EGraph<SpirvLang, ()>,
-        extractor: &Extractor<ExprCost, SpirvLang, ()>,
+        egraph: &EGraph<SpirvLang, SpirvAnalysis>,
+        extractor: &Extractor<ExprCost, SpirvLang, SpirvAnalysis>,
         root: Id,
         memo: &mut HashMap<Id, Id>,
         expr: &mut egg::RecExpr<SpirvLang>,
@@ -626,7 +626,7 @@ fn optimize_function_egraph(
             }
         }
     }
-    let mut egraph = EGraph::<SpirvLang, ()>::default();
+    let mut egraph = EGraph::<SpirvLang, SpirvAnalysis>::default();
     let mut id_to_class: HashMap<u32, Id> = HashMap::new();
     let mut class_types: HashMap<Id, u32> = HashMap::new();
     let mut symbol_widths: HashMap<egg::Symbol, u8> = HashMap::new();
