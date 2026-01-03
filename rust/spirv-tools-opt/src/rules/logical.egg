@@ -1,0 +1,63 @@
+; =============================================================================
+; Logical Rewrite Rules
+; =============================================================================
+
+(rewrite (LogNot (LogNot x)) x)
+(rewrite (LogAnd x x) x)
+(rewrite (LogOr x x) x)
+(rule ((= e (LogAnd x (Const 0))))
+      ((union e (Const 0))))
+(rewrite (LogOr x (Const 0)) x)
+(rewrite (LogAnd x (Const 1)) x)
+(rule ((= e (LogOr x (Const 1))))
+      ((union e (Const 1))))
+
+; Logical complement
+(rule ((= e (LogAnd x (LogNot x))))
+      ((union e (Const 0))))
+(rule ((= e (LogAnd (LogNot x) x)))
+      ((union e (Const 0))))
+(rule ((= e (LogOr x (LogNot x))))
+      ((union e (Const 1))))
+(rule ((= e (LogOr (LogNot x) x)))
+      ((union e (Const 1))))
+
+; =============================================================================
+; Select/If Rewrite Rules
+; =============================================================================
+
+(rewrite (Select (Const 0) t f) f)
+(rewrite (Select (Const 1) t f) t)
+(rewrite (Select c x x) x)
+(rewrite (Select (LogNot c) t f) (Select c f t))
+(rewrite (Select c (Select c a b) d) (Select c a d))
+(rewrite (Select c d (Select c a b)) (Select c d b))
+
+(rewrite (If (Const 0) t f) f)
+(rewrite (If (Const 1) t f) t)
+
+; =============================================================================
+; Min/Max Rewrite Rules
+; =============================================================================
+
+; Idempotent
+(rewrite (SMin x x) x)
+(rewrite (SMax x x) x)
+(rewrite (UMin x x) x)
+(rewrite (UMax x x) x)
+
+; Commutative
+(rewrite (SMin a b) (SMin b a))
+(rewrite (SMax a b) (SMax b a))
+(rewrite (UMin a b) (UMin b a))
+(rewrite (UMax a b) (UMax b a))
+
+; Associative
+(rewrite (SMin (SMin a b) c) (SMin a (SMin b c)))
+(rewrite (SMax (SMax a b) c) (SMax a (SMax b c)))
+(rewrite (UMin (UMin a b) c) (UMin a (UMin b c)))
+(rewrite (UMax (UMax a b) c) (UMax a (UMax b c)))
+
+; Min/Max with negation
+(rewrite (SMin (Neg a) (Neg b)) (Neg (SMax a b)))
+(rewrite (SMax (Neg a) (Neg b)) (Neg (SMin a b)))

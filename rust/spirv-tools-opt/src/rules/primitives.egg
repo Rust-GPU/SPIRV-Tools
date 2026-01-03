@@ -1,0 +1,97 @@
+; =============================================================================
+; Rules Using Custom Primitives
+; =============================================================================
+; These rules require custom primitives registered in Rust:
+; - bitrev32, bitrev64: bit reversal
+; - bits-disjoint: check if two bitmasks have no overlapping bits
+; - shl-clears-mask, shr-clears-mask: check if shift clears all mask bits
+; - mask-superset: check if one mask is a superset of another
+
+; =============================================================================
+; BitReverse Constant Folding
+; =============================================================================
+
+(rule ((= e (BitReverse (Const a))))
+      ((union e (Const (bitrev32 a)))))
+(rule ((= e (BitReverse (Const64 a))))
+      ((union e (Const64 (bitrev64 a)))))
+
+; =============================================================================
+; Mask-Aware Optimizations
+; =============================================================================
+
+; mask & (x + const) = mask & x when const has no bits in mask
+(rule ((= e (BitAnd (Const mask) (Add x (Const c))))
+       (bits-disjoint mask c))
+      ((union e (BitAnd (Const mask) x))))
+(rule ((= e (BitAnd (Add x (Const c)) (Const mask)))
+       (bits-disjoint mask c))
+      ((union e (BitAnd x (Const mask)))))
+
+; mask & (x - const) = mask & x when const has no bits in mask
+(rule ((= e (BitAnd (Const mask) (Sub x (Const c))))
+       (bits-disjoint mask c))
+      ((union e (BitAnd (Const mask) x))))
+(rule ((= e (BitAnd (Sub x (Const c)) (Const mask)))
+       (bits-disjoint mask c))
+      ((union e (BitAnd x (Const mask)))))
+
+; mask & (x | const) = mask & x when const has no bits in mask
+(rule ((= e (BitAnd (Const mask) (BitOr x (Const c))))
+       (bits-disjoint mask c))
+      ((union e (BitAnd (Const mask) x))))
+(rule ((= e (BitAnd (BitOr x (Const c)) (Const mask)))
+       (bits-disjoint mask c))
+      ((union e (BitAnd x (Const mask)))))
+
+; mask & (x ^ const) = mask & x when const has no bits in mask
+(rule ((= e (BitAnd (Const mask) (BitXor x (Const c))))
+       (bits-disjoint mask c))
+      ((union e (BitAnd (Const mask) x))))
+(rule ((= e (BitAnd (BitXor x (Const c)) (Const mask)))
+       (bits-disjoint mask c))
+      ((union e (BitAnd x (Const mask)))))
+
+; mask & (x | const) = mask when const is a superset of mask
+(rule ((= e (BitAnd (Const mask) (BitOr x (Const c))))
+       (mask-superset c mask))
+      ((union e (Const mask))))
+(rule ((= e (BitAnd (BitOr x (Const c)) (Const mask)))
+       (mask-superset c mask))
+      ((union e (Const mask))))
+
+; mask & (x << shift) = 0 when shifting clears all bits in mask
+(rule ((= e (BitAnd (Const mask) (Shl x (Const shift))))
+       (shl-clears-mask mask shift))
+      ((union e (Const 0))))
+(rule ((= e (BitAnd (Shl x (Const shift)) (Const mask)))
+       (shl-clears-mask mask shift))
+      ((union e (Const 0))))
+
+; mask & (x >> shift) = 0 when shifting clears all bits in mask
+(rule ((= e (BitAnd (Const mask) (ShrU x (Const shift))))
+       (shr-clears-mask mask shift))
+      ((union e (Const 0))))
+(rule ((= e (BitAnd (ShrU x (Const shift)) (Const mask)))
+       (shr-clears-mask mask shift))
+      ((union e (Const 0))))
+
+; =============================================================================
+; GLSL Bit Manipulation Constant Folding
+; =============================================================================
+
+; FindILsb - find least significant bit (returns -1 for 0)
+(rule ((= e (FindILsb (Const a))))
+      ((union e (Const (find-lsb a)))))
+
+; FindSMsb - find most significant bit for signed values
+(rule ((= e (FindSMsb (Const a))))
+      ((union e (Const (find-msb-signed a)))))
+
+; FindUMsb - find most significant bit for unsigned values
+(rule ((= e (FindUMsb (Const a))))
+      ((union e (Const (find-msb-unsigned a)))))
+
+; BitCount - count number of 1-bits (popcount)
+(rule ((= e (BitCount (Const a))))
+      ((union e (Const (popcount a)))))

@@ -1,0 +1,29 @@
+; =============================================================================
+; Comparison Rewrite Rules
+; =============================================================================
+
+; Reflexive comparisons
+(rule ((= e (Eq x x)))
+      ((union e (Const 1))))
+(rule ((= e (Ne x x)))
+      ((union e (Const 0))))
+(rule ((= e (SLe x x)))
+      ((union e (Const 1))))
+(rule ((= e (SGe x x)))
+      ((union e (Const 1))))
+(rule ((= e (ULe x x)))
+      ((union e (Const 1))))
+(rule ((= e (UGe x x)))
+      ((union e (Const 1))))
+(rule ((= e (SLt x x)))
+      ((union e (Const 0))))
+(rule ((= e (SGt x x)))
+      ((union e (Const 0))))
+(rule ((= e (ULt x x)))
+      ((union e (Const 0))))
+(rule ((= e (UGt x x)))
+      ((union e (Const 0))))
+
+; Comparison with negation
+(rewrite (Eq x (Neg x)) (Eq x (Const 0)))
+(rewrite (Ne x (Neg x)) (Ne x (Const 0)))

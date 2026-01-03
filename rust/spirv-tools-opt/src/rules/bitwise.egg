@@ -1,0 +1,72 @@
+; =============================================================================
+; Bitwise Rewrite Rules
+; =============================================================================
+
+; Identity rules
+(rewrite (BitAnd x x) x)
+(rewrite (BitOr x x) x)
+(rule ((= e (BitXor x x)))
+      ((union e (Const 0))))
+(rewrite (BitXor x (Const 0)) x)
+(rule ((= e (BitAnd x (Const 0))))
+      ((union e (Const 0))))
+
+; All-ones patterns (-1 = all ones in two's complement)
+(rule ((= e (BitOr x (Const -1))))
+      ((union e (Const -1))))
+(rewrite (BitAnd x (Const -1)) x)
+(rewrite (BitXor x (Const -1)) (BitNot x))
+
+; Double negation
+(rewrite (BitNot (BitNot x)) x)
+
+; De Morgan's laws
+(rewrite (BitNot (BitAnd x y)) (BitOr (BitNot x) (BitNot y)))
+(rewrite (BitNot (BitOr x y)) (BitAnd (BitNot x) (BitNot y)))
+
+; Complement rules
+(rule ((= e (BitAnd x (BitNot x))))
+      ((union e (Const 0))))
+(rule ((= e (BitAnd (BitNot x) x)))
+      ((union e (Const 0))))
+(rule ((= e (BitOr x (BitNot x))))
+      ((union e (Const -1))))
+(rule ((= e (BitOr (BitNot x) x)))
+      ((union e (Const -1))))
+
+; XOR rules
+(rewrite (BitXor (BitNot x) y) (BitNot (BitXor x y)))
+(rewrite (BitXor x (BitNot y)) (BitNot (BitXor x y)))
+
+; Absorption rules: x | (x & y) = x, x & (x | y) = x
+(rewrite (BitOr x (BitAnd x y)) x)
+(rewrite (BitOr x (BitAnd y x)) x)
+(rewrite (BitOr (BitAnd x y) x) x)
+(rewrite (BitOr (BitAnd y x) x) x)
+(rewrite (BitAnd x (BitOr x y)) x)
+(rewrite (BitAnd x (BitOr y x)) x)
+(rewrite (BitAnd (BitOr x y) x) x)
+(rewrite (BitAnd (BitOr y x) x) x)
+
+; Complement absorption: x | (~x & y) = x | y
+(rewrite (BitOr x (BitAnd (BitNot x) y)) (BitOr x y))
+(rewrite (BitOr x (BitAnd y (BitNot x))) (BitOr x y))
+(rewrite (BitAnd x (BitOr (BitNot x) y)) (BitAnd x y))
+(rewrite (BitAnd x (BitOr y (BitNot x))) (BitAnd x y))
+
+; XOR absorption
+(rewrite (BitAnd x (BitXor x y)) (BitAnd x (BitNot y)))
+(rewrite (BitAnd (BitXor x y) x) (BitAnd x (BitNot y)))
+
+; Shift by 0
+(rewrite (Shl x (Const 0)) x)
+(rewrite (ShrU x (Const 0)) x)
+(rewrite (ShrS x (Const 0)) x)
+
+; Shift of 0
+(rule ((= e (Shl (Const 0) x)))
+      ((union e (Const 0))))
+(rule ((= e (ShrU (Const 0) x)))
+      ((union e (Const 0))))
+(rule ((= e (ShrS (Const 0) x)))
+      ((union e (Const 0))))

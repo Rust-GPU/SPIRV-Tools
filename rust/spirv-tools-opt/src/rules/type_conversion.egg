@@ -1,0 +1,108 @@
+; =============================================================================
+; Type Conversion Rules
+; =============================================================================
+;
+; Optimizations for SPIR-V type conversion operations (OpConvert*, OpBitcast)
+; and GLSL pack/unpack operations.
+;
+; These operations are all part of the global e-graph and participate in
+; whole-program optimization via RVSDG.
+
+; =============================================================================
+; Round-Trip Elimination
+; =============================================================================
+
+; Float <-> Integer round-trips
+; Converting int->float->int or float->int->float often loses precision,
+; but in some cases (small integers, exact representations) it's identity.
+; These rewrites are conservative - they apply only when the operations cancel.
+
+; Double conversion cancellation (same direction)
+(rewrite (ConvertFToS (ConvertFToS x)) (ConvertFToS x))
+(rewrite (ConvertFToU (ConvertFToU x)) (ConvertFToU x))
+(rewrite (ConvertSToF (ConvertSToF x)) (ConvertSToF x))
+(rewrite (ConvertUToF (ConvertUToF x)) (ConvertUToF x))
+
+; Integer width change cancellation (if same signedness)
+(rewrite (SConvert (SConvert x)) (SConvert x))
+(rewrite (UConvert (UConvert x)) (UConvert x))
+
+; Float precision change cancellation
+(rewrite (FConvert (FConvert x)) (FConvert x))
+
+; =============================================================================
+; Bitcast Rules
+; =============================================================================
+
+; Bitcast of bitcast is bitcast (two reinterpretations)
+; Note: In general bitcast(bitcast(x)) may equal x if types align, but
+; without type info we can only say it's still a bitcast
+(rewrite (Bitcast (Bitcast x)) (Bitcast x))
+
+; =============================================================================
+; Quantization Rules
+; =============================================================================
+
+; Quantize is idempotent - quantizing twice is same as once
+(rewrite (QuantizeToF16 (QuantizeToF16 x)) (QuantizeToF16 x))
+
+; =============================================================================
+; Pack/Unpack Round-Trip Rules
+; =============================================================================
+
+; Unpack of pack is identity (for matching types)
+(rewrite (UnpackHalf2x16 (PackHalf2x16 x)) x)
+(rewrite (UnpackSnorm4x8 (PackSnorm4x8 x)) x)
+(rewrite (UnpackSnorm2x16 (PackSnorm2x16 x)) x)
+(rewrite (UnpackUnorm4x8 (PackUnorm4x8 x)) x)
+(rewrite (UnpackUnorm2x16 (PackUnorm2x16 x)) x)
+(rewrite (UnpackDouble2x32 (PackDouble2x32 x)) x)
+
+; Pack of unpack is identity (for matching types)
+(rewrite (PackHalf2x16 (UnpackHalf2x16 x)) x)
+(rewrite (PackSnorm4x8 (UnpackSnorm4x8 x)) x)
+(rewrite (PackSnorm2x16 (UnpackSnorm2x16 x)) x)
+(rewrite (PackUnorm4x8 (UnpackUnorm4x8 x)) x)
+(rewrite (PackUnorm2x16 (UnpackUnorm2x16 x)) x)
+(rewrite (PackDouble2x32 (UnpackDouble2x32 x)) x)
+
+; =============================================================================
+; Radians/Degrees Round-Trip
+; =============================================================================
+
+; Converting radians->degrees->radians or degrees->radians->degrees is identity
+(rewrite (Radians (Degrees x)) x)
+(rewrite (Degrees (Radians x)) x)
+
+; =============================================================================
+; NaN-Ignoring Min/Max Simplifications
+; =============================================================================
+
+; NMin/NMax are the same as FMin/FMax for non-NaN values
+; For NaN inputs, NMin/NMax return the non-NaN value
+
+; Self is identity (ignoring NaN)
+(rewrite (NMin x x) x)
+(rewrite (NMax x x) x)
+
+; NClamp with equal bounds
+(rewrite (NClamp x a a) a)
+
+; Commutativity
+(rewrite (NMin a b) (NMin b a))
+(rewrite (NMax a b) (NMax b a))
+
+; Idempotent
+(rewrite (NMin (NMin x y) y) (NMin x y))
+(rewrite (NMax (NMax x y) y) (NMax x y))
+(rewrite (NMin x (NMin x y)) (NMin x y))
+(rewrite (NMax x (NMax x y)) (NMax x y))
+
+; Absorption: nmin(x, nmax(x, y)) = x
+(rewrite (NMin x (NMax x y)) x)
+(rewrite (NMin (NMax x y) x) x)
+(rewrite (NMax x (NMin x y)) x)
+(rewrite (NMax (NMin x y) x) x)
+
+; NClamp expressed as nested NMin/NMax
+(rewrite (NClamp x lo hi) (NMax lo (NMin x hi)))

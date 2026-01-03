@@ -1,0 +1,365 @@
+; =============================================================================
+; SPIR-V RVSDG Expression Language Definition for egglog
+; =============================================================================
+;
+; This uses RVSDG (Regionalized Value State Dependence Graph) to represent
+; control flow in a structured way that enables powerful optimizations.
+;
+; Key types:
+; - Expr: Pure value computations (arithmetic, bitwise, etc.)
+; - Region: A sequence of operations with outputs (replaces basic blocks)
+; - Gamma: Conditional selection node (replaces if-then-else + phi)
+; - Theta: Loop node (replaces while loops + phi)
+; - Effect: Side effects and control flow (return, store, etc.)
+
+; =============================================================================
+; Pure Expression Sort (no side effects)
+; =============================================================================
+
+(datatype Expr
+    ; Arithmetic operations
+    (Add Expr Expr)
+    (Sub Expr Expr)
+    (Mul Expr Expr)
+    (Neg Expr)
+    (SDiv Expr Expr)
+    (UDiv Expr Expr)
+    (SRem Expr Expr)
+    (SMod Expr Expr)
+    (UMod Expr Expr)
+
+    ; Bitwise operations
+    (Shl Expr Expr)
+    (ShrS Expr Expr)
+    (ShrU Expr Expr)
+    (BitAnd Expr Expr)
+    (BitOr Expr Expr)
+    (BitXor Expr Expr)
+    (BitNot Expr)
+    (BitReverse Expr)
+    (RotL Expr Expr)
+    (RotR Expr Expr)
+
+    ; Comparison operations
+    (Eq Expr Expr)
+    (Ne Expr Expr)
+    (SLt Expr Expr)
+    (SLe Expr Expr)
+    (SGt Expr Expr)
+    (SGe Expr Expr)
+    (ULt Expr Expr)
+    (ULe Expr Expr)
+    (UGt Expr Expr)
+    (UGe Expr Expr)
+
+    ; Min/Max operations
+    (SMin Expr Expr)
+    (SMax Expr Expr)
+    (UMin Expr Expr)
+    (UMax Expr Expr)
+
+    ; Logical operations (on boolean values)
+    (LogNot Expr)
+    (LogAnd Expr Expr)
+    (LogOr Expr Expr)
+    (LogEq Expr Expr)
+    (LogNe Expr Expr)
+
+    ; Gamma node: structured conditional (RVSDG)
+    ; (Gamma cond then_val else_val) - selects then_val if cond is true
+    ; This is the RVSDG way to represent conditional values without phi nodes
+    (Gamma Expr Expr Expr)
+
+    ; Legacy Select (alias for Gamma for backward compatibility)
+    (Select Expr Expr Expr)
+    (If Expr Expr Expr)
+
+    ; Theta node: tail-controlled loop (RVSDG)
+    ; (Theta cond body_result loop_var_init)
+    ;   - cond: continue condition (evaluated each iteration)
+    ;   - body_result: the value computed in the loop body
+    ;   - loop_var_init: initial value of loop-carried variable
+    ; The loop continues while cond is true, and body_result becomes the next loop_var
+    (Theta Expr Expr Expr)
+
+    ; Loop variable reference - refers to the current iteration's loop variable
+    ; Used inside Theta body to reference the loop-carried state
+    (LoopVar)
+
+    ; LoopInvariant wrapper - marks an expression as loop-invariant
+    ; An expression that doesn't depend on LoopVar can be hoisted out of Theta
+    (LoopInvariant Expr)
+
+    ; Floating-point operations
+    (FAdd Expr Expr)
+    (FSub Expr Expr)
+    (FMul Expr Expr)
+    (FDiv Expr Expr)
+    (FNeg Expr)
+    (FRem Expr Expr)
+    (FMin Expr Expr)
+    (FMax Expr Expr)
+    (FAbs Expr)
+    (FFloor Expr)
+    (FCeil Expr)
+    (FRound Expr)
+    (FTrunc Expr)
+
+    ; Floating-point comparison operations (ordered)
+    (FOrdEq Expr Expr)
+    (FOrdNe Expr Expr)
+    (FOrdLt Expr Expr)
+    (FOrdLe Expr Expr)
+    (FOrdGt Expr Expr)
+    (FOrdGe Expr Expr)
+
+    ; Floating-point comparison operations (unordered - true if NaN)
+    (FUnordEq Expr Expr)
+    (FUnordNe Expr Expr)
+    (FUnordLt Expr Expr)
+    (FUnordLe Expr Expr)
+    (FUnordGt Expr Expr)
+    (FUnordGe Expr Expr)
+
+    ; FP predicates
+    (IsNan Expr)
+    (IsInf Expr)
+
+    ; Vector construction and extraction
+    ; Vec2/3/4 build vectors from scalars
+    (Vec2 Expr Expr)
+    (Vec3 Expr Expr Expr)
+    (Vec4 Expr Expr Expr Expr)
+
+    ; Extract scalar from vector (index is compile-time constant)
+    (VecExtract Expr i64)
+
+    ; Insert scalar into vector at index
+    (VecInsert Expr Expr i64)
+
+    ; Vector arithmetic (component-wise)
+    (VecAdd Expr Expr)
+    (VecSub Expr Expr)
+    (VecMul Expr Expr)
+    (VecDiv Expr Expr)
+    (VecNeg Expr)
+    (VecFAdd Expr Expr)
+    (VecFSub Expr Expr)
+    (VecFMul Expr Expr)
+    (VecFDiv Expr Expr)
+    (VecFNeg Expr)
+
+    ; Dot product
+    (Dot Expr Expr)
+
+    ; Vector times scalar
+    (VecTimesScalar Expr Expr)
+
+    ; Matrix operations
+    ; MatrixTimesScalar (matrix, scalar)
+    (MatTimesScalar Expr Expr)
+    ; MatrixTimesVector (matrix, vector) -> vector
+    (MatTimesVec Expr Expr)
+    ; VectorTimesMatrix (vector, matrix) -> vector
+    (VecTimesMat Expr Expr)
+    ; MatrixTimesMatrix (matrix, matrix) -> matrix
+    (MatTimesMat Expr Expr)
+    ; Transpose
+    (Transpose Expr)
+    ; OuterProduct (vec, vec) -> matrix
+    (OuterProduct Expr Expr)
+    ; Determinant
+    (Determinant Expr)
+    ; Inverse
+    (MatInverse Expr)
+
+    ; GLSL extended instructions commonly optimized
+    (FMix Expr Expr Expr)
+    (SmoothStep Expr Expr Expr)
+    (FClamp Expr Expr Expr)
+    (SClamp Expr Expr Expr)
+    (UClamp Expr Expr Expr)
+    (Cross Expr Expr)
+    (Normalize Expr)
+    (Length Expr)
+    (Distance Expr Expr)
+    (Reflect Expr Expr)
+    (Refract Expr Expr Expr)
+    (FaceForward Expr Expr Expr)
+
+    ; Additional GLSL math functions
+    (Sqrt Expr)
+    (InverseSqrt Expr)
+    (Exp Expr)
+    (Exp2 Expr)
+    (Log Expr)
+    (Log2 Expr)
+    (Pow Expr Expr)
+    (Sin Expr)
+    (Cos Expr)
+    (Tan Expr)
+    (Asin Expr)
+    (Acos Expr)
+    (Atan Expr)
+    (Atan2 Expr Expr)
+    (Sinh Expr)
+    (Cosh Expr)
+    (Tanh Expr)
+    (Asinh Expr)
+    (Acosh Expr)
+    (Atanh Expr)
+    (Fma Expr Expr Expr)
+    (Fract Expr)
+    (Modf Expr)
+    (ModfStruct Expr)
+    (Ldexp Expr Expr)
+    (Frexp Expr)
+    (FrexpStruct Expr)
+    (Step Expr Expr)
+    (Sign Expr)
+    (FSign Expr)
+    (SAbs Expr)
+    (FindILsb Expr)
+    (FindSMsb Expr)
+    (FindUMsb Expr)
+    (BitCount Expr)
+
+    ; Constants - we use i64 for the value
+    ; Const is for 32-bit values, Const64 for 64-bit values
+    (Const i64)
+    (Const64 i64)
+
+    ; Symbols (variables / function arguments)
+    (Sym String)
+
+    ; Argument reference in a region (by index)
+    ; Used inside Gamma/Theta regions to refer to inputs
+    (Arg i64)
+
+    ; ==========================================================================
+    ; Type Conversion Operations (SPIR-V OpConvert* and OpBitcast)
+    ; ==========================================================================
+
+    ; Float to integer conversions
+    (ConvertFToS Expr)      ; Float to signed int (OpConvertFToS)
+    (ConvertFToU Expr)      ; Float to unsigned int (OpConvertFToU)
+
+    ; Integer to float conversions
+    (ConvertSToF Expr)      ; Signed int to float (OpConvertSToF)
+    (ConvertUToF Expr)      ; Unsigned int to float (OpConvertUToF)
+
+    ; Integer width changes
+    (SConvert Expr)         ; Signed int width change (OpSConvert)
+    (UConvert Expr)         ; Unsigned int width change (OpUConvert)
+
+    ; Float precision changes
+    (FConvert Expr)         ; Float precision change (OpFConvert)
+
+    ; Bit-preserving reinterpretation
+    (Bitcast Expr)          ; Bit-preserving type reinterpretation (OpBitcast)
+
+    ; Quantization
+    (QuantizeToF16 Expr)    ; Quantize float to 16-bit precision (OpQuantizeToF16)
+
+    ; ==========================================================================
+    ; Pack/Unpack Operations (GLSL.std.450)
+    ; ==========================================================================
+
+    ; Half-float packing
+    (PackHalf2x16 Expr)     ; Pack two floats into uint (GLSLstd450PackHalf2x16)
+    (UnpackHalf2x16 Expr)   ; Unpack uint to two floats (GLSLstd450UnpackHalf2x16)
+
+    ; Snorm packing
+    (PackSnorm4x8 Expr)     ; Pack 4 floats to snorm bytes (GLSLstd450PackSnorm4x8)
+    (UnpackSnorm4x8 Expr)   ; Unpack snorm bytes to 4 floats (GLSLstd450UnpackSnorm4x8)
+    (PackSnorm2x16 Expr)    ; Pack 2 floats to snorm shorts (GLSLstd450PackSnorm2x16)
+    (UnpackSnorm2x16 Expr)  ; Unpack snorm shorts to 2 floats (GLSLstd450UnpackSnorm2x16)
+
+    ; Unorm packing
+    (PackUnorm4x8 Expr)     ; Pack 4 floats to unorm bytes (GLSLstd450PackUnorm4x8)
+    (UnpackUnorm4x8 Expr)   ; Unpack unorm bytes to 4 floats (GLSLstd450UnpackUnorm4x8)
+    (PackUnorm2x16 Expr)    ; Pack 2 floats to unorm shorts (GLSLstd450PackUnorm2x16)
+    (UnpackUnorm2x16 Expr)  ; Unpack unorm shorts to 2 floats (GLSLstd450UnpackUnorm2x16)
+
+    ; Double packing (for 64-bit doubles)
+    (PackDouble2x32 Expr)   ; Pack two uints to double (GLSLstd450PackDouble2x32)
+    (UnpackDouble2x32 Expr) ; Unpack double to two uints (GLSLstd450UnpackDouble2x32)
+
+    ; ==========================================================================
+    ; Additional GLSL Math Functions
+    ; ==========================================================================
+
+    ; Radians/Degrees conversion
+    (Radians Expr)          ; Convert degrees to radians (GLSLstd450Radians)
+    (Degrees Expr)          ; Convert radians to degrees (GLSLstd450Degrees)
+
+    ; NaN/Inf handling
+    (NMin Expr Expr)        ; NaN-ignoring minimum (GLSLstd450NMin)
+    (NMax Expr Expr)        ; NaN-ignoring maximum (GLSLstd450NMax)
+    (NClamp Expr Expr Expr) ; NaN-ignoring clamp (GLSLstd450NClamp)
+)
+
+; =============================================================================
+; RVSDG Region Types
+; =============================================================================
+
+; A Region represents a computation with inputs and outputs.
+; Regions are used inside Gamma and Theta nodes.
+
+; ExprList for multi-output regions
+(datatype ExprList
+    (ENil)
+    (ECons Expr ExprList)
+)
+
+; Helper to build lists
+(rewrite (ECons x (ENil)) (ECons x (ENil)))
+
+; =============================================================================
+; Additional Expr Constructors Using ExprList
+; =============================================================================
+; These are added to the Expr datatype after ExprList is defined
+
+; VectorShuffle - shuffle two vectors using mask indices
+; (VecShuffle vec1 vec2 mask) where mask is a list of indices
+(function VecShuffle (Expr Expr ExprList) Expr :merge old)
+
+; Composite operations (general, works for structs too)
+(function CompositeConstruct (ExprList) Expr :merge old)
+(function CompositeExtract (Expr i64) Expr :merge old)
+(function CompositeInsert (Expr Expr i64) Expr :merge old)
+
+; CompositeExtract from CompositeConstruct rules
+(rewrite (CompositeExtract (CompositeConstruct (ECons a (ENil))) 0) a)
+(rewrite (CompositeExtract (CompositeConstruct (ECons a (ECons b (ENil)))) 0) a)
+(rewrite (CompositeExtract (CompositeConstruct (ECons a (ECons b (ENil)))) 1) b)
+(rewrite (CompositeExtract (CompositeConstruct (ECons a (ECons b (ECons c (ENil))))) 0) a)
+(rewrite (CompositeExtract (CompositeConstruct (ECons a (ECons b (ECons c (ENil))))) 1) b)
+(rewrite (CompositeExtract (CompositeConstruct (ECons a (ECons b (ECons c (ENil))))) 2) c)
+(rewrite (CompositeExtract (CompositeConstruct (ECons a (ECons b (ECons c (ECons d (ENil)))))) 0) a)
+(rewrite (CompositeExtract (CompositeConstruct (ECons a (ECons b (ECons c (ECons d (ENil)))))) 1) b)
+(rewrite (CompositeExtract (CompositeConstruct (ECons a (ECons b (ECons c (ECons d (ENil)))))) 2) c)
+(rewrite (CompositeExtract (CompositeConstruct (ECons a (ECons b (ECons c (ECons d (ENil)))))) 3) d)
+
+; =============================================================================
+; Effect Sort (side effects and control flow)
+; =============================================================================
+
+(datatype Effect
+    ; No effect (identity)
+    (Pure)
+
+    ; Return from function
+    (Return)
+    (ReturnValue Expr)
+
+    ; Sequence two effects
+    (Seq Effect Effect)
+
+    ; Conditional effect (Gamma over effects)
+    ; (EffGamma cond then_effect else_effect)
+    (EffGamma Expr Effect Effect)
+
+    ; Unreachable (dead code)
+    (Unreachable)
+)

@@ -1,0 +1,150 @@
+; =============================================================================
+; RVSDG (Regionalized Value State Dependence Graph) Rewrite Rules
+; =============================================================================
+;
+; RVSDG represents control flow in a structured, functional way:
+; - Gamma nodes: Conditional selection (replaces if-then-else + phi)
+; - Theta nodes: Tail-controlled loops (replaces while loops + phi)
+; - Effects: Side effects and control flow
+
+; =============================================================================
+; Gamma/Select Equivalence
+; =============================================================================
+
+; Gamma and Select are equivalent - unify them
+(rewrite (Select c t f) (Gamma c t f))
+(rewrite (Gamma c t f) (Select c t f))
+(rewrite (If c t f) (Gamma c t f))
+
+; =============================================================================
+; RVSDG Gamma (Conditional) Rewrite Rules
+; =============================================================================
+
+; Gamma with constant condition
+(rewrite (Gamma (Const 0) t f) f)
+(rewrite (Gamma (Const 1) t f) t)
+
+; Gamma with same true/false values
+(rewrite (Gamma c x x) x)
+
+; Gamma with negated condition
+(rewrite (Gamma (LogNot c) t f) (Gamma c f t))
+
+; Nested Gamma simplification (same condition)
+(rewrite (Gamma c (Gamma c a b) d) (Gamma c a d))
+(rewrite (Gamma c d (Gamma c a b)) (Gamma c d b))
+
+; Gamma distributes over operations (hoisting)
+; These rules enable common subexpression elimination across branches
+(rewrite (Add (Gamma c a b) (Gamma c x y)) (Gamma c (Add a x) (Add b y)))
+(rewrite (Sub (Gamma c a b) (Gamma c x y)) (Gamma c (Sub a x) (Sub b y)))
+(rewrite (Mul (Gamma c a b) (Gamma c x y)) (Gamma c (Mul a x) (Mul b y)))
+(rewrite (BitAnd (Gamma c a b) (Gamma c x y)) (Gamma c (BitAnd a x) (BitAnd b y)))
+(rewrite (BitOr (Gamma c a b) (Gamma c x y)) (Gamma c (BitOr a x) (BitOr b y)))
+(rewrite (BitXor (Gamma c a b) (Gamma c x y)) (Gamma c (BitXor a x) (BitXor b y)))
+
+; Hoist common operations out of Gamma
+; (c ? (x + a) : (x + b)) => x + (c ? a : b)
+(rewrite (Gamma c (Add x a) (Add x b)) (Add x (Gamma c a b)))
+(rewrite (Gamma c (Add a x) (Add b x)) (Add (Gamma c a b) x))
+(rewrite (Gamma c (Sub x a) (Sub x b)) (Sub x (Gamma c a b)))
+(rewrite (Gamma c (Mul x a) (Mul x b)) (Mul x (Gamma c a b)))
+(rewrite (Gamma c (Mul a x) (Mul b x)) (Mul (Gamma c a b) x))
+(rewrite (Gamma c (BitAnd x a) (BitAnd x b)) (BitAnd x (Gamma c a b)))
+(rewrite (Gamma c (BitOr x a) (BitOr x b)) (BitOr x (Gamma c a b)))
+(rewrite (Gamma c (BitXor x a) (BitXor x b)) (BitXor x (Gamma c a b)))
+
+; =============================================================================
+; RVSDG Theta (Loop) Rewrite Rules - Loop Invariant Code Motion
+; =============================================================================
+
+; LoopInvariant is idempotent
+(rewrite (LoopInvariant (LoopInvariant x)) (LoopInvariant x))
+
+; Constants and symbols are inherently loop-invariant (they don't depend on LoopVar)
+(rewrite (Const n) (LoopInvariant (Const n)))
+(rewrite (Const64 n) (LoopInvariant (Const64 n)))
+(rewrite (Sym s) (LoopInvariant (Sym s)))
+
+; LoopVar is NOT loop-invariant (it changes each iteration)
+; No rule to mark LoopVar as LoopInvariant
+
+; Operations on loop invariants produce loop invariants
+(rewrite (Add (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (Add a b)))
+(rewrite (Sub (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (Sub a b)))
+(rewrite (Mul (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (Mul a b)))
+(rewrite (SDiv (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (SDiv a b)))
+(rewrite (UDiv (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (UDiv a b)))
+(rewrite (BitAnd (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (BitAnd a b)))
+(rewrite (BitOr (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (BitOr a b)))
+(rewrite (BitXor (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (BitXor a b)))
+(rewrite (Shl (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (Shl a b)))
+(rewrite (ShrS (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (ShrS a b)))
+(rewrite (ShrU (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (ShrU a b)))
+
+; Unary operations on loop invariants
+(rewrite (Neg (LoopInvariant a)) (LoopInvariant (Neg a)))
+(rewrite (BitNot (LoopInvariant a)) (LoopInvariant (BitNot a)))
+(rewrite (LogNot (LoopInvariant a)) (LoopInvariant (LogNot a)))
+
+; Comparisons on loop invariants
+(rewrite (Eq (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (Eq a b)))
+(rewrite (Ne (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (Ne a b)))
+(rewrite (SLt (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (SLt a b)))
+(rewrite (SLe (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (SLe a b)))
+(rewrite (SGt (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (SGt a b)))
+(rewrite (SGe (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (SGe a b)))
+(rewrite (ULt (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (ULt a b)))
+(rewrite (ULe (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (ULe a b)))
+(rewrite (UGt (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (UGt a b)))
+(rewrite (UGe (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (UGe a b)))
+
+; =============================================================================
+; Theta LICM: Hoist loop-invariant expressions out of Theta
+; =============================================================================
+
+; Core LICM rule: If the body of a Theta computes a LoopInvariant value,
+; that value can be computed before the loop.
+; (Theta cond (LoopInvariant x) init) - the invariant x doesn't need to be in the loop
+; This rule doesn't directly eliminate the Theta, but marks what can be hoisted.
+
+; Strip LoopInvariant wrapper (it's just an annotation for optimization)
+; After optimization, we extract the inner value
+(rewrite (LoopInvariant x) x)
+
+; =============================================================================
+; RVSDG Effect Rewrite Rules
+; =============================================================================
+
+; Sequence identity
+(rewrite (Seq (Pure) e) e)
+(rewrite (Seq e (Pure)) e)
+
+; Unreachable absorbs everything after it
+(rewrite (Seq (Unreachable) e) (Unreachable))
+
+; Effect Gamma with constant condition
+(rewrite (EffGamma (Const 0) t f) f)
+(rewrite (EffGamma (Const 1) t f) t)
+
+; Effect Gamma with same branches
+(rewrite (EffGamma c e e) e)
+
+; Effect Gamma with negated condition
+(rewrite (EffGamma (LogNot c) t f) (EffGamma c f t))
+
+; Both branches return same value -> just return that value
+(rewrite (EffGamma c (ReturnValue x) (ReturnValue x)) (ReturnValue x))
+
+; Both branches unreachable -> unreachable
+(rewrite (EffGamma c (Unreachable) (Unreachable)) (Unreachable))
+
+; One branch unreachable with return in other -> simplify
+; (If cond then return x else unreachable) -> return x when cond is true
+(rewrite (EffGamma c (ReturnValue x) (Unreachable)) (ReturnValue x))
+(rewrite (EffGamma c (Unreachable) (ReturnValue x)) (ReturnValue x))
+
+; Merge return transformation (the key RVSDG optimization!)
+; If both branches return different values, create a Gamma to select the result
+; (EffGamma c (ReturnValue x) (ReturnValue y)) -> (ReturnValue (Gamma c x y))
+(rewrite (EffGamma c (ReturnValue x) (ReturnValue y)) (ReturnValue (Gamma c x y)))

@@ -1,0 +1,243 @@
+; =============================================================================
+; GLSL Extended Instruction Rules
+; =============================================================================
+
+; =============================================================================
+; FMix (Linear Interpolation)
+; =============================================================================
+
+; FMix(a, a, t) = a
+(rewrite (FMix a a t) a)
+
+; FMix(a, b, 0) = a  (when t=0, return first arg)
+; FMix(a, b, 1) = b  (when t=1, return second arg)
+; Note: These require constant detection which we handle via Const
+
+; =============================================================================
+; Clamp Operations
+; =============================================================================
+
+; Clamp with equal bounds returns the bound
+(rewrite (FClamp x a a) a)
+(rewrite (SClamp x a a) a)
+(rewrite (UClamp x a a) a)
+
+; Clamp is idempotent when bounds are the same
+(rewrite (FClamp (FClamp x lo hi) lo hi) (FClamp x lo hi))
+(rewrite (SClamp (SClamp x lo hi) lo hi) (SClamp x lo hi))
+(rewrite (UClamp (UClamp x lo hi) lo hi) (UClamp x lo hi))
+
+; =============================================================================
+; Min/Max Simplifications
+; =============================================================================
+
+; Note: FMin/FMax idempotent, commutative, associative rules are in floating_point.egg
+
+; Clamp expressed as nested min/max
+; clamp(x, lo, hi) = max(lo, min(x, hi))
+(rewrite (FClamp x lo hi) (FMax lo (FMin x hi)))
+
+; =============================================================================
+; Square Root and Inverse Square Root
+; =============================================================================
+
+; sqrt(x*x) = abs(x) (for non-negative x conceptually)
+; InverseSqrt(1) = 1
+; InverseSqrt(InverseSqrt(x)) related to sqrt
+
+; Sqrt of 1 is 1 (conceptual - needs float constant support)
+; InverseSqrt * Sqrt = 1 (conceptual)
+
+; x * InverseSqrt(x) = Sqrt(x) (strength reduction)
+(rewrite (FMul x (InverseSqrt x)) (Sqrt x))
+(rewrite (FMul (InverseSqrt x) x) (Sqrt x))
+
+; 1 / Sqrt(x) = InverseSqrt(x)
+(rewrite (FDiv (Const 1) (Sqrt x)) (InverseSqrt x))
+
+; Sqrt(x) * Sqrt(x) = x
+(rewrite (FMul (Sqrt x) (Sqrt x)) x)
+
+; =============================================================================
+; Exponential and Logarithm
+; =============================================================================
+
+; Log(Exp(x)) = x
+(rewrite (Log (Exp x)) x)
+
+; Exp(Log(x)) = x (for positive x)
+(rewrite (Exp (Log x)) x)
+
+; Log2(Exp2(x)) = x
+(rewrite (Log2 (Exp2 x)) x)
+
+; Exp2(Log2(x)) = x
+(rewrite (Exp2 (Log2 x)) x)
+
+; Exp(0) = 1, Log(1) = 0 (conceptual - needs constants)
+
+; Exp(a + b) = Exp(a) * Exp(b)
+(rewrite (Exp (FAdd a b)) (FMul (Exp a) (Exp b)))
+(rewrite (Exp2 (FAdd a b)) (FMul (Exp2 a) (Exp2 b)))
+
+; Log(a * b) = Log(a) + Log(b)
+(rewrite (Log (FMul a b)) (FAdd (Log a) (Log b)))
+(rewrite (Log2 (FMul a b)) (FAdd (Log2 a) (Log2 b)))
+
+; Log(a / b) = Log(a) - Log(b)
+(rewrite (Log (FDiv a b)) (FSub (Log a) (Log b)))
+(rewrite (Log2 (FDiv a b)) (FSub (Log2 a) (Log2 b)))
+
+; =============================================================================
+; Power Function
+; =============================================================================
+
+; Pow(x, 0) = 1 (conceptual)
+; Pow(x, 1) = x
+; Pow(x, 2) = x * x
+
+; Pow(x, -1) = 1/x
+(rewrite (Pow x (Const -1)) (FDiv (Const 1) x))
+
+; Pow expressed via Exp/Log: Pow(a, b) = Exp(b * Log(a))
+; This enables more algebraic manipulation
+
+; =============================================================================
+; Trigonometric Functions
+; =============================================================================
+
+; sin(0) = 0, cos(0) = 1, tan(0) = 0 (conceptual)
+
+; Double negation
+(rewrite (Sin (FNeg x)) (FNeg (Sin x)))
+(rewrite (Cos (FNeg x)) (Cos x))
+(rewrite (Tan (FNeg x)) (FNeg (Tan x)))
+
+; Sinh/Cosh/Tanh negation
+(rewrite (Sinh (FNeg x)) (FNeg (Sinh x)))
+(rewrite (Cosh (FNeg x)) (Cosh x))
+(rewrite (Tanh (FNeg x)) (FNeg (Tanh x)))
+
+; Inverse trig cancellations (valid for principal value ranges)
+; Note: These are mathematically valid only in restricted domains,
+; but for shader optimization we assume inputs are in valid ranges
+(rewrite (Asin (Sin x)) x)
+(rewrite (Acos (Cos x)) x)
+(rewrite (Atan (Tan x)) x)
+(rewrite (Sin (Asin x)) x)
+(rewrite (Cos (Acos x)) x)
+(rewrite (Tan (Atan x)) x)
+
+; Inverse hyperbolic cancellations
+(rewrite (Asinh (Sinh x)) x)
+(rewrite (Sinh (Asinh x)) x)
+(rewrite (Acosh (Cosh x)) x)
+(rewrite (Cosh (Acosh x)) x)
+(rewrite (Atanh (Tanh x)) x)
+(rewrite (Tanh (Atanh x)) x)
+
+; Tan = Sin / Cos
+(rewrite (Tan x) (FDiv (Sin x) (Cos x)))
+
+; sin^2 + cos^2 = 1 (Pythagorean identity)
+; This is hard to express directly but can help with extraction
+
+; =============================================================================
+; Fused Multiply-Add
+; =============================================================================
+
+; Fma(a, b, c) = a*b + c (definition, for expansion if needed)
+; But prefer Fma when available (single rounding, faster)
+
+; Recognize Fma patterns
+(rewrite (FAdd (FMul a b) c) (Fma a b c))
+(rewrite (FAdd c (FMul a b)) (Fma a b c))
+
+; Fma with zero
+(rewrite (Fma a b (Const 0)) (FMul a b))
+
+; Fma with one
+(rewrite (Fma (Const 1) b c) (FAdd b c))
+(rewrite (Fma a (Const 1) c) (FAdd a c))
+
+; =============================================================================
+; Absolute Value and Sign
+; =============================================================================
+
+; Note: FAbs(FAbs x) = FAbs x is in floating_point.egg
+
+; SAbs idempotent
+(rewrite (SAbs (SAbs x)) (SAbs x))
+
+; SAbs of negation
+(rewrite (SAbs (Neg x)) (SAbs x))
+
+; sign(sign(x)) simplification
+(rewrite (FSign (FSign x)) (FSign x))
+(rewrite (Sign (Sign x)) (Sign x))
+
+; abs(x) * sign(x) = x
+(rewrite (FMul (FAbs x) (FSign x)) x)
+(rewrite (FMul (FSign x) (FAbs x)) x)
+
+; =============================================================================
+; Length, Distance, Normalize
+; =============================================================================
+
+; Distance(a, a) = 0
+; Note: This would produce a float zero, not Const 0
+
+; Length of normalized vector is 1
+; Normalize(Normalize(x)) = Normalize(x) (idempotent for non-zero)
+(rewrite (Normalize (Normalize x)) (Normalize x))
+
+; =============================================================================
+; Cross Product
+; =============================================================================
+
+; Cross product anti-commutativity: a × b = -(b × a)
+(rewrite (Cross a b) (VecNeg (Cross b a)))
+
+; Cross product with self is zero vector
+; (rewrite (Cross a a) (Vec3 (Const 0) (Const 0) (Const 0)))
+; Disabled: Need float zero representation
+
+; =============================================================================
+; Reflect and Refract
+; =============================================================================
+
+; Reflect with zero normal (conceptual)
+; Reflect(I, N) = I - 2*dot(N,I)*N
+
+; =============================================================================
+; Step Function
+; =============================================================================
+
+; Step(edge, x) = 0 if x < edge, else 1
+; Step(a, a) = 1 (x >= edge when x == edge)
+
+; =============================================================================
+; SmoothStep
+; =============================================================================
+
+; SmoothStep(a, b, a) = 0 (at left edge)
+; SmoothStep(a, b, b) = 1 (at right edge)
+; SmoothStep(a, a, x) = undefined/clamped
+
+; =============================================================================
+; Fract
+; =============================================================================
+
+; Fract(x) = x - Floor(x) (definition)
+(rewrite (Fract x) (FSub x (FFloor x)))
+
+; Fract(Fract(x)) = Fract(x) (idempotent for positive x)
+(rewrite (Fract (Fract x)) (Fract x))
+
+; =============================================================================
+; Bit Manipulation (GLSL)
+; =============================================================================
+
+; BitCount(0) = 0 (conceptual)
+; FindILsb(0) = -1 (conceptual)
+; FindSMsb/FindUMsb patterns

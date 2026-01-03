@@ -1,0 +1,182 @@
+; =============================================================================
+; Vector Construction/Extraction Rules
+; =============================================================================
+
+; Extract from Vec2
+(rewrite (VecExtract (Vec2 a b) 0) a)
+(rewrite (VecExtract (Vec2 a b) 1) b)
+
+; Extract from Vec3
+(rewrite (VecExtract (Vec3 a b c) 0) a)
+(rewrite (VecExtract (Vec3 a b c) 1) b)
+(rewrite (VecExtract (Vec3 a b c) 2) c)
+
+; Extract from Vec4
+(rewrite (VecExtract (Vec4 a b c d) 0) a)
+(rewrite (VecExtract (Vec4 a b c d) 1) b)
+(rewrite (VecExtract (Vec4 a b c d) 2) c)
+(rewrite (VecExtract (Vec4 a b c d) 3) d)
+
+; Insert then extract same index returns inserted value
+(rewrite (VecExtract (VecInsert v x 0) 0) x)
+(rewrite (VecExtract (VecInsert v x 1) 1) x)
+(rewrite (VecExtract (VecInsert v x 2) 2) x)
+(rewrite (VecExtract (VecInsert v x 3) 3) x)
+
+; Insert then extract different index returns original
+(rewrite (VecExtract (VecInsert v x 0) 1) (VecExtract v 1))
+(rewrite (VecExtract (VecInsert v x 0) 2) (VecExtract v 2))
+(rewrite (VecExtract (VecInsert v x 0) 3) (VecExtract v 3))
+(rewrite (VecExtract (VecInsert v x 1) 0) (VecExtract v 0))
+(rewrite (VecExtract (VecInsert v x 1) 2) (VecExtract v 2))
+(rewrite (VecExtract (VecInsert v x 1) 3) (VecExtract v 3))
+(rewrite (VecExtract (VecInsert v x 2) 0) (VecExtract v 0))
+(rewrite (VecExtract (VecInsert v x 2) 1) (VecExtract v 1))
+(rewrite (VecExtract (VecInsert v x 2) 3) (VecExtract v 3))
+(rewrite (VecExtract (VecInsert v x 3) 0) (VecExtract v 0))
+(rewrite (VecExtract (VecInsert v x 3) 1) (VecExtract v 1))
+(rewrite (VecExtract (VecInsert v x 3) 2) (VecExtract v 2))
+
+; NOTE: CompositeExtract from CompositeConstruct rules are defined in datatypes.egg
+; along with the ExprList datatype that they depend on.
+
+; =============================================================================
+; Vector Arithmetic Rules
+; =============================================================================
+
+; Vector identity operations
+(rewrite (VecAdd v (Vec2 (Const 0) (Const 0))) v)
+(rewrite (VecAdd v (Vec3 (Const 0) (Const 0) (Const 0))) v)
+(rewrite (VecAdd v (Vec4 (Const 0) (Const 0) (Const 0) (Const 0))) v)
+(rewrite (VecMul v (Vec2 (Const 1) (Const 1))) v)
+(rewrite (VecMul v (Vec3 (Const 1) (Const 1) (Const 1))) v)
+(rewrite (VecMul v (Vec4 (Const 1) (Const 1) (Const 1) (Const 1))) v)
+
+; VecNeg double negation
+(rewrite (VecNeg (VecNeg v)) v)
+(rewrite (VecFNeg (VecFNeg v)) v)
+
+; VecTimesScalar with 0 and 1
+(rewrite (VecTimesScalar v (Const 0)) (Vec2 (Const 0) (Const 0)))
+(rewrite (VecTimesScalar v (Const 1)) v)
+
+; =============================================================================
+; Dot Product Rules
+; =============================================================================
+
+; Dot product with zero vector is zero
+; Dot of unit vectors is 1
+; Self-dot is length squared
+
+; Extract from Dot when one vector is unit vector (has a 1 in one component, 0 elsewhere)
+; Dot(Vec2(1,0), v) = VecExtract(v, 0)
+(rewrite (Dot (Vec2 (Const 1) (Const 0)) v) (VecExtract v 0))
+(rewrite (Dot (Vec2 (Const 0) (Const 1)) v) (VecExtract v 1))
+(rewrite (Dot v (Vec2 (Const 1) (Const 0))) (VecExtract v 0))
+(rewrite (Dot v (Vec2 (Const 0) (Const 1))) (VecExtract v 1))
+
+(rewrite (Dot (Vec3 (Const 1) (Const 0) (Const 0)) v) (VecExtract v 0))
+(rewrite (Dot (Vec3 (Const 0) (Const 1) (Const 0)) v) (VecExtract v 1))
+(rewrite (Dot (Vec3 (Const 0) (Const 0) (Const 1)) v) (VecExtract v 2))
+(rewrite (Dot v (Vec3 (Const 1) (Const 0) (Const 0))) (VecExtract v 0))
+(rewrite (Dot v (Vec3 (Const 0) (Const 1) (Const 0))) (VecExtract v 1))
+(rewrite (Dot v (Vec3 (Const 0) (Const 0) (Const 1))) (VecExtract v 2))
+
+(rewrite (Dot (Vec4 (Const 1) (Const 0) (Const 0) (Const 0)) v) (VecExtract v 0))
+(rewrite (Dot (Vec4 (Const 0) (Const 1) (Const 0) (Const 0)) v) (VecExtract v 1))
+(rewrite (Dot (Vec4 (Const 0) (Const 0) (Const 1) (Const 0)) v) (VecExtract v 2))
+(rewrite (Dot (Vec4 (Const 0) (Const 0) (Const 0) (Const 1)) v) (VecExtract v 3))
+(rewrite (Dot v (Vec4 (Const 1) (Const 0) (Const 0) (Const 0))) (VecExtract v 0))
+(rewrite (Dot v (Vec4 (Const 0) (Const 1) (Const 0) (Const 0))) (VecExtract v 1))
+(rewrite (Dot v (Vec4 (Const 0) (Const 0) (Const 1) (Const 0))) (VecExtract v 2))
+(rewrite (Dot v (Vec4 (Const 0) (Const 0) (Const 0) (Const 1))) (VecExtract v 3))
+
+; Dot is commutative
+(rewrite (Dot a b) (Dot b a))
+
+; =============================================================================
+; Vector Subtraction and Negation
+; =============================================================================
+
+; Vector subtraction with self is zero
+; Note: produces a zero vector, represented via construction
+
+; v - 0 = v (for various dimensions)
+(rewrite (VecSub v (Vec2 (Const 0) (Const 0))) v)
+(rewrite (VecSub v (Vec3 (Const 0) (Const 0) (Const 0))) v)
+(rewrite (VecSub v (Vec4 (Const 0) (Const 0) (Const 0) (Const 0))) v)
+
+; 0 - v = -v
+(rewrite (VecSub (Vec2 (Const 0) (Const 0)) v) (VecNeg v))
+(rewrite (VecSub (Vec3 (Const 0) (Const 0) (Const 0)) v) (VecNeg v))
+(rewrite (VecSub (Vec4 (Const 0) (Const 0) (Const 0) (Const 0)) v) (VecNeg v))
+
+; Floating-point vector variants
+(rewrite (VecFAdd v (Vec2 (Const 0) (Const 0))) v)
+(rewrite (VecFAdd v (Vec3 (Const 0) (Const 0) (Const 0))) v)
+(rewrite (VecFAdd v (Vec4 (Const 0) (Const 0) (Const 0) (Const 0))) v)
+
+(rewrite (VecFMul v (Vec2 (Const 1) (Const 1))) v)
+(rewrite (VecFMul v (Vec3 (Const 1) (Const 1) (Const 1))) v)
+(rewrite (VecFMul v (Vec4 (Const 1) (Const 1) (Const 1) (Const 1))) v)
+
+(rewrite (VecFSub v (Vec2 (Const 0) (Const 0))) v)
+(rewrite (VecFSub v (Vec3 (Const 0) (Const 0) (Const 0))) v)
+(rewrite (VecFSub v (Vec4 (Const 0) (Const 0) (Const 0) (Const 0))) v)
+
+; =============================================================================
+; Vector Operations Distributivity
+; =============================================================================
+
+; VecTimesScalar distributes over VecAdd
+(rewrite (VecTimesScalar (VecAdd a b) s) (VecAdd (VecTimesScalar a s) (VecTimesScalar b s)))
+
+; VecTimesScalar with scalar multiplication
+(rewrite (VecTimesScalar (VecTimesScalar v s1) s2) (VecTimesScalar v (Mul s1 s2)))
+
+; =============================================================================
+; Cross Product Properties
+; =============================================================================
+
+; Cross product with self is zero (for 3D vectors)
+; Note: commented because zero vector construction is complex
+; (rewrite (Cross a a) (Vec3 (Const 0) (Const 0) (Const 0)))
+
+; Cross product negation
+(rewrite (Cross (VecNeg a) b) (VecNeg (Cross a b)))
+(rewrite (Cross a (VecNeg b)) (VecNeg (Cross a b)))
+(rewrite (Cross (VecNeg a) (VecNeg b)) (Cross a b))
+
+; Cross product distributes over scalar multiplication
+(rewrite (Cross (VecTimesScalar a s) b) (VecTimesScalar (Cross a b) s))
+(rewrite (Cross a (VecTimesScalar b s)) (VecTimesScalar (Cross a b) s))
+
+; =============================================================================
+; Dot Product Additional Properties
+; =============================================================================
+
+; Dot product distributes over VecAdd
+(rewrite (Dot (VecAdd a b) c) (Add (Dot a c) (Dot b c)))
+(rewrite (Dot a (VecAdd b c)) (Add (Dot a b) (Dot a c)))
+
+; Dot product distributes over scalar multiplication
+(rewrite (Dot (VecTimesScalar a s) b) (Mul s (Dot a b)))
+(rewrite (Dot a (VecTimesScalar b s)) (Mul (Dot a b) s))
+
+; Dot with negated vector
+(rewrite (Dot (VecNeg a) b) (Neg (Dot a b)))
+(rewrite (Dot a (VecNeg b)) (Neg (Dot a b)))
+
+; =============================================================================
+; Reconstruct Vector from Extracts
+; =============================================================================
+
+; If we extract all components and rebuild, we get the original
+; Vec2(VecExtract(v, 0), VecExtract(v, 1)) = v for Vec2
+; Note: This is an extraction pattern that helps with optimization
+
+; Insert into slot we just extracted from is identity
+(rewrite (VecInsert v (VecExtract v 0) 0) v)
+(rewrite (VecInsert v (VecExtract v 1) 1) v)
+(rewrite (VecInsert v (VecExtract v 2) 2) v)
+(rewrite (VecInsert v (VecExtract v 3) 3) v)

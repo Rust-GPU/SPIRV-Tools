@@ -1,0 +1,225 @@
+; =============================================================================
+; Arithmetic Rewrite Rules
+; =============================================================================
+
+; Identity rules
+(rewrite (Add x (Const 0)) x)
+(rewrite (Add (Const 0) x) x)
+(rewrite (Sub x (Const 0)) x)
+(rewrite (Mul x (Const 1)) x)
+(rewrite (Mul (Const 1) x) x)
+; Mul by zero: use rule + union to avoid cycles
+(rule ((= e (Mul x (Const 0))))
+      ((union e (Const 0))))
+(rule ((= e (Mul (Const 0) x)))
+      ((union e (Const 0))))
+
+; Negation rules
+(rewrite (Sub (Const 0) x) (Neg x))
+(rewrite (Neg (Neg x)) x)
+(rewrite (Mul x (Const -1)) (Neg x))
+(rewrite (Mul (Const -1) x) (Neg x))
+(rewrite (Neg (Add x y)) (Add (Neg x) (Neg y)))
+(rewrite (Neg (Sub x y)) (Sub y x))
+(rule ((= e (Add x (Neg x))))
+      ((union e (Const 0))))
+(rule ((= e (Add (Neg x) x)))
+      ((union e (Const 0))))
+(rule ((= e (Sub x x)))
+      ((union e (Const 0))))
+
+; Algebraic cancellation rules
+(rewrite (Sub (Add x y) x) y)
+(rewrite (Sub (Add y x) x) y)
+(rewrite (Add (Sub x y) y) x)
+(rewrite (Add y (Sub x y)) x)
+(rewrite (Sub (Add x y) y) x)
+(rewrite (Sub (Add y x) y) x)
+(rewrite (Sub x (Sub x y)) y)
+(rewrite (Sub x (Add x y)) (Neg y))
+(rewrite (Sub x (Add y x)) (Neg y))
+(rewrite (Sub (Sub x y) x) (Neg y))
+(rewrite (Sub (Sub a b) (Sub c b)) (Sub a c))
+(rewrite (Sub (Sub a b) (Sub a c)) (Sub c b))
+
+; Commutativity (needed for constant folding)
+(rewrite (Add a b) (Add b a))
+(rewrite (Mul a b) (Mul b a))
+
+; Associativity for Add
+(rewrite (Add (Add a b) c) (Add a (Add b c)))
+
+; Constant reassociation
+(rule ((= e (Add (Add x (Const a)) (Const b))))
+      ((union e (Add x (Const (+ a b))))))
+(rule ((= e (Add (Const a) (Add x (Const b)))))
+      ((union e (Add x (Const (+ a b))))))
+(rule ((= e (Add (Const a) (Add (Const b) x))))
+      ((union e (Add x (Const (+ a b))))))
+
+; Strength reduction: multiply by power of 2 -> shift
+(rewrite (Mul x (Const 2)) (Shl x (Const 1)))
+(rewrite (Mul x (Const 4)) (Shl x (Const 2)))
+(rewrite (Mul x (Const 8)) (Shl x (Const 3)))
+(rewrite (Mul x (Const 16)) (Shl x (Const 4)))
+(rewrite (Mul x (Const 32)) (Shl x (Const 5)))
+(rewrite (Mul x (Const 64)) (Shl x (Const 6)))
+(rewrite (Mul x (Const 128)) (Shl x (Const 7)))
+(rewrite (Mul x (Const 256)) (Shl x (Const 8)))
+
+; Division by power of 2 -> shift (unsigned)
+(rewrite (UDiv x (Const 2)) (ShrU x (Const 1)))
+(rewrite (UDiv x (Const 4)) (ShrU x (Const 2)))
+(rewrite (UDiv x (Const 8)) (ShrU x (Const 3)))
+(rewrite (UDiv x (Const 16)) (ShrU x (Const 4)))
+
+; Division cancellation
+(rewrite (SDiv (Mul x a) a) x)
+(rewrite (SDiv (Mul a x) a) x)
+(rewrite (UDiv (Mul x a) a) x)
+(rewrite (UDiv (Mul a x) a) x)
+
+; Division identity
+(rewrite (SDiv x (Const 1)) x)
+(rewrite (UDiv x (Const 1)) x)
+
+; Division by self
+(rule ((= e (SDiv x x)))
+      ((union e (Const 1))))
+(rule ((= e (UDiv x x)))
+      ((union e (Const 1))))
+
+; Mod/Rem by power of 2: x mod 2^n = x & (2^n - 1) for unsigned
+(rewrite (UMod x (Const 2)) (BitAnd x (Const 1)))
+(rewrite (UMod x (Const 4)) (BitAnd x (Const 3)))
+(rewrite (UMod x (Const 8)) (BitAnd x (Const 7)))
+(rewrite (UMod x (Const 16)) (BitAnd x (Const 15)))
+
+; Division/mod of 0
+(rule ((= e (SDiv (Const 0) x)))
+      ((union e (Const 0))))
+(rule ((= e (UDiv (Const 0) x)))
+      ((union e (Const 0))))
+(rule ((= e (SRem (Const 0) x)))
+      ((union e (Const 0))))
+(rule ((= e (UMod (Const 0) x)))
+      ((union e (Const 0))))
+(rule ((= e (SMod (Const 0) x)))
+      ((union e (Const 0))))
+
+; Mod by 1
+(rule ((= e (SRem x (Const 1))))
+      ((union e (Const 0))))
+(rule ((= e (UMod x (Const 1))))
+      ((union e (Const 0))))
+(rule ((= e (SMod x (Const 1))))
+      ((union e (Const 0))))
+
+; =============================================================================
+; Distributive Law (Factoring) Rules
+; =============================================================================
+
+; (x * a) + (x * b) => x * (a + b)  - factoring out common term
+(rewrite (Add (Mul x a) (Mul x b)) (Mul x (Add a b)))
+(rewrite (Add (Mul a x) (Mul b x)) (Mul x (Add a b)))
+(rewrite (Add (Mul x a) (Mul b x)) (Mul x (Add a b)))
+(rewrite (Add (Mul a x) (Mul x b)) (Mul x (Add a b)))
+
+; (x * a) - (x * b) => x * (a - b)  - factoring with subtraction
+(rewrite (Sub (Mul x a) (Mul x b)) (Mul x (Sub a b)))
+(rewrite (Sub (Mul a x) (Mul b x)) (Mul x (Sub a b)))
+(rewrite (Sub (Mul x a) (Mul b x)) (Mul x (Sub a b)))
+(rewrite (Sub (Mul a x) (Mul x b)) (Mul x (Sub a b)))
+
+; x + x => x * 2  - special case for adding same value
+(rewrite (Add x x) (Mul x (Const 2)))
+
+; =============================================================================
+; Additional Strength Reduction Patterns
+; =============================================================================
+
+; Multiply by 3: x * 3 = (x << 1) + x
+(rewrite (Mul x (Const 3)) (Add (Shl x (Const 1)) x))
+
+; Multiply by 5: x * 5 = (x << 2) + x
+(rewrite (Mul x (Const 5)) (Add (Shl x (Const 2)) x))
+
+; Multiply by 6: x * 6 = (x << 2) + (x << 1) = (x + x) * 3 = ...
+; Using shift+add form
+(rewrite (Mul x (Const 6)) (Add (Shl x (Const 2)) (Shl x (Const 1))))
+
+; Multiply by 7: x * 7 = (x << 3) - x
+(rewrite (Mul x (Const 7)) (Sub (Shl x (Const 3)) x))
+
+; Multiply by 9: x * 9 = (x << 3) + x
+(rewrite (Mul x (Const 9)) (Add (Shl x (Const 3)) x))
+
+; Multiply by 10: x * 10 = (x << 3) + (x << 1)
+(rewrite (Mul x (Const 10)) (Add (Shl x (Const 3)) (Shl x (Const 1))))
+
+; Multiply by 15: x * 15 = (x << 4) - x
+(rewrite (Mul x (Const 15)) (Sub (Shl x (Const 4)) x))
+
+; =============================================================================
+; Signed Division Strength Reduction
+; =============================================================================
+
+; SDiv by power of 2 needs sign-aware handling
+; For signed: x / 2 = (x + (x >> 31)) >> 1 for 32-bit
+; But ShrS already handles sign extension, so for simple cases:
+; Note: These are for non-negative values; full signed div is complex
+
+; =============================================================================
+; Modulo Optimization Patterns
+; =============================================================================
+
+; x % x = 0
+(rule ((= e (SRem x x)))
+      ((union e (Const 0))))
+(rule ((= e (UMod x x)))
+      ((union e (Const 0))))
+(rule ((= e (SMod x x)))
+      ((union e (Const 0))))
+
+; (x * y) % y = 0
+(rule ((= e (SRem (Mul x y) y)))
+      ((union e (Const 0))))
+(rule ((= e (UMod (Mul x y) y)))
+      ((union e (Const 0))))
+(rule ((= e (SRem (Mul y x) y)))
+      ((union e (Const 0))))
+(rule ((= e (UMod (Mul y x) y)))
+      ((union e (Const 0))))
+
+; Note: Min/Max integer operations are in logical.egg
+
+; =============================================================================
+; Algebraic Identities with Shifts
+; =============================================================================
+
+; Combining shifts: (x << a) << b = x << (a + b)
+(rule ((= e (Shl (Shl x (Const a)) (Const b))))
+      ((union e (Shl x (Const (+ a b))))))
+
+; (x >> a) >> b = x >> (a + b) for same shift type
+(rule ((= e (ShrU (ShrU x (Const a)) (Const b))))
+      ((union e (ShrU x (Const (+ a b))))))
+(rule ((= e (ShrS (ShrS x (Const a)) (Const b))))
+      ((union e (ShrS x (Const (+ a b))))))
+
+; Shift by 0 is identity (defined in bitwise.egg)
+
+; =============================================================================
+; Multiplication/Division Relationships
+; =============================================================================
+
+; (x * c) / c = x for non-zero c (assuming no overflow)
+; Already covered above
+
+; (x / c) * c + (x % c) = x (euclidean division identity)
+; This is complex to express but useful for pattern matching
+
+; Negation and multiplication
+(rewrite (Mul (Neg x) y) (Neg (Mul x y)))
+(rewrite (Mul x (Neg y)) (Neg (Mul x y)))
+(rewrite (Mul (Neg x) (Neg y)) (Mul x y))

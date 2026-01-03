@@ -1,0 +1,116 @@
+; =============================================================================
+; Matrix Operation Rules
+; =============================================================================
+
+; Transpose of transpose is identity
+(rewrite (Transpose (Transpose m)) m)
+
+; Matrix times identity (represented as 1.0 scalar) - conceptual
+; MatTimesScalar with 1 and 0
+(rewrite (MatTimesScalar m (Const 1)) m)
+
+; Double inverse is identity
+(rewrite (MatInverse (MatInverse m)) m)
+
+; Transpose of outer product
+; transpose(outerProduct(a,b)) = outerProduct(b,a)
+(rewrite (Transpose (OuterProduct a b)) (OuterProduct b a))
+
+; Matrix multiply associativity
+; (A * B) * C = A * (B * C)
+(rewrite (MatTimesMat (MatTimesMat a b) c) (MatTimesMat a (MatTimesMat b c)))
+
+; Matrix-vector associativity with matrix multiply
+; (A * B) * v = A * (B * v)
+(rewrite (MatTimesVec (MatTimesMat a b) v) (MatTimesVec a (MatTimesVec b v)))
+
+; Vector-matrix associativity
+; v * (A * B) = (v * A) * B
+(rewrite (VecTimesMat v (MatTimesMat a b)) (VecTimesMat (VecTimesMat v a) b))
+
+; Transpose and multiply: (A*B)^T = B^T * A^T
+(rewrite (Transpose (MatTimesMat a b)) (MatTimesMat (Transpose b) (Transpose a)))
+
+; =============================================================================
+; Matrix-Scalar Multiplication Rules
+; =============================================================================
+
+; Scalar multiply by 0 gives zero matrix (represented as scalar 0 times matrix)
+; Note: Without a ZeroMatrix constructor, we keep the scalar multiply form
+(rule ((= e (MatTimesScalar m (Const 0))))
+      ((union e (MatTimesScalar m (Const 0)))))
+
+; Scalar multiply is commutative in the scalar: (M*s1)*s2 = (M*s2)*s1
+; And associative: (M*s1)*s2 = M*(s1*s2)
+; We express this as merging the scalars
+(rewrite (MatTimesScalar (MatTimesScalar m (Const a)) (Const b))
+         (MatTimesScalar m (Const (* a b))))
+
+; =============================================================================
+; Determinant Rules
+; =============================================================================
+
+; Determinant of transpose equals determinant of original
+(rewrite (Determinant (Transpose m)) (Determinant m))
+
+; Determinant of product = product of determinants
+; det(A*B) = det(A) * det(B)
+(rewrite (Determinant (MatTimesMat a b)) (FMul (Determinant a) (Determinant b)))
+
+; Determinant of scalar*matrix = scalar^n * det(matrix) for nxn matrix
+; This is complex without knowing n, so we skip it
+
+; Determinant of inverse = 1/determinant of original
+(rewrite (Determinant (MatInverse m)) (FDiv (Const 1) (Determinant m)))
+
+; =============================================================================
+; Inverse Rules (beyond what's already there)
+; =============================================================================
+
+; Inverse of product: (A*B)^-1 = B^-1 * A^-1
+(rewrite (MatInverse (MatTimesMat a b)) (MatTimesMat (MatInverse b) (MatInverse a)))
+
+; Inverse of transpose: (A^T)^-1 = (A^-1)^T
+(rewrite (MatInverse (Transpose m)) (Transpose (MatInverse m)))
+
+; Inverse of scalar*matrix: (s*M)^-1 = (1/s)*M^-1
+(rewrite (MatInverse (MatTimesScalar m (Const s)))
+         (MatTimesScalar (MatInverse m) (Const (/ 1 s))))
+
+; =============================================================================
+; Outer Product Rules
+; =============================================================================
+
+; Outer product is anti-commutative with transpose
+; (already have: transpose(outerProduct(a,b)) = outerProduct(b,a))
+
+; Outer product distributes over vector addition (conceptually)
+; outerProduct(a+b, c) = outerProduct(a, c) + outerProduct(b, c)
+; But we don't have matrix addition in the e-graph yet
+
+; Outer product with zero vector produces zero matrix
+; (would need zero vector detection)
+
+; =============================================================================
+; Vector-Matrix Multiplication Rules
+; =============================================================================
+
+; Transpose relationship: v * M = (M^T * v)^T for row vector
+; But SPIR-V treats vectors as column vectors, so:
+; VecTimesMat(v, M) treats v as row vector: result is (M^T * v)
+
+; Matrix-vector with transpose
+(rewrite (MatTimesVec (Transpose m) v) (VecTimesMat v m))
+(rewrite (VecTimesMat v (Transpose m)) (MatTimesVec m v))
+
+; =============================================================================
+; Diagonal and Special Matrix Patterns
+; =============================================================================
+
+; If we had identity matrix representation:
+; M * I = M
+; I * M = M
+; M * M^-1 = I
+; M^-1 * M = I
+
+; For now, these would require an Identity constructor
