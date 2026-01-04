@@ -247,15 +247,14 @@ mod tests {
     fn test_add_zero_optimization() {
         let mut egraph = create_spirv_egraph().unwrap();
 
-        // Add expression: x + 0
-        egraph.parse_and_run_program(None, "(let root (Add (Sym \"x\") (Const 0)))").unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        // Add expression: x + 0 and (Sym "x") - they should be equivalent
+        egraph.parse_and_run_program(None, r#"(let add_form (Add (Sym "x") (Const 0)))"#).unwrap();
+        egraph.parse_and_run_program(None, r#"(let x_form (Sym "x"))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 3 (run)))").unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
-        assert!(!results.is_empty());
-        let result = format!("{}", results[0]);
-        // Should simplify to just (Sym "x")
-        assert!(result.contains("Sym") && result.contains("x"), "Expected (Sym \"x\"), got: {}", result);
+        // Check that they are equivalent in the e-graph
+        let check = egraph.parse_and_run_program(None, "(check (= add_form x_form))");
+        assert!(check.is_ok(), "Expected x + 0 to be equivalent to x in the e-graph");
     }
 
     #[test]
