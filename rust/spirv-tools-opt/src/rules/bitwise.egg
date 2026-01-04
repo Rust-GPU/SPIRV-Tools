@@ -161,3 +161,27 @@
 ; x ^ 1 = !x (for booleans)
 ; x & 1 = x (for booleans)
 ; x | 0 = x (already covered)
+
+; =============================================================================
+; Additional Loop Invariant Bitwise Rules
+; =============================================================================
+; Note: Most bitwise loop invariant rules are in rvsdg.egg
+; Here we add the ones that weren't covered there
+
+(rewrite (RotL (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (RotL a b)))
+(rewrite (RotR (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (RotR a b)))
+(rewrite (BitReverse (LoopInvariant a)) (LoopInvariant (BitReverse a)))
+
+; =============================================================================
+; Gamma Distribution for Bitwise Operations
+; =============================================================================
+; Note: Most Gamma distribution rules for bitwise ops are in rvsdg.egg
+; Here we add shift-related rules not covered there
+
+; select(c, ~a, ~b) = ~select(c, a, b)
+(rewrite (Gamma c (BitNot a) (BitNot b)) (BitNot (Gamma c a b)))
+
+; select(c, x << a, x << b) = x << select(c, a, b)
+(rewrite (Gamma c (Shl x a) (Shl x b)) (Shl x (Gamma c a b)))
+(rewrite (Gamma c (ShrU x a) (ShrU x b)) (ShrU x (Gamma c a b)))
+(rewrite (Gamma c (ShrS x a) (ShrS x b)) (ShrS x (Gamma c a b)))

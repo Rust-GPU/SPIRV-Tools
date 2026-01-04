@@ -168,3 +168,31 @@
 
 ; select(c, a || b, a || d) = a || select(c, b, d)
 (rewrite (Select c (LogOr a b) (LogOr a d)) (LogOr a (Select c b d)))
+
+; =============================================================================
+; Loop Invariant Logical Rules
+; =============================================================================
+; Note: LogNot is in rvsdg.egg, SMin/SMax/UMin/UMax are in rvsdg.egg
+; Here we add the ones not covered there
+
+(rewrite (LogAnd (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (LogAnd a b)))
+(rewrite (LogOr (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (LogOr a b)))
+(rewrite (LogEq (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (LogEq a b)))
+(rewrite (LogNe (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (LogNe a b)))
+
+; =============================================================================
+; Gamma with Logical Operations
+; =============================================================================
+
+; select(c, !a, !b) = !(select(c, a, b))
+(rewrite (Gamma c (LogNot a) (LogNot b)) (LogNot (Gamma c a b)))
+
+; select(c, a && x, b && x) = select(c, a, b) && x
+(rewrite (Gamma c (LogAnd a x) (LogAnd b x)) (LogAnd (Gamma c a b) x))
+(rewrite (Gamma c (LogOr a x) (LogOr b x)) (LogOr (Gamma c a b) x))
+
+; select(c, min(a, x), min(b, x)) = min(select(c, a, b), x)
+(rewrite (Gamma c (SMin a x) (SMin b x)) (SMin (Gamma c a b) x))
+(rewrite (Gamma c (SMax a x) (SMax b x)) (SMax (Gamma c a b) x))
+(rewrite (Gamma c (UMin a x) (UMin b x)) (UMin (Gamma c a b) x))
+(rewrite (Gamma c (UMax a x) (UMax b x)) (UMax (Gamma c a b) x))

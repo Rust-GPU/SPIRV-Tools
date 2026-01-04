@@ -151,3 +151,52 @@
 (rewrite (SLe (Add a c) (Add b c)) (SLe a b))
 (rewrite (SGt (Add a c) (Add b c)) (SGt a b))
 (rewrite (SGe (Add a c) (Add b c)) (SGe a b))
+
+; =============================================================================
+; Loop Invariant Comparisons
+; =============================================================================
+; Note: Eq, Ne, SLt, SLe, SGt, SGe, ULt, ULe, UGt, UGe are already in rvsdg.egg
+; The rules there cover the basic comparisons
+
+; =============================================================================
+; Gamma Distribution for Comparisons
+; =============================================================================
+
+; select(c, a == x, a == y) = a == select(c, x, y)
+(rewrite (Gamma c (Eq a x) (Eq a y)) (Eq a (Gamma c x y)))
+(rewrite (Gamma c (Ne a x) (Ne a y)) (Ne a (Gamma c x y)))
+(rewrite (Gamma c (SLt a x) (SLt a y)) (SLt a (Gamma c x y)))
+(rewrite (Gamma c (SLe a x) (SLe a y)) (SLe a (Gamma c x y)))
+(rewrite (Gamma c (ULt a x) (ULt a y)) (ULt a (Gamma c x y)))
+(rewrite (Gamma c (ULe a x) (ULe a y)) (ULe a (Gamma c x y)))
+
+; =============================================================================
+; Comparison after Bitwise Operations
+; =============================================================================
+
+; (x & mask) == 0 checks if bits in mask are clear
+; (x | mask) != 0 is always true if mask != 0
+
+; (x & 1) == 0 checks if x is even
+; (x & 1) != 0 checks if x is odd
+
+; =============================================================================
+; Comparison after Arithmetic
+; =============================================================================
+
+; (x - y) == 0 is x == y
+(rewrite (Eq (Sub x y) (Const 0)) (Eq x y))
+(rewrite (Ne (Sub x y) (Const 0)) (Ne x y))
+
+; (x + y) == 0 where y is constant becomes x == -y
+; This is handled by constant propagation
+
+; =============================================================================
+; Zero/NonZero Comparisons
+; =============================================================================
+
+; x == 0 || y == 0 patterns
+; These are common in graphics for avoiding division by zero
+
+; LogNot of equality with zero is same as != 0
+(rewrite (LogNot (Eq x (Const 0))) (Ne x (Const 0)))
