@@ -185,3 +185,22 @@
 (rewrite (Gamma c (Shl x a) (Shl x b)) (Shl x (Gamma c a b)))
 (rewrite (Gamma c (ShrU x a) (ShrU x b)) (ShrU x (Gamma c a b)))
 (rewrite (Gamma c (ShrS x a) (ShrS x b)) (ShrS x (Gamma c a b)))
+
+; =============================================================================
+; Additional Redundant And/Or/Xor Rules (not using primitives)
+; =============================================================================
+; Note: The primitive-based rules are in primitives.egg (bits-disjoint, etc.)
+
+; These are additional patterns that don't require primitives:
+
+; (a & m) | (b & m) = (a | b) & m  (factor out common mask)
+(rewrite (BitOr (BitAnd a m) (BitAnd b m)) (BitAnd (BitOr a b) m))
+(rewrite (BitOr (BitAnd m a) (BitAnd b m)) (BitAnd (BitOr a b) m))
+(rewrite (BitOr (BitAnd a m) (BitAnd m b)) (BitAnd (BitOr a b) m))
+(rewrite (BitOr (BitAnd m a) (BitAnd m b)) (BitAnd (BitOr a b) m))
+
+; (a & m) ^ (b & m) = (a ^ b) & m  (factor out common mask)
+(rewrite (BitXor (BitAnd a m) (BitAnd b m)) (BitAnd (BitXor a b) m))
+(rewrite (BitXor (BitAnd m a) (BitAnd b m)) (BitAnd (BitXor a b) m))
+(rewrite (BitXor (BitAnd a m) (BitAnd m b)) (BitAnd (BitXor a b) m))
+(rewrite (BitXor (BitAnd m a) (BitAnd m b)) (BitAnd (BitXor a b) m))

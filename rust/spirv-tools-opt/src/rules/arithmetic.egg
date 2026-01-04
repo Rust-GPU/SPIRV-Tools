@@ -356,3 +356,59 @@
 ; (x ^ a) ^ b = x ^ (a ^ b)
 (rule ((= e (BitXor (BitXor x (Const a)) (Const b))))
       ((union e (BitXor x (Const (^ a b))))))
+
+; =============================================================================
+; Generic Add/Sub Cancellation (C++ MergeGenericAddSubArithmetic)
+; =============================================================================
+
+; (a - b) + b = a (subtrahend cancels with addend)
+(rewrite (Add (Sub a b) b) a)
+(rewrite (Add b (Sub a b)) a)
+
+; (a + b) - b = a
+(rewrite (Sub (Add a b) b) a)
+(rewrite (Sub (Add b a) b) a)
+
+; =============================================================================
+; Negate Merging with Mul/Div (C++ MergeNegateMulDivArithmetic)
+; =============================================================================
+; These rules merge negation into multiply/divide when one operand is constant
+
+; -(-x) = x (already have this)
+; -(x * c) = x * (-c) - handled via Neg distribution
+; -(c * x) = x * (-c) - handled via Neg distribution
+
+; =============================================================================
+; Negate Merging with Add/Sub (C++ MergeNegateAddSubArithmetic)
+; =============================================================================
+
+; -(x + c) = (-c) - x
+(rule ((= e (Neg (Add x (Const c)))))
+      ((union e (Sub (Const (- 0 c)) x))))
+(rule ((= e (Neg (Add (Const c) x))))
+      ((union e (Sub (Const (- 0 c)) x))))
+
+; -(x - c) = c - x
+(rule ((= e (Neg (Sub x (Const c)))))
+      ((union e (Sub (Const c) x))))
+
+; -(c - x) = x - c (already have via Neg(Sub a b) = Sub b a)
+
+; =============================================================================
+; Add with Negate Merging (C++ MergeAddNegateArithmetic)
+; =============================================================================
+
+; (-x) + c = c - x
+(rewrite (Add (Neg x) (Const c)) (Sub (Const c) x))
+(rewrite (Add (Const c) (Neg x)) (Sub (Const c) x))
+
+; =============================================================================
+; Sub with Negate Merging (C++ MergeSubNegateArithmetic)
+; =============================================================================
+
+; (-x) - c = -(x + c) = (-c) - x
+(rule ((= e (Sub (Neg x) (Const c))))
+      ((union e (Sub (Const (- 0 c)) x))))
+
+; c - (-x) = c + x
+(rewrite (Sub (Const c) (Neg x)) (Add (Const c) x))

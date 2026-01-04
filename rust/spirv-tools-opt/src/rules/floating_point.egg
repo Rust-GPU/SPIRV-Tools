@@ -242,3 +242,65 @@
 ; a / (b / c) = (a * c) / b - already covered above
 
 ; (a / b) / c = a / (b * c) - already covered above
+
+; =============================================================================
+; FRem Rules (C++ RedundantFMod)
+; =============================================================================
+
+; 0 % x = 0
+(rewrite (FRem (Const 0) x) (Const 0))
+
+; =============================================================================
+; Generic Add/Sub Cancellation for FP (C++ MergeGenericAddSubArithmetic)
+; =============================================================================
+
+; (a - b) + b = a
+(rewrite (FAdd (FSub a b) b) a)
+(rewrite (FAdd b (FSub a b)) a)
+
+; (a + b) - b = a
+(rewrite (FSub (FAdd a b) b) a)
+(rewrite (FSub (FAdd b a) b) a)
+
+; =============================================================================
+; Negate Merging with FMul/FDiv (C++ MergeNegateMulDivArithmetic)
+; =============================================================================
+; Already covered via FNeg distribution rules
+
+; =============================================================================
+; Negate Merging with FAdd/FSub (C++ MergeNegateAddSubArithmetic)
+; =============================================================================
+
+; -(x + c) = -x - c = (-c) - x, but -x - c is simpler to express
+; FNeg(FAdd(x, c)) = FSub(FNeg(c), x) but we already have FNeg dist over FAdd
+; So we use: -(x + c) = -x + (-c) = FAdd(FNeg(x), FNeg(Const(c)))
+; But simpler: FNeg(x + c) already gets FSub via FAdd->FNeg rule
+
+; -(x - c) = c - x (already handled via FNeg(FSub a b) = FSub b a)
+
+; =============================================================================
+; FAdd with Negate Merging (C++ MergeAddNegateArithmetic)
+; =============================================================================
+
+; (-x) + c = c - x
+(rewrite (FAdd (FNeg x) (Const c)) (FSub (Const c) x))
+(rewrite (FAdd (Const c) (FNeg x)) (FSub (Const c) x))
+
+; =============================================================================
+; FSub with Negate Merging (C++ MergeSubNegateArithmetic)
+; =============================================================================
+
+; (-x) - c = -(x + c) which is -FAdd(x, c), already handled by FNeg dist
+
+; c - (-x) = c + x
+(rewrite (FSub c (FNeg x)) (FAdd c x))
+
+; =============================================================================
+; Mul/Div Cancellation (C++ MergeMulDivArithmetic)
+; =============================================================================
+
+; (y / x) * x = y
+(rewrite (FMul (FDiv y x) x) y)
+(rewrite (FMul x (FDiv y x)) y)
+
+; x * (y / x) = y - same as above with commutativity

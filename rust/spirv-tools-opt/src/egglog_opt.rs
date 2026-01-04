@@ -707,4 +707,87 @@ mod tests {
                 "Expected Sqrt, got: {}", result);
     }
 
+    // Tests for generic add/sub cancellation (C++ MergeGenericAddSubArithmetic)
+    #[test]
+    fn test_add_sub_cancellation() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // (a - b) + b should simplify to a
+        egraph.parse_and_run_program(None, r#"(let expr (Add (Sub (Sym "a") (Sym "b")) (Sym "b")))"#).unwrap();
+        egraph.parse_and_run_program(None, r#"(let expected (Sym "a"))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 3 (run)))").unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= expr expected))");
+        assert!(check.is_ok(), "Expected (a - b) + b to simplify to a");
+    }
+
+    #[test]
+    fn test_sub_add_cancellation() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // (a + b) - b should simplify to a
+        egraph.parse_and_run_program(None, r#"(let expr (Sub (Add (Sym "a") (Sym "b")) (Sym "b")))"#).unwrap();
+        egraph.parse_and_run_program(None, r#"(let expected (Sym "a"))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 3 (run)))").unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= expr expected))");
+        assert!(check.is_ok(), "Expected (a + b) - b to simplify to a");
+    }
+
+    // Test mask factoring
+    #[test]
+    fn test_mask_factoring_or() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // (a & m) | (b & m) should simplify to (a | b) & m
+        egraph.parse_and_run_program(None, r#"(let expr (BitOr (BitAnd (Sym "a") (Sym "m")) (BitAnd (Sym "b") (Sym "m"))))"#).unwrap();
+        egraph.parse_and_run_program(None, r#"(let expected (BitAnd (BitOr (Sym "a") (Sym "b")) (Sym "m")))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 3 (run)))").unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= expr expected))");
+        assert!(check.is_ok(), "Expected (a & m) | (b & m) to simplify to (a | b) & m");
+    }
+
+    // Test FP add/sub cancellation
+    #[test]
+    fn test_fadd_fsub_cancellation() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // (a - b) + b should simplify to a for floating point
+        egraph.parse_and_run_program(None, r#"(let expr (FAdd (FSub (Sym "a") (Sym "b")) (Sym "b")))"#).unwrap();
+        egraph.parse_and_run_program(None, r#"(let expected (Sym "a"))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 3 (run)))").unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= expr expected))");
+        assert!(check.is_ok(), "Expected FP (a - b) + b to simplify to a");
+    }
+
+    // Test FDiv cancellation
+    #[test]
+    fn test_fdiv_fmul_cancellation() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // (y / x) * x should simplify to y
+        egraph.parse_and_run_program(None, r#"(let expr (FMul (FDiv (Sym "y") (Sym "x")) (Sym "x")))"#).unwrap();
+        egraph.parse_and_run_program(None, r#"(let expected (Sym "y"))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 3 (run)))").unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= expr expected))");
+        assert!(check.is_ok(), "Expected (y / x) * x to simplify to y");
+    }
+
+    // Test negate with constant add
+    #[test]
+    fn test_add_neg_to_sub() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // (-x) + c should simplify to c - x
+        egraph.parse_and_run_program(None, r#"(let expr (Add (Neg (Sym "x")) (Const 5)))"#).unwrap();
+        egraph.parse_and_run_program(None, r#"(let expected (Sub (Const 5) (Sym "x")))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 3 (run)))").unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= expr expected))");
+        assert!(check.is_ok(), "Expected (-x) + c to simplify to c - x");
+    }
+
 }
