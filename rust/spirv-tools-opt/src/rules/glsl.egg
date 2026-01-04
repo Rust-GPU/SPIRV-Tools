@@ -241,3 +241,91 @@
 ; BitCount(0) = 0 (conceptual)
 ; FindILsb(0) = -1 (conceptual)
 ; FindSMsb/FindUMsb patterns
+
+; BitCount of constant 0
+(rule ((= e (BitCount (Const 0))))
+      ((union e (Const 0))))
+
+; FindILsb of 0 returns -1
+(rule ((= e (FindILsb (Const 0))))
+      ((union e (Const -1))))
+
+; FindSMsb of 0 returns -1
+(rule ((= e (FindSMsb (Const 0))))
+      ((union e (Const -1))))
+
+; FindUMsb of 0 returns -1
+(rule ((= e (FindUMsb (Const 0))))
+      ((union e (Const -1))))
+
+; =============================================================================
+; Additional GLSL Simplifications (C++ Parity)
+; =============================================================================
+
+; Sqrt simplifications
+(rewrite (Sqrt (FMul x x)) (FAbs x))
+
+; Pow simplifications
+(rewrite (Pow x (Const 0)) (Const 1))
+(rewrite (Pow x (Const 2)) (FMul x x))
+
+; Clamp with value already within bounds
+; clamp(clamp(x, a, b), a, b) = clamp(x, a, b) - already covered above
+
+; FMix edge cases
+; FMix(x, y, 0) = x
+; FMix(x, y, 1) = y
+; These require float constants which we represent as Const
+
+; Step simplifications
+; step(e, x) where x >= e returns 1, x < e returns 0
+; These require runtime knowledge
+
+; SmoothStep edge cases
+(rewrite (SmoothStep x x t) x)
+
+; Distance of same vector is 0
+; Distance(v, v) = 0.0 - needs float zero
+
+; Length of zero vector is 0
+; Normalize of unit vector is itself
+
+; Cross product of parallel vectors is zero
+; Cross(v, v) = vec3(0) - needs vector zero
+
+; =============================================================================
+; Sign and Absolute Value Relationships
+; =============================================================================
+
+; sign(-x) = -sign(x)
+(rewrite (FSign (FNeg x)) (FNeg (FSign x)))
+(rewrite (Sign (Neg x)) (Neg (Sign x)))
+
+; abs(abs(x)) = abs(x) - already in floating_point.egg for FAbs
+
+; sign(abs(x)) = sign(x) when x != 0
+; This is more complex to express
+
+; Note: Radians/Degrees and NMin/NMax/NClamp rules are in type_conversion.egg
+; Note: Pack/Unpack rules are in type_conversion.egg
+
+; =============================================================================
+; Ldexp and Frexp Relationships
+; =============================================================================
+
+; Ldexp(x, 0) = x (multiply by 2^0 = 1)
+; This would need integer 0 constant detection
+
+; =============================================================================
+; Fma Optimizations (beyond what's above)
+; =============================================================================
+
+; Fma(0, b, c) = c
+(rewrite (Fma (Const 0) b c) c)
+(rewrite (Fma a (Const 0) c) c)
+
+; Fma(a, b, 0) = a * b - already covered
+
+; Fma(-1, b, c) = c - b
+(rewrite (Fma (Const -1) b c) (FSub c b))
+(rewrite (Fma a (Const -1) c) (FSub c a))

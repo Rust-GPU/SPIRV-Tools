@@ -70,3 +70,94 @@
       ((union e (Const 0))))
 (rule ((= e (ShrS (Const 0) x)))
       ((union e (Const 0))))
+
+; =============================================================================
+; Rotation Rules
+; =============================================================================
+
+; Rotate by 0 is identity
+(rewrite (RotL x (Const 0)) x)
+(rewrite (RotR x (Const 0)) x)
+
+; Rotate of 0 is 0
+(rule ((= e (RotL (Const 0) x)))
+      ((union e (Const 0))))
+(rule ((= e (RotR (Const 0) x)))
+      ((union e (Const 0))))
+
+; Rotate left and right are inverses (for 32-bit, rot(x, n) = rot(x, 32-n))
+; RotL(x, n) = RotR(x, -n) in modular arithmetic
+(rewrite (RotL x (Neg n)) (RotR x n))
+(rewrite (RotR x (Neg n)) (RotL x n))
+
+; BitReverse is self-inverse when applied twice
+(rewrite (BitReverse (BitReverse x)) x)
+
+; =============================================================================
+; Bit Masking Patterns
+; =============================================================================
+
+; (x << n) >> n extracts high bits with zeros in low n bits (for ShrU)
+; (x >> n) << n extracts high bits with zeros in low n bits
+; These are used for bit field operations
+
+; Masking with shift: (x & mask) where mask is 2^n - 1 extracts low n bits
+; x & 1 extracts lowest bit
+(rewrite (BitAnd (BitOr x y) (Const 1)) (BitOr (BitAnd x (Const 1)) (BitAnd y (Const 1))))
+
+; Shift then mask vs mask then shift optimizations
+; ((x >> n) & m) vs ((x & (m << n)) >> n)
+
+; =============================================================================
+; Bit Field Operations (C++ parity)
+; =============================================================================
+
+; Extract low bit: x & 1
+; Test if power of 2: (x & (x - 1)) == 0 for x > 0
+; Count trailing zeros relates to FindILsb
+; Count leading zeros relates to FindSMsb/FindUMsb
+
+; (x | y) & ~x = y & ~x (masking)
+(rewrite (BitAnd (BitOr x y) (BitNot x)) (BitAnd y (BitNot x)))
+(rewrite (BitAnd (BitOr y x) (BitNot x)) (BitAnd y (BitNot x)))
+
+; (x & y) | ~x = y | ~x (masking)
+(rewrite (BitOr (BitAnd x y) (BitNot x)) (BitOr y (BitNot x)))
+(rewrite (BitOr (BitAnd y x) (BitNot x)) (BitOr y (BitNot x)))
+
+; XOR with all ones is NOT
+; Already covered: (rewrite (BitXor x (Const -1)) (BitNot x))
+
+; =============================================================================
+; Shift Combining (C++ parity)
+; =============================================================================
+
+; Combine shifts in opposite directions
+; (x >> a) << a masks off low bits (when a is same)
+(rewrite (Shl (ShrU x (Const a)) (Const a)) (BitAnd x (BitNot (Sub (Shl (Const 1) (Const a)) (Const 1)))))
+
+; (x << a) >> a for ShrU masks off high bits
+; Note: For signed shift right, this is more complex
+
+; Shift of shifted value
+; (x << a) << b = x << (a + b) - already in arithmetic.egg
+
+; =============================================================================
+; Bit Counting Relationships
+; =============================================================================
+
+; BitCount(~x) + BitCount(x) = bit_width (for fixed width)
+; FindILsb(x) == -1 when x == 0
+; FindILsb(x) >= 0 when x != 0
+
+; BitReverse(x) relationships
+; FindILsb(BitReverse(x)) relates to FindSMsb(x)
+
+; =============================================================================
+; Boolean Bit Optimization
+; =============================================================================
+
+; For boolean values (0 or 1):
+; x ^ 1 = !x (for booleans)
+; x & 1 = x (for booleans)
+; x | 0 = x (already covered)

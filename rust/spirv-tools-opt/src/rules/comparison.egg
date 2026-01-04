@@ -27,3 +27,127 @@
 ; Comparison with negation
 (rewrite (Eq x (Neg x)) (Eq x (Const 0)))
 (rewrite (Ne x (Neg x)) (Ne x (Const 0)))
+
+; =============================================================================
+; Comparison Negation (C++ Parity)
+; =============================================================================
+
+; LogNot of comparisons flips the comparison
+(rewrite (LogNot (Eq a b)) (Ne a b))
+(rewrite (LogNot (Ne a b)) (Eq a b))
+(rewrite (LogNot (SLt a b)) (SGe a b))
+(rewrite (LogNot (SLe a b)) (SGt a b))
+(rewrite (LogNot (SGt a b)) (SLe a b))
+(rewrite (LogNot (SGe a b)) (SLt a b))
+(rewrite (LogNot (ULt a b)) (UGe a b))
+(rewrite (LogNot (ULe a b)) (UGt a b))
+(rewrite (LogNot (UGt a b)) (ULe a b))
+(rewrite (LogNot (UGe a b)) (ULt a b))
+
+; =============================================================================
+; Comparison Flipping (swap operands)
+; =============================================================================
+
+; a < b is equivalent to b > a
+(rewrite (SLt a b) (SGt b a))
+(rewrite (SLe a b) (SGe b a))
+(rewrite (ULt a b) (UGt b a))
+(rewrite (ULe a b) (UGe b a))
+
+; Equality is symmetric
+(rewrite (Eq a b) (Eq b a))
+(rewrite (Ne a b) (Ne b a))
+
+; =============================================================================
+; Comparison of Negated Values
+; =============================================================================
+
+; (-a) < (-b) is equivalent to b < a (for signed)
+(rewrite (SLt (Neg a) (Neg b)) (SLt b a))
+(rewrite (SLe (Neg a) (Neg b)) (SLe b a))
+(rewrite (SGt (Neg a) (Neg b)) (SGt b a))
+(rewrite (SGe (Neg a) (Neg b)) (SGe b a))
+
+; =============================================================================
+; Comparison with Constants
+; =============================================================================
+
+; x < 0 for signed: test sign bit
+; x >= 0 for signed: test non-negative
+
+; x < 1 for unsigned is x == 0
+(rewrite (ULt x (Const 1)) (Eq x (Const 0)))
+
+; x <= 0 for unsigned is x == 0
+(rewrite (ULe x (Const 0)) (Eq x (Const 0)))
+
+; x > 0 for unsigned is x != 0
+(rewrite (UGt x (Const 0)) (Ne x (Const 0)))
+
+; x >= 1 for unsigned is x != 0
+(rewrite (UGe x (Const 1)) (Ne x (Const 0)))
+
+; =============================================================================
+; Comparison Chaining (C++ Parity)
+; =============================================================================
+
+; (a < b) && (b < c) implies a < c (transitivity)
+; Hard to express directly, but useful for analysis
+
+; (a == b) && (b == c) implies a == c
+; Also hard to express directly
+
+; (a <= b) && (b <= a) implies a == b
+(rule ((= e (LogAnd (SLe a b) (SLe b a))))
+      ((union e (Eq a b))))
+(rule ((= e (LogAnd (ULe a b) (ULe b a))))
+      ((union e (Eq a b))))
+
+; (a < b) || (a >= b) is always true
+(rule ((= e (LogOr (SLt a b) (SGe a b))))
+      ((union e (Const 1))))
+(rule ((= e (LogOr (ULt a b) (UGe a b))))
+      ((union e (Const 1))))
+
+; (a < b) && (a >= b) is always false
+(rule ((= e (LogAnd (SLt a b) (SGe a b))))
+      ((union e (Const 0))))
+(rule ((= e (LogAnd (ULt a b) (UGe a b))))
+      ((union e (Const 0))))
+
+; =============================================================================
+; Min/Max and Comparison Relationships
+; =============================================================================
+
+; SMin(a, b) <= a is always true
+; SMax(a, b) >= a is always true
+
+; a <= SMax(a, b) is always true
+(rule ((= e (SLe a (SMax a b))))
+      ((union e (Const 1))))
+(rule ((= e (ULe a (UMax a b))))
+      ((union e (Const 1))))
+
+; SMin(a, b) <= a is always true
+(rule ((= e (SLe (SMin a b) a)))
+      ((union e (Const 1))))
+(rule ((= e (ULe (UMin a b) a)))
+      ((union e (Const 1))))
+
+; =============================================================================
+; Comparison with Add/Sub
+; =============================================================================
+
+; (a + c) == (b + c) is a == b
+(rewrite (Eq (Add a c) (Add b c)) (Eq a b))
+(rewrite (Ne (Add a c) (Add b c)) (Ne a b))
+
+; (a - c) == (b - c) is a == b
+(rewrite (Eq (Sub a c) (Sub b c)) (Eq a b))
+(rewrite (Ne (Sub a c) (Sub b c)) (Ne a b))
+
+; (a + c) < (b + c) is a < b (no overflow assumed)
+(rewrite (SLt (Add a c) (Add b c)) (SLt a b))
+(rewrite (SLe (Add a c) (Add b c)) (SLe a b))
+(rewrite (SGt (Add a c) (Add b c)) (SGt a b))
+(rewrite (SGe (Add a c) (Add b c)) (SGe a b))

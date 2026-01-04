@@ -199,3 +199,112 @@
 (rewrite (FMul (Gamma c a b) (Gamma c x y)) (Gamma c (FMul a x) (FMul b y)))
 (rewrite (Gamma c (FAdd x a) (FAdd x b)) (FAdd x (Gamma c a b)))
 (rewrite (Gamma c (FMul x a) (FMul x b)) (FMul x (Gamma c a b)))
+
+; =============================================================================
+; Theta (Loop) Optimization Rules
+; =============================================================================
+
+; Theta with false condition never executes - return initial value
+(rewrite (Theta (Const 0) body init) init)
+
+; Theta with constant true condition would loop forever
+; We don't simplify this as it's an infinite loop
+
+; Theta where body equals LoopVar - loop does nothing, return init
+; (Theta cond (LoopVar) init) = init when loop doesn't modify state
+(rewrite (Theta cond (LoopVar) init) init)
+
+; =============================================================================
+; More Loop Invariant Propagation
+; =============================================================================
+
+; Comparison of loop invariants
+(rewrite (FOrdEq (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (FOrdEq a b)))
+(rewrite (FOrdNe (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (FOrdNe a b)))
+(rewrite (FOrdLt (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (FOrdLt a b)))
+(rewrite (FOrdLe (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (FOrdLe a b)))
+(rewrite (FOrdGt (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (FOrdGt a b)))
+(rewrite (FOrdGe (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (FOrdGe a b)))
+
+; GLSL extended instructions on loop invariants
+(rewrite (FMin (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (FMin a b)))
+(rewrite (FMax (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (FMax a b)))
+(rewrite (FFloor (LoopInvariant a)) (LoopInvariant (FFloor a)))
+(rewrite (FCeil (LoopInvariant a)) (LoopInvariant (FCeil a)))
+(rewrite (FRound (LoopInvariant a)) (LoopInvariant (FRound a)))
+(rewrite (FTrunc (LoopInvariant a)) (LoopInvariant (FTrunc a)))
+
+; Exp/Log on loop invariants
+(rewrite (Exp (LoopInvariant a)) (LoopInvariant (Exp a)))
+(rewrite (Log (LoopInvariant a)) (LoopInvariant (Log a)))
+(rewrite (Exp2 (LoopInvariant a)) (LoopInvariant (Exp2 a)))
+(rewrite (Log2 (LoopInvariant a)) (LoopInvariant (Log2 a)))
+(rewrite (Pow (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (Pow a b)))
+
+; Trig functions on loop invariants
+(rewrite (Sin (LoopInvariant a)) (LoopInvariant (Sin a)))
+(rewrite (Cos (LoopInvariant a)) (LoopInvariant (Cos a)))
+(rewrite (Tan (LoopInvariant a)) (LoopInvariant (Tan a)))
+
+; InverseSqrt on loop invariant
+(rewrite (InverseSqrt (LoopInvariant a)) (LoopInvariant (InverseSqrt a)))
+
+; =============================================================================
+; Gamma Inside Theta (Loop-conditional code motion)
+; =============================================================================
+
+; If condition is loop-invariant, hoist the Gamma out of the loop body
+; Theta(cond, Gamma(LoopInvariant(c), a, b), init)
+; can become Gamma(c, Theta(cond, a, init), Theta(cond, b, init))
+; This is complex and may not always be beneficial, so we skip it
+
+; =============================================================================
+; Min/Max Loop Invariant Rules
+; =============================================================================
+
+(rewrite (SMin (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (SMin a b)))
+(rewrite (SMax (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (SMax a b)))
+(rewrite (UMin (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (UMin a b)))
+(rewrite (UMax (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (UMax a b)))
+
+; =============================================================================
+; Additional Gamma with Min/Max
+; =============================================================================
+
+; select(c, min(a, b), min(a, d)) = min(a, select(c, b, d))
+(rewrite (Gamma c (SMin a b) (SMin a d)) (SMin a (Gamma c b d)))
+(rewrite (Gamma c (SMax a b) (SMax a d)) (SMax a (Gamma c b d)))
+(rewrite (Gamma c (UMin a b) (UMin a d)) (UMin a (Gamma c b d)))
+(rewrite (Gamma c (UMax a b) (UMax a d)) (UMax a (Gamma c b d)))
+(rewrite (Gamma c (FMin a b) (FMin a d)) (FMin a (Gamma c b d)))
+(rewrite (Gamma c (FMax a b) (FMax a d)) (FMax a (Gamma c b d)))
+
+; =============================================================================
+; Gamma with Comparisons (comparison absorption)
+; =============================================================================
+
+; select(a < b, a, b) = min(a, b)
+; select(a < b, b, a) = max(a, b)
+(rewrite (Gamma (SLt a b) a b) (SMin a b))
+(rewrite (Gamma (SLt a b) b a) (SMax a b))
+(rewrite (Gamma (ULt a b) a b) (UMin a b))
+(rewrite (Gamma (ULt a b) b a) (UMax a b))
+(rewrite (Gamma (FOrdLt a b) a b) (FMin a b))
+(rewrite (Gamma (FOrdLt a b) b a) (FMax a b))
+
+; select(a > b, a, b) = max(a, b)
+; select(a > b, b, a) = min(a, b)
+(rewrite (Gamma (SGt a b) a b) (SMax a b))
+(rewrite (Gamma (SGt a b) b a) (SMin a b))
+(rewrite (Gamma (UGt a b) a b) (UMax a b))
+(rewrite (Gamma (UGt a b) b a) (UMin a b))
+(rewrite (Gamma (FOrdGt a b) a b) (FMax a b))
+(rewrite (Gamma (FOrdGt a b) b a) (FMin a b))
+
+; select(a <= b, a, b) = min(a, b)
+(rewrite (Gamma (SLe a b) a b) (SMin a b))
+(rewrite (Gamma (SLe a b) b a) (SMax a b))
+(rewrite (Gamma (ULe a b) a b) (UMin a b))
+(rewrite (Gamma (ULe a b) b a) (UMax a b))
+(rewrite (Gamma (FOrdLe a b) a b) (FMin a b))
+(rewrite (Gamma (FOrdLe a b) b a) (FMax a b))
