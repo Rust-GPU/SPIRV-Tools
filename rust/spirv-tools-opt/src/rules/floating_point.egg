@@ -82,6 +82,11 @@
 ; Double negation in multiplication cancels
 (rewrite (FMul (FNeg a) (FNeg b)) (FMul a b))
 
+; Division with negation
+(rewrite (FDiv (FNeg a) b) (FNeg (FDiv a b)))
+(rewrite (FDiv a (FNeg b)) (FNeg (FDiv a b)))
+(rewrite (FDiv (FNeg a) (FNeg b)) (FDiv a b))
+
 ; =============================================================================
 ; Floating-Point Min/Max
 ; =============================================================================

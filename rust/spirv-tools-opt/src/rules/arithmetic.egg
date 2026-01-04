@@ -223,3 +223,70 @@
 (rewrite (Mul (Neg x) y) (Neg (Mul x y)))
 (rewrite (Mul x (Neg y)) (Neg (Mul x y)))
 (rewrite (Mul (Neg x) (Neg y)) (Mul x y))
+
+; =============================================================================
+; Additional Expression Combining (C++ Parity)
+; =============================================================================
+
+; Division with negation (integer)
+(rewrite (SDiv (Neg x) y) (Neg (SDiv x y)))
+(rewrite (SDiv x (Neg y)) (Neg (SDiv x y)))
+(rewrite (SDiv (Neg x) (Neg y)) (SDiv x y))
+
+; Note: FP negation distribution rules are in floating_point.egg
+
+; =============================================================================
+; Additional Factoring Patterns
+; =============================================================================
+
+; x + x + x = x * 3
+(rewrite (Add x (Add x x)) (Mul x (Const 3)))
+(rewrite (Add (Add x x) x) (Mul x (Const 3)))
+
+; More distributive patterns
+; (a + b) * c = a*c + b*c  (useful for extraction, not always better)
+; c * (a + b) = c*a + c*b
+
+; (a - b) * c = a*c - b*c
+(rewrite (Mul (Sub a b) c) (Sub (Mul a c) (Mul b c)))
+(rewrite (Mul c (Sub a b)) (Sub (Mul c a) (Mul c b)))
+
+; =============================================================================
+; Power of Two Division Optimization
+; =============================================================================
+
+; More powers of 2 for unsigned division
+(rewrite (UDiv x (Const 32)) (ShrU x (Const 5)))
+(rewrite (UDiv x (Const 64)) (ShrU x (Const 6)))
+(rewrite (UDiv x (Const 128)) (ShrU x (Const 7)))
+(rewrite (UDiv x (Const 256)) (ShrU x (Const 8)))
+(rewrite (UDiv x (Const 512)) (ShrU x (Const 9)))
+(rewrite (UDiv x (Const 1024)) (ShrU x (Const 10)))
+
+; More powers of 2 for unsigned modulo
+(rewrite (UMod x (Const 32)) (BitAnd x (Const 31)))
+(rewrite (UMod x (Const 64)) (BitAnd x (Const 63)))
+(rewrite (UMod x (Const 128)) (BitAnd x (Const 127)))
+(rewrite (UMod x (Const 256)) (BitAnd x (Const 255)))
+(rewrite (UMod x (Const 512)) (BitAnd x (Const 511)))
+(rewrite (UMod x (Const 1024)) (BitAnd x (Const 1023)))
+
+; Note: Floating-point identity rules (FAdd x 0, FMul x 1, etc.) are in floating_point.egg
+
+; =============================================================================
+; Absorption of Addition into Multiplication
+; =============================================================================
+
+; x * a + x = x * (a + 1)
+(rule ((= e (Add (Mul x (Const a)) x)))
+      ((union e (Mul x (Const (+ a 1))))))
+(rule ((= e (Add x (Mul x (Const a)))))
+      ((union e (Mul x (Const (+ a 1))))))
+
+; x * a - x = x * (a - 1)
+(rule ((= e (Sub (Mul x (Const a)) x)))
+      ((union e (Mul x (Const (- a 1))))))
+
+; x - x * a = x * (1 - a)
+(rule ((= e (Sub x (Mul x (Const a)))))
+      ((union e (Mul x (Const (- 1 a))))))

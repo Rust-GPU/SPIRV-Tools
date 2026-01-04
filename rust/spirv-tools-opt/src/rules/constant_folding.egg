@@ -148,3 +148,37 @@
       ((union e (Const 1))))
 (rule ((= e (LogNe (Const a) (Const b))) (= a b))
       ((union e (Const 0))))
+
+; =============================================================================
+; Division and Modulo Constant Folding
+; =============================================================================
+
+; Signed division of constants (avoiding division by zero)
+(rule ((= e (SDiv (Const a) (Const b))) (!= b 0))
+      ((union e (Const (/ a b)))))
+
+; Unsigned division - use signed division since egglog uses i64
+; This works correctly for values that fit in the positive range
+(rule ((= e (UDiv (Const a) (Const b))) (!= b 0) (>= a 0) (>= b 0))
+      ((union e (Const (/ a b)))))
+
+; Signed remainder of constants
+(rule ((= e (SRem (Const a) (Const b))) (!= b 0))
+      ((union e (Const (% a b)))))
+
+; Unsigned modulo (for positive values)
+(rule ((= e (UMod (Const a) (Const b))) (!= b 0) (>= a 0) (>= b 0))
+      ((union e (Const (% a b)))))
+
+; Signed modulo
+(rule ((= e (SMod (Const a) (Const b))) (!= b 0))
+      ((union e (Const (% a b)))))
+
+; =============================================================================
+; SAbs (Signed Absolute Value) Constant Folding
+; =============================================================================
+
+(rule ((= e (SAbs (Const a))) (>= a 0))
+      ((union e (Const a))))
+(rule ((= e (SAbs (Const a))) (< a 0))
+      ((union e (Const (- 0 a)))))

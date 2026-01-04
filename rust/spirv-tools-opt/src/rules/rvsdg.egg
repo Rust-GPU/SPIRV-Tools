@@ -148,3 +148,54 @@
 ; If both branches return different values, create a Gamma to select the result
 ; (EffGamma c (ReturnValue x) (ReturnValue y)) -> (ReturnValue (Gamma c x y))
 (rewrite (EffGamma c (ReturnValue x) (ReturnValue y)) (ReturnValue (Gamma c x y)))
+
+; =============================================================================
+; Additional Gamma Simplifications (C++ Parity)
+; =============================================================================
+
+; Gamma with one branch being the condition itself
+; select(c, c, x) = c (when c is boolean, selecting true gives c=true)
+(rewrite (Gamma c c x) c)
+; select(c, x, c) where c is false gives false
+; More precisely: select(c, x, 0) when result is 0/1
+(rewrite (Gamma c x (Const 0)) (LogAnd c x))
+(rewrite (Gamma c (Const 1) x) (LogOr c x))
+(rewrite (Gamma c (Const 0) x) (LogAnd (LogNot c) x))
+(rewrite (Gamma c x (Const 1)) (LogOr (LogNot c) x))
+
+; Gamma with constants 0/1 and variable
+; select(c, 0, 1) = !c
+; select(c, 1, 0) = c
+(rewrite (Gamma c (Const 0) (Const 1)) (LogNot c))
+(rewrite (Gamma c (Const 1) (Const 0)) c)
+
+; Chained Gamma with opposite conditions
+; select(c, select(!c, a, b), x) simplifies
+(rewrite (Gamma c (Gamma (LogNot c) a b) x) (Gamma c b x))
+(rewrite (Gamma c x (Gamma (LogNot c) a b)) (Gamma c x a))
+
+; Gamma selecting between x and operation on x
+; select(c, x, x + 1) can't be simplified generally, but
+; select(c, x, 0) when c means x!=0 can help
+
+; =============================================================================
+; Floating-Point Loop Invariant Rules
+; =============================================================================
+
+(rewrite (FAdd (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (FAdd a b)))
+(rewrite (FSub (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (FSub a b)))
+(rewrite (FMul (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (FMul a b)))
+(rewrite (FDiv (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (FDiv a b)))
+(rewrite (FNeg (LoopInvariant a)) (LoopInvariant (FNeg a)))
+(rewrite (FAbs (LoopInvariant a)) (LoopInvariant (FAbs a)))
+(rewrite (Sqrt (LoopInvariant a)) (LoopInvariant (Sqrt a)))
+
+; =============================================================================
+; Floating-Point Gamma Distribution
+; =============================================================================
+
+(rewrite (FAdd (Gamma c a b) (Gamma c x y)) (Gamma c (FAdd a x) (FAdd b y)))
+(rewrite (FSub (Gamma c a b) (Gamma c x y)) (Gamma c (FSub a x) (FSub b y)))
+(rewrite (FMul (Gamma c a b) (Gamma c x y)) (Gamma c (FMul a x) (FMul b y)))
+(rewrite (Gamma c (FAdd x a) (FAdd x b)) (FAdd x (Gamma c a b)))
+(rewrite (Gamma c (FMul x a) (FMul x b)) (FMul x (Gamma c a b)))
