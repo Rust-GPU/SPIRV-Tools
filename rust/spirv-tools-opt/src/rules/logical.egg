@@ -61,3 +61,110 @@
 ; Min/Max with negation
 (rewrite (SMin (Neg a) (Neg b)) (Neg (SMax a b)))
 (rewrite (SMax (Neg a) (Neg b)) (Neg (SMin a b)))
+
+; =============================================================================
+; De Morgan's Laws for Logical Operations
+; =============================================================================
+
+; !(a && b) = !a || !b
+(rewrite (LogNot (LogAnd a b)) (LogOr (LogNot a) (LogNot b)))
+
+; !(a || b) = !a && !b
+(rewrite (LogNot (LogOr a b)) (LogAnd (LogNot a) (LogNot b)))
+
+; =============================================================================
+; Absorption Laws
+; =============================================================================
+
+; a && (a || b) = a
+(rewrite (LogAnd a (LogOr a b)) a)
+(rewrite (LogAnd (LogOr a b) a) a)
+(rewrite (LogAnd a (LogOr b a)) a)
+(rewrite (LogAnd (LogOr b a) a) a)
+
+; a || (a && b) = a
+(rewrite (LogOr a (LogAnd a b)) a)
+(rewrite (LogOr (LogAnd a b) a) a)
+(rewrite (LogOr a (LogAnd b a)) a)
+(rewrite (LogOr (LogAnd b a) a) a)
+
+; =============================================================================
+; Complement Absorption
+; =============================================================================
+
+; a || (!a && b) = a || b
+(rewrite (LogOr a (LogAnd (LogNot a) b)) (LogOr a b))
+(rewrite (LogOr a (LogAnd b (LogNot a))) (LogOr a b))
+
+; a && (!a || b) = a && b
+(rewrite (LogAnd a (LogOr (LogNot a) b)) (LogAnd a b))
+(rewrite (LogAnd a (LogOr b (LogNot a))) (LogAnd a b))
+
+; =============================================================================
+; XOR Logical Properties
+; =============================================================================
+
+; a XOR a = false (represented as 0)
+(rule ((= e (LogNe a a)))
+      ((union e (Const 0))))
+
+; a XOR 0 = a
+(rewrite (LogNe a (Const 0)) a)
+(rewrite (LogNe (Const 0) a) a)
+
+; a XOR 1 = !a
+(rewrite (LogNe a (Const 1)) (LogNot a))
+(rewrite (LogNe (Const 1) a) (LogNot a))
+
+; =============================================================================
+; Min/Max Absorption and Distributivity
+; =============================================================================
+
+; min(a, max(a, b)) = a
+(rewrite (SMin a (SMax a b)) a)
+(rewrite (SMin (SMax a b) a) a)
+(rewrite (UMin a (UMax a b)) a)
+(rewrite (UMin (UMax a b) a) a)
+
+; max(a, min(a, b)) = a
+(rewrite (SMax a (SMin a b)) a)
+(rewrite (SMax (SMin a b) a) a)
+(rewrite (UMax a (UMin a b)) a)
+(rewrite (UMax (UMin a b) a) a)
+
+; min(min(a, b), b) = min(a, b)
+(rewrite (SMin (SMin a b) b) (SMin a b))
+(rewrite (SMin a (SMin a b)) (SMin a b))
+(rewrite (UMin (UMin a b) b) (UMin a b))
+(rewrite (UMin a (UMin a b)) (UMin a b))
+
+; max(max(a, b), b) = max(a, b)
+(rewrite (SMax (SMax a b) b) (SMax a b))
+(rewrite (SMax a (SMax a b)) (SMax a b))
+(rewrite (UMax (UMax a b) b) (UMax a b))
+(rewrite (UMax a (UMax a b)) (UMax a b))
+
+; =============================================================================
+; Select with Boolean Simplifications
+; =============================================================================
+
+; select(true, a, b) = a - already in rules
+; select(false, a, b) = b - already in rules
+
+; select(c, true, false) = c (boolean to boolean)
+(rewrite (Select c (Const 1) (Const 0)) c)
+
+; select(c, false, true) = !c
+(rewrite (Select c (Const 0) (Const 1)) (LogNot c))
+
+; select(c, a, a) = a - already in rules
+
+; =============================================================================
+; Conditional Distribution over Logical Ops
+; =============================================================================
+
+; select(c, a && b, a && d) = a && select(c, b, d)
+(rewrite (Select c (LogAnd a b) (LogAnd a d)) (LogAnd a (Select c b d)))
+
+; select(c, a || b, a || d) = a || select(c, b, d)
+(rewrite (Select c (LogOr a b) (LogOr a d)) (LogOr a (Select c b d)))

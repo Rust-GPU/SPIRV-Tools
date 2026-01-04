@@ -114,3 +114,29 @@
 ; M^-1 * M = I
 
 ; For now, these would require an Identity constructor
+
+; =============================================================================
+; Matrix Loop Invariant Rules
+; =============================================================================
+
+(rewrite (MatTimesScalar (LoopInvariant m) (LoopInvariant s)) (LoopInvariant (MatTimesScalar m s)))
+(rewrite (MatTimesVec (LoopInvariant m) (LoopInvariant v)) (LoopInvariant (MatTimesVec m v)))
+(rewrite (VecTimesMat (LoopInvariant v) (LoopInvariant m)) (LoopInvariant (VecTimesMat v m)))
+(rewrite (MatTimesMat (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (MatTimesMat a b)))
+(rewrite (Transpose (LoopInvariant m)) (LoopInvariant (Transpose m)))
+(rewrite (Determinant (LoopInvariant m)) (LoopInvariant (Determinant m)))
+(rewrite (MatInverse (LoopInvariant m)) (LoopInvariant (MatInverse m)))
+(rewrite (OuterProduct (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (OuterProduct a b)))
+
+; =============================================================================
+; Gamma Distribution for Matrix Operations
+; =============================================================================
+
+; select(c, M*v1, M*v2) = M * select(c, v1, v2)
+(rewrite (Gamma c (MatTimesVec m v1) (MatTimesVec m v2)) (MatTimesVec m (Gamma c v1 v2)))
+
+; select(c, v1*M, v2*M) = select(c, v1, v2) * M
+(rewrite (Gamma c (VecTimesMat v1 m) (VecTimesMat v2 m)) (VecTimesMat (Gamma c v1 v2) m))
+
+; select(c, M*s1, M*s2) = M * select(c, s1, s2)
+(rewrite (Gamma c (MatTimesScalar m s1) (MatTimesScalar m s2)) (MatTimesScalar m (Gamma c s1 s2)))

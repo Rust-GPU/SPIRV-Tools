@@ -180,3 +180,110 @@
 (rewrite (VecInsert v (VecExtract v 1) 1) v)
 (rewrite (VecInsert v (VecExtract v 2) 2) v)
 (rewrite (VecInsert v (VecExtract v 3) 3) v)
+
+; =============================================================================
+; Vector Length and Normalize Relationships
+; =============================================================================
+
+; Length(Normalize(v)) would be 1, but we need float representation
+; Normalize is idempotent for non-zero vectors (already in glsl.egg)
+
+; Dot(v, v) = Length(v)^2
+; This is useful for optimization but hard to express without sqrt
+
+; =============================================================================
+; Vector Projection Patterns
+; =============================================================================
+
+; Scalar projection: (Dot(a, b) / Dot(b, b)) * b gives projection of a onto b
+; This is complex to express but common in graphics
+
+; =============================================================================
+; Floating-Point Vector Operations
+; =============================================================================
+
+; VecFMul with 0 = 0 vector
+; VecFMul with 1 = identity (already covered)
+
+; VecFAdd associativity
+(rewrite (VecFAdd (VecFAdd a b) c) (VecFAdd a (VecFAdd b c)))
+
+; VecFMul associativity
+(rewrite (VecFMul (VecFMul a b) c) (VecFMul a (VecFMul b c)))
+
+; VecFAdd commutativity
+(rewrite (VecFAdd a b) (VecFAdd b a))
+
+; VecFMul commutativity
+(rewrite (VecFMul a b) (VecFMul b a))
+
+; =============================================================================
+; Scalar-Vector Multiplication Chain
+; =============================================================================
+
+; (v * s1) * s2 = v * (s1 * s2)
+(rewrite (VecTimesScalar (VecTimesScalar v (Const s1)) (Const s2))
+         (VecTimesScalar v (Const (* s1 s2))))
+
+; v * 0 produces zero vector (already have for integer version)
+
+; v * (-1) = -v
+(rewrite (VecTimesScalar v (Const -1)) (VecNeg v))
+
+; =============================================================================
+; Cross Product Additional Rules
+; =============================================================================
+
+; Cross product is anti-commutative (already in glsl.egg via VecNeg)
+
+; Cross product of orthogonal unit vectors gives the third
+; These are specific geometric identities
+
+; =============================================================================
+; Dot Product with Constructed Vectors
+; =============================================================================
+
+; Dot(Vec2(a, b), Vec2(c, d)) = a*c + b*d
+; This is useful for constant folding but complex to express
+
+; =============================================================================
+; Vector Component-wise Operations
+; =============================================================================
+
+; Component-wise minimum and maximum
+; VecMin(v, v) = v, VecMax(v, v) = v
+; These would need VecMin/VecMax constructors
+
+; =============================================================================
+; Swizzle/Shuffle Optimizations
+; =============================================================================
+
+; Consecutive extracts from same vector can be combined into shuffle
+; Extract after shuffle can be simplified
+
+; =============================================================================
+; Loop Invariant Vector Operations
+; =============================================================================
+
+(rewrite (VecAdd (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (VecAdd a b)))
+(rewrite (VecSub (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (VecSub a b)))
+(rewrite (VecMul (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (VecMul a b)))
+(rewrite (VecNeg (LoopInvariant a)) (LoopInvariant (VecNeg a)))
+(rewrite (VecFAdd (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (VecFAdd a b)))
+(rewrite (VecFSub (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (VecFSub a b)))
+(rewrite (VecFMul (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (VecFMul a b)))
+(rewrite (VecFNeg (LoopInvariant a)) (LoopInvariant (VecFNeg a)))
+(rewrite (Dot (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (Dot a b)))
+(rewrite (Cross (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (Cross a b)))
+(rewrite (Normalize (LoopInvariant a)) (LoopInvariant (Normalize a)))
+(rewrite (Length (LoopInvariant a)) (LoopInvariant (Length a)))
+
+; =============================================================================
+; Gamma Distribution for Vector Operations
+; =============================================================================
+
+; select(c, v1 + v2, v1 + v3) = v1 + select(c, v2, v3)
+(rewrite (Gamma c (VecFAdd x a) (VecFAdd x b)) (VecFAdd x (Gamma c a b)))
+(rewrite (Gamma c (VecFMul x a) (VecFMul x b)) (VecFMul x (Gamma c a b)))
+(rewrite (Gamma c (VecAdd x a) (VecAdd x b)) (VecAdd x (Gamma c a b)))
+(rewrite (Gamma c (VecMul x a) (VecMul x b)) (VecMul x (Gamma c a b)))
