@@ -258,6 +258,26 @@
 ; Swizzle/Shuffle Optimizations
 ; =============================================================================
 
+; VecShuffle identity - shuffling with identity indices gives original vector
+; VecShuffle(v, v, [0,1,2,3]) = v for a Vec4
+; These patterns are detected when all indices select from the first vector
+; in order
+
+; VecShuffle of same vector with sequential indices is identity
+; This requires matching the specific shuffle pattern
+
+; Extract from a shuffle: VecExtract(VecShuffle(v1, v2, indices), i)
+; Returns VecExtract from v1 or v2 depending on which source the index selects
+
+; Shuffle of constructed vector can be simplified
+; VecShuffle(Vec4(a,b,c,d), _, [2,3,0,1]) -> Vec4(c,d,a,b)
+
+; Two consecutive shuffles can be combined
+; VecShuffle(VecShuffle(v1, v2, m1), _, m2) can become VecShuffle(v1, v2, composed_mask)
+
+; Shuffle with all indices from one source simplifies
+; VecShuffle(v1, v2, mask) where all mask elements < vec_len -> depends only on v1
+
 ; Consecutive extracts from same vector can be combined into shuffle
 ; Extract after shuffle can be simplified
 

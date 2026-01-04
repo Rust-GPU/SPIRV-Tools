@@ -106,3 +106,61 @@
 
 ; NClamp expressed as nested NMin/NMax
 (rewrite (NClamp x lo hi) (NMax lo (NMin x hi)))
+
+; =============================================================================
+; Additional Type Conversion Optimizations
+; =============================================================================
+
+; Convert then operation vs operation then convert
+; These can sometimes be simplified when the operation is simpler in one type
+
+; Sign extension followed by zero extension patterns
+; These are complex and depend on bit widths
+
+; Truncation followed by extension
+; Trunc(Ext(x)) might equal x if bit widths match
+
+; =============================================================================
+; Loop Invariant Type Conversion
+; =============================================================================
+
+(rewrite (ConvertFToS (LoopInvariant x)) (LoopInvariant (ConvertFToS x)))
+(rewrite (ConvertFToU (LoopInvariant x)) (LoopInvariant (ConvertFToU x)))
+(rewrite (ConvertSToF (LoopInvariant x)) (LoopInvariant (ConvertSToF x)))
+(rewrite (ConvertUToF (LoopInvariant x)) (LoopInvariant (ConvertUToF x)))
+(rewrite (SConvert (LoopInvariant x)) (LoopInvariant (SConvert x)))
+(rewrite (UConvert (LoopInvariant x)) (LoopInvariant (UConvert x)))
+(rewrite (FConvert (LoopInvariant x)) (LoopInvariant (FConvert x)))
+(rewrite (Bitcast (LoopInvariant x)) (LoopInvariant (Bitcast x)))
+(rewrite (QuantizeToF16 (LoopInvariant x)) (LoopInvariant (QuantizeToF16 x)))
+
+; Pack/Unpack loop invariant
+(rewrite (PackHalf2x16 (LoopInvariant x)) (LoopInvariant (PackHalf2x16 x)))
+(rewrite (UnpackHalf2x16 (LoopInvariant x)) (LoopInvariant (UnpackHalf2x16 x)))
+(rewrite (PackSnorm4x8 (LoopInvariant x)) (LoopInvariant (PackSnorm4x8 x)))
+(rewrite (UnpackSnorm4x8 (LoopInvariant x)) (LoopInvariant (UnpackSnorm4x8 x)))
+(rewrite (PackUnorm4x8 (LoopInvariant x)) (LoopInvariant (PackUnorm4x8 x)))
+(rewrite (UnpackUnorm4x8 (LoopInvariant x)) (LoopInvariant (UnpackUnorm4x8 x)))
+
+; Radians/Degrees loop invariant
+(rewrite (Radians (LoopInvariant x)) (LoopInvariant (Radians x)))
+(rewrite (Degrees (LoopInvariant x)) (LoopInvariant (Degrees x)))
+
+; NMin/NMax/NClamp loop invariant
+(rewrite (NMin (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (NMin a b)))
+(rewrite (NMax (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (NMax a b)))
+(rewrite (NClamp (LoopInvariant x) (LoopInvariant lo) (LoopInvariant hi)) (LoopInvariant (NClamp x lo hi)))
+
+; =============================================================================
+; Gamma Distribution for Type Conversions
+; =============================================================================
+
+; select(c, convert(x), convert(y)) = convert(select(c, x, y))
+(rewrite (Gamma c (ConvertFToS x) (ConvertFToS y)) (ConvertFToS (Gamma c x y)))
+(rewrite (Gamma c (ConvertFToU x) (ConvertFToU y)) (ConvertFToU (Gamma c x y)))
+(rewrite (Gamma c (ConvertSToF x) (ConvertSToF y)) (ConvertSToF (Gamma c x y)))
+(rewrite (Gamma c (ConvertUToF x) (ConvertUToF y)) (ConvertUToF (Gamma c x y)))
+(rewrite (Gamma c (FConvert x) (FConvert y)) (FConvert (Gamma c x y)))
+(rewrite (Gamma c (SConvert x) (SConvert y)) (SConvert (Gamma c x y)))
+(rewrite (Gamma c (UConvert x) (UConvert y)) (UConvert (Gamma c x y)))
+(rewrite (Gamma c (Bitcast x) (Bitcast y)) (Bitcast (Gamma c x y)))

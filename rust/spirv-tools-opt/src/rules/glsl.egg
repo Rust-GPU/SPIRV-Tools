@@ -329,3 +329,165 @@
 ; Fma(-1, b, c) = c - b
 (rewrite (Fma (Const -1) b c) (FSub c b))
 (rewrite (Fma a (Const -1) c) (FSub c a))
+
+; =============================================================================
+; Additional GLSL Loop Invariant Rules
+; =============================================================================
+
+; Trig functions loop invariant (some already in rvsdg.egg, add remaining)
+(rewrite (Asin (LoopInvariant x)) (LoopInvariant (Asin x)))
+(rewrite (Acos (LoopInvariant x)) (LoopInvariant (Acos x)))
+(rewrite (Atan (LoopInvariant x)) (LoopInvariant (Atan x)))
+(rewrite (Atan2 (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (Atan2 a b)))
+(rewrite (Sinh (LoopInvariant x)) (LoopInvariant (Sinh x)))
+(rewrite (Cosh (LoopInvariant x)) (LoopInvariant (Cosh x)))
+(rewrite (Tanh (LoopInvariant x)) (LoopInvariant (Tanh x)))
+(rewrite (Asinh (LoopInvariant x)) (LoopInvariant (Asinh x)))
+(rewrite (Acosh (LoopInvariant x)) (LoopInvariant (Acosh x)))
+(rewrite (Atanh (LoopInvariant x)) (LoopInvariant (Atanh x)))
+
+; Mixed functions loop invariant
+(rewrite (FMix (LoopInvariant a) (LoopInvariant b) (LoopInvariant t)) (LoopInvariant (FMix a b t)))
+(rewrite (SmoothStep (LoopInvariant e0) (LoopInvariant e1) (LoopInvariant x)) (LoopInvariant (SmoothStep e0 e1 x)))
+(rewrite (Step (LoopInvariant e) (LoopInvariant x)) (LoopInvariant (Step e x)))
+(rewrite (FClamp (LoopInvariant x) (LoopInvariant lo) (LoopInvariant hi)) (LoopInvariant (FClamp x lo hi)))
+(rewrite (SClamp (LoopInvariant x) (LoopInvariant lo) (LoopInvariant hi)) (LoopInvariant (SClamp x lo hi)))
+(rewrite (UClamp (LoopInvariant x) (LoopInvariant lo) (LoopInvariant hi)) (LoopInvariant (UClamp x lo hi)))
+
+; Geometry functions loop invariant
+(rewrite (Distance (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (Distance a b)))
+(rewrite (Reflect (LoopInvariant i) (LoopInvariant n)) (LoopInvariant (Reflect i n)))
+(rewrite (Refract (LoopInvariant i) (LoopInvariant n) (LoopInvariant eta)) (LoopInvariant (Refract i n eta)))
+(rewrite (FaceForward (LoopInvariant n) (LoopInvariant i) (LoopInvariant nref)) (LoopInvariant (FaceForward n i nref)))
+
+; Fract and Modf loop invariant
+(rewrite (Fract (LoopInvariant x)) (LoopInvariant (Fract x)))
+(rewrite (Modf (LoopInvariant x)) (LoopInvariant (Modf x)))
+(rewrite (ModfStruct (LoopInvariant x)) (LoopInvariant (ModfStruct x)))
+(rewrite (FSign (LoopInvariant x)) (LoopInvariant (FSign x)))
+(rewrite (SAbs (LoopInvariant x)) (LoopInvariant (SAbs x)))
+(rewrite (Fma (LoopInvariant a) (LoopInvariant b) (LoopInvariant c)) (LoopInvariant (Fma a b c)))
+
+; Bit manipulation loop invariant
+(rewrite (BitCount (LoopInvariant x)) (LoopInvariant (BitCount x)))
+(rewrite (FindILsb (LoopInvariant x)) (LoopInvariant (FindILsb x)))
+(rewrite (FindSMsb (LoopInvariant x)) (LoopInvariant (FindSMsb x)))
+(rewrite (FindUMsb (LoopInvariant x)) (LoopInvariant (FindUMsb x)))
+(rewrite (BitReverse (LoopInvariant x)) (LoopInvariant (BitReverse x)))
+
+; =============================================================================
+; Gamma Distribution for GLSL Functions
+; =============================================================================
+
+; select(c, sqrt(x), sqrt(y)) = sqrt(select(c, x, y))
+(rewrite (Gamma c (Sqrt x) (Sqrt y)) (Sqrt (Gamma c x y)))
+(rewrite (Gamma c (InverseSqrt x) (InverseSqrt y)) (InverseSqrt (Gamma c x y)))
+(rewrite (Gamma c (FAbs x) (FAbs y)) (FAbs (Gamma c x y)))
+(rewrite (Gamma c (SAbs x) (SAbs y)) (SAbs (Gamma c x y)))
+(rewrite (Gamma c (FSign x) (FSign y)) (FSign (Gamma c x y)))
+(rewrite (Gamma c (Sign x) (Sign y)) (Sign (Gamma c x y)))
+
+; select(c, exp(x), exp(y)) = exp(select(c, x, y))
+(rewrite (Gamma c (Exp x) (Exp y)) (Exp (Gamma c x y)))
+(rewrite (Gamma c (Exp2 x) (Exp2 y)) (Exp2 (Gamma c x y)))
+(rewrite (Gamma c (Log x) (Log y)) (Log (Gamma c x y)))
+(rewrite (Gamma c (Log2 x) (Log2 y)) (Log2 (Gamma c x y)))
+
+; select(c, sin(x), sin(y)) = sin(select(c, x, y))
+(rewrite (Gamma c (Sin x) (Sin y)) (Sin (Gamma c x y)))
+(rewrite (Gamma c (Cos x) (Cos y)) (Cos (Gamma c x y)))
+(rewrite (Gamma c (Tan x) (Tan y)) (Tan (Gamma c x y)))
+
+; select(c, floor(x), floor(y)) = floor(select(c, x, y))
+(rewrite (Gamma c (FFloor x) (FFloor y)) (FFloor (Gamma c x y)))
+(rewrite (Gamma c (FCeil x) (FCeil y)) (FCeil (Gamma c x y)))
+(rewrite (Gamma c (FRound x) (FRound y)) (FRound (Gamma c x y)))
+(rewrite (Gamma c (FTrunc x) (FTrunc y)) (FTrunc (Gamma c x y)))
+
+; Clamp with same bounds: select(c, clamp(a, lo, hi), clamp(b, lo, hi)) = clamp(select(c, a, b), lo, hi)
+(rewrite (Gamma c (FClamp a lo hi) (FClamp b lo hi)) (FClamp (Gamma c a b) lo hi))
+(rewrite (Gamma c (SClamp a lo hi) (SClamp b lo hi)) (SClamp (Gamma c a b) lo hi))
+(rewrite (Gamma c (UClamp a lo hi) (UClamp b lo hi)) (UClamp (Gamma c a b) lo hi))
+
+; =============================================================================
+; More FMix Optimizations
+; =============================================================================
+
+; FMix is linear in first two arguments
+; FMix(a, b, t) = a * (1-t) + b * t
+; FMix(x, x, t) = x (already covered)
+
+; FMix with constant t
+; FMix(a, b, 0.5) = (a + b) / 2 (midpoint)
+
+; FMix expansion for optimization
+; Note: We prefer Fma form when available
+(rewrite (FMix a b t) (FAdd (FMul a (FSub (Const 1) t)) (FMul b t)))
+
+; =============================================================================
+; Pow Optimization Patterns
+; =============================================================================
+
+; Pow(x, 0.5) = Sqrt(x)
+; Pow(x, -0.5) = InverseSqrt(x)
+; Note: These need float constant representation
+
+; Pow(x, n) for small integer n can be expanded
+; Pow(x, 3) = x * x * x
+
+; =============================================================================
+; Sqrt/InverseSqrt Additional Rules
+; =============================================================================
+
+; InverseSqrt(x) * InverseSqrt(y) = InverseSqrt(x * y)
+(rewrite (FMul (InverseSqrt x) (InverseSqrt y)) (InverseSqrt (FMul x y)))
+
+; Sqrt(x) / Sqrt(y) = Sqrt(x/y)
+(rewrite (FDiv (Sqrt x) (Sqrt y)) (Sqrt (FDiv x y)))
+
+; InverseSqrt(x) / InverseSqrt(y) = Sqrt(x/y) / x (complex)
+
+; =============================================================================
+; Trigonometric Identities
+; =============================================================================
+
+; sin(x)^2 + cos(x)^2 = 1 is hard to match directly
+; But we can recognize: 1 - sin(x)^2 = cos(x)^2
+
+; sin(2x) = 2*sin(x)*cos(x) (double angle)
+; cos(2x) = cos^2(x) - sin^2(x)
+
+; sin(a+b) and cos(a+b) expansions are complex
+
+; =============================================================================
+; Atan2 Simplifications
+; =============================================================================
+
+; Atan2(y, x) where both are constants would be folded
+; Atan2(0, x) = 0 when x > 0, pi when x < 0
+; Atan2(y, 0) = pi/2 when y > 0, -pi/2 when y < 0
+
+; Atan2(y, x) = Atan(y/x) when x > 0 (quadrant I or IV)
+
+; =============================================================================
+; Ldexp Simplifications
+; =============================================================================
+
+; Ldexp(x, 0) = x (multiply by 2^0 = 1)
+(rewrite (Ldexp x (Const 0)) x)
+
+; Ldexp(x, 1) = x * 2
+(rewrite (Ldexp x (Const 1)) (FMul x (Const 2)))
+
+; Ldexp(x, -1) = x / 2 = x * 0.5
+
+; =============================================================================
+; IsNan/IsInf Simplifications
+; =============================================================================
+
+; IsNan(constant) = false for non-NaN constants
+; IsInf(constant) = false for finite constants
+
+; IsNan on integer converted to float is always false
+(rewrite (IsNan (ConvertSToF x)) (Const 0))
+(rewrite (IsNan (ConvertUToF x)) (Const 0))
