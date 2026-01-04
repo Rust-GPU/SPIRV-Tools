@@ -488,4 +488,224 @@ mod tests {
                 "Expected just (Sym \"x\"), got: {}", result);
     }
 
+    #[test]
+    fn test_strength_reduction_mul() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // x * 8 should be equivalent to x << 3 in the e-graph
+        // Both forms are valid; the e-graph knows they're equal
+        egraph.parse_and_run_program(None, r#"(let mul_form (Mul (Sym "x") (Const 8)))"#).unwrap();
+        egraph.parse_and_run_program(None, r#"(let shift_form (Shl (Sym "x") (Const 3)))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+
+        // Check that both forms are in the same equivalence class
+        let check = egraph.parse_and_run_program(None, "(check (= mul_form shift_form))");
+        assert!(check.is_ok(), "Expected mul and shift forms to be equivalent");
+    }
+
+    #[test]
+    fn test_strength_reduction_div() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // x / 4 (unsigned) should be equivalent to x >> 2 in the e-graph
+        egraph.parse_and_run_program(None, r#"(let div_form (UDiv (Sym "x") (Const 4)))"#).unwrap();
+        egraph.parse_and_run_program(None, r#"(let shift_form (ShrU (Sym "x") (Const 2)))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+
+        // Check that both forms are in the same equivalence class
+        let check = egraph.parse_and_run_program(None, "(check (= div_form shift_form))");
+        assert!(check.is_ok(), "Expected div and shift forms to be equivalent");
+    }
+
+    #[test]
+    fn test_mod_to_and() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // x % 8 (unsigned) should be equivalent to x & 7 in the e-graph
+        egraph.parse_and_run_program(None, r#"(let mod_form (UMod (Sym "x") (Const 8)))"#).unwrap();
+        egraph.parse_and_run_program(None, r#"(let and_form (BitAnd (Sym "x") (Const 7)))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+
+        // Check that both forms are in the same equivalence class
+        let check = egraph.parse_and_run_program(None, "(check (= mod_form and_form))");
+        assert!(check.is_ok(), "Expected mod and and forms to be equivalent");
+    }
+
+    #[test]
+    fn test_double_negation() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // --x should become x
+        egraph.parse_and_run_program(None, r#"(let root (Neg (Neg (Sym "x"))))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        assert!(!results.is_empty());
+        let result = format!("{}", results[0]);
+        eprintln!("Double negation result: {}", result);
+        assert!(result.contains("Sym") && !result.contains("Neg"),
+                "Expected (Sym \"x\"), got: {}", result);
+    }
+
+    #[test]
+    fn test_bitnot_bitnot() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // ~~x should become x
+        egraph.parse_and_run_program(None, r#"(let root (BitNot (BitNot (Sym "x"))))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        assert!(!results.is_empty());
+        let result = format!("{}", results[0]);
+        eprintln!("Double BitNot result: {}", result);
+        assert!(result.contains("Sym") && !result.contains("BitNot"),
+                "Expected (Sym \"x\"), got: {}", result);
+    }
+
+    #[test]
+    fn test_gamma_constant_true() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // select(true, a, b) = a
+        egraph.parse_and_run_program(None, r#"(let root (Gamma (Const 1) (Sym "a") (Sym "b")))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        assert!(!results.is_empty());
+        let result = format!("{}", results[0]);
+        eprintln!("Gamma true result: {}", result);
+        assert!(result.contains("Sym") && result.contains("a") && !result.contains("Gamma"),
+                "Expected (Sym \"a\"), got: {}", result);
+    }
+
+    #[test]
+    fn test_gamma_constant_false() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // select(false, a, b) = b
+        egraph.parse_and_run_program(None, r#"(let root (Gamma (Const 0) (Sym "a") (Sym "b")))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        assert!(!results.is_empty());
+        let result = format!("{}", results[0]);
+        eprintln!("Gamma false result: {}", result);
+        assert!(result.contains("Sym") && result.contains("b") && !result.contains("Gamma"),
+                "Expected (Sym \"b\"), got: {}", result);
+    }
+
+    #[test]
+    fn test_gamma_same_branches() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // select(c, x, x) = x
+        egraph.parse_and_run_program(None, r#"(let root (Gamma (Sym "c") (Sym "x") (Sym "x")))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        assert!(!results.is_empty());
+        let result = format!("{}", results[0]);
+        eprintln!("Gamma same branches result: {}", result);
+        assert!(result.contains("Sym") && result.contains("x") && !result.contains("Gamma"),
+                "Expected (Sym \"x\"), got: {}", result);
+    }
+
+    #[test]
+    fn test_clamp_same_bounds() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // clamp(x, a, a) = a
+        egraph.parse_and_run_program(None, r#"(let root (SClamp (Sym "x") (Sym "a") (Sym "a")))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        assert!(!results.is_empty());
+        let result = format!("{}", results[0]);
+        eprintln!("Clamp same bounds result: {}", result);
+        assert!(result.contains("Sym") && result.contains("a") && !result.contains("Clamp"),
+                "Expected (Sym \"a\"), got: {}", result);
+    }
+
+    #[test]
+    fn test_sqrt_squared() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // sqrt(x) * sqrt(x) = x
+        egraph.parse_and_run_program(None, r#"(let root (FMul (Sqrt (Sym "x")) (Sqrt (Sym "x"))))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        assert!(!results.is_empty());
+        let result = format!("{}", results[0]);
+        eprintln!("Sqrt squared result: {}", result);
+        assert!(result.contains("Sym") && result.contains("x") && !result.contains("Sqrt"),
+                "Expected (Sym \"x\"), got: {}", result);
+    }
+
+    #[test]
+    fn test_log_exp_cancel() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // log(exp(x)) = x
+        egraph.parse_and_run_program(None, r#"(let root (Log (Exp (Sym "x"))))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        assert!(!results.is_empty());
+        let result = format!("{}", results[0]);
+        eprintln!("Log/Exp cancel result: {}", result);
+        assert!(result.contains("Sym") && !result.contains("Log") && !result.contains("Exp"),
+                "Expected (Sym \"x\"), got: {}", result);
+    }
+
+    #[test]
+    fn test_fmix_same_args() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // mix(a, a, t) = a
+        egraph.parse_and_run_program(None, r#"(let root (FMix (Sym "a") (Sym "a") (Sym "t")))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        assert!(!results.is_empty());
+        let result = format!("{}", results[0]);
+        eprintln!("FMix same args result: {}", result);
+        assert!(result.contains("Sym") && result.contains("a") && !result.contains("FMix"),
+                "Expected (Sym \"a\"), got: {}", result);
+    }
+
+    #[test]
+    fn test_normalize_normalize() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // normalize(normalize(v)) = normalize(v)
+        egraph.parse_and_run_program(None, r#"(let root (Normalize (Normalize (Sym "v"))))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        assert!(!results.is_empty());
+        let result = format!("{}", results[0]);
+        eprintln!("Double normalize result: {}", result);
+        // Should simplify to single Normalize
+        let normalize_count = result.matches("Normalize").count();
+        assert!(normalize_count == 1, "Expected single Normalize, got: {}", result);
+    }
+
+    #[test]
+    fn test_x_inversesqrt_x() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // x * inversesqrt(x) = sqrt(x)
+        egraph.parse_and_run_program(None, r#"(let root (FMul (Sym "x") (InverseSqrt (Sym "x"))))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        assert!(!results.is_empty());
+        let result = format!("{}", results[0]);
+        eprintln!("x * inversesqrt(x) result: {}", result);
+        assert!(result.contains("Sqrt") && !result.contains("InverseSqrt"),
+                "Expected Sqrt, got: {}", result);
+    }
+
 }
