@@ -166,9 +166,7 @@
 ; FP Min/Max Additional Rules
 ; =============================================================================
 
-; FMin/FMax with negation
-(rewrite (FMin (FNeg a) (FNeg b)) (FNeg (FMax a b)))
-(rewrite (FMax (FNeg a) (FNeg b)) (FNeg (FMin a b)))
+; Note: FMin/FMax negation rules are in the section above
 
 ; FMin/FMax absorption
 (rewrite (FMin a (FMax a b)) a)

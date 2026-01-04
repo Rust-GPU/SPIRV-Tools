@@ -318,13 +318,7 @@
 ; (x / a) * a = x (approximate for integers, exact if x is divisible by a)
 ; We keep this for the e-graph to explore
 
-; (x + a) + b = x + (a + b)
-(rule ((= e (Add (Add x (Const a)) (Const b))))
-      ((union e (Add x (Const (+ a b))))))
-(rule ((= e (Add (Const b) (Add x (Const a)))))
-      ((union e (Add x (Const (+ a b))))))
-(rule ((= e (Add (Add (Const a) x) (Const b))))
-      ((union e (Add x (Const (+ a b))))))
+; Note: Add chain merging rules are in the "Constant reassociation" section above
 
 ; (x - a) - b = x - (a + b)
 (rule ((= e (Sub (Sub x (Const a)) (Const b))))
