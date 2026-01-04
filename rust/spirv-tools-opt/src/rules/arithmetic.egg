@@ -290,3 +290,75 @@
 ; x - x * a = x * (1 - a)
 (rule ((= e (Sub x (Mul x (Const a)))))
       ((union e (Mul x (Const (- 1 a))))))
+
+; =============================================================================
+; Arithmetic Chain Merging (C++ MergeMulMul, MergeDivDiv, etc.)
+; =============================================================================
+
+; (x * a) * b = x * (a * b) - constant chain merging
+(rule ((= e (Mul (Mul x (Const a)) (Const b))))
+      ((union e (Mul x (Const (* a b))))))
+(rule ((= e (Mul (Const b) (Mul x (Const a)))))
+      ((union e (Mul x (Const (* a b))))))
+(rule ((= e (Mul (Mul (Const a) x) (Const b))))
+      ((union e (Mul x (Const (* a b))))))
+
+; (x / a) / b = x / (a * b)
+(rule ((= e (SDiv (SDiv x (Const a)) (Const b))) (!= a 0) (!= b 0))
+      ((union e (SDiv x (Const (* a b))))))
+(rule ((= e (UDiv (UDiv x (Const a)) (Const b))) (!= a 0) (!= b 0))
+      ((union e (UDiv x (Const (* a b))))))
+
+; (x * a) / a = x (for non-zero a)
+(rule ((= e (SDiv (Mul x (Const a)) (Const a))) (!= a 0))
+      ((union e x)))
+(rule ((= e (UDiv (Mul x (Const a)) (Const a))) (!= a 0))
+      ((union e x)))
+
+; (x / a) * a = x (approximate for integers, exact if x is divisible by a)
+; We keep this for the e-graph to explore
+
+; (x + a) + b = x + (a + b)
+(rule ((= e (Add (Add x (Const a)) (Const b))))
+      ((union e (Add x (Const (+ a b))))))
+(rule ((= e (Add (Const b) (Add x (Const a)))))
+      ((union e (Add x (Const (+ a b))))))
+(rule ((= e (Add (Add (Const a) x) (Const b))))
+      ((union e (Add x (Const (+ a b))))))
+
+; (x - a) - b = x - (a + b)
+(rule ((= e (Sub (Sub x (Const a)) (Const b))))
+      ((union e (Sub x (Const (+ a b))))))
+
+; (x + a) - b = x + (a - b)
+(rule ((= e (Sub (Add x (Const a)) (Const b))))
+      ((union e (Add x (Const (- a b))))))
+
+; (x - a) + b = x + (b - a)
+(rule ((= e (Add (Sub x (Const a)) (Const b))))
+      ((union e (Add x (Const (- b a))))))
+
+; =============================================================================
+; Shift Chain Merging
+; =============================================================================
+
+; (x << a) << b = x << (a + b) - already defined above, ensure coverage
+; (x >> a) >> b = x >> (a + b) - already defined above
+
+; (x * 2^a) as (x << a) - already have strength reduction
+
+; =============================================================================
+; Bitwise Chain with Constants
+; =============================================================================
+
+; (x & a) & b = x & (a & b)
+(rule ((= e (BitAnd (BitAnd x (Const a)) (Const b))))
+      ((union e (BitAnd x (Const (& a b))))))
+
+; (x | a) | b = x | (a | b)
+(rule ((= e (BitOr (BitOr x (Const a)) (Const b))))
+      ((union e (BitOr x (Const (| a b))))))
+
+; (x ^ a) ^ b = x ^ (a ^ b)
+(rule ((= e (BitXor (BitXor x (Const a)) (Const b))))
+      ((union e (BitXor x (Const (^ a b))))))

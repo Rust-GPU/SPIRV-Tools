@@ -342,6 +342,36 @@
 (rewrite (CompositeExtract (CompositeConstruct (ECons a (ECons b (ECons c (ECons d (ENil)))))) 3) d)
 
 ; =============================================================================
+; CompositeInsert Optimization (Dead Insert Elimination)
+; =============================================================================
+
+; Insert then extract at same index returns inserted value
+(rewrite (CompositeExtract (CompositeInsert composite val 0) 0) val)
+(rewrite (CompositeExtract (CompositeInsert composite val 1) 1) val)
+(rewrite (CompositeExtract (CompositeInsert composite val 2) 2) val)
+(rewrite (CompositeExtract (CompositeInsert composite val 3) 3) val)
+
+; Insert then extract at different index returns original composite element
+(rewrite (CompositeExtract (CompositeInsert composite val 0) 1) (CompositeExtract composite 1))
+(rewrite (CompositeExtract (CompositeInsert composite val 0) 2) (CompositeExtract composite 2))
+(rewrite (CompositeExtract (CompositeInsert composite val 0) 3) (CompositeExtract composite 3))
+(rewrite (CompositeExtract (CompositeInsert composite val 1) 0) (CompositeExtract composite 0))
+(rewrite (CompositeExtract (CompositeInsert composite val 1) 2) (CompositeExtract composite 2))
+(rewrite (CompositeExtract (CompositeInsert composite val 1) 3) (CompositeExtract composite 3))
+(rewrite (CompositeExtract (CompositeInsert composite val 2) 0) (CompositeExtract composite 0))
+(rewrite (CompositeExtract (CompositeInsert composite val 2) 1) (CompositeExtract composite 1))
+(rewrite (CompositeExtract (CompositeInsert composite val 2) 3) (CompositeExtract composite 3))
+(rewrite (CompositeExtract (CompositeInsert composite val 3) 0) (CompositeExtract composite 0))
+(rewrite (CompositeExtract (CompositeInsert composite val 3) 1) (CompositeExtract composite 1))
+(rewrite (CompositeExtract (CompositeInsert composite val 3) 2) (CompositeExtract composite 2))
+
+; Inserting value extracted from same position is identity
+(rewrite (CompositeInsert composite (CompositeExtract composite 0) 0) composite)
+(rewrite (CompositeInsert composite (CompositeExtract composite 1) 1) composite)
+(rewrite (CompositeInsert composite (CompositeExtract composite 2) 2) composite)
+(rewrite (CompositeInsert composite (CompositeExtract composite 3) 3) composite)
+
+; =============================================================================
 ; Effect Sort (side effects and control flow)
 ; =============================================================================
 

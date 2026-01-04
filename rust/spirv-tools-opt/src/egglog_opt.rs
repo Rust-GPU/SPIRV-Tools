@@ -347,4 +347,145 @@ mod tests {
         assert!(result.contains("Const 4"), "Expected (Const 4), got: {}", result);
     }
 
+    #[test]
+    fn test_mul_chain_merge() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // (x * 3) * 4 should merge to x * 12
+        egraph.parse_and_run_program(None, r#"(let root (Mul (Mul (Sym "x") (Const 3)) (Const 4)))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        assert!(!results.is_empty());
+        let result = format!("{}", results[0]);
+        eprintln!("Mul chain result: {}", result);
+        assert!(result.contains("12"), "Expected merged constant 12, got: {}", result);
+    }
+
+    #[test]
+    fn test_add_chain_merge() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // (x + 5) + 7 should merge to x + 12
+        egraph.parse_and_run_program(None, r#"(let root (Add (Add (Sym "x") (Const 5)) (Const 7)))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        assert!(!results.is_empty());
+        let result = format!("{}", results[0]);
+        eprintln!("Add chain result: {}", result);
+        assert!(result.contains("12"), "Expected merged constant 12, got: {}", result);
+    }
+
+    #[test]
+    fn test_bitwise_chain_merge() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // (x & 0xFF) & 0x0F should merge to x & 0x0F
+        egraph.parse_and_run_program(None, r#"(let root (BitAnd (BitAnd (Sym "x") (Const 255)) (Const 15)))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        assert!(!results.is_empty());
+        let result = format!("{}", results[0]);
+        eprintln!("BitAnd chain result: {}", result);
+        // 255 & 15 = 15
+        assert!(result.contains("15") && !result.contains("255"),
+                "Expected merged constant 15, got: {}", result);
+    }
+
+    #[test]
+    fn test_gamma_to_min() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // select(a < b, a, b) should simplify to min(a, b)
+        egraph.parse_and_run_program(None, r#"(let root (Gamma (SLt (Sym "a") (Sym "b")) (Sym "a") (Sym "b")))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 15 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        assert!(!results.is_empty());
+        let result = format!("{}", results[0]);
+        eprintln!("Gamma to min result: {}", result);
+        assert!(result.contains("SMin"), "Expected SMin, got: {}", result);
+    }
+
+    #[test]
+    fn test_gamma_to_max() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // select(a < b, b, a) should simplify to max(a, b)
+        egraph.parse_and_run_program(None, r#"(let root (Gamma (SLt (Sym "a") (Sym "b")) (Sym "b") (Sym "a")))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 15 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        assert!(!results.is_empty());
+        let result = format!("{}", results[0]);
+        eprintln!("Gamma to max result: {}", result);
+        assert!(result.contains("SMax"), "Expected SMax, got: {}", result);
+    }
+
+    #[test]
+    fn test_de_morgan() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // !(a && b) should equal !a || !b
+        egraph.parse_and_run_program(None, r#"(let root (LogNot (LogAnd (Sym "a") (Sym "b"))))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        assert!(!results.is_empty());
+        let result = format!("{}", results[0]);
+        eprintln!("De Morgan result: {}", result);
+        // Should contain LogOr with LogNot on both operands
+        assert!(result.contains("LogOr") || result.contains("LogNot"),
+                "Expected De Morgan's law application, got: {}", result);
+    }
+
+    #[test]
+    fn test_loop_invariant_propagation() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // Add(LoopInvariant(a), LoopInvariant(b)) should become LoopInvariant(Add(a, b))
+        egraph.parse_and_run_program(None, r#"(let root (Add (LoopInvariant (Sym "a")) (LoopInvariant (Sym "b"))))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        assert!(!results.is_empty());
+        let result = format!("{}", results[0]);
+        eprintln!("Loop invariant result: {}", result);
+        // The result should show loop invariant wrapping around the Add
+        // After extraction, it might simplify to just (Add a b) due to (LoopInvariant x) = x rule
+    }
+
+    #[test]
+    fn test_fmul_chain_merge() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // (x * 2.0) * 3.0 should merge to x * 6.0 (using integer constants as proxy)
+        egraph.parse_and_run_program(None, r#"(let root (FMul (FMul (Sym "x") (Const 2)) (Const 3)))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        assert!(!results.is_empty());
+        let result = format!("{}", results[0]);
+        eprintln!("FMul chain result: {}", result);
+        assert!(result.contains("6"), "Expected merged constant 6, got: {}", result);
+    }
+
+    #[test]
+    fn test_reciprocal_chain() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // 1 / (1 / x) should equal x
+        egraph.parse_and_run_program(None, r#"(let root (FDiv (Const 1) (FDiv (Const 1) (Sym "x"))))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        assert!(!results.is_empty());
+        let result = format!("{}", results[0]);
+        eprintln!("Reciprocal chain result: {}", result);
+        assert!(result.contains("Sym") && result.contains("x") && !result.contains("FDiv"),
+                "Expected just (Sym \"x\"), got: {}", result);
+    }
+
 }

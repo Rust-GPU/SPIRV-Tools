@@ -181,3 +181,66 @@
 (rewrite (FMin a (FMin a b)) (FMin a b))
 (rewrite (FMax (FMax a b) b) (FMax a b))
 (rewrite (FMax a (FMax a b)) (FMax a b))
+
+; =============================================================================
+; Floating-Point Arithmetic Chain Merging (C++ MergeMulMul, etc.)
+; =============================================================================
+
+; (x * a) * b = x * (a * b) for float constants
+; Note: These rules assume fast-math style optimization (may affect precision)
+(rule ((= e (FMul (FMul x (Const a)) (Const b))))
+      ((union e (FMul x (Const (* a b))))))
+(rule ((= e (FMul (Const b) (FMul x (Const a)))))
+      ((union e (FMul x (Const (* a b))))))
+
+; (x / a) / b = x / (a * b)
+(rule ((= e (FDiv (FDiv x (Const a)) (Const b))) (!= a 0) (!= b 0))
+      ((union e (FDiv x (Const (* a b))))))
+
+; (x * a) / b = x * (a / b)
+(rule ((= e (FDiv (FMul x (Const a)) (Const b))) (!= b 0))
+      ((union e (FMul x (Const (/ a b))))))
+
+; (x / a) * b = x * (b / a)
+(rule ((= e (FMul (FDiv x (Const a)) (Const b))) (!= a 0))
+      ((union e (FMul x (Const (/ b a))))))
+
+; (x + a) + b = x + (a + b)
+(rule ((= e (FAdd (FAdd x (Const a)) (Const b))))
+      ((union e (FAdd x (Const (+ a b))))))
+(rule ((= e (FAdd (Const b) (FAdd x (Const a)))))
+      ((union e (FAdd x (Const (+ a b))))))
+
+; (x - a) - b = x - (a + b)
+(rule ((= e (FSub (FSub x (Const a)) (Const b))))
+      ((union e (FSub x (Const (+ a b))))))
+
+; (x + a) - b = x + (a - b)
+(rule ((= e (FSub (FAdd x (Const a)) (Const b))))
+      ((union e (FAdd x (Const (- a b))))))
+
+; (x - a) + b = x + (b - a)
+(rule ((= e (FAdd (FSub x (Const a)) (Const b))))
+      ((union e (FAdd x (Const (- b a))))))
+
+; =============================================================================
+; Negate Chain Merging (C++ MergeNegateArithmetic)
+; =============================================================================
+
+; -(-x * y) = x * y (handled above)
+; -(x * -y) = x * y (handled above)
+; -(-x + y) = x - y via (FNeg (FAdd (FNeg a) b)) = FSub a b - but needs care
+; Simplified: -(a + b) = -a - b (already have FNeg->FSub conversion)
+
+; -(a - b) = b - a (already covered)
+
+; =============================================================================
+; Reciprocal Optimization
+; =============================================================================
+
+; 1 / (1 / x) = x
+(rewrite (FDiv (Const 1) (FDiv (Const 1) x)) x)
+
+; a / (b / c) = (a * c) / b - already covered above
+
+; (a / b) / c = a / (b * c) - already covered above
