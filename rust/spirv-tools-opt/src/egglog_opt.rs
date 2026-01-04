@@ -790,4 +790,32 @@ mod tests {
         assert!(check.is_ok(), "Expected (-x) + c to simplify to c - x");
     }
 
+    // Test b - (x + a) = (b - a) - x (constant merging)
+    #[test]
+    fn test_const_sub_add() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // 10 - (x + 3) should simplify to 7 - x = (10 - 3) - x
+        egraph.parse_and_run_program(None, r#"(let expr (Sub (Const 10) (Add (Sym "x") (Const 3))))"#).unwrap();
+        egraph.parse_and_run_program(None, r#"(let expected (Sub (Const 7) (Sym "x")))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= expr expected))");
+        assert!(check.is_ok(), "Expected 10 - (x + 3) to simplify to 7 - x");
+    }
+
+    // Test b - (x - a) = (b + a) - x (constant merging)
+    #[test]
+    fn test_const_sub_sub() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // 10 - (x - 3) should simplify to 13 - x = (10 + 3) - x
+        egraph.parse_and_run_program(None, r#"(let expr (Sub (Const 10) (Sub (Sym "x") (Const 3))))"#).unwrap();
+        egraph.parse_and_run_program(None, r#"(let expected (Sub (Const 13) (Sym "x")))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= expr expected))");
+        assert!(check.is_ok(), "Expected 10 - (x - 3) to simplify to 13 - x");
+    }
+
 }

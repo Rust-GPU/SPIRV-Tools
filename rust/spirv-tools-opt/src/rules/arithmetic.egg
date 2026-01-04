@@ -412,3 +412,28 @@
 
 ; c - (-x) = c + x
 (rewrite (Sub (Const c) (Neg x)) (Add (Const c) x))
+
+; =============================================================================
+; Sub Arithmetic Merging (C++ MergeSubAddArithmetic, MergeSubSubArithmetic)
+; =============================================================================
+
+; Note: (x - a) - b, (x + a) - b, (x - a) + b rules are in "Multiplication Chain Merging" section above
+
+; b - (x + a) = (b - a) - x - for constants
+(rule ((= e (Sub (Const b) (Add x (Const a)))))
+      ((union e (Sub (Const (- b a)) x))))
+
+; b - (x - a) = (b + a) - x
+(rule ((= e (Sub (Const b) (Sub x (Const a)))))
+      ((union e (Sub (Const (+ b a)) x))))
+
+; =============================================================================
+; Add Arithmetic Merging (C++ MergeAddAddArithmetic, MergeAddSubArithmetic)
+; =============================================================================
+
+; Note: (x + a) + b already covered in chain merging above
+; Note: (x - a) + b = x + (b - a) already covered above
+
+; Commutative variant for (x - a) + b
+(rule ((= e (Add (Const b) (Sub x (Const a)))))
+      ((union e (Add x (Const (- b a))))))
