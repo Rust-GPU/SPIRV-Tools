@@ -308,3 +308,51 @@
 (rewrite (Gamma (ULe a b) b a) (UMax a b))
 (rewrite (Gamma (FOrdLe a b) a b) (FMin a b))
 (rewrite (Gamma (FOrdLe a b) b a) (FMax a b))
+
+; =============================================================================
+; Additional Gamma Optimizations (C++ Parity)
+; =============================================================================
+
+; select(a >= b, a, b) = max(a, b)
+(rewrite (Gamma (SGe a b) a b) (SMax a b))
+(rewrite (Gamma (SGe a b) b a) (SMin a b))
+(rewrite (Gamma (UGe a b) a b) (UMax a b))
+(rewrite (Gamma (UGe a b) b a) (UMin a b))
+(rewrite (Gamma (FOrdGe a b) a b) (FMax a b))
+(rewrite (Gamma (FOrdGe a b) b a) (FMin a b))
+
+; Gamma with equality: select(a == b, x, x) already handled
+; select(a == b, a, b) = b (if a==b then a else b, which is just b semantically)
+; Actually this is just identity - if equal pick a (which equals b), else pick b
+
+; Gamma with negated comparison already handled via LogNot rule
+
+; =============================================================================
+; Clamp Pattern Recognition
+; =============================================================================
+
+; max(min(x, hi), lo) = clamp(x, lo, hi) when lo <= hi
+(rewrite (SMax (SMin x hi) lo) (SClamp x lo hi))
+(rewrite (UMax (UMin x hi) lo) (UClamp x lo hi))
+(rewrite (FMax (FMin x hi) lo) (FClamp x lo hi))
+
+; min(max(x, lo), hi) = clamp(x, lo, hi) when lo <= hi
+(rewrite (SMin (SMax x lo) hi) (SClamp x lo hi))
+(rewrite (UMin (UMax x lo) hi) (UClamp x lo hi))
+(rewrite (FMin (FMax x lo) hi) (FClamp x lo hi))
+
+; =============================================================================
+; Dead Branch Elimination for EffGamma
+; =============================================================================
+
+; If the condition is a comparison that's always true/false based on analysis,
+; the branch can be eliminated. This is complex without value analysis.
+; The constant condition rules (EffGamma (Const 0) t f) = f etc. are already covered.
+
+; =============================================================================
+; Theta Loop Unrolling Patterns
+; =============================================================================
+
+; Theta with loop body that doesn't use LoopVar effectively
+; (Theta cond (SomeOp (LoopInvariant x)) init) patterns are already handled
+; via the LoopInvariant wrapper rules
