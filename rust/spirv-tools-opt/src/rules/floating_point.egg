@@ -120,3 +120,64 @@
 
 ; Round of negation
 (rewrite (FRound (FNeg x)) (FNeg (FRound x)))
+
+; =============================================================================
+; Additional Floating-Point Algebraic Identities
+; =============================================================================
+
+; FAdd commutativity
+(rewrite (FAdd a b) (FAdd b a))
+
+; FMul commutativity
+(rewrite (FMul a b) (FMul b a))
+
+; FAdd associativity
+(rewrite (FAdd (FAdd a b) c) (FAdd a (FAdd b c)))
+
+; FMul associativity
+(rewrite (FMul (FMul a b) c) (FMul a (FMul b c)))
+
+; Distributive: a * (b + c) = a*b + a*c (useful for factoring)
+; Note: May affect precision, but common optimization
+(rewrite (FMul a (FAdd b c)) (FAdd (FMul a b) (FMul a c)))
+(rewrite (FMul (FAdd a b) c) (FAdd (FMul a c) (FMul b c)))
+
+; Factoring: a*c + b*c = (a+b)*c
+(rewrite (FAdd (FMul a c) (FMul b c)) (FMul (FAdd a b) c))
+
+; x + x = 2*x
+(rewrite (FAdd x x) (FMul x (Const 2)))
+
+; =============================================================================
+; FP Division Optimization
+; =============================================================================
+
+; a / b / c = a / (b * c)
+(rewrite (FDiv (FDiv a b) c) (FDiv a (FMul b c)))
+
+; a / (b / c) = (a * c) / b
+(rewrite (FDiv a (FDiv b c)) (FDiv (FMul a c) b))
+
+; (a * b) / b = a (assuming no NaN/Inf issues)
+(rewrite (FDiv (FMul a b) b) a)
+(rewrite (FDiv (FMul b a) b) a)
+
+; =============================================================================
+; FP Min/Max Additional Rules
+; =============================================================================
+
+; FMin/FMax with negation
+(rewrite (FMin (FNeg a) (FNeg b)) (FNeg (FMax a b)))
+(rewrite (FMax (FNeg a) (FNeg b)) (FNeg (FMin a b)))
+
+; FMin/FMax absorption
+(rewrite (FMin a (FMax a b)) a)
+(rewrite (FMin (FMax a b) a) a)
+(rewrite (FMax a (FMin a b)) a)
+(rewrite (FMax (FMin a b) a) a)
+
+; FMin/FMax idempotent within nesting
+(rewrite (FMin (FMin a b) b) (FMin a b))
+(rewrite (FMin a (FMin a b)) (FMin a b))
+(rewrite (FMax (FMax a b) b) (FMax a b))
+(rewrite (FMax a (FMax a b)) (FMax a b))

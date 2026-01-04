@@ -182,3 +182,61 @@
       ((union e (Const a))))
 (rule ((= e (SAbs (Const a))) (< a 0))
       ((union e (Const (- 0 a)))))
+
+; =============================================================================
+; Sign and Clamp Constant Folding
+; =============================================================================
+
+; Sign of positive constant
+(rule ((= e (Sign (Const a))) (> a 0))
+      ((union e (Const 1))))
+
+; Sign of negative constant
+(rule ((= e (Sign (Const a))) (< a 0))
+      ((union e (Const -1))))
+
+; Sign of zero
+(rule ((= e (Sign (Const 0))))
+      ((union e (Const 0))))
+
+; =============================================================================
+; Clamp Constant Folding
+; =============================================================================
+
+; SClamp(x, lo, hi) when x <= lo
+(rule ((= e (SClamp (Const x) (Const lo) (Const hi))) (<= x lo))
+      ((union e (Const lo))))
+
+; SClamp(x, lo, hi) when x >= hi
+(rule ((= e (SClamp (Const x) (Const lo) (Const hi))) (>= x hi))
+      ((union e (Const hi))))
+
+; SClamp(x, lo, hi) when lo <= x <= hi
+(rule ((= e (SClamp (Const x) (Const lo) (Const hi))) (>= x lo) (<= x hi))
+      ((union e (Const x))))
+
+; UClamp follows same pattern for unsigned (positive values)
+(rule ((= e (UClamp (Const x) (Const lo) (Const hi))) (<= x lo) (>= lo 0) (>= x 0))
+      ((union e (Const lo))))
+
+(rule ((= e (UClamp (Const x) (Const lo) (Const hi))) (>= x hi) (>= hi 0))
+      ((union e (Const hi))))
+
+(rule ((= e (UClamp (Const x) (Const lo) (Const hi))) (>= x lo) (<= x hi) (>= x 0))
+      ((union e (Const x))))
+
+; =============================================================================
+; Rotation Constant Folding (requires primitives)
+; =============================================================================
+
+; RotL and RotR of 0
+(rule ((= e (RotL (Const 0) (Const a))))
+      ((union e (Const 0))))
+(rule ((= e (RotR (Const 0) (Const a))))
+      ((union e (Const 0))))
+
+; RotL and RotR by 0 (identity)
+(rule ((= e (RotL (Const a) (Const 0))))
+      ((union e (Const a))))
+(rule ((= e (RotR (Const a) (Const 0))))
+      ((union e (Const a))))
