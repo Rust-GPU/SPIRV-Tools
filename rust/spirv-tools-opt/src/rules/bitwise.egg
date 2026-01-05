@@ -204,3 +204,59 @@
 (rewrite (BitXor (BitAnd m a) (BitAnd b m)) (BitAnd (BitXor a b) m))
 (rewrite (BitXor (BitAnd a m) (BitAnd m b)) (BitAnd (BitXor a b) m))
 (rewrite (BitXor (BitAnd m a) (BitAnd m b)) (BitAnd (BitXor a b) m))
+
+; =============================================================================
+; C++ Parity: RedundantAndOrXor Patterns
+; =============================================================================
+; When ANDing with a constant mask:
+; m & (a | c) = a & m, when (m & c) == 0 (bits don't overlap)
+; m & (a ^ c) = a & m, when (m & c) == 0 (bits don't overlap)
+; m & (a | c) = m, when (m & c) == m (OR contains all needed bits)
+
+; General patterns that work without knowing exact constant values:
+; (a | 0) & m = a & m (already covered by identity rules)
+; (a ^ 0) & m = a & m (already covered by identity rules)
+
+; =============================================================================
+; C++ Parity: RedundantAndAddSub Patterns
+; =============================================================================
+; m & (a + c) can simplify when add doesn't affect masked bits
+; m & (a - c) can simplify when sub doesn't affect masked bits
+; For example: 1 & (b + 2) = b & 1, since adding 2 doesn't change bit 0
+
+; General rule: mask & (a + 0) = mask & a
+; This is covered by Add identity rules
+
+; =============================================================================
+; C++ Parity: RedundantAndShift Patterns
+; =============================================================================
+; m & (a << n) = 0, when m's set bits are all shifted out
+; m & (a >> n) = 0, when m's set bits are all shifted out
+
+; General patterns that work for any constant:
+; 0 & (a << n) = 0 (covered by BitAnd with 0)
+; 0 & (a >> n) = 0 (covered by BitAnd with 0)
+
+; Left shift of value then AND with mask selecting low bits
+; (x << n) & ((1 << n) - 1) = 0 for any n > 0
+; This is because left shift fills low bits with zeros
+
+; =============================================================================
+; Additional Bitwise Simplification Patterns
+; =============================================================================
+
+; Simplify AND with OR/XOR when one operand is same as mask operand
+; m & (m | a) = m (absorption - already covered)
+; m & (m ^ a) = m & ~a
+(rewrite (BitAnd m (BitXor m a)) (BitAnd m (BitNot a)))
+(rewrite (BitAnd (BitXor m a) m) (BitAnd m (BitNot a)))
+(rewrite (BitAnd m (BitXor a m)) (BitAnd m (BitNot a)))
+(rewrite (BitAnd (BitXor a m) m) (BitAnd m (BitNot a)))
+
+; Simplify OR with AND when one operand subsumes
+; m | (m & a) = m (absorption - already covered)
+; m | (m ^ a) = m | a
+(rewrite (BitOr m (BitXor m a)) (BitOr m a))
+(rewrite (BitOr (BitXor m a) m) (BitOr m a))
+(rewrite (BitOr m (BitXor a m)) (BitOr m a))
+(rewrite (BitOr (BitXor a m) m) (BitOr m a))

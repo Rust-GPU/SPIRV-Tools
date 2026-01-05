@@ -304,3 +304,33 @@
 (rewrite (FMul x (FDiv y x)) y)
 
 ; x * (y / x) = y - same as above with commutativity
+
+; =============================================================================
+; Additional C++ Parity Rules
+; =============================================================================
+
+; 0 - x = -x (C++ RedundantFSub)
+(rewrite (FSub (Const 0) x) (FNeg x))
+
+; FDiv reciprocal: 1 / x optimization for repeated divisions
+; x / y = x * (1 / y) can be beneficial when 1/y is computed once
+; But this can affect precision, so we keep it bidirectional for egraph exploration
+(rewrite (FDiv x y) (FMul x (FDiv (Const 1) y)))
+
+; FMix (linear interpolation) identities when GLSL ext available
+; FMix(a, b, 0) = a
+; FMix(a, b, 1) = b
+; FMix(a, a, t) = a
+; These would be in glsl.egg when implemented
+
+; =============================================================================
+; Floating-Point Abs Rules
+; =============================================================================
+
+; FAbs of FAbs is FAbs (idempotent) - already have
+; FAbs of FNeg gives FAbs
+(rewrite (FAbs (FNeg x)) (FAbs x))
+
+; FAbs(x * x) = x * x (square is always non-negative)
+; Note: Not quite right due to -0, but commonly optimized
+
