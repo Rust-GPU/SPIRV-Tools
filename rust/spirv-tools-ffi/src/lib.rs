@@ -12,7 +12,9 @@ use spirv_tools_core::validation::ValidModuleCache;
 use spirv_tools_core::{MessageLevel, TargetEnv};
 mod fuzz;
 mod optimizer;
-mod tests_optimizer;
+
+#[cfg(test)]
+mod optimizer_tests;
 
 pub use fuzz::{
     FuzzConfig, FuzzGenerator, FuzzModule, FuzzOutcome, InvalidKind, MaybeInvalid, Unchecked,

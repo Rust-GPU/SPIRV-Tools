@@ -222,8 +222,8 @@
 ; =============================================================================
 
 ; (v * s1) * s2 = v * (s1 * s2)
-(rewrite (VecTimesScalar (VecTimesScalar v (Const s1)) (Const s2))
-         (VecTimesScalar v (Const (* s1 s2))))
+(rule ((= e (VecTimesScalar (VecTimesScalar v (Const s1)) (Const s2))) (mul-safe s1 s2))
+      ((union e (VecTimesScalar v (Const (* s1 s2))))))
 
 ; v * 0 produces zero vector (already have for integer version)
 

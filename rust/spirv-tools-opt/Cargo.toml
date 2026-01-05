@@ -6,7 +6,7 @@ publish = false
 
 [dependencies]
 # egglog - equality saturation engine for SPIR-V optimization
-egglog = "1.0"
+egglog = { git = "https://github.com/egraphs-good/egglog.git" }
 spirv-tools-core = { path = "../spirv-tools-core" }
 arbitrary = { version = "1.3", features = ["derive"] }
 thiserror = "1.0"

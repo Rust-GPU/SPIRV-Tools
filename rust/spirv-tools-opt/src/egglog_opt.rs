@@ -186,18 +186,17 @@ fn popcount(x: i64) -> i64 {
 pub fn create_spirv_egraph() -> Result<EGraph, EgglogOptError> {
     let mut egraph = EGraph::default();
 
-    // Load the base SPIR-V language and rules
-    egraph
-        .parse_and_run_program(None, SPIRV_EGGLOG_PROGRAM)
-        .map_err(|e| EgglogOptError::ParseError(e.to_string()))?;
+    // Register all custom primitives FIRST (before loading rules that use them)
 
-    // Register custom primitives
+    // Bit reversal primitives
     add_primitive!(&mut egraph, "bitrev32" = |a: i64| -> i64 {
         bitreverse32(a)
     });
     add_primitive!(&mut egraph, "bitrev64" = |a: i64| -> i64 {
         bitreverse64(a)
     });
+
+    // Bit mask check primitives
     add_primitive!(&mut egraph, "bits-disjoint" = |a: i64, b: i64| -?> () {
         bits_disjoint(a, b)
     });
@@ -225,7 +224,23 @@ pub fn create_spirv_egraph() -> Result<EGraph, EgglogOptError> {
         popcount(a)
     });
 
-    // Load rules that use custom primitives
+    // Guard primitive that succeeds only if a*b would not overflow.
+    // Used in rule conditions to prevent rules from matching when multiplication would overflow.
+    add_primitive!(&mut egraph, "mul-safe" = |a: i64, b: i64| -?> () {
+        // Check if a * b would overflow
+        if a.checked_mul(b).is_some() {
+            Some(())
+        } else {
+            None
+        }
+    });
+
+    // Now load the base SPIR-V language and rules (which use the primitives above)
+    egraph
+        .parse_and_run_program(None, SPIRV_EGGLOG_PROGRAM)
+        .map_err(|e| EgglogOptError::ParseError(e.to_string()))?;
+
+    // Load additional rules that use custom primitives
     egraph
         .parse_and_run_program(None, SPIRV_EGGLOG_PRIMITIVES_PROGRAM)
         .map_err(|e| EgglogOptError::ParseError(e.to_string()))?;
@@ -344,6 +359,99 @@ mod tests {
         assert!(!results.is_empty());
         let result = format!("{}", results[0]);
         assert!(result.contains("Const 4"), "Expected (Const 4), got: {}", result);
+    }
+
+    #[test]
+    fn test_egglog_multiply_primitive_with_zero() {
+        // Test if egglog's * primitive works with zero directly (without our rules)
+        let mut egraph = EGraph::default();
+
+        // Use the check command to verify multiplication works
+        // (check (= result expected))
+        let result = egraph.parse_and_run_program(None, "(check (= (* 5 3) 15))");
+        assert!(result.is_ok(), "(* 5 3) should equal 15: {:?}", result);
+
+        // Test multiply by zero - this is what's expected to fail
+        let result = egraph.parse_and_run_program(None, "(check (= (* 5 0) 0))");
+        assert!(result.is_ok(), "(* 5 0) should equal 0: {:?}", result);
+
+        let result = egraph.parse_and_run_program(None, "(check (= (* 0 5) 0))");
+        assert!(result.is_ok(), "(* 0 5) should equal 0: {:?}", result);
+    }
+
+    #[test]
+    fn test_mul_by_zero() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // 5 * 0 should fold to 0
+        // This tests that the x*0=0 rule fires before strength reduction can cause explosion
+        egraph
+            .parse_and_run_program(None, r#"(let root (Mul (Const 5) (Const 0)))"#)
+            .unwrap();
+
+        // Run just 3 iterations - should be enough for x*0=0 to fire
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 3 (run)))")
+            .unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        assert!(!results.is_empty());
+        let result = format!("{}", results[0]);
+        eprintln!("Mul by zero result: {}", result);
+        assert!(
+            result.contains("Const 0"),
+            "Expected (Const 0), got: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_mul_by_zero_trace() {
+        // Trace what happens in the e-graph step by step
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        egraph
+            .parse_and_run_program(None, r#"(let root (Mul (Const 5) (Const 0)))"#)
+            .unwrap();
+
+        // After initial insertion - what does extract give us?
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        eprintln!("Initial: {:?}", results);
+
+        // Run 1 iteration
+        egraph.parse_and_run_program(None, "(run 1)").unwrap();
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        eprintln!("After 1 iteration: {:?}", results);
+
+        // Check if we already got 0
+        let result = format!("{}", results[0]);
+        if result.contains("Const 0") && !result.contains("Mul") {
+            eprintln!("SUCCESS: Folded to 0 after 1 iteration");
+            return;
+        }
+
+        // Run 2nd iteration
+        egraph.parse_and_run_program(None, "(run 1)").unwrap();
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        eprintln!("After 2 iterations: {:?}", results);
+
+        let result = format!("{}", results[0]);
+        if result.contains("Const 0") && !result.contains("Mul") {
+            eprintln!("SUCCESS: Folded to 0 after 2 iterations");
+            return;
+        }
+
+        // Run 3rd iteration
+        egraph.parse_and_run_program(None, "(run 1)").unwrap();
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        eprintln!("After 3 iterations: {:?}", results);
+
+        let result = format!("{}", results[0]);
+        assert!(
+            result.contains("Const 0") && !result.contains("Mul"),
+            "Expected (Const 0), got: {}",
+            result
+        );
     }
 
     #[test]

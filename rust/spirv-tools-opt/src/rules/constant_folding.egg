@@ -6,7 +6,8 @@
       ((union e (Const (+ a b)))))
 (rule ((= e (Sub (Const a) (Const b))))
       ((union e (Const (- a b)))))
-(rule ((= e (Mul (Const a) (Const b))))
+; Multiplication constant folding - use mul-safe guard to avoid panic on overflow
+(rule ((= e (Mul (Const a) (Const b))) (mul-safe a b))
       ((union e (Const (* a b)))))
 (rule ((= e (Neg (Const a))))
       ((union e (Const (- 0 a)))))

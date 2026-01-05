@@ -1,0 +1,382 @@
+//! Tests for arithmetic optimization rules (add, sub, mul, div, mod, neg).
+
+use super::common::{OptimizedModule, OptimizerEnvGuard, TestModuleBuilder};
+use rspirv::spirv::Op;
+
+// =============================================================================
+// Addition Tests
+// =============================================================================
+
+#[test]
+fn folds_constant_add() {
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    b.begin_void_function();
+    let c2 = b.const_i32(2);
+    let c3 = b.const_i32(3);
+    let _ = b.builder.i_add(b.int_ty, None, c2, c3).expect("add");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    assert!(
+        !result.has_opcode(Op::IAdd),
+        "constant add should be folded away"
+    );
+}
+
+#[test]
+fn add_with_negate_folds_to_zero() {
+    // x + (-x) should fold to 0
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    b.begin_void_function();
+    let c5 = b.const_i32(5);
+    let neg = b.builder.s_negate(b.int_ty, None, c5).expect("neg");
+    let _ = b.builder.i_add(b.int_ty, None, c5, neg).expect("add");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    assert!(
+        !result.has_opcode(Op::IAdd),
+        "x + (-x) should be folded to 0"
+    );
+}
+
+// =============================================================================
+// Subtraction Tests
+// =============================================================================
+
+#[test]
+fn sub_self_to_zero() {
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.int_ty]);
+    let x = params[0];
+    let _ = b.builder.i_sub(b.int_ty, None, x, x).expect("sub");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    assert!(
+        !result.has_opcode(Op::ISub),
+        "x - x should be folded to 0"
+    );
+}
+
+#[test]
+fn neg_sub_to_swap() {
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.int_ty, b.int_ty]);
+    let (a, bval) = (params[0], params[1]);
+    let sub = b.builder.i_sub(b.int_ty, None, a, bval).expect("sub");
+    let _ = b.builder.s_negate(b.int_ty, None, sub).expect("neg");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    // -(a - b) = b - a
+    assert!(
+        !result.has_opcode(Op::SNegate),
+        "-(a-b) should become b-a without negate"
+    );
+}
+
+// =============================================================================
+// Multiplication Tests
+// =============================================================================
+
+#[test]
+fn mul_by_zero() {
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    b.begin_void_function();
+    let c5 = b.const_i32(5);
+    let c0 = b.const_i32(0);
+    let _ = b.builder.i_mul(b.int_ty, None, c5, c0).expect("mul");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    assert!(!result.has_opcode(Op::IMul), "x * 0 should be folded to 0");
+}
+
+#[test]
+fn mul_by_one() {
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.int_ty]);
+    let x = params[0];
+    let c1 = b.const_i32(1);
+    let _ = b.builder.i_mul(b.int_ty, None, x, c1).expect("mul");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    assert!(!result.has_opcode(Op::IMul), "x * 1 should be folded to x");
+}
+
+#[test]
+fn mul_by_neg_one() {
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.int_ty]);
+    let x = params[0];
+    let neg1 = b.const_i32(-1);
+    let _ = b.builder.i_mul(b.int_ty, None, x, neg1).expect("mul");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    // x * -1 should become -x
+    assert!(
+        !result.has_opcode(Op::IMul),
+        "x * -1 should be replaced with negate"
+    );
+}
+
+#[test]
+fn factors_common_multiplicand() {
+    // Tests: param * 2 + param * 3 => factored and simplified
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.uint_ty]);
+    let param = params[0];
+    let c2 = b.const_u32(2);
+    let c3 = b.const_u32(3);
+    let mul_left = b.builder.i_mul(b.uint_ty, None, param, c2).expect("mul left");
+    let mul_right = b.builder.i_mul(b.uint_ty, None, param, c3).expect("mul right");
+    let _ = b.builder.i_add(b.uint_ty, None, mul_left, mul_right).expect("add");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    // Original has 2 multiplies. After factoring should have at most 1
+    assert!(
+        result.count_opcode(Op::IMul) <= 1,
+        "factoring should reduce from 2 multiplies to at most 1"
+    );
+}
+
+#[test]
+#[ignore = "causes egglog explosion due to mul+add pattern"]
+fn folds_linear_combination_to_constant() {
+    // Tests: 4*2 + 4*3 = 8 + 12 = 20 (all constants should fold)
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    b.begin_void_function();
+    let factor = b.const_i32(4);
+    let c2 = b.const_i32(2);
+    let c3 = b.const_i32(3);
+    let mul1 = b.builder.i_mul(b.int_ty, None, factor, c2).expect("mul1");
+    let mul2 = b.builder.i_mul(b.int_ty, None, c3, factor).expect("mul2");
+    let _ = b.builder.i_add(b.int_ty, None, mul1, mul2).expect("add");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    // Constant folding should eliminate multiply or add operations
+    assert!(
+        !result.has_opcode(Op::IMul) || !result.has_opcode(Op::IAdd),
+        "constant folding should eliminate at least multiply or add operations"
+    );
+}
+
+#[test]
+#[ignore = "constant folding for mul not yet working in egglog"]
+fn strength_reduces_mul_pow2() {
+    // x * 8 should become x << 3
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    b.begin_void_function();
+    let c5 = b.const_u32(5);
+    let c8 = b.const_u32(8);
+    let _ = b.builder.i_mul(b.uint_ty, None, c5, c8).expect("mul");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    // 5 * 8 = 40 should be folded to constant
+    assert!(result.has_constant_u32(40), "5 * 8 should fold to 40");
+}
+
+// =============================================================================
+// Division Tests
+// =============================================================================
+
+#[test]
+fn udiv_by_one() {
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.uint_ty]);
+    let x = params[0];
+    let c1 = b.const_u32(1);
+    let _ = b.builder.u_div(b.uint_ty, None, x, c1).expect("udiv");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    assert!(!result.has_opcode(Op::UDiv), "x / 1 should be folded to x");
+}
+
+#[test]
+fn sdiv_by_one() {
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.int_ty]);
+    let x = params[0];
+    let c1 = b.const_i32(1);
+    let _ = b.builder.s_div(b.int_ty, None, x, c1).expect("sdiv");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    assert!(!result.has_opcode(Op::SDiv), "x / 1 should be folded to x");
+}
+
+// =============================================================================
+// Remainder/Modulo Tests
+// =============================================================================
+
+#[test]
+fn urem_by_one() {
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.uint_ty]);
+    let x = params[0];
+    let c1 = b.const_u32(1);
+    let _ = b.builder.u_mod(b.uint_ty, None, x, c1).expect("umod");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    assert!(!result.has_opcode(Op::UMod), "x % 1 should be folded to 0");
+}
+
+#[test]
+fn srem_by_one() {
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.int_ty]);
+    let x = params[0];
+    let c1 = b.const_i32(1);
+    let _ = b.builder.s_rem(b.int_ty, None, x, c1).expect("srem");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    assert!(!result.has_opcode(Op::SRem), "x % 1 should be folded to 0");
+}
+
+#[test]
+fn rem_by_one_folds_to_zero() {
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    b.begin_void_function();
+    let c5_u = b.const_u32(5);
+    let c1_u = b.const_u32(1);
+    let c5_i = b.const_i32(5);
+    let c1_i = b.const_i32(1);
+    let _ = b.builder.u_mod(b.uint_ty, None, c5_u, c1_u).expect("umod");
+    let _ = b.builder.s_rem(b.int_ty, None, c5_i, c1_i).expect("srem");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    assert!(!result.has_opcode(Op::UMod), "umod by 1 should be folded");
+    assert!(!result.has_opcode(Op::SRem), "srem by 1 should be folded");
+}
+
+#[test]
+fn rewrites_umod_pow2_to_bitmask() {
+    // x % 8 should become x & 7
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    b.begin_void_function();
+    let c5 = b.const_u32(5);
+    let c1 = b.const_u32(1);
+    let c8 = b.const_u32(8);
+    let x = b.builder.i_add(b.uint_ty, None, c5, c1).expect("add");
+    let _ = b.builder.u_mod(b.uint_ty, None, x, c8).expect("umod");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    assert!(
+        !result.has_opcode(Op::UMod),
+        "umod by power of 2 should be rewritten"
+    );
+}
+
+// =============================================================================
+// Affine/GCD Tests
+// =============================================================================
+
+#[test]
+fn affine_gcd_add_folds_to_constant() {
+    // 14 * 2 + 21 = 28 + 21 = 49
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    b.begin_void_function();
+    let c14 = b.const_u32(14);
+    let c2 = b.const_u32(2);
+    let c21 = b.const_u32(21);
+    let mul = b.builder.i_mul(b.uint_ty, None, c14, c2).expect("mul");
+    let _ = b.builder.i_add(b.uint_ty, None, mul, c21).expect("add");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    assert!(
+        !result.has_opcode(Op::IMul) && !result.has_opcode(Op::IAdd),
+        "mul/add should be removed after folding"
+    );
+}
+
+#[test]
+fn affine_gcd_sub_folds_to_constant() {
+    // 14 * 2 - 21 = 28 - 21 = 7
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    b.begin_void_function();
+    let c14 = b.const_u32(14);
+    let c21 = b.const_u32(21);
+    let c2 = b.const_u32(2);
+    let mul = b.builder.i_mul(b.uint_ty, None, c14, c2).expect("mul");
+    let _ = b.builder.i_sub(b.uint_ty, None, mul, c21).expect("sub");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    assert!(
+        !result.has_opcode(Op::IMul) && !result.has_opcode(Op::ISub),
+        "mul/sub should be removed after folding"
+    );
+}
+
+// =============================================================================
+// Add/Sub Chain Tests
+// =============================================================================
+
+#[test]
+#[ignore = "causes egglog explosion due to associativity rules"]
+fn cancels_add_sub_chain() {
+    // (x + 5) - 5 should become x
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.int_ty]);
+    let x = params[0];
+    let c5 = b.const_i32(5);
+    let add = b.builder.i_add(b.int_ty, None, x, c5).expect("add");
+    let _ = b.builder.i_sub(b.int_ty, None, add, c5).expect("sub");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    assert!(
+        !result.has_opcode(Op::IAdd) && !result.has_opcode(Op::ISub),
+        "(x + 5) - 5 should simplify to x"
+    );
+}

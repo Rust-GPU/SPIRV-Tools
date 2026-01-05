@@ -137,13 +137,13 @@
 ; FMul associativity
 (rewrite (FMul (FMul a b) c) (FMul a (FMul b c)))
 
-; Distributive: a * (b + c) = a*b + a*c (useful for factoring)
-; Note: May affect precision, but common optimization
-(rewrite (FMul a (FAdd b c)) (FAdd (FMul a b) (FMul a c)))
-(rewrite (FMul (FAdd a b) c) (FAdd (FMul a c) (FMul b c)))
-
 ; Factoring: a*c + b*c = (a+b)*c
-(rewrite (FAdd (FMul a c) (FMul b c)) (FMul (FAdd a b) c))
+; One-directional to prevent expansion that causes e-graph explosion.
+; We recognize expanded patterns and factor them, but don't distribute.
+(rule ((= e (FAdd (FMul a c) (FMul b c))))
+      ((union e (FMul (FAdd a b) c))))
+(rule ((= e (FAdd (FMul c a) (FMul c b))))
+      ((union e (FMul c (FAdd a b)))))
 
 ; x + x = 2*x
 (rewrite (FAdd x x) (FMul x (Const 2)))
@@ -186,13 +186,14 @@
 
 ; (x * a) * b = x * (a * b) for float constants
 ; Note: These rules assume fast-math style optimization (may affect precision)
-(rule ((= e (FMul (FMul x (Const a)) (Const b))))
+; Using mul-safe guard to avoid overflow panics
+(rule ((= e (FMul (FMul x (Const a)) (Const b))) (mul-safe a b))
       ((union e (FMul x (Const (* a b))))))
-(rule ((= e (FMul (Const b) (FMul x (Const a)))))
+(rule ((= e (FMul (Const b) (FMul x (Const a)))) (mul-safe a b))
       ((union e (FMul x (Const (* a b))))))
 
 ; (x / a) / b = x / (a * b)
-(rule ((= e (FDiv (FDiv x (Const a)) (Const b))) (!= a 0) (!= b 0))
+(rule ((= e (FDiv (FDiv x (Const a)) (Const b))) (mul-safe a b))
       ((union e (FDiv x (Const (* a b))))))
 
 ; (x * a) / b = x * (a / b)
@@ -312,10 +313,13 @@
 ; 0 - x = -x (C++ RedundantFSub)
 (rewrite (FSub (Const 0) x) (FNeg x))
 
-; FDiv reciprocal: 1 / x optimization for repeated divisions
-; x / y = x * (1 / y) can be beneficial when 1/y is computed once
-; But this can affect precision, so we keep it bidirectional for egraph exploration
-(rewrite (FDiv x y) (FMul x (FDiv (Const 1) y)))
+; Recognize x * (1/y) as x/y for simplification
+; One-directional to prevent expansion that causes e-graph explosion.
+; We don't expand x/y to x * (1/y) as that creates more nodes.
+(rule ((= e (FMul x (FDiv (Const 1) y))))
+      ((union e (FDiv x y))))
+(rule ((= e (FMul (FDiv (Const 1) y) x)))
+      ((union e (FDiv x y))))
 
 ; FMix (linear interpolation) identities when GLSL ext available
 ; FMix(a, b, 0) = a

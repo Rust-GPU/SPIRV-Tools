@@ -135,30 +135,50 @@
 (rewrite (Add x x) (Mul x (Const 2)))
 
 ; =============================================================================
-; Additional Strength Reduction Patterns
+; Strength Reduction Recognition Patterns
 ; =============================================================================
+; These rules recognize shift+add patterns and consolidate to multiplies.
+; They're one-directional: we don't expand (Mul x 3) to shifts, but we
+; recognize shifts as multiplies for better cost extraction.
+; This prevents e-graph explosion while still enabling optimization.
 
-; Multiply by 3: x * 3 = (x << 1) + x
-(rewrite (Mul x (Const 3)) (Add (Shl x (Const 1)) x))
+; (x << 1) + x = x * 3
+(rule ((= e (Add (Shl x (Const 1)) x)))
+      ((union e (Mul x (Const 3)))))
+(rule ((= e (Add x (Shl x (Const 1)))))
+      ((union e (Mul x (Const 3)))))
 
-; Multiply by 5: x * 5 = (x << 2) + x
-(rewrite (Mul x (Const 5)) (Add (Shl x (Const 2)) x))
+; (x << 2) + x = x * 5
+(rule ((= e (Add (Shl x (Const 2)) x)))
+      ((union e (Mul x (Const 5)))))
+(rule ((= e (Add x (Shl x (Const 2)))))
+      ((union e (Mul x (Const 5)))))
 
-; Multiply by 6: x * 6 = (x << 2) + (x << 1) = (x + x) * 3 = ...
-; Using shift+add form
-(rewrite (Mul x (Const 6)) (Add (Shl x (Const 2)) (Shl x (Const 1))))
+; (x << 2) + (x << 1) = x * 6
+(rule ((= e (Add (Shl x (Const 2)) (Shl x (Const 1)))))
+      ((union e (Mul x (Const 6)))))
+(rule ((= e (Add (Shl x (Const 1)) (Shl x (Const 2)))))
+      ((union e (Mul x (Const 6)))))
 
-; Multiply by 7: x * 7 = (x << 3) - x
-(rewrite (Mul x (Const 7)) (Sub (Shl x (Const 3)) x))
+; (x << 3) - x = x * 7
+(rule ((= e (Sub (Shl x (Const 3)) x)))
+      ((union e (Mul x (Const 7)))))
 
-; Multiply by 9: x * 9 = (x << 3) + x
-(rewrite (Mul x (Const 9)) (Add (Shl x (Const 3)) x))
+; (x << 3) + x = x * 9
+(rule ((= e (Add (Shl x (Const 3)) x)))
+      ((union e (Mul x (Const 9)))))
+(rule ((= e (Add x (Shl x (Const 3)))))
+      ((union e (Mul x (Const 9)))))
 
-; Multiply by 10: x * 10 = (x << 3) + (x << 1)
-(rewrite (Mul x (Const 10)) (Add (Shl x (Const 3)) (Shl x (Const 1))))
+; (x << 3) + (x << 1) = x * 10
+(rule ((= e (Add (Shl x (Const 3)) (Shl x (Const 1)))))
+      ((union e (Mul x (Const 10)))))
+(rule ((= e (Add (Shl x (Const 1)) (Shl x (Const 3)))))
+      ((union e (Mul x (Const 10)))))
 
-; Multiply by 15: x * 15 = (x << 4) - x
-(rewrite (Mul x (Const 15)) (Sub (Shl x (Const 4)) x))
+; (x << 4) - x = x * 15
+(rule ((= e (Sub (Shl x (Const 4)) x)))
+      ((union e (Mul x (Const 15)))))
 
 ; =============================================================================
 ; Signed Division Strength Reduction
@@ -243,13 +263,14 @@
 (rewrite (Add x (Add x x)) (Mul x (Const 3)))
 (rewrite (Add (Add x x) x) (Mul x (Const 3)))
 
-; More distributive patterns
-; (a + b) * c = a*c + b*c  (useful for extraction, not always better)
-; c * (a + b) = c*a + c*b
-
-; (a - b) * c = a*c - b*c
-(rewrite (Mul (Sub a b) c) (Sub (Mul a c) (Mul b c)))
-(rewrite (Mul c (Sub a b)) (Sub (Mul c a) (Mul c b)))
+; Factoring patterns (recognize expanded form, merge to compact)
+; a*c - b*c = (a - b) * c
+; These are one-directional: we recognize the expanded form and factor it,
+; but we don't expand compact multiplies to prevent e-graph explosion.
+(rule ((= e (Sub (Mul a c) (Mul b c))))
+      ((union e (Mul (Sub a b) c))))
+(rule ((= e (Sub (Mul c a) (Mul c b))))
+      ((union e (Mul (Sub a b) c))))
 
 ; =============================================================================
 ; Power of Two Division Optimization
@@ -296,17 +317,19 @@
 ; =============================================================================
 
 ; (x * a) * b = x * (a * b) - constant chain merging
-(rule ((= e (Mul (Mul x (Const a)) (Const b))))
+; Use mul-safe guard to ensure a*b won't overflow before using egglog's * primitive.
+(rule ((= e (Mul (Mul x (Const a)) (Const b))) (mul-safe a b))
       ((union e (Mul x (Const (* a b))))))
-(rule ((= e (Mul (Const b) (Mul x (Const a)))))
+(rule ((= e (Mul (Const b) (Mul x (Const a)))) (mul-safe a b))
       ((union e (Mul x (Const (* a b))))))
-(rule ((= e (Mul (Mul (Const a) x) (Const b))))
+(rule ((= e (Mul (Mul (Const a) x) (Const b))) (mul-safe a b))
       ((union e (Mul x (Const (* a b))))))
 
 ; (x / a) / b = x / (a * b)
-(rule ((= e (SDiv (SDiv x (Const a)) (Const b))) (!= a 0) (!= b 0))
+; Use mul-safe guard to ensure a*b won't overflow
+(rule ((= e (SDiv (SDiv x (Const a)) (Const b))) (mul-safe a b))
       ((union e (SDiv x (Const (* a b))))))
-(rule ((= e (UDiv (UDiv x (Const a)) (Const b))) (!= a 0) (!= b 0))
+(rule ((= e (UDiv (UDiv x (Const a)) (Const b))) (mul-safe a b))
       ((union e (UDiv x (Const (* a b))))))
 
 ; (x * a) / a = x (for non-zero a)

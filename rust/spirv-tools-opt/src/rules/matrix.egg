@@ -43,8 +43,8 @@
 ; Scalar multiply is commutative in the scalar: (M*s1)*s2 = (M*s2)*s1
 ; And associative: (M*s1)*s2 = M*(s1*s2)
 ; We express this as merging the scalars
-(rewrite (MatTimesScalar (MatTimesScalar m (Const a)) (Const b))
-         (MatTimesScalar m (Const (* a b))))
+(rule ((= e (MatTimesScalar (MatTimesScalar m (Const a)) (Const b))) (mul-safe a b))
+      ((union e (MatTimesScalar m (Const (* a b))))))
 
 ; =============================================================================
 ; Determinant Rules
