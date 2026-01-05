@@ -356,3 +356,77 @@
 ; Theta with loop body that doesn't use LoopVar effectively
 ; (Theta cond (SomeOp (LoopInvariant x)) init) patterns are already handled
 ; via the LoopInvariant wrapper rules
+
+; =============================================================================
+; Advanced Egraph-Only Optimizations (Beyond C++ Parity)
+; =============================================================================
+; These rules exploit the global nature of egraph optimization to find
+; simplifications that multi-pass C++ optimizers cannot easily discover.
+
+; Cross-branch common subexpression: if both branches compute the same thing
+; differently, the egraph will unify them automatically. We add rules for
+; specific patterns that help guide this:
+
+; select(c, f(x), f(y)) where f is expensive can become f(select(c, x, y))
+; when f is a pure function. This is already covered by Gamma distribution.
+
+; Select absorption with arithmetic:
+; select(c, x + y, x) = x + select(c, y, 0)
+(rewrite (Gamma c (Add x y) x) (Add x (Gamma c y (Const 0))))
+(rewrite (Gamma c x (Add x y)) (Add x (Gamma c (Const 0) y)))
+(rewrite (Gamma c (FAdd x y) x) (FAdd x (Gamma c y (Const 0))))
+(rewrite (Gamma c x (FAdd x y)) (FAdd x (Gamma c (Const 0) y)))
+
+; select(c, x * y, x) = x * select(c, y, 1) (when y could be 1)
+(rewrite (Gamma c (Mul x y) x) (Mul x (Gamma c y (Const 1))))
+(rewrite (Gamma c x (Mul x y)) (Mul x (Gamma c (Const 1) y)))
+(rewrite (Gamma c (FMul x y) x) (FMul x (Gamma c y (Const 1))))
+(rewrite (Gamma c x (FMul x y)) (FMul x (Gamma c (Const 1) y)))
+
+; Nested Gamma flattening (when inner condition relates to outer)
+; select(c, select(c, a, b), d) = select(c, a, d) - already have
+; select(c, d, select(c, a, b)) = select(c, d, b) - already have
+
+; Double-condition elimination:
+; select(c, select(d, a, b), select(d, c_val, e)) patterns
+
+; =============================================================================
+; Algebraic Simplification through Gamma
+; =============================================================================
+
+; x - select(c, y, 0) = select(c, x - y, x)
+(rewrite (Sub x (Gamma c y (Const 0))) (Gamma c (Sub x y) x))
+(rewrite (FSub x (Gamma c y (Const 0))) (Gamma c (FSub x y) x))
+
+; x + select(c, y, 0) = select(c, x + y, x)
+(rewrite (Add x (Gamma c y (Const 0))) (Gamma c (Add x y) x))
+(rewrite (FAdd x (Gamma c y (Const 0))) (Gamma c (FAdd x y) x))
+
+; =============================================================================
+; Min/Max with Select Patterns
+; =============================================================================
+
+; min(select(c, a, b), x) where we know relationship
+; These help when one branch is constrained
+
+; max(x, 0) when x is known non-negative = x
+; This requires value analysis we don't have, but the pattern is:
+; select(x >= 0, x, -x) = abs(x)
+(rewrite (Gamma (SGe x (Const 0)) x (Neg x)) (SAbs x))
+(rewrite (Gamma (SLt x (Const 0)) (Neg x) x) (SAbs x))
+(rewrite (Gamma (FOrdGe x (Const 0)) x (FNeg x)) (FAbs x))
+(rewrite (Gamma (FOrdLt x (Const 0)) (FNeg x) x) (FAbs x))
+
+; =============================================================================
+; Conditional Evaluation Short-Circuiting
+; =============================================================================
+
+; select(c, c && x, false) = c && x (boolean contexts)
+(rewrite (Gamma c (LogAnd c x) (Const 0)) (LogAnd c x))
+
+; select(c, c || x, true) = true (when c is true, c||x is true; when false, true)
+; Actually: select(c, c || x, y) - if c then (true || x)=true, else y
+(rewrite (Gamma c (LogOr c x) y) (LogOr c y))
+
+; select(c, true, c || x) = c || x
+(rewrite (Gamma c (Const 1) (LogOr c x)) (LogOr c (Gamma c (Const 1) x)))
