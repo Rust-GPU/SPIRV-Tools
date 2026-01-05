@@ -10,8 +10,12 @@
 (rewrite (FMix a a t) a)
 
 ; FMix(a, b, 0) = a  (when t=0, return first arg)
+(rewrite (FMix a b (Const 0)) a)
+
 ; FMix(a, b, 1) = b  (when t=1, return second arg)
-; Note: These require constant detection which we handle via Const
+(rewrite (FMix a b (Const 1)) b)
+
+; RedundantFMix from C++ - matches GLSL FMix folding rules
 
 ; =============================================================================
 ; Clamp Operations
