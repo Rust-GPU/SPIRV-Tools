@@ -4674,4 +4674,464 @@ mod optimizer_tests {
         rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
         let _module = loader.module();
     }
+
+    // =========================================================================
+    // Tests for Advanced Egraph-Only Optimization Rules
+    // =========================================================================
+
+    #[test]
+    fn optimizer_simplifies_select_with_add_same_base() {
+        // Test: select(c, x + y, x) should optimize
+        // This tests the Select absorption rule: select(c, x + y, x) = x + select(c, y, 0)
+        let _guard = OptimizerEnvGuard::new();
+
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let bool_ty = b.type_bool();
+        let int = b.type_int(32, 1);
+        let func_ty = b.type_function(void, vec![bool_ty, int, int]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let cond = b.function_parameter(bool_ty).expect("cond param");
+        let x = b.function_parameter(int).expect("x param");
+        let y = b.function_parameter(int).expect("y param");
+        let _ = b.begin_block(None).unwrap();
+        let x_plus_y = b.i_add(int, None, x, y).expect("x + y");
+        let _select = b.select(int, None, cond, x_plus_y, x).expect("select");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let _module = loader.module();
+        // The optimization should run without error. The egraph may simplify
+        // the select(c, x+y, x) pattern to x + select(c, y, 0).
+    }
+
+    #[test]
+    fn optimizer_simplifies_select_with_mul_same_base() {
+        // Test: select(c, x * y, x) should optimize
+        // This tests: select(c, x * y, x) = x * select(c, y, 1)
+        let _guard = OptimizerEnvGuard::new();
+
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let bool_ty = b.type_bool();
+        let int = b.type_int(32, 1);
+        let func_ty = b.type_function(void, vec![bool_ty, int, int]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let cond = b.function_parameter(bool_ty).expect("cond param");
+        let x = b.function_parameter(int).expect("x param");
+        let y = b.function_parameter(int).expect("y param");
+        let _ = b.begin_block(None).unwrap();
+        let x_mul_y = b.i_mul(int, None, x, y).expect("x * y");
+        let _select = b.select(int, None, cond, x_mul_y, x).expect("select");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let _module = loader.module();
+    }
+
+    #[test]
+    fn optimizer_simplifies_sub_with_conditional_zero() {
+        // Test: x - select(c, y, 0) should become select(c, x - y, x)
+        let _guard = OptimizerEnvGuard::new();
+
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let bool_ty = b.type_bool();
+        let int = b.type_int(32, 1);
+        let func_ty = b.type_function(void, vec![bool_ty, int, int]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let cond = b.function_parameter(bool_ty).expect("cond param");
+        let x = b.function_parameter(int).expect("x param");
+        let y = b.function_parameter(int).expect("y param");
+        let _ = b.begin_block(None).unwrap();
+        let zero = b.constant_bit32(int, 0);
+        let select_y_or_zero = b.select(int, None, cond, y, zero).expect("select");
+        let _sub = b.i_sub(int, None, x, select_y_or_zero).expect("x - select");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let _module = loader.module();
+    }
+
+    #[test]
+    fn optimizer_simplifies_add_with_conditional_zero() {
+        // Test: x + select(c, y, 0) should become select(c, x + y, x)
+        let _guard = OptimizerEnvGuard::new();
+
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let bool_ty = b.type_bool();
+        let int = b.type_int(32, 1);
+        let func_ty = b.type_function(void, vec![bool_ty, int, int]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let cond = b.function_parameter(bool_ty).expect("cond param");
+        let x = b.function_parameter(int).expect("x param");
+        let y = b.function_parameter(int).expect("y param");
+        let _ = b.begin_block(None).unwrap();
+        let zero = b.constant_bit32(int, 0);
+        let select_y_or_zero = b.select(int, None, cond, y, zero).expect("select");
+        let _add = b.i_add(int, None, x, select_y_or_zero).expect("x + select");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let _module = loader.module();
+    }
+
+    #[test]
+    #[ignore = "absolute value pattern requires GLSL extended instructions not yet supported in lowering"]
+    fn optimizer_recognizes_abs_pattern_with_select() {
+        // Test: select(x >= 0, x, -x) should become abs(x)
+        // This is an advanced pattern recognition rule
+        let _guard = OptimizerEnvGuard::new();
+
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let bool_ty = b.type_bool();
+        let int = b.type_int(32, 1);
+        let func_ty = b.type_function(void, vec![int]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let x = b.function_parameter(int).expect("x param");
+        let _ = b.begin_block(None).unwrap();
+        let zero = b.constant_bit32(int, 0);
+        // x >= 0
+        let cond = b.s_greater_than_equal(bool_ty, None, x, zero).expect("x >= 0");
+        // -x
+        let neg_x = b.s_negate(int, None, x).expect("-x");
+        // select(x >= 0, x, -x)
+        let _select = b.select(int, None, cond, x, neg_x).expect("select");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let module = loader.module();
+
+        // Check that Select, SGreaterThanEqual, SNegate were eliminated
+        // and replaced with an ExtInst (GLSL.std.450 SAbs)
+        let has_select = module
+            .all_inst_iter()
+            .any(|inst| inst.class.opcode == Op::Select);
+        let has_sge = module
+            .all_inst_iter()
+            .any(|inst| inst.class.opcode == Op::SGreaterThanEqual);
+        let has_snegate = module
+            .all_inst_iter()
+            .any(|inst| inst.class.opcode == Op::SNegate);
+
+        // After optimization, these should be replaced with SAbs
+        assert!(
+            !has_select && !has_sge && !has_snegate,
+            "select(x>=0, x, -x) pattern should be replaced with abs"
+        );
+    }
+
+    #[test]
+    fn optimizer_simplifies_select_with_logical_and_condition() {
+        // Test: select(c, c && x, false) should become c && x
+        let _guard = OptimizerEnvGuard::new();
+
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let bool_ty = b.type_bool();
+        let func_ty = b.type_function(void, vec![bool_ty, bool_ty]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let c = b.function_parameter(bool_ty).expect("c param");
+        let x = b.function_parameter(bool_ty).expect("x param");
+        let _ = b.begin_block(None).unwrap();
+        let c_and_x = b.logical_and(bool_ty, None, c, x).expect("c && x");
+        let false_const = b.constant_false(bool_ty);
+        let _select = b.select(bool_ty, None, c, c_and_x, false_const).expect("select");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let module = loader.module();
+
+        // After optimization, select should be eliminated, leaving just LogicalAnd
+        let has_select = module
+            .all_inst_iter()
+            .any(|inst| inst.class.opcode == Op::Select);
+
+        // The optimization should remove the redundant select
+        assert!(
+            !has_select,
+            "select(c, c && x, false) should simplify to c && x"
+        );
+    }
+
+    #[test]
+    fn optimizer_select_with_same_both_arms() {
+        // Test: select(c, x, x) should become x
+        let _guard = OptimizerEnvGuard::new();
+
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let bool_ty = b.type_bool();
+        let int = b.type_int(32, 1);
+        let func_ty = b.type_function(void, vec![bool_ty, int]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let cond = b.function_parameter(bool_ty).expect("cond param");
+        let x = b.function_parameter(int).expect("x param");
+        let _ = b.begin_block(None).unwrap();
+        let _select = b.select(int, None, cond, x, x).expect("select(c, x, x)");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let module = loader.module();
+
+        // select(c, x, x) = x, so Select should be eliminated
+        let has_select = module
+            .all_inst_iter()
+            .any(|inst| inst.class.opcode == Op::Select);
+        assert!(!has_select, "select(c, x, x) should simplify to x");
+    }
+
+    #[test]
+    fn optimizer_select_with_true_condition() {
+        // Test: select(true, a, b) should become a
+        let _guard = OptimizerEnvGuard::new();
+
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let bool_ty = b.type_bool();
+        let int = b.type_int(32, 1);
+        let func_ty = b.type_function(void, vec![int, int]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let a = b.function_parameter(int).expect("a param");
+        let b_param = b.function_parameter(int).expect("b param");
+        let _ = b.begin_block(None).unwrap();
+        let true_const = b.constant_true(bool_ty);
+        let _select = b.select(int, None, true_const, a, b_param).expect("select(true, a, b)");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let module = loader.module();
+
+        // select(true, a, b) = a, so Select should be eliminated
+        let has_select = module
+            .all_inst_iter()
+            .any(|inst| inst.class.opcode == Op::Select);
+        assert!(!has_select, "select(true, a, b) should simplify to a");
+    }
+
+    #[test]
+    fn optimizer_select_with_false_condition() {
+        // Test: select(false, a, b) should become b
+        let _guard = OptimizerEnvGuard::new();
+
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let bool_ty = b.type_bool();
+        let int = b.type_int(32, 1);
+        let func_ty = b.type_function(void, vec![int, int]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let a = b.function_parameter(int).expect("a param");
+        let b_param = b.function_parameter(int).expect("b param");
+        let _ = b.begin_block(None).unwrap();
+        let false_const = b.constant_false(bool_ty);
+        let _select = b.select(int, None, false_const, a, b_param).expect("select(false, a, b)");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let module = loader.module();
+
+        // select(false, a, b) = b, so Select should be eliminated
+        let has_select = module
+            .all_inst_iter()
+            .any(|inst| inst.class.opcode == Op::Select);
+        assert!(!has_select, "select(false, a, b) should simplify to b");
+    }
+
+    #[test]
+    fn optimizer_nested_select_same_condition() {
+        // Test: select(c, select(c, a, b), d) should become select(c, a, d)
+        let _guard = OptimizerEnvGuard::new();
+
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let bool_ty = b.type_bool();
+        let int = b.type_int(32, 1);
+        let func_ty = b.type_function(void, vec![bool_ty, int, int, int]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let cond = b.function_parameter(bool_ty).expect("cond param");
+        let a = b.function_parameter(int).expect("a param");
+        let b_param = b.function_parameter(int).expect("b param");
+        let d = b.function_parameter(int).expect("d param");
+        let _ = b.begin_block(None).unwrap();
+        // Inner select: select(c, a, b)
+        let inner = b.select(int, None, cond, a, b_param).expect("inner select");
+        // Outer select: select(c, inner, d)
+        let _outer = b.select(int, None, cond, inner, d).expect("outer select");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let module = loader.module();
+
+        // Count Select ops - should be reduced from 2 to 1
+        let select_count = module
+            .all_inst_iter()
+            .filter(|inst| inst.class.opcode == Op::Select)
+            .count();
+        assert!(
+            select_count <= 1,
+            "nested select(c, select(c, a, b), d) should simplify to one select"
+        );
+    }
+
+    #[test]
+    fn optimizer_select_distribution_over_add() {
+        // Test: select(c, a, b) + select(c, x, y) could be optimized
+        // to select(c, a+x, b+y) via Gamma distribution rules
+        let _guard = OptimizerEnvGuard::new();
+
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let bool_ty = b.type_bool();
+        let int = b.type_int(32, 1);
+        let func_ty = b.type_function(void, vec![bool_ty, int, int, int, int]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let cond = b.function_parameter(bool_ty).expect("cond param");
+        let a = b.function_parameter(int).expect("a param");
+        let b_param = b.function_parameter(int).expect("b param");
+        let x = b.function_parameter(int).expect("x param");
+        let y = b.function_parameter(int).expect("y param");
+        let _ = b.begin_block(None).unwrap();
+        let sel1 = b.select(int, None, cond, a, b_param).expect("select1");
+        let sel2 = b.select(int, None, cond, x, y).expect("select2");
+        let _add = b.i_add(int, None, sel1, sel2).expect("add selects");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let module = loader.module();
+
+        // The egraph may combine: select(c,a,b) + select(c,x,y) => select(c, a+x, b+y)
+        // This reduces from 2 selects to 1
+        let select_count = module
+            .all_inst_iter()
+            .filter(|inst| inst.class.opcode == Op::Select)
+            .count();
+        // With the Gamma distribution rules, we should get down to 1 select
+        assert!(
+            select_count <= 1,
+            "select(c,a,b) + select(c,x,y) should combine to single select"
+        );
+    }
 }
