@@ -413,6 +413,40 @@
       ((union e composite)))
 
 ; =============================================================================
+; CompositeExtractFeedingConstruct (C++ parity)
+; =============================================================================
+; When constructing a composite from extractions of the same source at matching
+; indices, simplify to use the original source
+
+; Vec2: Construct(Extract(v,0), Extract(v,1)) = v
+(rule ((= e (CompositeConstruct (ECons (CompositeExtract v 0) (ECons (CompositeExtract v 1) (ENil))))))
+      ((union e v)))
+
+; Vec3: Construct(Extract(v,0), Extract(v,1), Extract(v,2)) = v
+(rule ((= e (CompositeConstruct (ECons (CompositeExtract v 0) (ECons (CompositeExtract v 1) (ECons (CompositeExtract v 2) (ENil)))))))
+      ((union e v)))
+
+; Vec4: Construct(Extract(v,0), Extract(v,1), Extract(v,2), Extract(v,3)) = v
+(rule ((= e (CompositeConstruct (ECons (CompositeExtract v 0) (ECons (CompositeExtract v 1) (ECons (CompositeExtract v 2) (ECons (CompositeExtract v 3) (ENil))))))))
+      ((union e v)))
+
+; Same pattern for Vec2/3/4 constructors
+(rule ((= e (Vec2 (CompositeExtract v 0) (CompositeExtract v 1))))
+      ((union e v)))
+(rule ((= e (Vec3 (CompositeExtract v 0) (CompositeExtract v 1) (CompositeExtract v 2))))
+      ((union e v)))
+(rule ((= e (Vec4 (CompositeExtract v 0) (CompositeExtract v 1) (CompositeExtract v 2) (CompositeExtract v 3))))
+      ((union e v)))
+
+; Same for VecExtract (vector-specific extraction)
+(rule ((= e (Vec2 (VecExtract v 0) (VecExtract v 1))))
+      ((union e v)))
+(rule ((= e (Vec3 (VecExtract v 0) (VecExtract v 1) (VecExtract v 2))))
+      ((union e v)))
+(rule ((= e (Vec4 (VecExtract v 0) (VecExtract v 1) (VecExtract v 2) (VecExtract v 3))))
+      ((union e v)))
+
+; =============================================================================
 ; Effect Sort (side effects and control flow)
 ; =============================================================================
 
