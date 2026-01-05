@@ -137,6 +137,17 @@
     ; Insert scalar into vector at index
     (VecInsert Expr Expr i64)
 
+    ; VectorShuffle - specialized by output vector size
+    ; Indices reference v1 (0..n-1) or v2 (n..2n-1) where n is input vector size
+    (VecShuffle2 Expr Expr i64 i64)
+    (VecShuffle3 Expr Expr i64 i64 i64)
+    (VecShuffle4 Expr Expr i64 i64 i64 i64)
+
+    ; Broadcast scalar to all components
+    (VecBroadcast2 Expr)
+    (VecBroadcast3 Expr)
+    (VecBroadcast4 Expr)
+
     ; Vector arithmetic (component-wise)
     (VecAdd Expr Expr)
     (VecSub Expr Expr)

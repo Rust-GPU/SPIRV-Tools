@@ -255,31 +255,132 @@
 ; These would need VecMin/VecMax constructors
 
 ; =============================================================================
-; Swizzle/Shuffle Optimizations
+; Swizzle/Shuffle Optimizations (C++ VectorShuffle parity)
 ; =============================================================================
+; Uses specialized VecShuffle2/3/4 with fixed-arity indices for cleaner rules
 
-; VecShuffle identity - shuffling with identity indices gives original vector
-; VecShuffle(v, v, [0,1,2,3]) = v for a Vec4
-; These patterns are detected when all indices select from the first vector
-; in order
+; -----------------------------------------------------------------------------
+; Identity shuffles - shuffling with identity indices gives original vector
+; -----------------------------------------------------------------------------
+(rewrite (VecShuffle2 v _ 0 1) v)
+(rewrite (VecShuffle3 v _ 0 1 2) v)
+(rewrite (VecShuffle4 v _ 0 1 2 3) v)
 
-; VecShuffle of same vector with sequential indices is identity
-; This requires matching the specific shuffle pattern
+; Same operand identity
+(rewrite (VecShuffle2 v v 0 1) v)
+(rewrite (VecShuffle3 v v 0 1 2) v)
+(rewrite (VecShuffle4 v v 0 1 2 3) v)
 
-; Extract from a shuffle: VecExtract(VecShuffle(v1, v2, indices), i)
-; Returns VecExtract from v1 or v2 depending on which source the index selects
+; -----------------------------------------------------------------------------
+; Extract from VecShuffle (C++ VectorShuffleFeedingExtract)
+; When extracting from a shuffle, go directly to the source vector
+; -----------------------------------------------------------------------------
 
-; Shuffle of constructed vector can be simplified
-; VecShuffle(Vec4(a,b,c,d), _, [2,3,0,1]) -> Vec4(c,d,a,b)
+; Vec4 shuffle -> extract at position 0
+(rewrite (VecExtract (VecShuffle4 v _ 0 _ _ _) 0) (VecExtract v 0))
+(rewrite (VecExtract (VecShuffle4 v _ 1 _ _ _) 0) (VecExtract v 1))
+(rewrite (VecExtract (VecShuffle4 v _ 2 _ _ _) 0) (VecExtract v 2))
+(rewrite (VecExtract (VecShuffle4 v _ 3 _ _ _) 0) (VecExtract v 3))
 
-; Two consecutive shuffles can be combined
-; VecShuffle(VecShuffle(v1, v2, m1), _, m2) can become VecShuffle(v1, v2, composed_mask)
+; Vec4 shuffle -> extract at position 1
+(rewrite (VecExtract (VecShuffle4 v _ _ 0 _ _) 1) (VecExtract v 0))
+(rewrite (VecExtract (VecShuffle4 v _ _ 1 _ _) 1) (VecExtract v 1))
+(rewrite (VecExtract (VecShuffle4 v _ _ 2 _ _) 1) (VecExtract v 2))
+(rewrite (VecExtract (VecShuffle4 v _ _ 3 _ _) 1) (VecExtract v 3))
 
-; Shuffle with all indices from one source simplifies
-; VecShuffle(v1, v2, mask) where all mask elements < vec_len -> depends only on v1
+; Vec4 shuffle -> extract at position 2
+(rewrite (VecExtract (VecShuffle4 v _ _ _ 0 _) 2) (VecExtract v 0))
+(rewrite (VecExtract (VecShuffle4 v _ _ _ 1 _) 2) (VecExtract v 1))
+(rewrite (VecExtract (VecShuffle4 v _ _ _ 2 _) 2) (VecExtract v 2))
+(rewrite (VecExtract (VecShuffle4 v _ _ _ 3 _) 2) (VecExtract v 3))
 
-; Consecutive extracts from same vector can be combined into shuffle
-; Extract after shuffle can be simplified
+; Vec4 shuffle -> extract at position 3
+(rewrite (VecExtract (VecShuffle4 v _ _ _ _ 0) 3) (VecExtract v 0))
+(rewrite (VecExtract (VecShuffle4 v _ _ _ _ 1) 3) (VecExtract v 1))
+(rewrite (VecExtract (VecShuffle4 v _ _ _ _ 2) 3) (VecExtract v 2))
+(rewrite (VecExtract (VecShuffle4 v _ _ _ _ 3) 3) (VecExtract v 3))
+
+; Vec3 shuffle -> extract
+(rewrite (VecExtract (VecShuffle3 v _ 0 _ _) 0) (VecExtract v 0))
+(rewrite (VecExtract (VecShuffle3 v _ 1 _ _) 0) (VecExtract v 1))
+(rewrite (VecExtract (VecShuffle3 v _ 2 _ _) 0) (VecExtract v 2))
+(rewrite (VecExtract (VecShuffle3 v _ _ 0 _) 1) (VecExtract v 0))
+(rewrite (VecExtract (VecShuffle3 v _ _ 1 _) 1) (VecExtract v 1))
+(rewrite (VecExtract (VecShuffle3 v _ _ 2 _) 1) (VecExtract v 2))
+(rewrite (VecExtract (VecShuffle3 v _ _ _ 0) 2) (VecExtract v 0))
+(rewrite (VecExtract (VecShuffle3 v _ _ _ 1) 2) (VecExtract v 1))
+(rewrite (VecExtract (VecShuffle3 v _ _ _ 2) 2) (VecExtract v 2))
+
+; Vec2 shuffle -> extract
+(rewrite (VecExtract (VecShuffle2 v _ 0 _) 0) (VecExtract v 0))
+(rewrite (VecExtract (VecShuffle2 v _ 1 _) 0) (VecExtract v 1))
+(rewrite (VecExtract (VecShuffle2 v _ _ 0) 1) (VecExtract v 0))
+(rewrite (VecExtract (VecShuffle2 v _ _ 1) 1) (VecExtract v 1))
+
+; -----------------------------------------------------------------------------
+; Broadcast patterns - same index in all positions
+; -----------------------------------------------------------------------------
+(rewrite (VecShuffle4 v _ 0 0 0 0) (VecBroadcast4 (VecExtract v 0)))
+(rewrite (VecShuffle4 v _ 1 1 1 1) (VecBroadcast4 (VecExtract v 1)))
+(rewrite (VecShuffle4 v _ 2 2 2 2) (VecBroadcast4 (VecExtract v 2)))
+(rewrite (VecShuffle4 v _ 3 3 3 3) (VecBroadcast4 (VecExtract v 3)))
+
+(rewrite (VecShuffle3 v _ 0 0 0) (VecBroadcast3 (VecExtract v 0)))
+(rewrite (VecShuffle3 v _ 1 1 1) (VecBroadcast3 (VecExtract v 1)))
+(rewrite (VecShuffle3 v _ 2 2 2) (VecBroadcast3 (VecExtract v 2)))
+
+(rewrite (VecShuffle2 v _ 0 0) (VecBroadcast2 (VecExtract v 0)))
+(rewrite (VecShuffle2 v _ 1 1) (VecBroadcast2 (VecExtract v 1)))
+
+; Broadcast constructs the vector with repeated value
+(rewrite (VecBroadcast2 x) (Vec2 x x))
+(rewrite (VecBroadcast3 x) (Vec3 x x x))
+(rewrite (VecBroadcast4 x) (Vec4 x x x x))
+
+; -----------------------------------------------------------------------------
+; Common swizzle patterns
+; -----------------------------------------------------------------------------
+
+; Reverse vec2
+(rewrite (VecShuffle2 v v 1 0) (Vec2 (VecExtract v 1) (VecExtract v 0)))
+
+; Swap halves of vec4 (.zwxy)
+(rewrite (VecShuffle4 v v 2 3 0 1) (Vec4 (VecExtract v 2) (VecExtract v 3) (VecExtract v 0) (VecExtract v 1)))
+
+; Extract .xy from vec4 to vec2
+(rewrite (VecShuffle2 (Vec4 a b c d) _ 0 1) (Vec2 a b))
+(rewrite (VecShuffle2 (Vec4 a b c d) _ 2 3) (Vec2 c d))
+
+; Extract .xyz from vec4 to vec3
+(rewrite (VecShuffle3 (Vec4 a b c d) _ 0 1 2) (Vec3 a b c))
+
+; -----------------------------------------------------------------------------
+; Shuffle of constructed vector simplifies
+; -----------------------------------------------------------------------------
+(rewrite (VecShuffle4 (Vec4 a b c d) _ 0 1 2 3) (Vec4 a b c d))
+(rewrite (VecShuffle4 (Vec4 a b c d) _ 3 2 1 0) (Vec4 d c b a))
+(rewrite (VecShuffle4 (Vec4 a b c d) _ 0 0 0 0) (Vec4 a a a a))
+(rewrite (VecShuffle4 (Vec4 a b c d) _ 1 1 1 1) (Vec4 b b b b))
+(rewrite (VecShuffle4 (Vec4 a b c d) _ 2 2 2 2) (Vec4 c c c c))
+(rewrite (VecShuffle4 (Vec4 a b c d) _ 3 3 3 3) (Vec4 d d d d))
+
+(rewrite (VecShuffle3 (Vec3 a b c) _ 0 1 2) (Vec3 a b c))
+(rewrite (VecShuffle3 (Vec3 a b c) _ 2 1 0) (Vec3 c b a))
+
+(rewrite (VecShuffle2 (Vec2 a b) _ 0 1) (Vec2 a b))
+(rewrite (VecShuffle2 (Vec2 a b) _ 1 0) (Vec2 b a))
+
+; -----------------------------------------------------------------------------
+; Two consecutive shuffles can sometimes be combined
+; (C++ VectorShuffleFeedingShuffle)
+; -----------------------------------------------------------------------------
+; When shuffling from a shuffle, compose the indices
+; This is complex in general, but some patterns are clear:
+
+; Shuffle(Shuffle(v, _, m1), _, identity) = Shuffle(v, _, m1)
+(rewrite (VecShuffle4 (VecShuffle4 v w i0 i1 i2 i3) _ 0 1 2 3) (VecShuffle4 v w i0 i1 i2 i3))
+(rewrite (VecShuffle3 (VecShuffle3 v w i0 i1 i2) _ 0 1 2) (VecShuffle3 v w i0 i1 i2))
+(rewrite (VecShuffle2 (VecShuffle2 v w i0 i1) _ 0 1) (VecShuffle2 v w i0 i1))
 
 ; =============================================================================
 ; Loop Invariant Vector Operations
