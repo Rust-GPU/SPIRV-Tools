@@ -4614,4 +4614,64 @@ mod optimizer_tests {
         assert!(!has_srem, "srem by 1 should be folded");
 
     }
+
+    #[test]
+    fn optimizer_simplifies_band_xor_same_operand() {
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(void, vec![int]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let param = b.function_parameter(int).expect("param");
+        let _ = b.begin_block(None).unwrap();
+        let mask = b.constant_bit32(int, 0xFF);
+        let xor_val = b.constant_bit32(int, 0x0F);
+        let _xor = b.bitwise_xor(int, None, param, xor_val).expect("xor");
+        let _band = b.bitwise_and(int, None, mask, _xor).expect("band");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let _module = loader.module();
+    }
+
+    #[test]
+    fn optimizer_simplifies_bor_xor_same_operand() {
+        let mut b = Builder::new();
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(void, vec![int]);
+        b.capability(rspirv::spirv::Capability::Shader);
+        b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+        let _func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _param = b.function_parameter(int).expect("param");
+        let _ = b.begin_block(None).unwrap();
+        let mask = b.constant_bit32(int, 0xFF);
+        let xor_val = b.constant_bit32(int, 0x0F);
+        let _xor = b.bitwise_xor(int, None, mask, xor_val).expect("xor");
+        let _bor = b.bitwise_or(int, None, mask, _xor).expect("bor");
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        let words = b.module().assemble();
+
+        let optimized = optimize_basic_block(&words).expect("optimizer runs");
+        let mut loader = Loader::new();
+        rspirv::binary::parse_words(&optimized, &mut loader).expect("parse optimized");
+        let _module = loader.module();
+    }
 }
