@@ -194,6 +194,36 @@ fn log2_pow2(x: i64) -> i64 {
     (x as u64).trailing_zeros() as i64
 }
 
+/// Check if an integer, when interpreted as a float, has an exact reciprocal.
+/// Returns Some(()) if the float constant has an exact reciprocal representation.
+fn has_exact_recip(x: i64) -> Option<()> {
+    // Reinterpret the i64 as bits of a float
+    // For this to work, we need to check if the value is a power of 2 float
+    let f = f64::from_bits(x as u64);
+    if !f.is_finite() || f == 0.0 {
+        return None;
+    }
+    let recip = 1.0 / f;
+    if !recip.is_finite() {
+        return None;
+    }
+    // Check if the reciprocal can be represented exactly
+    // This happens for powers of 2 and some special values
+    let roundtrip = 1.0 / recip;
+    if roundtrip == f {
+        Some(())
+    } else {
+        None
+    }
+}
+
+/// Compute the reciprocal of a float constant (stored as i64 bits).
+fn float_recip(x: i64) -> i64 {
+    let f = f64::from_bits(x as u64);
+    let recip = 1.0 / f;
+    recip.to_bits() as i64
+}
+
 // =============================================================================
 // Public API
 // =============================================================================
@@ -260,6 +290,14 @@ pub fn create_spirv_egraph() -> Result<EGraph, EgglogOptError> {
     });
     add_primitive!(&mut egraph, "log2-pow2" = |a: i64| -> i64 {
         log2_pow2(a)
+    });
+
+    // Float reciprocal primitives for x/c -> x*(1/c) optimization
+    add_primitive!(&mut egraph, "has-exact-recip" = |a: i64| -?> () {
+        has_exact_recip(a)
+    });
+    add_primitive!(&mut egraph, "float-recip" = |a: i64| -> i64 {
+        float_recip(a)
     });
 
     // Now load the base SPIR-V language and rules (which use the primitives above)
