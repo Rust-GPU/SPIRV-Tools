@@ -41,28 +41,39 @@ impl EgglogContext {
     }
 
     /// Get or create a term for an operand ID.
+    ///
+    /// IMPORTANT: Always returns a reference (Sym "idN") to enable structural sharing
+    /// in the e-graph. If we inlined full terms, the e-graph would create duplicate
+    /// nodes for the same subexpression, causing exponential explosion during saturation.
     fn get_or_create_term(&mut self, id: Word) -> String {
-        if let Some(term) = self.id_to_term.get(&id) {
-            term.clone()
-        } else {
-            format!("(Sym \"id{}\")", id)
-        }
+        // Always use Sym reference to enable structural sharing
+        // The actual term will be added separately via (let idN ...)
+        format!("(Sym \"id{}\")", id)
     }
 
     /// Convert an instruction to an egglog term.
     fn instruction_to_term(&mut self, inst: &Instruction) -> Option<String> {
         let term = match inst.class.opcode {
             Op::Constant => {
-                let value = inst.operands.iter().find_map(|op| match op {
-                    rspirv::dr::Operand::LiteralBit32(v) => Some(*v as i64),
-                    rspirv::dr::Operand::LiteralBit64(v) => Some(*v as i64),
-                    _ => None,
-                })?;
                 let width = inst
                     .result_type
                     .and_then(|ty| self.type_widths.get(&ty))
                     .copied()
                     .unwrap_or(32);
+                // Sign-extend 32-bit values so that 0xFFFFFFFF becomes -1 in i64
+                // This enables rules like (BitXor x (Const -1)) to match
+                let value = inst.operands.iter().find_map(|op| match op {
+                    rspirv::dr::Operand::LiteralBit32(v) => {
+                        if width == 32 {
+                            // Sign-extend 32-bit value to i64
+                            Some((*v as i32) as i64)
+                        } else {
+                            Some(*v as i64)
+                        }
+                    }
+                    rspirv::dr::Operand::LiteralBit64(v) => Some(*v as i64),
+                    _ => None,
+                })?;
                 if width == 64 {
                     format!("(Const64 {})", value)
                 } else {
