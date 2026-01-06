@@ -247,6 +247,10 @@
     ; Used inside Gamma/Theta regions to refer to inputs
     (Arg i64)
 
+    ; Copy operation (OpCopyObject)
+    ; CopyObject just makes a copy - it's always equal to the original
+    (CopyObject Expr)
+
     ; ==========================================================================
     ; Type Conversion Operations (SPIR-V OpConvert* and OpBitcast)
     ; ==========================================================================
@@ -478,3 +482,37 @@
     ; Unreachable (dead code)
     (Unreachable)
 )
+
+; =============================================================================
+; Copy Propagation (OpCopyObject elimination)
+; =============================================================================
+; CopyObject is always equivalent to its operand
+
+(rule ((= e (CopyObject x)))
+      ((union e x)))
+
+; =============================================================================
+; Insert-to-Construct Transformation
+; =============================================================================
+; A chain of inserts covering all positions becomes a Construct
+
+; Vec2: Insert(Insert(_, v0, 0), v1, 1) = Vec2(v0, v1)
+; Note: base is ignored when all positions are overwritten
+(rule ((= result (CompositeInsert (CompositeInsert _ v0 0) v1 1)))
+      ((union result (Vec2 v0 v1))))
+
+; Vec3: Insert(Insert(Insert(_, v0, 0), v1, 1), v2, 2) = Vec3(v0, v1, v2)
+(rule ((= result (CompositeInsert (CompositeInsert (CompositeInsert _ v0 0) v1 1) v2 2)))
+      ((union result (Vec3 v0 v1 v2))))
+
+; Vec4: Insert(Insert(Insert(Insert(_, v0, 0), v1, 1), v2, 2), v3, 3) = Vec4(v0, v1, v2, v3)
+(rule ((= result (CompositeInsert (CompositeInsert (CompositeInsert (CompositeInsert _ v0 0) v1 1) v2 2) v3 3)))
+      ((union result (Vec4 v0 v1 v2 v3))))
+
+; Also using VecInsert constructor
+(rule ((= result (VecInsert (VecInsert _ v0 0) v1 1)))
+      ((union result (Vec2 v0 v1))))
+(rule ((= result (VecInsert (VecInsert (VecInsert _ v0 0) v1 1) v2 2)))
+      ((union result (Vec3 v0 v1 v2))))
+(rule ((= result (VecInsert (VecInsert (VecInsert (VecInsert _ v0 0) v1 1) v2 2) v3 3)))
+      ((union result (Vec4 v0 v1 v2 v3))))
