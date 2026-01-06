@@ -2,14 +2,28 @@
 ; Logical Rewrite Rules
 ; =============================================================================
 
-(rewrite (LogNot (LogNot x)) x)
-(rewrite (LogAnd x x) x)
-(rewrite (LogOr x x) x)
+; Identity rules - ONE-DIRECTIONAL to prevent e-graph explosion
+(rule ((= e (LogNot (LogNot x))))
+      ((union e x)))
+(rule ((= e (LogAnd x x)))
+      ((union e x)))
+(rule ((= e (LogOr x x)))
+      ((union e x)))
 (rule ((= e (LogAnd x (Const 0))))
       ((union e (Const 0))))
-(rewrite (LogOr x (Const 0)) x)
-(rewrite (LogAnd x (Const 1)) x)
+(rule ((= e (LogAnd (Const 0) x)))
+      ((union e (Const 0))))
+(rule ((= e (LogOr x (Const 0))))
+      ((union e x)))
+(rule ((= e (LogOr (Const 0) x)))
+      ((union e x)))
+(rule ((= e (LogAnd x (Const 1))))
+      ((union e x)))
+(rule ((= e (LogAnd (Const 1) x)))
+      ((union e x)))
 (rule ((= e (LogOr x (Const 1))))
+      ((union e (Const 1))))
+(rule ((= e (LogOr (Const 1) x)))
       ((union e (Const 1))))
 
 ; Logical complement
@@ -26,25 +40,36 @@
 ; Select/If Rewrite Rules
 ; =============================================================================
 
-(rewrite (Select (Const 0) t f) f)
-(rewrite (Select (Const 1) t f) t)
-(rewrite (Select c x x) x)
+; Select rules - ONE-DIRECTIONAL where RHS is simpler
+(rule ((= e (Select (Const 0) t f)))
+      ((union e f)))
+(rule ((= e (Select (Const 1) t f)))
+      ((union e t)))
+(rule ((= e (Select c x x)))
+      ((union e x)))
 (rewrite (Select (LogNot c) t f) (Select c f t))
 (rewrite (Select c (Select c a b) d) (Select c a d))
 (rewrite (Select c d (Select c a b)) (Select c d b))
 
-(rewrite (If (Const 0) t f) f)
-(rewrite (If (Const 1) t f) t)
+; If rules - ONE-DIRECTIONAL where RHS is simpler
+(rule ((= e (If (Const 0) t f)))
+      ((union e f)))
+(rule ((= e (If (Const 1) t f)))
+      ((union e t)))
 
 ; =============================================================================
 ; Min/Max Rewrite Rules
 ; =============================================================================
 
-; Idempotent
-(rewrite (SMin x x) x)
-(rewrite (SMax x x) x)
-(rewrite (UMin x x) x)
-(rewrite (UMax x x) x)
+; Idempotent - ONE-DIRECTIONAL
+(rule ((= e (SMin x x)))
+      ((union e x)))
+(rule ((= e (SMax x x)))
+      ((union e x)))
+(rule ((= e (UMin x x)))
+      ((union e x)))
+(rule ((= e (UMax x x)))
+      ((union e x)))
 
 ; Commutative
 (rewrite (SMin a b) (SMin b a))
@@ -76,17 +101,25 @@
 ; Absorption Laws
 ; =============================================================================
 
-; a && (a || b) = a
-(rewrite (LogAnd a (LogOr a b)) a)
-(rewrite (LogAnd (LogOr a b) a) a)
-(rewrite (LogAnd a (LogOr b a)) a)
-(rewrite (LogAnd (LogOr b a) a) a)
+; a && (a || b) = a - ONE-DIRECTIONAL
+(rule ((= e (LogAnd a (LogOr a b))))
+      ((union e a)))
+(rule ((= e (LogAnd (LogOr a b) a)))
+      ((union e a)))
+(rule ((= e (LogAnd a (LogOr b a))))
+      ((union e a)))
+(rule ((= e (LogAnd (LogOr b a) a)))
+      ((union e a)))
 
-; a || (a && b) = a
-(rewrite (LogOr a (LogAnd a b)) a)
-(rewrite (LogOr (LogAnd a b) a) a)
-(rewrite (LogOr a (LogAnd b a)) a)
-(rewrite (LogOr (LogAnd b a) a) a)
+; a || (a && b) = a - ONE-DIRECTIONAL
+(rule ((= e (LogOr a (LogAnd a b))))
+      ((union e a)))
+(rule ((= e (LogOr (LogAnd a b) a)))
+      ((union e a)))
+(rule ((= e (LogOr a (LogAnd b a))))
+      ((union e a)))
+(rule ((= e (LogOr (LogAnd b a) a)))
+      ((union e a)))
 
 ; =============================================================================
 ; Complement Absorption
@@ -108,9 +141,11 @@
 (rule ((= e (LogNe a a)))
       ((union e (Const 0))))
 
-; a XOR 0 = a
-(rewrite (LogNe a (Const 0)) a)
-(rewrite (LogNe (Const 0) a) a)
+; a XOR 0 = a - ONE-DIRECTIONAL
+(rule ((= e (LogNe a (Const 0))))
+      ((union e a)))
+(rule ((= e (LogNe (Const 0) a)))
+      ((union e a)))
 
 ; a XOR 1 = !a
 (rewrite (LogNe a (Const 1)) (LogNot a))
@@ -120,17 +155,25 @@
 ; Min/Max Absorption and Distributivity
 ; =============================================================================
 
-; min(a, max(a, b)) = a
-(rewrite (SMin a (SMax a b)) a)
-(rewrite (SMin (SMax a b) a) a)
-(rewrite (UMin a (UMax a b)) a)
-(rewrite (UMin (UMax a b) a) a)
+; min(a, max(a, b)) = a - ONE-DIRECTIONAL
+(rule ((= e (SMin a (SMax a b))))
+      ((union e a)))
+(rule ((= e (SMin (SMax a b) a)))
+      ((union e a)))
+(rule ((= e (UMin a (UMax a b))))
+      ((union e a)))
+(rule ((= e (UMin (UMax a b) a)))
+      ((union e a)))
 
-; max(a, min(a, b)) = a
-(rewrite (SMax a (SMin a b)) a)
-(rewrite (SMax (SMin a b) a) a)
-(rewrite (UMax a (UMin a b)) a)
-(rewrite (UMax (UMin a b) a) a)
+; max(a, min(a, b)) = a - ONE-DIRECTIONAL
+(rule ((= e (SMax a (SMin a b))))
+      ((union e a)))
+(rule ((= e (SMax (SMin a b) a)))
+      ((union e a)))
+(rule ((= e (UMax a (UMin a b))))
+      ((union e a)))
+(rule ((= e (UMax (UMin a b) a)))
+      ((union e a)))
 
 ; min(min(a, b), b) = min(a, b)
 (rewrite (SMin (SMin a b) b) (SMin a b))
@@ -151,8 +194,9 @@
 ; select(true, a, b) = a - already in rules
 ; select(false, a, b) = b - already in rules
 
-; select(c, true, false) = c (boolean to boolean)
-(rewrite (Select c (Const 1) (Const 0)) c)
+; select(c, true, false) = c (boolean to boolean) - ONE-DIRECTIONAL
+(rule ((= e (Select c (Const 1) (Const 0))))
+      ((union e c)))
 
 ; select(c, false, true) = !c
 (rewrite (Select c (Const 0) (Const 1)) (LogNot c))

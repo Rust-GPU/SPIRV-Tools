@@ -20,12 +20,15 @@
 ; RVSDG Gamma (Conditional) Rewrite Rules
 ; =============================================================================
 
-; Gamma with constant condition
-(rewrite (Gamma (Const 0) t f) f)
-(rewrite (Gamma (Const 1) t f) t)
+; Gamma with constant condition - ONE-DIRECTIONAL
+(rule ((= e (Gamma (Const 0) t f)))
+      ((union e f)))
+(rule ((= e (Gamma (Const 1) t f)))
+      ((union e t)))
 
-; Gamma with same true/false values
-(rewrite (Gamma c x x) x)
+; Gamma with same true/false values - ONE-DIRECTIONAL
+(rule ((= e (Gamma c x x)))
+      ((union e x)))
 
 ; Gamma with negated condition
 (rewrite (Gamma (LogNot c) t f) (Gamma c f t))
@@ -62,9 +65,13 @@
 (rewrite (LoopInvariant (LoopInvariant x)) (LoopInvariant x))
 
 ; Constants and symbols are inherently loop-invariant (they don't depend on LoopVar)
-(rewrite (Const n) (LoopInvariant (Const n)))
-(rewrite (Const64 n) (LoopInvariant (Const64 n)))
-(rewrite (Sym s) (LoopInvariant (Sym s)))
+; NOTE: These rules are DISABLED because combined with the LoopInvariant stripping rule
+; at line ~113, they create cycles: Const(5) ↔ LoopInvariant(Const(5))
+; The stripping rule (LoopInvariant x) → x is bidirectional, so it also adds
+; LoopInvariant to everything, creating x ↔ LoopInvariant(x) for ALL nodes.
+; (rewrite (Const n) (LoopInvariant (Const n)))
+; (rewrite (Const64 n) (LoopInvariant (Const64 n)))
+; (rewrite (Sym s) (LoopInvariant (Sym s)))
 
 ; LoopVar is NOT loop-invariant (it changes each iteration)
 ; No rule to mark LoopVar as LoopInvariant
@@ -110,25 +117,32 @@
 
 ; Strip LoopInvariant wrapper (it's just an annotation for optimization)
 ; After optimization, we extract the inner value
-(rewrite (LoopInvariant x) x)
+; ONE-DIRECTIONAL: Using (rule ... union) to prevent x → LoopInvariant(x) for every x
+(rule ((= e (LoopInvariant x)))
+      ((union e x)))
 
 ; =============================================================================
 ; RVSDG Effect Rewrite Rules
 ; =============================================================================
 
-; Sequence identity
-(rewrite (Seq (Pure) e) e)
-(rewrite (Seq e (Pure)) e)
+; Sequence identity - ONE-DIRECTIONAL to prevent explosion
+(rule ((= e (Seq (Pure) x)))
+      ((union e x)))
+(rule ((= e (Seq x (Pure))))
+      ((union e x)))
 
 ; Unreachable absorbs everything after it
 (rewrite (Seq (Unreachable) e) (Unreachable))
 
-; Effect Gamma with constant condition
-(rewrite (EffGamma (Const 0) t f) f)
-(rewrite (EffGamma (Const 1) t f) t)
+; Effect Gamma with constant condition - ONE-DIRECTIONAL to prevent explosion
+(rule ((= e (EffGamma (Const 0) t f)))
+      ((union e f)))
+(rule ((= e (EffGamma (Const 1) t f)))
+      ((union e t)))
 
-; Effect Gamma with same branches
-(rewrite (EffGamma c e e) e)
+; Effect Gamma with same branches - ONE-DIRECTIONAL to prevent explosion
+(rule ((= result (EffGamma c x x)))
+      ((union result x)))
 
 ; Effect Gamma with negated condition
 (rewrite (EffGamma (LogNot c) t f) (EffGamma c f t))
@@ -155,7 +169,9 @@
 
 ; Gamma with one branch being the condition itself
 ; select(c, c, x) = c (when c is boolean, selecting true gives c=true)
-(rewrite (Gamma c c x) c)
+; ONE-DIRECTIONAL to prevent explosion
+(rule ((= e (Gamma c c x)))
+      ((union e c)))
 ; select(c, x, c) where c is false gives false
 ; More precisely: select(c, x, 0) when result is 0/1
 (rewrite (Gamma c x (Const 0)) (LogAnd c x))
@@ -165,9 +181,10 @@
 
 ; Gamma with constants 0/1 and variable
 ; select(c, 0, 1) = !c
-; select(c, 1, 0) = c
+; select(c, 1, 0) = c - ONE-DIRECTIONAL to prevent explosion
 (rewrite (Gamma c (Const 0) (Const 1)) (LogNot c))
-(rewrite (Gamma c (Const 1) (Const 0)) c)
+(rule ((= e (Gamma c (Const 1) (Const 0))))
+      ((union e c)))
 
 ; Chained Gamma with opposite conditions
 ; select(c, select(!c, a, b), x) simplifies

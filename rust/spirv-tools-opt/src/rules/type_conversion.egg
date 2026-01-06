@@ -50,29 +50,43 @@
 ; Pack/Unpack Round-Trip Rules
 ; =============================================================================
 
-; Unpack of pack is identity (for matching types)
-(rewrite (UnpackHalf2x16 (PackHalf2x16 x)) x)
-(rewrite (UnpackSnorm4x8 (PackSnorm4x8 x)) x)
-(rewrite (UnpackSnorm2x16 (PackSnorm2x16 x)) x)
-(rewrite (UnpackUnorm4x8 (PackUnorm4x8 x)) x)
-(rewrite (UnpackUnorm2x16 (PackUnorm2x16 x)) x)
-(rewrite (UnpackDouble2x32 (PackDouble2x32 x)) x)
+; Unpack of pack is identity (for matching types) - ONE-DIRECTIONAL
+(rule ((= e (UnpackHalf2x16 (PackHalf2x16 x))))
+      ((union e x)))
+(rule ((= e (UnpackSnorm4x8 (PackSnorm4x8 x))))
+      ((union e x)))
+(rule ((= e (UnpackSnorm2x16 (PackSnorm2x16 x))))
+      ((union e x)))
+(rule ((= e (UnpackUnorm4x8 (PackUnorm4x8 x))))
+      ((union e x)))
+(rule ((= e (UnpackUnorm2x16 (PackUnorm2x16 x))))
+      ((union e x)))
+(rule ((= e (UnpackDouble2x32 (PackDouble2x32 x))))
+      ((union e x)))
 
-; Pack of unpack is identity (for matching types)
-(rewrite (PackHalf2x16 (UnpackHalf2x16 x)) x)
-(rewrite (PackSnorm4x8 (UnpackSnorm4x8 x)) x)
-(rewrite (PackSnorm2x16 (UnpackSnorm2x16 x)) x)
-(rewrite (PackUnorm4x8 (UnpackUnorm4x8 x)) x)
-(rewrite (PackUnorm2x16 (UnpackUnorm2x16 x)) x)
-(rewrite (PackDouble2x32 (UnpackDouble2x32 x)) x)
+; Pack of unpack is identity (for matching types) - ONE-DIRECTIONAL
+(rule ((= e (PackHalf2x16 (UnpackHalf2x16 x))))
+      ((union e x)))
+(rule ((= e (PackSnorm4x8 (UnpackSnorm4x8 x))))
+      ((union e x)))
+(rule ((= e (PackSnorm2x16 (UnpackSnorm2x16 x))))
+      ((union e x)))
+(rule ((= e (PackUnorm4x8 (UnpackUnorm4x8 x))))
+      ((union e x)))
+(rule ((= e (PackUnorm2x16 (UnpackUnorm2x16 x))))
+      ((union e x)))
+(rule ((= e (PackDouble2x32 (UnpackDouble2x32 x))))
+      ((union e x)))
 
 ; =============================================================================
 ; Radians/Degrees Round-Trip
 ; =============================================================================
 
-; Converting radians->degrees->radians or degrees->radians->degrees is identity
-(rewrite (Radians (Degrees x)) x)
-(rewrite (Degrees (Radians x)) x)
+; Converting radians->degrees->radians or degrees->radians->degrees is identity - ONE-DIRECTIONAL
+(rule ((= e (Radians (Degrees x))))
+      ((union e x)))
+(rule ((= e (Degrees (Radians x))))
+      ((union e x)))
 
 ; =============================================================================
 ; NaN-Ignoring Min/Max Simplifications
@@ -81,12 +95,15 @@
 ; NMin/NMax are the same as FMin/FMax for non-NaN values
 ; For NaN inputs, NMin/NMax return the non-NaN value
 
-; Self is identity (ignoring NaN)
-(rewrite (NMin x x) x)
-(rewrite (NMax x x) x)
+; Self is identity (ignoring NaN) - ONE-DIRECTIONAL
+(rule ((= e (NMin x x)))
+      ((union e x)))
+(rule ((= e (NMax x x)))
+      ((union e x)))
 
-; NClamp with equal bounds
-(rewrite (NClamp x a a) a)
+; NClamp with equal bounds - ONE-DIRECTIONAL
+(rule ((= e (NClamp x a a)))
+      ((union e a)))
 
 ; Commutativity
 (rewrite (NMin a b) (NMin b a))
@@ -98,11 +115,15 @@
 (rewrite (NMin x (NMin x y)) (NMin x y))
 (rewrite (NMax x (NMax x y)) (NMax x y))
 
-; Absorption: nmin(x, nmax(x, y)) = x
-(rewrite (NMin x (NMax x y)) x)
-(rewrite (NMin (NMax x y) x) x)
-(rewrite (NMax x (NMin x y)) x)
-(rewrite (NMax (NMin x y) x) x)
+; Absorption: nmin(x, nmax(x, y)) = x - ONE-DIRECTIONAL to prevent explosion
+(rule ((= e (NMin x (NMax x y))))
+      ((union e x)))
+(rule ((= e (NMin (NMax x y) x)))
+      ((union e x)))
+(rule ((= e (NMax x (NMin x y))))
+      ((union e x)))
+(rule ((= e (NMax (NMin x y) x)))
+      ((union e x)))
 
 ; NClamp expressed as nested NMin/NMax
 (rewrite (NClamp x lo hi) (NMax lo (NMin x hi)))

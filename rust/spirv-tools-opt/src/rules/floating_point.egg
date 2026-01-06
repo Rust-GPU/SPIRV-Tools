@@ -2,9 +2,17 @@
 ; Floating-Point Rewrite Rules
 ; =============================================================================
 
-(rewrite (FMul x (Const 1)) x)
-(rewrite (FAdd x (Const 0)) x)
-(rewrite (FNeg (FNeg x)) x)
+; ONE-DIRECTIONAL to prevent e-graph explosion
+(rule ((= e (FMul x (Const 1))))
+      ((union e x)))
+(rule ((= e (FMul (Const 1) x)))
+      ((union e x)))
+(rule ((= e (FAdd x (Const 0))))
+      ((union e x)))
+(rule ((= e (FAdd (Const 0) x)))
+      ((union e x)))
+(rule ((= e (FNeg (FNeg x))))
+      ((union e x)))
 (rewrite (FFloor (FFloor x)) (FFloor x))
 (rewrite (FCeil (FCeil x)) (FCeil x))
 (rewrite (FTrunc (FTrunc x)) (FTrunc x))
@@ -59,8 +67,9 @@
 (rewrite (FMul x (Const -1)) (FNeg x))
 (rewrite (FMul (Const -1) x) (FNeg x))
 
-; Divide by one
-(rewrite (FDiv x (Const 1)) x)
+; Divide by one - ONE-DIRECTIONAL
+(rule ((= e (FDiv x (Const 1))))
+      ((union e x)))
 
 ; Divide by negative one
 (rewrite (FDiv x (Const -1)) (FNeg x))
@@ -91,9 +100,11 @@
 ; Floating-Point Min/Max
 ; =============================================================================
 
-; FMin/FMax are idempotent
-(rewrite (FMin x x) x)
-(rewrite (FMax x x) x)
+; FMin/FMax are idempotent - ONE-DIRECTIONAL
+(rule ((= e (FMin x x)))
+      ((union e x)))
+(rule ((= e (FMax x x)))
+      ((union e x)))
 
 ; FMin/FMax associativity
 (rewrite (FMin (FMin a b) c) (FMin a (FMin b c)))
@@ -158,9 +169,11 @@
 ; a / (b / c) = (a * c) / b
 (rewrite (FDiv a (FDiv b c)) (FDiv (FMul a c) b))
 
-; (a * b) / b = a (assuming no NaN/Inf issues)
-(rewrite (FDiv (FMul a b) b) a)
-(rewrite (FDiv (FMul b a) b) a)
+; (a * b) / b = a (assuming no NaN/Inf issues) - ONE-DIRECTIONAL
+(rule ((= e (FDiv (FMul a b) b)))
+      ((union e a)))
+(rule ((= e (FDiv (FMul b a) b)))
+      ((union e a)))
 
 ; =============================================================================
 ; FP Min/Max Additional Rules
@@ -168,11 +181,15 @@
 
 ; Note: FMin/FMax negation rules are in the section above
 
-; FMin/FMax absorption
-(rewrite (FMin a (FMax a b)) a)
-(rewrite (FMin (FMax a b) a) a)
-(rewrite (FMax a (FMin a b)) a)
-(rewrite (FMax (FMin a b) a) a)
+; FMin/FMax absorption - ONE-DIRECTIONAL
+(rule ((= e (FMin a (FMax a b))))
+      ((union e a)))
+(rule ((= e (FMin (FMax a b) a)))
+      ((union e a)))
+(rule ((= e (FMax a (FMin a b))))
+      ((union e a)))
+(rule ((= e (FMax (FMin a b) a)))
+      ((union e a)))
 
 ; FMin/FMax idempotent within nesting
 (rewrite (FMin (FMin a b) b) (FMin a b))
@@ -237,8 +254,9 @@
 ; Reciprocal Optimization
 ; =============================================================================
 
-; 1 / (1 / x) = x
-(rewrite (FDiv (Const 1) (FDiv (Const 1) x)) x)
+; 1 / (1 / x) = x - ONE-DIRECTIONAL
+(rule ((= e (FDiv (Const 1) (FDiv (Const 1) x))))
+      ((union e x)))
 
 ; a / (b / c) = (a * c) / b - already covered above
 
@@ -255,13 +273,17 @@
 ; Generic Add/Sub Cancellation for FP (C++ MergeGenericAddSubArithmetic)
 ; =============================================================================
 
-; (a - b) + b = a
-(rewrite (FAdd (FSub a b) b) a)
-(rewrite (FAdd b (FSub a b)) a)
+; (a - b) + b = a - ONE-DIRECTIONAL
+(rule ((= e (FAdd (FSub a b) b)))
+      ((union e a)))
+(rule ((= e (FAdd b (FSub a b))))
+      ((union e a)))
 
-; (a + b) - b = a
-(rewrite (FSub (FAdd a b) b) a)
-(rewrite (FSub (FAdd b a) b) a)
+; (a + b) - b = a - ONE-DIRECTIONAL
+(rule ((= e (FSub (FAdd a b) b)))
+      ((union e a)))
+(rule ((= e (FSub (FAdd b a) b)))
+      ((union e a)))
 
 ; =============================================================================
 ; Negate Merging with FMul/FDiv (C++ MergeNegateMulDivArithmetic)
@@ -300,9 +322,11 @@
 ; Mul/Div Cancellation (C++ MergeMulDivArithmetic)
 ; =============================================================================
 
-; (y / x) * x = y
-(rewrite (FMul (FDiv y x) x) y)
-(rewrite (FMul x (FDiv y x)) y)
+; (y / x) * x = y - ONE-DIRECTIONAL
+(rule ((= e (FMul (FDiv y x) x)))
+      ((union e y)))
+(rule ((= e (FMul x (FDiv y x))))
+      ((union e y)))
 
 ; x * (y / x) = y - same as above with commutativity
 

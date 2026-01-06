@@ -2,15 +2,18 @@
 ; Matrix Operation Rules
 ; =============================================================================
 
-; Transpose of transpose is identity
-(rewrite (Transpose (Transpose m)) m)
+; Transpose of transpose is identity - ONE-DIRECTIONAL to prevent explosion
+(rule ((= e (Transpose (Transpose m))))
+      ((union e m)))
 
 ; Matrix times identity (represented as 1.0 scalar) - conceptual
-; MatTimesScalar with 1 and 0
-(rewrite (MatTimesScalar m (Const 1)) m)
+; MatTimesScalar with 1 and 0 - ONE-DIRECTIONAL to prevent explosion
+(rule ((= e (MatTimesScalar m (Const 1))))
+      ((union e m)))
 
-; Double inverse is identity
-(rewrite (MatInverse (MatInverse m)) m)
+; Double inverse is identity - ONE-DIRECTIONAL to prevent explosion
+(rule ((= e (MatInverse (MatInverse m))))
+      ((union e m)))
 
 ; Transpose of outer product
 ; transpose(outerProduct(a,b)) = outerProduct(b,a)

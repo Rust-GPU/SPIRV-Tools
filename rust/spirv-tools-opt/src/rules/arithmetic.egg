@@ -2,12 +2,18 @@
 ; Arithmetic Rewrite Rules
 ; =============================================================================
 
-; Identity rules
-(rewrite (Add x (Const 0)) x)
-(rewrite (Add (Const 0) x) x)
-(rewrite (Sub x (Const 0)) x)
-(rewrite (Mul x (Const 1)) x)
-(rewrite (Mul (Const 1) x) x)
+; Identity rules - ONE-DIRECTIONAL to prevent e-graph explosion
+; Using (rule ... union) instead of (rewrite) to avoid x → Add(x, 0) for every x
+(rule ((= e (Add x (Const 0))))
+      ((union e x)))
+(rule ((= e (Add (Const 0) x)))
+      ((union e x)))
+(rule ((= e (Sub x (Const 0))))
+      ((union e x)))
+(rule ((= e (Mul x (Const 1))))
+      ((union e x)))
+(rule ((= e (Mul (Const 1) x)))
+      ((union e x)))
 ; Mul by zero: use rule + union to avoid cycles
 (rule ((= e (Mul x (Const 0))))
       ((union e (Const 0))))
@@ -16,7 +22,9 @@
 
 ; Negation rules
 (rewrite (Sub (Const 0) x) (Neg x))
-(rewrite (Neg (Neg x)) x)
+; Double negation - ONE-DIRECTIONAL (x → Neg(Neg(x)) would explode)
+(rule ((= e (Neg (Neg x))))
+      ((union e x)))
 (rewrite (Mul x (Const -1)) (Neg x))
 (rewrite (Mul (Const -1) x) (Neg x))
 (rewrite (Neg (Add x y)) (Add (Neg x) (Neg y)))
@@ -28,26 +36,41 @@
 (rule ((= e (Sub x x)))
       ((union e (Const 0))))
 
-; Algebraic cancellation rules
-(rewrite (Sub (Add x y) x) y)
-(rewrite (Sub (Add y x) x) y)
-(rewrite (Add (Sub x y) y) x)
-(rewrite (Add y (Sub x y)) x)
-(rewrite (Sub (Add x y) y) x)
-(rewrite (Sub (Add y x) y) x)
-(rewrite (Sub x (Sub x y)) y)
+; Algebraic cancellation rules - ONE-DIRECTIONAL to prevent explosion
+; Without this fix, y → Sub(Add(x, y), x) for every x and y - catastrophic!
+(rule ((= e (Sub (Add x y) x)))
+      ((union e y)))
+(rule ((= e (Sub (Add y x) x)))
+      ((union e y)))
+(rule ((= e (Add (Sub x y) y)))
+      ((union e x)))
+(rule ((= e (Add y (Sub x y))))
+      ((union e x)))
+(rule ((= e (Sub (Add x y) y)))
+      ((union e x)))
+(rule ((= e (Sub (Add y x) y)))
+      ((union e x)))
+(rule ((= e (Sub x (Sub x y))))
+      ((union e y)))
 (rewrite (Sub x (Add x y)) (Neg y))
 (rewrite (Sub x (Add y x)) (Neg y))
 (rewrite (Sub (Sub x y) x) (Neg y))
 (rewrite (Sub (Sub a b) (Sub c b)) (Sub a c))
 (rewrite (Sub (Sub a b) (Sub a c)) (Sub c b))
 
-; Commutativity (needed for constant folding)
-(rewrite (Add a b) (Add b a))
-(rewrite (Mul a b) (Mul b a))
+; Commutativity - ONE-DIRECTIONAL to prevent explosion
+; We normalize: move constants to the right to enable constant reassociation
+; NOTE: Full commutativity (rewrite (Add a b) (Add b a)) causes exponential explosion
+; when combined with other rules. Instead, we use targeted normalization.
+(rule ((= e (Add (Const c) x)) (!= c 0))
+      ((union e (Add x (Const c)))))
+(rule ((= e (Mul (Const c) x)) (!= c 0) (!= c 1))
+      ((union e (Mul x (Const c)))))
 
-; Associativity for Add
-(rewrite (Add (Add a b) c) (Add a (Add b c)))
+; Associativity for Add - ONE-DIRECTIONAL to prevent explosion
+; Normalize to right-associative form to enable constant gathering
+(rule ((= e (Add (Add a b) c)))
+      ((union e (Add a (Add b c)))))
 
 ; Constant reassociation
 (rule ((= e (Add (Add x (Const a)) (Const b))))
@@ -73,15 +96,22 @@
 (rewrite (UDiv x (Const 8)) (ShrU x (Const 3)))
 (rewrite (UDiv x (Const 16)) (ShrU x (Const 4)))
 
-; Division cancellation
-(rewrite (SDiv (Mul x a) a) x)
-(rewrite (SDiv (Mul a x) a) x)
-(rewrite (UDiv (Mul x a) a) x)
-(rewrite (UDiv (Mul a x) a) x)
+; Division cancellation - ONE-DIRECTIONAL to prevent explosion
+; Without this fix, x → SDiv(Mul(x, a), a) for every x and a
+(rule ((= e (SDiv (Mul x a) a)))
+      ((union e x)))
+(rule ((= e (SDiv (Mul a x) a)))
+      ((union e x)))
+(rule ((= e (UDiv (Mul x a) a)))
+      ((union e x)))
+(rule ((= e (UDiv (Mul a x) a)))
+      ((union e x)))
 
-; Division identity
-(rewrite (SDiv x (Const 1)) x)
-(rewrite (UDiv x (Const 1)) x)
+; Division identity - ONE-DIRECTIONAL to prevent explosion
+(rule ((= e (SDiv x (Const 1))))
+      ((union e x)))
+(rule ((= e (UDiv x (Const 1))))
+      ((union e x)))
 
 ; Division by self
 (rule ((= e (SDiv x x)))
@@ -383,14 +413,12 @@
 ; =============================================================================
 ; Generic Add/Sub Cancellation (C++ MergeGenericAddSubArithmetic)
 ; =============================================================================
+; NOTE: These rules are now handled by the ONE-DIRECTIONAL rules at the top
+; of this file (around lines 39-54). The duplicate bidirectional rules below
+; have been removed to prevent e-graph explosion.
 
-; (a - b) + b = a (subtrahend cancels with addend)
-(rewrite (Add (Sub a b) b) a)
-(rewrite (Add b (Sub a b)) a)
-
-; (a + b) - b = a
-(rewrite (Sub (Add a b) b) a)
-(rewrite (Sub (Add b a) b) a)
+; (a - b) + b = a (subtrahend cancels with addend) - ALREADY HANDLED ABOVE
+; (a + b) - b = a - ALREADY HANDLED ABOVE
 
 ; =============================================================================
 ; Negate Merging with Mul/Div (C++ MergeNegateMulDivArithmetic)

@@ -6,14 +6,17 @@
 ; FMix (Linear Interpolation)
 ; =============================================================================
 
-; FMix(a, a, t) = a
-(rewrite (FMix a a t) a)
+; FMix(a, a, t) = a - ONE-DIRECTIONAL
+(rule ((= e (FMix a a t)))
+      ((union e a)))
 
-; FMix(a, b, 0) = a  (when t=0, return first arg)
-(rewrite (FMix a b (Const 0)) a)
+; FMix(a, b, 0) = a - ONE-DIRECTIONAL (when t=0, return first arg)
+(rule ((= e (FMix a b (Const 0))))
+      ((union e a)))
 
-; FMix(a, b, 1) = b  (when t=1, return second arg)
-(rewrite (FMix a b (Const 1)) b)
+; FMix(a, b, 1) = b - ONE-DIRECTIONAL (when t=1, return second arg)
+(rule ((= e (FMix a b (Const 1))))
+      ((union e b)))
 
 ; RedundantFMix from C++ - matches GLSL FMix folding rules
 
@@ -21,10 +24,13 @@
 ; Clamp Operations
 ; =============================================================================
 
-; Clamp with equal bounds returns the bound
-(rewrite (FClamp x a a) a)
-(rewrite (SClamp x a a) a)
-(rewrite (UClamp x a a) a)
+; Clamp with equal bounds returns the bound - ONE-DIRECTIONAL
+(rule ((= e (FClamp x a a)))
+      ((union e a)))
+(rule ((= e (SClamp x a a)))
+      ((union e a)))
+(rule ((= e (UClamp x a a)))
+      ((union e a)))
 
 ; Clamp is idempotent when bounds are the same
 (rewrite (FClamp (FClamp x lo hi) lo hi) (FClamp x lo hi))
@@ -59,24 +65,29 @@
 ; 1 / Sqrt(x) = InverseSqrt(x)
 (rewrite (FDiv (Const 1) (Sqrt x)) (InverseSqrt x))
 
-; Sqrt(x) * Sqrt(x) = x
-(rewrite (FMul (Sqrt x) (Sqrt x)) x)
+; Sqrt(x) * Sqrt(x) = x - ONE-DIRECTIONAL
+(rule ((= e (FMul (Sqrt x) (Sqrt x))))
+      ((union e x)))
 
 ; =============================================================================
 ; Exponential and Logarithm
 ; =============================================================================
 
-; Log(Exp(x)) = x
-(rewrite (Log (Exp x)) x)
+; Log(Exp(x)) = x - ONE-DIRECTIONAL
+(rule ((= e (Log (Exp x))))
+      ((union e x)))
 
-; Exp(Log(x)) = x (for positive x)
-(rewrite (Exp (Log x)) x)
+; Exp(Log(x)) = x (for positive x) - ONE-DIRECTIONAL
+(rule ((= e (Exp (Log x))))
+      ((union e x)))
 
-; Log2(Exp2(x)) = x
-(rewrite (Log2 (Exp2 x)) x)
+; Log2(Exp2(x)) = x - ONE-DIRECTIONAL
+(rule ((= e (Log2 (Exp2 x))))
+      ((union e x)))
 
-; Exp2(Log2(x)) = x
-(rewrite (Exp2 (Log2 x)) x)
+; Exp2(Log2(x)) = x - ONE-DIRECTIONAL
+(rule ((= e (Exp2 (Log2 x))))
+      ((union e x)))
 
 ; Exp(0) = 1, Log(1) = 0 (conceptual - needs constants)
 
@@ -122,23 +133,35 @@
 (rewrite (Cosh (FNeg x)) (Cosh x))
 (rewrite (Tanh (FNeg x)) (FNeg (Tanh x)))
 
-; Inverse trig cancellations (valid for principal value ranges)
+; Inverse trig cancellations (valid for principal value ranges) - ONE-DIRECTIONAL
 ; Note: These are mathematically valid only in restricted domains,
 ; but for shader optimization we assume inputs are in valid ranges
-(rewrite (Asin (Sin x)) x)
-(rewrite (Acos (Cos x)) x)
-(rewrite (Atan (Tan x)) x)
-(rewrite (Sin (Asin x)) x)
-(rewrite (Cos (Acos x)) x)
-(rewrite (Tan (Atan x)) x)
+(rule ((= e (Asin (Sin x))))
+      ((union e x)))
+(rule ((= e (Acos (Cos x))))
+      ((union e x)))
+(rule ((= e (Atan (Tan x))))
+      ((union e x)))
+(rule ((= e (Sin (Asin x))))
+      ((union e x)))
+(rule ((= e (Cos (Acos x))))
+      ((union e x)))
+(rule ((= e (Tan (Atan x))))
+      ((union e x)))
 
-; Inverse hyperbolic cancellations
-(rewrite (Asinh (Sinh x)) x)
-(rewrite (Sinh (Asinh x)) x)
-(rewrite (Acosh (Cosh x)) x)
-(rewrite (Cosh (Acosh x)) x)
-(rewrite (Atanh (Tanh x)) x)
-(rewrite (Tanh (Atanh x)) x)
+; Inverse hyperbolic cancellations - ONE-DIRECTIONAL
+(rule ((= e (Asinh (Sinh x))))
+      ((union e x)))
+(rule ((= e (Sinh (Asinh x))))
+      ((union e x)))
+(rule ((= e (Acosh (Cosh x))))
+      ((union e x)))
+(rule ((= e (Cosh (Acosh x))))
+      ((union e x)))
+(rule ((= e (Atanh (Tanh x))))
+      ((union e x)))
+(rule ((= e (Tanh (Atanh x))))
+      ((union e x)))
 
 ; Tan = Sin / Cos
 (rewrite (Tan x) (FDiv (Sin x) (Cos x)))
@@ -180,9 +203,11 @@
 (rewrite (FSign (FSign x)) (FSign x))
 (rewrite (Sign (Sign x)) (Sign x))
 
-; abs(x) * sign(x) = x
-(rewrite (FMul (FAbs x) (FSign x)) x)
-(rewrite (FMul (FSign x) (FAbs x)) x)
+; abs(x) * sign(x) = x - ONE-DIRECTIONAL
+(rule ((= e (FMul (FAbs x) (FSign x))))
+      ((union e x)))
+(rule ((= e (FMul (FSign x) (FAbs x))))
+      ((union e x)))
 
 ; =============================================================================
 ; Length, Distance, Normalize
@@ -285,8 +310,9 @@
 ; step(e, x) where x >= e returns 1, x < e returns 0
 ; These require runtime knowledge
 
-; SmoothStep edge cases
-(rewrite (SmoothStep x x t) x)
+; SmoothStep edge cases - ONE-DIRECTIONAL
+(rule ((= e (SmoothStep x x t)))
+      ((union e x)))
 
 ; Distance of same vector is 0
 ; Distance(v, v) = 0.0 - needs float zero
@@ -324,9 +350,11 @@
 ; Fma Optimizations (beyond what's above)
 ; =============================================================================
 
-; Fma(0, b, c) = c
-(rewrite (Fma (Const 0) b c) c)
-(rewrite (Fma a (Const 0) c) c)
+; Fma(0, b, c) = c - ONE-DIRECTIONAL
+(rule ((= e (Fma (Const 0) b c)))
+      ((union e c)))
+(rule ((= e (Fma a (Const 0) c)))
+      ((union e c)))
 
 ; Fma(a, b, 0) = a * b - already covered
 
@@ -477,8 +505,9 @@
 ; Ldexp Simplifications
 ; =============================================================================
 
-; Ldexp(x, 0) = x (multiply by 2^0 = 1)
-(rewrite (Ldexp x (Const 0)) x)
+; Ldexp(x, 0) = x (multiply by 2^0 = 1) - ONE-DIRECTIONAL
+(rule ((= e (Ldexp x (Const 0))))
+      ((union e x)))
 
 ; Ldexp(x, 1) = x * 2
 (rewrite (Ldexp x (Const 1)) (FMul x (Const 2)))

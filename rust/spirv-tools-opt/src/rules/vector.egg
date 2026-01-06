@@ -2,26 +2,39 @@
 ; Vector Construction/Extraction Rules
 ; =============================================================================
 
-; Extract from Vec2
-(rewrite (VecExtract (Vec2 a b) 0) a)
-(rewrite (VecExtract (Vec2 a b) 1) b)
+; Extract from Vec2 - ONE-DIRECTIONAL to prevent explosion
+(rule ((= e (VecExtract (Vec2 a b) 0)))
+      ((union e a)))
+(rule ((= e (VecExtract (Vec2 a b) 1)))
+      ((union e b)))
 
-; Extract from Vec3
-(rewrite (VecExtract (Vec3 a b c) 0) a)
-(rewrite (VecExtract (Vec3 a b c) 1) b)
-(rewrite (VecExtract (Vec3 a b c) 2) c)
+; Extract from Vec3 - ONE-DIRECTIONAL
+(rule ((= e (VecExtract (Vec3 a b c) 0)))
+      ((union e a)))
+(rule ((= e (VecExtract (Vec3 a b c) 1)))
+      ((union e b)))
+(rule ((= e (VecExtract (Vec3 a b c) 2)))
+      ((union e c)))
 
-; Extract from Vec4
-(rewrite (VecExtract (Vec4 a b c d) 0) a)
-(rewrite (VecExtract (Vec4 a b c d) 1) b)
-(rewrite (VecExtract (Vec4 a b c d) 2) c)
-(rewrite (VecExtract (Vec4 a b c d) 3) d)
+; Extract from Vec4 - ONE-DIRECTIONAL
+(rule ((= e (VecExtract (Vec4 a b c d) 0)))
+      ((union e a)))
+(rule ((= e (VecExtract (Vec4 a b c d) 1)))
+      ((union e b)))
+(rule ((= e (VecExtract (Vec4 a b c d) 2)))
+      ((union e c)))
+(rule ((= e (VecExtract (Vec4 a b c d) 3)))
+      ((union e d)))
 
-; Insert then extract same index returns inserted value
-(rewrite (VecExtract (VecInsert v x 0) 0) x)
-(rewrite (VecExtract (VecInsert v x 1) 1) x)
-(rewrite (VecExtract (VecInsert v x 2) 2) x)
-(rewrite (VecExtract (VecInsert v x 3) 3) x)
+; Insert then extract same index returns inserted value - ONE-DIRECTIONAL
+(rule ((= e (VecExtract (VecInsert v x 0) 0)))
+      ((union e x)))
+(rule ((= e (VecExtract (VecInsert v x 1) 1)))
+      ((union e x)))
+(rule ((= e (VecExtract (VecInsert v x 2) 2)))
+      ((union e x)))
+(rule ((= e (VecExtract (VecInsert v x 3) 3)))
+      ((union e x)))
 
 ; Insert then extract different index returns original
 (rewrite (VecExtract (VecInsert v x 0) 1) (VecExtract v 1))
@@ -44,21 +57,30 @@
 ; Vector Arithmetic Rules
 ; =============================================================================
 
-; Vector identity operations
-(rewrite (VecAdd v (Vec2 (Const 0) (Const 0))) v)
-(rewrite (VecAdd v (Vec3 (Const 0) (Const 0) (Const 0))) v)
-(rewrite (VecAdd v (Vec4 (Const 0) (Const 0) (Const 0) (Const 0))) v)
-(rewrite (VecMul v (Vec2 (Const 1) (Const 1))) v)
-(rewrite (VecMul v (Vec3 (Const 1) (Const 1) (Const 1))) v)
-(rewrite (VecMul v (Vec4 (Const 1) (Const 1) (Const 1) (Const 1))) v)
+; Vector identity operations - ONE-DIRECTIONAL to prevent explosion
+(rule ((= e (VecAdd v (Vec2 (Const 0) (Const 0)))))
+      ((union e v)))
+(rule ((= e (VecAdd v (Vec3 (Const 0) (Const 0) (Const 0)))))
+      ((union e v)))
+(rule ((= e (VecAdd v (Vec4 (Const 0) (Const 0) (Const 0) (Const 0)))))
+      ((union e v)))
+(rule ((= e (VecMul v (Vec2 (Const 1) (Const 1)))))
+      ((union e v)))
+(rule ((= e (VecMul v (Vec3 (Const 1) (Const 1) (Const 1)))))
+      ((union e v)))
+(rule ((= e (VecMul v (Vec4 (Const 1) (Const 1) (Const 1) (Const 1)))))
+      ((union e v)))
 
-; VecNeg double negation
-(rewrite (VecNeg (VecNeg v)) v)
-(rewrite (VecFNeg (VecFNeg v)) v)
+; VecNeg double negation - ONE-DIRECTIONAL
+(rule ((= e (VecNeg (VecNeg v))))
+      ((union e v)))
+(rule ((= e (VecFNeg (VecFNeg v))))
+      ((union e v)))
 
-; VecTimesScalar with 0 and 1
+; VecTimesScalar with 0 and 1 - ONE-DIRECTIONAL for identity
 (rewrite (VecTimesScalar v (Const 0)) (Vec2 (Const 0) (Const 0)))
-(rewrite (VecTimesScalar v (Const 1)) v)
+(rule ((= e (VecTimesScalar v (Const 1))))
+      ((union e v)))
 
 ; =============================================================================
 ; Dot Product Rules
@@ -101,28 +123,40 @@
 ; Vector subtraction with self is zero
 ; Note: produces a zero vector, represented via construction
 
-; v - 0 = v (for various dimensions)
-(rewrite (VecSub v (Vec2 (Const 0) (Const 0))) v)
-(rewrite (VecSub v (Vec3 (Const 0) (Const 0) (Const 0))) v)
-(rewrite (VecSub v (Vec4 (Const 0) (Const 0) (Const 0) (Const 0))) v)
+; v - 0 = v (for various dimensions) - ONE-DIRECTIONAL
+(rule ((= e (VecSub v (Vec2 (Const 0) (Const 0)))))
+      ((union e v)))
+(rule ((= e (VecSub v (Vec3 (Const 0) (Const 0) (Const 0)))))
+      ((union e v)))
+(rule ((= e (VecSub v (Vec4 (Const 0) (Const 0) (Const 0) (Const 0)))))
+      ((union e v)))
 
 ; 0 - v = -v
 (rewrite (VecSub (Vec2 (Const 0) (Const 0)) v) (VecNeg v))
 (rewrite (VecSub (Vec3 (Const 0) (Const 0) (Const 0)) v) (VecNeg v))
 (rewrite (VecSub (Vec4 (Const 0) (Const 0) (Const 0) (Const 0)) v) (VecNeg v))
 
-; Floating-point vector variants
-(rewrite (VecFAdd v (Vec2 (Const 0) (Const 0))) v)
-(rewrite (VecFAdd v (Vec3 (Const 0) (Const 0) (Const 0))) v)
-(rewrite (VecFAdd v (Vec4 (Const 0) (Const 0) (Const 0) (Const 0))) v)
+; Floating-point vector variants - ONE-DIRECTIONAL
+(rule ((= e (VecFAdd v (Vec2 (Const 0) (Const 0)))))
+      ((union e v)))
+(rule ((= e (VecFAdd v (Vec3 (Const 0) (Const 0) (Const 0)))))
+      ((union e v)))
+(rule ((= e (VecFAdd v (Vec4 (Const 0) (Const 0) (Const 0) (Const 0)))))
+      ((union e v)))
 
-(rewrite (VecFMul v (Vec2 (Const 1) (Const 1))) v)
-(rewrite (VecFMul v (Vec3 (Const 1) (Const 1) (Const 1))) v)
-(rewrite (VecFMul v (Vec4 (Const 1) (Const 1) (Const 1) (Const 1))) v)
+(rule ((= e (VecFMul v (Vec2 (Const 1) (Const 1)))))
+      ((union e v)))
+(rule ((= e (VecFMul v (Vec3 (Const 1) (Const 1) (Const 1)))))
+      ((union e v)))
+(rule ((= e (VecFMul v (Vec4 (Const 1) (Const 1) (Const 1) (Const 1)))))
+      ((union e v)))
 
-(rewrite (VecFSub v (Vec2 (Const 0) (Const 0))) v)
-(rewrite (VecFSub v (Vec3 (Const 0) (Const 0) (Const 0))) v)
-(rewrite (VecFSub v (Vec4 (Const 0) (Const 0) (Const 0) (Const 0))) v)
+(rule ((= e (VecFSub v (Vec2 (Const 0) (Const 0)))))
+      ((union e v)))
+(rule ((= e (VecFSub v (Vec3 (Const 0) (Const 0) (Const 0)))))
+      ((union e v)))
+(rule ((= e (VecFSub v (Vec4 (Const 0) (Const 0) (Const 0) (Const 0)))))
+      ((union e v)))
 
 ; =============================================================================
 ; Vector Operations Distributivity
@@ -175,11 +209,15 @@
 ; Vec2(VecExtract(v, 0), VecExtract(v, 1)) = v for Vec2
 ; Note: This is an extraction pattern that helps with optimization
 
-; Insert into slot we just extracted from is identity
-(rewrite (VecInsert v (VecExtract v 0) 0) v)
-(rewrite (VecInsert v (VecExtract v 1) 1) v)
-(rewrite (VecInsert v (VecExtract v 2) 2) v)
-(rewrite (VecInsert v (VecExtract v 3) 3) v)
+; Insert into slot we just extracted from is identity - ONE-DIRECTIONAL
+(rule ((= e (VecInsert v (VecExtract v 0) 0)))
+      ((union e v)))
+(rule ((= e (VecInsert v (VecExtract v 1) 1)))
+      ((union e v)))
+(rule ((= e (VecInsert v (VecExtract v 2) 2)))
+      ((union e v)))
+(rule ((= e (VecInsert v (VecExtract v 3) 3)))
+      ((union e v)))
 
 ; =============================================================================
 ; Vector Length and Normalize Relationships
@@ -260,16 +298,22 @@
 ; Uses specialized VecShuffle2/3/4 with fixed-arity indices for cleaner rules
 
 ; -----------------------------------------------------------------------------
-; Identity shuffles - shuffling with identity indices gives original vector
+; Identity shuffles - ONE-DIRECTIONAL to prevent explosion
 ; -----------------------------------------------------------------------------
-(rewrite (VecShuffle2 v _ 0 1) v)
-(rewrite (VecShuffle3 v _ 0 1 2) v)
-(rewrite (VecShuffle4 v _ 0 1 2 3) v)
+(rule ((= e (VecShuffle2 v _ 0 1)))
+      ((union e v)))
+(rule ((= e (VecShuffle3 v _ 0 1 2)))
+      ((union e v)))
+(rule ((= e (VecShuffle4 v _ 0 1 2 3)))
+      ((union e v)))
 
-; Same operand identity
-(rewrite (VecShuffle2 v v 0 1) v)
-(rewrite (VecShuffle3 v v 0 1 2) v)
-(rewrite (VecShuffle4 v v 0 1 2 3) v)
+; Same operand identity - ONE-DIRECTIONAL
+(rule ((= e (VecShuffle2 v v 0 1)))
+      ((union e v)))
+(rule ((= e (VecShuffle3 v v 0 1 2)))
+      ((union e v)))
+(rule ((= e (VecShuffle4 v v 0 1 2 3)))
+      ((union e v)))
 
 ; -----------------------------------------------------------------------------
 ; Extract from VecShuffle (C++ VectorShuffleFeedingExtract)
