@@ -37,6 +37,18 @@
 (rewrite (Gamma c (Gamma c a b) d) (Gamma c a d))
 (rewrite (Gamma c d (Gamma c a b)) (Gamma c d b))
 
+; =============================================================================
+; Additional Phi/Gamma Redundancy Patterns (C++ RedundantPhi)
+; =============================================================================
+; Note: Most Gamma constant patterns are defined later in this file (around line 215)
+
+; Gamma where condition appears as one branch (boolean patterns)
+; select(c, c, false) = c (identity for boolean c)
+(rule ((= e (Gamma c c (Const 0))))
+      ((union e c)))
+; select(c, true, c) = c | true = true when c is boolean
+; But this is the same as select(c, 1, c) = c ? 1 : c which is just 1 when c is true, c when false
+
 ; Gamma distributes over operations (hoisting)
 ; These rules enable common subexpression elimination across branches
 (rewrite (Add (Gamma c a b) (Gamma c x y)) (Gamma c (Add a x) (Add b y)))
