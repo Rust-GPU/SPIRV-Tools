@@ -482,31 +482,8 @@
 ; =============================================================================
 ; Gamma Distribution for GLSL Functions
 ; =============================================================================
-
-; select(c, sqrt(x), sqrt(y)) = sqrt(select(c, x, y))
-(rewrite (Gamma c (Sqrt x) (Sqrt y)) (Sqrt (Gamma c x y)))
-(rewrite (Gamma c (InverseSqrt x) (InverseSqrt y)) (InverseSqrt (Gamma c x y)))
-(rewrite (Gamma c (FAbs x) (FAbs y)) (FAbs (Gamma c x y)))
-(rewrite (Gamma c (SAbs x) (SAbs y)) (SAbs (Gamma c x y)))
-(rewrite (Gamma c (FSign x) (FSign y)) (FSign (Gamma c x y)))
-(rewrite (Gamma c (Sign x) (Sign y)) (Sign (Gamma c x y)))
-
-; select(c, exp(x), exp(y)) = exp(select(c, x, y))
-(rewrite (Gamma c (Exp x) (Exp y)) (Exp (Gamma c x y)))
-(rewrite (Gamma c (Exp2 x) (Exp2 y)) (Exp2 (Gamma c x y)))
-(rewrite (Gamma c (Log x) (Log y)) (Log (Gamma c x y)))
-(rewrite (Gamma c (Log2 x) (Log2 y)) (Log2 (Gamma c x y)))
-
-; select(c, sin(x), sin(y)) = sin(select(c, x, y))
-(rewrite (Gamma c (Sin x) (Sin y)) (Sin (Gamma c x y)))
-(rewrite (Gamma c (Cos x) (Cos y)) (Cos (Gamma c x y)))
-(rewrite (Gamma c (Tan x) (Tan y)) (Tan (Gamma c x y)))
-
-; select(c, floor(x), floor(y)) = floor(select(c, x, y))
-(rewrite (Gamma c (FFloor x) (FFloor y)) (FFloor (Gamma c x y)))
-(rewrite (Gamma c (FCeil x) (FCeil y)) (FCeil (Gamma c x y)))
-(rewrite (Gamma c (FRound x) (FRound y)) (FRound (Gamma c x y)))
-(rewrite (Gamma c (FTrunc x) (FTrunc y)) (FTrunc (Gamma c x y)))
+; Note: Most Gamma distribution rules are in rvsdg.egg. Here we only add
+; specialized GLSL patterns not covered there.
 
 ; Clamp with same bounds: select(c, clamp(a, lo, hi), clamp(b, lo, hi)) = clamp(select(c, a, b), lo, hi)
 (rewrite (Gamma c (FClamp a lo hi) (FClamp b lo hi)) (FClamp (Gamma c a b) lo hi))
@@ -596,3 +573,74 @@
 ; IsNan on integer converted to float is always false
 (rewrite (IsNan (ConvertSToF x)) (Const 0))
 (rewrite (IsNan (ConvertUToF x)) (Const 0))
+
+; =============================================================================
+; FMix Feeding Extract (C++ FMixFeedingExtract parity)
+; =============================================================================
+; When extracting from a FMix with constant 0 or 1 interpolant, extract from endpoint
+; Note: VecExtract has a fixed index, so we enumerate concrete indices
+
+; VecExtract(FMix(x, y, 0), i) = VecExtract(x, i)
+(rule ((= e (VecExtract (FMix x y (Const 0)) 0)))
+      ((union e (VecExtract x 0))))
+(rule ((= e (VecExtract (FMix x y (Const 0)) 1)))
+      ((union e (VecExtract x 1))))
+(rule ((= e (VecExtract (FMix x y (Const 0)) 2)))
+      ((union e (VecExtract x 2))))
+(rule ((= e (VecExtract (FMix x y (Const 0)) 3)))
+      ((union e (VecExtract x 3))))
+
+; VecExtract(FMix(x, y, 1), i) = VecExtract(y, i)
+(rule ((= e (VecExtract (FMix x y (Const 1)) 0)))
+      ((union e (VecExtract y 0))))
+(rule ((= e (VecExtract (FMix x y (Const 1)) 1)))
+      ((union e (VecExtract y 1))))
+(rule ((= e (VecExtract (FMix x y (Const 1)) 2)))
+      ((union e (VecExtract y 2))))
+(rule ((= e (VecExtract (FMix x y (Const 1)) 3)))
+      ((union e (VecExtract y 3))))
+
+; =============================================================================
+; FMix Distribution (when interpolant is same)
+; =============================================================================
+
+; VecExtract(FMix(x, y, t), i) when all are vectors can distribute
+; This is less common but valid for component-wise operations
+
+; FMix with extraction from same index
+; VecExtract(FMix(x, y, t), i) = FMix(VecExtract(x, i), VecExtract(y, i), t)
+; when t is scalar
+(rewrite (VecExtract (FMix x y t) 0) (FMix (VecExtract x 0) (VecExtract y 0) t))
+(rewrite (VecExtract (FMix x y t) 1) (FMix (VecExtract x 1) (VecExtract y 1) t))
+(rewrite (VecExtract (FMix x y t) 2) (FMix (VecExtract x 2) (VecExtract y 2) t))
+(rewrite (VecExtract (FMix x y t) 3) (FMix (VecExtract x 3) (VecExtract y 3) t))
+
+; =============================================================================
+; SmoothStep Feeding Extract
+; =============================================================================
+
+; Similar pattern for SmoothStep
+(rewrite (VecExtract (SmoothStep e0 e1 x) 0) (SmoothStep (VecExtract e0 0) (VecExtract e1 0) (VecExtract x 0)))
+(rewrite (VecExtract (SmoothStep e0 e1 x) 1) (SmoothStep (VecExtract e0 1) (VecExtract e1 1) (VecExtract x 1)))
+(rewrite (VecExtract (SmoothStep e0 e1 x) 2) (SmoothStep (VecExtract e0 2) (VecExtract e1 2) (VecExtract x 2)))
+(rewrite (VecExtract (SmoothStep e0 e1 x) 3) (SmoothStep (VecExtract e0 3) (VecExtract e1 3) (VecExtract x 3)))
+
+; =============================================================================
+; Clamp Feeding Extract
+; =============================================================================
+
+; VecExtract(FClamp(x, lo, hi), i) = FClamp(VecExtract(x, i), VecExtract(lo, i), VecExtract(hi, i))
+(rewrite (VecExtract (FClamp x lo hi) 0) (FClamp (VecExtract x 0) (VecExtract lo 0) (VecExtract hi 0)))
+(rewrite (VecExtract (FClamp x lo hi) 1) (FClamp (VecExtract x 1) (VecExtract lo 1) (VecExtract hi 1)))
+(rewrite (VecExtract (FClamp x lo hi) 2) (FClamp (VecExtract x 2) (VecExtract lo 2) (VecExtract hi 2)))
+(rewrite (VecExtract (FClamp x lo hi) 3) (FClamp (VecExtract x 3) (VecExtract lo 3) (VecExtract hi 3)))
+
+; =============================================================================
+; Step Feeding Extract
+; =============================================================================
+
+; VecExtract(Step(edge, x), i) = Step(VecExtract(edge, i), VecExtract(x, i))
+(rewrite (VecExtract (Step edge x) 0) (Step (VecExtract edge 0) (VecExtract x 0)))
+(rewrite (VecExtract (Step edge x) 1) (Step (VecExtract edge 1) (VecExtract x 1)))
+(rewrite (VecExtract (Step edge x) 2) (Step (VecExtract edge 2) (VecExtract x 2)))
+(rewrite (VecExtract (Step edge x) 3) (Step (VecExtract edge 3) (VecExtract x 3)))
