@@ -1365,4 +1365,131 @@ mod tests {
         assert!(result.contains("20"), "Expected constant 20, got: {}", result);
     }
 
+    // =============================================================================
+    // GLSL Constant Folding Tests
+    // =============================================================================
+
+    #[test]
+    fn test_sin_constant_fold() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // sin(0) should fold to 0
+        egraph.parse_and_run_program(None, "(let root (Sin (Const 0)))").unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let result = format!("{}", results[0]);
+        // Result should be a constant (sin(0) = 0)
+        assert!(result.contains("Const"), "sin(0) should fold to a constant, got: {}", result);
+    }
+
+    #[test]
+    fn test_exp_log_constant_fold() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // exp(0) should fold to 1 (as float bits)
+        // 1.0f64.to_bits() = 4607182418800017408
+        egraph.parse_and_run_program(None, "(let root (Exp (Const 0)))").unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let result = format!("{}", results[0]);
+        // Result should be a constant
+        assert!(result.contains("Const"), "exp(0) should fold to a constant, got: {}", result);
+    }
+
+    #[test]
+    fn test_sqrt_constant_fold() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // sqrt(4.0) should fold to 2.0
+        // 4.0f64.to_bits() = 4616189618054758400
+        let four_bits = 4.0_f64.to_bits() as i64;
+        let expr = format!("(let root (Sqrt (Const {})))", four_bits);
+        egraph.parse_and_run_program(None, &expr).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let result = format!("{}", results[0]);
+        // Result should be a constant
+        assert!(result.contains("Const"), "sqrt(4.0) should fold to a constant, got: {}", result);
+    }
+
+    // =============================================================================
+    // Clamp Feeding Compare Tests
+    // =============================================================================
+
+    #[test]
+    fn test_clamp_lt_lo_is_false() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // FClamp(x, lo, hi) < lo => false (Const 0)
+        egraph.parse_and_run_program(None, r#"(let root (FOrdLt (FClamp (Sym "x") (Sym "lo") (Sym "hi")) (Sym "lo")))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let result = format!("{}", results[0]);
+        assert!(result.contains("Const 0"), "clamp(x, lo, hi) < lo should be false, got: {}", result);
+    }
+
+    #[test]
+    fn test_clamp_ge_lo_is_true() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // FClamp(x, lo, hi) >= lo => true (Const 1)
+        egraph.parse_and_run_program(None, r#"(let root (FOrdGe (FClamp (Sym "x") (Sym "lo") (Sym "hi")) (Sym "lo")))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let result = format!("{}", results[0]);
+        assert!(result.contains("Const 1"), "clamp(x, lo, hi) >= lo should be true, got: {}", result);
+    }
+
+    #[test]
+    fn test_clamp_gt_hi_is_false() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // FClamp(x, lo, hi) > hi => false (Const 0)
+        egraph.parse_and_run_program(None, r#"(let root (FOrdGt (FClamp (Sym "x") (Sym "lo") (Sym "hi")) (Sym "hi")))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let result = format!("{}", results[0]);
+        assert!(result.contains("Const 0"), "clamp(x, lo, hi) > hi should be false, got: {}", result);
+    }
+
+    // =============================================================================
+    // Div-Mul Cancellation Tests
+    // =============================================================================
+
+    #[test]
+    fn test_div_mul_cancel() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // (y / x) * x should simplify to y
+        egraph.parse_and_run_program(None, r#"(let root (Mul (SDiv (Sym "y") (Sym "x")) (Sym "x")))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let result = format!("{}", results[0]);
+        // Should simplify to just y
+        assert!(result.contains("Sym") && result.contains("y") && !result.contains("SDiv"),
+                "(y / x) * x should simplify to y, got: {}", result);
+    }
+
+    #[test]
+    fn test_mul_div_cancel_unsigned() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // x * (y / x) should simplify to y
+        egraph.parse_and_run_program(None, r#"(let root (Mul (Sym "x") (UDiv (Sym "y") (Sym "x"))))"#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let result = format!("{}", results[0]);
+        // Should simplify to just y
+        assert!(result.contains("Sym") && result.contains("y") && !result.contains("UDiv"),
+                "x * (y / x) should simplify to y, got: {}", result);
+    }
+
 }
