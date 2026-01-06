@@ -392,3 +392,118 @@ fn cancels_add_sub_chain() {
         "(x + 5) - 5 should simplify to x"
     );
 }
+
+// =============================================================================
+// Mul Chain Merging Tests (C++ MergeMulMulArithmetic parity)
+// =============================================================================
+
+#[test]
+fn merges_mul_mul_chain() {
+    // (x * 3) * 4 should become x * 12
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.int_ty]);
+    let x = params[0];
+    let c3 = b.const_i32(3);
+    let c4 = b.const_i32(4);
+    let mul1 = b.builder.i_mul(b.int_ty, None, x, c3).expect("mul1");
+    let _ = b.builder.i_mul(b.int_ty, None, mul1, c4).expect("mul2");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    // Should have at most 1 multiply (x * 12), not 2
+    assert!(
+        result.count_opcode(Op::IMul) <= 1,
+        "(x * 3) * 4 should merge to x * 12"
+    );
+}
+
+#[test]
+fn merges_div_div_chain() {
+    // (x / 2) / 4 should become x / 8
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.uint_ty]);
+    let x = params[0];
+    let c2 = b.const_u32(2);
+    let c4 = b.const_u32(4);
+    let div1 = b.builder.u_div(b.uint_ty, None, x, c2).expect("div1");
+    let _ = b.builder.u_div(b.uint_ty, None, div1, c4).expect("div2");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    // Should have at most 1 divide (or shift for power of 2), not 2
+    assert!(
+        result.count_opcode(Op::UDiv) <= 1,
+        "(x / 2) / 4 should merge to x / 8"
+    );
+}
+
+#[test]
+fn cancels_mul_div_same_constant() {
+    // (x * 5) / 5 should become x
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.int_ty]);
+    let x = params[0];
+    let c5 = b.const_i32(5);
+    let mul = b.builder.i_mul(b.int_ty, None, x, c5).expect("mul");
+    let _ = b.builder.s_div(b.int_ty, None, mul, c5).expect("div");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    // (x * 5) / 5 should simplify to just x
+    assert!(
+        !result.has_opcode(Op::IMul) && !result.has_opcode(Op::SDiv),
+        "(x * 5) / 5 should simplify to x"
+    );
+}
+
+// =============================================================================
+// Negate Merging Tests (C++ MergeNegateArithmetic parity)
+// =============================================================================
+
+#[test]
+fn merges_negate_into_mul() {
+    // -(x * 5) should become x * (-5)
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.int_ty]);
+    let x = params[0];
+    let c5 = b.const_i32(5);
+    let mul = b.builder.i_mul(b.int_ty, None, x, c5).expect("mul");
+    let _ = b.builder.s_negate(b.int_ty, None, mul).expect("neg");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    // Negate should be absorbed into the multiply
+    assert!(
+        !result.has_opcode(Op::SNegate),
+        "-(x * 5) should not have separate negate"
+    );
+}
+
+#[test]
+fn merges_negate_into_add() {
+    // -(x + 5) should become (-5) - x
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.int_ty]);
+    let x = params[0];
+    let c5 = b.const_i32(5);
+    let add = b.builder.i_add(b.int_ty, None, x, c5).expect("add");
+    let _ = b.builder.s_negate(b.int_ty, None, add).expect("neg");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    // Negate should be merged into add/sub
+    assert!(
+        !result.has_opcode(Op::SNegate),
+        "-(x + 5) should not have separate negate"
+    );
+}
