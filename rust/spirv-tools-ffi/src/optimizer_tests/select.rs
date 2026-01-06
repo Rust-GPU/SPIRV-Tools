@@ -210,7 +210,6 @@ fn select_distribution_over_add() {
 // =============================================================================
 
 #[test]
-#[ignore = "absolute value pattern requires GLSL extended instructions not yet supported in lowering"]
 fn abs_pattern_with_select() {
     // select(x >= 0, x, -x) should become abs(x)
     let _guard = OptimizerEnvGuard::new();
