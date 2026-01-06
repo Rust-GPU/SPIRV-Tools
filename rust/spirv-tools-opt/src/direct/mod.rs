@@ -1000,6 +1000,10 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     let mut copy_to_existing: HashMap<Word, Word> = HashMap::new();
 
     // Check which function body instructions fold to constants
+    // Note: We always add the folded constant to types_global_values with the original ID.
+    // This preserves ID stability for consumers that expect specific IDs.
+    // Even if an equivalent constant already exists, we keep both - SPIR-V allows duplicate
+    // constant definitions, and this avoids breaking ID references.
     for func in &module.functions {
         for block in &func.blocks {
             for inst in &block.instructions {
@@ -1009,26 +1013,8 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                             opt_inst.class.opcode,
                             Op::Constant | Op::ConstantTrue | Op::ConstantFalse
                         ) {
-                            // Check if this constant value already exists
-                            if let Some(ty) = opt_inst.result_type {
-                                let value = match opt_inst.class.opcode {
-                                    Op::ConstantTrue => 1,
-                                    Op::ConstantFalse => 0,
-                                    Op::Constant => {
-                                        opt_inst.operands.first().map(|op| match op {
-                                            rspirv::dr::Operand::LiteralBit32(v) => *v as u64,
-                                            rspirv::dr::Operand::LiteralBit64(v) => *v,
-                                            _ => 0,
-                                        }).unwrap_or(0)
-                                    }
-                                    _ => 0,
-                                };
-                                if let Some(&existing_id) = existing_constants.get(&(ty, value)) {
-                                    // This folds to an existing constant - emit CopyObject instead
-                                    copy_to_existing.insert(id, existing_id);
-                                    continue;
-                                }
-                            }
+                            // Always add the folded constant - don't deduplicate
+                            // This preserves the original instruction's ID
                             folded_to_constant.insert(id);
                         }
                     }
@@ -1036,8 +1022,10 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
             }
         }
     }
+    // Note: copy_to_existing is no longer used - we always preserve original IDs
+    let _ = copy_to_existing;
 
-    // Add folded constants to types_global_values (only for truly new constants)
+    // Add folded constants to types_global_values
     for &id in &folded_to_constant {
         if let Some(opt_inst) = optimized_instructions.get(&id) {
             output.types_global_values.push(opt_inst.clone());
@@ -1374,23 +1362,10 @@ fn cleanup_module(module: &mut Module, id_aliases: &HashMap<Word, Word>) {
             }
         }
 
-        // Remove unused constants from types_global_values
-        let before_constants_len = module.types_global_values.len();
-        module.types_global_values.retain(|inst| {
-            if let Some(id) = inst.result_id {
-                // Keep types always, constants only if used
-                if matches!(
-                    inst.class.opcode,
-                    Op::Constant | Op::ConstantTrue | Op::ConstantFalse
-                ) {
-                    return used_ids.contains(&id);
-                }
-            }
-            true
-        });
-        if module.types_global_values.len() < before_constants_len {
-            removed_any = true;
-        }
+        // Note: We intentionally do NOT remove unused constants from types_global_values.
+        // Constants might be referenced externally (e.g., by specialization constants) or
+        // represent intentional constant folding results. DCE of constants is too aggressive
+        // for a general-purpose optimizer and should be a separate opt-in pass.
 
         // Keep iterating until no more instructions are removed
         if !removed_any {

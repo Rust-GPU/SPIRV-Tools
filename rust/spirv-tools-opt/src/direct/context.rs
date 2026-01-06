@@ -42,13 +42,21 @@ impl EgglogContext {
 
     /// Get or create a term for an operand ID.
     ///
-    /// IMPORTANT: Always returns a reference (Sym "idN") to enable structural sharing
-    /// in the e-graph. If we inlined full terms, the e-graph would create duplicate
-    /// nodes for the same subexpression, causing exponential explosion during saturation.
+    /// Returns a reference to the egglog variable for this ID.
+    /// If the ID has a known term (was added via add_instruction), we reference
+    /// the egglog variable directly. Otherwise, we use Sym for external references
+    /// (function parameters, globals, etc.).
     fn get_or_create_term(&mut self, id: Word) -> String {
-        // Always use Sym reference to enable structural sharing
-        // The actual term will be added separately via (let idN ...)
-        format!("(Sym \"id{}\")", id)
+        // Check if this ID was added to the e-graph via add_instruction
+        // If so, use the egglog variable name directly
+        if self.id_to_term.contains_key(&id) {
+            // Reference the egglog variable (will be bound via let)
+            format!("id{}", id)
+        } else {
+            // External reference (function parameter, global, etc.)
+            // Use Sym to represent an opaque symbol
+            format!("(Sym \"id{}\")", id)
+        }
     }
 
     /// Convert an instruction to an egglog term.

@@ -26,6 +26,37 @@ fn folds_constant_add() {
 }
 
 #[test]
+fn folds_constant_add_preserves_id() {
+    // Test that when 2+3 folds to 5, the result has the SAME ID as the original add
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    b.begin_void_function();
+    let c2 = b.const_i32(2);
+    let c3 = b.const_i32(3);
+    let add_id = b.builder.i_add(b.int_ty, None, c2, c3).expect("add");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    // Check that we have a constant 5 with the add_id
+    let has_const_5_with_add_id = result.module.all_inst_iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.result_id == Some(add_id)
+            && inst.operands == vec![rspirv::dr::Operand::LiteralBit32(5)]
+    });
+
+    assert!(
+        !result.has_opcode(Op::IAdd),
+        "constant add should be folded away"
+    );
+    assert!(
+        has_const_5_with_add_id,
+        "constant 5 should have the same id as the original add (id={})", add_id
+    );
+}
+
+#[test]
 fn add_with_negate_folds_to_zero() {
     // x + (-x) should fold to 0
     let _guard = OptimizerEnvGuard::new();
