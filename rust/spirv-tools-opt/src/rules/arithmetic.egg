@@ -107,6 +107,18 @@
 (rule ((= e (UDiv (Mul a x) a)))
       ((union e x)))
 
+; Mul/Div cancellation: (y / x) * x = y (C++ MergeMulDivArithmetic)
+; Note: For integers this is only exact when y is divisible by x
+; But it's still a valid simplification in the e-graph
+(rule ((= e (Mul (SDiv y x) x)))
+      ((union e y)))
+(rule ((= e (Mul x (SDiv y x))))
+      ((union e y)))
+(rule ((= e (Mul (UDiv y x) x)))
+      ((union e y)))
+(rule ((= e (Mul x (UDiv y x))))
+      ((union e y)))
+
 ; Division identity - ONE-DIRECTIONAL to prevent explosion
 (rule ((= e (SDiv x (Const 1))))
       ((union e x)))
