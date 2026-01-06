@@ -362,3 +362,69 @@
 ; FAbs(x * x) = x * x (square is always non-negative)
 ; Note: Not quite right due to -0, but commonly optimized
 
+; =============================================================================
+; Advanced Reciprocal Chain Optimization (C++ ReciprocalFDiv)
+; =============================================================================
+
+; a / (1 / b) = a * b
+(rule ((= e (FDiv a (FDiv (Const 1) b))))
+      ((union e (FMul a b))))
+
+; 1 / (a / b) = b / a
+(rule ((= e (FDiv (Const 1) (FDiv a b))))
+      ((union e (FDiv b a))))
+
+; 1 / (a * b) for canonicalization (not expansion)
+; Don't add expansion rules like (1/x) * (1/y) = 1/(x*y) as they expand
+
+; (1/a) / (1/b) = b / a - ONE-DIRECTIONAL
+(rule ((= e (FDiv (FDiv (Const 1) a) (FDiv (Const 1) b))))
+      ((union e (FDiv b a))))
+
+; =============================================================================
+; Power Optimization Patterns
+; =============================================================================
+
+; x * x = x^2 (for cost model, Pow may be more expensive)
+; But Pow(x, 2) should reduce to x * x for extraction
+(rule ((= e (Pow x (Const 2))))
+      ((union e (FMul x x))))
+
+; Pow(x, 0) = 1 (assuming x != 0)
+(rule ((= e (Pow x (Const 0))))
+      ((union e (Const 1))))
+
+; Pow(x, 1) = x - ONE-DIRECTIONAL
+(rule ((= e (Pow x (Const 1))))
+      ((union e x)))
+
+; Pow(1, n) = 1 - ONE-DIRECTIONAL
+(rule ((= e (Pow (Const 1) n)))
+      ((union e (Const 1))))
+
+; Pow(x, -1) = 1/x
+(rule ((= e (Pow x (Const -1))))
+      ((union e (FDiv (Const 1) x))))
+
+; =============================================================================
+; Square Root and InverseSqrt Additional Patterns
+; =============================================================================
+; Note: Many InverseSqrt rules are in glsl.egg
+
+; Sqrt(x^2) = |x| (not just x due to negative input)
+; But for non-negative known values, Sqrt(x*x) = x
+
+; Sqrt(x) / x = 1 / Sqrt(x) = InverseSqrt(x)
+(rule ((= e (FDiv (Sqrt x) x)))
+      ((union e (InverseSqrt x))))
+
+; x / Sqrt(x) = Sqrt(x)
+(rule ((= e (FDiv x (Sqrt x))))
+      ((union e (Sqrt x))))
+
+; Note: Sqrt(x) * Sqrt(x) = x is in glsl.egg
+
+; InverseSqrt(x) * InverseSqrt(x) = 1/x
+(rule ((= e (FMul (InverseSqrt x) (InverseSqrt x))))
+      ((union e (FDiv (Const 1) x))))
+
