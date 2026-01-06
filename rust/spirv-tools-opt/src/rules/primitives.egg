@@ -126,3 +126,103 @@
 ; UMod by pow2 => BitAnd with (pow2 - 1)
 (rule ((= e (UMod x (Const c))) (is-pow2 c))
       ((union e (BitAnd x (Const (- c 1))))))
+
+; =============================================================================
+; GLSL Transcendental Constant Folding
+; =============================================================================
+; These rules fold GLSL math functions when applied to constants.
+; Uses the float-* primitives registered in Rust.
+
+; Trigonometric functions
+(rule ((= e (Sin (Const a))))
+      ((union e (Const (float-sin a)))))
+(rule ((= e (Cos (Const a))))
+      ((union e (Const (float-cos a)))))
+(rule ((= e (Tan (Const a))))
+      ((union e (Const (float-tan a)))))
+
+; Inverse trigonometric functions
+(rule ((= e (Asin (Const a))))
+      ((union e (Const (float-asin a)))))
+(rule ((= e (Acos (Const a))))
+      ((union e (Const (float-acos a)))))
+(rule ((= e (Atan (Const a))))
+      ((union e (Const (float-atan a)))))
+(rule ((= e (Atan2 (Const y) (Const x))))
+      ((union e (Const (float-atan2 y x)))))
+
+; Hyperbolic functions
+(rule ((= e (Sinh (Const a))))
+      ((union e (Const (float-sinh a)))))
+(rule ((= e (Cosh (Const a))))
+      ((union e (Const (float-cosh a)))))
+(rule ((= e (Tanh (Const a))))
+      ((union e (Const (float-tanh a)))))
+
+; Inverse hyperbolic functions
+(rule ((= e (Asinh (Const a))))
+      ((union e (Const (float-asinh a)))))
+(rule ((= e (Acosh (Const a))))
+      ((union e (Const (float-acosh a)))))
+(rule ((= e (Atanh (Const a))))
+      ((union e (Const (float-atanh a)))))
+
+; Exponential and logarithmic functions
+(rule ((= e (Exp (Const a))))
+      ((union e (Const (float-exp a)))))
+(rule ((= e (Exp2 (Const a))))
+      ((union e (Const (float-exp2 a)))))
+(rule ((= e (Log (Const a))))
+      ((union e (Const (float-log a)))))
+(rule ((= e (Log2 (Const a))))
+      ((union e (Const (float-log2 a)))))
+
+; Power and root functions
+(rule ((= e (Sqrt (Const a))))
+      ((union e (Const (float-sqrt a)))))
+(rule ((= e (InverseSqrt (Const a))))
+      ((union e (Const (float-inversesqrt a)))))
+(rule ((= e (Pow (Const x) (Const y))))
+      ((union e (Const (float-pow x y)))))
+
+; Rounding functions
+(rule ((= e (FFloor (Const a))))
+      ((union e (Const (float-floor a)))))
+(rule ((= e (FCeil (Const a))))
+      ((union e (Const (float-ceil a)))))
+(rule ((= e (FRound (Const a))))
+      ((union e (Const (float-round a)))))
+(rule ((= e (FTrunc (Const a))))
+      ((union e (Const (float-trunc a)))))
+
+; Absolute value and sign
+(rule ((= e (FAbs (Const a))))
+      ((union e (Const (float-abs a)))))
+(rule ((= e (FSign (Const a))))
+      ((union e (Const (float-sign a)))))
+(rule ((= e (Sign (Const a))))
+      ((union e (Const (float-sign a)))))
+
+; Fractional part
+(rule ((= e (Fract (Const a))))
+      ((union e (Const (float-fract a)))))
+
+; Min/Max
+(rule ((= e (FMin (Const x) (Const y))))
+      ((union e (Const (float-min x y)))))
+(rule ((= e (FMax (Const x) (Const y))))
+      ((union e (Const (float-max x y)))))
+
+; Clamp
+(rule ((= e (FClamp (Const x) (Const lo) (Const hi))))
+      ((union e (Const (float-clamp x lo hi)))))
+
+; Mix (linear interpolation)
+(rule ((= e (FMix (Const x) (Const y) (Const a))))
+      ((union e (Const (float-mix x y a)))))
+
+; Step and smoothstep
+(rule ((= e (Step (Const edge) (Const x))))
+      ((union e (Const (float-step edge x)))))
+(rule ((= e (SmoothStep (Const e0) (Const e1) (Const x))))
+      ((union e (Const (float-smoothstep e0 e1 x)))))
