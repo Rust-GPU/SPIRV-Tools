@@ -447,3 +447,111 @@
 
 ; select(c, true, c || x) = c || x
 (rewrite (Gamma c (Const 1) (LogOr c x)) (LogOr c (Gamma c (Const 1) x)))
+
+; =============================================================================
+; Gamma Distribution over Division Operations (C++ Parity)
+; =============================================================================
+; These rules hoist common operands out of conditional branches
+; Note: Shift Gamma distribution rules are in bitwise.egg
+
+; Division operations: select(c, a / x, b / x) = select(c, a, b) / x
+(rewrite (Gamma c (SDiv a x) (SDiv b x)) (SDiv (Gamma c a b) x))
+(rewrite (Gamma c (UDiv a x) (UDiv b x)) (UDiv (Gamma c a b) x))
+(rewrite (Gamma c (FDiv a x) (FDiv b x)) (FDiv (Gamma c a b) x))
+
+; Division with common dividend: select(c, x / a, x / b) = x / select(c, a, b)
+(rewrite (Gamma c (SDiv x a) (SDiv x b)) (SDiv x (Gamma c a b)))
+(rewrite (Gamma c (UDiv x a) (UDiv x b)) (UDiv x (Gamma c a b)))
+(rewrite (Gamma c (FDiv x a) (FDiv x b)) (FDiv x (Gamma c a b)))
+
+; Remainder/modulo operations
+(rewrite (Gamma c (SRem a x) (SRem b x)) (SRem (Gamma c a b) x))
+(rewrite (Gamma c (SMod a x) (SMod b x)) (SMod (Gamma c a b) x))
+(rewrite (Gamma c (UMod a x) (UMod b x)) (UMod (Gamma c a b) x))
+(rewrite (Gamma c (FRem a x) (FRem b x)) (FRem (Gamma c a b) x))
+
+; Negation: select(c, -a, -b) = -(select(c, a, b))
+(rewrite (Gamma c (Neg a) (Neg b)) (Neg (Gamma c a b)))
+(rewrite (Gamma c (FNeg a) (FNeg b)) (FNeg (Gamma c a b)))
+
+; Note: BitNot Gamma distribution is in bitwise.egg
+
+; =============================================================================
+; Gamma Distribution over Comparison Operations
+; =============================================================================
+; select(c, a < x, b < x) = select(c, a, b) < x
+(rewrite (Gamma c (SLt a x) (SLt b x)) (SLt (Gamma c a b) x))
+(rewrite (Gamma c (SLe a x) (SLe b x)) (SLe (Gamma c a b) x))
+(rewrite (Gamma c (SGt a x) (SGt b x)) (SGt (Gamma c a b) x))
+(rewrite (Gamma c (SGe a x) (SGe b x)) (SGe (Gamma c a b) x))
+(rewrite (Gamma c (ULt a x) (ULt b x)) (ULt (Gamma c a b) x))
+(rewrite (Gamma c (ULe a x) (ULe b x)) (ULe (Gamma c a b) x))
+(rewrite (Gamma c (UGt a x) (UGt b x)) (UGt (Gamma c a b) x))
+(rewrite (Gamma c (UGe a x) (UGe b x)) (UGe (Gamma c a b) x))
+(rewrite (Gamma c (Eq a x) (Eq b x)) (Eq (Gamma c a b) x))
+(rewrite (Gamma c (Ne a x) (Ne b x)) (Ne (Gamma c a b) x))
+
+; Floating-point comparisons
+(rewrite (Gamma c (FOrdLt a x) (FOrdLt b x)) (FOrdLt (Gamma c a b) x))
+(rewrite (Gamma c (FOrdLe a x) (FOrdLe b x)) (FOrdLe (Gamma c a b) x))
+(rewrite (Gamma c (FOrdGt a x) (FOrdGt b x)) (FOrdGt (Gamma c a b) x))
+(rewrite (Gamma c (FOrdGe a x) (FOrdGe b x)) (FOrdGe (Gamma c a b) x))
+(rewrite (Gamma c (FOrdEq a x) (FOrdEq b x)) (FOrdEq (Gamma c a b) x))
+(rewrite (Gamma c (FOrdNe a x) (FOrdNe b x)) (FOrdNe (Gamma c a b) x))
+
+; =============================================================================
+; Gamma Distribution over GLSL Functions
+; =============================================================================
+
+; select(c, sqrt(a), sqrt(b)) = sqrt(select(c, a, b))
+(rewrite (Gamma c (Sqrt a) (Sqrt b)) (Sqrt (Gamma c a b)))
+(rewrite (Gamma c (InverseSqrt a) (InverseSqrt b)) (InverseSqrt (Gamma c a b)))
+
+; Exponential functions
+(rewrite (Gamma c (Exp a) (Exp b)) (Exp (Gamma c a b)))
+(rewrite (Gamma c (Exp2 a) (Exp2 b)) (Exp2 (Gamma c a b)))
+(rewrite (Gamma c (Log a) (Log b)) (Log (Gamma c a b)))
+(rewrite (Gamma c (Log2 a) (Log2 b)) (Log2 (Gamma c a b)))
+
+; Trigonometric functions
+(rewrite (Gamma c (Sin a) (Sin b)) (Sin (Gamma c a b)))
+(rewrite (Gamma c (Cos a) (Cos b)) (Cos (Gamma c a b)))
+(rewrite (Gamma c (Tan a) (Tan b)) (Tan (Gamma c a b)))
+
+; Rounding functions
+(rewrite (Gamma c (FFloor a) (FFloor b)) (FFloor (Gamma c a b)))
+(rewrite (Gamma c (FCeil a) (FCeil b)) (FCeil (Gamma c a b)))
+(rewrite (Gamma c (FRound a) (FRound b)) (FRound (Gamma c a b)))
+(rewrite (Gamma c (FTrunc a) (FTrunc b)) (FTrunc (Gamma c a b)))
+
+; Absolute value
+(rewrite (Gamma c (FAbs a) (FAbs b)) (FAbs (Gamma c a b)))
+(rewrite (Gamma c (SAbs a) (SAbs b)) (SAbs (Gamma c a b)))
+
+; Normalize and Length
+(rewrite (Gamma c (Normalize a) (Normalize b)) (Normalize (Gamma c a b)))
+(rewrite (Gamma c (Length a) (Length b)) (Length (Gamma c a b)))
+
+; =============================================================================
+; Gamma with Common GLSL Binary Operations
+; =============================================================================
+
+; select(c, pow(a, x), pow(b, x)) = pow(select(c, a, b), x)
+(rewrite (Gamma c (Pow a x) (Pow b x)) (Pow (Gamma c a b) x))
+(rewrite (Gamma c (Pow x a) (Pow x b)) (Pow x (Gamma c a b)))
+
+; Distance with common point
+(rewrite (Gamma c (Distance a x) (Distance b x)) (Distance (Gamma c a b) x))
+(rewrite (Gamma c (Distance x a) (Distance x b)) (Distance x (Gamma c a b)))
+
+; Dot product with common vector
+(rewrite (Gamma c (Dot a x) (Dot b x)) (Dot (Gamma c a b) x))
+(rewrite (Gamma c (Dot x a) (Dot x b)) (Dot x (Gamma c a b)))
+
+; Cross product with common vector
+(rewrite (Gamma c (Cross a x) (Cross b x)) (Cross (Gamma c a b) x))
+(rewrite (Gamma c (Cross x a) (Cross x b)) (Cross x (Gamma c a b)))
+
+; Reflect with common normal
+(rewrite (Gamma c (Reflect a x) (Reflect b x)) (Reflect (Gamma c a b) x))
+(rewrite (Gamma c (Reflect x a) (Reflect x b)) (Reflect x (Gamma c a b)))
