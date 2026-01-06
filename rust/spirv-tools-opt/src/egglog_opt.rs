@@ -175,6 +175,25 @@ fn popcount(x: i64) -> i64 {
     (x as u64).count_ones() as i64
 }
 
+/// Check if a value is a power of 2 (and positive).
+/// Returns Some(()) if x is a power of 2, None otherwise.
+fn is_pow2(x: i64) -> Option<()> {
+    if x > 0 && (x & (x - 1)) == 0 {
+        Some(())
+    } else {
+        None
+    }
+}
+
+/// Compute log base 2 of a power of 2.
+/// Assumes x is a positive power of 2 (caller should guard with is-pow2).
+fn log2_pow2(x: i64) -> i64 {
+    if x <= 0 {
+        return -1;
+    }
+    (x as u64).trailing_zeros() as i64
+}
+
 // =============================================================================
 // Public API
 // =============================================================================
@@ -233,6 +252,14 @@ pub fn create_spirv_egraph() -> Result<EGraph, EgglogOptError> {
         } else {
             None
         }
+    });
+
+    // Power of 2 primitives for strength reduction (mul -> shift)
+    add_primitive!(&mut egraph, "is-pow2" = |a: i64| -?> () {
+        is_pow2(a)
+    });
+    add_primitive!(&mut egraph, "log2-pow2" = |a: i64| -> i64 {
+        log2_pow2(a)
     });
 
     // Now load the base SPIR-V language and rules (which use the primitives above)
@@ -924,6 +951,123 @@ mod tests {
 
         let check = egraph.parse_and_run_program(None, "(check (= expr expected))");
         assert!(check.is_ok(), "Expected 10 - (x - 3) to simplify to 13 - x");
+    }
+
+    // Test (x + 5) - 5 = x - trace the explosion
+    #[test]
+    fn test_add_sub_chain_explosion_trace() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // (x + 5) - 5 should simplify to x
+        egraph.parse_and_run_program(None, r#"(let root (Sub (Add (Sym "x") (Const 5)) (Const 5)))"#).unwrap();
+
+        // Trace iteration by iteration
+        for i in 1..=5 {
+            let start = std::time::Instant::now();
+            egraph.parse_and_run_program(None, "(run 1)").unwrap();
+            let elapsed = start.elapsed();
+
+            let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+            let result = format!("{}", results[0]);
+            eprintln!("Iter {}: {} ({:?})", i, result, elapsed);
+
+            // If we already got x, we're done
+            if result == "(Sym \"x\")" {
+                eprintln!("SUCCESS: Simplified to x after {} iterations", i);
+                return;
+            }
+
+            // If iteration takes too long, we have explosion
+            if elapsed.as_millis() > 500 {
+                eprintln!("WARNING: Iteration {} took {:?} - possible explosion", i, elapsed);
+            }
+        }
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let result = format!("{}", results[0]);
+        // Should have simplified to x
+        assert!(result == "(Sym \"x\")" || result.contains("Sym") && !result.contains("Add") && !result.contains("Sub"),
+                "Expected (Sym \"x\"), got: {}", result);
+    }
+
+    // Test real SPIR-V like scenario with multiple expressions
+    #[test]
+    fn test_add_sub_chain_with_context() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // Simulate what the FFI test does: x is a function parameter (id1), 5 is a constant (id2)
+        // add = x + 5 (id3), sub = add - 5 (id4)
+        // The e-graph will have: id1 = (Sym "id1"), id2 = (Const 5), id3 = (Add id1 id2), id4 = (Sub id3 id2)
+        egraph.parse_and_run_program(None, r#"(let id1 (Sym "id1"))"#).unwrap();
+        egraph.parse_and_run_program(None, r#"(let id2 (Const 5))"#).unwrap();
+        egraph.parse_and_run_program(None, r#"(let id3 (Add id1 id2))"#).unwrap();
+        egraph.parse_and_run_program(None, r#"(let id4 (Sub id3 id2))"#).unwrap();
+
+        // Trace iteration by iteration - run up to 20 like the direct optimizer
+        for i in 1..=20 {
+            let start = std::time::Instant::now();
+            egraph.parse_and_run_program(None, "(run 1)").unwrap();
+            let elapsed = start.elapsed();
+
+            let results = egraph.parse_and_run_program(None, "(extract id4)").unwrap();
+            let result = format!("{}", results[0]);
+            eprintln!("Iter {}: {} ({:?})", i, result, elapsed);
+
+            // If we already got id1 (which should alias to x), we're done
+            if result.contains("Sym") && result.contains("id1") && !result.contains("Add") && !result.contains("Sub") {
+                eprintln!("SUCCESS: Simplified to id1 after {} iterations", i);
+                return;
+            }
+
+            // If iteration takes too long, we have explosion
+            if elapsed.as_secs() > 5 {
+                panic!("EXPLOSION: Iteration {} took {:?}", i, elapsed);
+            }
+        }
+
+        let results = egraph.parse_and_run_program(None, "(extract id4)").unwrap();
+        let result = format!("{}", results[0]);
+        // Should have simplified to id1
+        assert!(result.contains("Sym") && result.contains("id1") && !result.contains("Add") && !result.contains("Sub"),
+                "Expected (Sym \"id1\"), got: {}", result);
+    }
+
+    // Test 4*2 + 4*3 = 20 - trace the explosion
+    #[test]
+    fn test_linear_combination_explosion_trace() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // 4*2 + 4*3 should fold to 20 (via 8 + 12)
+        egraph.parse_and_run_program(None, r#"(let root (Add (Mul (Const 4) (Const 2)) (Mul (Const 4) (Const 3))))"#).unwrap();
+
+        // Trace iteration by iteration
+        for i in 1..=10 {
+            let start = std::time::Instant::now();
+            egraph.parse_and_run_program(None, "(run 1)").unwrap();
+            let elapsed = start.elapsed();
+
+            let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+            let result = format!("{}", results[0]);
+            eprintln!("Iter {}: {} ({:?})", i, result, elapsed);
+
+            // Check if we got a constant
+            if result == "(Const 20)" || result.contains("20") {
+                eprintln!("SUCCESS: Folded to 20 after {} iterations", i);
+                return;
+            }
+
+            // If iteration takes too long, we have explosion
+            if elapsed.as_millis() > 500 {
+                eprintln!("WARNING: Iteration {} took {:?} - possible explosion", i, elapsed);
+                // Don't continue if it's exploding
+                break;
+            }
+        }
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let result = format!("{}", results[0]);
+        // Should have folded to 20
+        assert!(result.contains("20"), "Expected constant 20, got: {}", result);
     }
 
 }

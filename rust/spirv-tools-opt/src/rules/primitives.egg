@@ -95,3 +95,34 @@
 ; BitCount - count number of 1-bits (popcount)
 (rule ((= e (BitCount (Const a))))
       ((union e (Const (popcount a)))))
+
+; =============================================================================
+; Strength Reduction: Multiply by Power of 2 -> Shift
+; =============================================================================
+; x * 2^n => x << n (for unsigned, this is always valid)
+; Note: This uses is-pow2 to check if the constant is a power of 2,
+; and log2 to compute the shift amount.
+
+; x * pow2 => x << log2(pow2)
+(rule ((= e (Mul x (Const c))) (is-pow2 c))
+      ((union e (Shl x (Const (log2-pow2 c))))))
+(rule ((= e (Mul (Const c) x)) (is-pow2 c))
+      ((union e (Shl x (Const (log2-pow2 c))))))
+
+; =============================================================================
+; Strength Reduction: Division by Power of 2 -> Shift (unsigned only)
+; =============================================================================
+; x / 2^n => x >> n (for unsigned division)
+
+; UDiv by pow2 => ShrU (logical/unsigned shift right)
+(rule ((= e (UDiv x (Const c))) (is-pow2 c))
+      ((union e (ShrU x (Const (log2-pow2 c))))))
+
+; =============================================================================
+; Strength Reduction: Modulo by Power of 2 -> Bitwise AND
+; =============================================================================
+; x % 2^n => x & (2^n - 1) (for unsigned)
+
+; UMod by pow2 => BitAnd with (pow2 - 1)
+(rule ((= e (UMod x (Const c))) (is-pow2 c))
+      ((union e (BitAnd x (Const (- c 1))))))
