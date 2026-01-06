@@ -38,6 +38,78 @@
 (rewrite (UClamp (UClamp x lo hi) lo hi) (UClamp x lo hi))
 
 ; =============================================================================
+; Clamp Feeding Comparison (C++ FoldFClampFeedingCompare parity)
+; =============================================================================
+; When a clamped value is compared against a bound, we can simplify based on
+; the clamp constraining the value range.
+
+; FClamp(x, lo, hi) < lo => false (clamped value is always >= lo)
+(rule ((= e (FOrdLt (FClamp x lo hi) lo)))
+      ((union e (Const 0))))
+(rule ((= e (FUnordLt (FClamp x lo hi) lo)))
+      ((union e (Const 0))))
+
+; FClamp(x, lo, hi) > hi => false (clamped value is always <= hi)
+(rule ((= e (FOrdGt (FClamp x lo hi) hi)))
+      ((union e (Const 0))))
+(rule ((= e (FUnordGt (FClamp x lo hi) hi)))
+      ((union e (Const 0))))
+
+; FClamp(x, lo, hi) >= lo => true (clamped value is always >= lo)
+(rule ((= e (FOrdGe (FClamp x lo hi) lo)))
+      ((union e (Const 1))))
+(rule ((= e (FUnordGe (FClamp x lo hi) lo)))
+      ((union e (Const 1))))
+
+; FClamp(x, lo, hi) <= hi => true (clamped value is always <= hi)
+(rule ((= e (FOrdLe (FClamp x lo hi) hi)))
+      ((union e (Const 1))))
+(rule ((= e (FUnordLe (FClamp x lo hi) hi)))
+      ((union e (Const 1))))
+
+; lo < FClamp(x, lo, hi) => x > lo (clamp is > lo iff x is > lo)
+; This is more complex - simplified form: just compare x directly
+; lo <= FClamp(x, lo, hi) => true
+(rule ((= e (FOrdLe lo (FClamp x lo hi))))
+      ((union e (Const 1))))
+(rule ((= e (FUnordLe lo (FClamp x lo hi))))
+      ((union e (Const 1))))
+
+; hi >= FClamp(x, lo, hi) => true
+(rule ((= e (FOrdGe hi (FClamp x lo hi))))
+      ((union e (Const 1))))
+(rule ((= e (FUnordGe hi (FClamp x lo hi))))
+      ((union e (Const 1))))
+
+; Similar rules for signed integer clamp
+; SClamp(x, lo, hi) < lo => false
+(rule ((= e (SLt (SClamp x lo hi) lo)))
+      ((union e (Const 0))))
+; SClamp(x, lo, hi) > hi => false
+(rule ((= e (SGt (SClamp x lo hi) hi)))
+      ((union e (Const 0))))
+; SClamp(x, lo, hi) >= lo => true
+(rule ((= e (SGe (SClamp x lo hi) lo)))
+      ((union e (Const 1))))
+; SClamp(x, lo, hi) <= hi => true
+(rule ((= e (SLe (SClamp x lo hi) hi)))
+      ((union e (Const 1))))
+
+; Similar rules for unsigned integer clamp
+; UClamp(x, lo, hi) < lo => false
+(rule ((= e (ULt (UClamp x lo hi) lo)))
+      ((union e (Const 0))))
+; UClamp(x, lo, hi) > hi => false
+(rule ((= e (UGt (UClamp x lo hi) hi)))
+      ((union e (Const 0))))
+; UClamp(x, lo, hi) >= lo => true
+(rule ((= e (UGe (UClamp x lo hi) lo)))
+      ((union e (Const 1))))
+; UClamp(x, lo, hi) <= hi => true
+(rule ((= e (ULe (UClamp x lo hi) hi)))
+      ((union e (Const 1))))
+
+; =============================================================================
 ; Min/Max Simplifications
 ; =============================================================================
 
