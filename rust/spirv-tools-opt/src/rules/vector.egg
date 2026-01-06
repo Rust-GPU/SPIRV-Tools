@@ -426,6 +426,54 @@
 (rewrite (VecShuffle3 (VecShuffle3 v w i0 i1 i2) _ 0 1 2) (VecShuffle3 v w i0 i1 i2))
 (rewrite (VecShuffle2 (VecShuffle2 v w i0 i1) _ 0 1) (VecShuffle2 v w i0 i1))
 
+; -----------------------------------------------------------------------------
+; Shuffle of broadcast optimization
+; Any shuffle of a broadcast vector yields the same broadcast
+; This is because all elements are identical, so rearranging them has no effect
+; -----------------------------------------------------------------------------
+
+; Shuffle of broadcast Vec4 (all same value) is still that broadcast
+(rule ((= e (VecShuffle4 (Vec4 x x x x) _ _ _ _ _)))
+      ((union e (Vec4 x x x x))))
+(rule ((= e (VecShuffle3 (Vec4 x x x x) _ _ _ _)))
+      ((union e (Vec3 x x x))))
+(rule ((= e (VecShuffle2 (Vec4 x x x x) _ _ _)))
+      ((union e (Vec2 x x))))
+
+; Shuffle of broadcast Vec3
+(rule ((= e (VecShuffle3 (Vec3 x x x) _ _ _ _)))
+      ((union e (Vec3 x x x))))
+(rule ((= e (VecShuffle2 (Vec3 x x x) _ _ _)))
+      ((union e (Vec2 x x))))
+
+; Shuffle of broadcast Vec2
+(rule ((= e (VecShuffle2 (Vec2 x x) _ _ _)))
+      ((union e (Vec2 x x))))
+
+; Shuffle from VecBroadcast directly
+(rule ((= e (VecShuffle4 (VecBroadcast4 x) _ _ _ _ _)))
+      ((union e (VecBroadcast4 x))))
+(rule ((= e (VecShuffle3 (VecBroadcast3 x) _ _ _ _)))
+      ((union e (VecBroadcast3 x))))
+(rule ((= e (VecShuffle2 (VecBroadcast2 x) _ _ _)))
+      ((union e (VecBroadcast2 x))))
+
+; Downcast shuffle of broadcast
+(rule ((= e (VecShuffle3 (VecBroadcast4 x) _ _ _ _)))
+      ((union e (VecBroadcast3 x))))
+(rule ((= e (VecShuffle2 (VecBroadcast4 x) _ _ _)))
+      ((union e (VecBroadcast2 x))))
+(rule ((= e (VecShuffle2 (VecBroadcast3 x) _ _ _)))
+      ((union e (VecBroadcast2 x))))
+
+; Extract from broadcast is the broadcast value
+(rule ((= e (VecExtract (VecBroadcast2 x) _)))
+      ((union e x)))
+(rule ((= e (VecExtract (VecBroadcast3 x) _)))
+      ((union e x)))
+(rule ((= e (VecExtract (VecBroadcast4 x) _)))
+      ((union e x)))
+
 ; =============================================================================
 ; Loop Invariant Vector Operations
 ; =============================================================================
