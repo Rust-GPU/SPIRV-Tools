@@ -265,6 +265,55 @@
 ; (x << n) & ((1 << n) - 1) = 0 for any n > 0
 ; This is because left shift fills low bits with zeros
 
+; Specific patterns where mask bits are shifted out:
+; 1 & (x << 1) = 0  (bit 0 is shifted to bit 1, so AND with 1 is 0)
+(rule ((= e (BitAnd (Const 1) (Shl x (Const 1)))))
+      ((union e (Const 0))))
+(rule ((= e (BitAnd (Shl x (Const 1)) (Const 1))))
+      ((union e (Const 0))))
+
+; 1 & (x << n) = 0 for n >= 1
+(rule ((= e (BitAnd (Const 1) (Shl x (Const 2)))))
+      ((union e (Const 0))))
+(rule ((= e (BitAnd (Shl x (Const 2)) (Const 1))))
+      ((union e (Const 0))))
+(rule ((= e (BitAnd (Const 1) (Shl x (Const 3)))))
+      ((union e (Const 0))))
+(rule ((= e (BitAnd (Shl x (Const 3)) (Const 1))))
+      ((union e (Const 0))))
+(rule ((= e (BitAnd (Const 1) (Shl x (Const 4)))))
+      ((union e (Const 0))))
+(rule ((= e (BitAnd (Shl x (Const 4)) (Const 1))))
+      ((union e (Const 0))))
+
+; 3 & (x << 2) = 0  (bits 0-1 are shifted to bits 2-3)
+(rule ((= e (BitAnd (Const 3) (Shl x (Const 2)))))
+      ((union e (Const 0))))
+(rule ((= e (BitAnd (Shl x (Const 2)) (Const 3))))
+      ((union e (Const 0))))
+
+; 7 & (x << 3) = 0  (bits 0-2 are shifted to bits 3-5)
+(rule ((= e (BitAnd (Const 7) (Shl x (Const 3)))))
+      ((union e (Const 0))))
+(rule ((= e (BitAnd (Shl x (Const 3)) (Const 7))))
+      ((union e (Const 0))))
+
+; 15 & (x << 4) = 0  (bits 0-3 are shifted to bits 4-7)
+(rule ((= e (BitAnd (Const 15) (Shl x (Const 4)))))
+      ((union e (Const 0))))
+(rule ((= e (BitAnd (Shl x (Const 4)) (Const 15))))
+      ((union e (Const 0))))
+
+; High bit masks with right shift
+; 0x80000000 & (x >> 1) = 0 for 32-bit (high bit is shifted down)
+; (any shift right of 1 or more moves data away from bit 31)
+(rule ((= e (BitAnd (Const 2147483648) (ShrU x (Const 1)))))
+      ((union e (Const 0))))
+(rule ((= e (BitAnd (ShrU x (Const 1)) (Const 2147483648))))
+      ((union e (Const 0))))
+
+; For signed right shift, high bit propagates, so only works for ShrU
+
 ; =============================================================================
 ; Additional Bitwise Simplification Patterns
 ; =============================================================================

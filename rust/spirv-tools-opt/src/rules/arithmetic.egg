@@ -222,6 +222,50 @@
 (rule ((= e (Sub (Shl x (Const 4)) x)))
       ((union e (Mul x (Const 15)))))
 
+; (x << 3) + (x << 2) = x * 12
+(rule ((= e (Add (Shl x (Const 3)) (Shl x (Const 2)))))
+      ((union e (Mul x (Const 12)))))
+(rule ((= e (Add (Shl x (Const 2)) (Shl x (Const 3)))))
+      ((union e (Mul x (Const 12)))))
+
+; (x << 3) + (x << 1) + x = x * 11
+(rule ((= e (Add (Add (Shl x (Const 3)) (Shl x (Const 1))) x)))
+      ((union e (Mul x (Const 11)))))
+(rule ((= e (Add (Shl x (Const 3)) (Add (Shl x (Const 1)) x))))
+      ((union e (Mul x (Const 11)))))
+
+; (x << 3) + (x << 2) + x = x * 13
+(rule ((= e (Add (Add (Shl x (Const 3)) (Shl x (Const 2))) x)))
+      ((union e (Mul x (Const 13)))))
+(rule ((= e (Add (Shl x (Const 3)) (Add (Shl x (Const 2)) x))))
+      ((union e (Mul x (Const 13)))))
+
+; (x << 4) - (x << 1) = x * 14
+(rule ((= e (Sub (Shl x (Const 4)) (Shl x (Const 1)))))
+      ((union e (Mul x (Const 14)))))
+
+; (x << 4) + x = x * 17
+(rule ((= e (Add (Shl x (Const 4)) x)))
+      ((union e (Mul x (Const 17)))))
+(rule ((= e (Add x (Shl x (Const 4)))))
+      ((union e (Mul x (Const 17)))))
+
+; (x << 4) + (x << 1) = x * 18
+(rule ((= e (Add (Shl x (Const 4)) (Shl x (Const 1)))))
+      ((union e (Mul x (Const 18)))))
+(rule ((= e (Add (Shl x (Const 1)) (Shl x (Const 4)))))
+      ((union e (Mul x (Const 18)))))
+
+; (x << 5) - x = x * 31
+(rule ((= e (Sub (Shl x (Const 5)) x)))
+      ((union e (Mul x (Const 31)))))
+
+; (x << 5) + x = x * 33
+(rule ((= e (Add (Shl x (Const 5)) x)))
+      ((union e (Mul x (Const 33)))))
+(rule ((= e (Add x (Shl x (Const 5)))))
+      ((union e (Mul x (Const 33)))))
+
 ; =============================================================================
 ; Signed Division Strength Reduction
 ; =============================================================================
