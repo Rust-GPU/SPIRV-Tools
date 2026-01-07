@@ -10,12 +10,14 @@
 (rule ((= e (FMix a a t)))
       ((union e a)))
 
-; FMix(a, b, 0) = a - ONE-DIRECTIONAL (when t=0, return first arg)
-(rule ((= e (FMix a b (Const 0))))
+; FMix(a, b, 0) = a - ONE-DIRECTIONAL (when t=0.0f, return first arg)
+; Note: f32 0.0 has bit pattern 0, which matches integer 0
+(rule ((= e (FMix a b (Const c))) (is-float-zero32 c))
       ((union e a)))
 
-; FMix(a, b, 1) = b - ONE-DIRECTIONAL (when t=1, return second arg)
-(rule ((= e (FMix a b (Const 1))))
+; FMix(a, b, 1) = b - ONE-DIRECTIONAL (when t=1.0f, return second arg)
+; Note: f32 1.0 has bit pattern 0x3f800000 = 1065353216, NOT integer 1
+(rule ((= e (FMix a b (Const c))) (is-float-one32 c))
       ((union e b)))
 
 ; RedundantFMix from C++ - matches GLSL FMix folding rules
@@ -140,8 +142,9 @@
 (rule ((= e (FMul (InverseSqrt x) x)))
       ((union e (Sqrt x))))
 
-; 1 / Sqrt(x) = InverseSqrt(x) - ONE-DIRECTIONAL (prefer InverseSqrt)
-(rule ((= e (FDiv (Const 1) (Sqrt x))))
+; 1.0 / Sqrt(x) = InverseSqrt(x) - ONE-DIRECTIONAL (prefer InverseSqrt)
+; Note: f32 1.0 has bit pattern 0x3f800000 = 1065353216
+(rule ((= e (FDiv (Const c) (Sqrt x))) (is-float-one32 c))
       ((union e (InverseSqrt x))))
 
 ; Sqrt(x) * Sqrt(x) = x - ONE-DIRECTIONAL
@@ -282,14 +285,16 @@
       ((union e (Fma a b c))))
 
 ; Fma with zero - ONE-DIRECTIONAL (simplify, don't expand)
-(rule ((= e (Fma a b (Const 0))))
+; Note: f32 0.0 has bit pattern 0, which matches integer 0
+(rule ((= e (Fma a b (Const c))) (is-float-zero32 c))
       ((union e (FMul a b))))
 
 ; Fma with one - ONE-DIRECTIONAL (simplify, don't expand)
-(rule ((= e (Fma (Const 1) b c)))
-      ((union e (FAdd b c))))
-(rule ((= e (Fma a (Const 1) c)))
-      ((union e (FAdd a c))))
+; Note: f32 1.0 has bit pattern 0x3f800000 = 1065353216
+(rule ((= e (Fma (Const c) b d)) (is-float-one32 c))
+      ((union e (FAdd b d))))
+(rule ((= e (Fma a (Const c) d)) (is-float-one32 c))
+      ((union e (FAdd a d))))
 
 ; =============================================================================
 ; Absolute Value and Sign
@@ -464,17 +469,19 @@
 ; =============================================================================
 
 ; Fma(0, b, c) = c - ONE-DIRECTIONAL
-(rule ((= e (Fma (Const 0) b c)))
+; Note: f32 0.0 has bit pattern 0, which matches integer 0
+(rule ((= e (Fma (Const c1) b c)) (is-float-zero32 c1))
       ((union e c)))
-(rule ((= e (Fma a (Const 0) c)))
+(rule ((= e (Fma a (Const c1) c)) (is-float-zero32 c1))
       ((union e c)))
 
-; Fma(a, b, 0) = a * b - already covered
+; Fma(a, b, 0) = a * b - already covered above
 
 ; Fma(-1, b, c) = c - b - ONE-DIRECTIONAL
-(rule ((= e (Fma (Const -1) b c)))
+; Note: f32 -1.0 has bit pattern 0xbf800000 = 3212836864
+(rule ((= e (Fma (Const c1) b c)) (is-float-neg-one32 c1))
       ((union e (FSub c b))))
-(rule ((= e (Fma a (Const -1) c)))
+(rule ((= e (Fma a (Const c1) c)) (is-float-neg-one32 c1))
       ((union e (FSub c a))))
 
 ; =============================================================================
@@ -581,7 +588,8 @@
 
 ; Recognize FMix pattern - ONE-DIRECTIONAL (prefer FMix over expanded form)
 ; a * (1-t) + b * t = FMix(a, b, t)
-(rule ((= e (FAdd (FMul a (FSub (Const 1) t)) (FMul b t))))
+; Note: f32 1.0 has bit pattern 0x3f800000 = 1065353216
+(rule ((= e (FAdd (FMul a (FSub (Const c) t)) (FMul b t))) (is-float-one32 c))
       ((union e (FMix a b t))))
 
 ; =============================================================================
@@ -640,8 +648,10 @@
       ((union e x)))
 
 ; Ldexp(x, 1) = x * 2 - ONE-DIRECTIONAL
+; Note: Ldexp exponent is INTEGER, so (Const 1) is correct
+; But output is float, so we use f32 2.0 bit pattern 0x40000000 = 1073741824
 (rule ((= e (Ldexp x (Const 1))))
-      ((union e (FMul x (Const 2)))))
+      ((union e (FMul x (Const 1073741824)))))
 
 ; Ldexp(x, -1) = x / 2 = x * 0.5
 
@@ -664,24 +674,26 @@
 ; When extracting from a FMix with constant 0 or 1 interpolant, extract from endpoint
 ; Note: VecExtract has a fixed index, so we enumerate concrete indices
 
-; VecExtract(FMix(x, y, 0), i) = VecExtract(x, i)
-(rule ((= e (VecExtract (FMix x y (Const 0)) 0)))
+; VecExtract(FMix(x, y, 0.0), i) = VecExtract(x, i)
+; Note: f32 0.0 has bit pattern 0, which matches integer 0
+(rule ((= e (VecExtract (FMix x y (Const c)) 0)) (is-float-zero32 c))
       ((union e (VecExtract x 0))))
-(rule ((= e (VecExtract (FMix x y (Const 0)) 1)))
+(rule ((= e (VecExtract (FMix x y (Const c)) 1)) (is-float-zero32 c))
       ((union e (VecExtract x 1))))
-(rule ((= e (VecExtract (FMix x y (Const 0)) 2)))
+(rule ((= e (VecExtract (FMix x y (Const c)) 2)) (is-float-zero32 c))
       ((union e (VecExtract x 2))))
-(rule ((= e (VecExtract (FMix x y (Const 0)) 3)))
+(rule ((= e (VecExtract (FMix x y (Const c)) 3)) (is-float-zero32 c))
       ((union e (VecExtract x 3))))
 
-; VecExtract(FMix(x, y, 1), i) = VecExtract(y, i)
-(rule ((= e (VecExtract (FMix x y (Const 1)) 0)))
+; VecExtract(FMix(x, y, 1.0), i) = VecExtract(y, i)
+; Note: f32 1.0 has bit pattern 0x3f800000 = 1065353216
+(rule ((= e (VecExtract (FMix x y (Const c)) 0)) (is-float-one32 c))
       ((union e (VecExtract y 0))))
-(rule ((= e (VecExtract (FMix x y (Const 1)) 1)))
+(rule ((= e (VecExtract (FMix x y (Const c)) 1)) (is-float-one32 c))
       ((union e (VecExtract y 1))))
-(rule ((= e (VecExtract (FMix x y (Const 1)) 2)))
+(rule ((= e (VecExtract (FMix x y (Const c)) 2)) (is-float-one32 c))
       ((union e (VecExtract y 2))))
-(rule ((= e (VecExtract (FMix x y (Const 1)) 3)))
+(rule ((= e (VecExtract (FMix x y (Const c)) 3)) (is-float-one32 c))
       ((union e (VecExtract y 3))))
 
 ; =============================================================================
