@@ -484,6 +484,254 @@
 )
 
 ; =============================================================================
+; Liveness Tracking for DCE (Dead Code Elimination)
+; =============================================================================
+; Live expressions are reachable from roots (side-effecting instructions).
+; DCE happens entirely in the e-graph during saturation.
+;
+; Root: Marks an Effect as a program root (entry point for liveness)
+; Live: Marks an Expr as live (reachable from a root)
+;
+; The Rust code marks effect terms as Root, then these rules propagate
+; liveness through the entire program during saturation.
+
+(relation Root (Effect))
+(relation Live (Expr))
+
+; Forward declarations for condition analysis (used by EffGamma root propagation below)
+; Full rules defined later in the "Condition Analysis for Partial DCE" section
+(relation CanBeTrue (Expr))
+(relation CanBeFalse (Expr))
+
+; =============================================================================
+; Root Effects propagate liveness to their operands
+; =============================================================================
+
+; ReturnValue: the returned expression is live
+(rule ((Root e) (= e (ReturnValue x))) ((Live x)))
+
+; EffGamma: condition is always live, branches depend on condition value
+(rule ((Root e) (= e (EffGamma c t f))) ((Live c)))
+(rule ((Root e) (= e (EffGamma c t f)) (CanBeTrue c)) ((Root t)))
+(rule ((Root e) (= e (EffGamma c t f)) (CanBeFalse c)) ((Root f)))
+
+; Seq: both effects in a sequence are roots if the sequence is
+(rule ((Root e) (= e (Seq a b))) ((Root a) (Root b)))
+
+; Pure and Return have no expressions to mark live
+; Unreachable is dead by definition
+
+; Propagate liveness through arithmetic operations
+(rule ((Live e) (= e (Add a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (Sub a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (Mul a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (Neg a))) ((Live a)))
+(rule ((Live e) (= e (SDiv a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (UDiv a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (SRem a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (SMod a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (UMod a b))) ((Live a) (Live b)))
+
+; Propagate liveness through bitwise operations
+(rule ((Live e) (= e (Shl a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (ShrS a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (ShrU a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (BitAnd a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (BitOr a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (BitXor a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (BitNot a))) ((Live a)))
+(rule ((Live e) (= e (BitReverse a))) ((Live a)))
+(rule ((Live e) (= e (RotL a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (RotR a b))) ((Live a) (Live b)))
+
+; Propagate liveness through comparison operations
+(rule ((Live e) (= e (Eq a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (Ne a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (SLt a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (SLe a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (SGt a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (SGe a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (ULt a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (ULe a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (UGt a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (UGe a b))) ((Live a) (Live b)))
+
+; Propagate liveness through min/max operations
+(rule ((Live e) (= e (SMin a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (SMax a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (UMin a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (UMax a b))) ((Live a) (Live b)))
+
+; Propagate liveness through logical operations
+(rule ((Live e) (= e (LogNot a))) ((Live a)))
+(rule ((Live e) (= e (LogAnd a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (LogOr a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (LogEq a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (LogNe a b))) ((Live a) (Live b)))
+
+; =============================================================================
+; Condition Analysis for Partial DCE
+; =============================================================================
+; CanBeTrue/CanBeFalse track whether a condition can have a particular value.
+; This enables partial dead code elimination - if we know a branch is never
+; taken, we don't need to mark its contents as live.
+; (Relation declarations are at top with Root/Live)
+
+; Constants have known truth values
+(rule ((= e (Const 0))) ((CanBeFalse e)))
+(rule ((= e (Const c)) (!= c 0)) ((CanBeTrue e)))
+
+; By default, any non-constant expression can be either true or false
+; (conservative: assume both branches are possible)
+; We use Sym as a proxy for "unknown runtime value"
+(rule ((= e (Sym s))) ((CanBeTrue e) (CanBeFalse e)))
+
+; Propagate through logical operations
+(rule ((= e (LogNot x)) (CanBeTrue x)) ((CanBeFalse e)))
+(rule ((= e (LogNot x)) (CanBeFalse x)) ((CanBeTrue e)))
+
+; LogAnd can be true only if both can be true
+(rule ((= e (LogAnd a b)) (CanBeTrue a) (CanBeTrue b)) ((CanBeTrue e)))
+; LogAnd can be false if either can be false
+(rule ((= e (LogAnd a b)) (CanBeFalse a)) ((CanBeFalse e)))
+(rule ((= e (LogAnd a b)) (CanBeFalse b)) ((CanBeFalse e)))
+
+; LogOr can be false only if both can be false
+(rule ((= e (LogOr a b)) (CanBeFalse a) (CanBeFalse b)) ((CanBeFalse e)))
+; LogOr can be true if either can be true
+(rule ((= e (LogOr a b)) (CanBeTrue a)) ((CanBeTrue e)))
+(rule ((= e (LogOr a b)) (CanBeTrue b)) ((CanBeTrue e)))
+
+; Comparisons can generally be either (conservative)
+; More precise rules would require value range analysis
+(rule ((= e (Eq a b))) ((CanBeTrue e) (CanBeFalse e)))
+(rule ((= e (Ne a b))) ((CanBeTrue e) (CanBeFalse e)))
+(rule ((= e (SLt a b))) ((CanBeTrue e) (CanBeFalse e)))
+(rule ((= e (SLe a b))) ((CanBeTrue e) (CanBeFalse e)))
+(rule ((= e (SGt a b))) ((CanBeTrue e) (CanBeFalse e)))
+(rule ((= e (SGe a b))) ((CanBeTrue e) (CanBeFalse e)))
+(rule ((= e (ULt a b))) ((CanBeTrue e) (CanBeFalse e)))
+(rule ((= e (ULe a b))) ((CanBeTrue e) (CanBeFalse e)))
+(rule ((= e (UGt a b))) ((CanBeTrue e) (CanBeFalse e)))
+(rule ((= e (UGe a b))) ((CanBeTrue e) (CanBeFalse e)))
+
+; Gamma/Select results inherit condition properties
+(rule ((= e (Gamma c t f)) (CanBeTrue c)) ((CanBeTrue e) (CanBeFalse e)))
+(rule ((= e (Gamma c t f)) (CanBeFalse c)) ((CanBeTrue e) (CanBeFalse e)))
+
+; =============================================================================
+; RVSDG-Aware Liveness for Partial DCE
+; =============================================================================
+; Propagate liveness through control flow with branch awareness.
+; Only mark a branch as live if the condition can take that path.
+
+; Condition is always live if the Gamma is live
+(rule ((Live e) (= e (Gamma c t f))) ((Live c)))
+(rule ((Live e) (= e (Select c t f))) ((Live c)))
+(rule ((Live e) (= e (If c t f))) ((Live c)))
+
+; Then branch is only live if condition can be true
+(rule ((Live e) (= e (Gamma c t f)) (CanBeTrue c)) ((Live t)))
+(rule ((Live e) (= e (Select c t f)) (CanBeTrue c)) ((Live t)))
+(rule ((Live e) (= e (If c t f)) (CanBeTrue c)) ((Live t)))
+
+; Else branch is only live if condition can be false
+(rule ((Live e) (= e (Gamma c t f)) (CanBeFalse c)) ((Live f)))
+(rule ((Live e) (= e (Select c t f)) (CanBeFalse c)) ((Live f)))
+(rule ((Live e) (= e (If c t f)) (CanBeFalse c)) ((Live f)))
+
+; Propagate liveness through Theta (loops)
+; Loop body is only live if the loop can execute (condition can be true)
+(rule ((Live e) (= e (Theta c body init))) ((Live init)))
+(rule ((Live e) (= e (Theta c body init)) (CanBeTrue c)) ((Live c) (Live body)))
+(rule ((Live e) (= e (LoopInvariant x))) ((Live x)))
+
+; Propagate liveness through floating-point operations
+(rule ((Live e) (= e (FAdd a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (FSub a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (FMul a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (FDiv a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (FNeg a))) ((Live a)))
+(rule ((Live e) (= e (FRem a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (FMin a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (FMax a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (FAbs a))) ((Live a)))
+(rule ((Live e) (= e (FFloor a))) ((Live a)))
+(rule ((Live e) (= e (FCeil a))) ((Live a)))
+(rule ((Live e) (= e (FTrunc a))) ((Live a)))
+(rule ((Live e) (= e (FRound a))) ((Live a)))
+
+; Propagate liveness through floating-point comparisons
+(rule ((Live e) (= e (FOrdEq a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (FOrdNe a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (FOrdLt a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (FOrdLe a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (FOrdGt a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (FOrdGe a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (FUnordEq a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (FUnordNe a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (FUnordLt a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (FUnordLe a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (FUnordGt a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (FUnordGe a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (IsNan a))) ((Live a)))
+(rule ((Live e) (= e (IsInf a))) ((Live a)))
+
+; Propagate liveness through vector operations
+(rule ((Live e) (= e (VecExtract v _))) ((Live v)))
+(rule ((Live e) (= e (Vec2 a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (Vec3 a b c))) ((Live a) (Live b) (Live c)))
+(rule ((Live e) (= e (Vec4 a b c d))) ((Live a) (Live b) (Live c) (Live d)))
+(rule ((Live e) (= e (VecInsert v s _))) ((Live v) (Live s)))
+(rule ((Live e) (= e (VecShuffle2 a b _ _))) ((Live a) (Live b)))
+(rule ((Live e) (= e (VecShuffle3 a b _ _ _))) ((Live a) (Live b)))
+(rule ((Live e) (= e (VecShuffle4 a b _ _ _ _))) ((Live a) (Live b)))
+(rule ((Live e) (= e (VecBroadcast2 a))) ((Live a)))
+(rule ((Live e) (= e (VecBroadcast3 a))) ((Live a)))
+(rule ((Live e) (= e (VecBroadcast4 a))) ((Live a)))
+(rule ((Live e) (= e (VecAdd a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (VecSub a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (VecMul a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (VecDiv a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (VecNeg a))) ((Live a)))
+(rule ((Live e) (= e (VecFAdd a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (VecFSub a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (VecFMul a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (VecFDiv a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (VecFNeg a))) ((Live a)))
+(rule ((Live e) (= e (Dot a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (VecTimesScalar v s))) ((Live v) (Live s)))
+
+; Propagate liveness through matrix operations
+(rule ((Live e) (= e (MatTimesScalar m s))) ((Live m) (Live s)))
+(rule ((Live e) (= e (MatTimesVec m v))) ((Live m) (Live v)))
+(rule ((Live e) (= e (VecTimesMat v m))) ((Live v) (Live m)))
+(rule ((Live e) (= e (MatTimesMat a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (Transpose m))) ((Live m)))
+(rule ((Live e) (= e (OuterProduct a b))) ((Live a) (Live b)))
+
+; Propagate liveness through type conversions
+(rule ((Live e) (= e (ConvertFToS a))) ((Live a)))
+(rule ((Live e) (= e (ConvertFToU a))) ((Live a)))
+(rule ((Live e) (= e (ConvertSToF a))) ((Live a)))
+(rule ((Live e) (= e (ConvertUToF a))) ((Live a)))
+(rule ((Live e) (= e (SConvert a))) ((Live a)))
+(rule ((Live e) (= e (UConvert a))) ((Live a)))
+(rule ((Live e) (= e (FConvert a))) ((Live a)))
+(rule ((Live e) (= e (Bitcast a))) ((Live a)))
+(rule ((Live e) (= e (QuantizeToF16 a))) ((Live a)))
+
+; Propagate liveness through composite operations
+(rule ((Live e) (= e (CompositeExtract a _))) ((Live a)))
+(rule ((Live e) (= e (CompositeInsert a b _))) ((Live a) (Live b)))
+
+; Propagate liveness through CopyObject
+(rule ((Live e) (= e (CopyObject x))) ((Live x)))
+
+; Propagate liveness through Sym (external references are always live if referenced)
+; Note: Sym nodes don't have subexpressions, so no propagation needed
+
+; =============================================================================
 ; Copy Propagation (OpCopyObject elimination)
 ; =============================================================================
 ; CopyObject is always equivalent to its operand
@@ -516,3 +764,98 @@
       ((union result (Vec3 v0 v1 v2))))
 (rule ((= result (VecInsert (VecInsert (VecInsert (VecInsert _ v0 0) v1 1) v2 2) v3 3)))
       ((union result (Vec4 v0 v1 v2 v3))))
+
+; =============================================================================
+; Liveness Propagation for GLSL Extended Instructions
+; =============================================================================
+; These complete the DCE support for all GLSL.std.450 operations
+
+; Math functions
+(rule ((Live e) (= e (Sqrt a))) ((Live a)))
+(rule ((Live e) (= e (InverseSqrt a))) ((Live a)))
+(rule ((Live e) (= e (Exp a))) ((Live a)))
+(rule ((Live e) (= e (Exp2 a))) ((Live a)))
+(rule ((Live e) (= e (Log a))) ((Live a)))
+(rule ((Live e) (= e (Log2 a))) ((Live a)))
+(rule ((Live e) (= e (Pow a b))) ((Live a) (Live b)))
+
+; Trigonometric functions
+(rule ((Live e) (= e (Sin a))) ((Live a)))
+(rule ((Live e) (= e (Cos a))) ((Live a)))
+(rule ((Live e) (= e (Tan a))) ((Live a)))
+(rule ((Live e) (= e (Asin a))) ((Live a)))
+(rule ((Live e) (= e (Acos a))) ((Live a)))
+(rule ((Live e) (= e (Atan a))) ((Live a)))
+(rule ((Live e) (= e (Atan2 a b))) ((Live a) (Live b)))
+
+; Hyperbolic functions
+(rule ((Live e) (= e (Sinh a))) ((Live a)))
+(rule ((Live e) (= e (Cosh a))) ((Live a)))
+(rule ((Live e) (= e (Tanh a))) ((Live a)))
+(rule ((Live e) (= e (Asinh a))) ((Live a)))
+(rule ((Live e) (= e (Acosh a))) ((Live a)))
+(rule ((Live e) (= e (Atanh a))) ((Live a)))
+
+; Interpolation and clamping
+(rule ((Live e) (= e (FMix a b t))) ((Live a) (Live b) (Live t)))
+(rule ((Live e) (= e (SmoothStep e0 e1 x))) ((Live e0) (Live e1) (Live x)))
+(rule ((Live e) (= e (FClamp x lo hi))) ((Live x) (Live lo) (Live hi)))
+(rule ((Live e) (= e (SClamp x lo hi))) ((Live x) (Live lo) (Live hi)))
+(rule ((Live e) (= e (UClamp x lo hi))) ((Live x) (Live lo) (Live hi)))
+(rule ((Live e) (= e (NClamp x lo hi))) ((Live x) (Live lo) (Live hi)))
+
+; Geometry functions
+(rule ((Live e) (= e (Cross a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (Normalize a))) ((Live a)))
+(rule ((Live e) (= e (Length a))) ((Live a)))
+(rule ((Live e) (= e (Distance a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (Reflect i n))) ((Live i) (Live n)))
+(rule ((Live e) (= e (Refract i n eta))) ((Live i) (Live n) (Live eta)))
+(rule ((Live e) (= e (FaceForward n i nref))) ((Live n) (Live i) (Live nref)))
+
+; Additional math
+(rule ((Live e) (= e (Fma a b c))) ((Live a) (Live b) (Live c)))
+(rule ((Live e) (= e (Fract a))) ((Live a)))
+(rule ((Live e) (= e (Modf a))) ((Live a)))
+(rule ((Live e) (= e (ModfStruct a))) ((Live a)))
+(rule ((Live e) (= e (Ldexp a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (Frexp a))) ((Live a)))
+(rule ((Live e) (= e (FrexpStruct a))) ((Live a)))
+(rule ((Live e) (= e (Step e x))) ((Live e) (Live x)))
+
+; Sign and absolute value
+(rule ((Live e) (= e (Sign a))) ((Live a)))
+(rule ((Live e) (= e (FSign a))) ((Live a)))
+(rule ((Live e) (= e (SAbs a))) ((Live a)))
+
+; Bit manipulation
+(rule ((Live e) (= e (FindILsb a))) ((Live a)))
+(rule ((Live e) (= e (FindSMsb a))) ((Live a)))
+(rule ((Live e) (= e (FindUMsb a))) ((Live a)))
+(rule ((Live e) (= e (BitCount a))) ((Live a)))
+
+; NaN-ignoring min/max
+(rule ((Live e) (= e (NMin a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (NMax a b))) ((Live a) (Live b)))
+
+; Pack/Unpack operations
+(rule ((Live e) (= e (PackHalf2x16 a))) ((Live a)))
+(rule ((Live e) (= e (UnpackHalf2x16 a))) ((Live a)))
+(rule ((Live e) (= e (PackSnorm4x8 a))) ((Live a)))
+(rule ((Live e) (= e (UnpackSnorm4x8 a))) ((Live a)))
+(rule ((Live e) (= e (PackSnorm2x16 a))) ((Live a)))
+(rule ((Live e) (= e (UnpackSnorm2x16 a))) ((Live a)))
+(rule ((Live e) (= e (PackUnorm4x8 a))) ((Live a)))
+(rule ((Live e) (= e (UnpackUnorm4x8 a))) ((Live a)))
+(rule ((Live e) (= e (PackUnorm2x16 a))) ((Live a)))
+(rule ((Live e) (= e (UnpackUnorm2x16 a))) ((Live a)))
+(rule ((Live e) (= e (PackDouble2x32 a))) ((Live a)))
+(rule ((Live e) (= e (UnpackDouble2x32 a))) ((Live a)))
+
+; Radians/Degrees conversion
+(rule ((Live e) (= e (Radians a))) ((Live a)))
+(rule ((Live e) (= e (Degrees a))) ((Live a)))
+
+; Determinant and inverse
+(rule ((Live e) (= e (Determinant m))) ((Live m)))
+(rule ((Live e) (= e (MatInverse m))) ((Live m)))
