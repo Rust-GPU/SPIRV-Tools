@@ -84,10 +84,20 @@
 (rule ((= e (Mul (Const c) x)) (!= c 0) (!= c 1))
       ((union e (Mul x (Const c)))))
 
-; Associativity for Add - ONE-DIRECTIONAL to prevent explosion
-; Normalize to right-associative form to enable constant gathering
-(rule ((= e (Add (Add a b) c)))
+; Associativity for Add - RESTRICTED to prevent explosion
+; General associativity (Add (Add a b) c) -> (Add a (Add b c)) causes e-graph explosion
+; when combined with identity rules:
+;   1. Add(x, 0) = x via identity
+;   2. Any Add(x, Y) now matches Add(Add(x, 0), Y)
+;   3. Associativity fires endlessly
+;
+; Safe variant: Only apply when 'b' is an Add operation (not a Const that could be 0).
+; This enables (a + (b + c)) + d -> a + ((b + c) + d) for chains of additions.
+(rule ((= e (Add (Add a b) c)) (= b (Add _ _)))
       ((union e (Add a (Add b c)))))
+;
+; The constant reassociation rules below handle the most important optimization case
+; (gathering constants together for folding).
 
 ; Constant reassociation
 (rule ((= e (Add (Add x (Const a)) (Const b))))

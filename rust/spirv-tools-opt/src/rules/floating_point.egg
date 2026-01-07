@@ -189,12 +189,15 @@
 ; These bidirectional rules cause cycles: (FAdd a b) ↔ (FAdd b a) ↔ ...
 ; Commutativity is handled implicitly by the e-graph when both forms are present
 
-; FAdd associativity - ONE-DIRECTIONAL (right-associative canonical form)
-(rule ((= e (FAdd (FAdd a b) c)))
+; FAdd/FMul associativity - RESTRICTED to prevent explosion
+; General associativity (FAdd (FAdd a b) c) -> (FAdd a (FAdd b c)) causes e-graph explosion:
+;   1. FAdd(x, 0) = x via identity
+;   2. Any FAdd(x, Y) matches FAdd(FAdd(x, 0), Y) and cascades endlessly
+;
+; Safe variant: Only apply when 'b' is an FAdd/FMul (not a Const that could be 0 or 1).
+(rule ((= e (FAdd (FAdd a b) c)) (= b (FAdd _ _)))
       ((union e (FAdd a (FAdd b c)))))
-
-; FMul associativity - ONE-DIRECTIONAL (right-associative canonical form)
-(rule ((= e (FMul (FMul a b) c)))
+(rule ((= e (FMul (FMul a b) c)) (= b (FMul _ _)))
       ((union e (FMul a (FMul b c)))))
 
 ; Factoring: a*c + b*c = (a+b)*c

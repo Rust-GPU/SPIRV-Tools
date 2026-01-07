@@ -36,19 +36,19 @@
 (rule ((= e (VecExtract (VecInsert v x 3) 3)))
       ((union e x)))
 
-; Insert then extract different index returns original
-(rewrite (VecExtract (VecInsert v x 0) 1) (VecExtract v 1))
-(rewrite (VecExtract (VecInsert v x 0) 2) (VecExtract v 2))
-(rewrite (VecExtract (VecInsert v x 0) 3) (VecExtract v 3))
-(rewrite (VecExtract (VecInsert v x 1) 0) (VecExtract v 0))
-(rewrite (VecExtract (VecInsert v x 1) 2) (VecExtract v 2))
-(rewrite (VecExtract (VecInsert v x 1) 3) (VecExtract v 3))
-(rewrite (VecExtract (VecInsert v x 2) 0) (VecExtract v 0))
-(rewrite (VecExtract (VecInsert v x 2) 1) (VecExtract v 1))
-(rewrite (VecExtract (VecInsert v x 2) 3) (VecExtract v 3))
-(rewrite (VecExtract (VecInsert v x 3) 0) (VecExtract v 0))
-(rewrite (VecExtract (VecInsert v x 3) 1) (VecExtract v 1))
-(rewrite (VecExtract (VecInsert v x 3) 2) (VecExtract v 2))
+; Insert then extract different index returns original - ONE-DIRECTIONAL
+(rule ((= e (VecExtract (VecInsert v x 0) 1))) ((union e (VecExtract v 1))))
+(rule ((= e (VecExtract (VecInsert v x 0) 2))) ((union e (VecExtract v 2))))
+(rule ((= e (VecExtract (VecInsert v x 0) 3))) ((union e (VecExtract v 3))))
+(rule ((= e (VecExtract (VecInsert v x 1) 0))) ((union e (VecExtract v 0))))
+(rule ((= e (VecExtract (VecInsert v x 1) 2))) ((union e (VecExtract v 2))))
+(rule ((= e (VecExtract (VecInsert v x 1) 3))) ((union e (VecExtract v 3))))
+(rule ((= e (VecExtract (VecInsert v x 2) 0))) ((union e (VecExtract v 0))))
+(rule ((= e (VecExtract (VecInsert v x 2) 1))) ((union e (VecExtract v 1))))
+(rule ((= e (VecExtract (VecInsert v x 2) 3))) ((union e (VecExtract v 3))))
+(rule ((= e (VecExtract (VecInsert v x 3) 0))) ((union e (VecExtract v 0))))
+(rule ((= e (VecExtract (VecInsert v x 3) 1))) ((union e (VecExtract v 1))))
+(rule ((= e (VecExtract (VecInsert v x 3) 2))) ((union e (VecExtract v 2))))
 
 ; NOTE: CompositeExtract from CompositeConstruct rules are defined in datatypes.egg
 ; along with the ExprList datatype that they depend on.
@@ -78,7 +78,10 @@
       ((union e v)))
 
 ; VecTimesScalar with 0 and 1 - ONE-DIRECTIONAL for identity
-(rewrite (VecTimesScalar v (Const 0)) (Vec2 (Const 0) (Const 0)))
+; Note: VecTimesScalar v 0 → Vec2(0,0) assumes Vec2, but dimension info is lost
+; For now we keep this as a simplification
+(rule ((= e (VecTimesScalar v (Const 0))))
+      ((union e (Vec2 (Const 0) (Const 0)))))
 (rule ((= e (VecTimesScalar v (Const 1))))
       ((union e v)))
 
@@ -91,27 +94,27 @@
 ; Self-dot is length squared
 
 ; Extract from Dot when one vector is unit vector (has a 1 in one component, 0 elsewhere)
-; Dot(Vec2(1,0), v) = VecExtract(v, 0)
-(rewrite (Dot (Vec2 (Const 1) (Const 0)) v) (VecExtract v 0))
-(rewrite (Dot (Vec2 (Const 0) (Const 1)) v) (VecExtract v 1))
-(rewrite (Dot v (Vec2 (Const 1) (Const 0))) (VecExtract v 0))
-(rewrite (Dot v (Vec2 (Const 0) (Const 1))) (VecExtract v 1))
+; Dot(Vec2(1,0), v) = VecExtract(v, 0) - ONE-DIRECTIONAL
+(rule ((= e (Dot (Vec2 (Const 1) (Const 0)) v))) ((union e (VecExtract v 0))))
+(rule ((= e (Dot (Vec2 (Const 0) (Const 1)) v))) ((union e (VecExtract v 1))))
+(rule ((= e (Dot v (Vec2 (Const 1) (Const 0))))) ((union e (VecExtract v 0))))
+(rule ((= e (Dot v (Vec2 (Const 0) (Const 1))))) ((union e (VecExtract v 1))))
 
-(rewrite (Dot (Vec3 (Const 1) (Const 0) (Const 0)) v) (VecExtract v 0))
-(rewrite (Dot (Vec3 (Const 0) (Const 1) (Const 0)) v) (VecExtract v 1))
-(rewrite (Dot (Vec3 (Const 0) (Const 0) (Const 1)) v) (VecExtract v 2))
-(rewrite (Dot v (Vec3 (Const 1) (Const 0) (Const 0))) (VecExtract v 0))
-(rewrite (Dot v (Vec3 (Const 0) (Const 1) (Const 0))) (VecExtract v 1))
-(rewrite (Dot v (Vec3 (Const 0) (Const 0) (Const 1))) (VecExtract v 2))
+(rule ((= e (Dot (Vec3 (Const 1) (Const 0) (Const 0)) v))) ((union e (VecExtract v 0))))
+(rule ((= e (Dot (Vec3 (Const 0) (Const 1) (Const 0)) v))) ((union e (VecExtract v 1))))
+(rule ((= e (Dot (Vec3 (Const 0) (Const 0) (Const 1)) v))) ((union e (VecExtract v 2))))
+(rule ((= e (Dot v (Vec3 (Const 1) (Const 0) (Const 0))))) ((union e (VecExtract v 0))))
+(rule ((= e (Dot v (Vec3 (Const 0) (Const 1) (Const 0))))) ((union e (VecExtract v 1))))
+(rule ((= e (Dot v (Vec3 (Const 0) (Const 0) (Const 1))))) ((union e (VecExtract v 2))))
 
-(rewrite (Dot (Vec4 (Const 1) (Const 0) (Const 0) (Const 0)) v) (VecExtract v 0))
-(rewrite (Dot (Vec4 (Const 0) (Const 1) (Const 0) (Const 0)) v) (VecExtract v 1))
-(rewrite (Dot (Vec4 (Const 0) (Const 0) (Const 1) (Const 0)) v) (VecExtract v 2))
-(rewrite (Dot (Vec4 (Const 0) (Const 0) (Const 0) (Const 1)) v) (VecExtract v 3))
-(rewrite (Dot v (Vec4 (Const 1) (Const 0) (Const 0) (Const 0))) (VecExtract v 0))
-(rewrite (Dot v (Vec4 (Const 0) (Const 1) (Const 0) (Const 0))) (VecExtract v 1))
-(rewrite (Dot v (Vec4 (Const 0) (Const 0) (Const 1) (Const 0))) (VecExtract v 2))
-(rewrite (Dot v (Vec4 (Const 0) (Const 0) (Const 0) (Const 1))) (VecExtract v 3))
+(rule ((= e (Dot (Vec4 (Const 1) (Const 0) (Const 0) (Const 0)) v))) ((union e (VecExtract v 0))))
+(rule ((= e (Dot (Vec4 (Const 0) (Const 1) (Const 0) (Const 0)) v))) ((union e (VecExtract v 1))))
+(rule ((= e (Dot (Vec4 (Const 0) (Const 0) (Const 1) (Const 0)) v))) ((union e (VecExtract v 2))))
+(rule ((= e (Dot (Vec4 (Const 0) (Const 0) (Const 0) (Const 1)) v))) ((union e (VecExtract v 3))))
+(rule ((= e (Dot v (Vec4 (Const 1) (Const 0) (Const 0) (Const 0))))) ((union e (VecExtract v 0))))
+(rule ((= e (Dot v (Vec4 (Const 0) (Const 1) (Const 0) (Const 0))))) ((union e (VecExtract v 1))))
+(rule ((= e (Dot v (Vec4 (Const 0) (Const 0) (Const 1) (Const 0))))) ((union e (VecExtract v 2))))
+(rule ((= e (Dot v (Vec4 (Const 0) (Const 0) (Const 0) (Const 1))))) ((union e (VecExtract v 3))))
 
 ; Dot is commutative - REMOVED to prevent e-graph explosion
 ; These bidirectional rules cause cycles: (Dot a b) ↔ (Dot b a) ↔ ...
@@ -131,10 +134,13 @@
 (rule ((= e (VecSub v (Vec4 (Const 0) (Const 0) (Const 0) (Const 0)))))
       ((union e v)))
 
-; 0 - v = -v
-(rewrite (VecSub (Vec2 (Const 0) (Const 0)) v) (VecNeg v))
-(rewrite (VecSub (Vec3 (Const 0) (Const 0) (Const 0)) v) (VecNeg v))
-(rewrite (VecSub (Vec4 (Const 0) (Const 0) (Const 0) (Const 0)) v) (VecNeg v))
+; 0 - v = -v - ONE-DIRECTIONAL
+(rule ((= e (VecSub (Vec2 (Const 0) (Const 0)) v)))
+      ((union e (VecNeg v))))
+(rule ((= e (VecSub (Vec3 (Const 0) (Const 0) (Const 0)) v)))
+      ((union e (VecNeg v))))
+(rule ((= e (VecSub (Vec4 (Const 0) (Const 0) (Const 0) (Const 0)) v)))
+      ((union e (VecNeg v))))
 
 ; Floating-point vector variants - ONE-DIRECTIONAL
 (rule ((= e (VecFAdd v (Vec2 (Const 0) (Const 0)))))
@@ -162,11 +168,13 @@
 ; Vector Operations Distributivity
 ; =============================================================================
 
-; VecTimesScalar distributes over VecAdd
-(rewrite (VecTimesScalar (VecAdd a b) s) (VecAdd (VecTimesScalar a s) (VecTimesScalar b s)))
+; VecTimesScalar distributes over VecAdd - ONE-DIRECTIONAL (distribute, don't factor)
+(rule ((= e (VecTimesScalar (VecAdd a b) s)))
+      ((union e (VecAdd (VecTimesScalar a s) (VecTimesScalar b s)))))
 
-; VecTimesScalar with scalar multiplication
-(rewrite (VecTimesScalar (VecTimesScalar v s1) s2) (VecTimesScalar v (Mul s1 s2)))
+; VecTimesScalar with scalar multiplication - ONE-DIRECTIONAL (combine scalars)
+(rule ((= e (VecTimesScalar (VecTimesScalar v s1) s2)))
+      ((union e (VecTimesScalar v (Mul s1 s2)))))
 
 ; =============================================================================
 ; Cross Product Properties
@@ -176,30 +184,42 @@
 ; Note: commented because zero vector construction is complex
 ; (rewrite (Cross a a) (Vec3 (Const 0) (Const 0) (Const 0)))
 
-; Cross product negation
-(rewrite (Cross (VecNeg a) b) (VecNeg (Cross a b)))
-(rewrite (Cross a (VecNeg b)) (VecNeg (Cross a b)))
-(rewrite (Cross (VecNeg a) (VecNeg b)) (Cross a b))
+; Cross product negation - ONE-DIRECTIONAL (push VecNeg out of Cross)
+(rule ((= e (Cross (VecNeg a) b)))
+      ((union e (VecNeg (Cross a b)))))
+(rule ((= e (Cross a (VecNeg b))))
+      ((union e (VecNeg (Cross a b)))))
+(rule ((= e (Cross (VecNeg a) (VecNeg b))))
+      ((union e (Cross a b))))
 
-; Cross product distributes over scalar multiplication
-(rewrite (Cross (VecTimesScalar a s) b) (VecTimesScalar (Cross a b) s))
-(rewrite (Cross a (VecTimesScalar b s)) (VecTimesScalar (Cross a b) s))
+; Cross product distributes over scalar multiplication - ONE-DIRECTIONAL
+(rule ((= e (Cross (VecTimesScalar a s) b)))
+      ((union e (VecTimesScalar (Cross a b) s))))
+(rule ((= e (Cross a (VecTimesScalar b s))))
+      ((union e (VecTimesScalar (Cross a b) s))))
 
 ; =============================================================================
 ; Dot Product Additional Properties
 ; =============================================================================
 
-; Dot product distributes over VecAdd
-(rewrite (Dot (VecAdd a b) c) (Add (Dot a c) (Dot b c)))
-(rewrite (Dot a (VecAdd b c)) (Add (Dot a b) (Dot a c)))
+; Dot product distributes over VecAdd - ONE-DIRECTIONAL (expand Dot)
+; This creates scalar Add from vector Dot, which is the ONLY direction we want
+(rule ((= e (Dot (VecAdd a b) c)))
+      ((union e (Add (Dot a c) (Dot b c)))))
+(rule ((= e (Dot a (VecAdd b c))))
+      ((union e (Add (Dot a b) (Dot a c)))))
 
-; Dot product distributes over scalar multiplication
-(rewrite (Dot (VecTimesScalar a s) b) (Mul s (Dot a b)))
-(rewrite (Dot a (VecTimesScalar b s)) (Mul (Dot a b) s))
+; Dot product distributes over scalar multiplication - ONE-DIRECTIONAL
+(rule ((= e (Dot (VecTimesScalar a s) b)))
+      ((union e (Mul s (Dot a b)))))
+(rule ((= e (Dot a (VecTimesScalar b s))))
+      ((union e (Mul (Dot a b) s))))
 
-; Dot with negated vector
-(rewrite (Dot (VecNeg a) b) (Neg (Dot a b)))
-(rewrite (Dot a (VecNeg b)) (Neg (Dot a b)))
+; Dot with negated vector - ONE-DIRECTIONAL
+(rule ((= e (Dot (VecNeg a) b)))
+      ((union e (Neg (Dot a b)))))
+(rule ((= e (Dot a (VecNeg b))))
+      ((union e (Neg (Dot a b)))))
 
 ; =============================================================================
 ; Reconstruct Vector from Extracts
@@ -243,12 +263,12 @@
 ; VecFMul with 0 = 0 vector
 ; VecFMul with 1 = identity (already covered)
 
-; VecFAdd associativity - ONE-DIRECTIONAL (right-associative canonical form)
-(rule ((= e (VecFAdd (VecFAdd a b) c)))
+; VecFAdd/VecFMul associativity - RESTRICTED to prevent explosion
+; Same issue as scalar: identity rules (x + 0 = x) combined with general associativity
+; cause exponential growth. Safe variant only fires when 'b' is same operation type.
+(rule ((= e (VecFAdd (VecFAdd a b) c)) (= b (VecFAdd _ _)))
       ((union e (VecFAdd a (VecFAdd b c)))))
-
-; VecFMul associativity - ONE-DIRECTIONAL (right-associative canonical form)
-(rule ((= e (VecFMul (VecFMul a b) c)))
+(rule ((= e (VecFMul (VecFMul a b) c)) (= b (VecFMul _ _)))
       ((union e (VecFMul a (VecFMul b c)))))
 
 ; VecFAdd/VecFMul commutativity - REMOVED to prevent e-graph explosion
@@ -264,8 +284,9 @@
 
 ; v * 0 produces zero vector (already have for integer version)
 
-; v * (-1) = -v
-(rewrite (VecTimesScalar v (Const -1)) (VecNeg v))
+; v * (-1) = -v - ONE-DIRECTIONAL
+(rule ((= e (VecTimesScalar v (Const -1))))
+      ((union e (VecNeg v))))
 
 ; =============================================================================
 ; Cross Product Additional Rules
@@ -319,111 +340,113 @@
 ; When extracting from a shuffle, go directly to the source vector
 ; -----------------------------------------------------------------------------
 
-; Vec4 shuffle -> extract at position 0
-(rewrite (VecExtract (VecShuffle4 v _ 0 _ _ _) 0) (VecExtract v 0))
-(rewrite (VecExtract (VecShuffle4 v _ 1 _ _ _) 0) (VecExtract v 1))
-(rewrite (VecExtract (VecShuffle4 v _ 2 _ _ _) 0) (VecExtract v 2))
-(rewrite (VecExtract (VecShuffle4 v _ 3 _ _ _) 0) (VecExtract v 3))
+; Vec4 shuffle -> extract at position 0 - ONE-DIRECTIONAL
+(rule ((= e (VecExtract (VecShuffle4 v _ 0 _ _ _) 0))) ((union e (VecExtract v 0))))
+(rule ((= e (VecExtract (VecShuffle4 v _ 1 _ _ _) 0))) ((union e (VecExtract v 1))))
+(rule ((= e (VecExtract (VecShuffle4 v _ 2 _ _ _) 0))) ((union e (VecExtract v 2))))
+(rule ((= e (VecExtract (VecShuffle4 v _ 3 _ _ _) 0))) ((union e (VecExtract v 3))))
 
-; Vec4 shuffle -> extract at position 1
-(rewrite (VecExtract (VecShuffle4 v _ _ 0 _ _) 1) (VecExtract v 0))
-(rewrite (VecExtract (VecShuffle4 v _ _ 1 _ _) 1) (VecExtract v 1))
-(rewrite (VecExtract (VecShuffle4 v _ _ 2 _ _) 1) (VecExtract v 2))
-(rewrite (VecExtract (VecShuffle4 v _ _ 3 _ _) 1) (VecExtract v 3))
+; Vec4 shuffle -> extract at position 1 - ONE-DIRECTIONAL
+(rule ((= e (VecExtract (VecShuffle4 v _ _ 0 _ _) 1))) ((union e (VecExtract v 0))))
+(rule ((= e (VecExtract (VecShuffle4 v _ _ 1 _ _) 1))) ((union e (VecExtract v 1))))
+(rule ((= e (VecExtract (VecShuffle4 v _ _ 2 _ _) 1))) ((union e (VecExtract v 2))))
+(rule ((= e (VecExtract (VecShuffle4 v _ _ 3 _ _) 1))) ((union e (VecExtract v 3))))
 
-; Vec4 shuffle -> extract at position 2
-(rewrite (VecExtract (VecShuffle4 v _ _ _ 0 _) 2) (VecExtract v 0))
-(rewrite (VecExtract (VecShuffle4 v _ _ _ 1 _) 2) (VecExtract v 1))
-(rewrite (VecExtract (VecShuffle4 v _ _ _ 2 _) 2) (VecExtract v 2))
-(rewrite (VecExtract (VecShuffle4 v _ _ _ 3 _) 2) (VecExtract v 3))
+; Vec4 shuffle -> extract at position 2 - ONE-DIRECTIONAL
+(rule ((= e (VecExtract (VecShuffle4 v _ _ _ 0 _) 2))) ((union e (VecExtract v 0))))
+(rule ((= e (VecExtract (VecShuffle4 v _ _ _ 1 _) 2))) ((union e (VecExtract v 1))))
+(rule ((= e (VecExtract (VecShuffle4 v _ _ _ 2 _) 2))) ((union e (VecExtract v 2))))
+(rule ((= e (VecExtract (VecShuffle4 v _ _ _ 3 _) 2))) ((union e (VecExtract v 3))))
 
-; Vec4 shuffle -> extract at position 3
-(rewrite (VecExtract (VecShuffle4 v _ _ _ _ 0) 3) (VecExtract v 0))
-(rewrite (VecExtract (VecShuffle4 v _ _ _ _ 1) 3) (VecExtract v 1))
-(rewrite (VecExtract (VecShuffle4 v _ _ _ _ 2) 3) (VecExtract v 2))
-(rewrite (VecExtract (VecShuffle4 v _ _ _ _ 3) 3) (VecExtract v 3))
+; Vec4 shuffle -> extract at position 3 - ONE-DIRECTIONAL
+(rule ((= e (VecExtract (VecShuffle4 v _ _ _ _ 0) 3))) ((union e (VecExtract v 0))))
+(rule ((= e (VecExtract (VecShuffle4 v _ _ _ _ 1) 3))) ((union e (VecExtract v 1))))
+(rule ((= e (VecExtract (VecShuffle4 v _ _ _ _ 2) 3))) ((union e (VecExtract v 2))))
+(rule ((= e (VecExtract (VecShuffle4 v _ _ _ _ 3) 3))) ((union e (VecExtract v 3))))
 
-; Vec3 shuffle -> extract
-(rewrite (VecExtract (VecShuffle3 v _ 0 _ _) 0) (VecExtract v 0))
-(rewrite (VecExtract (VecShuffle3 v _ 1 _ _) 0) (VecExtract v 1))
-(rewrite (VecExtract (VecShuffle3 v _ 2 _ _) 0) (VecExtract v 2))
-(rewrite (VecExtract (VecShuffle3 v _ _ 0 _) 1) (VecExtract v 0))
-(rewrite (VecExtract (VecShuffle3 v _ _ 1 _) 1) (VecExtract v 1))
-(rewrite (VecExtract (VecShuffle3 v _ _ 2 _) 1) (VecExtract v 2))
-(rewrite (VecExtract (VecShuffle3 v _ _ _ 0) 2) (VecExtract v 0))
-(rewrite (VecExtract (VecShuffle3 v _ _ _ 1) 2) (VecExtract v 1))
-(rewrite (VecExtract (VecShuffle3 v _ _ _ 2) 2) (VecExtract v 2))
+; Vec3 shuffle -> extract - ONE-DIRECTIONAL
+(rule ((= e (VecExtract (VecShuffle3 v _ 0 _ _) 0))) ((union e (VecExtract v 0))))
+(rule ((= e (VecExtract (VecShuffle3 v _ 1 _ _) 0))) ((union e (VecExtract v 1))))
+(rule ((= e (VecExtract (VecShuffle3 v _ 2 _ _) 0))) ((union e (VecExtract v 2))))
+(rule ((= e (VecExtract (VecShuffle3 v _ _ 0 _) 1))) ((union e (VecExtract v 0))))
+(rule ((= e (VecExtract (VecShuffle3 v _ _ 1 _) 1))) ((union e (VecExtract v 1))))
+(rule ((= e (VecExtract (VecShuffle3 v _ _ 2 _) 1))) ((union e (VecExtract v 2))))
+(rule ((= e (VecExtract (VecShuffle3 v _ _ _ 0) 2))) ((union e (VecExtract v 0))))
+(rule ((= e (VecExtract (VecShuffle3 v _ _ _ 1) 2))) ((union e (VecExtract v 1))))
+(rule ((= e (VecExtract (VecShuffle3 v _ _ _ 2) 2))) ((union e (VecExtract v 2))))
 
-; Vec2 shuffle -> extract
-(rewrite (VecExtract (VecShuffle2 v _ 0 _) 0) (VecExtract v 0))
-(rewrite (VecExtract (VecShuffle2 v _ 1 _) 0) (VecExtract v 1))
-(rewrite (VecExtract (VecShuffle2 v _ _ 0) 1) (VecExtract v 0))
-(rewrite (VecExtract (VecShuffle2 v _ _ 1) 1) (VecExtract v 1))
-
-; -----------------------------------------------------------------------------
-; Broadcast patterns - same index in all positions
-; -----------------------------------------------------------------------------
-(rewrite (VecShuffle4 v _ 0 0 0 0) (VecBroadcast4 (VecExtract v 0)))
-(rewrite (VecShuffle4 v _ 1 1 1 1) (VecBroadcast4 (VecExtract v 1)))
-(rewrite (VecShuffle4 v _ 2 2 2 2) (VecBroadcast4 (VecExtract v 2)))
-(rewrite (VecShuffle4 v _ 3 3 3 3) (VecBroadcast4 (VecExtract v 3)))
-
-(rewrite (VecShuffle3 v _ 0 0 0) (VecBroadcast3 (VecExtract v 0)))
-(rewrite (VecShuffle3 v _ 1 1 1) (VecBroadcast3 (VecExtract v 1)))
-(rewrite (VecShuffle3 v _ 2 2 2) (VecBroadcast3 (VecExtract v 2)))
-
-(rewrite (VecShuffle2 v _ 0 0) (VecBroadcast2 (VecExtract v 0)))
-(rewrite (VecShuffle2 v _ 1 1) (VecBroadcast2 (VecExtract v 1)))
-
-; Broadcast constructs the vector with repeated value
-(rewrite (VecBroadcast2 x) (Vec2 x x))
-(rewrite (VecBroadcast3 x) (Vec3 x x x))
-(rewrite (VecBroadcast4 x) (Vec4 x x x x))
+; Vec2 shuffle -> extract - ONE-DIRECTIONAL
+(rule ((= e (VecExtract (VecShuffle2 v _ 0 _) 0))) ((union e (VecExtract v 0))))
+(rule ((= e (VecExtract (VecShuffle2 v _ 1 _) 0))) ((union e (VecExtract v 1))))
+(rule ((= e (VecExtract (VecShuffle2 v _ _ 0) 1))) ((union e (VecExtract v 0))))
+(rule ((= e (VecExtract (VecShuffle2 v _ _ 1) 1))) ((union e (VecExtract v 1))))
 
 ; -----------------------------------------------------------------------------
-; Common swizzle patterns
+; Broadcast patterns - same index in all positions - ONE-DIRECTIONAL
+; -----------------------------------------------------------------------------
+(rule ((= e (VecShuffle4 v _ 0 0 0 0))) ((union e (VecBroadcast4 (VecExtract v 0)))))
+(rule ((= e (VecShuffle4 v _ 1 1 1 1))) ((union e (VecBroadcast4 (VecExtract v 1)))))
+(rule ((= e (VecShuffle4 v _ 2 2 2 2))) ((union e (VecBroadcast4 (VecExtract v 2)))))
+(rule ((= e (VecShuffle4 v _ 3 3 3 3))) ((union e (VecBroadcast4 (VecExtract v 3)))))
+
+(rule ((= e (VecShuffle3 v _ 0 0 0))) ((union e (VecBroadcast3 (VecExtract v 0)))))
+(rule ((= e (VecShuffle3 v _ 1 1 1))) ((union e (VecBroadcast3 (VecExtract v 1)))))
+(rule ((= e (VecShuffle3 v _ 2 2 2))) ((union e (VecBroadcast3 (VecExtract v 2)))))
+
+(rule ((= e (VecShuffle2 v _ 0 0))) ((union e (VecBroadcast2 (VecExtract v 0)))))
+(rule ((= e (VecShuffle2 v _ 1 1))) ((union e (VecBroadcast2 (VecExtract v 1)))))
+
+; Broadcast constructs the vector with repeated value - ONE-DIRECTIONAL
+(rule ((= e (VecBroadcast2 x))) ((union e (Vec2 x x))))
+(rule ((= e (VecBroadcast3 x))) ((union e (Vec3 x x x))))
+(rule ((= e (VecBroadcast4 x))) ((union e (Vec4 x x x x))))
+
+; -----------------------------------------------------------------------------
+; Common swizzle patterns - ONE-DIRECTIONAL
 ; -----------------------------------------------------------------------------
 
 ; Reverse vec2
-(rewrite (VecShuffle2 v v 1 0) (Vec2 (VecExtract v 1) (VecExtract v 0)))
+(rule ((= e (VecShuffle2 v v 1 0)))
+      ((union e (Vec2 (VecExtract v 1) (VecExtract v 0)))))
 
 ; Swap halves of vec4 (.zwxy)
-(rewrite (VecShuffle4 v v 2 3 0 1) (Vec4 (VecExtract v 2) (VecExtract v 3) (VecExtract v 0) (VecExtract v 1)))
+(rule ((= e (VecShuffle4 v v 2 3 0 1)))
+      ((union e (Vec4 (VecExtract v 2) (VecExtract v 3) (VecExtract v 0) (VecExtract v 1)))))
 
 ; Extract .xy from vec4 to vec2
-(rewrite (VecShuffle2 (Vec4 a b c d) _ 0 1) (Vec2 a b))
-(rewrite (VecShuffle2 (Vec4 a b c d) _ 2 3) (Vec2 c d))
+(rule ((= e (VecShuffle2 (Vec4 a b c d) _ 0 1))) ((union e (Vec2 a b))))
+(rule ((= e (VecShuffle2 (Vec4 a b c d) _ 2 3))) ((union e (Vec2 c d))))
 
 ; Extract .xyz from vec4 to vec3
-(rewrite (VecShuffle3 (Vec4 a b c d) _ 0 1 2) (Vec3 a b c))
+(rule ((= e (VecShuffle3 (Vec4 a b c d) _ 0 1 2))) ((union e (Vec3 a b c))))
 
 ; -----------------------------------------------------------------------------
-; Shuffle of constructed vector simplifies
+; Shuffle of constructed vector simplifies - ONE-DIRECTIONAL
 ; -----------------------------------------------------------------------------
-(rewrite (VecShuffle4 (Vec4 a b c d) _ 0 1 2 3) (Vec4 a b c d))
-(rewrite (VecShuffle4 (Vec4 a b c d) _ 3 2 1 0) (Vec4 d c b a))
-(rewrite (VecShuffle4 (Vec4 a b c d) _ 0 0 0 0) (Vec4 a a a a))
-(rewrite (VecShuffle4 (Vec4 a b c d) _ 1 1 1 1) (Vec4 b b b b))
-(rewrite (VecShuffle4 (Vec4 a b c d) _ 2 2 2 2) (Vec4 c c c c))
-(rewrite (VecShuffle4 (Vec4 a b c d) _ 3 3 3 3) (Vec4 d d d d))
+(rule ((= e (VecShuffle4 (Vec4 a b c d) _ 0 1 2 3))) ((union e (Vec4 a b c d))))
+(rule ((= e (VecShuffle4 (Vec4 a b c d) _ 3 2 1 0))) ((union e (Vec4 d c b a))))
+(rule ((= e (VecShuffle4 (Vec4 a b c d) _ 0 0 0 0))) ((union e (Vec4 a a a a))))
+(rule ((= e (VecShuffle4 (Vec4 a b c d) _ 1 1 1 1))) ((union e (Vec4 b b b b))))
+(rule ((= e (VecShuffle4 (Vec4 a b c d) _ 2 2 2 2))) ((union e (Vec4 c c c c))))
+(rule ((= e (VecShuffle4 (Vec4 a b c d) _ 3 3 3 3))) ((union e (Vec4 d d d d))))
 
-(rewrite (VecShuffle3 (Vec3 a b c) _ 0 1 2) (Vec3 a b c))
-(rewrite (VecShuffle3 (Vec3 a b c) _ 2 1 0) (Vec3 c b a))
+(rule ((= e (VecShuffle3 (Vec3 a b c) _ 0 1 2))) ((union e (Vec3 a b c))))
+(rule ((= e (VecShuffle3 (Vec3 a b c) _ 2 1 0))) ((union e (Vec3 c b a))))
 
-(rewrite (VecShuffle2 (Vec2 a b) _ 0 1) (Vec2 a b))
-(rewrite (VecShuffle2 (Vec2 a b) _ 1 0) (Vec2 b a))
+(rule ((= e (VecShuffle2 (Vec2 a b) _ 0 1))) ((union e (Vec2 a b))))
+(rule ((= e (VecShuffle2 (Vec2 a b) _ 1 0))) ((union e (Vec2 b a))))
 
 ; -----------------------------------------------------------------------------
-; Two consecutive shuffles can sometimes be combined
+; Two consecutive shuffles can sometimes be combined - ONE-DIRECTIONAL
 ; (C++ VectorShuffleFeedingShuffle)
 ; -----------------------------------------------------------------------------
 ; When shuffling from a shuffle, compose the indices
 ; This is complex in general, but some patterns are clear:
 
 ; Shuffle(Shuffle(v, _, m1), _, identity) = Shuffle(v, _, m1)
-(rewrite (VecShuffle4 (VecShuffle4 v w i0 i1 i2 i3) _ 0 1 2 3) (VecShuffle4 v w i0 i1 i2 i3))
-(rewrite (VecShuffle3 (VecShuffle3 v w i0 i1 i2) _ 0 1 2) (VecShuffle3 v w i0 i1 i2))
-(rewrite (VecShuffle2 (VecShuffle2 v w i0 i1) _ 0 1) (VecShuffle2 v w i0 i1))
+(rule ((= e (VecShuffle4 (VecShuffle4 v w i0 i1 i2 i3) _ 0 1 2 3))) ((union e (VecShuffle4 v w i0 i1 i2 i3))))
+(rule ((= e (VecShuffle3 (VecShuffle3 v w i0 i1 i2) _ 0 1 2))) ((union e (VecShuffle3 v w i0 i1 i2))))
+(rule ((= e (VecShuffle2 (VecShuffle2 v w i0 i1) _ 0 1))) ((union e (VecShuffle2 v w i0 i1))))
 
 ; -----------------------------------------------------------------------------
 ; Shuffle of broadcast optimization
@@ -474,28 +497,28 @@
       ((union e x)))
 
 ; =============================================================================
-; Loop Invariant Vector Operations
+; Loop Invariant Vector Operations - ONE-DIRECTIONAL
 ; =============================================================================
 
-(rewrite (VecAdd (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (VecAdd a b)))
-(rewrite (VecSub (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (VecSub a b)))
-(rewrite (VecMul (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (VecMul a b)))
-(rewrite (VecNeg (LoopInvariant a)) (LoopInvariant (VecNeg a)))
-(rewrite (VecFAdd (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (VecFAdd a b)))
-(rewrite (VecFSub (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (VecFSub a b)))
-(rewrite (VecFMul (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (VecFMul a b)))
-(rewrite (VecFNeg (LoopInvariant a)) (LoopInvariant (VecFNeg a)))
-(rewrite (Dot (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (Dot a b)))
-(rewrite (Cross (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (Cross a b)))
-(rewrite (Normalize (LoopInvariant a)) (LoopInvariant (Normalize a)))
-(rewrite (Length (LoopInvariant a)) (LoopInvariant (Length a)))
+(rule ((= e (VecAdd (LoopInvariant a) (LoopInvariant b)))) ((union e (LoopInvariant (VecAdd a b)))))
+(rule ((= e (VecSub (LoopInvariant a) (LoopInvariant b)))) ((union e (LoopInvariant (VecSub a b)))))
+(rule ((= e (VecMul (LoopInvariant a) (LoopInvariant b)))) ((union e (LoopInvariant (VecMul a b)))))
+(rule ((= e (VecNeg (LoopInvariant a)))) ((union e (LoopInvariant (VecNeg a)))))
+(rule ((= e (VecFAdd (LoopInvariant a) (LoopInvariant b)))) ((union e (LoopInvariant (VecFAdd a b)))))
+(rule ((= e (VecFSub (LoopInvariant a) (LoopInvariant b)))) ((union e (LoopInvariant (VecFSub a b)))))
+(rule ((= e (VecFMul (LoopInvariant a) (LoopInvariant b)))) ((union e (LoopInvariant (VecFMul a b)))))
+(rule ((= e (VecFNeg (LoopInvariant a)))) ((union e (LoopInvariant (VecFNeg a)))))
+(rule ((= e (Dot (LoopInvariant a) (LoopInvariant b)))) ((union e (LoopInvariant (Dot a b)))))
+(rule ((= e (Cross (LoopInvariant a) (LoopInvariant b)))) ((union e (LoopInvariant (Cross a b)))))
+(rule ((= e (Normalize (LoopInvariant a)))) ((union e (LoopInvariant (Normalize a)))))
+(rule ((= e (Length (LoopInvariant a)))) ((union e (LoopInvariant (Length a)))))
 
 ; =============================================================================
-; Gamma Distribution for Vector Operations
+; Gamma Distribution for Vector Operations - ONE-DIRECTIONAL
 ; =============================================================================
 
 ; select(c, v1 + v2, v1 + v3) = v1 + select(c, v2, v3)
-(rewrite (Gamma c (VecFAdd x a) (VecFAdd x b)) (VecFAdd x (Gamma c a b)))
-(rewrite (Gamma c (VecFMul x a) (VecFMul x b)) (VecFMul x (Gamma c a b)))
-(rewrite (Gamma c (VecAdd x a) (VecAdd x b)) (VecAdd x (Gamma c a b)))
-(rewrite (Gamma c (VecMul x a) (VecMul x b)) (VecMul x (Gamma c a b)))
+(rule ((= e (Gamma c (VecFAdd x a) (VecFAdd x b)))) ((union e (VecFAdd x (Gamma c a b)))))
+(rule ((= e (Gamma c (VecFMul x a) (VecFMul x b)))) ((union e (VecFMul x (Gamma c a b)))))
+(rule ((= e (Gamma c (VecAdd x a) (VecAdd x b)))) ((union e (VecAdd x (Gamma c a b)))))
+(rule ((= e (Gamma c (VecMul x a) (VecMul x b)))) ((union e (VecMul x (Gamma c a b)))))

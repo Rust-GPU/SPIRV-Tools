@@ -1492,4 +1492,23 @@ mod tests {
                 "x * (y / x) should simplify to y, got: {}", result);
     }
 
+    /// Test that identity operations don't cause e-graph explosion
+    #[test]
+    fn test_identity_no_explosion() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // Add with Const 0 - this used to cause explosion due to associativity rule interaction
+        egraph.parse_and_run_program(None, "(let c5 (Const 5))").unwrap();
+        egraph.parse_and_run_program(None, "(let c0 (Const 0))").unwrap();
+        egraph.parse_and_run_program(None, "(let expr (Add c5 c0))").unwrap(); // 5 + 0 = 5 (identity)
+
+        // Run 20 iterations - should complete quickly
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 20 (run)))").unwrap();
+
+        // Extract - should be (Const 5)
+        let results = egraph.parse_and_run_program(None, "(extract c5)").unwrap();
+        let result = format!("{}", results[0]);
+        assert!(result.contains("5"), "Expected Const 5, got: {}", result);
+    }
+
 }
