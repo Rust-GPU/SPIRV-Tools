@@ -383,13 +383,21 @@
 ; (x / c) * c + (x % c) = x (euclidean division identity)
 ; This is complex to express but useful for pattern matching
 
-; Negation and multiplication - ONE-DIRECTIONAL to prevent explosion
-; We pull Neg OUT of Mul, not push Neg IN (which would expand forever)
+; Negation and multiplication
+; When one operand is a constant, absorb the negate into the constant.
+; This eliminates a Neg operation: -(x * c) → x * (-c)
+(rule ((= e (Neg (Mul x (Const c)))))
+      ((union e (Mul x (Const (- 0 c))))))
+(rule ((= e (Neg (Mul (Const c) x))))
+      ((union e (Mul x (Const (- 0 c))))))
+
+; For non-constant operands, we pull Neg OUT of Mul to normalize.
+; This enables double-negation cancellation.
 (rule ((= e (Mul (Neg x) y)))
       ((union e (Neg (Mul x y)))))
 (rule ((= e (Mul x (Neg y))))
       ((union e (Neg (Mul x y)))))
-; Double negation in multiply cancels - ONE-DIRECTIONAL
+; Double negation in multiply cancels
 (rule ((= e (Mul (Neg x) (Neg y))))
       ((union e (Mul x y))))
 

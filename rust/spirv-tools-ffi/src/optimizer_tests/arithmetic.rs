@@ -1,6 +1,7 @@
 //! Tests for arithmetic optimization rules (add, sub, mul, div, mod, neg).
 
 use super::common::{OptimizedModule, OptimizerEnvGuard, TestModuleBuilder};
+use rspirv::binary::Assemble;
 use rspirv::spirv::Op;
 
 // =============================================================================
@@ -31,11 +32,18 @@ fn folds_constant_add_preserves_id() {
     let _guard = OptimizerEnvGuard::new();
 
     let mut b = TestModuleBuilder::new();
-    b.begin_void_function();
+    // Use a function that returns a value so DCE doesn't remove everything
+    let func_ty = b.builder.type_function(b.int_ty, vec![]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    b.builder.begin_block(None).expect("begin block");
     let c2 = b.const_i32(2);
     let c3 = b.const_i32(3);
     let add_id = b.builder.i_add(b.int_ty, None, c2, c3).expect("add");
-    let words = b.finish();
+    b.builder.ret_value(add_id).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
 

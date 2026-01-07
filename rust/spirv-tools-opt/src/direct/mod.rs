@@ -604,36 +604,10 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
         }
     }
 
-    // If no side effects found, find the "leaf" instructions - those not used by other instructions
-    // This handles test modules and functions without return values/stores
-    // We only treat unused instructions as roots so DCE can still eliminate intermediate results
-    if true_roots.is_empty() {
-        // Collect all IDs that are USED by other instructions
-        let mut used_by_others: HashSet<Word> = HashSet::new();
-        for func in &module.functions {
-            for block in &func.blocks {
-                for inst in &block.instructions {
-                    for op in &inst.operands {
-                        if let Some(ref_id) = op.id_ref_any() {
-                            used_by_others.insert(ref_id);
-                        }
-                    }
-                }
-            }
-        }
-        // Only mark instructions that aren't used by anything as roots
-        for &id in &ctx.root_ids {
-            if !used_by_others.contains(&id) {
-                true_roots.insert(id);
-            }
-        }
-        // If still empty (everything is used by something), fall back to all
-        if true_roots.is_empty() {
-            for &id in &ctx.root_ids {
-                true_roots.insert(id);
-            }
-        }
-    }
+    // If no side effects found, true_roots stays empty, which means:
+    // - No instructions are marked Live
+    // - DCE will remove all pure computations
+    // This is correct behavior: functions with no side effects produce no observable output
 
     // Step 5: Mark roots as Live in the e-graph BEFORE saturation
     // For functions with RVSDG effects (EffGamma), liveness propagates from Root(effect)
