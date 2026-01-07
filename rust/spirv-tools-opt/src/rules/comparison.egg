@@ -24,9 +24,11 @@
 (rule ((= e (UGt x x)))
       ((union e (Const 0))))
 
-; Comparison with negation
-(rewrite (Eq x (Neg x)) (Eq x (Const 0)))
-(rewrite (Ne x (Neg x)) (Ne x (Const 0)))
+; Comparison with negation - ONE-DIRECTIONAL
+(rule ((= e (Eq x (Neg x))))
+      ((union e (Eq x (Const 0)))))
+(rule ((= e (Ne x (Neg x))))
+      ((union e (Ne x (Const 0)))))
 
 ; =============================================================================
 ; Comparison Negation (C++ Parity) - ONE-DIRECTIONAL
@@ -81,11 +83,15 @@
 ; Comparison of Negated Values
 ; =============================================================================
 
-; (-a) < (-b) is equivalent to b < a (for signed)
-(rewrite (SLt (Neg a) (Neg b)) (SLt b a))
-(rewrite (SLe (Neg a) (Neg b)) (SLe b a))
-(rewrite (SGt (Neg a) (Neg b)) (SGt b a))
-(rewrite (SGe (Neg a) (Neg b)) (SGe b a))
+; (-a) < (-b) is equivalent to b < a (for signed) - ONE-DIRECTIONAL
+(rule ((= e (SLt (Neg a) (Neg b))))
+      ((union e (SLt b a))))
+(rule ((= e (SLe (Neg a) (Neg b))))
+      ((union e (SLe b a))))
+(rule ((= e (SGt (Neg a) (Neg b))))
+      ((union e (SGt b a))))
+(rule ((= e (SGe (Neg a) (Neg b))))
+      ((union e (SGe b a))))
 
 ; =============================================================================
 ; Comparison with Constants
@@ -94,17 +100,21 @@
 ; x < 0 for signed: test sign bit
 ; x >= 0 for signed: test non-negative
 
-; x < 1 for unsigned is x == 0
-(rewrite (ULt x (Const 1)) (Eq x (Const 0)))
+; x < 1 for unsigned is x == 0 - ONE-DIRECTIONAL
+(rule ((= e (ULt x (Const 1))))
+      ((union e (Eq x (Const 0)))))
 
-; x <= 0 for unsigned is x == 0
-(rewrite (ULe x (Const 0)) (Eq x (Const 0)))
+; x <= 0 for unsigned is x == 0 - ONE-DIRECTIONAL
+(rule ((= e (ULe x (Const 0))))
+      ((union e (Eq x (Const 0)))))
 
-; x > 0 for unsigned is x != 0
-(rewrite (UGt x (Const 0)) (Ne x (Const 0)))
+; x > 0 for unsigned is x != 0 - ONE-DIRECTIONAL
+(rule ((= e (UGt x (Const 0))))
+      ((union e (Ne x (Const 0)))))
 
-; x >= 1 for unsigned is x != 0
-(rewrite (UGe x (Const 1)) (Ne x (Const 0)))
+; x >= 1 for unsigned is x != 0 - ONE-DIRECTIONAL
+(rule ((= e (UGe x (Const 1))))
+      ((union e (Ne x (Const 0)))))
 
 ; =============================================================================
 ; Comparison Chaining (C++ Parity)
@@ -157,19 +167,27 @@
 ; Comparison with Add/Sub
 ; =============================================================================
 
-; (a + c) == (b + c) is a == b
-(rewrite (Eq (Add a c) (Add b c)) (Eq a b))
-(rewrite (Ne (Add a c) (Add b c)) (Ne a b))
+; (a + c) == (b + c) is a == b - ONE-DIRECTIONAL
+(rule ((= e (Eq (Add a c) (Add b c))))
+      ((union e (Eq a b))))
+(rule ((= e (Ne (Add a c) (Add b c))))
+      ((union e (Ne a b))))
 
-; (a - c) == (b - c) is a == b
-(rewrite (Eq (Sub a c) (Sub b c)) (Eq a b))
-(rewrite (Ne (Sub a c) (Sub b c)) (Ne a b))
+; (a - c) == (b - c) is a == b - ONE-DIRECTIONAL
+(rule ((= e (Eq (Sub a c) (Sub b c))))
+      ((union e (Eq a b))))
+(rule ((= e (Ne (Sub a c) (Sub b c))))
+      ((union e (Ne a b))))
 
-; (a + c) < (b + c) is a < b (no overflow assumed)
-(rewrite (SLt (Add a c) (Add b c)) (SLt a b))
-(rewrite (SLe (Add a c) (Add b c)) (SLe a b))
-(rewrite (SGt (Add a c) (Add b c)) (SGt a b))
-(rewrite (SGe (Add a c) (Add b c)) (SGe a b))
+; (a + c) < (b + c) is a < b (no overflow assumed) - ONE-DIRECTIONAL
+(rule ((= e (SLt (Add a c) (Add b c))))
+      ((union e (SLt a b))))
+(rule ((= e (SLe (Add a c) (Add b c))))
+      ((union e (SLe a b))))
+(rule ((= e (SGt (Add a c) (Add b c))))
+      ((union e (SGt a b))))
+(rule ((= e (SGe (Add a c) (Add b c))))
+      ((union e (SGe a b))))
 
 ; =============================================================================
 ; Loop Invariant Comparisons
@@ -181,13 +199,19 @@
 ; Gamma Distribution for Comparisons
 ; =============================================================================
 
-; select(c, a == x, a == y) = a == select(c, x, y)
-(rewrite (Gamma c (Eq a x) (Eq a y)) (Eq a (Gamma c x y)))
-(rewrite (Gamma c (Ne a x) (Ne a y)) (Ne a (Gamma c x y)))
-(rewrite (Gamma c (SLt a x) (SLt a y)) (SLt a (Gamma c x y)))
-(rewrite (Gamma c (SLe a x) (SLe a y)) (SLe a (Gamma c x y)))
-(rewrite (Gamma c (ULt a x) (ULt a y)) (ULt a (Gamma c x y)))
-(rewrite (Gamma c (ULe a x) (ULe a y)) (ULe a (Gamma c x y)))
+; select(c, a == x, a == y) = a == select(c, x, y) - ONE-DIRECTIONAL
+(rule ((= e (Gamma c (Eq a x) (Eq a y))))
+      ((union e (Eq a (Gamma c x y)))))
+(rule ((= e (Gamma c (Ne a x) (Ne a y))))
+      ((union e (Ne a (Gamma c x y)))))
+(rule ((= e (Gamma c (SLt a x) (SLt a y))))
+      ((union e (SLt a (Gamma c x y)))))
+(rule ((= e (Gamma c (SLe a x) (SLe a y))))
+      ((union e (SLe a (Gamma c x y)))))
+(rule ((= e (Gamma c (ULt a x) (ULt a y))))
+      ((union e (ULt a (Gamma c x y)))))
+(rule ((= e (Gamma c (ULe a x) (ULe a y))))
+      ((union e (ULe a (Gamma c x y)))))
 
 ; =============================================================================
 ; Comparison after Bitwise Operations
@@ -203,9 +227,11 @@
 ; Comparison after Arithmetic
 ; =============================================================================
 
-; (x - y) == 0 is x == y
-(rewrite (Eq (Sub x y) (Const 0)) (Eq x y))
-(rewrite (Ne (Sub x y) (Const 0)) (Ne x y))
+; (x - y) == 0 is x == y - ONE-DIRECTIONAL
+(rule ((= e (Eq (Sub x y) (Const 0))))
+      ((union e (Eq x y))))
+(rule ((= e (Ne (Sub x y) (Const 0))))
+      ((union e (Ne x y))))
 
 ; (x + y) == 0 where y is constant becomes x == -y
 ; This is handled by constant propagation
@@ -217,5 +243,6 @@
 ; x == 0 || y == 0 patterns
 ; These are common in graphics for avoiding division by zero
 
-; LogNot of equality with zero is same as != 0
-(rewrite (LogNot (Eq x (Const 0))) (Ne x (Const 0)))
+; LogNot of equality with zero is same as != 0 - ONE-DIRECTIONAL
+(rule ((= e (LogNot (Eq x (Const 0)))))
+      ((union e (Ne x (Const 0)))))

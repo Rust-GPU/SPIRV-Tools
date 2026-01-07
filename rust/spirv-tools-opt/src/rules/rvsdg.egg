@@ -37,9 +37,11 @@
 (rule ((= e (Gamma (LogNot c) t f)))
       ((union e (Gamma c f t))))
 
-; Nested Gamma simplification (same condition)
-(rewrite (Gamma c (Gamma c a b) d) (Gamma c a d))
-(rewrite (Gamma c d (Gamma c a b)) (Gamma c d b))
+; Nested Gamma simplification (same condition) - ONE-DIRECTIONAL
+(rule ((= e (Gamma c (Gamma c a b) d)))
+      ((union e (Gamma c a d))))
+(rule ((= e (Gamma c d (Gamma c a b))))
+      ((union e (Gamma c d b))))
 
 ; =============================================================================
 ; Additional Phi/Gamma Redundancy Patterns (C++ RedundantPhi)
@@ -93,8 +95,9 @@
 ; RVSDG Theta (Loop) Rewrite Rules - Loop Invariant Code Motion
 ; =============================================================================
 
-; LoopInvariant is idempotent
-(rewrite (LoopInvariant (LoopInvariant x)) (LoopInvariant x))
+; LoopInvariant is idempotent - ONE-DIRECTIONAL
+(rule ((= e (LoopInvariant (LoopInvariant x))))
+      ((union e (LoopInvariant x))))
 
 ; Constants and symbols are inherently loop-invariant (they don't depend on LoopVar)
 ; NOTE: These rules are DISABLED because combined with the LoopInvariant stripping rule
@@ -188,8 +191,9 @@
 (rule ((= e (Seq x (Pure))))
       ((union e x)))
 
-; Unreachable absorbs everything after it
-(rewrite (Seq (Unreachable) e) (Unreachable))
+; Unreachable absorbs everything after it - ONE-DIRECTIONAL
+(rule ((= result (Seq (Unreachable) e)))
+      ((union result (Unreachable))))
 
 ; Effect Gamma with constant condition - ONE-DIRECTIONAL to prevent explosion
 (rule ((= e (EffGamma (Const 0) t f)))

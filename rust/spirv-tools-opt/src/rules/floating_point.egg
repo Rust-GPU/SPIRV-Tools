@@ -13,12 +13,19 @@
       ((union e x)))
 (rule ((= e (FNeg (FNeg x))))
       ((union e x)))
-(rewrite (FFloor (FFloor x)) (FFloor x))
-(rewrite (FCeil (FCeil x)) (FCeil x))
-(rewrite (FTrunc (FTrunc x)) (FTrunc x))
-(rewrite (FRound (FRound x)) (FRound x))
-(rewrite (FAbs (FAbs x)) (FAbs x))
-(rewrite (FNeg (FAbs x)) (FAbs (FNeg x)))
+; Idempotent rules - ONE-DIRECTIONAL
+(rule ((= e (FFloor (FFloor x))))
+      ((union e (FFloor x))))
+(rule ((= e (FCeil (FCeil x))))
+      ((union e (FCeil x))))
+(rule ((= e (FTrunc (FTrunc x))))
+      ((union e (FTrunc x))))
+(rule ((= e (FRound (FRound x))))
+      ((union e (FRound x))))
+(rule ((= e (FAbs (FAbs x))))
+      ((union e (FAbs x))))
+(rule ((= e (FNeg (FAbs x))))
+      ((union e (FAbs (FNeg x)))))
 
 ; =============================================================================
 ; Floating-Point Comparison Rules
@@ -32,19 +39,32 @@
 ; Reflexive unordered inequality (x != x is true only if NaN)
 ; (rewrite (FUnordNe x x) (IsNan x))  -- disabled, complex
 
-; Negation of ordered vs unordered comparisons
-(rewrite (LogNot (FOrdEq a b)) (FUnordNe a b))
-(rewrite (LogNot (FOrdNe a b)) (FUnordEq a b))
-(rewrite (LogNot (FOrdLt a b)) (FUnordGe a b))
-(rewrite (LogNot (FOrdLe a b)) (FUnordGt a b))
-(rewrite (LogNot (FOrdGt a b)) (FUnordLe a b))
-(rewrite (LogNot (FOrdGe a b)) (FUnordLt a b))
-(rewrite (LogNot (FUnordEq a b)) (FOrdNe a b))
-(rewrite (LogNot (FUnordNe a b)) (FOrdEq a b))
-(rewrite (LogNot (FUnordLt a b)) (FOrdGe a b))
-(rewrite (LogNot (FUnordLe a b)) (FOrdGt a b))
-(rewrite (LogNot (FUnordGt a b)) (FOrdLe a b))
-(rewrite (LogNot (FUnordGe a b)) (FOrdLt a b))
+; Negation of ordered vs unordered comparisons - ONE-DIRECTIONAL
+; Remove LogNot by flipping comparison type
+(rule ((= e (LogNot (FOrdEq a b))))
+      ((union e (FUnordNe a b))))
+(rule ((= e (LogNot (FOrdNe a b))))
+      ((union e (FUnordEq a b))))
+(rule ((= e (LogNot (FOrdLt a b))))
+      ((union e (FUnordGe a b))))
+(rule ((= e (LogNot (FOrdLe a b))))
+      ((union e (FUnordGt a b))))
+(rule ((= e (LogNot (FOrdGt a b))))
+      ((union e (FUnordLe a b))))
+(rule ((= e (LogNot (FOrdGe a b))))
+      ((union e (FUnordLt a b))))
+(rule ((= e (LogNot (FUnordEq a b))))
+      ((union e (FOrdNe a b))))
+(rule ((= e (LogNot (FUnordNe a b))))
+      ((union e (FOrdEq a b))))
+(rule ((= e (LogNot (FUnordLt a b))))
+      ((union e (FOrdGe a b))))
+(rule ((= e (LogNot (FUnordLe a b))))
+      ((union e (FOrdGt a b))))
+(rule ((= e (LogNot (FUnordGt a b))))
+      ((union e (FOrdLe a b))))
+(rule ((= e (LogNot (FUnordGe a b))))
+      ((union e (FOrdLt a b))))
 
 ; Symmetry: a > b  <=>  b < a - ONE-DIRECTIONAL
 ; Canonicalize to "less than" form to prevent cycles
@@ -61,33 +81,42 @@
 ; Floating-Point Arithmetic Identities
 ; =============================================================================
 
-; Subtraction as addition of negation
-(rewrite (FSub a b) (FAdd a (FNeg b)))
+; Subtraction as addition of negation - ONE-DIRECTIONAL
+; FSub is the canonical form, don't expand to FAdd+FNeg (causes explosion)
+(rule ((= e (FAdd a (FNeg b))))
+      ((union e (FSub a b))))
 
-; Multiply by zero (note: NaN * 0 = NaN, but this is common optimization)
-(rewrite (FMul x (Const 0)) (Const 0))
-(rewrite (FMul (Const 0) x) (Const 0))
+; Multiply by zero (note: NaN * 0 = NaN, but this is common optimization) - ONE-DIRECTIONAL
+(rule ((= e (FMul x (Const 0))))
+      ((union e (Const 0))))
+(rule ((= e (FMul (Const 0) x)))
+      ((union e (Const 0))))
 
-; Multiply by negative one
-(rewrite (FMul x (Const -1)) (FNeg x))
-(rewrite (FMul (Const -1) x) (FNeg x))
+; Multiply by negative one - ONE-DIRECTIONAL
+(rule ((= e (FMul x (Const -1))))
+      ((union e (FNeg x))))
+(rule ((= e (FMul (Const -1) x)))
+      ((union e (FNeg x))))
 
 ; Divide by one - ONE-DIRECTIONAL
 (rule ((= e (FDiv x (Const 1))))
       ((union e x)))
 
-; Divide by negative one
-(rewrite (FDiv x (Const -1)) (FNeg x))
+; Divide by negative one - ONE-DIRECTIONAL
+(rule ((= e (FDiv x (Const -1))))
+      ((union e (FNeg x))))
 
 ; x / x = 1 (assuming not zero or NaN)
 ; Note: commented out due to NaN/zero concerns
 ; (rewrite (FDiv x x) (Const 1))
 
-; x - x = 0
-(rewrite (FSub x x) (Const 0))
+; x - x = 0 - ONE-DIRECTIONAL
+(rule ((= e (FSub x x)))
+      ((union e (Const 0))))
 
-; Negation of subtraction
-(rewrite (FNeg (FSub a b)) (FSub b a))
+; Negation of subtraction - ONE-DIRECTIONAL
+(rule ((= e (FNeg (FSub a b))))
+      ((union e (FSub b a))))
 
 ; Distributive property for negation - ONE-DIRECTIONAL to prevent explosion
 ; We pull FNeg OUT of FMul, not push IN (which would expand forever)
@@ -128,23 +157,29 @@
 ; FMin/FMax commutativity - REMOVED to prevent e-graph explosion
 ; These bidirectional rules cause cycles: (FMin a b) ↔ (FMin b a) ↔ ...
 
-; FMin/FMax with negation
-(rewrite (FMin (FNeg a) (FNeg b)) (FNeg (FMax a b)))
-(rewrite (FMax (FNeg a) (FNeg b)) (FNeg (FMin a b)))
+; FMin/FMax with negation - ONE-DIRECTIONAL
+(rule ((= e (FMin (FNeg a) (FNeg b))))
+      ((union e (FNeg (FMax a b)))))
+(rule ((= e (FMax (FNeg a) (FNeg b))))
+      ((union e (FNeg (FMin a b)))))
 
 ; =============================================================================
 ; Floor/Ceil/Trunc/Round Relationships
 ; =============================================================================
 
-; Floor of negation
-(rewrite (FFloor (FNeg x)) (FNeg (FCeil x)))
-(rewrite (FCeil (FNeg x)) (FNeg (FFloor x)))
+; Floor of negation - ONE-DIRECTIONAL
+(rule ((= e (FFloor (FNeg x))))
+      ((union e (FNeg (FCeil x)))))
+(rule ((= e (FCeil (FNeg x))))
+      ((union e (FNeg (FFloor x)))))
 
-; Trunc of negation (same sign behavior)
-(rewrite (FTrunc (FNeg x)) (FNeg (FTrunc x)))
+; Trunc of negation (same sign behavior) - ONE-DIRECTIONAL
+(rule ((= e (FTrunc (FNeg x))))
+      ((union e (FNeg (FTrunc x)))))
 
-; Round of negation
-(rewrite (FRound (FNeg x)) (FNeg (FRound x)))
+; Round of negation - ONE-DIRECTIONAL
+(rule ((= e (FRound (FNeg x))))
+      ((union e (FNeg (FRound x)))))
 
 ; =============================================================================
 ; Additional Floating-Point Algebraic Identities
@@ -179,11 +214,13 @@
 ; FP Division Optimization
 ; =============================================================================
 
-; a / b / c = a / (b * c)
-(rewrite (FDiv (FDiv a b) c) (FDiv a (FMul b c)))
+; a / b / c = a / (b * c) - ONE-DIRECTIONAL
+(rule ((= e (FDiv (FDiv a b) c)))
+      ((union e (FDiv a (FMul b c)))))
 
-; a / (b / c) = (a * c) / b
-(rewrite (FDiv a (FDiv b c)) (FDiv (FMul a c) b))
+; a / (b / c) = (a * c) / b - ONE-DIRECTIONAL
+(rule ((= e (FDiv a (FDiv b c))))
+      ((union e (FDiv (FMul a c) b))))
 
 ; (a * b) / b = a (assuming no NaN/Inf issues) - ONE-DIRECTIONAL
 (rule ((= e (FDiv (FMul a b) b)))
@@ -207,11 +244,15 @@
 (rule ((= e (FMax (FMin a b) a)))
       ((union e a)))
 
-; FMin/FMax idempotent within nesting
-(rewrite (FMin (FMin a b) b) (FMin a b))
-(rewrite (FMin a (FMin a b)) (FMin a b))
-(rewrite (FMax (FMax a b) b) (FMax a b))
-(rewrite (FMax a (FMax a b)) (FMax a b))
+; FMin/FMax idempotent within nesting - ONE-DIRECTIONAL
+(rule ((= e (FMin (FMin a b) b)))
+      ((union e (FMin a b))))
+(rule ((= e (FMin a (FMin a b))))
+      ((union e (FMin a b))))
+(rule ((= e (FMax (FMax a b) b)))
+      ((union e (FMax a b))))
+(rule ((= e (FMax a (FMax a b))))
+      ((union e (FMax a b))))
 
 ; =============================================================================
 ; Floating-Point Arithmetic Chain Merging (C++ MergeMulMul, etc.)
@@ -282,8 +323,9 @@
 ; FRem Rules (C++ RedundantFMod)
 ; =============================================================================
 
-; 0 % x = 0
-(rewrite (FRem (Const 0) x) (Const 0))
+; 0 % x = 0 - ONE-DIRECTIONAL
+(rule ((= e (FRem (Const 0) x)))
+      ((union e (Const 0))))
 
 ; =============================================================================
 ; Generic Add/Sub Cancellation for FP (C++ MergeGenericAddSubArithmetic)
@@ -321,9 +363,11 @@
 ; FAdd with Negate Merging (C++ MergeAddNegateArithmetic)
 ; =============================================================================
 
-; (-x) + c = c - x
-(rewrite (FAdd (FNeg x) (Const c)) (FSub (Const c) x))
-(rewrite (FAdd (Const c) (FNeg x)) (FSub (Const c) x))
+; (-x) + c = c - x - ONE-DIRECTIONAL
+(rule ((= e (FAdd (FNeg x) (Const c))))
+      ((union e (FSub (Const c) x))))
+(rule ((= e (FAdd (Const c) (FNeg x))))
+      ((union e (FSub (Const c) x))))
 
 ; =============================================================================
 ; FSub with Negate Merging (C++ MergeSubNegateArithmetic)
@@ -331,8 +375,9 @@
 
 ; (-x) - c = -(x + c) which is -FAdd(x, c), already handled by FNeg dist
 
-; c - (-x) = c + x
-(rewrite (FSub c (FNeg x)) (FAdd c x))
+; c - (-x) = c + x - ONE-DIRECTIONAL
+(rule ((= e (FSub c (FNeg x))))
+      ((union e (FAdd c x))))
 
 ; =============================================================================
 ; Mul/Div Cancellation (C++ MergeMulDivArithmetic)
@@ -350,8 +395,9 @@
 ; Additional C++ Parity Rules
 ; =============================================================================
 
-; 0 - x = -x (C++ RedundantFSub)
-(rewrite (FSub (Const 0) x) (FNeg x))
+; 0 - x = -x (C++ RedundantFSub) - ONE-DIRECTIONAL
+(rule ((= e (FSub (Const 0) x)))
+      ((union e (FNeg x))))
 
 ; Recognize x * (1/y) as x/y for simplification
 ; One-directional to prevent expansion that causes e-graph explosion.
@@ -372,8 +418,9 @@
 ; =============================================================================
 
 ; FAbs of FAbs is FAbs (idempotent) - already have
-; FAbs of FNeg gives FAbs
-(rewrite (FAbs (FNeg x)) (FAbs x))
+; FAbs of FNeg gives FAbs - ONE-DIRECTIONAL
+(rule ((= e (FAbs (FNeg x))))
+      ((union e (FAbs x))))
 
 ; FAbs(x * x) = x * x (square is always non-negative)
 ; Note: Not quite right due to -0, but commonly optimized

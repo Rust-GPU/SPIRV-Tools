@@ -17,18 +17,25 @@
 ; but in some cases (small integers, exact representations) it's identity.
 ; These rewrites are conservative - they apply only when the operations cancel.
 
-; Double conversion cancellation (same direction)
-(rewrite (ConvertFToS (ConvertFToS x)) (ConvertFToS x))
-(rewrite (ConvertFToU (ConvertFToU x)) (ConvertFToU x))
-(rewrite (ConvertSToF (ConvertSToF x)) (ConvertSToF x))
-(rewrite (ConvertUToF (ConvertUToF x)) (ConvertUToF x))
+; Double conversion cancellation (same direction) - ONE-DIRECTIONAL
+(rule ((= e (ConvertFToS (ConvertFToS x))))
+      ((union e (ConvertFToS x))))
+(rule ((= e (ConvertFToU (ConvertFToU x))))
+      ((union e (ConvertFToU x))))
+(rule ((= e (ConvertSToF (ConvertSToF x))))
+      ((union e (ConvertSToF x))))
+(rule ((= e (ConvertUToF (ConvertUToF x))))
+      ((union e (ConvertUToF x))))
 
-; Integer width change cancellation (if same signedness)
-(rewrite (SConvert (SConvert x)) (SConvert x))
-(rewrite (UConvert (UConvert x)) (UConvert x))
+; Integer width change cancellation (if same signedness) - ONE-DIRECTIONAL
+(rule ((= e (SConvert (SConvert x))))
+      ((union e (SConvert x))))
+(rule ((= e (UConvert (UConvert x))))
+      ((union e (UConvert x))))
 
-; Float precision change cancellation
-(rewrite (FConvert (FConvert x)) (FConvert x))
+; Float precision change cancellation - ONE-DIRECTIONAL
+(rule ((= e (FConvert (FConvert x))))
+      ((union e (FConvert x))))
 
 ; =============================================================================
 ; Bitcast Rules
@@ -36,15 +43,17 @@
 
 ; Bitcast of bitcast is bitcast (two reinterpretations)
 ; Note: In general bitcast(bitcast(x)) may equal x if types align, but
-; without type info we can only say it's still a bitcast
-(rewrite (Bitcast (Bitcast x)) (Bitcast x))
+; without type info we can only say it's still a bitcast - ONE-DIRECTIONAL
+(rule ((= e (Bitcast (Bitcast x))))
+      ((union e (Bitcast x))))
 
 ; =============================================================================
 ; Quantization Rules
 ; =============================================================================
 
-; Quantize is idempotent - quantizing twice is same as once
-(rewrite (QuantizeToF16 (QuantizeToF16 x)) (QuantizeToF16 x))
+; Quantize is idempotent - quantizing twice is same as once - ONE-DIRECTIONAL
+(rule ((= e (QuantizeToF16 (QuantizeToF16 x))))
+      ((union e (QuantizeToF16 x))))
 
 ; =============================================================================
 ; Pack/Unpack Round-Trip Rules
@@ -109,11 +118,15 @@
 ; NMin(a, b) ↔ NMin(b, a) creates immediate cycles
 ; The e-graph handles commutativity implicitly when both forms are present
 
-; Idempotent
-(rewrite (NMin (NMin x y) y) (NMin x y))
-(rewrite (NMax (NMax x y) y) (NMax x y))
-(rewrite (NMin x (NMin x y)) (NMin x y))
-(rewrite (NMax x (NMax x y)) (NMax x y))
+; Idempotent - ONE-DIRECTIONAL
+(rule ((= e (NMin (NMin x y) y)))
+      ((union e (NMin x y))))
+(rule ((= e (NMax (NMax x y) y)))
+      ((union e (NMax x y))))
+(rule ((= e (NMin x (NMin x y))))
+      ((union e (NMin x y))))
+(rule ((= e (NMax x (NMax x y))))
+      ((union e (NMax x y))))
 
 ; Absorption: nmin(x, nmax(x, y)) = x - ONE-DIRECTIONAL to prevent explosion
 (rule ((= e (NMin x (NMax x y))))
@@ -125,8 +138,9 @@
 (rule ((= e (NMax (NMin x y) x)))
       ((union e x)))
 
-; NClamp expressed as nested NMin/NMax
-(rewrite (NClamp x lo hi) (NMax lo (NMin x hi)))
+; NClamp expressed as nested NMin/NMax - ONE-DIRECTIONAL (simplify TO clamp)
+(rule ((= e (NMax lo (NMin x hi))))
+      ((union e (NClamp x lo hi))))
 
 ; =============================================================================
 ; Additional Type Conversion Optimizations
@@ -145,43 +159,72 @@
 ; Loop Invariant Type Conversion
 ; =============================================================================
 
-(rewrite (ConvertFToS (LoopInvariant x)) (LoopInvariant (ConvertFToS x)))
-(rewrite (ConvertFToU (LoopInvariant x)) (LoopInvariant (ConvertFToU x)))
-(rewrite (ConvertSToF (LoopInvariant x)) (LoopInvariant (ConvertSToF x)))
-(rewrite (ConvertUToF (LoopInvariant x)) (LoopInvariant (ConvertUToF x)))
-(rewrite (SConvert (LoopInvariant x)) (LoopInvariant (SConvert x)))
-(rewrite (UConvert (LoopInvariant x)) (LoopInvariant (UConvert x)))
-(rewrite (FConvert (LoopInvariant x)) (LoopInvariant (FConvert x)))
-(rewrite (Bitcast (LoopInvariant x)) (LoopInvariant (Bitcast x)))
-(rewrite (QuantizeToF16 (LoopInvariant x)) (LoopInvariant (QuantizeToF16 x)))
+; Loop invariant rules - ONE-DIRECTIONAL
+(rule ((= e (ConvertFToS (LoopInvariant x))))
+      ((union e (LoopInvariant (ConvertFToS x)))))
+(rule ((= e (ConvertFToU (LoopInvariant x))))
+      ((union e (LoopInvariant (ConvertFToU x)))))
+(rule ((= e (ConvertSToF (LoopInvariant x))))
+      ((union e (LoopInvariant (ConvertSToF x)))))
+(rule ((= e (ConvertUToF (LoopInvariant x))))
+      ((union e (LoopInvariant (ConvertUToF x)))))
+(rule ((= e (SConvert (LoopInvariant x))))
+      ((union e (LoopInvariant (SConvert x)))))
+(rule ((= e (UConvert (LoopInvariant x))))
+      ((union e (LoopInvariant (UConvert x)))))
+(rule ((= e (FConvert (LoopInvariant x))))
+      ((union e (LoopInvariant (FConvert x)))))
+(rule ((= e (Bitcast (LoopInvariant x))))
+      ((union e (LoopInvariant (Bitcast x)))))
+(rule ((= e (QuantizeToF16 (LoopInvariant x))))
+      ((union e (LoopInvariant (QuantizeToF16 x)))))
 
-; Pack/Unpack loop invariant
-(rewrite (PackHalf2x16 (LoopInvariant x)) (LoopInvariant (PackHalf2x16 x)))
-(rewrite (UnpackHalf2x16 (LoopInvariant x)) (LoopInvariant (UnpackHalf2x16 x)))
-(rewrite (PackSnorm4x8 (LoopInvariant x)) (LoopInvariant (PackSnorm4x8 x)))
-(rewrite (UnpackSnorm4x8 (LoopInvariant x)) (LoopInvariant (UnpackSnorm4x8 x)))
-(rewrite (PackUnorm4x8 (LoopInvariant x)) (LoopInvariant (PackUnorm4x8 x)))
-(rewrite (UnpackUnorm4x8 (LoopInvariant x)) (LoopInvariant (UnpackUnorm4x8 x)))
+; Pack/Unpack loop invariant - ONE-DIRECTIONAL
+(rule ((= e (PackHalf2x16 (LoopInvariant x))))
+      ((union e (LoopInvariant (PackHalf2x16 x)))))
+(rule ((= e (UnpackHalf2x16 (LoopInvariant x))))
+      ((union e (LoopInvariant (UnpackHalf2x16 x)))))
+(rule ((= e (PackSnorm4x8 (LoopInvariant x))))
+      ((union e (LoopInvariant (PackSnorm4x8 x)))))
+(rule ((= e (UnpackSnorm4x8 (LoopInvariant x))))
+      ((union e (LoopInvariant (UnpackSnorm4x8 x)))))
+(rule ((= e (PackUnorm4x8 (LoopInvariant x))))
+      ((union e (LoopInvariant (PackUnorm4x8 x)))))
+(rule ((= e (UnpackUnorm4x8 (LoopInvariant x))))
+      ((union e (LoopInvariant (UnpackUnorm4x8 x)))))
 
-; Radians/Degrees loop invariant
-(rewrite (Radians (LoopInvariant x)) (LoopInvariant (Radians x)))
-(rewrite (Degrees (LoopInvariant x)) (LoopInvariant (Degrees x)))
+; Radians/Degrees loop invariant - ONE-DIRECTIONAL
+(rule ((= e (Radians (LoopInvariant x))))
+      ((union e (LoopInvariant (Radians x)))))
+(rule ((= e (Degrees (LoopInvariant x))))
+      ((union e (LoopInvariant (Degrees x)))))
 
-; NMin/NMax/NClamp loop invariant
-(rewrite (NMin (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (NMin a b)))
-(rewrite (NMax (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (NMax a b)))
-(rewrite (NClamp (LoopInvariant x) (LoopInvariant lo) (LoopInvariant hi)) (LoopInvariant (NClamp x lo hi)))
+; NMin/NMax/NClamp loop invariant - ONE-DIRECTIONAL
+(rule ((= e (NMin (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (NMin a b)))))
+(rule ((= e (NMax (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (NMax a b)))))
+(rule ((= e (NClamp (LoopInvariant x) (LoopInvariant lo) (LoopInvariant hi))))
+      ((union e (LoopInvariant (NClamp x lo hi)))))
 
 ; =============================================================================
 ; Gamma Distribution for Type Conversions
 ; =============================================================================
 
-; select(c, convert(x), convert(y)) = convert(select(c, x, y))
-(rewrite (Gamma c (ConvertFToS x) (ConvertFToS y)) (ConvertFToS (Gamma c x y)))
-(rewrite (Gamma c (ConvertFToU x) (ConvertFToU y)) (ConvertFToU (Gamma c x y)))
-(rewrite (Gamma c (ConvertSToF x) (ConvertSToF y)) (ConvertSToF (Gamma c x y)))
-(rewrite (Gamma c (ConvertUToF x) (ConvertUToF y)) (ConvertUToF (Gamma c x y)))
-(rewrite (Gamma c (FConvert x) (FConvert y)) (FConvert (Gamma c x y)))
-(rewrite (Gamma c (SConvert x) (SConvert y)) (SConvert (Gamma c x y)))
-(rewrite (Gamma c (UConvert x) (UConvert y)) (UConvert (Gamma c x y)))
-(rewrite (Gamma c (Bitcast x) (Bitcast y)) (Bitcast (Gamma c x y)))
+; select(c, convert(x), convert(y)) = convert(select(c, x, y)) - ONE-DIRECTIONAL
+(rule ((= e (Gamma c (ConvertFToS x) (ConvertFToS y))))
+      ((union e (ConvertFToS (Gamma c x y)))))
+(rule ((= e (Gamma c (ConvertFToU x) (ConvertFToU y))))
+      ((union e (ConvertFToU (Gamma c x y)))))
+(rule ((= e (Gamma c (ConvertSToF x) (ConvertSToF y))))
+      ((union e (ConvertSToF (Gamma c x y)))))
+(rule ((= e (Gamma c (ConvertUToF x) (ConvertUToF y))))
+      ((union e (ConvertUToF (Gamma c x y)))))
+(rule ((= e (Gamma c (FConvert x) (FConvert y))))
+      ((union e (FConvert (Gamma c x y)))))
+(rule ((= e (Gamma c (SConvert x) (SConvert y))))
+      ((union e (SConvert (Gamma c x y)))))
+(rule ((= e (Gamma c (UConvert x) (UConvert y))))
+      ((union e (UConvert (Gamma c x y)))))
+(rule ((= e (Gamma c (Bitcast x) (Bitcast y))))
+      ((union e (Bitcast (Gamma c x y)))))
