@@ -494,3 +494,16 @@
 (rule ((= e (FMul (InverseSqrt x) (InverseSqrt x))))
       ((union e (FDiv (Const 1) x))))
 
+; =============================================================================
+; Reciprocal Division Optimization (C++ ReciprocalFDiv)
+; =============================================================================
+; Division by a constant with an exact reciprocal can be converted to multiplication
+; x / c = x * (1/c) when 1/c can be exactly represented
+; This is always safe for floating-point and often faster
+
+; General rule: x / const = x * (1/const) when const has an exact reciprocal
+; Uses has-exact-recip primitive to check if reciprocal is exact
+; Uses float-recip primitive to compute the reciprocal
+(rule ((= e (FDiv x (Const c))) (has-exact-recip c))
+      ((union e (FMul x (Const (float-recip c))))))
+

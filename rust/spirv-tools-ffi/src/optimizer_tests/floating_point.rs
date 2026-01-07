@@ -654,3 +654,123 @@ fn fp_x_plus_x_to_mul_2() {
         "x + x should become x * 2"
     );
 }
+
+// =============================================================================
+// Reciprocal Division to Multiplication Tests (C++ ReciprocalFDiv parity)
+// =============================================================================
+// Division by power-of-2 reciprocals can be converted to multiplication
+// x / 0.5 = x * 2.0, x / 0.25 = x * 4.0, etc.
+
+#[test]
+fn fp_div_half_to_mul_two() {
+    // x / 0.5 should become x * 2.0
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.float_ty]);
+    let x = params[0];
+    let half = b.const_f32(0.5);
+    let _ = b.builder.f_div(b.float_ty, None, x, half).expect("fdiv");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    assert!(
+        !result.has_opcode(Op::FDiv),
+        "x / 0.5 should become x * 2.0"
+    );
+}
+
+#[test]
+fn fp_div_quarter_to_mul_four() {
+    // x / 0.25 should become x * 4.0
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.float_ty]);
+    let x = params[0];
+    let quarter = b.const_f32(0.25);
+    let _ = b.builder.f_div(b.float_ty, None, x, quarter).expect("fdiv");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    assert!(
+        !result.has_opcode(Op::FDiv),
+        "x / 0.25 should become x * 4.0"
+    );
+}
+
+#[test]
+fn fp_div_two_to_mul_half() {
+    // x / 2.0 should become x * 0.5
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.float_ty]);
+    let x = params[0];
+    let two = b.const_f32(2.0);
+    let _ = b.builder.f_div(b.float_ty, None, x, two).expect("fdiv");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    assert!(
+        !result.has_opcode(Op::FDiv),
+        "x / 2.0 should become x * 0.5"
+    );
+}
+
+#[test]
+fn fp_div_four_to_mul_quarter() {
+    // x / 4.0 should become x * 0.25
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.float_ty]);
+    let x = params[0];
+    let four = b.const_f32(4.0);
+    let _ = b.builder.f_div(b.float_ty, None, x, four).expect("fdiv");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    assert!(
+        !result.has_opcode(Op::FDiv),
+        "x / 4.0 should become x * 0.25"
+    );
+}
+
+#[test]
+fn fp_div_eighth_to_mul_eight() {
+    // x / 0.125 should become x * 8.0
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.float_ty]);
+    let x = params[0];
+    let eighth = b.const_f32(0.125);
+    let _ = b.builder.f_div(b.float_ty, None, x, eighth).expect("fdiv");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    assert!(
+        !result.has_opcode(Op::FDiv),
+        "x / 0.125 should become x * 8.0"
+    );
+}
+
+#[test]
+fn fp_div_eight_to_mul_eighth() {
+    // x / 8.0 should become x * 0.125
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.float_ty]);
+    let x = params[0];
+    let eight = b.const_f32(8.0);
+    let _ = b.builder.f_div(b.float_ty, None, x, eight).expect("fdiv");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    assert!(
+        !result.has_opcode(Op::FDiv),
+        "x / 8.0 should become x * 0.125"
+    );
+}
