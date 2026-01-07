@@ -48,15 +48,21 @@
 ; Comparison Flipping (swap operands)
 ; =============================================================================
 
-; a < b is equivalent to b > a
-(rewrite (SLt a b) (SGt b a))
-(rewrite (SLe a b) (SGe b a))
-(rewrite (ULt a b) (UGt b a))
-(rewrite (ULe a b) (UGe b a))
+; a < b is equivalent to b > a - ONE-DIRECTIONAL
+; Canonicalize to "less than" form (SLt, SLe, ULt, ULe) to prevent cycles
+(rule ((= e (SGt a b)))
+      ((union e (SLt b a))))
+(rule ((= e (SGe a b)))
+      ((union e (SLe b a))))
+(rule ((= e (UGt a b)))
+      ((union e (ULt b a))))
+(rule ((= e (UGe a b)))
+      ((union e (ULe b a))))
 
-; Equality is symmetric
-(rewrite (Eq a b) (Eq b a))
-(rewrite (Ne a b) (Ne b a))
+; Equality is symmetric - ONE-DIRECTIONAL
+; Only union, don't create new nodes in both directions
+; Note: We don't add any rule here because Eq(a,b) ↔ Eq(b,a) would still explode
+; The e-graph handles this via union when both forms are present
 
 ; =============================================================================
 ; Comparison of Negated Values

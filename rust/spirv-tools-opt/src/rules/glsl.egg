@@ -248,16 +248,22 @@
 ; Fma(a, b, c) = a*b + c (definition, for expansion if needed)
 ; But prefer Fma when available (single rounding, faster)
 
-; Recognize Fma patterns
-(rewrite (FAdd (FMul a b) c) (Fma a b c))
-(rewrite (FAdd c (FMul a b)) (Fma a b c))
+; Recognize Fma patterns - ONE-DIRECTIONAL (prefer Fma over expanded form)
+; We don't expand Fma to FAdd(FMul...) since that's worse for performance
+(rule ((= e (FAdd (FMul a b) c)))
+      ((union e (Fma a b c))))
+(rule ((= e (FAdd c (FMul a b))))
+      ((union e (Fma a b c))))
 
-; Fma with zero
-(rewrite (Fma a b (Const 0)) (FMul a b))
+; Fma with zero - ONE-DIRECTIONAL (simplify, don't expand)
+(rule ((= e (Fma a b (Const 0))))
+      ((union e (FMul a b))))
 
-; Fma with one
-(rewrite (Fma (Const 1) b c) (FAdd b c))
-(rewrite (Fma a (Const 1) c) (FAdd a c))
+; Fma with one - ONE-DIRECTIONAL (simplify, don't expand)
+(rule ((= e (Fma (Const 1) b c)))
+      ((union e (FAdd b c))))
+(rule ((= e (Fma a (Const 1) c)))
+      ((union e (FAdd a c))))
 
 ; =============================================================================
 ; Absolute Value and Sign

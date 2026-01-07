@@ -30,9 +30,12 @@
 (rule ((= e (BitNot (BitNot x))))
       ((union e x)))
 
-; De Morgan's laws
-(rewrite (BitNot (BitAnd x y)) (BitOr (BitNot x) (BitNot y)))
-(rewrite (BitNot (BitOr x y)) (BitAnd (BitNot x) (BitNot y)))
+; De Morgan's laws - ONE-DIRECTIONAL to prevent explosion
+; We push BitNot INSIDE, not pull OUTSIDE (which would expand forever)
+(rule ((= e (BitNot (BitAnd x y))))
+      ((union e (BitOr (BitNot x) (BitNot y)))))
+(rule ((= e (BitNot (BitOr x y))))
+      ((union e (BitAnd (BitNot x) (BitNot y)))))
 
 ; Complement rules
 (rule ((= e (BitAnd x (BitNot x))))
@@ -44,9 +47,12 @@
 (rule ((= e (BitOr (BitNot x) x)))
       ((union e (Const -1))))
 
-; XOR rules
-(rewrite (BitXor (BitNot x) y) (BitNot (BitXor x y)))
-(rewrite (BitXor x (BitNot y)) (BitNot (BitXor x y)))
+; XOR rules - ONE-DIRECTIONAL to prevent explosion
+; We pull BitNot OUT of XOR (not push in, which would expand forever)
+(rule ((= e (BitXor (BitNot x) y)))
+      ((union e (BitNot (BitXor x y)))))
+(rule ((= e (BitXor x (BitNot y))))
+      ((union e (BitNot (BitXor x y)))))
 
 ; Absorption rules: x | (x & y) = x, x & (x | y) = x - ONE-DIRECTIONAL
 (rule ((= e (BitOr x (BitAnd x y))))

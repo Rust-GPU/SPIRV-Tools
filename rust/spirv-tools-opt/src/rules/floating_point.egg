@@ -84,17 +84,25 @@
 ; Negation of subtraction
 (rewrite (FNeg (FSub a b)) (FSub b a))
 
-; Distributive property for negation
-(rewrite (FMul (FNeg a) b) (FNeg (FMul a b)))
-(rewrite (FMul a (FNeg b)) (FNeg (FMul a b)))
+; Distributive property for negation - ONE-DIRECTIONAL to prevent explosion
+; We pull FNeg OUT of FMul, not push IN (which would expand forever)
+(rule ((= e (FMul (FNeg a) b)))
+      ((union e (FNeg (FMul a b)))))
+(rule ((= e (FMul a (FNeg b))))
+      ((union e (FNeg (FMul a b)))))
 
-; Double negation in multiplication cancels
-(rewrite (FMul (FNeg a) (FNeg b)) (FMul a b))
+; Double negation in multiplication cancels - ONE-DIRECTIONAL
+(rule ((= e (FMul (FNeg a) (FNeg b))))
+      ((union e (FMul a b))))
 
-; Division with negation
-(rewrite (FDiv (FNeg a) b) (FNeg (FDiv a b)))
-(rewrite (FDiv a (FNeg b)) (FNeg (FDiv a b)))
-(rewrite (FDiv (FNeg a) (FNeg b)) (FDiv a b))
+; Division with negation - ONE-DIRECTIONAL to prevent explosion
+; We pull FNeg OUT of FDiv, not push IN
+(rule ((= e (FDiv (FNeg a) b)))
+      ((union e (FNeg (FDiv a b)))))
+(rule ((= e (FDiv a (FNeg b))))
+      ((union e (FNeg (FDiv a b)))))
+(rule ((= e (FDiv (FNeg a) (FNeg b))))
+      ((union e (FDiv a b))))
 
 ; =============================================================================
 ; Floating-Point Min/Max
@@ -156,8 +164,10 @@
 (rule ((= e (FAdd (FMul c a) (FMul c b))))
       ((union e (FMul c (FAdd a b)))))
 
-; x + x = 2*x
-(rewrite (FAdd x x) (FMul x (Const 2)))
+; x + x = 2*x - ONE-DIRECTIONAL to prevent explosion
+; (FMul x 2 → FAdd x x would expand forever)
+(rule ((= e (FAdd x x)))
+      ((union e (FMul x (Const 2)))))
 
 ; =============================================================================
 ; FP Division Optimization

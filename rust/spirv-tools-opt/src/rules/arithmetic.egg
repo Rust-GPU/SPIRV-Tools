@@ -21,14 +21,23 @@
       ((union e (Const 0))))
 
 ; Negation rules
-(rewrite (Sub (Const 0) x) (Neg x))
+; (Sub 0 x) is Neg x - ONE-DIRECTIONAL to prevent Neg x → Sub 0 x expansion
+(rule ((= e (Sub (Const 0) x)))
+      ((union e (Neg x))))
 ; Double negation - ONE-DIRECTIONAL (x → Neg(Neg(x)) would explode)
 (rule ((= e (Neg (Neg x))))
       ((union e x)))
-(rewrite (Mul x (Const -1)) (Neg x))
-(rewrite (Mul (Const -1) x) (Neg x))
-(rewrite (Neg (Add x y)) (Add (Neg x) (Neg y)))
-(rewrite (Neg (Sub x y)) (Sub y x))
+; Mul by -1 is Neg - ONE-DIRECTIONAL to prevent Neg x → Mul x -1 expansion
+(rule ((= e (Mul x (Const -1))))
+      ((union e (Neg x))))
+(rule ((= e (Mul (Const -1) x)))
+      ((union e (Neg x))))
+; Neg distribution - ONE-DIRECTIONAL: push Neg INSIDE Add/Sub, not OUTSIDE
+; This avoids Add(Neg x, Neg y) → Neg(Add(x, y)) → Add(Neg x, Neg y) cycles
+(rule ((= e (Neg (Add x y))))
+      ((union e (Add (Neg x) (Neg y)))))
+(rule ((= e (Neg (Sub x y))))
+      ((union e (Sub y x))))
 (rule ((= e (Add x (Neg x))))
       ((union e (Const 0))))
 (rule ((= e (Add (Neg x) x)))
@@ -52,11 +61,19 @@
       ((union e x)))
 (rule ((= e (Sub x (Sub x y))))
       ((union e y)))
-(rewrite (Sub x (Add x y)) (Neg y))
-(rewrite (Sub x (Add y x)) (Neg y))
-(rewrite (Sub (Sub x y) x) (Neg y))
-(rewrite (Sub (Sub a b) (Sub c b)) (Sub a c))
-(rewrite (Sub (Sub a b) (Sub a c)) (Sub c b))
+; Sub patterns that produce Neg - ONE-DIRECTIONAL
+; (Neg y → Sub x (Add x y) would create terms out of thin air)
+(rule ((= e (Sub x (Add x y))))
+      ((union e (Neg y))))
+(rule ((= e (Sub x (Add y x))))
+      ((union e (Neg y))))
+(rule ((= e (Sub (Sub x y) x)))
+      ((union e (Neg y))))
+; Sub-sub simplifications - ONE-DIRECTIONAL
+(rule ((= e (Sub (Sub a b) (Sub c b))))
+      ((union e (Sub a c))))
+(rule ((= e (Sub (Sub a b) (Sub a c))))
+      ((union e (Sub c b))))
 
 ; Commutativity - ONE-DIRECTIONAL to prevent explosion
 ; We normalize: move constants to the right to enable constant reassociation
@@ -80,21 +97,35 @@
 (rule ((= e (Add (Const a) (Add (Const b) x))))
       ((union e (Add x (Const (+ a b))))))
 
-; Strength reduction: multiply by power of 2 -> shift
-(rewrite (Mul x (Const 2)) (Shl x (Const 1)))
-(rewrite (Mul x (Const 4)) (Shl x (Const 2)))
-(rewrite (Mul x (Const 8)) (Shl x (Const 3)))
-(rewrite (Mul x (Const 16)) (Shl x (Const 4)))
-(rewrite (Mul x (Const 32)) (Shl x (Const 5)))
-(rewrite (Mul x (Const 64)) (Shl x (Const 6)))
-(rewrite (Mul x (Const 128)) (Shl x (Const 7)))
-(rewrite (Mul x (Const 256)) (Shl x (Const 8)))
+; Strength reduction: multiply by power of 2 -> shift - ONE-DIRECTIONAL
+; We recognize Mul x 2^n as Shl, but NOT the reverse (Shl x n → Mul x 2^n)
+; The reverse would interact badly with shift recognition patterns
+(rule ((= e (Mul x (Const 2))))
+      ((union e (Shl x (Const 1)))))
+(rule ((= e (Mul x (Const 4))))
+      ((union e (Shl x (Const 2)))))
+(rule ((= e (Mul x (Const 8))))
+      ((union e (Shl x (Const 3)))))
+(rule ((= e (Mul x (Const 16))))
+      ((union e (Shl x (Const 4)))))
+(rule ((= e (Mul x (Const 32))))
+      ((union e (Shl x (Const 5)))))
+(rule ((= e (Mul x (Const 64))))
+      ((union e (Shl x (Const 6)))))
+(rule ((= e (Mul x (Const 128))))
+      ((union e (Shl x (Const 7)))))
+(rule ((= e (Mul x (Const 256))))
+      ((union e (Shl x (Const 8)))))
 
-; Division by power of 2 -> shift (unsigned)
-(rewrite (UDiv x (Const 2)) (ShrU x (Const 1)))
-(rewrite (UDiv x (Const 4)) (ShrU x (Const 2)))
-(rewrite (UDiv x (Const 8)) (ShrU x (Const 3)))
-(rewrite (UDiv x (Const 16)) (ShrU x (Const 4)))
+; Division by power of 2 -> shift (unsigned) - ONE-DIRECTIONAL
+(rule ((= e (UDiv x (Const 2))))
+      ((union e (ShrU x (Const 1)))))
+(rule ((= e (UDiv x (Const 4))))
+      ((union e (ShrU x (Const 2)))))
+(rule ((= e (UDiv x (Const 8))))
+      ((union e (ShrU x (Const 3)))))
+(rule ((= e (UDiv x (Const 16))))
+      ((union e (ShrU x (Const 4)))))
 
 ; Division cancellation - ONE-DIRECTIONAL to prevent explosion
 ; Without this fix, x → SDiv(Mul(x, a), a) for every x and a
@@ -131,11 +162,15 @@
 (rule ((= e (UDiv x x)))
       ((union e (Const 1))))
 
-; Mod/Rem by power of 2: x mod 2^n = x & (2^n - 1) for unsigned
-(rewrite (UMod x (Const 2)) (BitAnd x (Const 1)))
-(rewrite (UMod x (Const 4)) (BitAnd x (Const 3)))
-(rewrite (UMod x (Const 8)) (BitAnd x (Const 7)))
-(rewrite (UMod x (Const 16)) (BitAnd x (Const 15)))
+; Mod/Rem by power of 2: x mod 2^n = x & (2^n - 1) for unsigned - ONE-DIRECTIONAL
+(rule ((= e (UMod x (Const 2))))
+      ((union e (BitAnd x (Const 1)))))
+(rule ((= e (UMod x (Const 4))))
+      ((union e (BitAnd x (Const 3)))))
+(rule ((= e (UMod x (Const 8))))
+      ((union e (BitAnd x (Const 7)))))
+(rule ((= e (UMod x (Const 16))))
+      ((union e (BitAnd x (Const 15)))))
 
 ; Division/mod of 0
 (rule ((= e (SDiv (Const 0) x)))
@@ -158,23 +193,36 @@
       ((union e (Const 0))))
 
 ; =============================================================================
-; Distributive Law (Factoring) Rules
+; Distributive Law (Factoring) Rules - ONE-DIRECTIONAL
 ; =============================================================================
+; NOTE: These MUST be one-directional rules! Using bidirectional rewrite causes
+; x * (a + b) → (x * a) + (x * b) which expands forever with nested expressions.
+; We only want to FACTOR (collect terms), not DISTRIBUTE (expand terms).
 
 ; (x * a) + (x * b) => x * (a + b)  - factoring out common term
-(rewrite (Add (Mul x a) (Mul x b)) (Mul x (Add a b)))
-(rewrite (Add (Mul a x) (Mul b x)) (Mul x (Add a b)))
-(rewrite (Add (Mul x a) (Mul b x)) (Mul x (Add a b)))
-(rewrite (Add (Mul a x) (Mul x b)) (Mul x (Add a b)))
+(rule ((= e (Add (Mul x a) (Mul x b))))
+      ((union e (Mul x (Add a b)))))
+(rule ((= e (Add (Mul a x) (Mul b x))))
+      ((union e (Mul x (Add a b)))))
+(rule ((= e (Add (Mul x a) (Mul b x))))
+      ((union e (Mul x (Add a b)))))
+(rule ((= e (Add (Mul a x) (Mul x b))))
+      ((union e (Mul x (Add a b)))))
 
 ; (x * a) - (x * b) => x * (a - b)  - factoring with subtraction
-(rewrite (Sub (Mul x a) (Mul x b)) (Mul x (Sub a b)))
-(rewrite (Sub (Mul a x) (Mul b x)) (Mul x (Sub a b)))
-(rewrite (Sub (Mul x a) (Mul b x)) (Mul x (Sub a b)))
-(rewrite (Sub (Mul a x) (Mul x b)) (Mul x (Sub a b)))
+(rule ((= e (Sub (Mul x a) (Mul x b))))
+      ((union e (Mul x (Sub a b)))))
+(rule ((= e (Sub (Mul a x) (Mul b x))))
+      ((union e (Mul x (Sub a b)))))
+(rule ((= e (Sub (Mul x a) (Mul b x))))
+      ((union e (Mul x (Sub a b)))))
+(rule ((= e (Sub (Mul a x) (Mul x b))))
+      ((union e (Mul x (Sub a b)))))
 
-; x + x => x * 2  - special case for adding same value
-(rewrite (Add x x) (Mul x (Const 2)))
+; x + x => x * 2  - special case for adding same value - ONE-DIRECTIONAL
+; (x * 2 → x + x would explode)
+(rule ((= e (Add x x)))
+      ((union e (Mul x (Const 2)))))
 
 ; =============================================================================
 ; Strength Reduction Recognition Patterns
@@ -325,19 +373,29 @@
 ; (x / c) * c + (x % c) = x (euclidean division identity)
 ; This is complex to express but useful for pattern matching
 
-; Negation and multiplication
-(rewrite (Mul (Neg x) y) (Neg (Mul x y)))
-(rewrite (Mul x (Neg y)) (Neg (Mul x y)))
-(rewrite (Mul (Neg x) (Neg y)) (Mul x y))
+; Negation and multiplication - ONE-DIRECTIONAL to prevent explosion
+; We pull Neg OUT of Mul, not push Neg IN (which would expand forever)
+(rule ((= e (Mul (Neg x) y)))
+      ((union e (Neg (Mul x y)))))
+(rule ((= e (Mul x (Neg y))))
+      ((union e (Neg (Mul x y)))))
+; Double negation in multiply cancels - ONE-DIRECTIONAL
+(rule ((= e (Mul (Neg x) (Neg y))))
+      ((union e (Mul x y))))
 
 ; =============================================================================
 ; Additional Expression Combining (C++ Parity)
 ; =============================================================================
 
-; Division with negation (integer)
-(rewrite (SDiv (Neg x) y) (Neg (SDiv x y)))
-(rewrite (SDiv x (Neg y)) (Neg (SDiv x y)))
-(rewrite (SDiv (Neg x) (Neg y)) (SDiv x y))
+; Division with negation (integer) - ONE-DIRECTIONAL to prevent explosion
+; We pull Neg OUT of SDiv, not push Neg IN
+(rule ((= e (SDiv (Neg x) y)))
+      ((union e (Neg (SDiv x y)))))
+(rule ((= e (SDiv x (Neg y))))
+      ((union e (Neg (SDiv x y)))))
+; Double negation in divide cancels - ONE-DIRECTIONAL
+(rule ((= e (SDiv (Neg x) (Neg y))))
+      ((union e (SDiv x y))))
 
 ; Note: FP negation distribution rules are in floating_point.egg
 
@@ -345,9 +403,11 @@
 ; Additional Factoring Patterns
 ; =============================================================================
 
-; x + x + x = x * 3
-(rewrite (Add x (Add x x)) (Mul x (Const 3)))
-(rewrite (Add (Add x x) x) (Mul x (Const 3)))
+; x + x + x = x * 3 - ONE-DIRECTIONAL to prevent explosion
+(rule ((= e (Add x (Add x x))))
+      ((union e (Mul x (Const 3)))))
+(rule ((= e (Add (Add x x) x)))
+      ((union e (Mul x (Const 3)))))
 
 ; Factoring patterns (recognize expanded form, merge to compact)
 ; a*c - b*c = (a - b) * c
@@ -359,24 +419,36 @@
       ((union e (Mul (Sub a b) c))))
 
 ; =============================================================================
-; Power of Two Division Optimization
+; Power of Two Division Optimization - ONE-DIRECTIONAL
 ; =============================================================================
 
 ; More powers of 2 for unsigned division
-(rewrite (UDiv x (Const 32)) (ShrU x (Const 5)))
-(rewrite (UDiv x (Const 64)) (ShrU x (Const 6)))
-(rewrite (UDiv x (Const 128)) (ShrU x (Const 7)))
-(rewrite (UDiv x (Const 256)) (ShrU x (Const 8)))
-(rewrite (UDiv x (Const 512)) (ShrU x (Const 9)))
-(rewrite (UDiv x (Const 1024)) (ShrU x (Const 10)))
+(rule ((= e (UDiv x (Const 32))))
+      ((union e (ShrU x (Const 5)))))
+(rule ((= e (UDiv x (Const 64))))
+      ((union e (ShrU x (Const 6)))))
+(rule ((= e (UDiv x (Const 128))))
+      ((union e (ShrU x (Const 7)))))
+(rule ((= e (UDiv x (Const 256))))
+      ((union e (ShrU x (Const 8)))))
+(rule ((= e (UDiv x (Const 512))))
+      ((union e (ShrU x (Const 9)))))
+(rule ((= e (UDiv x (Const 1024))))
+      ((union e (ShrU x (Const 10)))))
 
 ; More powers of 2 for unsigned modulo
-(rewrite (UMod x (Const 32)) (BitAnd x (Const 31)))
-(rewrite (UMod x (Const 64)) (BitAnd x (Const 63)))
-(rewrite (UMod x (Const 128)) (BitAnd x (Const 127)))
-(rewrite (UMod x (Const 256)) (BitAnd x (Const 255)))
-(rewrite (UMod x (Const 512)) (BitAnd x (Const 511)))
-(rewrite (UMod x (Const 1024)) (BitAnd x (Const 1023)))
+(rule ((= e (UMod x (Const 32))))
+      ((union e (BitAnd x (Const 31)))))
+(rule ((= e (UMod x (Const 64))))
+      ((union e (BitAnd x (Const 63)))))
+(rule ((= e (UMod x (Const 128))))
+      ((union e (BitAnd x (Const 127)))))
+(rule ((= e (UMod x (Const 256))))
+      ((union e (BitAnd x (Const 255)))))
+(rule ((= e (UMod x (Const 512))))
+      ((union e (BitAnd x (Const 511)))))
+(rule ((= e (UMod x (Const 1024))))
+      ((union e (BitAnd x (Const 1023)))))
 
 ; Note: Floating-point identity rules (FAdd x 0, FMul x 1, etc.) are in floating_point.egg
 
@@ -505,9 +577,11 @@
 ; Add with Negate Merging (C++ MergeAddNegateArithmetic)
 ; =============================================================================
 
-; (-x) + c = c - x
-(rewrite (Add (Neg x) (Const c)) (Sub (Const c) x))
-(rewrite (Add (Const c) (Neg x)) (Sub (Const c) x))
+; (-x) + c = c - x - ONE-DIRECTIONAL
+(rule ((= e (Add (Neg x) (Const c))))
+      ((union e (Sub (Const c) x))))
+(rule ((= e (Add (Const c) (Neg x))))
+      ((union e (Sub (Const c) x))))
 
 ; =============================================================================
 ; Sub with Negate Merging (C++ MergeSubNegateArithmetic)
@@ -517,8 +591,9 @@
 (rule ((= e (Sub (Neg x) (Const c))))
       ((union e (Sub (Const (- 0 c)) x))))
 
-; c - (-x) = c + x
-(rewrite (Sub (Const c) (Neg x)) (Add (Const c) x))
+; c - (-x) = c + x - ONE-DIRECTIONAL
+(rule ((= e (Sub (Const c) (Neg x))))
+      ((union e (Add (Const c) x))))
 
 ; =============================================================================
 ; Sub Arithmetic Merging (C++ MergeSubAddArithmetic, MergeSubSubArithmetic)

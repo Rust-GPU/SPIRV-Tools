@@ -577,7 +577,9 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     }
 
     // Step 4: Run optimization ONCE on the entire module
-    let run_cmd = "(run-schedule (repeat 20 (run)))";
+    // Use 5 iterations which works without explosion
+    // TODO: Fix remaining bidirectional rules to enable more iterations
+    let run_cmd = "(run-schedule (repeat 5 (run)))";
     egraph
         .parse_and_run_program(None, run_cmd)
         .map_err(|e| EgglogOptError::ExecutionError(e.to_string()))?;

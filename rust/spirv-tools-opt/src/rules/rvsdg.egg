@@ -12,9 +12,11 @@
 ; =============================================================================
 
 ; Gamma and Select are equivalent - unify them
-(rewrite (Select c t f) (Gamma c t f))
-(rewrite (Gamma c t f) (Select c t f))
-(rewrite (If c t f) (Gamma c t f))
+; ONE-DIRECTIONAL: Convert Select/If to Gamma (canonical form), never the reverse
+(rule ((= e (Select c t f)))
+      ((union e (Gamma c t f))))
+(rule ((= e (If c t f)))
+      ((union e (Gamma c t f))))
 
 ; =============================================================================
 ; RVSDG Gamma (Conditional) Rewrite Rules
@@ -49,25 +51,41 @@
 ; select(c, true, c) = c | true = true when c is boolean
 ; But this is the same as select(c, 1, c) = c ? 1 : c which is just 1 when c is true, c when false
 
-; Gamma distributes over operations (hoisting)
-; These rules enable common subexpression elimination across branches
-(rewrite (Add (Gamma c a b) (Gamma c x y)) (Gamma c (Add a x) (Add b y)))
-(rewrite (Sub (Gamma c a b) (Gamma c x y)) (Gamma c (Sub a x) (Sub b y)))
-(rewrite (Mul (Gamma c a b) (Gamma c x y)) (Gamma c (Mul a x) (Mul b y)))
-(rewrite (BitAnd (Gamma c a b) (Gamma c x y)) (Gamma c (BitAnd a x) (BitAnd b y)))
-(rewrite (BitOr (Gamma c a b) (Gamma c x y)) (Gamma c (BitOr a x) (BitOr b y)))
-(rewrite (BitXor (Gamma c a b) (Gamma c x y)) (Gamma c (BitXor a x) (BitXor b y)))
+; Gamma distributes over operations (hoisting) - ONE-DIRECTIONAL
+; Push operations INTO Gamma, not out (pulling out creates Op(Gamma, Gamma) which explodes)
+; These rules combine two Gammas with same condition into a single Gamma
+(rule ((= e (Add (Gamma c a b) (Gamma c x y))))
+      ((union e (Gamma c (Add a x) (Add b y)))))
+(rule ((= e (Sub (Gamma c a b) (Gamma c x y))))
+      ((union e (Gamma c (Sub a x) (Sub b y)))))
+(rule ((= e (Mul (Gamma c a b) (Gamma c x y))))
+      ((union e (Gamma c (Mul a x) (Mul b y)))))
+(rule ((= e (BitAnd (Gamma c a b) (Gamma c x y))))
+      ((union e (Gamma c (BitAnd a x) (BitAnd b y)))))
+(rule ((= e (BitOr (Gamma c a b) (Gamma c x y))))
+      ((union e (Gamma c (BitOr a x) (BitOr b y)))))
+(rule ((= e (BitXor (Gamma c a b) (Gamma c x y))))
+      ((union e (Gamma c (BitXor a x) (BitXor b y)))))
 
-; Hoist common operations out of Gamma
+; Hoist common operations out of Gamma - ONE-DIRECTIONAL
 ; (c ? (x + a) : (x + b)) => x + (c ? a : b)
-(rewrite (Gamma c (Add x a) (Add x b)) (Add x (Gamma c a b)))
-(rewrite (Gamma c (Add a x) (Add b x)) (Add (Gamma c a b) x))
-(rewrite (Gamma c (Sub x a) (Sub x b)) (Sub x (Gamma c a b)))
-(rewrite (Gamma c (Mul x a) (Mul x b)) (Mul x (Gamma c a b)))
-(rewrite (Gamma c (Mul a x) (Mul b x)) (Mul (Gamma c a b) x))
-(rewrite (Gamma c (BitAnd x a) (BitAnd x b)) (BitAnd x (Gamma c a b)))
-(rewrite (Gamma c (BitOr x a) (BitOr x b)) (BitOr x (Gamma c a b)))
-(rewrite (Gamma c (BitXor x a) (BitXor x b)) (BitXor x (Gamma c a b)))
+; Hoist the common factor OUT (simplifies branching)
+(rule ((= e (Gamma c (Add x a) (Add x b))))
+      ((union e (Add x (Gamma c a b)))))
+(rule ((= e (Gamma c (Add a x) (Add b x))))
+      ((union e (Add (Gamma c a b) x))))
+(rule ((= e (Gamma c (Sub x a) (Sub x b))))
+      ((union e (Sub x (Gamma c a b)))))
+(rule ((= e (Gamma c (Mul x a) (Mul x b))))
+      ((union e (Mul x (Gamma c a b)))))
+(rule ((= e (Gamma c (Mul a x) (Mul b x))))
+      ((union e (Mul (Gamma c a b) x))))
+(rule ((= e (Gamma c (BitAnd x a) (BitAnd x b))))
+      ((union e (BitAnd x (Gamma c a b)))))
+(rule ((= e (Gamma c (BitOr x a) (BitOr x b))))
+      ((union e (BitOr x (Gamma c a b)))))
+(rule ((= e (Gamma c (BitXor x a) (BitXor x b))))
+      ((union e (BitXor x (Gamma c a b)))))
 
 ; =============================================================================
 ; RVSDG Theta (Loop) Rewrite Rules - Loop Invariant Code Motion
@@ -399,18 +417,26 @@
 ; select(c, f(x), f(y)) where f is expensive can become f(select(c, x, y))
 ; when f is a pure function. This is already covered by Gamma distribution.
 
-; Select absorption with arithmetic:
-; select(c, x + y, x) = x + select(c, y, 0)
-(rewrite (Gamma c (Add x y) x) (Add x (Gamma c y (Const 0))))
-(rewrite (Gamma c x (Add x y)) (Add x (Gamma c (Const 0) y)))
-(rewrite (Gamma c (FAdd x y) x) (FAdd x (Gamma c y (Const 0))))
-(rewrite (Gamma c x (FAdd x y)) (FAdd x (Gamma c (Const 0) y)))
+; Select absorption with arithmetic: - ONE-DIRECTIONAL
+; select(c, x + y, x) = x + select(c, y, 0) - hoist common term OUT
+(rule ((= e (Gamma c (Add x y) x)))
+      ((union e (Add x (Gamma c y (Const 0))))))
+(rule ((= e (Gamma c x (Add x y))))
+      ((union e (Add x (Gamma c (Const 0) y)))))
+(rule ((= e (Gamma c (FAdd x y) x)))
+      ((union e (FAdd x (Gamma c y (Const 0))))))
+(rule ((= e (Gamma c x (FAdd x y))))
+      ((union e (FAdd x (Gamma c (Const 0) y)))))
 
-; select(c, x * y, x) = x * select(c, y, 1) (when y could be 1)
-(rewrite (Gamma c (Mul x y) x) (Mul x (Gamma c y (Const 1))))
-(rewrite (Gamma c x (Mul x y)) (Mul x (Gamma c (Const 1) y)))
-(rewrite (Gamma c (FMul x y) x) (FMul x (Gamma c y (Const 1))))
-(rewrite (Gamma c x (FMul x y)) (FMul x (Gamma c (Const 1) y)))
+; select(c, x * y, x) = x * select(c, y, 1) (when y could be 1) - ONE-DIRECTIONAL
+(rule ((= e (Gamma c (Mul x y) x)))
+      ((union e (Mul x (Gamma c y (Const 1))))))
+(rule ((= e (Gamma c x (Mul x y))))
+      ((union e (Mul x (Gamma c (Const 1) y)))))
+(rule ((= e (Gamma c (FMul x y) x)))
+      ((union e (FMul x (Gamma c y (Const 1))))))
+(rule ((= e (Gamma c x (FMul x y))))
+      ((union e (FMul x (Gamma c (Const 1) y)))))
 
 ; Nested Gamma flattening (when inner condition relates to outer)
 ; select(c, select(c, a, b), d) = select(c, a, d) - already have
@@ -423,13 +449,9 @@
 ; Algebraic Simplification through Gamma
 ; =============================================================================
 
-; x - select(c, y, 0) = select(c, x - y, x)
-(rewrite (Sub x (Gamma c y (Const 0))) (Gamma c (Sub x y) x))
-(rewrite (FSub x (Gamma c y (Const 0))) (Gamma c (FSub x y) x))
-
-; x + select(c, y, 0) = select(c, x + y, x)
-(rewrite (Add x (Gamma c y (Const 0))) (Gamma c (Add x y) x))
-(rewrite (FAdd x (Gamma c y (Const 0))) (Gamma c (FAdd x y) x))
+; NOTE: The inverse rules for "x op select(c, y, 0) -> select(c, x op y, x)" are REMOVED
+; because they form a cycle with the rules at lines 422-439.
+; The select absorption rules above (420-439) are the canonical simplifying direction.
 
 ; =============================================================================
 ; Min/Max with Select Patterns
