@@ -225,6 +225,111 @@ fn float_recip(x: i64) -> i64 {
 }
 
 // =============================================================================
+// Float Arithmetic Primitives (for constant folding in FP rules)
+// =============================================================================
+// These primitives interpret i64 as f32 bit patterns (since SPIRV uses 32-bit floats).
+// For 32-bit floats, the bit pattern is stored in the lower 32 bits of i64.
+
+/// Multiply two f32 constants (stored as i64 bit patterns).
+fn float_mul32(a: i64, b: i64) -> i64 {
+    let fa = f32::from_bits(a as u32);
+    let fb = f32::from_bits(b as u32);
+    let result = fa * fb;
+    result.to_bits() as i64
+}
+
+/// Divide two f32 constants (stored as i64 bit patterns).
+fn float_div32(a: i64, b: i64) -> Option<i64> {
+    let fb = f32::from_bits(b as u32);
+    if fb == 0.0 {
+        return None;
+    }
+    let fa = f32::from_bits(a as u32);
+    let result = fa / fb;
+    Some(result.to_bits() as i64)
+}
+
+/// Add two f32 constants (stored as i64 bit patterns).
+fn float_add32(a: i64, b: i64) -> i64 {
+    let fa = f32::from_bits(a as u32);
+    let fb = f32::from_bits(b as u32);
+    let result = fa + fb;
+    result.to_bits() as i64
+}
+
+/// Subtract two f32 constants (stored as i64 bit patterns).
+fn float_sub32(a: i64, b: i64) -> i64 {
+    let fa = f32::from_bits(a as u32);
+    let fb = f32::from_bits(b as u32);
+    let result = fa - fb;
+    result.to_bits() as i64
+}
+
+/// Negate an f32 constant (stored as i64 bit pattern).
+fn float_neg32(a: i64) -> i64 {
+    let fa = f32::from_bits(a as u32);
+    let result = -fa;
+    result.to_bits() as i64
+}
+
+/// Check if an i64 represents f32 1.0 bit pattern.
+fn is_float_one32(x: i64) -> Option<()> {
+    let f = f32::from_bits(x as u32);
+    if f == 1.0 { Some(()) } else { None }
+}
+
+/// Check if an i64 represents f32 0.0 bit pattern.
+fn is_float_zero32(x: i64) -> Option<()> {
+    let f = f32::from_bits(x as u32);
+    if f == 0.0 { Some(()) } else { None }
+}
+
+/// Check if an i64 represents f32 -1.0 bit pattern.
+fn is_float_neg_one32(x: i64) -> Option<()> {
+    let f = f32::from_bits(x as u32);
+    if f == -1.0 { Some(()) } else { None }
+}
+
+/// Check if an i64 represents f32 2.0 bit pattern.
+fn is_float_two32(x: i64) -> Option<()> {
+    let f = f32::from_bits(x as u32);
+    if f == 2.0 { Some(()) } else { None }
+}
+
+/// Check if an i64 represents f32 0.5 bit pattern (for sqrt optimizations).
+fn is_float_half32(x: i64) -> Option<()> {
+    let f = f32::from_bits(x as u32);
+    if f == 0.5 { Some(()) } else { None }
+}
+
+/// Check if an i64 represents f32 -0.5 bit pattern (for inverse sqrt optimizations).
+fn is_float_neg_half32(x: i64) -> Option<()> {
+    let f = f32::from_bits(x as u32);
+    if f == -0.5 { Some(()) } else { None }
+}
+
+/// Check if an f32 constant (stored as i64 bit pattern) has an exact reciprocal.
+fn has_exact_recip32(x: i64) -> Option<()> {
+    let f = f32::from_bits(x as u32);
+    if !f.is_finite() || f == 0.0 {
+        return None;
+    }
+    let recip = 1.0 / f;
+    if !recip.is_finite() {
+        return None;
+    }
+    let roundtrip = 1.0 / recip;
+    if roundtrip == f { Some(()) } else { None }
+}
+
+/// Compute the reciprocal of an f32 constant (stored as i64 bit pattern).
+fn float_recip32(x: i64) -> i64 {
+    let f = f32::from_bits(x as u32);
+    let recip = 1.0f32 / f;
+    recip.to_bits() as i64
+}
+
+// =============================================================================
 // GLSL Transcendental Constant Folding Primitives
 // =============================================================================
 // These primitives evaluate GLSL math functions on float constants.
@@ -514,13 +619,33 @@ pub fn create_spirv_egraph() -> Result<EGraph, EgglogOptError> {
         log2_pow2(a)
     });
 
-    // Float reciprocal primitives for x/c -> x*(1/c) optimization
+    // Float reciprocal primitives for x/c -> x*(1/c) optimization (f64 versions, legacy)
     add_primitive!(&mut egraph, "has-exact-recip" = |a: i64| -?> () {
         has_exact_recip(a)
     });
     add_primitive!(&mut egraph, "float-recip" = |a: i64| -> i64 {
         float_recip(a)
     });
+
+    // f32 arithmetic primitives for FP constant folding
+    // These interpret i64 as f32 bit patterns (lower 32 bits)
+    add_primitive!(&mut egraph, "float-mul32" = |a: i64, b: i64| -> i64 { float_mul32(a, b) });
+    add_primitive!(&mut egraph, "float-div32" = |a: i64, b: i64| -?> i64 { float_div32(a, b) });
+    add_primitive!(&mut egraph, "float-add32" = |a: i64, b: i64| -> i64 { float_add32(a, b) });
+    add_primitive!(&mut egraph, "float-sub32" = |a: i64, b: i64| -> i64 { float_sub32(a, b) });
+    add_primitive!(&mut egraph, "float-neg32" = |a: i64| -> i64 { float_neg32(a) });
+
+    // f32 identity check primitives
+    add_primitive!(&mut egraph, "is-float-one32" = |a: i64| -?> () { is_float_one32(a) });
+    add_primitive!(&mut egraph, "is-float-zero32" = |a: i64| -?> () { is_float_zero32(a) });
+    add_primitive!(&mut egraph, "is-float-neg-one32" = |a: i64| -?> () { is_float_neg_one32(a) });
+    add_primitive!(&mut egraph, "is-float-two32" = |a: i64| -?> () { is_float_two32(a) });
+    add_primitive!(&mut egraph, "is-float-half32" = |a: i64| -?> () { is_float_half32(a) });
+    add_primitive!(&mut egraph, "is-float-neg-half32" = |a: i64| -?> () { is_float_neg_half32(a) });
+
+    // f32 reciprocal primitives
+    add_primitive!(&mut egraph, "has-exact-recip32" = |a: i64| -?> () { has_exact_recip32(a) });
+    add_primitive!(&mut egraph, "float-recip32" = |a: i64| -> i64 { float_recip32(a) });
 
     // GLSL transcendental constant folding primitives
     add_primitive!(&mut egraph, "float-sin" = |a: i64| -> i64 { float_sin(a) });

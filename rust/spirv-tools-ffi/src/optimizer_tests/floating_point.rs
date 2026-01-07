@@ -774,3 +774,49 @@ fn fp_div_eight_to_mul_eighth() {
         "x / 8.0 should become x * 0.125"
     );
 }
+
+// =============================================================================
+// Merge FMul with FDiv Tests (C++ MergeMulTest cases 8-9)
+// =============================================================================
+
+#[test]
+fn fp_merge_mul_of_div_left() {
+    // 2.0 * (2.0 / x) should become 4.0 / x
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.float_ty]);
+    let x = params[0];
+    let c2 = b.const_f32(2.0);
+    let div = b.builder.f_div(b.float_ty, None, c2, x).expect("fdiv");
+    let _ = b.builder.f_mul(b.float_ty, None, c2, div).expect("fmul");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    // Should merge into a single FDiv with 4.0
+    assert!(
+        !result.has_opcode(Op::FMul),
+        "c * (c' / x) should become (c*c') / x"
+    );
+}
+
+#[test]
+fn fp_merge_mul_of_div_right() {
+    // (2.0 / x) * 2.0 should become 4.0 / x
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.float_ty]);
+    let x = params[0];
+    let c2 = b.const_f32(2.0);
+    let div = b.builder.f_div(b.float_ty, None, c2, x).expect("fdiv");
+    let _ = b.builder.f_mul(b.float_ty, None, div, c2).expect("fmul");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    // Should merge into a single FDiv with 4.0
+    assert!(
+        !result.has_opcode(Op::FMul),
+        "(c / x) * c' should become (c*c') / x"
+    );
+}

@@ -1,15 +1,20 @@
 ; =============================================================================
 ; Floating-Point Rewrite Rules
 ; =============================================================================
+; NOTE: All f32 constants are stored as i64 bit patterns.
+; Use is-float-one32/is-float-zero32/is-float-neg-one32 to check identity values.
+; Use float-mul32/float-div32/float-add32/float-sub32 for arithmetic on constants.
 
 ; ONE-DIRECTIONAL to prevent e-graph explosion
-(rule ((= e (FMul x (Const 1))))
+; x * 1.0 = x (uses f32 identity check)
+(rule ((= e (FMul x (Const c))) (is-float-one32 c))
       ((union e x)))
-(rule ((= e (FMul (Const 1) x)))
+(rule ((= e (FMul (Const c) x)) (is-float-one32 c))
       ((union e x)))
-(rule ((= e (FAdd x (Const 0))))
+; x + 0.0 = x (uses f32 identity check)
+(rule ((= e (FAdd x (Const c))) (is-float-zero32 c))
       ((union e x)))
-(rule ((= e (FAdd (Const 0) x)))
+(rule ((= e (FAdd (Const c) x)) (is-float-zero32 c))
       ((union e x)))
 (rule ((= e (FNeg (FNeg x))))
       ((union e x)))
@@ -87,23 +92,23 @@
       ((union e (FSub a b))))
 
 ; Multiply by zero (note: NaN * 0 = NaN, but this is common optimization) - ONE-DIRECTIONAL
-(rule ((= e (FMul x (Const 0))))
-      ((union e (Const 0))))
-(rule ((= e (FMul (Const 0) x)))
-      ((union e (Const 0))))
+(rule ((= e (FMul x (Const c))) (is-float-zero32 c))
+      ((union e (Const c))))
+(rule ((= e (FMul (Const c) x)) (is-float-zero32 c))
+      ((union e (Const c))))
 
 ; Multiply by negative one - ONE-DIRECTIONAL
-(rule ((= e (FMul x (Const -1))))
+(rule ((= e (FMul x (Const c))) (is-float-neg-one32 c))
       ((union e (FNeg x))))
-(rule ((= e (FMul (Const -1) x)))
+(rule ((= e (FMul (Const c) x)) (is-float-neg-one32 c))
       ((union e (FNeg x))))
 
 ; Divide by one - ONE-DIRECTIONAL
-(rule ((= e (FDiv x (Const 1))))
+(rule ((= e (FDiv x (Const c))) (is-float-one32 c))
       ((union e x)))
 
 ; Divide by negative one - ONE-DIRECTIONAL
-(rule ((= e (FDiv x (Const -1))))
+(rule ((= e (FDiv x (Const c))) (is-float-neg-one32 c))
       ((union e (FNeg x))))
 
 ; x / x = 1 (assuming not zero or NaN)
@@ -210,8 +215,9 @@
 
 ; x + x = 2*x - ONE-DIRECTIONAL to prevent explosion
 ; (FMul x 2 → FAdd x x would expand forever)
+; Note: f32 2.0 has bit pattern 0x40000000 = 1073741824
 (rule ((= e (FAdd x x)))
-      ((union e (FMul x (Const 2)))))
+      ((union e (FMul x (Const 1073741824)))))
 
 ; =============================================================================
 ; FP Division Optimization
@@ -260,44 +266,44 @@
 ; =============================================================================
 ; Floating-Point Arithmetic Chain Merging (C++ MergeMulMul, etc.)
 ; =============================================================================
+; NOTE: Using float-mul32/float-div32/float-add32/float-sub32 for f32 constant operations
 
 ; (x * a) * b = x * (a * b) for float constants
 ; Note: These rules assume fast-math style optimization (may affect precision)
-; Using mul-safe guard to avoid overflow panics
-(rule ((= e (FMul (FMul x (Const a)) (Const b))) (mul-safe a b))
-      ((union e (FMul x (Const (* a b))))))
-(rule ((= e (FMul (Const b) (FMul x (Const a)))) (mul-safe a b))
-      ((union e (FMul x (Const (* a b))))))
+(rule ((= e (FMul (FMul x (Const a)) (Const b))))
+      ((union e (FMul x (Const (float-mul32 a b))))))
+(rule ((= e (FMul (Const b) (FMul x (Const a)))))
+      ((union e (FMul x (Const (float-mul32 a b))))))
 
 ; (x / a) / b = x / (a * b)
-(rule ((= e (FDiv (FDiv x (Const a)) (Const b))) (mul-safe a b))
-      ((union e (FDiv x (Const (* a b))))))
+(rule ((= e (FDiv (FDiv x (Const a)) (Const b))))
+      ((union e (FDiv x (Const (float-mul32 a b))))))
 
 ; (x * a) / b = x * (a / b)
-(rule ((= e (FDiv (FMul x (Const a)) (Const b))) (!= b 0))
-      ((union e (FMul x (Const (/ a b))))))
+(rule ((= e (FDiv (FMul x (Const a)) (Const b))))
+      ((union e (FMul x (Const (float-div32 a b))))))
 
 ; (x / a) * b = x * (b / a)
-(rule ((= e (FMul (FDiv x (Const a)) (Const b))) (!= a 0))
-      ((union e (FMul x (Const (/ b a))))))
+(rule ((= e (FMul (FDiv x (Const a)) (Const b))))
+      ((union e (FMul x (Const (float-div32 b a))))))
 
 ; (x + a) + b = x + (a + b)
 (rule ((= e (FAdd (FAdd x (Const a)) (Const b))))
-      ((union e (FAdd x (Const (+ a b))))))
+      ((union e (FAdd x (Const (float-add32 a b))))))
 (rule ((= e (FAdd (Const b) (FAdd x (Const a)))))
-      ((union e (FAdd x (Const (+ a b))))))
+      ((union e (FAdd x (Const (float-add32 a b))))))
 
 ; (x - a) - b = x - (a + b)
 (rule ((= e (FSub (FSub x (Const a)) (Const b))))
-      ((union e (FSub x (Const (+ a b))))))
+      ((union e (FSub x (Const (float-add32 a b))))))
 
 ; (x + a) - b = x + (a - b)
 (rule ((= e (FSub (FAdd x (Const a)) (Const b))))
-      ((union e (FAdd x (Const (- a b))))))
+      ((union e (FAdd x (Const (float-sub32 a b))))))
 
 ; (x - a) + b = x + (b - a)
 (rule ((= e (FAdd (FSub x (Const a)) (Const b))))
-      ((union e (FAdd x (Const (- b a))))))
+      ((union e (FAdd x (Const (float-sub32 b a))))))
 
 ; =============================================================================
 ; Negate Chain Merging (C++ MergeNegateArithmetic)
@@ -314,8 +320,9 @@
 ; Reciprocal Optimization
 ; =============================================================================
 
-; 1 / (1 / x) = x - ONE-DIRECTIONAL
-(rule ((= e (FDiv (Const 1) (FDiv (Const 1) x))))
+; 1.0 / (1.0 / x) = x - ONE-DIRECTIONAL
+; Match any two constants that are both 1.0
+(rule ((= e (FDiv (Const c1) (FDiv (Const c2) x))) (is-float-one32 c1) (is-float-one32 c2))
       ((union e x)))
 
 ; a / (b / c) = (a * c) / b - already covered above
@@ -326,9 +333,9 @@
 ; FRem Rules (C++ RedundantFMod)
 ; =============================================================================
 
-; 0 % x = 0 - ONE-DIRECTIONAL
-(rule ((= e (FRem (Const 0) x)))
-      ((union e (Const 0))))
+; 0.0 % x = 0.0 - ONE-DIRECTIONAL
+(rule ((= e (FRem (Const c) x)) (is-float-zero32 c))
+      ((union e (Const c))))
 
 ; =============================================================================
 ; Generic Add/Sub Cancellation for FP (C++ MergeGenericAddSubArithmetic)
@@ -392,22 +399,32 @@
 (rule ((= e (FMul x (FDiv y x))))
       ((union e y)))
 
+; =============================================================================
+; Merge FMul with FDiv (C++ MergeMulTest cases 8-9)
+; =============================================================================
+; c * (c' / x) = (c*c') / x - ONE-DIRECTIONAL
+; Using float-mul32 for proper f32 constant multiplication
+(rule ((= e (FMul (Const a) (FDiv (Const b) x))))
+      ((union e (FDiv (Const (float-mul32 a b)) x))))
+(rule ((= e (FMul (FDiv (Const a) x) (Const b))))
+      ((union e (FDiv (Const (float-mul32 a b)) x))))
+
 ; x * (y / x) = y - same as above with commutativity
 
 ; =============================================================================
 ; Additional C++ Parity Rules
 ; =============================================================================
 
-; 0 - x = -x (C++ RedundantFSub) - ONE-DIRECTIONAL
-(rule ((= e (FSub (Const 0) x)))
+; 0.0 - x = -x (C++ RedundantFSub) - ONE-DIRECTIONAL
+(rule ((= e (FSub (Const c) x)) (is-float-zero32 c))
       ((union e (FNeg x))))
 
-; Recognize x * (1/y) as x/y for simplification
+; Recognize x * (1.0/y) as x/y for simplification
 ; One-directional to prevent expansion that causes e-graph explosion.
 ; We don't expand x/y to x * (1/y) as that creates more nodes.
-(rule ((= e (FMul x (FDiv (Const 1) y))))
+(rule ((= e (FMul x (FDiv (Const c) y))) (is-float-one32 c))
       ((union e (FDiv x y))))
-(rule ((= e (FMul (FDiv (Const 1) y) x)))
+(rule ((= e (FMul (FDiv (Const c) y) x)) (is-float-one32 c))
       ((union e (FDiv x y))))
 
 ; FMix (linear interpolation) identities when GLSL ext available
@@ -432,45 +449,50 @@
 ; Advanced Reciprocal Chain Optimization (C++ ReciprocalFDiv)
 ; =============================================================================
 
-; a / (1 / b) = a * b
-(rule ((= e (FDiv a (FDiv (Const 1) b))))
+; a / (1 / b) = a * b - ONE-DIRECTIONAL
+(rule ((= e (FDiv a (FDiv (Const c) b))) (is-float-one32 c))
       ((union e (FMul a b))))
 
-; 1 / (a / b) = b / a
-(rule ((= e (FDiv (Const 1) (FDiv a b))))
+; 1 / (a / b) = b / a - ONE-DIRECTIONAL
+(rule ((= e (FDiv (Const c) (FDiv a b))) (is-float-one32 c))
       ((union e (FDiv b a))))
 
 ; 1 / (a * b) for canonicalization (not expansion)
 ; Don't add expansion rules like (1/x) * (1/y) = 1/(x*y) as they expand
 
 ; (1/a) / (1/b) = b / a - ONE-DIRECTIONAL
-(rule ((= e (FDiv (FDiv (Const 1) a) (FDiv (Const 1) b))))
+(rule ((= e (FDiv (FDiv (Const c1) a) (FDiv (Const c2) b))) (is-float-one32 c1) (is-float-one32 c2))
       ((union e (FDiv b a))))
 
 ; =============================================================================
 ; Power Optimization Patterns
 ; =============================================================================
+; NOTE: Pow takes two float arguments, so we use is-float-* checks for constants.
+; f32 bit patterns: 0.0=0, 1.0=1065353216, 2.0=1073741824, -1.0=0xbf800000=3212836864
 
 ; x * x = x^2 (for cost model, Pow may be more expensive)
 ; But Pow(x, 2) should reduce to x * x for extraction
-(rule ((= e (Pow x (Const 2))))
+(rule ((= e (Pow x (Const c))) (is-float-two32 c))
       ((union e (FMul x x))))
 
-; Pow(x, 0) = 1 (assuming x != 0)
-(rule ((= e (Pow x (Const 0))))
-      ((union e (Const 1))))
+; Pow(x, 0) = 1 (assuming x != 0) - ONE-DIRECTIONAL
+; Note: Returns f32 1.0 (bit pattern 1065353216)
+(rule ((= e (Pow x (Const c))) (is-float-zero32 c))
+      ((union e (Const 1065353216))))
 
 ; Pow(x, 1) = x - ONE-DIRECTIONAL
-(rule ((= e (Pow x (Const 1))))
+(rule ((= e (Pow x (Const c))) (is-float-one32 c))
       ((union e x)))
 
 ; Pow(1, n) = 1 - ONE-DIRECTIONAL
-(rule ((= e (Pow (Const 1) n)))
-      ((union e (Const 1))))
+; Note: Both checks and result use f32 1.0 (bit pattern 1065353216)
+(rule ((= e (Pow (Const c) n)) (is-float-one32 c))
+      ((union e (Const 1065353216))))
 
-; Pow(x, -1) = 1/x
-(rule ((= e (Pow x (Const -1))))
-      ((union e (FDiv (Const 1) x))))
+; Pow(x, -1) = 1/x - ONE-DIRECTIONAL
+; Note: f32 -1.0 has bit pattern 0xbf800000 = 3212836864
+(rule ((= e (Pow x (Const c))) (is-float-neg-one32 c))
+      ((union e (FDiv (Const 1065353216) x))))
 
 ; =============================================================================
 ; Square Root and InverseSqrt Additional Patterns
@@ -491,8 +513,9 @@
 ; Note: Sqrt(x) * Sqrt(x) = x is in glsl.egg
 
 ; InverseSqrt(x) * InverseSqrt(x) = 1/x
+; Note: For f32, 1.0 has bit pattern 0x3f800000 = 1065353216
 (rule ((= e (FMul (InverseSqrt x) (InverseSqrt x))))
-      ((union e (FDiv (Const 1) x))))
+      ((union e (FDiv (Const 1065353216) x))))
 
 ; =============================================================================
 ; Reciprocal Division Optimization (C++ ReciprocalFDiv)
@@ -502,8 +525,8 @@
 ; This is always safe for floating-point and often faster
 
 ; General rule: x / const = x * (1/const) when const has an exact reciprocal
-; Uses has-exact-recip primitive to check if reciprocal is exact
-; Uses float-recip primitive to compute the reciprocal
-(rule ((= e (FDiv x (Const c))) (has-exact-recip c))
-      ((union e (FMul x (Const (float-recip c))))))
+; Uses has-exact-recip32 primitive to check if reciprocal is exact (for f32)
+; Uses float-recip32 primitive to compute the reciprocal (for f32)
+(rule ((= e (FDiv x (Const c))) (has-exact-recip32 c))
+      ((union e (FMul x (Const (float-recip32 c))))))
 
