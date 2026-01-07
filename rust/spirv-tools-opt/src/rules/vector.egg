@@ -89,12 +89,21 @@
 ; Dot Product Rules
 ; =============================================================================
 
-; Dot product with zero vector is zero
+; Dot product with zero vector is zero (integer version)
 ; Dot of unit vectors is 1
 ; Self-dot is length squared
 
+; Dot with zero vector is zero - ONE-DIRECTIONAL
+; Integer vectors (Const 0 for integer 0)
+(rule ((= e (Dot (Vec2 (Const 0) (Const 0)) v))) ((union e (Const 0))))
+(rule ((= e (Dot v (Vec2 (Const 0) (Const 0))))) ((union e (Const 0))))
+(rule ((= e (Dot (Vec3 (Const 0) (Const 0) (Const 0)) v))) ((union e (Const 0))))
+(rule ((= e (Dot v (Vec3 (Const 0) (Const 0) (Const 0))))) ((union e (Const 0))))
+(rule ((= e (Dot (Vec4 (Const 0) (Const 0) (Const 0) (Const 0)) v))) ((union e (Const 0))))
+(rule ((= e (Dot v (Vec4 (Const 0) (Const 0) (Const 0) (Const 0))))) ((union e (Const 0))))
+
 ; Extract from Dot when one vector is unit vector (has a 1 in one component, 0 elsewhere)
-; Dot(Vec2(1,0), v) = VecExtract(v, 0) - ONE-DIRECTIONAL
+; INTEGER vectors - Dot(Vec2(1,0), v) = VecExtract(v, 0) - ONE-DIRECTIONAL
 (rule ((= e (Dot (Vec2 (Const 1) (Const 0)) v))) ((union e (VecExtract v 0))))
 (rule ((= e (Dot (Vec2 (Const 0) (Const 1)) v))) ((union e (VecExtract v 1))))
 (rule ((= e (Dot v (Vec2 (Const 1) (Const 0))))) ((union e (VecExtract v 0))))
