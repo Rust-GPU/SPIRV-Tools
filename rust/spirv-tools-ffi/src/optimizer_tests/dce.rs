@@ -1111,3 +1111,400 @@ fn does_not_remove_intermediate_in_live_chain() {
     let has_arith = result.has_opcode(Op::IAdd) || result.has_opcode(Op::IMul);
     assert!(has_arith, "arithmetic operations must not be removed");
 }
+
+// =============================================================================
+// Edge Case Tests - Void Functions
+// =============================================================================
+
+#[test]
+fn void_function_all_dead_code_removed() {
+    // Void function with no side effects - all computations are dead
+    // fn f() { let x = 1 + 2; let y = x * 3; }
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    b.begin_void_function();
+    let c1 = b.const_i32(1);
+    let c2 = b.const_i32(2);
+    let dead_add = b.builder.i_add(b.int_ty, None, c1, c2).expect("dead_add");
+    let c3 = b.const_i32(3);
+    let _dead_mul = b.builder.i_mul(b.int_ty, None, dead_add, c3).expect("dead_mul");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    // All arithmetic should be removed - no side effects in void function
+    assert!(
+        !result.has_opcode(Op::IAdd),
+        "dead add in void function should be removed"
+    );
+    assert!(
+        !result.has_opcode(Op::IMul),
+        "dead mul in void function should be removed"
+    );
+}
+
+#[test]
+fn void_function_with_param_all_dead() {
+    // Void function that uses a parameter but has no side effects
+    // fn f(x: i32) { let y = x + 1; let z = y * 2; }
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.int_ty]);
+    let x = params[0];
+    let c1 = b.const_i32(1);
+    let dead_add = b.builder.i_add(b.int_ty, None, x, c1).expect("dead_add");
+    let c2 = b.const_i32(2);
+    let _dead_mul = b.builder.i_mul(b.int_ty, None, dead_add, c2).expect("dead_mul");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    // All arithmetic should be removed - no side effects
+    assert!(
+        !result.has_opcode(Op::IAdd),
+        "dead add with param in void function should be removed"
+    );
+    assert!(
+        !result.has_opcode(Op::IMul),
+        "dead mul with param in void function should be removed"
+    );
+}
+
+// =============================================================================
+// Edge Case Tests - Multiple Functions
+// =============================================================================
+
+#[test]
+fn dce_across_multiple_functions() {
+    // Two functions in same module - each should be DCE'd independently
+    // fn f() -> i32 { return 5 + 3; }
+    // fn g() { let dead = 10 + 20; }
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+
+    // First function: returns a value (live)
+    let func1_ty = b.builder.type_function(b.int_ty, vec![]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func1_ty)
+        .expect("begin f");
+    b.builder.begin_block(None).expect("begin block");
+    let c5 = b.const_i32(5);
+    let c3 = b.const_i32(3);
+    let live_add = b.builder.i_add(b.int_ty, None, c5, c3).expect("live_add");
+    b.builder.ret_value(live_add).expect("ret");
+    b.builder.end_function().expect("end f");
+
+    // Second function: void with dead code
+    let func2_ty = b.builder.type_function(b.void_ty, vec![]);
+    b.builder
+        .begin_function(b.void_ty, None, rspirv::spirv::FunctionControl::NONE, func2_ty)
+        .expect("begin g");
+    b.builder.begin_block(None).expect("begin block");
+    let c10 = b.const_i32(10);
+    let c20 = b.const_i32(20);
+    let _dead_add = b.builder.i_add(b.int_ty, None, c10, c20).expect("dead_add");
+    b.builder.ret().expect("ret");
+    b.builder.end_function().expect("end g");
+
+    let words = b.builder.module().assemble();
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    // Function 1's result should be folded to 8
+    assert!(
+        result.has_constant_u32(8),
+        "live computation 5+3 should fold to 8"
+    );
+
+    // Function 2's dead add (10+20=30) should NOT produce a constant 30
+    // (since the add is dead and should be removed)
+    // Note: constant 10 or 20 might exist if they're used elsewhere, but 30 should not
+    let has_30 = result.module.types_global_values.iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.operands.iter().any(|op| match op {
+                rspirv::dr::Operand::LiteralBit32(v) => *v == 30,
+                _ => false,
+            })
+    });
+    assert!(
+        !has_30,
+        "dead computation 10+20 should not produce constant 30"
+    );
+}
+
+// =============================================================================
+// Edge Case Tests - Complex Liveness Patterns
+// =============================================================================
+
+#[test]
+fn dce_with_diamond_use_pattern() {
+    // Diamond pattern where shared value feeds two paths, only one is live:
+    //     base = param + 1
+    //     live_path = base * 2
+    //     dead_path = base * 3  (not returned)
+    //     return live_path
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let param = b.builder.function_parameter(b.int_ty).expect("param");
+    b.builder.begin_block(None).expect("begin block");
+
+    let c1 = b.const_i32(1);
+    let base = b.builder.i_add(b.int_ty, None, param, c1).expect("base");
+    let c2 = b.const_i32(2);
+    let live_path = b.builder.i_mul(b.int_ty, None, base, c2).expect("live_path");
+    let c3 = b.const_i32(3);
+    let dead_path = b.builder.i_mul(b.int_ty, None, base, c3).expect("dead_path");
+
+    b.builder.ret_value(live_path).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    // dead_path instruction should be removed
+    let dead_exists = result
+        .module
+        .all_inst_iter()
+        .any(|inst| inst.result_id == Some(dead_path));
+    assert!(
+        !dead_exists,
+        "dead_path (base * 3) should be removed since it's not returned"
+    );
+
+    // base and live_path should remain (or be optimized but not removed)
+    // The expression (param + 1) * 2 should be preserved in some form
+    let has_arith = result.has_opcode(Op::IAdd) || result.has_opcode(Op::IMul);
+    assert!(has_arith, "live path arithmetic should be preserved");
+}
+
+#[test]
+fn dce_constant_used_by_both_dead_and_live() {
+    // Constant used by both dead and live code - constant must be kept
+    //     shared_const = 5
+    //     dead_use = shared_const + 1
+    //     live_use = param * shared_const
+    //     return live_use
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let param = b.builder.function_parameter(b.int_ty).expect("param");
+    b.builder.begin_block(None).expect("begin block");
+
+    let shared_const = b.const_i32(5);
+    let c1 = b.const_i32(1);
+    let _dead_use = b.builder.i_add(b.int_ty, None, shared_const, c1).expect("dead_use");
+    let live_use = b.builder.i_mul(b.int_ty, None, param, shared_const).expect("live_use");
+
+    b.builder.ret_value(live_use).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    // Constant 5 must be preserved (used by live_use)
+    assert!(
+        result.has_constant_u32(5),
+        "constant 5 must be preserved (used by live code)"
+    );
+
+    // Constant 6 (from dead 5+1) should NOT exist
+    let has_6 = result.module.types_global_values.iter().any(|inst| {
+        inst.class.opcode == Op::Constant
+            && inst.operands.iter().any(|op| match op {
+                rspirv::dr::Operand::LiteralBit32(v) => *v == 6,
+                _ => false,
+            })
+    });
+    assert!(
+        !has_6,
+        "dead computation 5+1=6 should not produce constant"
+    );
+}
+
+#[test]
+fn dce_long_dead_chain_completely_removed() {
+    // Long chain of dead computations
+    //     d1 = 1 + 2
+    //     d2 = d1 * 3
+    //     d3 = d2 - 4
+    //     d4 = d3 + 5
+    //     d5 = d4 * 6
+    //     return 42
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.int_ty, vec![]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    b.builder.begin_block(None).expect("begin block");
+
+    let c1 = b.const_i32(1);
+    let c2 = b.const_i32(2);
+    let d1 = b.builder.i_add(b.int_ty, None, c1, c2).expect("d1");
+    let c3 = b.const_i32(3);
+    let d2 = b.builder.i_mul(b.int_ty, None, d1, c3).expect("d2");
+    let c4 = b.const_i32(4);
+    let d3 = b.builder.i_sub(b.int_ty, None, d2, c4).expect("d3");
+    let c5 = b.const_i32(5);
+    let d4 = b.builder.i_add(b.int_ty, None, d3, c5).expect("d4");
+    let c6 = b.const_i32(6);
+    let _d5 = b.builder.i_mul(b.int_ty, None, d4, c6).expect("d5");
+
+    let c42 = b.const_i32(42);
+    b.builder.ret_value(c42).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    // All arithmetic operations should be removed (the entire chain is dead)
+    assert!(
+        !result.has_opcode(Op::IAdd),
+        "dead chain IAdd should be removed"
+    );
+    assert!(
+        !result.has_opcode(Op::IMul),
+        "dead chain IMul should be removed"
+    );
+    assert!(
+        !result.has_opcode(Op::ISub),
+        "dead chain ISub should be removed"
+    );
+
+    // Return value 42 must be preserved
+    assert!(result.has_constant_u32(42), "return value 42 must be preserved");
+}
+
+#[test]
+fn dce_preserves_all_ops_in_live_chain() {
+    // Long live chain - nothing should be removed
+    //     a = param + 1
+    //     b = a * 2
+    //     c = b - 3
+    //     d = c + 4
+    //     return d
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let param = b.builder.function_parameter(b.int_ty).expect("param");
+    b.builder.begin_block(None).expect("begin block");
+
+    let c1 = b.const_i32(1);
+    let a = b.builder.i_add(b.int_ty, None, param, c1).expect("a");
+    let c2 = b.const_i32(2);
+    let bb = b.builder.i_mul(b.int_ty, None, a, c2).expect("b");
+    let c3 = b.const_i32(3);
+    let c = b.builder.i_sub(b.int_ty, None, bb, c3).expect("c");
+    let c4 = b.const_i32(4);
+    let d = b.builder.i_add(b.int_ty, None, c, c4).expect("d");
+
+    b.builder.ret_value(d).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    // Some arithmetic must remain (can't fully fold with unknown param)
+    // The expression is: ((param + 1) * 2 - 3) + 4 = 2*param + 2 - 3 + 4 = 2*param + 3
+    // Either way, some ops should remain
+    let has_arith = result.has_opcode(Op::IAdd)
+        || result.has_opcode(Op::IMul)
+        || result.has_opcode(Op::ISub);
+    assert!(has_arith, "live chain arithmetic should be preserved");
+}
+
+// =============================================================================
+// Edge Case Tests - Bitwise Operations
+// =============================================================================
+
+#[test]
+fn dce_dead_bitwise_operations() {
+    // Dead bitwise operations should be removed
+    //     dead_and = x & y
+    //     dead_or = dead_and | z
+    //     return 0
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty, b.int_ty, b.int_ty]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.int_ty).expect("x");
+    let y = b.builder.function_parameter(b.int_ty).expect("y");
+    let z = b.builder.function_parameter(b.int_ty).expect("z");
+    b.builder.begin_block(None).expect("begin block");
+
+    let dead_and = b.builder.bitwise_and(b.int_ty, None, x, y).expect("dead_and");
+    let _dead_or = b.builder.bitwise_or(b.int_ty, None, dead_and, z).expect("dead_or");
+
+    let c0 = b.const_i32(0);
+    b.builder.ret_value(c0).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    // All bitwise ops should be removed
+    assert!(
+        !result.has_opcode(Op::BitwiseAnd),
+        "dead BitwiseAnd should be removed"
+    );
+    assert!(
+        !result.has_opcode(Op::BitwiseOr),
+        "dead BitwiseOr should be removed"
+    );
+}
+
+#[test]
+fn dce_preserves_live_bitwise_operations() {
+    // Live bitwise operations should NOT be removed
+    //     result = (x & y) | z
+    //     return result
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty, b.int_ty, b.int_ty]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.int_ty).expect("x");
+    let y = b.builder.function_parameter(b.int_ty).expect("y");
+    let z = b.builder.function_parameter(b.int_ty).expect("z");
+    b.builder.begin_block(None).expect("begin block");
+
+    let and_result = b.builder.bitwise_and(b.int_ty, None, x, y).expect("and");
+    let result = b.builder.bitwise_or(b.int_ty, None, and_result, z).expect("or");
+
+    b.builder.ret_value(result).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result_mod = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    // Bitwise ops should remain (can't fold with unknown params)
+    assert!(
+        result_mod.has_opcode(Op::BitwiseAnd),
+        "live BitwiseAnd should be preserved"
+    );
+    assert!(
+        result_mod.has_opcode(Op::BitwiseOr),
+        "live BitwiseOr should be preserved"
+    );
+}
