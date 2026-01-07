@@ -666,6 +666,13 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
             live_ids.insert(id);
         }
     }
+    // IDs in true_roots that aren't in id_to_term are constants/parameters from
+    // types_global_values that are directly used by side-effects - they're always live
+    for &root_id in &true_roots {
+        if !ctx.id_to_term.contains_key(&root_id) {
+            live_ids.insert(root_id);
+        }
+    }
 
     // Step 8: Extract optimized terms for each instruction
     let mut optimized_instructions: HashMap<Word, Instruction> = HashMap::new();
@@ -731,6 +738,15 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
         .copied()
         .filter(|id| true_roots.contains(id) && live_ids.contains(id))
         .collect();
+
+    // IDs in true_roots that aren't in ctx.root_ids are constants from types_global_values
+    // that are directly used by side-effects (e.g., ReturnValue with a constant operand).
+    // They don't need extraction but must be marked as used to survive DCE.
+    for &root_id in &true_roots {
+        if !ctx.root_ids.contains(&root_id) {
+            used_ids.insert(root_id);
+        }
+    }
 
     for &id in &extraction_roots {
         let extract_cmd = format!("(extract id{})", id);
