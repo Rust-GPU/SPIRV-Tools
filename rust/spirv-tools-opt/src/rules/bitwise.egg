@@ -24,7 +24,9 @@
       ((union e x)))
 (rule ((= e (BitAnd (Const -1) x)))
       ((union e x)))
-(rewrite (BitXor x (Const -1)) (BitNot x))
+; XOR with all-ones is NOT - ONE-DIRECTIONAL (canonical form is BitNot)
+(rule ((= e (BitXor x (Const -1))))
+      ((union e (BitNot x))))
 
 ; Double negation - ONE-DIRECTIONAL
 (rule ((= e (BitNot (BitNot x))))
@@ -72,15 +74,21 @@
 (rule ((= e (BitAnd (BitOr y x) x)))
       ((union e x)))
 
-; Complement absorption: x | (~x & y) = x | y
-(rewrite (BitOr x (BitAnd (BitNot x) y)) (BitOr x y))
-(rewrite (BitOr x (BitAnd y (BitNot x))) (BitOr x y))
-(rewrite (BitAnd x (BitOr (BitNot x) y)) (BitAnd x y))
-(rewrite (BitAnd x (BitOr y (BitNot x))) (BitAnd x y))
+; Complement absorption: x | (~x & y) = x | y - ONE-DIRECTIONAL
+(rule ((= e (BitOr x (BitAnd (BitNot x) y))))
+      ((union e (BitOr x y))))
+(rule ((= e (BitOr x (BitAnd y (BitNot x)))))
+      ((union e (BitOr x y))))
+(rule ((= e (BitAnd x (BitOr (BitNot x) y))))
+      ((union e (BitAnd x y))))
+(rule ((= e (BitAnd x (BitOr y (BitNot x)))))
+      ((union e (BitAnd x y))))
 
-; XOR absorption
-(rewrite (BitAnd x (BitXor x y)) (BitAnd x (BitNot y)))
-(rewrite (BitAnd (BitXor x y) x) (BitAnd x (BitNot y)))
+; XOR absorption - ONE-DIRECTIONAL
+(rule ((= e (BitAnd x (BitXor x y))))
+      ((union e (BitAnd x (BitNot y)))))
+(rule ((= e (BitAnd (BitXor x y) x)))
+      ((union e (BitAnd x (BitNot y)))))
 
 ; Shift by 0 - ONE-DIRECTIONAL
 (rule ((= e (Shl x (Const 0))))
@@ -115,9 +123,12 @@
       ((union e (Const 0))))
 
 ; Rotate left and right are inverses (for 32-bit, rot(x, n) = rot(x, 32-n))
-; RotL(x, n) = RotR(x, -n) in modular arithmetic
-(rewrite (RotL x (Neg n)) (RotR x n))
-(rewrite (RotR x (Neg n)) (RotL x n))
+; RotL(x, n) = RotR(x, -n) in modular arithmetic - ONE-DIRECTIONAL
+; Only go RotL with Neg → RotR (canonical form uses positive rotation)
+(rule ((= e (RotL x (Neg n))))
+      ((union e (RotR x n))))
+(rule ((= e (RotR x (Neg n))))
+      ((union e (RotL x n))))
 
 ; BitReverse is self-inverse when applied twice - ONE-DIRECTIONAL
 (rule ((= e (BitReverse (BitReverse x))))
@@ -133,7 +144,8 @@
 
 ; Masking with shift: (x & mask) where mask is 2^n - 1 extracts low n bits
 ; x & 1 extracts lowest bit
-(rewrite (BitAnd (BitOr x y) (Const 1)) (BitOr (BitAnd x (Const 1)) (BitAnd y (Const 1))))
+; NOTE: Expansion rule REMOVED - (BitAnd (BitOr x y) (Const 1)) → (BitOr (BitAnd x (Const 1)) (BitAnd y (Const 1)))
+; would create MORE terms on RHS, causing e-graph explosion
 
 ; Shift then mask vs mask then shift optimizations
 ; ((x >> n) & m) vs ((x & (m << n)) >> n)
@@ -147,13 +159,17 @@
 ; Count trailing zeros relates to FindILsb
 ; Count leading zeros relates to FindSMsb/FindUMsb
 
-; (x | y) & ~x = y & ~x (masking)
-(rewrite (BitAnd (BitOr x y) (BitNot x)) (BitAnd y (BitNot x)))
-(rewrite (BitAnd (BitOr y x) (BitNot x)) (BitAnd y (BitNot x)))
+; (x | y) & ~x = y & ~x (masking) - ONE-DIRECTIONAL
+(rule ((= e (BitAnd (BitOr x y) (BitNot x))))
+      ((union e (BitAnd y (BitNot x)))))
+(rule ((= e (BitAnd (BitOr y x) (BitNot x))))
+      ((union e (BitAnd y (BitNot x)))))
 
-; (x & y) | ~x = y | ~x (masking)
-(rewrite (BitOr (BitAnd x y) (BitNot x)) (BitOr y (BitNot x)))
-(rewrite (BitOr (BitAnd y x) (BitNot x)) (BitOr y (BitNot x)))
+; (x & y) | ~x = y | ~x (masking) - ONE-DIRECTIONAL
+(rule ((= e (BitOr (BitAnd x y) (BitNot x))))
+      ((union e (BitOr y (BitNot x)))))
+(rule ((= e (BitOr (BitAnd y x) (BitNot x))))
+      ((union e (BitOr y (BitNot x)))))
 
 ; XOR with all ones is NOT
 ; Already covered: (rewrite (BitXor x (Const -1)) (BitNot x))
@@ -164,7 +180,8 @@
 
 ; Combine shifts in opposite directions
 ; (x >> a) << a masks off low bits (when a is same)
-(rewrite (Shl (ShrU x (Const a)) (Const a)) (BitAnd x (BitNot (Sub (Shl (Const 1) (Const a)) (Const 1)))))
+; NOTE: Expansion rule REMOVED - creates Sub, Shl, BitNot terms causing explosion
+; The pattern (Shl (ShrU x a) a) creates a complex mask expression
 
 ; (x << a) >> a for ShrU masks off high bits
 ; Note: For signed shift right, this is more complex
@@ -198,9 +215,13 @@
 ; Note: Most bitwise loop invariant rules are in rvsdg.egg
 ; Here we add the ones that weren't covered there
 
-(rewrite (RotL (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (RotL a b)))
-(rewrite (RotR (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (RotR a b)))
-(rewrite (BitReverse (LoopInvariant a)) (LoopInvariant (BitReverse a)))
+; LoopInvariant rules - ONE-DIRECTIONAL (use rule/union to prevent cycles)
+(rule ((= e (RotL (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (RotL a b)))))
+(rule ((= e (RotR (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (RotR a b)))))
+(rule ((= e (BitReverse (LoopInvariant a))))
+      ((union e (LoopInvariant (BitReverse a)))))
 
 ; =============================================================================
 ; Gamma Distribution for Bitwise Operations
@@ -208,13 +229,17 @@
 ; Note: Most Gamma distribution rules for bitwise ops are in rvsdg.egg
 ; Here we add shift-related rules not covered there
 
-; select(c, ~a, ~b) = ~select(c, a, b)
-(rewrite (Gamma c (BitNot a) (BitNot b)) (BitNot (Gamma c a b)))
+; select(c, ~a, ~b) = ~select(c, a, b) - ONE-DIRECTIONAL
+(rule ((= e (Gamma c (BitNot a) (BitNot b))))
+      ((union e (BitNot (Gamma c a b)))))
 
-; select(c, x << a, x << b) = x << select(c, a, b)
-(rewrite (Gamma c (Shl x a) (Shl x b)) (Shl x (Gamma c a b)))
-(rewrite (Gamma c (ShrU x a) (ShrU x b)) (ShrU x (Gamma c a b)))
-(rewrite (Gamma c (ShrS x a) (ShrS x b)) (ShrS x (Gamma c a b)))
+; select(c, x << a, x << b) = x << select(c, a, b) - ONE-DIRECTIONAL
+(rule ((= e (Gamma c (Shl x a) (Shl x b))))
+      ((union e (Shl x (Gamma c a b)))))
+(rule ((= e (Gamma c (ShrU x a) (ShrU x b))))
+      ((union e (ShrU x (Gamma c a b)))))
+(rule ((= e (Gamma c (ShrS x a) (ShrS x b))))
+      ((union e (ShrS x (Gamma c a b)))))
 
 ; =============================================================================
 ; Additional Redundant And/Or/Xor Rules (not using primitives)
@@ -223,17 +248,25 @@
 
 ; These are additional patterns that don't require primitives:
 
-; (a & m) | (b & m) = (a | b) & m  (factor out common mask)
-(rewrite (BitOr (BitAnd a m) (BitAnd b m)) (BitAnd (BitOr a b) m))
-(rewrite (BitOr (BitAnd m a) (BitAnd b m)) (BitAnd (BitOr a b) m))
-(rewrite (BitOr (BitAnd a m) (BitAnd m b)) (BitAnd (BitOr a b) m))
-(rewrite (BitOr (BitAnd m a) (BitAnd m b)) (BitAnd (BitOr a b) m))
+; (a & m) | (b & m) = (a | b) & m  (factor out common mask) - ONE-DIRECTIONAL
+(rule ((= e (BitOr (BitAnd a m) (BitAnd b m))))
+      ((union e (BitAnd (BitOr a b) m))))
+(rule ((= e (BitOr (BitAnd m a) (BitAnd b m))))
+      ((union e (BitAnd (BitOr a b) m))))
+(rule ((= e (BitOr (BitAnd a m) (BitAnd m b))))
+      ((union e (BitAnd (BitOr a b) m))))
+(rule ((= e (BitOr (BitAnd m a) (BitAnd m b))))
+      ((union e (BitAnd (BitOr a b) m))))
 
-; (a & m) ^ (b & m) = (a ^ b) & m  (factor out common mask)
-(rewrite (BitXor (BitAnd a m) (BitAnd b m)) (BitAnd (BitXor a b) m))
-(rewrite (BitXor (BitAnd m a) (BitAnd b m)) (BitAnd (BitXor a b) m))
-(rewrite (BitXor (BitAnd a m) (BitAnd m b)) (BitAnd (BitXor a b) m))
-(rewrite (BitXor (BitAnd m a) (BitAnd m b)) (BitAnd (BitXor a b) m))
+; (a & m) ^ (b & m) = (a ^ b) & m  (factor out common mask) - ONE-DIRECTIONAL
+(rule ((= e (BitXor (BitAnd a m) (BitAnd b m))))
+      ((union e (BitAnd (BitXor a b) m))))
+(rule ((= e (BitXor (BitAnd m a) (BitAnd b m))))
+      ((union e (BitAnd (BitXor a b) m))))
+(rule ((= e (BitXor (BitAnd a m) (BitAnd m b))))
+      ((union e (BitAnd (BitXor a b) m))))
+(rule ((= e (BitXor (BitAnd m a) (BitAnd m b))))
+      ((union e (BitAnd (BitXor a b) m))))
 
 ; =============================================================================
 ; C++ Parity: RedundantAndOrXor Patterns
@@ -326,16 +359,24 @@
 
 ; Simplify AND with OR/XOR when one operand is same as mask operand
 ; m & (m | a) = m (absorption - already covered)
-; m & (m ^ a) = m & ~a
-(rewrite (BitAnd m (BitXor m a)) (BitAnd m (BitNot a)))
-(rewrite (BitAnd (BitXor m a) m) (BitAnd m (BitNot a)))
-(rewrite (BitAnd m (BitXor a m)) (BitAnd m (BitNot a)))
-(rewrite (BitAnd (BitXor a m) m) (BitAnd m (BitNot a)))
+; m & (m ^ a) = m & ~a - ONE-DIRECTIONAL
+(rule ((= e (BitAnd m (BitXor m a))))
+      ((union e (BitAnd m (BitNot a)))))
+(rule ((= e (BitAnd (BitXor m a) m)))
+      ((union e (BitAnd m (BitNot a)))))
+(rule ((= e (BitAnd m (BitXor a m))))
+      ((union e (BitAnd m (BitNot a)))))
+(rule ((= e (BitAnd (BitXor a m) m)))
+      ((union e (BitAnd m (BitNot a)))))
 
 ; Simplify OR with AND when one operand subsumes
 ; m | (m & a) = m (absorption - already covered)
-; m | (m ^ a) = m | a
-(rewrite (BitOr m (BitXor m a)) (BitOr m a))
-(rewrite (BitOr (BitXor m a) m) (BitOr m a))
-(rewrite (BitOr m (BitXor a m)) (BitOr m a))
-(rewrite (BitOr (BitXor a m) m) (BitOr m a))
+; m | (m ^ a) = m | a - ONE-DIRECTIONAL
+(rule ((= e (BitOr m (BitXor m a))))
+      ((union e (BitOr m a))))
+(rule ((= e (BitOr (BitXor m a) m)))
+      ((union e (BitOr m a))))
+(rule ((= e (BitOr m (BitXor a m))))
+      ((union e (BitOr m a))))
+(rule ((= e (BitOr (BitXor a m) m)))
+      ((union e (BitOr m a))))

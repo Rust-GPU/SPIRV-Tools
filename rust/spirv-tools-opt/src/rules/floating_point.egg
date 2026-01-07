@@ -46,11 +46,16 @@
 (rewrite (LogNot (FUnordGt a b)) (FOrdLe a b))
 (rewrite (LogNot (FUnordGe a b)) (FOrdLt a b))
 
-; Symmetry: a > b  <=>  b < a
-(rewrite (FOrdGt a b) (FOrdLt b a))
-(rewrite (FOrdGe a b) (FOrdLe b a))
-(rewrite (FUnordGt a b) (FUnordLt b a))
-(rewrite (FUnordGe a b) (FUnordLe b a))
+; Symmetry: a > b  <=>  b < a - ONE-DIRECTIONAL
+; Canonicalize to "less than" form to prevent cycles
+(rule ((= e (FOrdGt a b)))
+      ((union e (FOrdLt b a))))
+(rule ((= e (FOrdGe a b)))
+      ((union e (FOrdLe b a))))
+(rule ((= e (FUnordGt a b)))
+      ((union e (FUnordLt b a))))
+(rule ((= e (FUnordGe a b)))
+      ((union e (FUnordLe b a))))
 
 ; =============================================================================
 ; Floating-Point Arithmetic Identities
@@ -114,13 +119,14 @@
 (rule ((= e (FMax x x)))
       ((union e x)))
 
-; FMin/FMax associativity
-(rewrite (FMin (FMin a b) c) (FMin a (FMin b c)))
-(rewrite (FMax (FMax a b) c) (FMax a (FMax b c)))
+; FMin/FMax associativity - ONE-DIRECTIONAL (right-associative canonical form)
+(rule ((= e (FMin (FMin a b) c)))
+      ((union e (FMin a (FMin b c)))))
+(rule ((= e (FMax (FMax a b) c)))
+      ((union e (FMax a (FMax b c)))))
 
-; FMin/FMax commutativity
-(rewrite (FMin a b) (FMin b a))
-(rewrite (FMax a b) (FMax b a))
+; FMin/FMax commutativity - REMOVED to prevent e-graph explosion
+; These bidirectional rules cause cycles: (FMin a b) ↔ (FMin b a) ↔ ...
 
 ; FMin/FMax with negation
 (rewrite (FMin (FNeg a) (FNeg b)) (FNeg (FMax a b)))
@@ -144,17 +150,17 @@
 ; Additional Floating-Point Algebraic Identities
 ; =============================================================================
 
-; FAdd commutativity
-(rewrite (FAdd a b) (FAdd b a))
+; FAdd/FMul commutativity - REMOVED to prevent e-graph explosion
+; These bidirectional rules cause cycles: (FAdd a b) ↔ (FAdd b a) ↔ ...
+; Commutativity is handled implicitly by the e-graph when both forms are present
 
-; FMul commutativity
-(rewrite (FMul a b) (FMul b a))
+; FAdd associativity - ONE-DIRECTIONAL (right-associative canonical form)
+(rule ((= e (FAdd (FAdd a b) c)))
+      ((union e (FAdd a (FAdd b c)))))
 
-; FAdd associativity
-(rewrite (FAdd (FAdd a b) c) (FAdd a (FAdd b c)))
-
-; FMul associativity
-(rewrite (FMul (FMul a b) c) (FMul a (FMul b c)))
+; FMul associativity - ONE-DIRECTIONAL (right-associative canonical form)
+(rule ((= e (FMul (FMul a b) c)))
+      ((union e (FMul a (FMul b c)))))
 
 ; Factoring: a*c + b*c = (a+b)*c
 ; One-directional to prevent expansion that causes e-graph explosion.

@@ -71,31 +71,38 @@
 (rule ((= e (UMax x x)))
       ((union e x)))
 
-; Commutative
-(rewrite (SMin a b) (SMin b a))
-(rewrite (SMax a b) (SMax b a))
-(rewrite (UMin a b) (UMin b a))
-(rewrite (UMax a b) (UMax b a))
+; Commutative - REMOVED to prevent e-graph explosion
+; These bidirectional rules cause cycles: (SMin a b) ↔ (SMin b a) ↔ ...
+; Commutativity is handled implicitly by the e-graph when both forms are present
 
-; Associative
-(rewrite (SMin (SMin a b) c) (SMin a (SMin b c)))
-(rewrite (SMax (SMax a b) c) (SMax a (SMax b c)))
-(rewrite (UMin (UMin a b) c) (UMin a (UMin b c)))
-(rewrite (UMax (UMax a b) c) (UMax a (UMax b c)))
+; Associative - ONE-DIRECTIONAL (right-associative canonical form)
+; Only go from left-associative to right-associative, never back
+(rule ((= e (SMin (SMin a b) c)))
+      ((union e (SMin a (SMin b c)))))
+(rule ((= e (SMax (SMax a b) c)))
+      ((union e (SMax a (SMax b c)))))
+(rule ((= e (UMin (UMin a b) c)))
+      ((union e (UMin a (UMin b c)))))
+(rule ((= e (UMax (UMax a b) c)))
+      ((union e (UMax a (UMax b c)))))
 
-; Min/Max with negation
-(rewrite (SMin (Neg a) (Neg b)) (Neg (SMax a b)))
-(rewrite (SMax (Neg a) (Neg b)) (Neg (SMin a b)))
+; Min/Max with negation - ONE-DIRECTIONAL
+; Only simplify negations OUT of Min/Max, never push them in
+(rule ((= e (SMin (Neg a) (Neg b))))
+      ((union e (Neg (SMax a b)))))
+(rule ((= e (SMax (Neg a) (Neg b))))
+      ((union e (Neg (SMin a b)))))
 
 ; =============================================================================
-; De Morgan's Laws for Logical Operations
+; De Morgan's Laws for Logical Operations - REMOVED
 ; =============================================================================
-
-; !(a && b) = !a || !b
-(rewrite (LogNot (LogAnd a b)) (LogOr (LogNot a) (LogNot b)))
-
-; !(a || b) = !a && !b
-(rewrite (LogNot (LogOr a b)) (LogAnd (LogNot a) (LogNot b)))
+; De Morgan's laws are bidirectional in nature:
+;   !(a && b) ↔ (!a || !b)
+;   !(a || b) ↔ (!a && !b)
+; These can cause explosion when combined with double negation elimination.
+; Example: LogNot(LogAnd(a,b)) → LogOr(LogNot(a),LogNot(b))
+;          But then LogOr absorbs into LogAnd via other rules, causing cycles.
+; Better to handle these at extraction time or with specific patterns.
 
 ; =============================================================================
 ; Absorption Laws

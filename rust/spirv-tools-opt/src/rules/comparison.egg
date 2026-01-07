@@ -29,20 +29,33 @@
 (rewrite (Ne x (Neg x)) (Ne x (Const 0)))
 
 ; =============================================================================
-; Comparison Negation (C++ Parity)
+; Comparison Negation (C++ Parity) - ONE-DIRECTIONAL
 ; =============================================================================
+; NOTE: These MUST be one-directional rules! Using bidirectional rewrite causes
+; cycles: LogNot(Eq a b) ↔ Ne a b ↔ LogNot(Ne a b) ↔ Eq a b ↔ ...
+; We only simplify LogNot(comparison) to the negated comparison form.
 
-; LogNot of comparisons flips the comparison
-(rewrite (LogNot (Eq a b)) (Ne a b))
-(rewrite (LogNot (Ne a b)) (Eq a b))
-(rewrite (LogNot (SLt a b)) (SGe a b))
-(rewrite (LogNot (SLe a b)) (SGt a b))
-(rewrite (LogNot (SGt a b)) (SLe a b))
-(rewrite (LogNot (SGe a b)) (SLt a b))
-(rewrite (LogNot (ULt a b)) (UGe a b))
-(rewrite (LogNot (ULe a b)) (UGt a b))
-(rewrite (LogNot (UGt a b)) (ULe a b))
-(rewrite (LogNot (UGe a b)) (ULt a b))
+; LogNot of comparisons flips the comparison - ONE-DIRECTIONAL
+(rule ((= e (LogNot (Eq a b))))
+      ((union e (Ne a b))))
+(rule ((= e (LogNot (Ne a b))))
+      ((union e (Eq a b))))
+(rule ((= e (LogNot (SLt a b))))
+      ((union e (SGe a b))))
+(rule ((= e (LogNot (SLe a b))))
+      ((union e (SGt a b))))
+(rule ((= e (LogNot (SGt a b))))
+      ((union e (SLe a b))))
+(rule ((= e (LogNot (SGe a b))))
+      ((union e (SLt a b))))
+(rule ((= e (LogNot (ULt a b))))
+      ((union e (UGe a b))))
+(rule ((= e (LogNot (ULe a b))))
+      ((union e (UGt a b))))
+(rule ((= e (LogNot (UGt a b))))
+      ((union e (ULe a b))))
+(rule ((= e (LogNot (UGe a b))))
+      ((union e (ULt a b))))
 
 ; =============================================================================
 ; Comparison Flipping (swap operands)

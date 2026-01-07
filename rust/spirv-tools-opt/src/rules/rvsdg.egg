@@ -32,8 +32,10 @@
 (rule ((= e (Gamma c x x)))
       ((union e x)))
 
-; Gamma with negated condition
-(rewrite (Gamma (LogNot c) t f) (Gamma c f t))
+; Gamma with negated condition - ONE-DIRECTIONAL
+; Only simplify LogNot out of condition, never put it back
+(rule ((= e (Gamma (LogNot c) t f)))
+      ((union e (Gamma c f t))))
 
 ; Nested Gamma simplification (same condition)
 (rewrite (Gamma c (Gamma c a b) d) (Gamma c a d))
@@ -106,35 +108,60 @@
 ; LoopVar is NOT loop-invariant (it changes each iteration)
 ; No rule to mark LoopVar as LoopInvariant
 
-; Operations on loop invariants produce loop invariants
-(rewrite (Add (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (Add a b)))
-(rewrite (Sub (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (Sub a b)))
-(rewrite (Mul (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (Mul a b)))
-(rewrite (SDiv (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (SDiv a b)))
-(rewrite (UDiv (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (UDiv a b)))
-(rewrite (BitAnd (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (BitAnd a b)))
-(rewrite (BitOr (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (BitOr a b)))
-(rewrite (BitXor (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (BitXor a b)))
-(rewrite (Shl (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (Shl a b)))
-(rewrite (ShrS (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (ShrS a b)))
-(rewrite (ShrU (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (ShrU a b)))
+; Operations on loop invariants produce loop invariants - ONE-DIRECTIONAL
+; Using rule/union to prevent LoopInvariant(Add a b) → Add(LI a, LI b) cycles
+(rule ((= e (Add (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (Add a b)))))
+(rule ((= e (Sub (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (Sub a b)))))
+(rule ((= e (Mul (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (Mul a b)))))
+(rule ((= e (SDiv (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (SDiv a b)))))
+(rule ((= e (UDiv (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (UDiv a b)))))
+(rule ((= e (BitAnd (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (BitAnd a b)))))
+(rule ((= e (BitOr (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (BitOr a b)))))
+(rule ((= e (BitXor (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (BitXor a b)))))
+(rule ((= e (Shl (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (Shl a b)))))
+(rule ((= e (ShrS (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (ShrS a b)))))
+(rule ((= e (ShrU (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (ShrU a b)))))
 
-; Unary operations on loop invariants
-(rewrite (Neg (LoopInvariant a)) (LoopInvariant (Neg a)))
-(rewrite (BitNot (LoopInvariant a)) (LoopInvariant (BitNot a)))
-(rewrite (LogNot (LoopInvariant a)) (LoopInvariant (LogNot a)))
+; Unary operations on loop invariants - ONE-DIRECTIONAL
+(rule ((= e (Neg (LoopInvariant a))))
+      ((union e (LoopInvariant (Neg a)))))
+(rule ((= e (BitNot (LoopInvariant a))))
+      ((union e (LoopInvariant (BitNot a)))))
+(rule ((= e (LogNot (LoopInvariant a))))
+      ((union e (LoopInvariant (LogNot a)))))
 
-; Comparisons on loop invariants
-(rewrite (Eq (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (Eq a b)))
-(rewrite (Ne (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (Ne a b)))
-(rewrite (SLt (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (SLt a b)))
-(rewrite (SLe (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (SLe a b)))
-(rewrite (SGt (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (SGt a b)))
-(rewrite (SGe (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (SGe a b)))
-(rewrite (ULt (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (ULt a b)))
-(rewrite (ULe (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (ULe a b)))
-(rewrite (UGt (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (UGt a b)))
-(rewrite (UGe (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (UGe a b)))
+; Comparisons on loop invariants - ONE-DIRECTIONAL
+(rule ((= e (Eq (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (Eq a b)))))
+(rule ((= e (Ne (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (Ne a b)))))
+(rule ((= e (SLt (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (SLt a b)))))
+(rule ((= e (SLe (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (SLe a b)))))
+(rule ((= e (SGt (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (SGt a b)))))
+(rule ((= e (SGe (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (SGe a b)))))
+(rule ((= e (ULt (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (ULt a b)))))
+(rule ((= e (ULe (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (ULe a b)))))
+(rule ((= e (UGt (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (UGt a b)))))
+(rule ((= e (UGe (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (UGe a b)))))
 
 ; =============================================================================
 ; Theta LICM: Hoist loop-invariant expressions out of Theta
@@ -174,8 +201,9 @@
 (rule ((= result (EffGamma c x x)))
       ((union result x)))
 
-; Effect Gamma with negated condition
-(rewrite (EffGamma (LogNot c) t f) (EffGamma c f t))
+; Effect Gamma with negated condition - ONE-DIRECTIONAL
+(rule ((= e (EffGamma (LogNot c) t f)))
+      ((union e (EffGamma c f t))))
 
 ; Both branches return same value -> just return that value
 (rewrite (EffGamma c (ReturnValue x) (ReturnValue x)) (ReturnValue x))
@@ -204,15 +232,21 @@
       ((union e c)))
 ; select(c, x, c) where c is false gives false
 ; More precisely: select(c, x, 0) when result is 0/1
-(rewrite (Gamma c x (Const 0)) (LogAnd c x))
-(rewrite (Gamma c (Const 1) x) (LogOr c x))
-(rewrite (Gamma c (Const 0) x) (LogAnd (LogNot c) x))
-(rewrite (Gamma c x (Const 1)) (LogOr (LogNot c) x))
+; ONE-DIRECTIONAL: Convert Gamma to LogAnd/LogOr, never reverse (prevents explosion)
+(rule ((= e (Gamma c x (Const 0))))
+      ((union e (LogAnd c x))))
+(rule ((= e (Gamma c (Const 1) x)))
+      ((union e (LogOr c x))))
+(rule ((= e (Gamma c (Const 0) x)))
+      ((union e (LogAnd (LogNot c) x))))
+(rule ((= e (Gamma c x (Const 1))))
+      ((union e (LogOr (LogNot c) x))))
 
 ; Gamma with constants 0/1 and variable
 ; select(c, 0, 1) = !c
 ; select(c, 1, 0) = c - ONE-DIRECTIONAL to prevent explosion
-(rewrite (Gamma c (Const 0) (Const 1)) (LogNot c))
+(rule ((= e (Gamma c (Const 0) (Const 1))))
+      ((union e (LogNot c))))
 (rule ((= e (Gamma c (Const 1) (Const 0))))
       ((union e c)))
 
@@ -226,72 +260,108 @@
 ; select(c, x, 0) when c means x!=0 can help
 
 ; =============================================================================
-; Floating-Point Loop Invariant Rules
+; Floating-Point Loop Invariant Rules - ONE-DIRECTIONAL
 ; =============================================================================
 
-(rewrite (FAdd (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (FAdd a b)))
-(rewrite (FSub (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (FSub a b)))
-(rewrite (FMul (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (FMul a b)))
-(rewrite (FDiv (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (FDiv a b)))
-(rewrite (FNeg (LoopInvariant a)) (LoopInvariant (FNeg a)))
-(rewrite (FAbs (LoopInvariant a)) (LoopInvariant (FAbs a)))
-(rewrite (Sqrt (LoopInvariant a)) (LoopInvariant (Sqrt a)))
+(rule ((= e (FAdd (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (FAdd a b)))))
+(rule ((= e (FSub (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (FSub a b)))))
+(rule ((= e (FMul (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (FMul a b)))))
+(rule ((= e (FDiv (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (FDiv a b)))))
+(rule ((= e (FNeg (LoopInvariant a))))
+      ((union e (LoopInvariant (FNeg a)))))
+(rule ((= e (FAbs (LoopInvariant a))))
+      ((union e (LoopInvariant (FAbs a)))))
+(rule ((= e (Sqrt (LoopInvariant a))))
+      ((union e (LoopInvariant (Sqrt a)))))
 
 ; =============================================================================
-; Floating-Point Gamma Distribution
+; Floating-Point Gamma Distribution - ONE-DIRECTIONAL
 ; =============================================================================
+; Distribution INTO Gamma (combining two conditional values)
+(rule ((= e (FAdd (Gamma c a b) (Gamma c x y))))
+      ((union e (Gamma c (FAdd a x) (FAdd b y)))))
+(rule ((= e (FSub (Gamma c a b) (Gamma c x y))))
+      ((union e (Gamma c (FSub a x) (FSub b y)))))
+(rule ((= e (FMul (Gamma c a b) (Gamma c x y))))
+      ((union e (Gamma c (FMul a x) (FMul b y)))))
 
-(rewrite (FAdd (Gamma c a b) (Gamma c x y)) (Gamma c (FAdd a x) (FAdd b y)))
-(rewrite (FSub (Gamma c a b) (Gamma c x y)) (Gamma c (FSub a x) (FSub b y)))
-(rewrite (FMul (Gamma c a b) (Gamma c x y)) (Gamma c (FMul a x) (FMul b y)))
-(rewrite (Gamma c (FAdd x a) (FAdd x b)) (FAdd x (Gamma c a b)))
-(rewrite (Gamma c (FMul x a) (FMul x b)) (FMul x (Gamma c a b)))
+; Hoisting common factors OUT of Gamma - ONE-DIRECTIONAL
+(rule ((= e (Gamma c (FAdd x a) (FAdd x b))))
+      ((union e (FAdd x (Gamma c a b)))))
+(rule ((= e (Gamma c (FMul x a) (FMul x b))))
+      ((union e (FMul x (Gamma c a b)))))
 
 ; =============================================================================
-; Theta (Loop) Optimization Rules
+; Theta (Loop) Optimization Rules - ONE-DIRECTIONAL
 ; =============================================================================
 
 ; Theta with false condition never executes - return initial value
-(rewrite (Theta (Const 0) body init) init)
+(rule ((= e (Theta (Const 0) body init)))
+      ((union e init)))
 
 ; Theta with constant true condition would loop forever
 ; We don't simplify this as it's an infinite loop
 
 ; Theta where body equals LoopVar - loop does nothing, return init
 ; (Theta cond (LoopVar) init) = init when loop doesn't modify state
-(rewrite (Theta cond (LoopVar) init) init)
+(rule ((= e (Theta cond (LoopVar) init)))
+      ((union e init)))
 
 ; =============================================================================
-; More Loop Invariant Propagation
+; More Loop Invariant Propagation - ONE-DIRECTIONAL
 ; =============================================================================
 
 ; Comparison of loop invariants
-(rewrite (FOrdEq (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (FOrdEq a b)))
-(rewrite (FOrdNe (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (FOrdNe a b)))
-(rewrite (FOrdLt (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (FOrdLt a b)))
-(rewrite (FOrdLe (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (FOrdLe a b)))
-(rewrite (FOrdGt (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (FOrdGt a b)))
-(rewrite (FOrdGe (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (FOrdGe a b)))
+(rule ((= e (FOrdEq (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (FOrdEq a b)))))
+(rule ((= e (FOrdNe (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (FOrdNe a b)))))
+(rule ((= e (FOrdLt (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (FOrdLt a b)))))
+(rule ((= e (FOrdLe (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (FOrdLe a b)))))
+(rule ((= e (FOrdGt (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (FOrdGt a b)))))
+(rule ((= e (FOrdGe (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (FOrdGe a b)))))
 
 ; GLSL extended instructions on loop invariants
-(rewrite (FMin (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (FMin a b)))
-(rewrite (FMax (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (FMax a b)))
-(rewrite (FFloor (LoopInvariant a)) (LoopInvariant (FFloor a)))
-(rewrite (FCeil (LoopInvariant a)) (LoopInvariant (FCeil a)))
-(rewrite (FRound (LoopInvariant a)) (LoopInvariant (FRound a)))
-(rewrite (FTrunc (LoopInvariant a)) (LoopInvariant (FTrunc a)))
+(rule ((= e (FMin (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (FMin a b)))))
+(rule ((= e (FMax (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (FMax a b)))))
+(rule ((= e (FFloor (LoopInvariant a))))
+      ((union e (LoopInvariant (FFloor a)))))
+(rule ((= e (FCeil (LoopInvariant a))))
+      ((union e (LoopInvariant (FCeil a)))))
+(rule ((= e (FRound (LoopInvariant a))))
+      ((union e (LoopInvariant (FRound a)))))
+(rule ((= e (FTrunc (LoopInvariant a))))
+      ((union e (LoopInvariant (FTrunc a)))))
 
 ; Exp/Log on loop invariants
-(rewrite (Exp (LoopInvariant a)) (LoopInvariant (Exp a)))
-(rewrite (Log (LoopInvariant a)) (LoopInvariant (Log a)))
-(rewrite (Exp2 (LoopInvariant a)) (LoopInvariant (Exp2 a)))
-(rewrite (Log2 (LoopInvariant a)) (LoopInvariant (Log2 a)))
-(rewrite (Pow (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (Pow a b)))
+(rule ((= e (Exp (LoopInvariant a))))
+      ((union e (LoopInvariant (Exp a)))))
+(rule ((= e (Log (LoopInvariant a))))
+      ((union e (LoopInvariant (Log a)))))
+(rule ((= e (Exp2 (LoopInvariant a))))
+      ((union e (LoopInvariant (Exp2 a)))))
+(rule ((= e (Log2 (LoopInvariant a))))
+      ((union e (LoopInvariant (Log2 a)))))
+(rule ((= e (Pow (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (Pow a b)))))
 
 ; Trig functions on loop invariants
-(rewrite (Sin (LoopInvariant a)) (LoopInvariant (Sin a)))
-(rewrite (Cos (LoopInvariant a)) (LoopInvariant (Cos a)))
-(rewrite (Tan (LoopInvariant a)) (LoopInvariant (Tan a)))
+(rule ((= e (Sin (LoopInvariant a))))
+      ((union e (LoopInvariant (Sin a)))))
+(rule ((= e (Cos (LoopInvariant a))))
+      ((union e (LoopInvariant (Cos a)))))
+(rule ((= e (Tan (LoopInvariant a))))
+      ((union e (LoopInvariant (Tan a)))))
 
 ; InverseSqrt on loop invariant
 (rewrite (InverseSqrt (LoopInvariant a)) (LoopInvariant (InverseSqrt a)))
@@ -469,18 +539,21 @@
 (rewrite (Gamma (FOrdLt x (Const 0)) (FNeg x) x) (FAbs x))
 
 ; =============================================================================
-; Conditional Evaluation Short-Circuiting
+; Conditional Evaluation Short-Circuiting - ONE-DIRECTIONAL
 ; =============================================================================
 
 ; select(c, c && x, false) = c && x (boolean contexts)
-(rewrite (Gamma c (LogAnd c x) (Const 0)) (LogAnd c x))
+(rule ((= e (Gamma c (LogAnd c x) (Const 0))))
+      ((union e (LogAnd c x))))
 
 ; select(c, c || x, true) = true (when c is true, c||x is true; when false, true)
 ; Actually: select(c, c || x, y) - if c then (true || x)=true, else y
-(rewrite (Gamma c (LogOr c x) y) (LogOr c y))
+(rule ((= e (Gamma c (LogOr c x) y)))
+      ((union e (LogOr c y))))
 
 ; select(c, true, c || x) = c || x
-(rewrite (Gamma c (Const 1) (LogOr c x)) (LogOr c (Gamma c (Const 1) x)))
+; NOTE: This rule was REMOVED because it creates new Gamma nodes that cause cycles
+; (rewrite (Gamma c (Const 1) (LogOr c x)) (LogOr c (Gamma c (Const 1) x)))
 
 ; =============================================================================
 ; Gamma Distribution over Division Operations (C++ Parity)

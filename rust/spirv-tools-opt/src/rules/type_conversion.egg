@@ -105,9 +105,9 @@
 (rule ((= e (NClamp x a a)))
       ((union e a)))
 
-; Commutativity
-(rewrite (NMin a b) (NMin b a))
-(rewrite (NMax a b) (NMax b a))
+; Commutativity - REMOVED to prevent e-graph explosion
+; NMin(a, b) ↔ NMin(b, a) creates immediate cycles
+; The e-graph handles commutativity implicitly when both forms are present
 
 ; Idempotent
 (rewrite (NMin (NMin x y) y) (NMin x y))

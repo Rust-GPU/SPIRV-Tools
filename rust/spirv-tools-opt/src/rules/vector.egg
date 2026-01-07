@@ -113,8 +113,8 @@
 (rewrite (Dot v (Vec4 (Const 0) (Const 0) (Const 1) (Const 0))) (VecExtract v 2))
 (rewrite (Dot v (Vec4 (Const 0) (Const 0) (Const 0) (Const 1))) (VecExtract v 3))
 
-; Dot is commutative
-(rewrite (Dot a b) (Dot b a))
+; Dot is commutative - REMOVED to prevent e-graph explosion
+; These bidirectional rules cause cycles: (Dot a b) ↔ (Dot b a) ↔ ...
 
 ; =============================================================================
 ; Vector Subtraction and Negation
@@ -243,17 +243,16 @@
 ; VecFMul with 0 = 0 vector
 ; VecFMul with 1 = identity (already covered)
 
-; VecFAdd associativity
-(rewrite (VecFAdd (VecFAdd a b) c) (VecFAdd a (VecFAdd b c)))
+; VecFAdd associativity - ONE-DIRECTIONAL (right-associative canonical form)
+(rule ((= e (VecFAdd (VecFAdd a b) c)))
+      ((union e (VecFAdd a (VecFAdd b c)))))
 
-; VecFMul associativity
-(rewrite (VecFMul (VecFMul a b) c) (VecFMul a (VecFMul b c)))
+; VecFMul associativity - ONE-DIRECTIONAL (right-associative canonical form)
+(rule ((= e (VecFMul (VecFMul a b) c)))
+      ((union e (VecFMul a (VecFMul b c)))))
 
-; VecFAdd commutativity
-(rewrite (VecFAdd a b) (VecFAdd b a))
-
-; VecFMul commutativity
-(rewrite (VecFMul a b) (VecFMul b a))
+; VecFAdd/VecFMul commutativity - REMOVED to prevent e-graph explosion
+; These bidirectional rules cause cycles: (VecFAdd a b) ↔ (VecFAdd b a) ↔ ...
 
 ; =============================================================================
 ; Scalar-Vector Multiplication Chain
