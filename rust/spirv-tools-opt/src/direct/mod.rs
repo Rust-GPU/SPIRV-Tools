@@ -1680,6 +1680,7 @@ fn has_side_effects(inst: &Instruction) -> bool {
 fn is_optimizable(inst: &Instruction) -> bool {
     matches!(
         inst.class.opcode,
+        // Integer arithmetic
         Op::IAdd
             | Op::ISub
             | Op::IMul
@@ -1689,14 +1690,17 @@ fn is_optimizable(inst: &Instruction) -> bool {
             | Op::UMod
             | Op::SMod
             | Op::SNegate
+            // Shifts
             | Op::ShiftLeftLogical
             | Op::ShiftRightLogical
             | Op::ShiftRightArithmetic
+            // Bitwise
             | Op::BitwiseAnd
             | Op::BitwiseOr
             | Op::BitwiseXor
             | Op::Not
             | Op::BitReverse
+            // Integer comparisons
             | Op::IEqual
             | Op::INotEqual
             | Op::SLessThan
@@ -1707,17 +1711,48 @@ fn is_optimizable(inst: &Instruction) -> bool {
             | Op::ULessThanEqual
             | Op::UGreaterThan
             | Op::UGreaterThanEqual
-            | Op::Select
-            | Op::Constant
-            | Op::ConstantTrue
-            | Op::ConstantFalse
+            // Logical
             | Op::LogicalNot
             | Op::LogicalAnd
             | Op::LogicalOr
             | Op::LogicalEqual
             | Op::LogicalNotEqual
+            // Select
+            | Op::Select
+            // Constants
+            | Op::Constant
+            | Op::ConstantTrue
+            | Op::ConstantFalse
+            // Copy
             | Op::CopyObject
             | Op::Phi
+            // Floating-point arithmetic
+            | Op::FAdd
+            | Op::FSub
+            | Op::FMul
+            | Op::FDiv
+            | Op::FRem
+            | Op::FMod
+            | Op::FNegate
+            // Floating-point comparisons (ordered)
+            | Op::FOrdEqual
+            | Op::FOrdNotEqual
+            | Op::FOrdLessThan
+            | Op::FOrdLessThanEqual
+            | Op::FOrdGreaterThan
+            | Op::FOrdGreaterThanEqual
+            // Floating-point comparisons (unordered)
+            | Op::FUnordEqual
+            | Op::FUnordNotEqual
+            | Op::FUnordLessThan
+            | Op::FUnordLessThanEqual
+            | Op::FUnordGreaterThan
+            | Op::FUnordGreaterThanEqual
+            // Conversions
+            | Op::ConvertFToU
+            | Op::ConvertFToS
+            | Op::ConvertSToF
+            | Op::ConvertUToF
     )
 }
 
@@ -1931,6 +1966,7 @@ fn materialize_term(
 
     // Binary operations
     let binary_ops: &[(&str, Op)] = &[
+        // Integer arithmetic
         ("Add", Op::IAdd),
         ("Sub", Op::ISub),
         ("Mul", Op::IMul),
@@ -1939,12 +1975,15 @@ fn materialize_term(
         ("SRem", Op::SRem),
         ("SMod", Op::SMod),
         ("UMod", Op::UMod),
+        // Shifts
         ("Shl", Op::ShiftLeftLogical),
         ("ShrU", Op::ShiftRightLogical),
         ("ShrS", Op::ShiftRightArithmetic),
+        // Bitwise
         ("BitAnd", Op::BitwiseAnd),
         ("BitOr", Op::BitwiseOr),
         ("BitXor", Op::BitwiseXor),
+        // Integer comparisons
         ("Eq", Op::IEqual),
         ("Ne", Op::INotEqual),
         ("SLt", Op::SLessThan),
@@ -1955,10 +1994,32 @@ fn materialize_term(
         ("ULe", Op::ULessThanEqual),
         ("UGt", Op::UGreaterThan),
         ("UGe", Op::UGreaterThanEqual),
+        // Logical
         ("LogAnd", Op::LogicalAnd),
         ("LogOr", Op::LogicalOr),
         ("LogEq", Op::LogicalEqual),
         ("LogNe", Op::LogicalNotEqual),
+        // Floating-point arithmetic
+        ("FAdd", Op::FAdd),
+        ("FSub", Op::FSub),
+        ("FMul", Op::FMul),
+        ("FDiv", Op::FDiv),
+        ("FRem", Op::FRem),
+        ("FMod", Op::FMod),
+        // Floating-point comparisons (ordered)
+        ("FOrdEq", Op::FOrdEqual),
+        ("FOrdNe", Op::FOrdNotEqual),
+        ("FOrdLt", Op::FOrdLessThan),
+        ("FOrdLe", Op::FOrdLessThanEqual),
+        ("FOrdGt", Op::FOrdGreaterThan),
+        ("FOrdGe", Op::FOrdGreaterThanEqual),
+        // Floating-point comparisons (unordered)
+        ("FUnordEq", Op::FUnordEqual),
+        ("FUnordNe", Op::FUnordNotEqual),
+        ("FUnordLt", Op::FUnordLessThan),
+        ("FUnordLe", Op::FUnordLessThanEqual),
+        ("FUnordGt", Op::FUnordGreaterThan),
+        ("FUnordGe", Op::FUnordGreaterThanEqual),
     ];
 
     for (name, opcode) in binary_ops {
@@ -2000,10 +2061,18 @@ fn materialize_term(
 
     // Unary operations
     let unary_ops: &[(&str, Op)] = &[
+        // Integer
         ("Neg", Op::SNegate),
         ("BitNot", Op::Not),
         ("BitReverse", Op::BitReverse),
         ("LogNot", Op::LogicalNot),
+        // Floating-point
+        ("FNeg", Op::FNegate),
+        // Conversions
+        ("ConvertFToU", Op::ConvertFToU),
+        ("ConvertFToS", Op::ConvertFToS),
+        ("ConvertSToF", Op::ConvertSToF),
+        ("ConvertUToF", Op::ConvertUToF),
     ];
 
     for (name, opcode) in unary_ops {

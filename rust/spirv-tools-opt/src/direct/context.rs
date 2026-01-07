@@ -127,6 +127,33 @@ impl EgglogContext {
             Op::LogicalOr => self.binary_op("LogOr", inst)?,
             Op::LogicalEqual => self.binary_op("LogEq", inst)?,
             Op::LogicalNotEqual => self.binary_op("LogNe", inst)?,
+            // Floating-point operations
+            Op::FAdd => self.binary_op("FAdd", inst)?,
+            Op::FSub => self.binary_op("FSub", inst)?,
+            Op::FMul => self.binary_op("FMul", inst)?,
+            Op::FDiv => self.binary_op("FDiv", inst)?,
+            Op::FRem => self.binary_op("FRem", inst)?,
+            Op::FMod => self.binary_op("FMod", inst)?,
+            Op::FNegate => self.unary_op("FNeg", inst)?,
+            // Floating-point comparisons (ordered)
+            Op::FOrdEqual => self.binary_op("FOrdEq", inst)?,
+            Op::FOrdNotEqual => self.binary_op("FOrdNe", inst)?,
+            Op::FOrdLessThan => self.binary_op("FOrdLt", inst)?,
+            Op::FOrdLessThanEqual => self.binary_op("FOrdLe", inst)?,
+            Op::FOrdGreaterThan => self.binary_op("FOrdGt", inst)?,
+            Op::FOrdGreaterThanEqual => self.binary_op("FOrdGe", inst)?,
+            // Floating-point comparisons (unordered)
+            Op::FUnordEqual => self.binary_op("FUnordEq", inst)?,
+            Op::FUnordNotEqual => self.binary_op("FUnordNe", inst)?,
+            Op::FUnordLessThan => self.binary_op("FUnordLt", inst)?,
+            Op::FUnordLessThanEqual => self.binary_op("FUnordLe", inst)?,
+            Op::FUnordGreaterThan => self.binary_op("FUnordGt", inst)?,
+            Op::FUnordGreaterThanEqual => self.binary_op("FUnordGe", inst)?,
+            // Conversion operations
+            Op::ConvertFToU => self.unary_op("ConvertFToU", inst)?,
+            Op::ConvertFToS => self.unary_op("ConvertFToS", inst)?,
+            Op::ConvertSToF => self.unary_op("ConvertSToF", inst)?,
+            Op::ConvertUToF => self.unary_op("ConvertUToF", inst)?,
             Op::Select => {
                 let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
                 if ops.len() >= 3 {
