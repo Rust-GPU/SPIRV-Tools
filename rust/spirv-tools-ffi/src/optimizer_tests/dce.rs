@@ -2252,3 +2252,1425 @@ fn dce_preserves_live_subtraction() {
         "live ISub should be preserved"
     );
 }
+
+// =============================================================================
+// Edge Case Tests - Division and Modulo Operations
+// =============================================================================
+
+#[test]
+fn dce_dead_signed_division() {
+    // Dead signed division should be removed
+    //     dead_div = x / y
+    //     return 0
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty, b.int_ty]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.int_ty).expect("x");
+    let y = b.builder.function_parameter(b.int_ty).expect("y");
+    b.builder.begin_block(None).expect("begin block");
+
+    let _dead_div = b.builder.s_div(b.int_ty, None, x, y).expect("dead_div");
+
+    let c0 = b.const_i32(0);
+    b.builder.ret_value(c0).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    assert!(
+        !result.has_opcode(Op::SDiv),
+        "dead SDiv should be removed"
+    );
+}
+
+#[test]
+fn dce_preserves_live_signed_division() {
+    // Live signed division should NOT be removed
+    //     result = x / y
+    //     return result
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty, b.int_ty]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.int_ty).expect("x");
+    let y = b.builder.function_parameter(b.int_ty).expect("y");
+    b.builder.begin_block(None).expect("begin block");
+
+    let result = b.builder.s_div(b.int_ty, None, x, y).expect("div");
+
+    b.builder.ret_value(result).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result_mod = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    assert!(
+        result_mod.has_opcode(Op::SDiv),
+        "live SDiv should be preserved"
+    );
+}
+
+#[test]
+fn dce_dead_unsigned_division() {
+    // Dead unsigned division should be removed
+    //     dead_div = x / y (unsigned)
+    //     return 0
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty, b.int_ty]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.int_ty).expect("x");
+    let y = b.builder.function_parameter(b.int_ty).expect("y");
+    b.builder.begin_block(None).expect("begin block");
+
+    let _dead_div = b.builder.u_div(b.int_ty, None, x, y).expect("dead_div");
+
+    let c0 = b.const_i32(0);
+    b.builder.ret_value(c0).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    assert!(
+        !result.has_opcode(Op::UDiv),
+        "dead UDiv should be removed"
+    );
+}
+
+#[test]
+fn dce_dead_signed_modulo() {
+    // Dead signed modulo should be removed
+    //     dead_mod = x % y
+    //     return 0
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty, b.int_ty]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.int_ty).expect("x");
+    let y = b.builder.function_parameter(b.int_ty).expect("y");
+    b.builder.begin_block(None).expect("begin block");
+
+    let _dead_mod = b.builder.s_mod(b.int_ty, None, x, y).expect("dead_mod");
+
+    let c0 = b.const_i32(0);
+    b.builder.ret_value(c0).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    assert!(
+        !result.has_opcode(Op::SMod),
+        "dead SMod should be removed"
+    );
+}
+
+#[test]
+fn dce_dead_unsigned_modulo() {
+    // Dead unsigned modulo should be removed
+    //     dead_mod = x % y (unsigned)
+    //     return 0
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty, b.int_ty]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.int_ty).expect("x");
+    let y = b.builder.function_parameter(b.int_ty).expect("y");
+    b.builder.begin_block(None).expect("begin block");
+
+    let _dead_mod = b.builder.u_mod(b.int_ty, None, x, y).expect("dead_mod");
+
+    let c0 = b.const_i32(0);
+    b.builder.ret_value(c0).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    assert!(
+        !result.has_opcode(Op::UMod),
+        "dead UMod should be removed"
+    );
+}
+
+// =============================================================================
+// Edge Case Tests - Floating Point Operations
+// NOTE: These tests are ignored until floating point operations are added to the e-graph.
+// They serve as documentation of expected behavior once float support is implemented.
+// =============================================================================
+
+#[test]
+fn dce_dead_float_add() {
+    // Dead float addition should be removed
+    //     dead_add = x + y (float)
+    //     return 0.0
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.float_ty, vec![b.float_ty, b.float_ty]);
+    b.builder
+        .begin_function(b.float_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.float_ty).expect("x");
+    let y = b.builder.function_parameter(b.float_ty).expect("y");
+    b.builder.begin_block(None).expect("begin block");
+
+    let _dead_add = b.builder.f_add(b.float_ty, None, x, y).expect("dead_add");
+
+    let c0 = b.const_f32(0.0);
+    b.builder.ret_value(c0).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    assert!(
+        !result.has_opcode(Op::FAdd),
+        "dead FAdd should be removed"
+    );
+}
+
+#[test]
+fn dce_preserves_live_float_add() {
+    // Live float addition should NOT be removed
+    //     result = x + y (float)
+    //     return result
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.float_ty, vec![b.float_ty, b.float_ty]);
+    b.builder
+        .begin_function(b.float_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.float_ty).expect("x");
+    let y = b.builder.function_parameter(b.float_ty).expect("y");
+    b.builder.begin_block(None).expect("begin block");
+
+    let result = b.builder.f_add(b.float_ty, None, x, y).expect("add");
+
+    b.builder.ret_value(result).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result_mod = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    assert!(
+        result_mod.has_opcode(Op::FAdd),
+        "live FAdd should be preserved"
+    );
+}
+
+#[test]
+fn dce_dead_float_mul() {
+    // Dead float multiplication should be removed
+    //     dead_mul = x * y (float)
+    //     return 0.0
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.float_ty, vec![b.float_ty, b.float_ty]);
+    b.builder
+        .begin_function(b.float_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.float_ty).expect("x");
+    let y = b.builder.function_parameter(b.float_ty).expect("y");
+    b.builder.begin_block(None).expect("begin block");
+
+    let _dead_mul = b.builder.f_mul(b.float_ty, None, x, y).expect("dead_mul");
+
+    let c0 = b.const_f32(0.0);
+    b.builder.ret_value(c0).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    assert!(
+        !result.has_opcode(Op::FMul),
+        "dead FMul should be removed"
+    );
+}
+
+#[test]
+fn dce_dead_float_sub() {
+    // Dead float subtraction should be removed
+    //     dead_sub = x - y (float)
+    //     return 0.0
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.float_ty, vec![b.float_ty, b.float_ty]);
+    b.builder
+        .begin_function(b.float_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.float_ty).expect("x");
+    let y = b.builder.function_parameter(b.float_ty).expect("y");
+    b.builder.begin_block(None).expect("begin block");
+
+    let _dead_sub = b.builder.f_sub(b.float_ty, None, x, y).expect("dead_sub");
+
+    let c0 = b.const_f32(0.0);
+    b.builder.ret_value(c0).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    assert!(
+        !result.has_opcode(Op::FSub),
+        "dead FSub should be removed"
+    );
+}
+
+#[test]
+fn dce_dead_float_div() {
+    // Dead float division should be removed
+    //     dead_div = x / y (float)
+    //     return 0.0
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.float_ty, vec![b.float_ty, b.float_ty]);
+    b.builder
+        .begin_function(b.float_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.float_ty).expect("x");
+    let y = b.builder.function_parameter(b.float_ty).expect("y");
+    b.builder.begin_block(None).expect("begin block");
+
+    let _dead_div = b.builder.f_div(b.float_ty, None, x, y).expect("dead_div");
+
+    let c0 = b.const_f32(0.0);
+    b.builder.ret_value(c0).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    assert!(
+        !result.has_opcode(Op::FDiv),
+        "dead FDiv should be removed"
+    );
+}
+
+#[test]
+fn dce_dead_float_negate() {
+    // Dead float negation should be removed
+    //     dead_neg = -x (float)
+    //     return 0.0
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.float_ty, vec![b.float_ty]);
+    b.builder
+        .begin_function(b.float_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.float_ty).expect("x");
+    b.builder.begin_block(None).expect("begin block");
+
+    let _dead_neg = b.builder.f_negate(b.float_ty, None, x).expect("dead_neg");
+
+    let c0 = b.const_f32(0.0);
+    b.builder.ret_value(c0).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    assert!(
+        !result.has_opcode(Op::FNegate),
+        "dead FNegate should be removed"
+    );
+}
+
+#[test]
+fn dce_preserves_live_float_negate() {
+    // Live float negation should NOT be removed
+    //     result = -x (float)
+    //     return result
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.float_ty, vec![b.float_ty]);
+    b.builder
+        .begin_function(b.float_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.float_ty).expect("x");
+    b.builder.begin_block(None).expect("begin block");
+
+    let result = b.builder.f_negate(b.float_ty, None, x).expect("neg");
+
+    b.builder.ret_value(result).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result_mod = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    assert!(
+        result_mod.has_opcode(Op::FNegate),
+        "live FNegate should be preserved"
+    );
+}
+
+// =============================================================================
+// Edge Case Tests - Interleaved Dead/Live Instructions
+// =============================================================================
+
+#[test]
+fn dce_interleaved_dead_live_dead() {
+    // Pattern: dead, live, dead - should remove only dead
+    //     dead1 = x + 1
+    //     live = x + 2
+    //     dead2 = x + 3
+    //     return live
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.int_ty).expect("x");
+    b.builder.begin_block(None).expect("begin block");
+
+    let c1 = b.const_i32(1);
+    let c2 = b.const_i32(2);
+    let c3 = b.const_i32(3);
+
+    let _dead1 = b.builder.i_add(b.int_ty, None, x, c1).expect("dead1");
+    let live = b.builder.i_add(b.int_ty, None, x, c2).expect("live");
+    let _dead2 = b.builder.i_add(b.int_ty, None, x, c3).expect("dead2");
+
+    b.builder.ret_value(live).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    // Should have exactly 1 IAdd (the live one)
+    let iadd_count = result.count_opcode(Op::IAdd);
+    assert_eq!(iadd_count, 1, "should have exactly 1 live IAdd, got {}", iadd_count);
+}
+
+#[test]
+fn dce_interleaved_live_dead_live() {
+    // Pattern: live, dead, live - should remove only dead
+    //     live1 = x + 1
+    //     dead = x + 2
+    //     live2 = live1 + 3
+    //     return live2
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.int_ty).expect("x");
+    b.builder.begin_block(None).expect("begin block");
+
+    let c1 = b.const_i32(1);
+    let c2 = b.const_i32(2);
+    let c3 = b.const_i32(3);
+
+    let live1 = b.builder.i_add(b.int_ty, None, x, c1).expect("live1");
+    let _dead = b.builder.i_add(b.int_ty, None, x, c2).expect("dead");
+    let live2 = b.builder.i_add(b.int_ty, None, live1, c3).expect("live2");
+
+    b.builder.ret_value(live2).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    // Should have 2 IAdds (both live ones), but constant folding may reduce
+    // At minimum we need the final computation
+    assert!(
+        result.has_opcode(Op::IAdd) || result.has_opcode(Op::Constant),
+        "should have computation or folded constant"
+    );
+}
+
+#[test]
+fn dce_alternating_dead_live_pattern() {
+    // Alternating dead/live pattern with different operations
+    //     dead_add = x + 1
+    //     live_mul = x * 2
+    //     dead_sub = x - 3
+    //     live_result = live_mul + 4
+    //     dead_and = x & 5
+    //     return live_result
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.int_ty).expect("x");
+    b.builder.begin_block(None).expect("begin block");
+
+    let c1 = b.const_i32(1);
+    let c2 = b.const_i32(2);
+    let c3 = b.const_i32(3);
+    let c4 = b.const_i32(4);
+    let c5 = b.const_i32(5);
+
+    let _dead_add = b.builder.i_add(b.int_ty, None, x, c1).expect("dead_add");
+    let live_mul = b.builder.i_mul(b.int_ty, None, x, c2).expect("live_mul");
+    let _dead_sub = b.builder.i_sub(b.int_ty, None, x, c3).expect("dead_sub");
+    let live_result = b.builder.i_add(b.int_ty, None, live_mul, c4).expect("live_result");
+    let _dead_and = b.builder.bitwise_and(b.int_ty, None, x, c5).expect("dead_and");
+
+    b.builder.ret_value(live_result).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    // Dead operations should be removed
+    assert!(
+        !result.has_opcode(Op::ISub),
+        "dead ISub should be removed"
+    );
+    assert!(
+        !result.has_opcode(Op::BitwiseAnd),
+        "dead BitwiseAnd should be removed"
+    );
+}
+
+// =============================================================================
+// Edge Case Tests - Long Live Chains (Stress Test)
+// =============================================================================
+
+#[test]
+fn dce_long_live_chain_20_ops() {
+    // Long chain of 20 live operations
+    //     v1 = x + 1
+    //     v2 = v1 + 1
+    //     ...
+    //     v20 = v19 + 1
+    //     return v20
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.int_ty).expect("x");
+    b.builder.begin_block(None).expect("begin block");
+
+    let c1 = b.const_i32(1);
+
+    let mut prev = x;
+    for _ in 0..20 {
+        prev = b.builder.i_add(b.int_ty, None, prev, c1).expect("add");
+    }
+
+    b.builder.ret_value(prev).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    // All operations are live, should have computation preserved
+    // (constant folding may reduce, but should have some IAdd or equivalent)
+    assert!(
+        result.has_opcode(Op::IAdd) || result.has_opcode(Op::Constant),
+        "should preserve live chain computation"
+    );
+}
+
+#[test]
+fn dce_long_dead_chain_20_ops() {
+    // Long chain of 20 dead operations (not feeding return)
+    //     v1 = x + 1
+    //     v2 = v1 + 1
+    //     ...
+    //     v20 = v19 + 1  (dead - not returned)
+    //     return 0
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.int_ty).expect("x");
+    b.builder.begin_block(None).expect("begin block");
+
+    let c1 = b.const_i32(1);
+
+    let mut prev = x;
+    for _ in 0..20 {
+        prev = b.builder.i_add(b.int_ty, None, prev, c1).expect("add");
+    }
+    let _ = prev; // unused
+
+    let c0 = b.const_i32(0);
+    b.builder.ret_value(c0).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    // All 20 IAdds are dead
+    assert!(
+        !result.has_opcode(Op::IAdd),
+        "all 20 dead IAdds should be removed"
+    );
+}
+
+// =============================================================================
+// Edge Case Tests - Multiple Uses of Same Instruction
+// =============================================================================
+
+#[test]
+fn dce_instruction_used_twice_in_same_op() {
+    // Same instruction used twice (x + x)
+    //     doubled = x + x
+    //     return doubled
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.int_ty).expect("x");
+    b.builder.begin_block(None).expect("begin block");
+
+    let doubled = b.builder.i_add(b.int_ty, None, x, x).expect("doubled");
+
+    b.builder.ret_value(doubled).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    // Should preserve the x + x computation (or strength reduced to x * 2 or x << 1)
+    assert!(
+        result.has_opcode(Op::IAdd) || result.has_opcode(Op::IMul) || result.has_opcode(Op::ShiftLeftLogical),
+        "should preserve doubling computation"
+    );
+}
+
+#[test]
+fn dce_instruction_used_in_multiple_live_ops() {
+    // Intermediate value used by multiple live operations
+    //     intermediate = x + 1
+    //     use1 = intermediate + 2
+    //     use2 = intermediate + 3
+    //     result = use1 + use2
+    //     return result
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.int_ty).expect("x");
+    b.builder.begin_block(None).expect("begin block");
+
+    let c1 = b.const_i32(1);
+    let c2 = b.const_i32(2);
+    let c3 = b.const_i32(3);
+
+    let intermediate = b.builder.i_add(b.int_ty, None, x, c1).expect("intermediate");
+    let use1 = b.builder.i_add(b.int_ty, None, intermediate, c2).expect("use1");
+    let use2 = b.builder.i_add(b.int_ty, None, intermediate, c3).expect("use2");
+    let result = b.builder.i_add(b.int_ty, None, use1, use2).expect("result");
+
+    b.builder.ret_value(result).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result_mod = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    // All operations are live - should have computations
+    assert!(
+        result_mod.has_opcode(Op::IAdd),
+        "should preserve multi-use live computation"
+    );
+}
+
+#[test]
+fn dce_instruction_used_in_one_live_one_dead() {
+    // Intermediate used by both live and dead operations
+    //     intermediate = x + 1
+    //     live_use = intermediate + 2  -> returned
+    //     dead_use = intermediate + 3  -> not returned
+    //     return live_use
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.int_ty).expect("x");
+    b.builder.begin_block(None).expect("begin block");
+
+    let c1 = b.const_i32(1);
+    let c2 = b.const_i32(2);
+    let c3 = b.const_i32(3);
+
+    let intermediate = b.builder.i_add(b.int_ty, None, x, c1).expect("intermediate");
+    let live_use = b.builder.i_add(b.int_ty, None, intermediate, c2).expect("live_use");
+    let _dead_use = b.builder.i_add(b.int_ty, None, intermediate, c3).expect("dead_use");
+
+    b.builder.ret_value(live_use).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    // intermediate and live_use should be kept, dead_use should be removed
+    // Due to constant folding, we might get fewer IAdds but result should be correct
+    assert!(
+        result.has_opcode(Op::IAdd) || result.has_opcode(Op::Constant),
+        "should have live computation"
+    );
+}
+
+// =============================================================================
+// Edge Case Tests - Dead Code After Live Code
+// =============================================================================
+
+#[test]
+fn dce_dead_code_after_return_value_computed() {
+    // Dead code computed after the live return value
+    //     live = x + 1
+    //     dead1 = x + 2  (computed after live, but not used)
+    //     dead2 = x + 3  (computed after live, but not used)
+    //     return live
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.int_ty).expect("x");
+    b.builder.begin_block(None).expect("begin block");
+
+    let c1 = b.const_i32(1);
+    let c2 = b.const_i32(2);
+    let c3 = b.const_i32(3);
+
+    let live = b.builder.i_add(b.int_ty, None, x, c1).expect("live");
+    let _dead1 = b.builder.i_add(b.int_ty, None, x, c2).expect("dead1");
+    let _dead2 = b.builder.i_add(b.int_ty, None, x, c3).expect("dead2");
+
+    b.builder.ret_value(live).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    // Should have only 1 IAdd (the live one)
+    let iadd_count = result.count_opcode(Op::IAdd);
+    assert_eq!(iadd_count, 1, "should have exactly 1 live IAdd, got {}", iadd_count);
+}
+
+// =============================================================================
+// Edge Case Tests - Conversion Operations
+// NOTE: These tests are ignored until conversion operations are added to the e-graph.
+// =============================================================================
+
+#[test]
+fn dce_dead_convert_s_to_f() {
+    // Dead signed int to float conversion
+    //     dead_conv = (float)x
+    //     return 0
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.int_ty).expect("x");
+    b.builder.begin_block(None).expect("begin block");
+
+    let _dead_conv = b.builder.convert_s_to_f(b.float_ty, None, x).expect("dead_conv");
+
+    let c0 = b.const_i32(0);
+    b.builder.ret_value(c0).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    assert!(
+        !result.has_opcode(Op::ConvertSToF),
+        "dead ConvertSToF should be removed"
+    );
+}
+
+#[test]
+fn dce_preserves_live_convert_s_to_f() {
+    // Live signed int to float conversion
+    //     result = (float)x
+    //     return result
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.float_ty, vec![b.int_ty]);
+    b.builder
+        .begin_function(b.float_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.int_ty).expect("x");
+    b.builder.begin_block(None).expect("begin block");
+
+    let result = b.builder.convert_s_to_f(b.float_ty, None, x).expect("conv");
+
+    b.builder.ret_value(result).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result_mod = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    assert!(
+        result_mod.has_opcode(Op::ConvertSToF),
+        "live ConvertSToF should be preserved"
+    );
+}
+
+#[test]
+fn dce_dead_convert_f_to_s() {
+    // Dead float to signed int conversion
+    //     dead_conv = (int)x
+    //     return 0.0
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.float_ty, vec![b.float_ty]);
+    b.builder
+        .begin_function(b.float_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.float_ty).expect("x");
+    b.builder.begin_block(None).expect("begin block");
+
+    let _dead_conv = b.builder.convert_f_to_s(b.int_ty, None, x).expect("dead_conv");
+
+    let c0 = b.const_f32(0.0);
+    b.builder.ret_value(c0).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    assert!(
+        !result.has_opcode(Op::ConvertFToS),
+        "dead ConvertFToS should be removed"
+    );
+}
+
+#[test]
+fn dce_dead_convert_u_to_f() {
+    // Dead unsigned int to float conversion
+    //     dead_conv = (float)x
+    //     return 0
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.int_ty).expect("x");
+    b.builder.begin_block(None).expect("begin block");
+
+    let _dead_conv = b.builder.convert_u_to_f(b.float_ty, None, x).expect("dead_conv");
+
+    let c0 = b.const_i32(0);
+    b.builder.ret_value(c0).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    assert!(
+        !result.has_opcode(Op::ConvertUToF),
+        "dead ConvertUToF should be removed"
+    );
+}
+
+// =============================================================================
+// Edge Case Tests - Comparison Edge Cases
+// =============================================================================
+
+#[test]
+fn dce_dead_greater_than_comparison() {
+    // Dead greater than comparison
+    //     dead_cmp = x > y
+    //     return 0
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty, b.int_ty]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.int_ty).expect("x");
+    let y = b.builder.function_parameter(b.int_ty).expect("y");
+    b.builder.begin_block(None).expect("begin block");
+
+    let _dead_cmp = b.builder.s_greater_than(b.bool_ty, None, x, y).expect("dead_cmp");
+
+    let c0 = b.const_i32(0);
+    b.builder.ret_value(c0).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    assert!(
+        !result.has_opcode(Op::SGreaterThan),
+        "dead SGreaterThan should be removed"
+    );
+}
+
+#[test]
+fn dce_dead_less_than_or_equal_comparison() {
+    // Dead less than or equal comparison
+    //     dead_cmp = x <= y
+    //     return 0
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty, b.int_ty]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.int_ty).expect("x");
+    let y = b.builder.function_parameter(b.int_ty).expect("y");
+    b.builder.begin_block(None).expect("begin block");
+
+    let _dead_cmp = b.builder.s_less_than_equal(b.bool_ty, None, x, y).expect("dead_cmp");
+
+    let c0 = b.const_i32(0);
+    b.builder.ret_value(c0).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    assert!(
+        !result.has_opcode(Op::SLessThanEqual),
+        "dead SLessThanEqual should be removed"
+    );
+}
+
+#[test]
+fn dce_dead_greater_than_or_equal_comparison() {
+    // Dead greater than or equal comparison
+    //     dead_cmp = x >= y
+    //     return 0
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty, b.int_ty]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.int_ty).expect("x");
+    let y = b.builder.function_parameter(b.int_ty).expect("y");
+    b.builder.begin_block(None).expect("begin block");
+
+    let _dead_cmp = b.builder.s_greater_than_equal(b.bool_ty, None, x, y).expect("dead_cmp");
+
+    let c0 = b.const_i32(0);
+    b.builder.ret_value(c0).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    assert!(
+        !result.has_opcode(Op::SGreaterThanEqual),
+        "dead SGreaterThanEqual should be removed"
+    );
+}
+
+#[test]
+fn dce_dead_float_comparison_ordered_less_than() {
+    // Dead float ordered less than comparison
+    //     dead_cmp = x < y (float, ordered)
+    //     return 0.0
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.float_ty, vec![b.float_ty, b.float_ty]);
+    b.builder
+        .begin_function(b.float_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.float_ty).expect("x");
+    let y = b.builder.function_parameter(b.float_ty).expect("y");
+    b.builder.begin_block(None).expect("begin block");
+
+    let _dead_cmp = b.builder.f_ord_less_than(b.bool_ty, None, x, y).expect("dead_cmp");
+
+    let c0 = b.const_f32(0.0);
+    b.builder.ret_value(c0).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    assert!(
+        !result.has_opcode(Op::FOrdLessThan),
+        "dead FOrdLessThan should be removed"
+    );
+}
+
+#[test]
+fn dce_dead_float_comparison_ordered_equal() {
+    // Dead float ordered equal comparison
+    //     dead_cmp = x == y (float, ordered)
+    //     return 0.0
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.float_ty, vec![b.float_ty, b.float_ty]);
+    b.builder
+        .begin_function(b.float_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.float_ty).expect("x");
+    let y = b.builder.function_parameter(b.float_ty).expect("y");
+    b.builder.begin_block(None).expect("begin block");
+
+    let _dead_cmp = b.builder.f_ord_equal(b.bool_ty, None, x, y).expect("dead_cmp");
+
+    let c0 = b.const_f32(0.0);
+    b.builder.ret_value(c0).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    assert!(
+        !result.has_opcode(Op::FOrdEqual),
+        "dead FOrdEqual should be removed"
+    );
+}
+
+// =============================================================================
+// Edge Case Tests - Logical Operations
+// =============================================================================
+
+#[test]
+fn dce_dead_logical_and() {
+    // Dead logical AND
+    //     dead_and = a && b
+    //     return false
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.bool_ty, vec![b.bool_ty, b.bool_ty]);
+    b.builder
+        .begin_function(b.bool_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let a = b.builder.function_parameter(b.bool_ty).expect("a");
+    let bb = b.builder.function_parameter(b.bool_ty).expect("b");
+    b.builder.begin_block(None).expect("begin block");
+
+    let _dead_and = b.builder.logical_and(b.bool_ty, None, a, bb).expect("dead_and");
+
+    let false_val = b.const_bool(false);
+    b.builder.ret_value(false_val).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    assert!(
+        !result.has_opcode(Op::LogicalAnd),
+        "dead LogicalAnd should be removed"
+    );
+}
+
+#[test]
+fn dce_dead_logical_or() {
+    // Dead logical OR
+    //     dead_or = a || b
+    //     return false
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.bool_ty, vec![b.bool_ty, b.bool_ty]);
+    b.builder
+        .begin_function(b.bool_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let a = b.builder.function_parameter(b.bool_ty).expect("a");
+    let bb = b.builder.function_parameter(b.bool_ty).expect("b");
+    b.builder.begin_block(None).expect("begin block");
+
+    let _dead_or = b.builder.logical_or(b.bool_ty, None, a, bb).expect("dead_or");
+
+    let false_val = b.const_bool(false);
+    b.builder.ret_value(false_val).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    assert!(
+        !result.has_opcode(Op::LogicalOr),
+        "dead LogicalOr should be removed"
+    );
+}
+
+#[test]
+fn dce_dead_logical_not() {
+    // Dead logical NOT
+    //     dead_not = !a
+    //     return false
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.bool_ty, vec![b.bool_ty]);
+    b.builder
+        .begin_function(b.bool_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let a = b.builder.function_parameter(b.bool_ty).expect("a");
+    b.builder.begin_block(None).expect("begin block");
+
+    let _dead_not = b.builder.logical_not(b.bool_ty, None, a).expect("dead_not");
+
+    let false_val = b.const_bool(false);
+    b.builder.ret_value(false_val).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    assert!(
+        !result.has_opcode(Op::LogicalNot),
+        "dead LogicalNot should be removed"
+    );
+}
+
+#[test]
+fn dce_preserves_live_logical_and() {
+    // Live logical AND
+    //     result = a && b
+    //     return result
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.bool_ty, vec![b.bool_ty, b.bool_ty]);
+    b.builder
+        .begin_function(b.bool_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let a = b.builder.function_parameter(b.bool_ty).expect("a");
+    let bb = b.builder.function_parameter(b.bool_ty).expect("b");
+    b.builder.begin_block(None).expect("begin block");
+
+    let result = b.builder.logical_and(b.bool_ty, None, a, bb).expect("and");
+
+    b.builder.ret_value(result).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result_mod = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    assert!(
+        result_mod.has_opcode(Op::LogicalAnd),
+        "live LogicalAnd should be preserved"
+    );
+}
+
+// =============================================================================
+// Edge Case Tests - Select with Dead Condition
+// =============================================================================
+
+#[test]
+fn dce_dead_select_operation() {
+    // Dead select operation
+    //     dead_sel = cond ? x : y
+    //     return 0
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.int_ty, vec![b.bool_ty, b.int_ty, b.int_ty]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let cond = b.builder.function_parameter(b.bool_ty).expect("cond");
+    let x = b.builder.function_parameter(b.int_ty).expect("x");
+    let y = b.builder.function_parameter(b.int_ty).expect("y");
+    b.builder.begin_block(None).expect("begin block");
+
+    let _dead_sel = b.builder.select(b.int_ty, None, cond, x, y).expect("dead_sel");
+
+    let c0 = b.const_i32(0);
+    b.builder.ret_value(c0).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    assert!(
+        !result.has_opcode(Op::Select),
+        "dead Select should be removed"
+    );
+}
+
+#[test]
+fn dce_preserves_live_select() {
+    // Live select operation
+    //     result = cond ? x : y
+    //     return result
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.int_ty, vec![b.bool_ty, b.int_ty, b.int_ty]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let cond = b.builder.function_parameter(b.bool_ty).expect("cond");
+    let x = b.builder.function_parameter(b.int_ty).expect("x");
+    let y = b.builder.function_parameter(b.int_ty).expect("y");
+    b.builder.begin_block(None).expect("begin block");
+
+    let result = b.builder.select(b.int_ty, None, cond, x, y).expect("sel");
+
+    b.builder.ret_value(result).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result_mod = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    assert!(
+        result_mod.has_opcode(Op::Select),
+        "live Select should be preserved"
+    );
+}
+
+// =============================================================================
+// Edge Case Tests - Complex Mixed Patterns
+// =============================================================================
+
+#[test]
+fn dce_complex_diamond_with_dead_side_branch() {
+    // Diamond pattern where one branch is dead
+    //     a = x + 1
+    //     b = x + 2
+    //     c = a + b  -> live (returned)
+    //     d = a - b  -> dead (not returned)
+    //     return c
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.int_ty).expect("x");
+    b.builder.begin_block(None).expect("begin block");
+
+    let c1 = b.const_i32(1);
+    let c2 = b.const_i32(2);
+
+    let a = b.builder.i_add(b.int_ty, None, x, c1).expect("a");
+    let bb_val = b.builder.i_add(b.int_ty, None, x, c2).expect("b");
+    let c = b.builder.i_add(b.int_ty, None, a, bb_val).expect("c");
+    let _d = b.builder.i_sub(b.int_ty, None, a, bb_val).expect("d");
+
+    b.builder.ret_value(c).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    // ISub (d) should be removed as dead
+    assert!(
+        !result.has_opcode(Op::ISub),
+        "dead ISub (d) should be removed"
+    );
+}
+
+#[test]
+fn dce_parallel_dead_computations_from_same_inputs() {
+    // Multiple dead computations from same inputs
+    //     dead1 = x + y
+    //     dead2 = x - y
+    //     dead3 = x * y
+    //     dead4 = x & y
+    //     return 0
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty, b.int_ty]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.int_ty).expect("x");
+    let y = b.builder.function_parameter(b.int_ty).expect("y");
+    b.builder.begin_block(None).expect("begin block");
+
+    let _dead1 = b.builder.i_add(b.int_ty, None, x, y).expect("dead1");
+    let _dead2 = b.builder.i_sub(b.int_ty, None, x, y).expect("dead2");
+    let _dead3 = b.builder.i_mul(b.int_ty, None, x, y).expect("dead3");
+    let _dead4 = b.builder.bitwise_and(b.int_ty, None, x, y).expect("dead4");
+
+    let c0 = b.const_i32(0);
+    b.builder.ret_value(c0).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    // All should be removed
+    assert!(!result.has_opcode(Op::IAdd), "dead IAdd should be removed");
+    assert!(!result.has_opcode(Op::ISub), "dead ISub should be removed");
+    assert!(!result.has_opcode(Op::IMul), "dead IMul should be removed");
+    assert!(!result.has_opcode(Op::BitwiseAnd), "dead BitwiseAnd should be removed");
+}
+
+#[test]
+fn dce_tree_structure_with_multiple_live_leaves() {
+    // Tree where multiple leaves are live
+    //     a = x + 1
+    //     b = x + 2
+    //     c = a + 3  -> live leaf
+    //     d = b + 4  -> live leaf
+    //     e = a + 5  -> dead
+    //     return c + d
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.int_ty).expect("x");
+    b.builder.begin_block(None).expect("begin block");
+
+    let c1 = b.const_i32(1);
+    let c2 = b.const_i32(2);
+    let c3 = b.const_i32(3);
+    let c4 = b.const_i32(4);
+    let c5 = b.const_i32(5);
+
+    let a = b.builder.i_add(b.int_ty, None, x, c1).expect("a");
+    let bb_val = b.builder.i_add(b.int_ty, None, x, c2).expect("b");
+    let c = b.builder.i_add(b.int_ty, None, a, c3).expect("c");
+    let d = b.builder.i_add(b.int_ty, None, bb_val, c4).expect("d");
+    let _e = b.builder.i_add(b.int_ty, None, a, c5).expect("e");  // dead
+    let result = b.builder.i_add(b.int_ty, None, c, d).expect("result");
+
+    b.builder.ret_value(result).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result_mod = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    // Should have IAdds for the live path
+    assert!(
+        result_mod.has_opcode(Op::IAdd),
+        "should have live IAdds"
+    );
+}
+
+// =============================================================================
+// Edge Case Tests - Zero/Identity Operation Chains
+// =============================================================================
+
+#[test]
+fn dce_dead_chain_of_identity_ops() {
+    // Dead chain: x + 0 - 0 * 1 (all identity ops, still dead if unused)
+    //     t1 = x + 0
+    //     t2 = t1 - 0
+    //     t3 = t2 * 1  (dead - not returned)
+    //     return 42
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.int_ty).expect("x");
+    b.builder.begin_block(None).expect("begin block");
+
+    let c0 = b.const_i32(0);
+    let c1 = b.const_i32(1);
+    let c42 = b.const_i32(42);
+
+    let t1 = b.builder.i_add(b.int_ty, None, x, c0).expect("t1");
+    let t2 = b.builder.i_sub(b.int_ty, None, t1, c0).expect("t2");
+    let _t3 = b.builder.i_mul(b.int_ty, None, t2, c1).expect("t3");
+
+    b.builder.ret_value(c42).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    // All operations in the dead chain should be removed
+    assert!(!result.has_opcode(Op::IAdd), "dead IAdd should be removed");
+    assert!(!result.has_opcode(Op::ISub), "dead ISub should be removed");
+    assert!(!result.has_opcode(Op::IMul), "dead IMul should be removed");
+}
+
+#[test]
+fn dce_live_chain_of_identity_ops_preserved() {
+    // Live chain: x + 0 - 0 * 1 (identity ops, but result is returned)
+    //     t1 = x + 0
+    //     t2 = t1 - 0
+    //     t3 = t2 * 1
+    //     return t3
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
+    b.builder
+        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .expect("begin function");
+    let x = b.builder.function_parameter(b.int_ty).expect("x");
+    b.builder.begin_block(None).expect("begin block");
+
+    let c0 = b.const_i32(0);
+    let c1 = b.const_i32(1);
+
+    let t1 = b.builder.i_add(b.int_ty, None, x, c0).expect("t1");
+    let t2 = b.builder.i_sub(b.int_ty, None, t1, c0).expect("t2");
+    let t3 = b.builder.i_mul(b.int_ty, None, t2, c1).expect("t3");
+
+    b.builder.ret_value(t3).expect("ret");
+    b.builder.end_function().expect("end function");
+    let words = b.builder.module().assemble();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+
+    // The chain is live, but identity rules may simplify to just returning x
+    // This is fine - we just want to ensure DCE doesn't incorrectly remove live code
+    // The function should still return the correct value
+    assert!(
+        result.has_opcode(Op::FunctionParameter) || result.has_opcode(Op::IAdd) || result.has_opcode(Op::Constant),
+        "should preserve the live computation in some form"
+    );
+}

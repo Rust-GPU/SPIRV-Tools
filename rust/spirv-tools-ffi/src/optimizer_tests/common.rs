@@ -45,6 +45,7 @@ pub struct TestModuleBuilder {
     pub int_ty: u32,
     pub uint_ty: u32,
     pub bool_ty: u32,
+    pub float_ty: u32,
 }
 
 impl TestModuleBuilder {
@@ -58,6 +59,7 @@ impl TestModuleBuilder {
         let int_ty = builder.type_int(32, 1); // signed
         let uint_ty = builder.type_int(32, 0); // unsigned
         let bool_ty = builder.type_bool();
+        let float_ty = builder.type_float(32, None);
 
         Self {
             builder,
@@ -65,6 +67,7 @@ impl TestModuleBuilder {
             int_ty,
             uint_ty,
             bool_ty,
+            float_ty,
         }
     }
 
@@ -118,6 +121,20 @@ impl TestModuleBuilder {
     /// Create a boolean false constant.
     pub fn const_false(&mut self) -> u32 {
         self.builder.constant_false(self.bool_ty)
+    }
+
+    /// Create a boolean constant.
+    pub fn const_bool(&mut self, value: bool) -> u32 {
+        if value {
+            self.const_true()
+        } else {
+            self.const_false()
+        }
+    }
+
+    /// Create a 32-bit float constant.
+    pub fn const_f32(&mut self, value: f32) -> u32 {
+        self.builder.constant_bit32(self.float_ty, value.to_bits())
     }
 }
 
