@@ -546,3 +546,243 @@ fn merges_negate_into_add() {
         "-(x + 5) should not have separate negate"
     );
 }
+
+#[test]
+fn merges_negate_into_sub() {
+    // -(x - 5) should become 5 - x
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.int_ty]);
+    let x = params[0];
+    let c5 = b.const_i32(5);
+    let sub = b.builder.i_sub(b.int_ty, None, x, c5).expect("sub");
+    let _ = b.builder.s_negate(b.int_ty, None, sub).expect("neg");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    // Negate should swap the subtraction
+    assert!(
+        !result.has_opcode(Op::SNegate),
+        "-(x - 5) should become 5 - x without separate negate"
+    );
+}
+
+#[test]
+fn double_negate_cancels() {
+    // -(-x) should become x
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.int_ty]);
+    let x = params[0];
+    let neg1 = b.builder.s_negate(b.int_ty, None, x).expect("neg1");
+    let _ = b.builder.s_negate(b.int_ty, None, neg1).expect("neg2");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    assert!(
+        !result.has_opcode(Op::SNegate),
+        "-(-x) should fold to x (no negate)"
+    );
+}
+
+#[test]
+fn merges_negate_into_div() {
+    // -(x / 5) should become x / (-5)
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.int_ty]);
+    let x = params[0];
+    let c5 = b.const_i32(5);
+    let div = b.builder.s_div(b.int_ty, None, x, c5).expect("div");
+    let _ = b.builder.s_negate(b.int_ty, None, div).expect("neg");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    // Negate should be absorbed into the divide
+    assert!(
+        !result.has_opcode(Op::SNegate),
+        "-(x / 5) should not have separate negate"
+    );
+}
+
+// =============================================================================
+// Add with Negate Merging Tests (C++ MergeAddNegateArithmetic parity)
+// =============================================================================
+
+#[test]
+fn add_negate_to_sub() {
+    // (-x) + 5 should become 5 - x
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.int_ty]);
+    let x = params[0];
+    let c5 = b.const_i32(5);
+    let neg = b.builder.s_negate(b.int_ty, None, x).expect("neg");
+    let _ = b.builder.i_add(b.int_ty, None, neg, c5).expect("add");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    assert!(
+        !result.has_opcode(Op::SNegate),
+        "(-x) + 5 should become 5 - x without separate negate"
+    );
+}
+
+#[test]
+fn add_negate_commutative() {
+    // 5 + (-x) should become 5 - x
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.int_ty]);
+    let x = params[0];
+    let c5 = b.const_i32(5);
+    let neg = b.builder.s_negate(b.int_ty, None, x).expect("neg");
+    let _ = b.builder.i_add(b.int_ty, None, c5, neg).expect("add");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    assert!(
+        !result.has_opcode(Op::SNegate),
+        "5 + (-x) should become 5 - x without separate negate"
+    );
+}
+
+// =============================================================================
+// Sub with Negate Merging Tests (C++ MergeSubNegateArithmetic parity)
+// =============================================================================
+
+#[test]
+fn sub_of_negate_to_add() {
+    // x - (-y) should become x + y
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.int_ty, b.int_ty]);
+    let (x, y) = (params[0], params[1]);
+    let neg = b.builder.s_negate(b.int_ty, None, y).expect("neg");
+    let _ = b.builder.i_sub(b.int_ty, None, x, neg).expect("sub");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    assert!(
+        !result.has_opcode(Op::SNegate),
+        "x - (-y) should become x + y without negate"
+    );
+}
+
+#[test]
+fn const_sub_negate_to_add() {
+    // 5 - (-x) should become 5 + x
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.int_ty]);
+    let x = params[0];
+    let c5 = b.const_i32(5);
+    let neg = b.builder.s_negate(b.int_ty, None, x).expect("neg");
+    let _ = b.builder.i_sub(b.int_ty, None, c5, neg).expect("sub");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    assert!(
+        !result.has_opcode(Op::SNegate),
+        "5 - (-x) should become 5 + x without negate"
+    );
+}
+
+// =============================================================================
+// Add/Sub Chain Merging Tests (additional C++ parity)
+// =============================================================================
+
+#[test]
+fn add_of_sub_const_merges() {
+    // (x - 3) + 5 should become x + 2
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.int_ty]);
+    let x = params[0];
+    let c3 = b.const_i32(3);
+    let c5 = b.const_i32(5);
+    let sub = b.builder.i_sub(b.int_ty, None, x, c3).expect("sub");
+    let _ = b.builder.i_add(b.int_ty, None, sub, c5).expect("add");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    // Should have at most 1 op (add), not sub + add
+    assert!(
+        !result.has_opcode(Op::ISub),
+        "(x - 3) + 5 should merge to x + 2 (no sub)"
+    );
+}
+
+#[test]
+fn add_of_add_const_merges() {
+    // (x + 3) + 5 should become x + 8
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.int_ty]);
+    let x = params[0];
+    let c3 = b.const_i32(3);
+    let c5 = b.const_i32(5);
+    let add1 = b.builder.i_add(b.int_ty, None, x, c3).expect("add1");
+    let _ = b.builder.i_add(b.int_ty, None, add1, c5).expect("add2");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    // Should have exactly 1 add
+    assert!(
+        result.count_opcode(Op::IAdd) <= 1,
+        "(x + 3) + 5 should merge to x + 8"
+    );
+}
+
+#[test]
+fn sub_of_add_const_merges() {
+    // (x + 3) - 5 should become x + (-2) = x - 2
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.int_ty]);
+    let x = params[0];
+    let c3 = b.const_i32(3);
+    let c5 = b.const_i32(5);
+    let add = b.builder.i_add(b.int_ty, None, x, c3).expect("add");
+    let _ = b.builder.i_sub(b.int_ty, None, add, c5).expect("sub");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    // Should have at most 1 op
+    assert!(
+        result.count_opcode(Op::IAdd) + result.count_opcode(Op::ISub) <= 1,
+        "(x + 3) - 5 should merge to single op"
+    );
+}
+
+#[test]
+fn sub_of_sub_const_merges() {
+    // (x - 3) - 5 should become x - 8
+    let _guard = OptimizerEnvGuard::new();
+
+    let mut b = TestModuleBuilder::new();
+    let params = b.begin_function_with_params(vec![b.int_ty]);
+    let x = params[0];
+    let c3 = b.const_i32(3);
+    let c5 = b.const_i32(5);
+    let sub1 = b.builder.i_sub(b.int_ty, None, x, c3).expect("sub1");
+    let _ = b.builder.i_sub(b.int_ty, None, sub1, c5).expect("sub2");
+    let words = b.finish();
+
+    let result = OptimizedModule::from_words(&words).expect("optimizer runs");
+    // Should have exactly 1 sub
+    assert!(
+        result.count_opcode(Op::ISub) <= 1,
+        "(x - 3) - 5 should merge to x - 8"
+    );
+}
