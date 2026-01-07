@@ -34,8 +34,12 @@ impl EgglogContext {
             }
 
             if let Some(term) = self.instruction_to_term(inst) {
-                self.id_to_term.insert(result_id, term);
-                self.root_ids.push(result_id);
+                self.id_to_term.insert(result_id, term.clone());
+                // Constants are NOT roots - they're only live if referenced by a root
+                // This enables DCE to remove unused constants naturally through e-graph extraction
+                if !matches!(inst.class.opcode, Op::Constant | Op::ConstantTrue | Op::ConstantFalse) {
+                    self.root_ids.push(result_id);
+                }
             }
         }
     }

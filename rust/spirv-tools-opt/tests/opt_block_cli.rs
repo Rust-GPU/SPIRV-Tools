@@ -1403,13 +1403,13 @@ fn cli_opt_block_folds_redundant_phi() {
     let has_phi = module
         .all_inst_iter()
         .any(|inst| inst.class.opcode == Op::Phi);
-    let has_copy = module.all_inst_iter().any(|inst| {
-        inst.class.opcode == Op::CopyObject
-            && inst.result_id == Some(phi_id)
-            && inst.operands == vec![rspirv::dr::Operand::IdRef(val_id)]
+    // With DCE enabled, the dead Phi is removed entirely (not converted to CopyObject)
+    // The Phi's value is never used by the void-returning function
+    let has_copy_or_removed = !module.all_inst_iter().any(|inst| {
+        inst.result_id == Some(phi_id)
     });
     assert!(!has_phi, "redundant phi should be folded away");
-    assert!(has_copy, "phi should fold to a copy of the operand");
+    assert!(has_copy_or_removed, "phi should be removed by DCE (dead code)");
 }
 
 #[test]

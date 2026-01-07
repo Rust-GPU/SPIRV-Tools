@@ -225,8 +225,12 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     // Step 3: Create ONE egraph with ALL terms
     let mut egraph = create_spirv_egraph()?;
 
-    // Add all terms as let bindings
-    for &id in &ctx.root_ids {
+    // Add ALL terms as let bindings (including constants)
+    // Constants are bound but not roots - they're only live if referenced by a root
+    // Sort by ID to ensure deterministic binding order (constants typically have lower IDs)
+    let mut sorted_ids: Vec<Word> = ctx.id_to_term.keys().copied().collect();
+    sorted_ids.sort();
+    for id in sorted_ids {
         if let Some(term) = ctx.id_to_term.get(&id) {
             let binding = format!("(let id{} {})", id, term);
             egraph
@@ -503,6 +507,12 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                 .parse_and_run_program(None, &eff_gamma)
                 .map_err(|e| EgglogOptError::ExecutionError(e.to_string()))?;
 
+            // Mark this effect as a Root for DCE - liveness propagates from here
+            let root_cmd = format!("(Root {})", effect_var);
+            egraph
+                .parse_and_run_program(None, &root_cmd)
+                .map_err(|e| EgglogOptError::ExecutionError(e.to_string()))?;
+
             rvsdg_selections.push(RvsdgSelection {
                 func_idx: sel.func_idx,
                 header_block_idx: sel.header_block_idx,
@@ -576,18 +586,93 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
         }
     }
 
-    // Step 4: Run optimization ONCE on the entire module
-    // Use 5 iterations which works without explosion
-    // TODO: Fix remaining bidirectional rules to enable more iterations
-    let run_cmd = "(run-schedule (repeat 5 (run)))";
+    // Step 4: Collect TRUE roots - IDs that are operands of side-effecting instructions
+    // These are the only values that must survive - everything else is dead code
+    let mut true_roots: HashSet<Word> = HashSet::new();
+    for func in &module.functions {
+        for block in &func.blocks {
+            for inst in &block.instructions {
+                if has_side_effects(inst) {
+                    // Collect all operand IDs from this side-effecting instruction
+                    for op in &inst.operands {
+                        if let Some(ref_id) = op.id_ref_any() {
+                            true_roots.insert(ref_id);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // If no side effects found, find the "leaf" instructions - those not used by other instructions
+    // This handles test modules and functions without return values/stores
+    // We only treat unused instructions as roots so DCE can still eliminate intermediate results
+    if true_roots.is_empty() {
+        // Collect all IDs that are USED by other instructions
+        let mut used_by_others: HashSet<Word> = HashSet::new();
+        for func in &module.functions {
+            for block in &func.blocks {
+                for inst in &block.instructions {
+                    for op in &inst.operands {
+                        if let Some(ref_id) = op.id_ref_any() {
+                            used_by_others.insert(ref_id);
+                        }
+                    }
+                }
+            }
+        }
+        // Only mark instructions that aren't used by anything as roots
+        for &id in &ctx.root_ids {
+            if !used_by_others.contains(&id) {
+                true_roots.insert(id);
+            }
+        }
+        // If still empty (everything is used by something), fall back to all
+        if true_roots.is_empty() {
+            for &id in &ctx.root_ids {
+                true_roots.insert(id);
+            }
+        }
+    }
+
+    // Step 5: Mark roots as Live in the e-graph BEFORE saturation
+    // For functions with RVSDG effects (EffGamma), liveness propagates from Root(effect)
+    // For simple functions without CFG, we mark return value operands as Live directly
+    // This enables DCE to happen entirely IN the e-graph alongside optimization
+    for &root_id in &true_roots {
+        if ctx.id_to_term.contains_key(&root_id) {
+            // Mark the expression as Live - the egraph rules will propagate this
+            let live_cmd = format!("(Live id{})", root_id);
+            let _ = egraph.parse_and_run_program(None, &live_cmd);
+        }
+    }
+
+    // Step 6: Run optimization ONCE - both optimization rules AND liveness propagation
+    // happen in this single saturation pass. This enables:
+    // - DCE-aware constant folding (dead branches are identified)
+    // - Partial DCE (RVSDG Gamma/Theta branches marked dead when condition is constant)
+    // - Optimizations that expose new DCE opportunities
+    let run_cmd = "(run-schedule (repeat 20 (run)))";
     egraph
         .parse_and_run_program(None, run_cmd)
         .map_err(|e| EgglogOptError::ExecutionError(e.to_string()))?;
 
-    // Step 5: Extract optimized terms for each instruction
+    // Step 7: Query which IDs are live after saturation
+    // Only live IDs need to be extracted and emitted
+    let mut live_ids: HashSet<Word> = HashSet::new();
+    for &id in ctx.id_to_term.keys() {
+        let check_cmd = format!("(check (Live id{}))", id);
+        if egraph.parse_and_run_program(None, &check_cmd).is_ok() {
+            live_ids.insert(id);
+        }
+    }
+
+    // Step 8: Extract optimized terms for each instruction
     let mut optimized_instructions: HashMap<Word, Instruction> = HashMap::new();
     // Track which IDs become aliases to other IDs (for dead code elimination)
     let mut id_aliases: HashMap<Word, Word> = HashMap::new();
+    // Track which IDs are actually used (reachable from roots) for DCE
+    let mut used_ids: HashSet<Word> = HashSet::new();
 
     // Build ID map for term resolution - include ALL SSA values
     let mut id_map: HashMap<String, Word> = HashMap::new();
@@ -628,6 +713,8 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
 
     // Track synthesized constants that we need to add to the module
     let mut synthesized_constants: Vec<Instruction> = Vec::new();
+    // Track synthesized intermediate instructions (from nested expression materialization)
+    let mut synthesized_instructions: Vec<Instruction> = Vec::new();
     // Get next available ID for synthesized constants
     let mut next_id = all_ssa_ids.iter().copied().max().unwrap_or(0) + 1;
     // Find a suitable integer type for synthesized constants
@@ -636,7 +723,16 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
               inst.operands.first() == Some(&rspirv::dr::Operand::LiteralBit32(32)))
         .and_then(|inst| inst.result_id);
 
-    for &id in &ctx.root_ids {
+    // Only extract from IDs that are both:
+    // 1. True roots (operands of side effects) - these are the outputs we need
+    // 2. Live (reachable via liveness propagation in the e-graph)
+    // This implements full in-e-graph DCE: liveness is computed during saturation
+    let extraction_roots: Vec<Word> = ctx.root_ids.iter()
+        .copied()
+        .filter(|id| true_roots.contains(id) && live_ids.contains(id))
+        .collect();
+
+    for &id in &extraction_roots {
         let extract_cmd = format!("(extract id{})", id);
         let results = egraph
             .parse_and_run_program(None, &extract_cmd)
@@ -648,6 +744,12 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                 let result_type = ctx.id_to_type.get(&id).copied().unwrap_or(0);
 
                 // Before parsing, ensure all inline constants in the term have IDs
+                // If the ENTIRE term is just a constant (e.g., "(Const 84)"), use the
+                // current instruction's ID for that constant instead of synthesizing.
+                // This enables proper DCE - the instruction becomes the constant.
+                let is_root_const = term.trim().starts_with("(Const ") ||
+                                    term.trim().starts_with("(Const64 ");
+
                 for (is_64, value) in find_inline_constants(&term) {
                     let key = if is_64 {
                         format!("const64_{}", value)
@@ -655,35 +757,51 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                         format!("const_{}", value)
                     };
                     if !id_map.contains_key(&key) {
-                        // Create a new constant
-                        let const_type = if is_64 {
-                            // Try to find 64-bit int type
-                            module.types_global_values.iter()
-                                .find(|inst| inst.class.opcode == Op::TypeInt &&
-                                      inst.operands.first() == Some(&rspirv::dr::Operand::LiteralBit32(64)))
-                                .and_then(|inst| inst.result_id)
-                                .or(int32_type)
+                        // If this root folds to a constant, use its ID for the constant
+                        // Don't synthesize a new constant - the instruction becomes it
+                        if is_root_const {
+                            id_map.insert(key, id);
+                            // Don't synthesize - will be added via folded_to_constant later
                         } else {
-                            int32_type
-                        };
-                        if let Some(ty) = const_type {
-                            let const_id = next_id;
-                            next_id += 1;
-                            let operand = if is_64 {
-                                rspirv::dr::Operand::LiteralBit64(value as u64)
+                            // Create a new constant for use as an operand
+                            let const_type = if is_64 {
+                                // Try to find 64-bit int type
+                                module.types_global_values.iter()
+                                    .find(|inst| inst.class.opcode == Op::TypeInt &&
+                                          inst.operands.first() == Some(&rspirv::dr::Operand::LiteralBit32(64)))
+                                    .and_then(|inst| inst.result_id)
+                                    .or(int32_type)
                             } else {
-                                rspirv::dr::Operand::LiteralBit32(value as u32)
+                                int32_type
                             };
-                            synthesized_constants.push(Instruction::new(
-                                Op::Constant,
-                                Some(ty),
-                                Some(const_id),
-                                vec![operand],
-                            ));
-                            id_map.insert(key, const_id);
-                            id_map.insert(format!("id{}", const_id), const_id);
+                            if let Some(ty) = const_type {
+                                let const_id = next_id;
+                                next_id += 1;
+                                let operand = if is_64 {
+                                    rspirv::dr::Operand::LiteralBit64(value as u64)
+                                } else {
+                                    rspirv::dr::Operand::LiteralBit32(value as u32)
+                                };
+                                synthesized_constants.push(Instruction::new(
+                                    Op::Constant,
+                                    Some(ty),
+                                    Some(const_id),
+                                    vec![operand],
+                                ));
+                                id_map.insert(key, const_id);
+                                id_map.insert(format!("id{}", const_id), const_id);
+                            }
                         }
                     }
+                }
+
+                // Track all IDs referenced in this term for DCE
+                collect_ids_from_term(&term, &id_map, &mut used_ids);
+                // The root ID itself is used
+                used_ids.insert(id);
+                // The result type is used
+                if result_type != 0 {
+                    used_ids.insert(result_type);
                 }
 
                 // Check if the result is just a reference to another ID
@@ -691,6 +809,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                     if alias_id != id {
                         // This instruction becomes an alias to another value
                         id_aliases.insert(id, alias_id);
+                        used_ids.insert(alias_id);
                         // Emit CopyObject to maintain SSA form
                         optimized_instructions.insert(id, Instruction::new(
                             Op::CopyObject,
@@ -701,8 +820,53 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                     }
                 } else {
                     let type_width = type_widths.get(&result_type).copied();
+                    // Try simple term_to_instruction first
                     if let Some(inst) = term_to_instruction(&term, id, result_type, &id_map, type_width) {
+                        // Also collect IDs from the generated instruction
+                        collect_ids_from_instruction(&inst, &mut used_ids);
                         optimized_instructions.insert(id, inst);
+                    } else {
+                        // If simple parsing fails, try to materialize nested expressions
+                        // This handles cases like (Mul (Const 4) (Add (Sym "id5") (Sym "id6")))
+                        if let Some((final_id, new_insts)) = materialize_term(
+                            &term,
+                            result_type,
+                            &mut id_map,
+                            &mut next_id,
+                            &type_widths,
+                            int32_type,
+                        ) {
+                            let _ = final_id; // Suppress unused warning
+                            // Add synthesized intermediate instructions
+                            // The last instruction should use the original ID and gets stored in
+                            // optimized_instructions (to UPDATE the existing instruction, not INSERT new)
+                            let num_insts = new_insts.len();
+                            for (i, mut inst) in new_insts.into_iter().enumerate() {
+                                if i == num_insts - 1 {
+                                    // The final instruction gets the original result ID
+                                    // It goes into optimized_instructions to UPDATE the existing inst
+                                    // NOT into synthesized_instructions (to avoid duplication)
+                                    let old_id = inst.result_id;
+                                    inst.result_id = Some(id);
+                                    collect_ids_from_instruction(&inst, &mut used_ids);
+                                    optimized_instructions.insert(id, inst);
+                                    // Update id_map if the ID changed
+                                    if let Some(old) = old_id {
+                                        if old != id {
+                                            id_map.insert(format!("id{}", id), id);
+                                        }
+                                    }
+                                } else if let Some(inst_id) = inst.result_id {
+                                    // Intermediate instructions are NEW - they need to be inserted
+                                    collect_ids_from_instruction(&inst, &mut used_ids);
+                                    synthesized_instructions.push(inst.clone());
+                                    // Track in optimized_instructions if it's a new ID
+                                    if !optimized_instructions.contains_key(&inst_id) {
+                                        optimized_instructions.insert(inst_id, inst);
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -964,7 +1128,25 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     // Step 6: Rebuild the module with optimized instructions
     let mut output = module.clone();
 
-    // Add synthesized constants to the module
+    // DCE for types_global_values: only keep types (always needed) and used constants
+    // This is the e-graph DCE - only IDs reachable from roots survive extraction
+    output.types_global_values.retain(|inst| {
+        // Types are always kept (they might be referenced externally)
+        if !matches!(inst.class.opcode, Op::Constant | Op::ConstantTrue | Op::ConstantFalse |
+                     Op::ConstantComposite | Op::ConstantSampler | Op::ConstantNull |
+                     Op::SpecConstant | Op::SpecConstantTrue | Op::SpecConstantFalse |
+                     Op::SpecConstantComposite | Op::SpecConstantOp) {
+            return true;
+        }
+        // Constants are only kept if they're in used_ids (reachable from roots)
+        if let Some(id) = inst.result_id {
+            used_ids.contains(&id)
+        } else {
+            true
+        }
+    });
+
+    // Add synthesized constants to the module (these are already used by definition)
     for const_inst in synthesized_constants {
         output.types_global_values.push(const_inst);
     }
@@ -1028,7 +1210,10 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     let _ = copy_to_existing;
 
     // Add folded constants to types_global_values
-    for &id in &folded_to_constant {
+    // Sort by ID to ensure deterministic output ordering
+    let mut sorted_folded: Vec<Word> = folded_to_constant.iter().copied().collect();
+    sorted_folded.sort();
+    for id in sorted_folded {
         if let Some(opt_inst) = optimized_instructions.get(&id) {
             output.types_global_values.push(opt_inst.clone());
         }
@@ -1082,6 +1267,23 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                     true
                 }
             });
+        }
+    }
+
+    // Insert synthesized intermediate instructions into the first block of each function
+    // These are created when materializing nested expressions from the e-graph
+    if !synthesized_instructions.is_empty() {
+        for func in &mut output.functions {
+            if let Some(block) = func.blocks.first_mut() {
+                // Find the position before the first non-phi instruction
+                let insert_pos = block.instructions.iter().position(|inst| {
+                    !matches!(inst.class.opcode, Op::Phi)
+                }).unwrap_or(0);
+                // Insert synthesized instructions at this position
+                for (i, inst) in synthesized_instructions.iter().enumerate() {
+                    block.instructions.insert(insert_pos + i, inst.clone());
+                }
+            }
         }
     }
 
@@ -1248,7 +1450,8 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     }
 
     // Step 7: Clean up - remove instructions that are just CopyObject of themselves or unused
-    cleanup_module(&mut output, &id_aliases);
+    // Pass true_roots so that modules without side effects don't have everything removed
+    cleanup_module(&mut output, &id_aliases, &true_roots);
 
     Ok(output)
 }
@@ -1265,7 +1468,7 @@ fn parse_sym_alias(term: &str, id_map: &HashMap<String, Word>) -> Option<Word> {
 }
 
 /// Clean up the module by removing redundant instructions and dead code
-fn cleanup_module(module: &mut Module, id_aliases: &HashMap<Word, Word>) {
+fn cleanup_module(module: &mut Module, id_aliases: &HashMap<Word, Word>, true_roots: &HashSet<Word>) {
     // Build transitive alias map
     let mut final_aliases: HashMap<Word, Word> = HashMap::new();
     for (&from, &to) in id_aliases {
@@ -1296,8 +1499,16 @@ fn cleanup_module(module: &mut Module, id_aliases: &HashMap<Word, Word>) {
     }
 
     // Dead code elimination: collect all used IDs and remove unused instructions
+    let mut dce_iteration = 0;
     loop {
+        dce_iteration += 1;
         let mut used_ids: HashSet<Word> = HashSet::new();
+
+        // True roots (from e-graph analysis) are always considered used
+        // This handles modules without side effects (e.g., test modules)
+        for &root_id in true_roots {
+            used_ids.insert(root_id);
+        }
 
         // Collect all referenced IDs from all instructions
         for func in &module.functions {
@@ -1341,6 +1552,9 @@ fn cleanup_module(module: &mut Module, id_aliases: &HashMap<Word, Word>) {
 
         // Remove unused instructions (those whose result_id is not in used_ids)
         let mut removed_any = false;
+        if std::env::var("DEBUG_DCE").is_ok() {
+            eprintln!("DEBUG_DCE: iteration {}, used_ids = {:?}", dce_iteration, used_ids);
+        }
         for func in &mut module.functions {
             for block in &mut func.blocks {
                 let before_len = block.instructions.len();
@@ -1353,6 +1567,9 @@ fn cleanup_module(module: &mut Module, id_aliases: &HashMap<Word, Word>) {
                                 return used_ids.contains(&target);
                             }
                             // Not used and not aliased to something used - remove it
+                            if std::env::var("DEBUG_DCE").is_ok() {
+                                eprintln!("DEBUG_DCE: Removing id{} ({:?})", result_id, inst.class.opcode);
+                            }
                             return false;
                         }
                     }
@@ -1373,6 +1590,61 @@ fn cleanup_module(module: &mut Module, id_aliases: &HashMap<Word, Word>) {
         if !removed_any {
             break;
         }
+    }
+}
+
+/// Collect all IDs referenced in a term string (for DCE tracking)
+fn collect_ids_from_term(term: &str, id_map: &HashMap<String, Word>, used_ids: &mut HashSet<Word>) {
+    // Find all (Sym "idN") patterns and extract the IDs
+    let mut i = 0;
+    let bytes = term.as_bytes();
+    while i < bytes.len() {
+        // Look for (Sym "id
+        if i + 8 < bytes.len() && &bytes[i..i+8] == b"(Sym \"id" {
+            // Extract the number after "id"
+            let start = i + 8;
+            let mut end = start;
+            while end < bytes.len() && bytes[end].is_ascii_digit() {
+                end += 1;
+            }
+            if end > start {
+                if let Ok(id_str) = std::str::from_utf8(&bytes[start..end]) {
+                    if let Ok(id) = id_str.parse::<Word>() {
+                        used_ids.insert(id);
+                    }
+                }
+            }
+            i = end;
+        } else if i + 10 < bytes.len() && &bytes[i..i+10] == b"(Sym \"const" {
+            // Look for (Sym "const_N") or (Sym "const64_N") patterns
+            // These reference constants that need to be kept
+            let start = i + 5; // After "(Sym "
+            let mut end = start;
+            while end < bytes.len() && bytes[end] != b'"' {
+                end += 1;
+            }
+            if let Ok(key) = std::str::from_utf8(&bytes[start..end]) {
+                if let Some(&id) = id_map.get(key) {
+                    used_ids.insert(id);
+                }
+            }
+            i = end;
+        } else {
+            i += 1;
+        }
+    }
+}
+
+/// Collect IDs from an instruction's operands
+fn collect_ids_from_instruction(inst: &Instruction, used_ids: &mut HashSet<Word>) {
+    for op in &inst.operands {
+        if let Some(id) = op.id_ref_any() {
+            used_ids.insert(id);
+        }
+    }
+    // Also include the result type as a used ID
+    if let Some(ty) = inst.result_type {
+        used_ids.insert(ty);
     }
 }
 
@@ -1592,6 +1864,219 @@ fn resolve_term_to_id_simple(term: &str, id_map: &HashMap<String, Word>) -> Opti
     // Direct id reference (idN)
     if term.starts_with("id") {
         return id_map.get(term).copied();
+    }
+
+    None
+}
+
+/// Recursively materialize a term, creating intermediate instructions for nested expressions.
+/// Returns the ID of the final result and a list of synthesized instructions.
+fn materialize_term(
+    term: &str,
+    result_type: Word,
+    id_map: &mut HashMap<String, Word>,
+    next_id: &mut Word,
+    type_widths: &HashMap<Word, u32>,
+    int32_type: Option<Word>,
+) -> Option<(Word, Vec<Instruction>)> {
+    let term = term.trim();
+    let mut synthesized: Vec<Instruction> = Vec::new();
+
+    // Try to resolve as simple reference first
+    if let Some(id) = resolve_term_to_id_simple(term, id_map) {
+        return Some((id, synthesized));
+    }
+
+    // Handle constants
+    if let Some(rest) = term.strip_prefix("(Const ") {
+        if let Some(num_str) = rest.strip_suffix(')') {
+            if let Ok(value) = num_str.trim().parse::<i64>() {
+                let const_key = format!("const_{}", value);
+                if let Some(&id) = id_map.get(&const_key) {
+                    return Some((id, synthesized));
+                }
+                // Create new constant
+                if let Some(ty) = int32_type {
+                    let const_id = *next_id;
+                    *next_id += 1;
+                    let inst = Instruction::new(
+                        Op::Constant,
+                        Some(ty),
+                        Some(const_id),
+                        vec![rspirv::dr::Operand::LiteralBit32(value as u32)],
+                    );
+                    synthesized.push(inst);
+                    id_map.insert(const_key, const_id);
+                    id_map.insert(format!("id{}", const_id), const_id);
+                    return Some((const_id, synthesized));
+                }
+            }
+        }
+    }
+    if let Some(rest) = term.strip_prefix("(Const64 ") {
+        if let Some(num_str) = rest.strip_suffix(')') {
+            if let Ok(value) = num_str.trim().parse::<i64>() {
+                let const_key = format!("const64_{}", value);
+                if let Some(&id) = id_map.get(&const_key) {
+                    return Some((id, synthesized));
+                }
+                // Create new 64-bit constant
+                if let Some(ty) = int32_type {
+                    let const_id = *next_id;
+                    *next_id += 1;
+                    let inst = Instruction::new(
+                        Op::Constant,
+                        Some(ty),
+                        Some(const_id),
+                        vec![rspirv::dr::Operand::LiteralBit64(value as u64)],
+                    );
+                    synthesized.push(inst);
+                    id_map.insert(const_key, const_id);
+                    id_map.insert(format!("id{}", const_id), const_id);
+                    return Some((const_id, synthesized));
+                }
+            }
+        }
+    }
+
+    // Binary operations
+    let binary_ops: &[(&str, Op)] = &[
+        ("Add", Op::IAdd),
+        ("Sub", Op::ISub),
+        ("Mul", Op::IMul),
+        ("SDiv", Op::SDiv),
+        ("UDiv", Op::UDiv),
+        ("SRem", Op::SRem),
+        ("SMod", Op::SMod),
+        ("UMod", Op::UMod),
+        ("Shl", Op::ShiftLeftLogical),
+        ("ShrU", Op::ShiftRightLogical),
+        ("ShrS", Op::ShiftRightArithmetic),
+        ("BitAnd", Op::BitwiseAnd),
+        ("BitOr", Op::BitwiseOr),
+        ("BitXor", Op::BitwiseXor),
+        ("Eq", Op::IEqual),
+        ("Ne", Op::INotEqual),
+        ("SLt", Op::SLessThan),
+        ("SLe", Op::SLessThanEqual),
+        ("SGt", Op::SGreaterThan),
+        ("SGe", Op::SGreaterThanEqual),
+        ("ULt", Op::ULessThan),
+        ("ULe", Op::ULessThanEqual),
+        ("UGt", Op::UGreaterThan),
+        ("UGe", Op::UGreaterThanEqual),
+        ("LogAnd", Op::LogicalAnd),
+        ("LogOr", Op::LogicalOr),
+        ("LogEq", Op::LogicalEqual),
+        ("LogNe", Op::LogicalNotEqual),
+    ];
+
+    for (name, opcode) in binary_ops {
+        let prefix = format!("({} ", name);
+        if let Some(rest) = term.strip_prefix(&prefix) {
+            if let Some(rest) = rest.strip_suffix(')') {
+                let terms = split_terms_simple(rest);
+                if terms.len() >= 2 {
+                    // Recursively materialize operands
+                    let (lhs_id, mut lhs_synth) = materialize_term(
+                        &terms[0], result_type, id_map, next_id, type_widths, int32_type,
+                    )?;
+                    synthesized.append(&mut lhs_synth);
+
+                    let (rhs_id, mut rhs_synth) = materialize_term(
+                        &terms[1], result_type, id_map, next_id, type_widths, int32_type,
+                    )?;
+                    synthesized.append(&mut rhs_synth);
+
+                    // Create the binary instruction
+                    let inst_id = *next_id;
+                    *next_id += 1;
+                    let inst = Instruction::new(
+                        *opcode,
+                        Some(result_type),
+                        Some(inst_id),
+                        vec![
+                            rspirv::dr::Operand::IdRef(lhs_id),
+                            rspirv::dr::Operand::IdRef(rhs_id),
+                        ],
+                    );
+                    synthesized.push(inst);
+                    id_map.insert(format!("id{}", inst_id), inst_id);
+                    return Some((inst_id, synthesized));
+                }
+            }
+        }
+    }
+
+    // Unary operations
+    let unary_ops: &[(&str, Op)] = &[
+        ("Neg", Op::SNegate),
+        ("BitNot", Op::Not),
+        ("BitReverse", Op::BitReverse),
+        ("LogNot", Op::LogicalNot),
+    ];
+
+    for (name, opcode) in unary_ops {
+        let prefix = format!("({} ", name);
+        if let Some(rest) = term.strip_prefix(&prefix) {
+            if let Some(operand_term) = rest.strip_suffix(')') {
+                let (operand_id, mut operand_synth) = materialize_term(
+                    operand_term.trim(), result_type, id_map, next_id, type_widths, int32_type,
+                )?;
+                synthesized.append(&mut operand_synth);
+
+                let inst_id = *next_id;
+                *next_id += 1;
+                let inst = Instruction::new(
+                    *opcode,
+                    Some(result_type),
+                    Some(inst_id),
+                    vec![rspirv::dr::Operand::IdRef(operand_id)],
+                );
+                synthesized.push(inst);
+                id_map.insert(format!("id{}", inst_id), inst_id);
+                return Some((inst_id, synthesized));
+            }
+        }
+    }
+
+    // Select
+    if let Some(rest) = term.strip_prefix("(Select ") {
+        if let Some(rest) = rest.strip_suffix(')') {
+            let terms = split_terms_simple(rest);
+            if terms.len() >= 3 {
+                let (cond_id, mut cond_synth) = materialize_term(
+                    &terms[0], result_type, id_map, next_id, type_widths, int32_type,
+                )?;
+                synthesized.append(&mut cond_synth);
+
+                let (then_id, mut then_synth) = materialize_term(
+                    &terms[1], result_type, id_map, next_id, type_widths, int32_type,
+                )?;
+                synthesized.append(&mut then_synth);
+
+                let (else_id, mut else_synth) = materialize_term(
+                    &terms[2], result_type, id_map, next_id, type_widths, int32_type,
+                )?;
+                synthesized.append(&mut else_synth);
+
+                let inst_id = *next_id;
+                *next_id += 1;
+                let inst = Instruction::new(
+                    Op::Select,
+                    Some(result_type),
+                    Some(inst_id),
+                    vec![
+                        rspirv::dr::Operand::IdRef(cond_id),
+                        rspirv::dr::Operand::IdRef(then_id),
+                        rspirv::dr::Operand::IdRef(else_id),
+                    ],
+                );
+                synthesized.push(inst);
+                id_map.insert(format!("id{}", inst_id), inst_id);
+                return Some((inst_id, synthesized));
+            }
+        }
     }
 
     None
