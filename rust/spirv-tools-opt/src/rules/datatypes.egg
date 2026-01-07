@@ -327,8 +327,7 @@
     (ECons Expr ExprList)
 )
 
-; Helper to build lists
-(rewrite (ECons x (ENil)) (ECons x (ENil)))
+; Helper to build lists - removed self-referential rule that caused cycles
 
 ; =============================================================================
 ; Additional Expr Constructors Using ExprList
@@ -370,11 +369,15 @@
 ; CompositeInsert Optimization (Dead Insert Elimination)
 ; =============================================================================
 
-; Insert then extract at same index returns inserted value
-(rewrite (CompositeExtract (CompositeInsert composite val 0) 0) val)
-(rewrite (CompositeExtract (CompositeInsert composite val 1) 1) val)
-(rewrite (CompositeExtract (CompositeInsert composite val 2) 2) val)
-(rewrite (CompositeExtract (CompositeInsert composite val 3) 3) val)
+; Insert then extract at same index returns inserted value - ONE-DIRECTIONAL
+(rule ((= e (CompositeExtract (CompositeInsert composite val 0) 0)))
+      ((union e val)))
+(rule ((= e (CompositeExtract (CompositeInsert composite val 1) 1)))
+      ((union e val)))
+(rule ((= e (CompositeExtract (CompositeInsert composite val 2) 2)))
+      ((union e val)))
+(rule ((= e (CompositeExtract (CompositeInsert composite val 3) 3)))
+      ((union e val)))
 
 ; Insert then extract at different index returns original composite element
 ; These rules require the original CompositeExtract to exist in the e-graph

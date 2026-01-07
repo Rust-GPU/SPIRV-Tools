@@ -209,21 +209,26 @@
 (rule ((= e (EffGamma (LogNot c) t f)))
       ((union e (EffGamma c f t))))
 
-; Both branches return same value -> just return that value
-(rewrite (EffGamma c (ReturnValue x) (ReturnValue x)) (ReturnValue x))
+; Both branches return same value -> just return that value - ONE-DIRECTIONAL
+(rule ((= e (EffGamma c (ReturnValue x) (ReturnValue x))))
+      ((union e (ReturnValue x))))
 
-; Both branches unreachable -> unreachable
-(rewrite (EffGamma c (Unreachable) (Unreachable)) (Unreachable))
+; Both branches unreachable -> unreachable - ONE-DIRECTIONAL
+(rule ((= e (EffGamma c (Unreachable) (Unreachable))))
+      ((union e (Unreachable))))
 
-; One branch unreachable with return in other -> simplify
+; One branch unreachable with return in other -> simplify - ONE-DIRECTIONAL
 ; (If cond then return x else unreachable) -> return x when cond is true
-(rewrite (EffGamma c (ReturnValue x) (Unreachable)) (ReturnValue x))
-(rewrite (EffGamma c (Unreachable) (ReturnValue x)) (ReturnValue x))
+(rule ((= e (EffGamma c (ReturnValue x) (Unreachable))))
+      ((union e (ReturnValue x))))
+(rule ((= e (EffGamma c (Unreachable) (ReturnValue x))))
+      ((union e (ReturnValue x))))
 
-; Merge return transformation (the key RVSDG optimization!)
+; Merge return transformation (the key RVSDG optimization!) - ONE-DIRECTIONAL
 ; If both branches return different values, create a Gamma to select the result
 ; (EffGamma c (ReturnValue x) (ReturnValue y)) -> (ReturnValue (Gamma c x y))
-(rewrite (EffGamma c (ReturnValue x) (ReturnValue y)) (ReturnValue (Gamma c x y)))
+(rule ((= e (EffGamma c (ReturnValue x) (ReturnValue y))))
+      ((union e (ReturnValue (Gamma c x y)))))
 
 ; =============================================================================
 ; Additional Gamma Simplifications (C++ Parity)
@@ -254,10 +259,12 @@
 (rule ((= e (Gamma c (Const 1) (Const 0))))
       ((union e c)))
 
-; Chained Gamma with opposite conditions
+; Chained Gamma with opposite conditions - ONE-DIRECTIONAL
 ; select(c, select(!c, a, b), x) simplifies
-(rewrite (Gamma c (Gamma (LogNot c) a b) x) (Gamma c b x))
-(rewrite (Gamma c x (Gamma (LogNot c) a b)) (Gamma c x a))
+(rule ((= e (Gamma c (Gamma (LogNot c) a b) x)))
+      ((union e (Gamma c b x))))
+(rule ((= e (Gamma c x (Gamma (LogNot c) a b))))
+      ((union e (Gamma c x a))))
 
 ; Gamma selecting between x and operation on x
 ; select(c, x, x + 1) can't be simplified generally, but
@@ -367,8 +374,9 @@
 (rule ((= e (Tan (LoopInvariant a))))
       ((union e (LoopInvariant (Tan a)))))
 
-; InverseSqrt on loop invariant
-(rewrite (InverseSqrt (LoopInvariant a)) (LoopInvariant (InverseSqrt a)))
+; InverseSqrt on loop invariant - ONE-DIRECTIONAL
+(rule ((= e (InverseSqrt (LoopInvariant a))))
+      ((union e (LoopInvariant (InverseSqrt a)))))
 
 ; =============================================================================
 ; Gamma Inside Theta (Loop-conditional code motion)
@@ -383,64 +391,99 @@
 ; Min/Max Loop Invariant Rules
 ; =============================================================================
 
-(rewrite (SMin (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (SMin a b)))
-(rewrite (SMax (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (SMax a b)))
-(rewrite (UMin (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (UMin a b)))
-(rewrite (UMax (LoopInvariant a) (LoopInvariant b)) (LoopInvariant (UMax a b)))
+; Min/Max loop invariant rules - ONE-DIRECTIONAL
+(rule ((= e (SMin (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (SMin a b)))))
+(rule ((= e (SMax (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (SMax a b)))))
+(rule ((= e (UMin (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (UMin a b)))))
+(rule ((= e (UMax (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (UMax a b)))))
 
 ; =============================================================================
 ; Additional Gamma with Min/Max
 ; =============================================================================
 
-; select(c, min(a, b), min(a, d)) = min(a, select(c, b, d))
-(rewrite (Gamma c (SMin a b) (SMin a d)) (SMin a (Gamma c b d)))
-(rewrite (Gamma c (SMax a b) (SMax a d)) (SMax a (Gamma c b d)))
-(rewrite (Gamma c (UMin a b) (UMin a d)) (UMin a (Gamma c b d)))
-(rewrite (Gamma c (UMax a b) (UMax a d)) (UMax a (Gamma c b d)))
-(rewrite (Gamma c (FMin a b) (FMin a d)) (FMin a (Gamma c b d)))
-(rewrite (Gamma c (FMax a b) (FMax a d)) (FMax a (Gamma c b d)))
+; select(c, min(a, b), min(a, d)) = min(a, select(c, b, d)) - ONE-DIRECTIONAL
+(rule ((= e (Gamma c (SMin a b) (SMin a d))))
+      ((union e (SMin a (Gamma c b d)))))
+(rule ((= e (Gamma c (SMax a b) (SMax a d))))
+      ((union e (SMax a (Gamma c b d)))))
+(rule ((= e (Gamma c (UMin a b) (UMin a d))))
+      ((union e (UMin a (Gamma c b d)))))
+(rule ((= e (Gamma c (UMax a b) (UMax a d))))
+      ((union e (UMax a (Gamma c b d)))))
+(rule ((= e (Gamma c (FMin a b) (FMin a d))))
+      ((union e (FMin a (Gamma c b d)))))
+(rule ((= e (Gamma c (FMax a b) (FMax a d))))
+      ((union e (FMax a (Gamma c b d)))))
 
 ; =============================================================================
 ; Gamma with Comparisons (comparison absorption)
 ; =============================================================================
 
-; select(a < b, a, b) = min(a, b)
+; select(a < b, a, b) = min(a, b) - ONE-DIRECTIONAL
 ; select(a < b, b, a) = max(a, b)
-(rewrite (Gamma (SLt a b) a b) (SMin a b))
-(rewrite (Gamma (SLt a b) b a) (SMax a b))
-(rewrite (Gamma (ULt a b) a b) (UMin a b))
-(rewrite (Gamma (ULt a b) b a) (UMax a b))
-(rewrite (Gamma (FOrdLt a b) a b) (FMin a b))
-(rewrite (Gamma (FOrdLt a b) b a) (FMax a b))
+(rule ((= e (Gamma (SLt a b) a b)))
+      ((union e (SMin a b))))
+(rule ((= e (Gamma (SLt a b) b a)))
+      ((union e (SMax a b))))
+(rule ((= e (Gamma (ULt a b) a b)))
+      ((union e (UMin a b))))
+(rule ((= e (Gamma (ULt a b) b a)))
+      ((union e (UMax a b))))
+(rule ((= e (Gamma (FOrdLt a b) a b)))
+      ((union e (FMin a b))))
+(rule ((= e (Gamma (FOrdLt a b) b a)))
+      ((union e (FMax a b))))
 
-; select(a > b, a, b) = max(a, b)
+; select(a > b, a, b) = max(a, b) - ONE-DIRECTIONAL
 ; select(a > b, b, a) = min(a, b)
-(rewrite (Gamma (SGt a b) a b) (SMax a b))
-(rewrite (Gamma (SGt a b) b a) (SMin a b))
-(rewrite (Gamma (UGt a b) a b) (UMax a b))
-(rewrite (Gamma (UGt a b) b a) (UMin a b))
-(rewrite (Gamma (FOrdGt a b) a b) (FMax a b))
-(rewrite (Gamma (FOrdGt a b) b a) (FMin a b))
+(rule ((= e (Gamma (SGt a b) a b)))
+      ((union e (SMax a b))))
+(rule ((= e (Gamma (SGt a b) b a)))
+      ((union e (SMin a b))))
+(rule ((= e (Gamma (UGt a b) a b)))
+      ((union e (UMax a b))))
+(rule ((= e (Gamma (UGt a b) b a)))
+      ((union e (UMin a b))))
+(rule ((= e (Gamma (FOrdGt a b) a b)))
+      ((union e (FMax a b))))
+(rule ((= e (Gamma (FOrdGt a b) b a)))
+      ((union e (FMin a b))))
 
-; select(a <= b, a, b) = min(a, b)
-(rewrite (Gamma (SLe a b) a b) (SMin a b))
-(rewrite (Gamma (SLe a b) b a) (SMax a b))
-(rewrite (Gamma (ULe a b) a b) (UMin a b))
-(rewrite (Gamma (ULe a b) b a) (UMax a b))
-(rewrite (Gamma (FOrdLe a b) a b) (FMin a b))
-(rewrite (Gamma (FOrdLe a b) b a) (FMax a b))
+; select(a <= b, a, b) = min(a, b) - ONE-DIRECTIONAL
+(rule ((= e (Gamma (SLe a b) a b)))
+      ((union e (SMin a b))))
+(rule ((= e (Gamma (SLe a b) b a)))
+      ((union e (SMax a b))))
+(rule ((= e (Gamma (ULe a b) a b)))
+      ((union e (UMin a b))))
+(rule ((= e (Gamma (ULe a b) b a)))
+      ((union e (UMax a b))))
+(rule ((= e (Gamma (FOrdLe a b) a b)))
+      ((union e (FMin a b))))
+(rule ((= e (Gamma (FOrdLe a b) b a)))
+      ((union e (FMax a b))))
 
 ; =============================================================================
 ; Additional Gamma Optimizations (C++ Parity)
 ; =============================================================================
 
-; select(a >= b, a, b) = max(a, b)
-(rewrite (Gamma (SGe a b) a b) (SMax a b))
-(rewrite (Gamma (SGe a b) b a) (SMin a b))
-(rewrite (Gamma (UGe a b) a b) (UMax a b))
-(rewrite (Gamma (UGe a b) b a) (UMin a b))
-(rewrite (Gamma (FOrdGe a b) a b) (FMax a b))
-(rewrite (Gamma (FOrdGe a b) b a) (FMin a b))
+; select(a >= b, a, b) = max(a, b) - ONE-DIRECTIONAL
+(rule ((= e (Gamma (SGe a b) a b)))
+      ((union e (SMax a b))))
+(rule ((= e (Gamma (SGe a b) b a)))
+      ((union e (SMin a b))))
+(rule ((= e (Gamma (UGe a b) a b)))
+      ((union e (UMax a b))))
+(rule ((= e (Gamma (UGe a b) b a)))
+      ((union e (UMin a b))))
+(rule ((= e (Gamma (FOrdGe a b) a b)))
+      ((union e (FMax a b))))
+(rule ((= e (Gamma (FOrdGe a b) b a)))
+      ((union e (FMin a b))))
 
 ; Gamma with equality: select(a == b, x, x) already handled
 ; select(a == b, a, b) = b (if a==b then a else b, which is just b semantically)
@@ -452,15 +495,21 @@
 ; Clamp Pattern Recognition
 ; =============================================================================
 
-; max(min(x, hi), lo) = clamp(x, lo, hi) when lo <= hi
-(rewrite (SMax (SMin x hi) lo) (SClamp x lo hi))
-(rewrite (UMax (UMin x hi) lo) (UClamp x lo hi))
-(rewrite (FMax (FMin x hi) lo) (FClamp x lo hi))
+; max(min(x, hi), lo) = clamp(x, lo, hi) when lo <= hi - ONE-DIRECTIONAL
+(rule ((= e (SMax (SMin x hi) lo)))
+      ((union e (SClamp x lo hi))))
+(rule ((= e (UMax (UMin x hi) lo)))
+      ((union e (UClamp x lo hi))))
+(rule ((= e (FMax (FMin x hi) lo)))
+      ((union e (FClamp x lo hi))))
 
-; min(max(x, lo), hi) = clamp(x, lo, hi) when lo <= hi
-(rewrite (SMin (SMax x lo) hi) (SClamp x lo hi))
-(rewrite (UMin (UMax x lo) hi) (UClamp x lo hi))
-(rewrite (FMin (FMax x lo) hi) (FClamp x lo hi))
+; min(max(x, lo), hi) = clamp(x, lo, hi) when lo <= hi - ONE-DIRECTIONAL
+(rule ((= e (SMin (SMax x lo) hi)))
+      ((union e (SClamp x lo hi))))
+(rule ((= e (UMin (UMax x lo) hi)))
+      ((union e (UClamp x lo hi))))
+(rule ((= e (FMin (FMax x lo) hi)))
+      ((union e (FClamp x lo hi))))
 
 ; =============================================================================
 ; Dead Branch Elimination for EffGamma
@@ -536,11 +585,15 @@
 
 ; max(x, 0) when x is known non-negative = x
 ; This requires value analysis we don't have, but the pattern is:
-; select(x >= 0, x, -x) = abs(x)
-(rewrite (Gamma (SGe x (Const 0)) x (Neg x)) (SAbs x))
-(rewrite (Gamma (SLt x (Const 0)) (Neg x) x) (SAbs x))
-(rewrite (Gamma (FOrdGe x (Const 0)) x (FNeg x)) (FAbs x))
-(rewrite (Gamma (FOrdLt x (Const 0)) (FNeg x) x) (FAbs x))
+; select(x >= 0, x, -x) = abs(x) - ONE-DIRECTIONAL
+(rule ((= e (Gamma (SGe x (Const 0)) x (Neg x))))
+      ((union e (SAbs x))))
+(rule ((= e (Gamma (SLt x (Const 0)) (Neg x) x)))
+      ((union e (SAbs x))))
+(rule ((= e (Gamma (FOrdGe x (Const 0)) x (FNeg x))))
+      ((union e (FAbs x))))
+(rule ((= e (Gamma (FOrdLt x (Const 0)) (FNeg x) x)))
+      ((union e (FAbs x))))
 
 ; =============================================================================
 ; Conditional Evaluation Short-Circuiting - ONE-DIRECTIONAL
@@ -565,104 +618,159 @@
 ; These rules hoist common operands out of conditional branches
 ; Note: Shift Gamma distribution rules are in bitwise.egg
 
-; Division operations: select(c, a / x, b / x) = select(c, a, b) / x
-(rewrite (Gamma c (SDiv a x) (SDiv b x)) (SDiv (Gamma c a b) x))
-(rewrite (Gamma c (UDiv a x) (UDiv b x)) (UDiv (Gamma c a b) x))
-(rewrite (Gamma c (FDiv a x) (FDiv b x)) (FDiv (Gamma c a b) x))
+; Division operations: select(c, a / x, b / x) = select(c, a, b) / x - ONE-DIRECTIONAL
+(rule ((= e (Gamma c (SDiv a x) (SDiv b x))))
+      ((union e (SDiv (Gamma c a b) x))))
+(rule ((= e (Gamma c (UDiv a x) (UDiv b x))))
+      ((union e (UDiv (Gamma c a b) x))))
+(rule ((= e (Gamma c (FDiv a x) (FDiv b x))))
+      ((union e (FDiv (Gamma c a b) x))))
 
-; Division with common dividend: select(c, x / a, x / b) = x / select(c, a, b)
-(rewrite (Gamma c (SDiv x a) (SDiv x b)) (SDiv x (Gamma c a b)))
-(rewrite (Gamma c (UDiv x a) (UDiv x b)) (UDiv x (Gamma c a b)))
-(rewrite (Gamma c (FDiv x a) (FDiv x b)) (FDiv x (Gamma c a b)))
+; Division with common dividend: select(c, x / a, x / b) = x / select(c, a, b) - ONE-DIRECTIONAL
+(rule ((= e (Gamma c (SDiv x a) (SDiv x b))))
+      ((union e (SDiv x (Gamma c a b)))))
+(rule ((= e (Gamma c (UDiv x a) (UDiv x b))))
+      ((union e (UDiv x (Gamma c a b)))))
+(rule ((= e (Gamma c (FDiv x a) (FDiv x b))))
+      ((union e (FDiv x (Gamma c a b)))))
 
-; Remainder/modulo operations
-(rewrite (Gamma c (SRem a x) (SRem b x)) (SRem (Gamma c a b) x))
-(rewrite (Gamma c (SMod a x) (SMod b x)) (SMod (Gamma c a b) x))
-(rewrite (Gamma c (UMod a x) (UMod b x)) (UMod (Gamma c a b) x))
-(rewrite (Gamma c (FRem a x) (FRem b x)) (FRem (Gamma c a b) x))
+; Remainder/modulo operations - ONE-DIRECTIONAL
+(rule ((= e (Gamma c (SRem a x) (SRem b x))))
+      ((union e (SRem (Gamma c a b) x))))
+(rule ((= e (Gamma c (SMod a x) (SMod b x))))
+      ((union e (SMod (Gamma c a b) x))))
+(rule ((= e (Gamma c (UMod a x) (UMod b x))))
+      ((union e (UMod (Gamma c a b) x))))
+(rule ((= e (Gamma c (FRem a x) (FRem b x))))
+      ((union e (FRem (Gamma c a b) x))))
 
-; Negation: select(c, -a, -b) = -(select(c, a, b))
-(rewrite (Gamma c (Neg a) (Neg b)) (Neg (Gamma c a b)))
-(rewrite (Gamma c (FNeg a) (FNeg b)) (FNeg (Gamma c a b)))
+; Negation: select(c, -a, -b) = -(select(c, a, b)) - ONE-DIRECTIONAL
+(rule ((= e (Gamma c (Neg a) (Neg b))))
+      ((union e (Neg (Gamma c a b)))))
+(rule ((= e (Gamma c (FNeg a) (FNeg b))))
+      ((union e (FNeg (Gamma c a b)))))
 
 ; Note: BitNot Gamma distribution is in bitwise.egg
 
 ; =============================================================================
 ; Gamma Distribution over Comparison Operations
 ; =============================================================================
-; select(c, a < x, b < x) = select(c, a, b) < x
-(rewrite (Gamma c (SLt a x) (SLt b x)) (SLt (Gamma c a b) x))
-(rewrite (Gamma c (SLe a x) (SLe b x)) (SLe (Gamma c a b) x))
-(rewrite (Gamma c (SGt a x) (SGt b x)) (SGt (Gamma c a b) x))
-(rewrite (Gamma c (SGe a x) (SGe b x)) (SGe (Gamma c a b) x))
-(rewrite (Gamma c (ULt a x) (ULt b x)) (ULt (Gamma c a b) x))
-(rewrite (Gamma c (ULe a x) (ULe b x)) (ULe (Gamma c a b) x))
-(rewrite (Gamma c (UGt a x) (UGt b x)) (UGt (Gamma c a b) x))
-(rewrite (Gamma c (UGe a x) (UGe b x)) (UGe (Gamma c a b) x))
-(rewrite (Gamma c (Eq a x) (Eq b x)) (Eq (Gamma c a b) x))
-(rewrite (Gamma c (Ne a x) (Ne b x)) (Ne (Gamma c a b) x))
+; select(c, a < x, b < x) = select(c, a, b) < x - ONE-DIRECTIONAL
+(rule ((= e (Gamma c (SLt a x) (SLt b x))))
+      ((union e (SLt (Gamma c a b) x))))
+(rule ((= e (Gamma c (SLe a x) (SLe b x))))
+      ((union e (SLe (Gamma c a b) x))))
+(rule ((= e (Gamma c (SGt a x) (SGt b x))))
+      ((union e (SGt (Gamma c a b) x))))
+(rule ((= e (Gamma c (SGe a x) (SGe b x))))
+      ((union e (SGe (Gamma c a b) x))))
+(rule ((= e (Gamma c (ULt a x) (ULt b x))))
+      ((union e (ULt (Gamma c a b) x))))
+(rule ((= e (Gamma c (ULe a x) (ULe b x))))
+      ((union e (ULe (Gamma c a b) x))))
+(rule ((= e (Gamma c (UGt a x) (UGt b x))))
+      ((union e (UGt (Gamma c a b) x))))
+(rule ((= e (Gamma c (UGe a x) (UGe b x))))
+      ((union e (UGe (Gamma c a b) x))))
+(rule ((= e (Gamma c (Eq a x) (Eq b x))))
+      ((union e (Eq (Gamma c a b) x))))
+(rule ((= e (Gamma c (Ne a x) (Ne b x))))
+      ((union e (Ne (Gamma c a b) x))))
 
-; Floating-point comparisons
-(rewrite (Gamma c (FOrdLt a x) (FOrdLt b x)) (FOrdLt (Gamma c a b) x))
-(rewrite (Gamma c (FOrdLe a x) (FOrdLe b x)) (FOrdLe (Gamma c a b) x))
-(rewrite (Gamma c (FOrdGt a x) (FOrdGt b x)) (FOrdGt (Gamma c a b) x))
-(rewrite (Gamma c (FOrdGe a x) (FOrdGe b x)) (FOrdGe (Gamma c a b) x))
-(rewrite (Gamma c (FOrdEq a x) (FOrdEq b x)) (FOrdEq (Gamma c a b) x))
-(rewrite (Gamma c (FOrdNe a x) (FOrdNe b x)) (FOrdNe (Gamma c a b) x))
+; Floating-point comparisons - ONE-DIRECTIONAL
+(rule ((= e (Gamma c (FOrdLt a x) (FOrdLt b x))))
+      ((union e (FOrdLt (Gamma c a b) x))))
+(rule ((= e (Gamma c (FOrdLe a x) (FOrdLe b x))))
+      ((union e (FOrdLe (Gamma c a b) x))))
+(rule ((= e (Gamma c (FOrdGt a x) (FOrdGt b x))))
+      ((union e (FOrdGt (Gamma c a b) x))))
+(rule ((= e (Gamma c (FOrdGe a x) (FOrdGe b x))))
+      ((union e (FOrdGe (Gamma c a b) x))))
+(rule ((= e (Gamma c (FOrdEq a x) (FOrdEq b x))))
+      ((union e (FOrdEq (Gamma c a b) x))))
+(rule ((= e (Gamma c (FOrdNe a x) (FOrdNe b x))))
+      ((union e (FOrdNe (Gamma c a b) x))))
 
 ; =============================================================================
 ; Gamma Distribution over GLSL Functions
 ; =============================================================================
 
-; select(c, sqrt(a), sqrt(b)) = sqrt(select(c, a, b))
-(rewrite (Gamma c (Sqrt a) (Sqrt b)) (Sqrt (Gamma c a b)))
-(rewrite (Gamma c (InverseSqrt a) (InverseSqrt b)) (InverseSqrt (Gamma c a b)))
+; select(c, sqrt(a), sqrt(b)) = sqrt(select(c, a, b)) - ONE-DIRECTIONAL
+(rule ((= e (Gamma c (Sqrt a) (Sqrt b))))
+      ((union e (Sqrt (Gamma c a b)))))
+(rule ((= e (Gamma c (InverseSqrt a) (InverseSqrt b))))
+      ((union e (InverseSqrt (Gamma c a b)))))
 
-; Exponential functions
-(rewrite (Gamma c (Exp a) (Exp b)) (Exp (Gamma c a b)))
-(rewrite (Gamma c (Exp2 a) (Exp2 b)) (Exp2 (Gamma c a b)))
-(rewrite (Gamma c (Log a) (Log b)) (Log (Gamma c a b)))
-(rewrite (Gamma c (Log2 a) (Log2 b)) (Log2 (Gamma c a b)))
+; Exponential functions - ONE-DIRECTIONAL
+(rule ((= e (Gamma c (Exp a) (Exp b))))
+      ((union e (Exp (Gamma c a b)))))
+(rule ((= e (Gamma c (Exp2 a) (Exp2 b))))
+      ((union e (Exp2 (Gamma c a b)))))
+(rule ((= e (Gamma c (Log a) (Log b))))
+      ((union e (Log (Gamma c a b)))))
+(rule ((= e (Gamma c (Log2 a) (Log2 b))))
+      ((union e (Log2 (Gamma c a b)))))
 
-; Trigonometric functions
-(rewrite (Gamma c (Sin a) (Sin b)) (Sin (Gamma c a b)))
-(rewrite (Gamma c (Cos a) (Cos b)) (Cos (Gamma c a b)))
-(rewrite (Gamma c (Tan a) (Tan b)) (Tan (Gamma c a b)))
+; Trigonometric functions - ONE-DIRECTIONAL
+(rule ((= e (Gamma c (Sin a) (Sin b))))
+      ((union e (Sin (Gamma c a b)))))
+(rule ((= e (Gamma c (Cos a) (Cos b))))
+      ((union e (Cos (Gamma c a b)))))
+(rule ((= e (Gamma c (Tan a) (Tan b))))
+      ((union e (Tan (Gamma c a b)))))
 
-; Rounding functions
-(rewrite (Gamma c (FFloor a) (FFloor b)) (FFloor (Gamma c a b)))
-(rewrite (Gamma c (FCeil a) (FCeil b)) (FCeil (Gamma c a b)))
-(rewrite (Gamma c (FRound a) (FRound b)) (FRound (Gamma c a b)))
-(rewrite (Gamma c (FTrunc a) (FTrunc b)) (FTrunc (Gamma c a b)))
+; Rounding functions - ONE-DIRECTIONAL
+(rule ((= e (Gamma c (FFloor a) (FFloor b))))
+      ((union e (FFloor (Gamma c a b)))))
+(rule ((= e (Gamma c (FCeil a) (FCeil b))))
+      ((union e (FCeil (Gamma c a b)))))
+(rule ((= e (Gamma c (FRound a) (FRound b))))
+      ((union e (FRound (Gamma c a b)))))
+(rule ((= e (Gamma c (FTrunc a) (FTrunc b))))
+      ((union e (FTrunc (Gamma c a b)))))
 
-; Absolute value
-(rewrite (Gamma c (FAbs a) (FAbs b)) (FAbs (Gamma c a b)))
-(rewrite (Gamma c (SAbs a) (SAbs b)) (SAbs (Gamma c a b)))
+; Absolute value - ONE-DIRECTIONAL
+(rule ((= e (Gamma c (FAbs a) (FAbs b))))
+      ((union e (FAbs (Gamma c a b)))))
+(rule ((= e (Gamma c (SAbs a) (SAbs b))))
+      ((union e (SAbs (Gamma c a b)))))
 
-; Normalize and Length
-(rewrite (Gamma c (Normalize a) (Normalize b)) (Normalize (Gamma c a b)))
-(rewrite (Gamma c (Length a) (Length b)) (Length (Gamma c a b)))
+; Normalize and Length - ONE-DIRECTIONAL
+(rule ((= e (Gamma c (Normalize a) (Normalize b))))
+      ((union e (Normalize (Gamma c a b)))))
+(rule ((= e (Gamma c (Length a) (Length b))))
+      ((union e (Length (Gamma c a b)))))
 
 ; =============================================================================
 ; Gamma with Common GLSL Binary Operations
 ; =============================================================================
 
-; select(c, pow(a, x), pow(b, x)) = pow(select(c, a, b), x)
-(rewrite (Gamma c (Pow a x) (Pow b x)) (Pow (Gamma c a b) x))
-(rewrite (Gamma c (Pow x a) (Pow x b)) (Pow x (Gamma c a b)))
+; select(c, pow(a, x), pow(b, x)) = pow(select(c, a, b), x) - ONE-DIRECTIONAL
+(rule ((= e (Gamma c (Pow a x) (Pow b x))))
+      ((union e (Pow (Gamma c a b) x))))
+(rule ((= e (Gamma c (Pow x a) (Pow x b))))
+      ((union e (Pow x (Gamma c a b)))))
 
-; Distance with common point
-(rewrite (Gamma c (Distance a x) (Distance b x)) (Distance (Gamma c a b) x))
-(rewrite (Gamma c (Distance x a) (Distance x b)) (Distance x (Gamma c a b)))
+; Distance with common point - ONE-DIRECTIONAL
+(rule ((= e (Gamma c (Distance a x) (Distance b x))))
+      ((union e (Distance (Gamma c a b) x))))
+(rule ((= e (Gamma c (Distance x a) (Distance x b))))
+      ((union e (Distance x (Gamma c a b)))))
 
-; Dot product with common vector
-(rewrite (Gamma c (Dot a x) (Dot b x)) (Dot (Gamma c a b) x))
-(rewrite (Gamma c (Dot x a) (Dot x b)) (Dot x (Gamma c a b)))
+; Dot product with common vector - ONE-DIRECTIONAL
+(rule ((= e (Gamma c (Dot a x) (Dot b x))))
+      ((union e (Dot (Gamma c a b) x))))
+(rule ((= e (Gamma c (Dot x a) (Dot x b))))
+      ((union e (Dot x (Gamma c a b)))))
 
-; Cross product with common vector
-(rewrite (Gamma c (Cross a x) (Cross b x)) (Cross (Gamma c a b) x))
-(rewrite (Gamma c (Cross x a) (Cross x b)) (Cross x (Gamma c a b)))
+; Cross product with common vector - ONE-DIRECTIONAL
+(rule ((= e (Gamma c (Cross a x) (Cross b x))))
+      ((union e (Cross (Gamma c a b) x))))
+(rule ((= e (Gamma c (Cross x a) (Cross x b))))
+      ((union e (Cross x (Gamma c a b)))))
 
-; Reflect with common normal
-(rewrite (Gamma c (Reflect a x) (Reflect b x)) (Reflect (Gamma c a b) x))
-(rewrite (Gamma c (Reflect x a) (Reflect x b)) (Reflect x (Gamma c a b)))
+; Reflect with common normal - ONE-DIRECTIONAL
+(rule ((= e (Gamma c (Reflect a x) (Reflect b x))))
+      ((union e (Reflect (Gamma c a b) x))))
+(rule ((= e (Gamma c (Reflect x a) (Reflect x b))))
+      ((union e (Reflect x (Gamma c a b)))))
