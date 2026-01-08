@@ -1015,23 +1015,26 @@ mod tests {
     fn test_fmul_chain_merge() {
         let mut egraph = create_spirv_egraph().unwrap();
 
-        // (x * 2.0) * 3.0 should merge to x * 6.0 (using integer constants as proxy)
-        egraph.parse_and_run_program(None, r#"(let root (FMul (FMul (Sym "x") (Const 2)) (Const 3)))"#).unwrap();
+        // (x * 2.0) * 3.0 should merge to x * 6.0
+        // f32 bit patterns: 2.0 = 1073741824, 3.0 = 1077936128, 6.0 = 1086324736
+        egraph.parse_and_run_program(None, r#"(let root (FMul (FMul (Sym "x") (Const 1073741824)) (Const 1077936128)))"#).unwrap();
         egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
 
         let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
         assert!(!results.is_empty());
         let result = format!("{}", results[0]);
         eprintln!("FMul chain result: {}", result);
-        assert!(result.contains("6"), "Expected merged constant 6, got: {}", result);
+        // Should contain the bit pattern for 6.0 = 1086324736
+        assert!(result.contains("1086324736"), "Expected merged constant for 6.0 (1086324736), got: {}", result);
     }
 
     #[test]
     fn test_reciprocal_chain() {
         let mut egraph = create_spirv_egraph().unwrap();
 
-        // 1 / (1 / x) should equal x
-        egraph.parse_and_run_program(None, r#"(let root (FDiv (Const 1) (FDiv (Const 1) (Sym "x"))))"#).unwrap();
+        // 1.0 / (1.0 / x) should equal x
+        // f32 bit pattern: 1.0 = 1065353216
+        egraph.parse_and_run_program(None, r#"(let root (FDiv (Const 1065353216) (FDiv (Const 1065353216) (Sym "x"))))"#).unwrap();
         egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
 
         let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
