@@ -9,17 +9,16 @@ fn build_const_add_module() -> (Vec<u32>, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![]);
+    let func_ty = b.type_function(int, vec![]);
     let _ = b
-        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let _ = b.begin_block(None).expect("block");
     let c2 = b.constant_bit32(int, 2);
     let c3 = b.constant_bit32(int, 3);
     let add = b.i_add(int, None, c2, c3).expect("add");
-    b.ret().expect("ret");
+    b.ret_value(add).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), add)
 }
@@ -154,11 +153,10 @@ fn build_umod_pow2_module() -> (Vec<u32>, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![]);
+    let func_ty = b.type_function(int, vec![]);
     let _ = b
-        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let _ = b.begin_block(None).expect("block");
     let c5 = b.constant_bit32(int, 5);
@@ -166,7 +164,7 @@ fn build_umod_pow2_module() -> (Vec<u32>, u32) {
     let c8 = b.constant_bit32(int, 8);
     let x = b.i_add(int, None, c5, c1).expect("iadd");
     let umod = b.u_mod(int, None, x, c8).expect("umod");
-    b.ret().expect("ret");
+    b.ret_value(umod).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), umod)
 }
@@ -1492,10 +1490,9 @@ fn build_factored_const_mul_sum_module() -> (Vec<u32>, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![int, int]);
-    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+    let func_ty = b.type_function(int, vec![int, int]);
+    b.begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let lhs = b.function_parameter(int).expect("lhs param");
     let rhs = b.function_parameter(int).expect("rhs param");
@@ -1504,7 +1501,7 @@ fn build_factored_const_mul_sum_module() -> (Vec<u32>, u32) {
     let mul_left = b.i_mul(int, None, lhs, c4).expect("mul left");
     let mul_right = b.i_mul(int, None, rhs, c4).expect("mul right");
     let add = b.i_add(int, None, mul_left, mul_right).expect("add");
-    b.ret().expect("ret");
+    b.ret_value(add).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), add)
 }
@@ -1513,10 +1510,9 @@ fn build_factored_const_mul_sum_commuted_module() -> (Vec<u32>, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![int, int]);
-    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+    let func_ty = b.type_function(int, vec![int, int]);
+    b.begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let lhs = b.function_parameter(int).expect("lhs param");
     let rhs = b.function_parameter(int).expect("rhs param");
@@ -1525,7 +1521,7 @@ fn build_factored_const_mul_sum_commuted_module() -> (Vec<u32>, u32) {
     let mul_left = b.i_mul(int, None, c4, lhs).expect("mul left");
     let mul_right = b.i_mul(int, None, c4, rhs).expect("mul right");
     let add = b.i_add(int, None, mul_left, mul_right).expect("add");
-    b.ret().expect("ret");
+    b.ret_value(add).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), add)
 }
@@ -1534,10 +1530,9 @@ fn build_factored_const_mul_sub_module() -> (Vec<u32>, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![int, int]);
-    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+    let func_ty = b.type_function(int, vec![int, int]);
+    b.begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let lhs = b.function_parameter(int).expect("lhs param");
     let rhs = b.function_parameter(int).expect("rhs param");
@@ -1546,7 +1541,7 @@ fn build_factored_const_mul_sub_module() -> (Vec<u32>, u32) {
     let mul_left = b.i_mul(int, None, lhs, c4).expect("mul left");
     let mul_right = b.i_mul(int, None, rhs, c4).expect("mul right");
     let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
-    b.ret().expect("ret");
+    b.ret_value(sub).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), sub)
 }
@@ -1555,10 +1550,9 @@ fn build_factored_const_mul_sub_commuted_module() -> (Vec<u32>, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![int, int]);
-    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+    let func_ty = b.type_function(int, vec![int, int]);
+    b.begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let lhs = b.function_parameter(int).expect("lhs param");
     let rhs = b.function_parameter(int).expect("rhs param");
@@ -1567,7 +1561,7 @@ fn build_factored_const_mul_sub_commuted_module() -> (Vec<u32>, u32) {
     let mul_left = b.i_mul(int, None, c4, lhs).expect("mul left");
     let mul_right = b.i_mul(int, None, c4, rhs).expect("mul right");
     let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
-    b.ret().expect("ret");
+    b.ret_value(sub).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), sub)
 }
@@ -1576,10 +1570,9 @@ fn build_factored_const_mul_sum_mixed_module() -> (Vec<u32>, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![int, int]);
-    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+    let func_ty = b.type_function(int, vec![int, int]);
+    b.begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let lhs = b.function_parameter(int).expect("lhs param");
     let rhs = b.function_parameter(int).expect("rhs param");
@@ -1588,7 +1581,7 @@ fn build_factored_const_mul_sum_mixed_module() -> (Vec<u32>, u32) {
     let mul_left = b.i_mul(int, None, lhs, c4).expect("mul left");
     let mul_right = b.i_mul(int, None, c4, rhs).expect("mul right");
     let add = b.i_add(int, None, mul_left, mul_right).expect("add");
-    b.ret().expect("ret");
+    b.ret_value(add).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), add)
 }
@@ -1597,10 +1590,9 @@ fn build_factored_const_mul_sub_mixed_module() -> (Vec<u32>, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![int, int]);
-    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+    let func_ty = b.type_function(int, vec![int, int]);
+    b.begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let lhs = b.function_parameter(int).expect("lhs param");
     let rhs = b.function_parameter(int).expect("rhs param");
@@ -1609,7 +1601,7 @@ fn build_factored_const_mul_sub_mixed_module() -> (Vec<u32>, u32) {
     let mul_left = b.i_mul(int, None, lhs, c4).expect("mul left");
     let mul_right = b.i_mul(int, None, c4, rhs).expect("mul right");
     let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
-    b.ret().expect("ret");
+    b.ret_value(sub).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), sub)
 }
@@ -1618,10 +1610,9 @@ fn build_factored_symbolic_mul_sub_module() -> (Vec<u32>, u32, u32, u32, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![int, int, int]);
-    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+    let func_ty = b.type_function(int, vec![int, int, int]);
+    b.begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let base = b.function_parameter(int).expect("base param");
     let lhs = b.function_parameter(int).expect("lhs param");
@@ -1630,7 +1621,7 @@ fn build_factored_symbolic_mul_sub_module() -> (Vec<u32>, u32, u32, u32, u32) {
     let mul_left = b.i_mul(int, None, base, lhs).expect("mul left");
     let mul_right = b.i_mul(int, None, base, rhs).expect("mul right");
     let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
-    b.ret().expect("ret");
+    b.ret_value(sub).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), sub, base, lhs, rhs)
 }
@@ -1639,10 +1630,9 @@ fn build_factored_symbolic_mul_add_module() -> (Vec<u32>, u32, u32, u32, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![int, int, int]);
-    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+    let func_ty = b.type_function(int, vec![int, int, int]);
+    b.begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let base = b.function_parameter(int).expect("base param");
     let lhs = b.function_parameter(int).expect("lhs param");
@@ -1651,7 +1641,7 @@ fn build_factored_symbolic_mul_add_module() -> (Vec<u32>, u32, u32, u32, u32) {
     let mul_left = b.i_mul(int, None, base, lhs).expect("mul left");
     let mul_right = b.i_mul(int, None, base, rhs).expect("mul right");
     let add = b.i_add(int, None, mul_left, mul_right).expect("add");
-    b.ret().expect("ret");
+    b.ret_value(add).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), add, base, lhs, rhs)
 }
@@ -1660,10 +1650,9 @@ fn build_factored_symbolic_mul_sub_commuted_module() -> (Vec<u32>, u32, u32, u32
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![int, int, int]);
-    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+    let func_ty = b.type_function(int, vec![int, int, int]);
+    b.begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let base = b.function_parameter(int).expect("base param");
     let lhs = b.function_parameter(int).expect("lhs param");
@@ -1672,7 +1661,7 @@ fn build_factored_symbolic_mul_sub_commuted_module() -> (Vec<u32>, u32, u32, u32
     let mul_left = b.i_mul(int, None, lhs, base).expect("mul left");
     let mul_right = b.i_mul(int, None, rhs, base).expect("mul right");
     let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
-    b.ret().expect("ret");
+    b.ret_value(sub).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), sub, base, lhs, rhs)
 }
@@ -1681,10 +1670,9 @@ fn build_factored_symbolic_mul_add_mixed_module() -> (Vec<u32>, u32, u32, u32, u
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![int, int, int]);
-    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+    let func_ty = b.type_function(int, vec![int, int, int]);
+    b.begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let base = b.function_parameter(int).expect("base param");
     let lhs = b.function_parameter(int).expect("lhs param");
@@ -1693,7 +1681,7 @@ fn build_factored_symbolic_mul_add_mixed_module() -> (Vec<u32>, u32, u32, u32, u
     let mul_left = b.i_mul(int, None, base, lhs).expect("mul left");
     let mul_right = b.i_mul(int, None, rhs, base).expect("mul right");
     let add = b.i_add(int, None, mul_left, mul_right).expect("add");
-    b.ret().expect("ret");
+    b.ret_value(add).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), add, base, lhs, rhs)
 }
@@ -1702,10 +1690,9 @@ fn build_factored_symbolic_mul_sub_mixed_module() -> (Vec<u32>, u32, u32, u32, u
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![int, int, int]);
-    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+    let func_ty = b.type_function(int, vec![int, int, int]);
+    b.begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let base = b.function_parameter(int).expect("base param");
     let lhs = b.function_parameter(int).expect("lhs param");
@@ -1714,7 +1701,7 @@ fn build_factored_symbolic_mul_sub_mixed_module() -> (Vec<u32>, u32, u32, u32, u
     let mul_left = b.i_mul(int, None, base, lhs).expect("mul left");
     let mul_right = b.i_mul(int, None, rhs, base).expect("mul right");
     let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
-    b.ret().expect("ret");
+    b.ret_value(sub).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), sub, base, lhs, rhs)
 }
@@ -1723,10 +1710,9 @@ fn build_factored_symbolic_mul_add_commuted_module() -> (Vec<u32>, u32, u32, u32
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![int, int, int]);
-    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+    let func_ty = b.type_function(int, vec![int, int, int]);
+    b.begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let base = b.function_parameter(int).expect("base param");
     let lhs = b.function_parameter(int).expect("lhs param");
@@ -1735,7 +1721,7 @@ fn build_factored_symbolic_mul_add_commuted_module() -> (Vec<u32>, u32, u32, u32
     let mul_left = b.i_mul(int, None, lhs, base).expect("mul left");
     let mul_right = b.i_mul(int, None, rhs, base).expect("mul right");
     let add = b.i_add(int, None, mul_left, mul_right).expect("add");
-    b.ret().expect("ret");
+    b.ret_value(add).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), add, base, lhs, rhs)
 }
@@ -1744,10 +1730,9 @@ fn build_factored_mul_sum_module() -> (Vec<u32>, u32, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![int]);
-    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+    let func_ty = b.type_function(int, vec![int]);
+    b.begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let param = b.function_parameter(int).expect("param id");
     b.begin_block(None).expect("block");
@@ -1756,7 +1741,7 @@ fn build_factored_mul_sum_module() -> (Vec<u32>, u32, u32) {
     let mul_left = b.i_mul(int, None, param, c2).expect("mul left");
     let mul_right = b.i_mul(int, None, param, c3).expect("mul right");
     let add = b.i_add(int, None, mul_left, mul_right).expect("add");
-    b.ret().expect("ret");
+    b.ret_value(add).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), add, param)
 }
@@ -1765,10 +1750,9 @@ fn build_factored_mixed_const_difference_mul_module() -> (Vec<u32>, u32, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 1);
-    let func_ty = b.type_function(void, vec![int]);
-    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+    let func_ty = b.type_function(int, vec![int]);
+    b.begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let x = b.function_parameter(int).expect("x param");
     b.begin_block(None).expect("block");
@@ -1777,7 +1761,7 @@ fn build_factored_mixed_const_difference_mul_module() -> (Vec<u32>, u32, u32) {
     let mul_left = b.i_mul(int, None, c2, x).expect("mul left");
     let mul_right = b.i_mul(int, None, c5, x).expect("mul right");
     let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
-    b.ret().expect("ret");
+    b.ret_value(sub).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), sub, x)
 }
@@ -1786,10 +1770,9 @@ fn build_factored_mixed_const_difference_mul_commuted_module() -> (Vec<u32>, u32
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 1);
-    let func_ty = b.type_function(void, vec![int]);
-    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+    let func_ty = b.type_function(int, vec![int]);
+    b.begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let x = b.function_parameter(int).expect("x param");
     b.begin_block(None).expect("block");
@@ -1798,7 +1781,7 @@ fn build_factored_mixed_const_difference_mul_commuted_module() -> (Vec<u32>, u32
     let mul_left = b.i_mul(int, None, x, c2).expect("mul left commuted");
     let mul_right = b.i_mul(int, None, c5, x).expect("mul right");
     let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
-    b.ret().expect("ret");
+    b.ret_value(sub).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), sub, x)
 }
@@ -1807,10 +1790,9 @@ fn build_factored_mixed_const_positive_difference_mul_module() -> (Vec<u32>, u32
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 1);
-    let func_ty = b.type_function(void, vec![int]);
-    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+    let func_ty = b.type_function(int, vec![int]);
+    b.begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let x = b.function_parameter(int).expect("x param");
     b.begin_block(None).expect("block");
@@ -1819,7 +1801,7 @@ fn build_factored_mixed_const_positive_difference_mul_module() -> (Vec<u32>, u32
     let mul_left = b.i_mul(int, None, c7, x).expect("mul left");
     let mul_right = b.i_mul(int, None, c2, x).expect("mul right");
     let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
-    b.ret().expect("ret");
+    b.ret_value(sub).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), sub, x)
 }
@@ -1828,10 +1810,9 @@ fn build_factored_mixed_const_positive_difference_mul_commuted_module() -> (Vec<
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 1);
-    let func_ty = b.type_function(void, vec![int]);
-    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+    let func_ty = b.type_function(int, vec![int]);
+    b.begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let x = b.function_parameter(int).expect("x param");
     b.begin_block(None).expect("block");
@@ -1840,7 +1821,7 @@ fn build_factored_mixed_const_positive_difference_mul_commuted_module() -> (Vec<
     let mul_left = b.i_mul(int, None, x, c7).expect("mul left commuted");
     let mul_right = b.i_mul(int, None, c2, x).expect("mul right");
     let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
-    b.ret().expect("ret");
+    b.ret_value(sub).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), sub, x)
 }
@@ -1849,10 +1830,9 @@ fn build_factored_mixed_const_wrap_negative_difference_mul_module() -> (Vec<u32>
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 1);
-    let func_ty = b.type_function(void, vec![int]);
-    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+    let func_ty = b.type_function(int, vec![int]);
+    b.begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let x = b.function_parameter(int).expect("x param");
     b.begin_block(None).expect("block");
@@ -1861,7 +1841,7 @@ fn build_factored_mixed_const_wrap_negative_difference_mul_module() -> (Vec<u32>
     let mul_left = b.i_mul(int, None, high, x).expect("mul left");
     let mul_right = b.i_mul(int, None, c5, x).expect("mul right");
     let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
-    b.ret().expect("ret");
+    b.ret_value(sub).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), sub, x)
 }
@@ -1871,10 +1851,9 @@ fn build_factored_mixed_const_wrap_negative_difference_mul_commuted_module() -> 
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 1);
-    let func_ty = b.type_function(void, vec![int]);
-    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+    let func_ty = b.type_function(int, vec![int]);
+    b.begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let x = b.function_parameter(int).expect("x param");
     b.begin_block(None).expect("block");
@@ -1883,7 +1862,7 @@ fn build_factored_mixed_const_wrap_negative_difference_mul_commuted_module() -> 
     let mul_left = b.i_mul(int, None, x, high).expect("mul left commuted");
     let mul_right = b.i_mul(int, None, c5, x).expect("mul right");
     let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
-    b.ret().expect("ret");
+    b.ret_value(sub).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), sub, x)
 }
@@ -1892,10 +1871,9 @@ fn build_factored_mixed_const_wrap_positive_difference_mul_module() -> (Vec<u32>
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 1);
-    let func_ty = b.type_function(void, vec![int]);
-    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+    let func_ty = b.type_function(int, vec![int]);
+    b.begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let x = b.function_parameter(int).expect("x param");
     b.begin_block(None).expect("block");
@@ -1904,7 +1882,7 @@ fn build_factored_mixed_const_wrap_positive_difference_mul_module() -> (Vec<u32>
     let mul_left = b.i_mul(int, None, neg1, x).expect("mul left");
     let mul_right = b.i_mul(int, None, neg4, x).expect("mul right");
     let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
-    b.ret().expect("ret");
+    b.ret_value(sub).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), sub, x)
 }
@@ -1914,10 +1892,9 @@ fn build_factored_mixed_const_wrap_positive_difference_mul_commuted_module() -> 
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 1);
-    let func_ty = b.type_function(void, vec![int]);
-    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+    let func_ty = b.type_function(int, vec![int]);
+    b.begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let x = b.function_parameter(int).expect("x param");
     b.begin_block(None).expect("block");
@@ -1926,7 +1903,7 @@ fn build_factored_mixed_const_wrap_positive_difference_mul_commuted_module() -> 
     let mul_left = b.i_mul(int, None, x, neg1).expect("mul left commuted");
     let mul_right = b.i_mul(int, None, neg4, x).expect("mul right");
     let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
-    b.ret().expect("ret");
+    b.ret_value(sub).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), sub, x)
 }
@@ -1935,10 +1912,9 @@ fn build_factored_const_equal_difference_mul_module() -> (Vec<u32>, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 1);
-    let func_ty = b.type_function(void, vec![int]);
-    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+    let func_ty = b.type_function(int, vec![int]);
+    b.begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let x = b.function_parameter(int).expect("x param");
     b.begin_block(None).expect("block");
@@ -1946,7 +1922,7 @@ fn build_factored_const_equal_difference_mul_module() -> (Vec<u32>, u32) {
     let mul_left = b.i_mul(int, None, c6, x).expect("mul left");
     let mul_right = b.i_mul(int, None, c6, x).expect("mul right");
     let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
-    b.ret().expect("ret");
+    b.ret_value(sub).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), sub)
 }
@@ -1955,10 +1931,9 @@ fn build_factored_const_equal_difference_mul_commuted_module() -> (Vec<u32>, u32
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 1);
-    let func_ty = b.type_function(void, vec![int]);
-    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+    let func_ty = b.type_function(int, vec![int]);
+    b.begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let x = b.function_parameter(int).expect("x param");
     b.begin_block(None).expect("block");
@@ -1966,7 +1941,7 @@ fn build_factored_const_equal_difference_mul_commuted_module() -> (Vec<u32>, u32
     let mul_left = b.i_mul(int, None, x, c6).expect("mul left commuted");
     let mul_right = b.i_mul(int, None, c6, x).expect("mul right");
     let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
-    b.ret().expect("ret");
+    b.ret_value(sub).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), sub)
 }
@@ -1975,10 +1950,9 @@ fn build_factored_const_equal_difference_unsigned_mul_module() -> (Vec<u32>, u32
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![int]);
-    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+    let func_ty = b.type_function(int, vec![int]);
+    b.begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let x = b.function_parameter(int).expect("x param");
     b.begin_block(None).expect("block");
@@ -1986,7 +1960,7 @@ fn build_factored_const_equal_difference_unsigned_mul_module() -> (Vec<u32>, u32
     let mul_left = b.i_mul(int, None, c6, x).expect("mul left");
     let mul_right = b.i_mul(int, None, x, c6).expect("mul right commuted");
     let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
-    b.ret().expect("ret");
+    b.ret_value(sub).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), sub)
 }
@@ -1995,10 +1969,9 @@ fn build_factored_const_difference_unsigned_mul_module() -> (Vec<u32>, u32, u32)
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![int]);
-    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+    let func_ty = b.type_function(int, vec![int]);
+    b.begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let x = b.function_parameter(int).expect("x param");
     b.begin_block(None).expect("block");
@@ -2007,7 +1980,7 @@ fn build_factored_const_difference_unsigned_mul_module() -> (Vec<u32>, u32, u32)
     let mul_left = b.i_mul(int, None, c7, x).expect("mul left");
     let mul_right = b.i_mul(int, None, c2, x).expect("mul right");
     let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
-    b.ret().expect("ret");
+    b.ret_value(sub).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), sub, x)
 }
@@ -2017,10 +1990,9 @@ fn build_factored_mixed_const_wrap_positive_difference_unsigned_mul_module() -> 
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![int]);
-    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+    let func_ty = b.type_function(int, vec![int]);
+    b.begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let x = b.function_parameter(int).expect("x param");
     b.begin_block(None).expect("block");
@@ -2029,7 +2001,7 @@ fn build_factored_mixed_const_wrap_positive_difference_unsigned_mul_module() -> 
     let mul_left = b.i_mul(int, None, neg1, x).expect("mul left");
     let mul_right = b.i_mul(int, None, neg4, x).expect("mul right");
     let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
-    b.ret().expect("ret");
+    b.ret_value(sub).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), sub, x)
 }
@@ -2039,10 +2011,9 @@ fn build_factored_mixed_const_wrap_positive_difference_unsigned_mul_commuted_mod
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![int]);
-    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+    let func_ty = b.type_function(int, vec![int]);
+    b.begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let x = b.function_parameter(int).expect("x param");
     b.begin_block(None).expect("block");
@@ -2051,7 +2022,7 @@ fn build_factored_mixed_const_wrap_positive_difference_unsigned_mul_commuted_mod
     let mul_left = b.i_mul(int, None, x, neg1).expect("mul left commuted");
     let mul_right = b.i_mul(int, None, neg4, x).expect("mul right");
     let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
-    b.ret().expect("ret");
+    b.ret_value(sub).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), sub, x)
 }
@@ -2061,10 +2032,9 @@ fn build_factored_mixed_const_wrap_negative_difference_unsigned_mul_module() -> 
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![int]);
-    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+    let func_ty = b.type_function(int, vec![int]);
+    b.begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let x = b.function_parameter(int).expect("x param");
     b.begin_block(None).expect("block");
@@ -2073,7 +2043,7 @@ fn build_factored_mixed_const_wrap_negative_difference_unsigned_mul_module() -> 
     let mul_left = b.i_mul(int, None, high, x).expect("mul left");
     let mul_right = b.i_mul(int, None, c5, x).expect("mul right");
     let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
-    b.ret().expect("ret");
+    b.ret_value(sub).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), sub, x)
 }
@@ -2083,10 +2053,9 @@ fn build_factored_mixed_const_wrap_negative_difference_unsigned_mul_commuted_mod
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![int]);
-    b.begin_function(void, None, FunctionControl::NONE, func_ty)
+    let func_ty = b.type_function(int, vec![int]);
+    b.begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let x = b.function_parameter(int).expect("x param");
     b.begin_block(None).expect("block");
@@ -2095,7 +2064,7 @@ fn build_factored_mixed_const_wrap_negative_difference_unsigned_mul_commuted_mod
     let mul_left = b.i_mul(int, None, x, high).expect("mul left commuted");
     let mul_right = b.i_mul(int, None, c5, x).expect("mul right");
     let sub = b.i_sub(int, None, mul_left, mul_right).expect("sub");
-    b.ret().expect("ret");
+    b.ret_value(sub).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), sub, x)
 }
@@ -3944,17 +3913,16 @@ fn build_add_negate_module() -> (Vec<u32>, u32) {
         rspirv::spirv::AddressingModel::Logical,
         rspirv::spirv::MemoryModel::Simple,
     );
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![]);
+    let func_ty = b.type_function(int, vec![]);
     let _ = b
-        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(int, None, rspirv::spirv::FunctionControl::NONE, func_ty)
         .expect("function");
     let _ = b.begin_block(None).expect("block");
     let c5 = b.constant_bit32(int, 5);
     let neg = b.s_negate(int, None, c5).expect("neg");
     let add = b.i_add(int, None, c5, neg).expect("add");
-    b.ret().expect("ret");
+    b.ret_value(add).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), add)
 }
@@ -3966,17 +3934,16 @@ fn build_mul_one_module() -> (Vec<u32>, u32) {
         rspirv::spirv::AddressingModel::Logical,
         rspirv::spirv::MemoryModel::Simple,
     );
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![]);
+    let func_ty = b.type_function(int, vec![]);
     let _ = b
-        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(int, None, rspirv::spirv::FunctionControl::NONE, func_ty)
         .expect("function");
     let _ = b.begin_block(None).expect("block");
     let c4 = b.constant_bit32(int, 4);
     let c1 = b.constant_bit32(int, 1);
     let mul = b.i_mul(int, None, c4, c1).expect("mul id");
-    b.ret().expect("ret");
+    b.ret_value(mul).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), mul)
 }
@@ -3988,17 +3955,16 @@ fn build_udiv_one_module() -> (Vec<u32>, u32) {
         rspirv::spirv::AddressingModel::Logical,
         rspirv::spirv::MemoryModel::Simple,
     );
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![]);
+    let func_ty = b.type_function(int, vec![]);
     let _ = b
-        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(int, None, rspirv::spirv::FunctionControl::NONE, func_ty)
         .expect("function");
     let _ = b.begin_block(None).expect("block");
     let c9 = b.constant_bit32(int, 9);
     let c1 = b.constant_bit32(int, 1);
     let div = b.u_div(int, None, c9, c1).expect("div id");
-    b.ret().expect("ret");
+    b.ret_value(div).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), div)
 }
@@ -4010,17 +3976,16 @@ fn build_urem_one_module() -> (Vec<u32>, u32) {
         rspirv::spirv::AddressingModel::Logical,
         rspirv::spirv::MemoryModel::Simple,
     );
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![]);
+    let func_ty = b.type_function(int, vec![]);
     let _ = b
-        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(int, None, rspirv::spirv::FunctionControl::NONE, func_ty)
         .expect("function");
     let _ = b.begin_block(None).expect("block");
     let c9 = b.constant_bit32(int, 9);
     let c1 = b.constant_bit32(int, 1);
     let rem = b.u_mod(int, None, c9, c1).expect("rem id");
-    b.ret().expect("ret");
+    b.ret_value(rem).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), rem)
 }
@@ -4032,17 +3997,16 @@ fn build_sdiv_one_module() -> (Vec<u32>, u32) {
         rspirv::spirv::AddressingModel::Logical,
         rspirv::spirv::MemoryModel::Simple,
     );
-    let void = b.type_void();
     let int = b.type_int(32, 1);
-    let func_ty = b.type_function(void, vec![]);
+    let func_ty = b.type_function(int, vec![]);
     let _ = b
-        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(int, None, rspirv::spirv::FunctionControl::NONE, func_ty)
         .expect("function");
     let _ = b.begin_block(None).expect("block");
     let c9 = b.constant_bit32(int, 9);
     let c1 = b.constant_bit32(int, 1);
     let div = b.s_div(int, None, c9, c1).expect("div id");
-    b.ret().expect("ret");
+    b.ret_value(div).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), div)
 }
@@ -4054,17 +4018,16 @@ fn build_srem_one_module() -> (Vec<u32>, u32) {
         rspirv::spirv::AddressingModel::Logical,
         rspirv::spirv::MemoryModel::Simple,
     );
-    let void = b.type_void();
     let int = b.type_int(32, 1);
-    let func_ty = b.type_function(void, vec![]);
+    let func_ty = b.type_function(int, vec![]);
     let _ = b
-        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(int, None, rspirv::spirv::FunctionControl::NONE, func_ty)
         .expect("function");
     let _ = b.begin_block(None).expect("block");
     let c9 = b.constant_bit32(int, 9);
     let c1 = b.constant_bit32(int, 1);
     let rem = b.s_rem(int, None, c9, c1).expect("rem id");
-    b.ret().expect("ret");
+    b.ret_value(rem).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), rem)
 }
@@ -4076,11 +4039,10 @@ fn build_rotate_fold_module() -> (Vec<u32>, u32) {
         rspirv::spirv::AddressingModel::Logical,
         rspirv::spirv::MemoryModel::Simple,
     );
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![]);
+    let func_ty = b.type_function(int, vec![]);
     let _ = b
-        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(int, None, rspirv::spirv::FunctionControl::NONE, func_ty)
         .expect("function");
     let _ = b.begin_block(None).expect("block");
     let value = b.constant_bit32(int, 0x12);
@@ -4093,7 +4055,7 @@ fn build_rotate_fold_module() -> (Vec<u32>, u32) {
     let or = b
         .bitwise_or(int, None, left, right)
         .expect("rotate pattern");
-    b.ret().expect("ret");
+    b.ret_value(or).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), or)
 }
@@ -4105,11 +4067,10 @@ fn build_rotate_fold_commuted_module() -> (Vec<u32>, u32) {
         rspirv::spirv::AddressingModel::Logical,
         rspirv::spirv::MemoryModel::Simple,
     );
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![]);
+    let func_ty = b.type_function(int, vec![]);
     let _ = b
-        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(int, None, rspirv::spirv::FunctionControl::NONE, func_ty)
         .expect("function");
     let _ = b.begin_block(None).expect("block");
     let value = b.constant_bit32(int, 0x12);
@@ -4122,7 +4083,7 @@ fn build_rotate_fold_commuted_module() -> (Vec<u32>, u32) {
     let or = b
         .bitwise_or(int, None, right, left)
         .expect("rotate pattern commuted");
-    b.ret().expect("ret");
+    b.ret_value(or).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), or)
 }
@@ -4135,11 +4096,10 @@ fn build_rotate_fold_u64_module() -> (Vec<u32>, u32) {
         rspirv::spirv::AddressingModel::Logical,
         rspirv::spirv::MemoryModel::Simple,
     );
-    let void = b.type_void();
     let int = b.type_int(64, 0);
-    let func_ty = b.type_function(void, vec![]);
+    let func_ty = b.type_function(int, vec![]);
     let _ = b
-        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(int, None, rspirv::spirv::FunctionControl::NONE, func_ty)
         .expect("function");
     let _ = b.begin_block(None).expect("block");
     let value = b.constant_bit64(int, 0x12);
@@ -4152,7 +4112,7 @@ fn build_rotate_fold_u64_module() -> (Vec<u32>, u32) {
     let or = b
         .bitwise_or(int, None, left, right)
         .expect("rotate pattern 64-bit");
-    b.ret().expect("ret");
+    b.ret_value(right_amount).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), or)
 }
@@ -4165,11 +4125,10 @@ fn build_rotate_fold_u64_commuted_module() -> (Vec<u32>, u32) {
         rspirv::spirv::AddressingModel::Logical,
         rspirv::spirv::MemoryModel::Simple,
     );
-    let void = b.type_void();
     let int = b.type_int(64, 0);
-    let func_ty = b.type_function(void, vec![]);
+    let func_ty = b.type_function(int, vec![]);
     let _ = b
-        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(int, None, rspirv::spirv::FunctionControl::NONE, func_ty)
         .expect("function");
     let _ = b.begin_block(None).expect("block");
     let value = b.constant_bit64(int, 0x12);
@@ -4182,7 +4141,7 @@ fn build_rotate_fold_u64_commuted_module() -> (Vec<u32>, u32) {
     let or = b
         .bitwise_or(int, None, right, left)
         .expect("rotate pattern commuted 64-bit");
-    b.ret().expect("ret");
+    b.ret_value(right_amount).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), or)
 }
@@ -4194,17 +4153,16 @@ fn build_bitand_all_ones_module() -> (Vec<u32>, u32) {
         rspirv::spirv::AddressingModel::Logical,
         rspirv::spirv::MemoryModel::Simple,
     );
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![]);
+    let func_ty = b.type_function(int, vec![]);
     let _ = b
-        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(int, None, rspirv::spirv::FunctionControl::NONE, func_ty)
         .expect("function");
     let _ = b.begin_block(None).expect("block");
     let value = b.constant_bit32(int, 0x1234_5678);
     let ones = b.constant_bit32(int, u32::MAX);
     let band = b.bitwise_and(int, None, value, ones).expect("bitwise and");
-    b.ret().expect("ret");
+    b.ret_value(band).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), band)
 }
@@ -4216,17 +4174,16 @@ fn build_bitor_all_ones_module() -> (Vec<u32>, u32) {
         rspirv::spirv::AddressingModel::Logical,
         rspirv::spirv::MemoryModel::Simple,
     );
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![]);
+    let func_ty = b.type_function(int, vec![]);
     let _ = b
-        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(int, None, rspirv::spirv::FunctionControl::NONE, func_ty)
         .expect("function");
     let _ = b.begin_block(None).expect("block");
     let value = b.constant_bit32(int, 0xBEEF_CAFE);
     let ones = b.constant_bit32(int, u32::MAX);
     let bor = b.bitwise_or(int, None, value, ones).expect("bitwise or");
-    b.ret().expect("ret");
+    b.ret_value(bor).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), bor)
 }
@@ -4238,11 +4195,10 @@ fn build_bitxor_all_ones_module() -> (Vec<u32>, u32) {
         rspirv::spirv::AddressingModel::Logical,
         rspirv::spirv::MemoryModel::Simple,
     );
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![]);
+    let func_ty = b.type_function(int, vec![]);
     let _ = b
-        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(int, None, rspirv::spirv::FunctionControl::NONE, func_ty)
         .expect("function");
     let _ = b.begin_block(None).expect("block");
     let lhs = b.constant_bit32(int, 5);
@@ -4250,7 +4206,7 @@ fn build_bitxor_all_ones_module() -> (Vec<u32>, u32) {
     let value = b.i_add(int, None, lhs, rhs).expect("value");
     let ones = b.constant_bit32(int, u32::MAX);
     let bxor = b.bitwise_xor(int, None, value, ones).expect("bitwise xor");
-    b.ret().expect("ret");
+    b.ret_value(bxor).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), bxor)
 }
@@ -4262,17 +4218,16 @@ fn build_bitand_zero_module() -> (Vec<u32>, u32) {
         rspirv::spirv::AddressingModel::Logical,
         rspirv::spirv::MemoryModel::Simple,
     );
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![]);
+    let func_ty = b.type_function(int, vec![]);
     let _ = b
-        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(int, None, rspirv::spirv::FunctionControl::NONE, func_ty)
         .expect("function");
     let _ = b.begin_block(None).expect("block");
     let value = b.constant_bit32(int, 0xDEAD_BEEF);
     let zero = b.constant_bit32(int, 0);
     let band = b.bitwise_and(int, None, value, zero).expect("bitwise and");
-    b.ret().expect("ret");
+    b.ret_value(band).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), band)
 }
@@ -4284,11 +4239,10 @@ fn build_bitor_zero_module() -> (Vec<u32>, u32) {
         rspirv::spirv::AddressingModel::Logical,
         rspirv::spirv::MemoryModel::Simple,
     );
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![]);
+    let func_ty = b.type_function(int, vec![]);
     let _ = b
-        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(int, None, rspirv::spirv::FunctionControl::NONE, func_ty)
         .expect("function");
     let _ = b.begin_block(None).expect("block");
     let lhs = b.constant_bit32(int, 2);
@@ -4296,7 +4250,7 @@ fn build_bitor_zero_module() -> (Vec<u32>, u32) {
     let value = b.i_add(int, None, lhs, rhs).expect("value");
     let zero = b.constant_bit32(int, 0);
     let bor = b.bitwise_or(int, None, value, zero).expect("bitwise or");
-    b.ret().expect("ret");
+    b.ret_value(bor).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), bor)
 }
@@ -4308,11 +4262,10 @@ fn build_bitxor_zero_module() -> (Vec<u32>, u32) {
         rspirv::spirv::AddressingModel::Logical,
         rspirv::spirv::MemoryModel::Simple,
     );
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![]);
+    let func_ty = b.type_function(int, vec![]);
     let _ = b
-        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(int, None, rspirv::spirv::FunctionControl::NONE, func_ty)
         .expect("function");
     let _ = b.begin_block(None).expect("block");
     let lhs = b.constant_bit32(int, 7);
@@ -4320,7 +4273,7 @@ fn build_bitxor_zero_module() -> (Vec<u32>, u32) {
     let value = b.i_add(int, None, lhs, rhs).expect("value");
     let zero = b.constant_bit32(int, 0);
     let bxor = b.bitwise_xor(int, None, value, zero).expect("bitwise xor");
-    b.ret().expect("ret");
+    b.ret_value(bxor).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), bxor)
 }
@@ -4332,18 +4285,17 @@ fn build_bitand_self_module() -> (Vec<u32>, u32) {
         rspirv::spirv::AddressingModel::Logical,
         rspirv::spirv::MemoryModel::Simple,
     );
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![]);
+    let func_ty = b.type_function(int, vec![]);
     let _ = b
-        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(int, None, rspirv::spirv::FunctionControl::NONE, func_ty)
         .expect("function");
     let _ = b.begin_block(None).expect("block");
     let lhs = b.constant_bit32(int, 4);
     let rhs = b.constant_bit32(int, 6);
     let value = b.i_add(int, None, lhs, rhs).expect("value");
     let band = b.bitwise_and(int, None, value, value).expect("bitwise and");
-    b.ret().expect("ret");
+    b.ret_value(band).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), band)
 }
@@ -4355,18 +4307,17 @@ fn build_bitor_self_module() -> (Vec<u32>, u32) {
         rspirv::spirv::AddressingModel::Logical,
         rspirv::spirv::MemoryModel::Simple,
     );
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![]);
+    let func_ty = b.type_function(int, vec![]);
     let _ = b
-        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(int, None, rspirv::spirv::FunctionControl::NONE, func_ty)
         .expect("function");
     let _ = b.begin_block(None).expect("block");
     let lhs = b.constant_bit32(int, 7);
     let rhs = b.constant_bit32(int, 8);
     let value = b.i_add(int, None, lhs, rhs).expect("value");
     let bor = b.bitwise_or(int, None, value, value).expect("bitwise or");
-    b.ret().expect("ret");
+    b.ret_value(bor).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), bor)
 }
@@ -4378,18 +4329,17 @@ fn build_bitxor_self_module() -> (Vec<u32>, u32) {
         rspirv::spirv::AddressingModel::Logical,
         rspirv::spirv::MemoryModel::Simple,
     );
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![]);
+    let func_ty = b.type_function(int, vec![]);
     let _ = b
-        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(int, None, rspirv::spirv::FunctionControl::NONE, func_ty)
         .expect("function");
     let _ = b.begin_block(None).expect("block");
     let lhs = b.constant_bit32(int, 5);
     let rhs = b.constant_bit32(int, 9);
     let value = b.i_add(int, None, lhs, rhs).expect("value");
     let bxor = b.bitwise_xor(int, None, value, value).expect("bitwise xor");
-    b.ret().expect("ret");
+    b.ret_value(bxor).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), bxor)
 }
@@ -4401,11 +4351,10 @@ fn build_bitand_complement_module() -> (Vec<u32>, u32) {
         rspirv::spirv::AddressingModel::Logical,
         rspirv::spirv::MemoryModel::Simple,
     );
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![]);
+    let func_ty = b.type_function(int, vec![]);
     let _ = b
-        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(int, None, rspirv::spirv::FunctionControl::NONE, func_ty)
         .expect("function");
     let _ = b.begin_block(None).expect("block");
     let lhs = b.constant_bit32(int, 2);
@@ -4413,7 +4362,7 @@ fn build_bitand_complement_module() -> (Vec<u32>, u32) {
     let value = b.i_add(int, None, lhs, rhs).expect("value");
     let not_value = b.not(int, None, value).expect("not");
     let band = b.bitwise_and(int, None, value, not_value).expect("band");
-    b.ret().expect("ret");
+    b.ret_value(band).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), band)
 }
@@ -4425,11 +4374,10 @@ fn build_bitor_complement_module() -> (Vec<u32>, u32) {
         rspirv::spirv::AddressingModel::Logical,
         rspirv::spirv::MemoryModel::Simple,
     );
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![]);
+    let func_ty = b.type_function(int, vec![]);
     let _ = b
-        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(int, None, rspirv::spirv::FunctionControl::NONE, func_ty)
         .expect("function");
     let _ = b.begin_block(None).expect("block");
     let lhs = b.constant_bit32(int, 11);
@@ -4437,7 +4385,7 @@ fn build_bitor_complement_module() -> (Vec<u32>, u32) {
     let value = b.i_add(int, None, lhs, rhs).expect("value");
     let not_value = b.not(int, None, value).expect("not");
     let bor = b.bitwise_or(int, None, value, not_value).expect("bor");
-    b.ret().expect("ret");
+    b.ret_value(bor).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), bor)
 }
@@ -4449,17 +4397,16 @@ fn build_shift_zero_module() -> (Vec<u32>, u32) {
         rspirv::spirv::AddressingModel::Logical,
         rspirv::spirv::MemoryModel::Simple,
     );
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![]);
+    let func_ty = b.type_function(int, vec![]);
     let _ = b
-        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(int, None, rspirv::spirv::FunctionControl::NONE, func_ty)
         .expect("function");
     let _ = b.begin_block(None).expect("block");
     let c4 = b.constant_bit32(int, 4);
     let zero = b.constant_bit32(int, 0);
     let shl = b.shift_left_logical(int, None, c4, zero).expect("shift id");
-    b.ret().expect("ret");
+    b.ret_value(shl).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), shl)
 }
@@ -4471,17 +4418,16 @@ fn build_mul_neg_one_module() -> (Vec<u32>, u32) {
         rspirv::spirv::AddressingModel::Logical,
         rspirv::spirv::MemoryModel::Simple,
     );
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![]);
+    let func_ty = b.type_function(int, vec![]);
     let _ = b
-        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(int, None, rspirv::spirv::FunctionControl::NONE, func_ty)
         .expect("function");
     let _ = b.begin_block(None).expect("block");
     let c6 = b.constant_bit32(int, 6);
     let c_neg_one = b.constant_bit32(int, u32::MAX);
     let mul = b.i_mul(int, None, c6, c_neg_one).expect("mul id");
-    b.ret().expect("ret");
+    b.ret_value(mul).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), mul)
 }
@@ -4493,17 +4439,16 @@ fn build_mul_zero_module() -> (Vec<u32>, u32) {
         rspirv::spirv::AddressingModel::Logical,
         rspirv::spirv::MemoryModel::Simple,
     );
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![]);
+    let func_ty = b.type_function(int, vec![]);
     let _ = b
-        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(int, None, rspirv::spirv::FunctionControl::NONE, func_ty)
         .expect("function");
     let _ = b.begin_block(None).expect("block");
     let c4 = b.constant_bit32(int, 4);
     let c0 = b.constant_bit32(int, 0);
     let mul = b.i_mul(int, None, c4, c0).expect("mul id");
-    b.ret().expect("ret");
+    b.ret_value(mul).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), mul)
 }
@@ -4515,11 +4460,10 @@ fn build_srem_divisible_module() -> (Vec<u32>, u32) {
         rspirv::spirv::AddressingModel::Logical,
         rspirv::spirv::MemoryModel::Simple,
     );
-    let void = b.type_void();
     let int = b.type_int(32, 1);
-    let func_ty = b.type_function(void, vec![int]);
+    let func_ty = b.type_function(int, vec![int]);
     let _ = b
-        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(int, None, rspirv::spirv::FunctionControl::NONE, func_ty)
         .expect("function");
     let param = b.function_parameter(int).expect("function parameter");
     let _ = b.begin_block(None).expect("block");
@@ -4527,7 +4471,7 @@ fn build_srem_divisible_module() -> (Vec<u32>, u32) {
     let c3 = b.constant_bit32(int, 3);
     let mul = b.i_mul(int, None, param, c6).expect("mul");
     let rem = b.s_rem(int, None, mul, c3).expect("srem");
-    b.ret().expect("ret");
+    b.ret_value(rem).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), rem)
 }
@@ -4539,11 +4483,10 @@ fn build_srem_non_divisible_module() -> (Vec<u32>, u32) {
         rspirv::spirv::AddressingModel::Logical,
         rspirv::spirv::MemoryModel::Simple,
     );
-    let void = b.type_void();
     let int = b.type_int(32, 1);
-    let func_ty = b.type_function(void, vec![int]);
+    let func_ty = b.type_function(int, vec![int]);
     let _ = b
-        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(int, None, rspirv::spirv::FunctionControl::NONE, func_ty)
         .expect("function");
     let param = b.function_parameter(int).expect("function parameter");
     let _ = b.begin_block(None).expect("block");
@@ -4551,7 +4494,7 @@ fn build_srem_non_divisible_module() -> (Vec<u32>, u32) {
     let c3 = b.constant_bit32(int, 3);
     let mul = b.i_mul(int, None, param, c5).expect("mul");
     let rem = b.s_rem(int, None, mul, c3).expect("srem");
-    b.ret().expect("ret");
+    b.ret_value(rem).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), rem)
 }
@@ -4563,11 +4506,10 @@ fn build_div_rem_neg_shift_module() -> (Vec<u32>, u32, u32, u32, u32, u32) {
         rspirv::spirv::AddressingModel::Logical,
         rspirv::spirv::MemoryModel::Simple,
     );
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![]);
+    let func_ty = b.type_function(int, vec![]);
     let _ = b
-        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(int, None, rspirv::spirv::FunctionControl::NONE, func_ty)
         .expect("function");
     let _ = b.begin_block(None).expect("block");
     let c20 = b.constant_bit32(int, 20);
@@ -4578,7 +4520,7 @@ fn build_div_rem_neg_shift_module() -> (Vec<u32>, u32, u32, u32, u32, u32) {
     let neg = b.s_negate(int, None, c5).expect("neg");
     let shl = b.shift_left_logical(int, None, c5, c4).expect("shl");
     let shr = b.shift_right_logical(int, None, c20, c4).expect("shr");
-    b.ret().expect("ret");
+    b.ret_value(shr).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), div, rem, neg, shl, shr)
 }
@@ -4587,11 +4529,10 @@ fn build_affine_gcd_add_module() -> (Vec<u32>, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![]);
+    let func_ty = b.type_function(int, vec![]);
     let _ = b
-        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let _ = b.begin_block(None).expect("block");
     let c6 = b.constant_bit32(int, 6);
@@ -4599,7 +4540,7 @@ fn build_affine_gcd_add_module() -> (Vec<u32>, u32) {
     let x = b.constant_bit32(int, 4);
     let mul = b.i_mul(int, None, c6, x).expect("mul");
     let add = b.i_add(int, None, mul, c12).expect("add");
-    b.ret().expect("ret");
+    b.ret_value(add).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), add)
 }
@@ -4608,17 +4549,16 @@ fn build_mul_pow2_module() -> (Vec<u32>, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![int]);
+    let func_ty = b.type_function(int, vec![int]);
     let _ = b
-        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let param = b.function_parameter(int).expect("param");
     let _ = b.begin_block(None).expect("block");
     let c8 = b.constant_bit32(int, 8);
     let mul = b.i_mul(int, None, param, c8).expect("mul");
-    b.ret().expect("ret");
+    b.ret_value(mul).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), mul)
 }
@@ -4627,17 +4567,16 @@ fn build_div_pow2_module() -> (Vec<u32>, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 0);
-    let func_ty = b.type_function(void, vec![int]);
+    let func_ty = b.type_function(int, vec![int]);
     let _ = b
-        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .begin_function(int, None, FunctionControl::NONE, func_ty)
         .expect("function");
     let param = b.function_parameter(int).expect("param");
     let _ = b.begin_block(None).expect("block");
     let c8 = b.constant_bit32(int, 8);
     let div = b.u_div(int, None, param, c8).expect("div");
-    b.ret().expect("ret");
+    b.ret_value(div).expect("ret");
     b.end_function().expect("end");
     (b.module().assemble(), div)
 }
