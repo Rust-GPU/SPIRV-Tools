@@ -171,7 +171,18 @@
 (rule ((= e (Exp2 (Log2 x))))
       ((union e x)))
 
-; Exp(0) = 1, Log(1) = 0 (conceptual - needs constants)
+; Exp(0) = 1 - ONE-DIRECTIONAL
+; Note: f32 0.0 = bit pattern 0, f32 1.0 = bit pattern 1065353216
+(rule ((= e (Exp (Const c))) (is-float-zero32 c))
+      ((union e (Const 1065353216))))
+(rule ((= e (Exp2 (Const c))) (is-float-zero32 c))
+      ((union e (Const 1065353216))))
+
+; Log(1) = 0 - ONE-DIRECTIONAL
+(rule ((= e (Log (Const c))) (is-float-one32 c))
+      ((union e (Const 0))))
+(rule ((= e (Log2 (Const c))) (is-float-one32 c))
+      ((union e (Const 0))))
 
 ; Exp(a) * Exp(b) = Exp(a + b) - ONE-DIRECTIONAL (combine exps)
 (rule ((= e (FMul (Exp a) (Exp b))))
@@ -208,7 +219,26 @@
 ; Trigonometric Functions
 ; =============================================================================
 
-; sin(0) = 0, cos(0) = 1, tan(0) = 0 (conceptual)
+; Sin(0) = 0 - ONE-DIRECTIONAL
+(rule ((= e (Sin (Const c))) (is-float-zero32 c))
+      ((union e (Const 0))))
+
+; Cos(0) = 1 - ONE-DIRECTIONAL
+; Note: f32 1.0 = bit pattern 1065353216
+(rule ((= e (Cos (Const c))) (is-float-zero32 c))
+      ((union e (Const 1065353216))))
+
+; Tan(0) = 0 - ONE-DIRECTIONAL
+(rule ((= e (Tan (Const c))) (is-float-zero32 c))
+      ((union e (Const 0))))
+
+; Sinh(0) = 0, Cosh(0) = 1, Tanh(0) = 0 - ONE-DIRECTIONAL
+(rule ((= e (Sinh (Const c))) (is-float-zero32 c))
+      ((union e (Const 0))))
+(rule ((= e (Cosh (Const c))) (is-float-zero32 c))
+      ((union e (Const 1065353216))))
+(rule ((= e (Tanh (Const c))) (is-float-zero32 c))
+      ((union e (Const 0))))
 
 ; Negation pulling - ONE-DIRECTIONAL (pull FNeg outside trig functions)
 ; Sin(-x) = -Sin(x)
