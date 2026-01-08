@@ -117,6 +117,71 @@
       ((union e (Ne x (Const 0)))))
 
 ; =============================================================================
+; Boundary Value Comparisons (C++ Parity - from fold.cpp)
+; =============================================================================
+; These optimize comparisons involving INT32_MIN, INT32_MAX, UINT32_MAX
+; UINT32_MAX = 0xFFFFFFFF = 4294967295 = -1 as signed
+; INT32_MAX = 2147483647
+; INT32_MIN = -2147483648
+
+; ULt: x < UINT32_MAX is always true unless x == UINT32_MAX
+; UINT32_MAX < x is always false - ONE-DIRECTIONAL
+(rule ((= e (ULt (Const 4294967295) x)))
+      ((union e (Const 0))))
+; x < 0 for unsigned is always false - ONE-DIRECTIONAL
+(rule ((= e (ULt x (Const 0))))
+      ((union e (Const 0))))
+
+; SLt: INT32_MAX < x is always false - ONE-DIRECTIONAL
+(rule ((= e (SLt (Const 2147483647) x)))
+      ((union e (Const 0))))
+; x < INT32_MIN is always false - ONE-DIRECTIONAL
+(rule ((= e (SLt x (Const -2147483648))))
+      ((union e (Const 0))))
+
+; UGt: 0 > x for unsigned is always false - ONE-DIRECTIONAL
+(rule ((= e (UGt (Const 0) x)))
+      ((union e (Const 0))))
+; x > UINT32_MAX is always false - ONE-DIRECTIONAL
+(rule ((= e (UGt x (Const 4294967295))))
+      ((union e (Const 0))))
+
+; SGt: INT32_MIN > x is always false - ONE-DIRECTIONAL
+(rule ((= e (SGt (Const -2147483648) x)))
+      ((union e (Const 0))))
+; x > INT32_MAX is always false - ONE-DIRECTIONAL
+(rule ((= e (SGt x (Const 2147483647))))
+      ((union e (Const 0))))
+
+; ULe: 0 <= x for unsigned is always true - ONE-DIRECTIONAL
+(rule ((= e (ULe (Const 0) x)))
+      ((union e (Const 1))))
+; x <= UINT32_MAX is always true - ONE-DIRECTIONAL
+(rule ((= e (ULe x (Const 4294967295))))
+      ((union e (Const 1))))
+
+; SLe: INT32_MIN <= x is always true - ONE-DIRECTIONAL
+(rule ((= e (SLe (Const -2147483648) x)))
+      ((union e (Const 1))))
+; x <= INT32_MAX is always true - ONE-DIRECTIONAL
+(rule ((= e (SLe x (Const 2147483647))))
+      ((union e (Const 1))))
+
+; UGe: x >= 0 for unsigned is always true - ONE-DIRECTIONAL
+(rule ((= e (UGe x (Const 0))))
+      ((union e (Const 1))))
+; UINT32_MAX >= x is always true - ONE-DIRECTIONAL
+(rule ((= e (UGe (Const 4294967295) x)))
+      ((union e (Const 1))))
+
+; SGe: x >= INT32_MIN is always true - ONE-DIRECTIONAL
+(rule ((= e (SGe x (Const -2147483648))))
+      ((union e (Const 1))))
+; INT32_MAX >= x is always true - ONE-DIRECTIONAL
+(rule ((= e (SGe (Const 2147483647) x)))
+      ((union e (Const 1))))
+
+; =============================================================================
 ; Comparison Chaining (C++ Parity)
 ; =============================================================================
 
