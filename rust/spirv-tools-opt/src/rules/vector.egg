@@ -125,6 +125,53 @@
 (rule ((= e (Dot v (Vec4 (Const 0) (Const 0) (Const 1) (Const 0))))) ((union e (VecExtract v 2))))
 (rule ((= e (Dot v (Vec4 (Const 0) (Const 0) (Const 0) (Const 1))))) ((union e (VecExtract v 3))))
 
+; FLOAT vectors - Dot with unit vector (one f32 1.0, rest f32 0.0) = VecExtract
+; f32 1.0 = bit pattern 0x3f800000 = 1065353216
+; f32 0.0 = bit pattern 0 (same as integer 0)
+; These use is-float-one32/is-float-zero32 guards for proper f32 matching
+
+; Vec2 float unit vectors
+(rule ((= e (Dot (Vec2 (Const c1) (Const c2)) v)) (is-float-one32 c1) (is-float-zero32 c2))
+      ((union e (VecExtract v 0))))
+(rule ((= e (Dot (Vec2 (Const c1) (Const c2)) v)) (is-float-zero32 c1) (is-float-one32 c2))
+      ((union e (VecExtract v 1))))
+(rule ((= e (Dot v (Vec2 (Const c1) (Const c2)))) (is-float-one32 c1) (is-float-zero32 c2))
+      ((union e (VecExtract v 0))))
+(rule ((= e (Dot v (Vec2 (Const c1) (Const c2)))) (is-float-zero32 c1) (is-float-one32 c2))
+      ((union e (VecExtract v 1))))
+
+; Vec3 float unit vectors
+(rule ((= e (Dot (Vec3 (Const c1) (Const c2) (Const c3)) v)) (is-float-one32 c1) (is-float-zero32 c2) (is-float-zero32 c3))
+      ((union e (VecExtract v 0))))
+(rule ((= e (Dot (Vec3 (Const c1) (Const c2) (Const c3)) v)) (is-float-zero32 c1) (is-float-one32 c2) (is-float-zero32 c3))
+      ((union e (VecExtract v 1))))
+(rule ((= e (Dot (Vec3 (Const c1) (Const c2) (Const c3)) v)) (is-float-zero32 c1) (is-float-zero32 c2) (is-float-one32 c3))
+      ((union e (VecExtract v 2))))
+(rule ((= e (Dot v (Vec3 (Const c1) (Const c2) (Const c3)))) (is-float-one32 c1) (is-float-zero32 c2) (is-float-zero32 c3))
+      ((union e (VecExtract v 0))))
+(rule ((= e (Dot v (Vec3 (Const c1) (Const c2) (Const c3)))) (is-float-zero32 c1) (is-float-one32 c2) (is-float-zero32 c3))
+      ((union e (VecExtract v 1))))
+(rule ((= e (Dot v (Vec3 (Const c1) (Const c2) (Const c3)))) (is-float-zero32 c1) (is-float-zero32 c2) (is-float-one32 c3))
+      ((union e (VecExtract v 2))))
+
+; Vec4 float unit vectors
+(rule ((= e (Dot (Vec4 (Const c1) (Const c2) (Const c3) (Const c4)) v)) (is-float-one32 c1) (is-float-zero32 c2) (is-float-zero32 c3) (is-float-zero32 c4))
+      ((union e (VecExtract v 0))))
+(rule ((= e (Dot (Vec4 (Const c1) (Const c2) (Const c3) (Const c4)) v)) (is-float-zero32 c1) (is-float-one32 c2) (is-float-zero32 c3) (is-float-zero32 c4))
+      ((union e (VecExtract v 1))))
+(rule ((= e (Dot (Vec4 (Const c1) (Const c2) (Const c3) (Const c4)) v)) (is-float-zero32 c1) (is-float-zero32 c2) (is-float-one32 c3) (is-float-zero32 c4))
+      ((union e (VecExtract v 2))))
+(rule ((= e (Dot (Vec4 (Const c1) (Const c2) (Const c3) (Const c4)) v)) (is-float-zero32 c1) (is-float-zero32 c2) (is-float-zero32 c3) (is-float-one32 c4))
+      ((union e (VecExtract v 3))))
+(rule ((= e (Dot v (Vec4 (Const c1) (Const c2) (Const c3) (Const c4)))) (is-float-one32 c1) (is-float-zero32 c2) (is-float-zero32 c3) (is-float-zero32 c4))
+      ((union e (VecExtract v 0))))
+(rule ((= e (Dot v (Vec4 (Const c1) (Const c2) (Const c3) (Const c4)))) (is-float-zero32 c1) (is-float-one32 c2) (is-float-zero32 c3) (is-float-zero32 c4))
+      ((union e (VecExtract v 1))))
+(rule ((= e (Dot v (Vec4 (Const c1) (Const c2) (Const c3) (Const c4)))) (is-float-zero32 c1) (is-float-zero32 c2) (is-float-one32 c3) (is-float-zero32 c4))
+      ((union e (VecExtract v 2))))
+(rule ((= e (Dot v (Vec4 (Const c1) (Const c2) (Const c3) (Const c4)))) (is-float-zero32 c1) (is-float-zero32 c2) (is-float-zero32 c3) (is-float-one32 c4))
+      ((union e (VecExtract v 3))))
+
 ; Dot is commutative - REMOVED to prevent e-graph explosion
 ; These bidirectional rules cause cycles: (Dot a b) ↔ (Dot b a) ↔ ...
 
