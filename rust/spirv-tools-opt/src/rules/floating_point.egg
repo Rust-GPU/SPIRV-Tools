@@ -223,13 +223,11 @@
 ; FP Division Optimization
 ; =============================================================================
 
-; a / b / c = a / (b * c) - ONE-DIRECTIONAL
-(rule ((= e (FDiv (FDiv a b) c)))
-      ((union e (FDiv a (FMul b c)))))
-
-; a / (b / c) = (a * c) / b - ONE-DIRECTIONAL
-(rule ((= e (FDiv a (FDiv b c))))
-      ((union e (FDiv (FMul a c) b))))
+; NOTE: General restructuring rules like (a/b)/c = a/(b*c) and a/(b/c) = (a*c)/b
+; cause e-graph explosion because they unconditionally create new FMul nodes
+; that then interact with other rules in cycles. Instead we have:
+; 1. Specific rules for reciprocals (1/x patterns) - see below
+; 2. Constant merging rules (x/a)/b = x/(a*b) when a,b are constants
 
 ; (a * b) / b = a (assuming no NaN/Inf issues) - ONE-DIRECTIONAL
 (rule ((= e (FDiv (FMul a b) b)))
