@@ -60,11 +60,6 @@ impl InstructionCategory {
         }
     }
 
-    /// Returns true if this category can appear among OpPhi instructions.
-    fn allowed_in_phi_region(self) -> bool {
-        matches!(self, Self::Phi | Self::LineDebug)
-    }
-
     /// Returns true if this category can appear among OpVariable instructions.
     fn allowed_in_variable_region(self) -> bool {
         matches!(self, Self::Phi | Self::Variable | Self::LineDebug)
@@ -368,16 +363,6 @@ mod tests {
         assert_eq!(InstructionCategory::from_opcode(Op::FMul), InstructionCategory::Regular);
         assert_eq!(InstructionCategory::from_opcode(Op::Load), InstructionCategory::Regular);
         assert_eq!(InstructionCategory::from_opcode(Op::Store), InstructionCategory::Regular);
-    }
-
-    #[test]
-    fn test_allowed_in_phi_region() {
-        assert!(InstructionCategory::Phi.allowed_in_phi_region());
-        assert!(InstructionCategory::LineDebug.allowed_in_phi_region());
-        assert!(!InstructionCategory::Variable.allowed_in_phi_region());
-        assert!(!InstructionCategory::Regular.allowed_in_phi_region());
-        assert!(!InstructionCategory::Merge.allowed_in_phi_region());
-        assert!(!InstructionCategory::Terminator.allowed_in_phi_region());
     }
 
     #[test]

@@ -2036,4 +2036,16 @@ pub enum ValidationError {
         /// The required capability.
         required_capability: rspirv::spirv::Capability,
     },
+    /// OpFunction has an invalid function type.
+    #[error(
+        "OpFunction {function:?} has Function Type {function_type:?} which is not {expected}"
+    )]
+    FunctionTypeInvalid {
+        /// The function with the invalid type.
+        function: Id,
+        /// The invalid function type reference.
+        function_type: TypeId,
+        /// Expected type description.
+        expected: &'static str,
+    },
 }
