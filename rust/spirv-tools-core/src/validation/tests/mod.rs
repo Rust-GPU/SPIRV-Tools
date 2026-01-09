@@ -9594,12 +9594,14 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
         );
     }
     #[test]
-    fn shift_count_must_match_component_width() {
+    fn shift_count_can_have_different_bit_width() {
+        // Per SPIR-V spec, the Shift operand only needs to match the dimension
+        // (scalar vs vector with same component count), not the bit width.
         use rspirv::{binary::Assemble, dr::Builder};
         let mut b = Builder::new();
         b.set_version(1, 6);
         b.capability(rspirv::spirv::Capability::Shader);
-        b.capability(rspirv::spirv::Capability::Matrix);
+        b.capability(rspirv::spirv::Capability::Int16);
         b.memory_model(
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::GLSL450,
@@ -9608,31 +9610,21 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
         let int32 = b.type_int(32, 0);
         let int16 = b.type_int(16, 0);
         let fn_ty = b.type_function(void, std::iter::empty::<u32>());
-        let main = b
+        let _main = b
             .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
             .unwrap();
-        let header = b.begin_block(None).unwrap();
+        let _header = b.begin_block(None).unwrap();
         let lhs = b.constant_bit32(int32, 1);
         let count = b.constant_bit32(int16, 1);
         b.shift_left_logical(int32, None, lhs, count).unwrap();
         b.ret().unwrap();
         b.end_function().unwrap();
         let words = b.module().assemble();
-        let err = words
+        // This should pass - different bit width for shift count is allowed
+        words
             .as_slice()
             .validate(TargetEnv::Universal1_6)
-            .expect_err("shift count must match bit width and component count");
-        assert_eq!(
-            err,
-            ValidationError::OperandTypeMismatch {
-                function: Id::try_from(main).unwrap(),
-                block: Id::try_from(header).unwrap(),
-                instruction: rspirv::spirv::Op::ShiftLeftLogical,
-                operand_index: 1,
-                expected: TypeId::try_from(int32).unwrap(),
-                found: TypeId::try_from(int16).unwrap(),
-            }
-        );
+            .expect("shift count with different bit width should be valid");
     }
     #[test]
     fn shift_count_vector_shape_must_match_value() {
@@ -13036,7 +13028,10 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
             .expect("Offset operand should be allowed when using the pre-HLSL legalization option");
     }
     #[test]
-    fn bitwise_ops_require_32bit_in_vulkan_by_default() {
+    fn bit_field_ops_require_32bit_in_vulkan_by_default() {
+        // Vulkan restricts bit field operations (BitFieldInsert, BitFieldSExtract,
+        // BitFieldUExtract, BitReverse, BitCount) to 32-bit integers.
+        // Basic bitwise ops (Or, Xor, And, Not) and shift ops are NOT restricted.
         use crate::validation::ValidationOptions;
         use rspirv::binary::Assemble;
         use rspirv::dr::Builder;
@@ -13046,32 +13041,34 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
         builder.capability(Capability::Shader);
         builder.capability(Capability::Int64);
         builder.memory_model(AddressingModel::Logical, MemoryModel::GLSL450);
-        let u64 = builder.type_int(64, 0);
-        let fn_ty = builder.type_function(u64, [u64, u64]);
+        let u64_ty = builder.type_int(64, 0);
+        let fn_ty = builder.type_function(u64_ty, [u64_ty]);
         builder
-            .begin_function(u64, None, FunctionControl::NONE, fn_ty)
+            .begin_function(u64_ty, None, FunctionControl::NONE, fn_ty)
             .unwrap();
-        let a = builder.function_parameter(u64).unwrap();
-        let b = builder.function_parameter(u64).unwrap();
+        let a = builder.function_parameter(u64_ty).unwrap();
         builder.begin_block(None).unwrap();
-        let or = builder.bitwise_or(u64, None, a, b).unwrap();
-        builder.ret_value(or).unwrap();
+        // BitReverse is one of the restricted operations
+        let rev = builder.bit_reverse(u64_ty, None, a).unwrap();
+        builder.ret_value(rev).unwrap();
         builder.end_function().unwrap();
         let binary = builder.module().assemble();
         let err = binary
             .as_slice()
             .validate_with_options(TargetEnv::Vulkan1_1, ValidationOptions::default())
-            .expect_err("64-bit bitwise ops should be disallowed by default in Vulkan");
+            .expect_err("64-bit bit field ops should be disallowed by default in Vulkan");
         assert_eq!(
             err,
             ValidationError::VulkanBitwiseRequires32Bit {
-                opcode: rspirv::spirv::Op::BitwiseOr,
+                opcode: rspirv::spirv::Op::BitReverse,
                 bit_width: 64
             }
         );
     }
     #[test]
-    fn bitwise_ops_allow_non_32bit_when_option_enabled() {
+    fn basic_bitwise_ops_allow_64bit_in_vulkan() {
+        // Basic bitwise operations (BitwiseOr, BitwiseXor, BitwiseAnd, Not) and
+        // shift operations are NOT restricted to 32-bit in Vulkan.
         use crate::validation::ValidationOptions;
         use rspirv::binary::Assemble;
         use rspirv::dr::Builder;
@@ -13081,16 +13078,44 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
         builder.capability(Capability::Shader);
         builder.capability(Capability::Int64);
         builder.memory_model(AddressingModel::Logical, MemoryModel::GLSL450);
-        let u64 = builder.type_int(64, 0);
-        let fn_ty = builder.type_function(u64, [u64, u64]);
+        let u64_ty = builder.type_int(64, 0);
+        let fn_ty = builder.type_function(u64_ty, [u64_ty, u64_ty]);
         builder
-            .begin_function(u64, None, FunctionControl::NONE, fn_ty)
+            .begin_function(u64_ty, None, FunctionControl::NONE, fn_ty)
             .unwrap();
-        let a = builder.function_parameter(u64).unwrap();
-        let b = builder.function_parameter(u64).unwrap();
+        let a = builder.function_parameter(u64_ty).unwrap();
+        let b = builder.function_parameter(u64_ty).unwrap();
         builder.begin_block(None).unwrap();
-        let or = builder.bitwise_or(u64, None, a, b).unwrap();
-        builder.ret_value(or).unwrap();
+        let or_result = builder.bitwise_or(u64_ty, None, a, b).unwrap();
+        builder.ret_value(or_result).unwrap();
+        builder.end_function().unwrap();
+        let binary = builder.module().assemble();
+        // Should pass without any special option - basic bitwise ops are not restricted
+        binary
+            .as_slice()
+            .validate_with_options(TargetEnv::Vulkan1_1, ValidationOptions::default())
+            .expect("64-bit basic bitwise ops should be allowed in Vulkan");
+    }
+    #[test]
+    fn bit_field_ops_allow_non_32bit_when_option_enabled() {
+        use crate::validation::ValidationOptions;
+        use rspirv::binary::Assemble;
+        use rspirv::dr::Builder;
+        use rspirv::spirv::{AddressingModel, Capability, FunctionControl, MemoryModel};
+        let mut builder = Builder::new();
+        builder.set_version(1, 6);
+        builder.capability(Capability::Shader);
+        builder.capability(Capability::Int64);
+        builder.memory_model(AddressingModel::Logical, MemoryModel::GLSL450);
+        let u64_ty = builder.type_int(64, 0);
+        let fn_ty = builder.type_function(u64_ty, [u64_ty]);
+        builder
+            .begin_function(u64_ty, None, FunctionControl::NONE, fn_ty)
+            .unwrap();
+        let a = builder.function_parameter(u64_ty).unwrap();
+        builder.begin_block(None).unwrap();
+        let rev = builder.bit_reverse(u64_ty, None, a).unwrap();
+        builder.ret_value(rev).unwrap();
         builder.end_function().unwrap();
         let binary = builder.module().assemble();
         let options = ValidationOptions {
@@ -13100,7 +13125,7 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
         binary
             .as_slice()
             .validate_with_options(TargetEnv::Vulkan1_1, options)
-            .expect("64-bit bitwise ops should be allowed when option is enabled");
+            .expect("64-bit bit field ops should be allowed when option is enabled");
     }
     #[test]
     fn friendly_name_helpers_format_ids_and_members() {

@@ -64,7 +64,15 @@ impl ValidationRule for OffsetTextureOperandRule {
 // Vulkan Bitwise Widths Rule
 // ============================================================================
 
-/// Validates that bitwise operations use 32-bit integers in Vulkan.
+/// Validates that bit field and bit count operations use 32-bit integers in Vulkan.
+///
+/// Per the Vulkan spec, the Base operand of OpBitFieldInsert, OpBitFieldSExtract,
+/// OpBitFieldUExtract, OpBitReverse, and OpBitCount must be 32-bit integers
+/// unless the maintenance9 feature is enabled (allow_vulkan_32_bit_bitwise option).
+///
+/// NOTE: This restriction does NOT apply to shift operations (OpShiftRightLogical,
+/// OpShiftLeftLogical, OpShiftRightArithmetic) or basic bitwise operations
+/// (OpBitwiseOr, OpBitwiseXor, OpBitwiseAnd, OpNot).
 pub struct VulkanBitwiseWidthsRule;
 
 impl ValidationRule for VulkanBitwiseWidthsRule {
@@ -77,18 +85,17 @@ impl ValidationRule for VulkanBitwiseWidthsRule {
     }
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
-        let bitwise_opcodes = [
-            Op::ShiftRightLogical,
-            Op::ShiftRightArithmetic,
-            Op::ShiftLeftLogical,
-            Op::BitwiseOr,
-            Op::BitwiseXor,
-            Op::BitwiseAnd,
-            Op::Not,
+        // Only bit field and bit count operations have the 32-bit restriction in Vulkan
+        let restricted_opcodes = [
+            Op::BitFieldInsert,
+            Op::BitFieldSExtract,
+            Op::BitFieldUExtract,
+            Op::BitReverse,
+            Op::BitCount,
         ];
 
         for inst in ctx.module.all_inst_iter() {
-            if !bitwise_opcodes.contains(&inst.class.opcode) {
+            if !restricted_opcodes.contains(&inst.class.opcode) {
                 continue;
             }
             let Some(raw_type) = inst.result_type else {

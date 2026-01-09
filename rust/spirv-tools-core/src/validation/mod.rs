@@ -3614,7 +3614,7 @@ fn validate_functions(
                                 let Some(result_inst) = result_type_inst else {
                                     continue;
                                 };
-                                let Some((result_components, result_width)) =
+                                let Some((result_components, _result_width)) =
                                     integer_shape(result_inst)
                                 else {
                                     return Err(ValidationError::InstructionResultTypeMismatch {
@@ -3628,6 +3628,7 @@ fn validate_functions(
 
                                 if let Some(op_type_id) = result_types.get(&result_id).copied() {
                                     if operand_index == 0 {
+                                        // Base operand must match result type exactly
                                         if op_type_id != result_type {
                                             return Err(ValidationError::OperandTypeMismatch {
                                                 function: function_id,
@@ -3639,11 +3640,13 @@ fn validate_functions(
                                             });
                                         }
                                     } else if operand_index == 1 {
+                                        // Shift operand must be int scalar/vector with same
+                                        // dimension as result, but bit width can differ
                                         let op_inst =
                                             ResultId::try_from(u32::from(Id::from(op_type_id)))
                                                 .ok()
                                                 .and_then(|rid| definitions.get(&rid));
-                                        let Some((op_components, op_width)) =
+                                        let Some((op_components, _op_width)) =
                                             op_inst.and_then(integer_shape)
                                         else {
                                             return Err(ValidationError::OperandTypeMismatch {
@@ -3655,9 +3658,8 @@ fn validate_functions(
                                                 found: op_type_id,
                                             });
                                         };
-                                        if op_components != result_components
-                                            || op_width != result_width
-                                        {
+                                        // Only check dimension matches, not bit width
+                                        if op_components != result_components {
                                             return Err(ValidationError::OperandTypeMismatch {
                                                 function: function_id,
                                                 block: block_label_id,
@@ -6221,18 +6223,19 @@ fn enforce_vulkan_bitwise_widths(
         return Ok(());
     }
 
-    let bitwise_opcodes = [
-        rspirv::spirv::Op::ShiftRightLogical,
-        rspirv::spirv::Op::ShiftRightArithmetic,
-        rspirv::spirv::Op::ShiftLeftLogical,
-        rspirv::spirv::Op::BitwiseOr,
-        rspirv::spirv::Op::BitwiseXor,
-        rspirv::spirv::Op::BitwiseAnd,
-        rspirv::spirv::Op::Not,
+    // Only bit field and bit count operations have the 32-bit restriction in Vulkan.
+    // Shift operations and basic bitwise operations (Or, Xor, And, Not) do NOT have
+    // this restriction.
+    let restricted_opcodes = [
+        rspirv::spirv::Op::BitFieldInsert,
+        rspirv::spirv::Op::BitFieldSExtract,
+        rspirv::spirv::Op::BitFieldUExtract,
+        rspirv::spirv::Op::BitReverse,
+        rspirv::spirv::Op::BitCount,
     ];
 
     for inst in module.all_inst_iter() {
-        if !bitwise_opcodes.contains(&inst.class.opcode) {
+        if !restricted_opcodes.contains(&inst.class.opcode) {
             continue;
         }
         let Some(raw_type) = inst.result_type else {
