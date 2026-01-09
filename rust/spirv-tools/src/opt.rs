@@ -143,25 +143,29 @@ impl Optimizer for RustOptimizer {
     ) -> Result<Binary, Error> {
         let words = input.as_ref();
 
-        // For now, we just return the input as-is and emit a warning
-        // The actual optimization will be implemented using spirv-tools-opt
-        if !self.passes.is_empty() {
-            msg_callback.on_message(Message {
-                level: MessageLevel::Warning,
-                source: None,
-                line: 0,
-                column: 0,
-                index: 0,
-                message: format!(
-                    "Rust SPIR-V optimizer is not yet fully implemented. {} passes registered but not applied.",
-                    self.passes.len()
-                ),
-                notes: String::new(),
-            });
+        // If no passes registered, return input unchanged
+        if self.passes.is_empty() {
+            return Ok(Binary::OwnedU32(words.to_vec()));
         }
 
-        // Return the input unchanged for now
-        Ok(Binary::OwnedU32(words.to_vec()))
+        // Use the e-graph based optimizer which applies all optimizations
+        // in a single global pass using equality saturation
+        match spirv_tools_opt::optimize_words(words) {
+            Ok(optimized) => Ok(Binary::OwnedU32(optimized)),
+            Err(e) => {
+                msg_callback.on_message(Message {
+                    level: MessageLevel::Error,
+                    source: None,
+                    line: 0,
+                    column: 0,
+                    index: 0,
+                    message: format!("Optimization failed: {e}"),
+                    notes: String::new(),
+                });
+                // On error, return input unchanged
+                Ok(Binary::OwnedU32(words.to_vec()))
+            }
+        }
     }
 
     fn register_pass(&mut self, pass: Passes) -> &mut Self {
