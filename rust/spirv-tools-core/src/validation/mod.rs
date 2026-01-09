@@ -40,9 +40,6 @@ pub mod helpers;
 pub mod type_ext;
 pub use type_ext::{TypeInstructionExt, TypeResolver, DefaultTypeResolver};
 
-// Data extractors for populating context
-pub mod extractors;
-
 // Validation context and rule trait
 pub mod context;
 pub use context::{ValidationContext, ValidationRule, run_rules, TestContextData};
@@ -58,7 +55,6 @@ use rules::capabilities::{
     capability_operand, capability_satisfied, required_extension_for_capability,
     validate_capabilities,
 };
-use extractors::collect_result_types as extract_result_types;
 use helpers::{
     build_decoration_lookup, collect_declared_capabilities, collect_execution_models,
     collect_result_instructions, collect_result_opcodes, collect_result_types,
@@ -886,7 +882,7 @@ fn validate_words(
     validate_operand_definitions(&module, &defined_ids)?;
 
     // Build validation context and run limit rules
-    let result_types = extract_result_types(&module);
+    let result_types = collect_result_types(&module)?;
     let validation_ctx = ValidationContext {
         module: &module,
         env,
