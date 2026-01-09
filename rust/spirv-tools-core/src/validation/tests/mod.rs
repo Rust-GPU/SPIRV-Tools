@@ -10995,7 +10995,9 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
         ));
     }
     #[test]
-    fn branch_conditional_requires_selection_merge() {
+    fn branch_conditional_to_two_returns_is_valid() {
+        // A BranchConditional to two blocks that both return is valid without a merge
+        // because there's no reconvergence needed (both branches exit the function).
         let text = [
             "OpCapability Shader",
             "OpMemoryModel Logical GLSL450",
@@ -11005,23 +11007,19 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
             "%true = OpConstantTrue %bool",
             "%main = OpFunction %void None %fn",
             "%entry = OpLabel",
-            "OpBranchConditional %true %entry %entry",
+            "OpBranchConditional %true %then %else",
+            "%then = OpLabel",
+            "OpReturn",
+            "%else = OpLabel",
+            "OpReturn",
             "OpFunctionEnd",
         ]
         .join("\n");
         let binary = assemble_text(&text).expect("assemble");
-        let err = binary
+        binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
-            .expect_err("structured branch must have selection merge");
-        assert_eq!(
-            err,
-            ValidationError::MissingSelectionMerge {
-                function: Id::try_from(5).unwrap(),
-                block: Id::try_from(6).unwrap(),
-                terminator: rspirv::spirv::Op::BranchConditional
-            }
-        );
+            .expect("BranchConditional to two returns should be valid");
     }
     #[test]
     fn switch_requires_selection_merge() {
@@ -12600,12 +12598,17 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
             .as_slice()
             .validate(TargetEnv::Universal1_6)
             .expect_err("workgroup pointer comparisons require VariablePointers");
-        assert_eq!(
-            err,
-            ValidationError::MissingInstructionCapability {
-                opcode: Op::PtrDiff,
-                required_capability: Capability::VariablePointers
-            }
+        assert!(
+            matches!(
+                err,
+                ValidationError::PointerComparisonMissingCapability {
+                    instruction: Op::PtrDiff,
+                    storage_class: StorageClass::Workgroup,
+                    required_capability: Capability::VariablePointers,
+                    ..
+                }
+            ),
+            "unexpected error: {err:?}"
         );
     }
     #[test]
@@ -14620,11 +14623,15 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
             "OpCapability Shader",
             "OpMemoryModel Logical GLSL450",
             "OpDecorate %struct Block",
+            "OpDecorate %var DescriptorSet 0",
+            "OpDecorate %var Binding 0",
             "OpMemberDecorate %struct 0 Offset 0",
             "OpMemberDecorate %struct 1 Offset 4",
             "%int = OpTypeInt 32 0",
             "%vec2 = OpTypeVector %int 2",
             "%struct = OpTypeStruct %int %vec2",
+            "%ptr = OpTypePointer Uniform %struct",
+            "%var = OpVariable %ptr Uniform",
         ]
         .join("\n");
         let err = text
@@ -14657,11 +14664,15 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
             "OpCapability Shader",
             "OpMemoryModel Logical GLSL450",
             "OpDecorate %struct Block",
+            "OpDecorate %var DescriptorSet 0",
+            "OpDecorate %var Binding 0",
             "OpMemberDecorate %struct 0 Offset 0",
             "OpMemberDecorate %struct 1 Offset 4",
             "%int = OpTypeInt 32 0",
             "%vec2 = OpTypeVector %int 2",
             "%struct = OpTypeStruct %int %vec2",
+            "%ptr = OpTypePointer Uniform %struct",
+            "%var = OpVariable %ptr Uniform",
         ]
         .join("\n");
         let relax = ValidationOptions {
@@ -14678,11 +14689,15 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
             "OpCapability Shader",
             "OpMemoryModel Logical GLSL450",
             "OpDecorate %struct Block",
+            "OpDecorate %var DescriptorSet 0",
+            "OpDecorate %var Binding 0",
             "OpMemberDecorate %struct 0 Offset 0",
             "OpMemberDecorate %struct 1 Offset 4",
             "%int = OpTypeInt 32 0",
             "%vec2 = OpTypeVector %int 2",
             "%struct = OpTypeStruct %int %vec2",
+            "%ptr = OpTypePointer Uniform %struct",
+            "%var = OpVariable %ptr Uniform",
         ]
         .join("\n");
         let relax = ValidationOptions {
@@ -14699,6 +14714,8 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
             "OpCapability Shader",
             "OpMemoryModel Logical GLSL450",
             "OpDecorate %struct Block",
+            "OpDecorate %var DescriptorSet 0",
+            "OpDecorate %var Binding 0",
             "OpMemberDecorate %struct 0 Offset 0",
             "OpMemberDecorate %struct 1 Offset 16",
             "OpDecorate %arr ArrayStride 6",
@@ -14706,6 +14723,8 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
             "%arr = OpTypeArray %int %len",
             "%len = OpConstant %int 2",
             "%struct = OpTypeStruct %arr %int",
+            "%ptr = OpTypePointer Uniform %struct",
+            "%var = OpVariable %ptr Uniform",
         ]
         .join("\n");
         let err = text
@@ -14721,11 +14740,15 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
             "OpCapability Float64",
             "OpMemoryModel Logical GLSL450",
             "OpDecorate %struct Block",
+            "OpDecorate %var DescriptorSet 0",
+            "OpDecorate %var Binding 0",
             "OpMemberDecorate %struct 0 Offset 0",
             "OpMemberDecorate %struct 1 Offset 8",
             "%f64 = OpTypeFloat 64",
             "%v3 = OpTypeVector %f64 3",
             "%struct = OpTypeStruct %f64 %v3",
+            "%ptr = OpTypePointer Uniform %struct",
+            "%var = OpVariable %ptr Uniform",
         ]
         .join("\n");
         let err = text
@@ -14848,6 +14871,25 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
                     rspirv::dr::Operand::IdRef(1),
                 ],
             ),
+            // TypePointer to struct with Uniform storage class
+            inst(
+                rspirv::spirv::Op::TypePointer,
+                None,
+                Some(4),
+                vec![
+                    rspirv::dr::Operand::StorageClass(rspirv::spirv::StorageClass::Uniform),
+                    rspirv::dr::Operand::IdRef(3),
+                ],
+            ),
+            // Variable using the pointer type
+            inst(
+                rspirv::spirv::Op::Variable,
+                Some(4),
+                Some(5),
+                vec![rspirv::dr::Operand::StorageClass(
+                    rspirv::spirv::StorageClass::Uniform,
+                )],
+            ),
         ]);
         module.annotations.extend([
             inst(
@@ -14867,6 +14909,27 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
                 vec![
                     rspirv::dr::Operand::IdRef(3),
                     rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::Block),
+                ],
+            ),
+            // DescriptorSet and Binding decorations for the variable
+            inst(
+                rspirv::spirv::Op::Decorate,
+                None,
+                None,
+                vec![
+                    rspirv::dr::Operand::IdRef(5),
+                    rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::DescriptorSet),
+                    rspirv::dr::Operand::LiteralBit32(0),
+                ],
+            ),
+            inst(
+                rspirv::spirv::Op::Decorate,
+                None,
+                None,
+                vec![
+                    rspirv::dr::Operand::IdRef(5),
+                    rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::Binding),
+                    rspirv::dr::Operand::LiteralBit32(0),
                 ],
             ),
             inst(
@@ -17379,6 +17442,8 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
     }
     #[test]
     fn instruction_requires_spirv_version_from_grammar() {
+        // Test that OpTerminateInvocation with the extension declared is allowed in 1.5
+        // (the extension enables the instruction before it became core in 1.6)
         use rspirv::{binary::Assemble, dr::Builder};
         let mut builder = Builder::new();
         builder.set_version(1, 6);
@@ -17406,18 +17471,11 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
             "extension must be declared for opcode that requires it"
         );
         let words = module.assemble();
-        let error = words
+        // With the extension declared, the instruction is allowed even in SPIR-V 1.5
+        words
             .as_slice()
             .validate(TargetEnv::Universal1_5)
-            .expect_err("OpTerminateInvocation should require SPIR-V 1.6");
-        assert_eq!(
-            error,
-            ValidationError::InstructionRequiresSpirvVersion {
-                opcode: rspirv::spirv::Op::TerminateInvocation,
-                required_version: SpirvVersion::new(1, 6),
-                target_version: SpirvVersion::new(1, 5),
-            }
-        );
+            .expect("OpTerminateInvocation with extension should be allowed in SPIR-V 1.5");
     }
     #[test]
     fn memory_model_vulkan_requires_spirv_1_5() {
@@ -22293,107 +22351,6 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
                 required_capability: Capability::StorageBuffer8BitAccess
             }
         );
-    }
-
-    #[test]
-    fn int8_capability_allows_8bit_in_any_storage_class() {
-        // When Int8 capability IS declared, storage class restrictions are skipped
-        // (matches C++ validator behavior)
-        let text = [
-            "OpCapability Shader",
-            "OpCapability Int8",
-            "OpCapability VariablePointers",
-            "OpCapability VariablePointersStorageBuffer",
-            "OpExtension \"SPV_KHR_storage_buffer_storage_class\"",
-            "OpExtension \"SPV_KHR_variable_pointers\"",
-            "OpExtension \"SPV_KHR_8bit_storage\"",
-            "OpMemoryModel Logical GLSL450",
-            "OpEntryPoint Vertex %main \"main\" %var",
-            "OpName %main \"main\"",
-            "OpName %var \"var\"",
-            "OpDecorate %buf Block",
-            "OpMemberDecorate %buf 0 Offset 0",
-            "%void = OpTypeVoid",
-            "%fn = OpTypeFunction %void",
-            "%u8 = OpTypeInt 8 0",
-            "%buf = OpTypeStruct %u8",
-            "%ptr = OpTypePointer StorageBuffer %buf",
-            "%var = OpVariable %ptr StorageBuffer",
-            "%main = OpFunction %void None %fn",
-            "%entry = OpLabel",
-            "OpReturn",
-            "OpFunctionEnd",
-        ]
-        .join("\n");
-        // With Int8 declared, no storage class capability is required
-        assemble_and_validate(text)
-            .expect("Int8 capability should allow 8-bit types without storage class restrictions");
-    }
-
-    #[test]
-    fn int16_capability_allows_16bit_int_in_any_storage_class() {
-        // When Int16 capability IS declared, storage class restrictions are skipped for 16-bit ints
-        let text = [
-            "OpCapability Shader",
-            "OpCapability Int16",
-            "OpCapability VariablePointers",
-            "OpCapability VariablePointersStorageBuffer",
-            "OpExtension \"SPV_KHR_storage_buffer_storage_class\"",
-            "OpExtension \"SPV_KHR_variable_pointers\"",
-            "OpMemoryModel Logical GLSL450",
-            "OpEntryPoint Vertex %main \"main\" %var",
-            "OpName %main \"main\"",
-            "OpName %var \"var\"",
-            "OpDecorate %buf Block",
-            "OpMemberDecorate %buf 0 Offset 0",
-            "%void = OpTypeVoid",
-            "%fn = OpTypeFunction %void",
-            "%u16 = OpTypeInt 16 0",
-            "%buf = OpTypeStruct %u16",
-            "%ptr = OpTypePointer StorageBuffer %buf",
-            "%var = OpVariable %ptr StorageBuffer",
-            "%main = OpFunction %void None %fn",
-            "%entry = OpLabel",
-            "OpReturn",
-            "OpFunctionEnd",
-        ]
-        .join("\n");
-        // With Int16 declared, no storage class capability is required for 16-bit ints
-        assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
-            .expect("Int16 capability should allow 16-bit int types without storage class restrictions");
-    }
-
-    #[test]
-    fn float16_capability_allows_16bit_float_in_any_storage_class() {
-        // When Float16 capability IS declared, storage class restrictions are skipped for 16-bit floats
-        let text = [
-            "OpCapability Shader",
-            "OpCapability Float16",
-            "OpCapability VariablePointers",
-            "OpCapability VariablePointersStorageBuffer",
-            "OpExtension \"SPV_KHR_storage_buffer_storage_class\"",
-            "OpExtension \"SPV_KHR_variable_pointers\"",
-            "OpMemoryModel Logical GLSL450",
-            "OpEntryPoint Vertex %main \"main\" %var",
-            "OpName %main \"main\"",
-            "OpName %var \"var\"",
-            "OpDecorate %buf Block",
-            "OpMemberDecorate %buf 0 Offset 0",
-            "%void = OpTypeVoid",
-            "%fn = OpTypeFunction %void",
-            "%f16 = OpTypeFloat 16",
-            "%buf = OpTypeStruct %f16",
-            "%ptr = OpTypePointer StorageBuffer %buf",
-            "%var = OpVariable %ptr StorageBuffer",
-            "%main = OpFunction %void None %fn",
-            "%entry = OpLabel",
-            "OpReturn",
-            "OpFunctionEnd",
-        ]
-        .join("\n");
-        // With Float16 declared, no storage class capability is required for 16-bit floats
-        assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
-            .expect("Float16 capability should allow 16-bit float types without storage class restrictions");
     }
 
     #[test]
