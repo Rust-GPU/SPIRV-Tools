@@ -451,6 +451,18 @@ pub enum ValidationError {
         /// The variable's storage class.
         storage_class: rspirv::spirv::StorageClass,
     },
+    /// In logical addressing, a load/store pointer must come from a logical pointer-producing opcode.
+    #[error(
+        "{instruction:?} Pointer <id> {pointer:?} is not a logical pointer."
+    )]
+    NotALogicalPointer {
+        /// The load/store instruction.
+        instruction: rspirv::spirv::Op,
+        /// The pointer operand.
+        pointer: Id,
+        /// The opcode that produced the pointer (which is not a logical pointer producer).
+        source_opcode: rspirv::spirv::Op,
+    },
     /// The pointer and object types for an OpStore do not match.
     #[error(
         "OpStore pointer type {pointer_type:?} does not match object type {object_type:?} for pointer {pointer:?}"

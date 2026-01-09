@@ -13424,6 +13424,170 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
             "expected storage-class diagnostic, got {err:?}"
         );
     }
+
+    /// Tests that OpLoad rejects pointers from OpCompositeExtract in logical addressing.
+    #[test]
+    fn opload_rejects_pointer_from_composite_extract() {
+        use rspirv::binary::Assemble;
+        use rspirv::spirv::{AddressingModel, ExecutionModel, ExecutionMode as SpvExecutionMode};
+
+        let mut b = rspirv::dr::Builder::new();
+        b.set_version(1, 5);
+        b.capability(Capability::Shader);
+        b.memory_model(AddressingModel::Logical, MemoryModel::GLSL450);
+
+        let void = b.type_void();
+        let u32_type = b.type_int(32, 0);
+        let fn_type = b.type_function(void, vec![]);
+        let ptr_func_u32 = b.type_pointer(None, rspirv::spirv::StorageClass::Function, u32_type);
+        // A struct containing a pointer
+        let struct_type = b.type_struct(vec![ptr_func_u32]);
+
+        let main_fn = b
+            .begin_function(void, None, FunctionControl::NONE, fn_type)
+            .unwrap();
+        b.entry_point(ExecutionModel::GLCompute, main_fn, "main", vec![]);
+        b.execution_mode(main_fn, SpvExecutionMode::LocalSize, vec![1, 1, 1]);
+
+        b.begin_block(None).unwrap();
+        let _var = b
+            .variable(ptr_func_u32, None, rspirv::spirv::StorageClass::Function, None);
+        let ptr_ptr_type = b.type_pointer(None, rspirv::spirv::StorageClass::Function, struct_type);
+        let struct_var = b.variable(ptr_ptr_type, None, rspirv::spirv::StorageClass::Function, None);
+        let struct_val = b.load(struct_type, None, struct_var, None, vec![]).unwrap();
+        // Extract a pointer from the struct composite
+        let extracted_ptr = b
+            .composite_extract(ptr_func_u32, None, struct_val, vec![0])
+            .unwrap();
+        // Try to load using the extracted pointer - this should fail in Logical addressing
+        b.load(u32_type, None, extracted_ptr, None, vec![]).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let module = b.module();
+        let binary = module.assemble();
+        let err = validate_module(&binary, TargetEnv::Vulkan1_2)
+            .expect_err("loading from composite-extracted pointer should fail");
+        assert!(
+            matches!(
+                err,
+                ValidationError::NotALogicalPointer {
+                    instruction: rspirv::spirv::Op::Load,
+                    source_opcode: rspirv::spirv::Op::CompositeExtract,
+                    ..
+                }
+            ),
+            "expected NotALogicalPointer error from CompositeExtract, got {err:?}"
+        );
+    }
+
+    /// Tests that OpLoad works correctly with pointers from valid logical sources.
+    #[test]
+    fn opload_accepts_valid_logical_pointer_sources() {
+        // From Variable
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint GLCompute %main \"main\"",
+            "OpExecutionMode %main LocalSize 1 1 1",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u32 = OpTypeInt 32 0",
+            "%ptr = OpTypePointer Function %u32",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "%var = OpVariable %ptr Function",
+            "%val = OpLoad %u32 %var",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+
+        let binary = assemble_text(&text).expect("assemble");
+        validate_module(&binary, TargetEnv::Vulkan1_2)
+            .expect("loading from Variable should work");
+
+        // From AccessChain
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint GLCompute %main \"main\"",
+            "OpExecutionMode %main LocalSize 1 1 1",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u32 = OpTypeInt 32 0",
+            "%struct = OpTypeStruct %u32",
+            "%ptr_struct = OpTypePointer Function %struct",
+            "%ptr_u32 = OpTypePointer Function %u32",
+            "%c0 = OpConstant %u32 0",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "%var = OpVariable %ptr_struct Function",
+            "%chain = OpAccessChain %ptr_u32 %var %c0",
+            "%val = OpLoad %u32 %chain",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+
+        let binary = assemble_text(&text).expect("assemble");
+        validate_module(&binary, TargetEnv::Vulkan1_2)
+            .expect("loading from AccessChain should work");
+    }
+
+    /// Tests that OpStore also rejects non-logical pointers.
+    #[test]
+    fn opstore_rejects_non_logical_pointer() {
+        use rspirv::binary::Assemble;
+        use rspirv::spirv::{AddressingModel, ExecutionModel, ExecutionMode as SpvExecutionMode};
+
+        let mut b = rspirv::dr::Builder::new();
+        b.set_version(1, 5);
+        b.capability(Capability::Shader);
+        b.memory_model(AddressingModel::Logical, MemoryModel::GLSL450);
+
+        let void = b.type_void();
+        let u32_type = b.type_int(32, 0);
+        let fn_type = b.type_function(void, vec![]);
+        let ptr_func_u32 = b.type_pointer(None, rspirv::spirv::StorageClass::Function, u32_type);
+        let struct_type = b.type_struct(vec![ptr_func_u32]);
+
+        let main_fn = b
+            .begin_function(void, None, FunctionControl::NONE, fn_type)
+            .unwrap();
+        b.entry_point(ExecutionModel::GLCompute, main_fn, "main", vec![]);
+        b.execution_mode(main_fn, SpvExecutionMode::LocalSize, vec![1, 1, 1]);
+
+        b.begin_block(None).unwrap();
+        let ptr_ptr_type = b.type_pointer(None, rspirv::spirv::StorageClass::Function, struct_type);
+        let struct_var = b.variable(ptr_ptr_type, None, rspirv::spirv::StorageClass::Function, None);
+        let struct_val = b.load(struct_type, None, struct_var, None, vec![]).unwrap();
+        let extracted_ptr = b
+            .composite_extract(ptr_func_u32, None, struct_val, vec![0])
+            .unwrap();
+        let constant_val = b.constant_bit32(u32_type, 42);
+        // Try to store to the extracted pointer
+        b.store(extracted_ptr, constant_val, None, vec![]).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+
+        let module = b.module();
+        let binary = module.assemble();
+        let err = validate_module(&binary, TargetEnv::Vulkan1_2)
+            .expect_err("storing to composite-extracted pointer should fail");
+        assert!(
+            matches!(
+                err,
+                ValidationError::NotALogicalPointer {
+                    instruction: rspirv::spirv::Op::Store,
+                    source_opcode: rspirv::spirv::Op::CompositeExtract,
+                    ..
+                }
+            ),
+            "expected NotALogicalPointer error for Store, got {err:?}"
+        );
+    }
+
     #[test]
     fn friendly_names_populated_on_valid_module() {
         let text = [
