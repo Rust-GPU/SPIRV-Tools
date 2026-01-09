@@ -3673,12 +3673,14 @@ fn validate_functions(
                                 }
                                 continue;
                             }
-                            // Operand type checks for simple arithmetic/logical ops: operands must
-                            // match the result type.
+                            // Operand type checks for simple arithmetic/logical ops.
+                            // Integer arithmetic ops check dimension and bit width (signedness can differ).
+                            // Logical ops require exact type match.
                             if let Some(result_type) =
                                 inst.result_type.and_then(|raw| TypeId::try_from(raw).ok())
                             {
-                                let requires_operand_type_match = matches!(
+                                // Integer ops only require same dimension and bit width, not same signedness
+                                let requires_dimension_bitwidth_match = matches!(
                                     inst.class.opcode,
                                     rspirv::spirv::Op::IAdd
                                         | rspirv::spirv::Op::ISub
@@ -3691,11 +3693,56 @@ fn validate_functions(
                                         | rspirv::spirv::Op::BitwiseOr
                                         | rspirv::spirv::Op::BitwiseXor
                                         | rspirv::spirv::Op::Not
-                                        | rspirv::spirv::Op::LogicalAnd
+                                );
+                                // Logical ops require exact type match (boolean)
+                                let requires_exact_type_match = matches!(
+                                    inst.class.opcode,
+                                    rspirv::spirv::Op::LogicalAnd
                                         | rspirv::spirv::Op::LogicalOr
                                         | rspirv::spirv::Op::LogicalNot
                                 );
-                                if requires_operand_type_match {
+                                if requires_dimension_bitwidth_match {
+                                    if let Some(found_type) = result_types.get(&result_id).copied()
+                                    {
+                                        // Check dimension and bit width match (allow signedness mismatch)
+                                        let result_inst =
+                                            ResultId::try_from(u32::from(result_type))
+                                                .ok()
+                                                .and_then(|rid| definitions.get(&rid));
+                                        let found_inst = ResultId::try_from(u32::from(found_type))
+                                            .ok()
+                                            .and_then(|rid| definitions.get(&rid));
+                                        let result_shape = result_inst.and_then(integer_shape);
+                                        let found_shape = found_inst.and_then(integer_shape);
+                                        match (result_shape, found_shape) {
+                                            (Some((res_dim, res_width)), Some((found_dim, found_width))) => {
+                                                if res_dim != found_dim || res_width != found_width {
+                                                    return Err(ValidationError::OperandTypeMismatch {
+                                                        function: function_id,
+                                                        block: block_label_id,
+                                                        instruction: inst.class.opcode,
+                                                        operand_index,
+                                                        expected: result_type,
+                                                        found: found_type,
+                                                    });
+                                                }
+                                            }
+                                            _ => {
+                                                // If we can't determine shape, fall back to exact match
+                                                if found_type != result_type {
+                                                    return Err(ValidationError::OperandTypeMismatch {
+                                                        function: function_id,
+                                                        block: block_label_id,
+                                                        instruction: inst.class.opcode,
+                                                        operand_index,
+                                                        expected: result_type,
+                                                        found: found_type,
+                                                    });
+                                                }
+                                            }
+                                        }
+                                    }
+                                } else if requires_exact_type_match {
                                     if let Some(found_type) = result_types.get(&result_id).copied()
                                     {
                                         if found_type != result_type {
@@ -3715,12 +3762,12 @@ fn validate_functions(
                     }
                 }
 
-                // Basic operand type checks for arithmetic instructions: operands must
-                // match the instruction's result type.
+                // Basic operand type checks for integer arithmetic instructions.
+                // Integer ops only require same dimension and bit width, not same signedness.
                 if let Some(result_type) =
                     inst.result_type.and_then(|raw| TypeId::try_from(raw).ok())
                 {
-                    let requires_operand_type_match = matches!(
+                    let requires_dimension_bitwidth_match = matches!(
                         inst.class.opcode,
                         rspirv::spirv::Op::IAdd
                             | rspirv::spirv::Op::ISub
@@ -3730,20 +3777,46 @@ fn validate_functions(
                             | rspirv::spirv::Op::SRem
                             | rspirv::spirv::Op::UMod
                     );
-                    if requires_operand_type_match {
+                    if requires_dimension_bitwidth_match {
+                        let result_inst = ResultId::try_from(u32::from(result_type))
+                            .ok()
+                            .and_then(|rid| definitions.get(&rid));
+                        let result_shape = result_inst.and_then(integer_shape);
                         for (operand_index, operand) in inst.operands.iter().enumerate() {
                             if let rspirv::dr::Operand::IdRef(raw) = operand {
                                 if let Ok(op_id) = ResultId::try_from(*raw) {
                                     if let Some(found_type) = result_types.get(&op_id).copied() {
-                                        if found_type != result_type {
-                                            return Err(ValidationError::OperandTypeMismatch {
-                                                function: function_id,
-                                                block: block_label_id,
-                                                instruction: inst.class.opcode,
-                                                operand_index,
-                                                expected: result_type,
-                                                found: found_type,
-                                            });
+                                        // Check dimension and bit width match (allow signedness mismatch)
+                                        let found_inst = ResultId::try_from(u32::from(found_type))
+                                            .ok()
+                                            .and_then(|rid| definitions.get(&rid));
+                                        let found_shape = found_inst.and_then(integer_shape);
+                                        match (result_shape, found_shape) {
+                                            (Some((res_dim, res_width)), Some((found_dim, found_width))) => {
+                                                if res_dim != found_dim || res_width != found_width {
+                                                    return Err(ValidationError::OperandTypeMismatch {
+                                                        function: function_id,
+                                                        block: block_label_id,
+                                                        instruction: inst.class.opcode,
+                                                        operand_index,
+                                                        expected: result_type,
+                                                        found: found_type,
+                                                    });
+                                                }
+                                            }
+                                            _ => {
+                                                // If we can't determine shape, fall back to exact match
+                                                if found_type != result_type {
+                                                    return Err(ValidationError::OperandTypeMismatch {
+                                                        function: function_id,
+                                                        block: block_label_id,
+                                                        instruction: inst.class.opcode,
+                                                        operand_index,
+                                                        expected: result_type,
+                                                        found: found_type,
+                                                    });
+                                                }
+                                            }
                                         }
                                     }
                                 }

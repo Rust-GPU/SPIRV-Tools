@@ -25825,6 +25825,156 @@ fn dot_product_valid() {
     validate_module(&binary, TargetEnv::Vulkan1_2).expect("should be valid");
 }
 
+/// Tests that integer subtraction allows signed operand with unsigned result type.
+/// Per SPIR-V spec, IAdd, ISub, IMul only require same dimension and bit width.
+#[test]
+fn int_arithmetic_allows_signed_unsigned_mismatch_isub() {
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint GLCompute %main \"main\"",
+        "OpExecutionMode %main LocalSize 1 1 1",
+        "%void = OpTypeVoid",
+        "%fn = OpTypeFunction %void",
+        "%u32 = OpTypeInt 32 0",
+        "%i32 = OpTypeInt 32 1",
+        "%unsigned_55 = OpConstant %u32 55",
+        "%signed_10 = OpConstant %i32 10",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        // Result is unsigned, operand 0 is signed, operand 1 is unsigned
+        "%result = OpISub %u32 %signed_10 %unsigned_55",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+
+    let binary = assemble_text(&text).expect("assemble");
+    validate_module(&binary, TargetEnv::Vulkan1_2)
+        .expect("should be valid: signedness mismatch allowed for ISub");
+}
+
+/// Tests that integer addition allows mixed signed/unsigned operands.
+#[test]
+fn int_arithmetic_allows_signed_unsigned_mismatch_iadd() {
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint GLCompute %main \"main\"",
+        "OpExecutionMode %main LocalSize 1 1 1",
+        "%void = OpTypeVoid",
+        "%fn = OpTypeFunction %void",
+        "%u32 = OpTypeInt 32 0",
+        "%i32 = OpTypeInt 32 1",
+        "%unsigned_5 = OpConstant %u32 5",
+        "%signed_10 = OpConstant %i32 10",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        // Result is signed, operands are mixed
+        "%result = OpIAdd %i32 %unsigned_5 %signed_10",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+
+    let binary = assemble_text(&text).expect("assemble");
+    validate_module(&binary, TargetEnv::Vulkan1_2)
+        .expect("should be valid: signedness mismatch allowed for IAdd");
+}
+
+/// Tests that integer multiplication allows mixed signed/unsigned operands.
+#[test]
+fn int_arithmetic_allows_signed_unsigned_mismatch_imul() {
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint GLCompute %main \"main\"",
+        "OpExecutionMode %main LocalSize 1 1 1",
+        "%void = OpTypeVoid",
+        "%fn = OpTypeFunction %void",
+        "%u32 = OpTypeInt 32 0",
+        "%i32 = OpTypeInt 32 1",
+        "%unsigned_3 = OpConstant %u32 3",
+        "%signed_7 = OpConstant %i32 7",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "%result = OpIMul %u32 %unsigned_3 %signed_7",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+
+    let binary = assemble_text(&text).expect("assemble");
+    validate_module(&binary, TargetEnv::Vulkan1_2)
+        .expect("should be valid: signedness mismatch allowed for IMul");
+}
+
+/// Tests that different bit widths are still rejected for integer arithmetic.
+#[test]
+fn int_arithmetic_rejects_different_bit_width() {
+    let text = [
+        "OpCapability Shader",
+        "OpCapability Int64",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint GLCompute %main \"main\"",
+        "OpExecutionMode %main LocalSize 1 1 1",
+        "%void = OpTypeVoid",
+        "%fn = OpTypeFunction %void",
+        "%u32 = OpTypeInt 32 0",
+        "%u64 = OpTypeInt 64 0",
+        "%c32 = OpConstant %u32 5",
+        "%c64 = OpConstant %u64 10",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "%result = OpIAdd %u32 %c32 %c64",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+
+    let binary = assemble_text(&text).expect("assemble");
+    let result = validate_module(&binary, TargetEnv::Vulkan1_2);
+    assert!(result.is_err(), "should reject different bit widths");
+}
+
+/// Tests that bitwise operations also allow signed/unsigned mismatch.
+#[test]
+fn bitwise_allows_signed_unsigned_mismatch() {
+    use rspirv::binary::Assemble;
+    use rspirv::spirv::{AddressingModel, ExecutionModel, ExecutionMode as SpvExecutionMode};
+
+    let mut b = rspirv::dr::Builder::new();
+    b.set_version(1, 5);
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::GLSL450);
+
+    let void = b.type_void();
+    let u32_type = b.type_int(32, 0); // unsigned
+    let i32_type = b.type_int(32, 1); // signed
+    let fn_type = b.type_function(void, vec![]);
+
+    let unsigned_mask = b.constant_bit32(u32_type, 0xFF);
+    let signed_val = b.constant_bit32(i32_type, 1234);
+
+    let main_fn = b
+        .begin_function(void, None, FunctionControl::NONE, fn_type)
+        .unwrap();
+    b.entry_point(ExecutionModel::GLCompute, main_fn, "main", vec![]);
+    b.execution_mode(main_fn, SpvExecutionMode::LocalSize, vec![1, 1, 1]);
+
+    b.begin_block(None).unwrap();
+    // Result is unsigned, operands are mixed signed/unsigned
+    b.bitwise_and(u32_type, None, signed_val, unsigned_mask)
+        .unwrap();
+    b.ret().unwrap();
+    b.end_function().unwrap();
+
+    let module = b.module();
+    let binary = module.assemble();
+    validate_module(&binary, TargetEnv::Vulkan1_2)
+        .expect("should be valid: signedness mismatch allowed for BitwiseAnd");
+}
+
 // ============================================================================
 // Bitwise Validation Tests
 // ============================================================================
