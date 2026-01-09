@@ -1118,21 +1118,49 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     // Step 6: Rebuild the module with optimized instructions
     let mut output = module.clone();
 
-    // DCE for types_global_values: only keep types (always needed) and used constants
+    // DCE for types_global_values: only keep types (always needed), used constants,
+    // and used variables. Unused Private/Function storage class variables are removed.
     // This is the e-graph DCE - only IDs reachable from roots survive extraction
     output.types_global_values.retain(|inst| {
-        // Types are always kept (they might be referenced externally)
-        if !matches!(inst.class.opcode, Op::Constant | Op::ConstantTrue | Op::ConstantFalse |
-                     Op::ConstantComposite | Op::ConstantSampler | Op::ConstantNull |
-                     Op::SpecConstant | Op::SpecConstantTrue | Op::SpecConstantFalse |
-                     Op::SpecConstantComposite | Op::SpecConstantOp) {
-            return true;
-        }
-        // Constants are only kept if they're in used_ids (reachable from roots)
-        if let Some(id) = inst.result_id {
-            used_ids.contains(&id)
-        } else {
-            true
+        match inst.class.opcode {
+            // Constants are only kept if they're in used_ids (reachable from roots)
+            Op::Constant | Op::ConstantTrue | Op::ConstantFalse |
+            Op::ConstantComposite | Op::ConstantSampler | Op::ConstantNull |
+            Op::SpecConstant | Op::SpecConstantTrue | Op::SpecConstantFalse |
+            Op::SpecConstantComposite | Op::SpecConstantOp => {
+                if let Some(id) = inst.result_id {
+                    used_ids.contains(&id)
+                } else {
+                    true
+                }
+            }
+            // Variables with Private or Function storage class can be removed if unused.
+            // Other storage classes (Input, Output, Uniform, etc.) must be kept as they
+            // are part of the shader interface.
+            Op::Variable => {
+                let storage_class = inst.operands.first().and_then(|op| {
+                    if let rspirv::dr::Operand::StorageClass(sc) = op {
+                        Some(*sc)
+                    } else {
+                        None
+                    }
+                });
+                match storage_class {
+                    Some(rspirv::spirv::StorageClass::Private) |
+                    Some(rspirv::spirv::StorageClass::Function) => {
+                        // Private/Function variables can be DCE'd if unused
+                        if let Some(id) = inst.result_id {
+                            used_ids.contains(&id)
+                        } else {
+                            true
+                        }
+                    }
+                    // All other storage classes are part of the interface, keep them
+                    _ => true,
+                }
+            }
+            // Types and other instructions are always kept
+            _ => true,
         }
     });
 
