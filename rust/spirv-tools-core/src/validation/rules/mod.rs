@@ -44,8 +44,14 @@
 //! - [`types`]: Type and ID validation rules
 //! - [`block_layout`]: Block layout validation rules
 //! - [`arithmetics`]: Arithmetic instruction validation rules
+//! - [`adjacency`]: Instruction placement and adjacency validation rules
+//! - [`literals`]: Literal number encoding validation rules
+//! - [`derivatives`]: Derivative instruction validation rules
+//! - [`barriers`]: Barrier instruction validation rules
 
+pub mod adjacency;
 pub mod arithmetics;
+pub mod barriers;
 pub mod bitwise;
 pub mod block_layout;
 pub mod builtins;
@@ -54,12 +60,14 @@ pub mod cfg;
 pub mod composites;
 pub mod conversion;
 pub mod decorations;
+pub mod derivatives;
 pub mod entry_points;
 pub mod execution_modes;
 pub mod extensions;
 pub mod interpolation;
 pub mod layout;
 pub mod limits;
+pub mod literals;
 pub mod logicals;
 pub mod memory;
 pub mod pointers;

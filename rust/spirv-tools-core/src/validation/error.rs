@@ -1882,4 +1882,112 @@ pub enum ValidationError {
         /// The result type.
         result_type: TypeId,
     },
+    /// A literal number has incorrectly encoded upper bits.
+    #[error(
+        "literal for id {id:?} with type {type_id:?} ({bit_width}-bit {}) has invalid upper bits - must be {}",
+        if *is_signed { "signed" } else { "unsigned" },
+        if *is_signed { "sign-extended" } else { "zero-extended" }
+    )]
+    LiteralUpperBitsInvalid {
+        /// The id of the constant with the invalid literal.
+        id: Id,
+        /// The type id of the constant.
+        type_id: TypeId,
+        /// The bit width of the type.
+        bit_width: u32,
+        /// Whether the type is signed.
+        is_signed: bool,
+    },
+    /// A derivative instruction has an invalid result type.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} requires result type to be {expected} (found {result_type:?})"
+    )]
+    DerivativeResultTypeInvalid {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode of the derivative operation.
+        opcode: rspirv::spirv::Op,
+        /// The invalid result type.
+        result_type: TypeId,
+        /// Expected type description.
+        expected: &'static str,
+    },
+    /// A derivative instruction has mismatched operand and result types.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} requires P type to match result type {result_type:?}"
+    )]
+    DerivativeOperandTypeMismatch {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode of the derivative operation.
+        opcode: rspirv::spirv::Op,
+        /// The result type.
+        result_type: TypeId,
+    },
+    /// A derivative instruction requires a specific execution model.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} requires execution model from {allowed:?}"
+    )]
+    DerivativeRequiresExecutionModel {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode of the derivative operation.
+        opcode: rspirv::spirv::Op,
+        /// The allowed execution models.
+        allowed: Vec<rspirv::spirv::ExecutionModel>,
+    },
+    /// A barrier instruction has an invalid result type.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} requires result type to be {expected} (found {result_type:?})"
+    )]
+    BarrierResultTypeInvalid {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode of the barrier operation.
+        opcode: rspirv::spirv::Op,
+        /// The invalid result type.
+        result_type: TypeId,
+        /// Expected type description.
+        expected: &'static str,
+    },
+    /// A barrier instruction has an invalid operand type.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} has operand {operand_index} with invalid type, expected {expected}"
+    )]
+    BarrierOperandTypeInvalid {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode of the barrier operation.
+        opcode: rspirv::spirv::Op,
+        /// The operand index with the invalid type.
+        operand_index: usize,
+        /// Expected type description.
+        expected: &'static str,
+    },
+    /// A barrier instruction requires a specific execution model.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} requires execution model from {allowed:?} in SPIR-V {spirv_version}"
+    )]
+    BarrierRequiresExecutionModel {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode of the barrier operation.
+        opcode: rspirv::spirv::Op,
+        /// The allowed execution models.
+        allowed: Vec<rspirv::spirv::ExecutionModel>,
+        /// The SPIR-V version in use.
+        spirv_version: crate::version::SpirvVersion,
+    },
 }
