@@ -4999,7 +4999,9 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
         );
     }
     #[test]
-    fn unreachable_block_is_rejected() {
+    fn unreachable_block_is_allowed() {
+        // SPIR-V spec allows unreachable blocks - the C++ validator skips them
+        // during structured control flow validation.
         use rspirv::{binary::Assemble, dr::Builder};
         let mut builder = Builder::new();
         builder.set_version(1, 6);
@@ -5010,26 +5012,20 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
         );
         let void = builder.type_void();
         let fn_ty = builder.type_function(void, std::iter::empty::<u32>());
-        let function_id = builder
+        let _function_id = builder
             .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
             .unwrap();
         let _entry = builder.begin_block(None).unwrap();
         builder.ret().unwrap();
-        let unreachable = builder.begin_block(None).unwrap();
+        let _unreachable = builder.begin_block(None).unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
         let words = builder.module().assemble();
-        let error = words
+        // Should now succeed since unreachable blocks are allowed
+        words
             .as_slice()
             .validate(TargetEnv::Universal1_6)
-            .expect_err("unreachable block should be rejected");
-        assert_eq!(
-            error,
-            ValidationError::UnreachableBlock {
-                function: Id::try_from(function_id).unwrap(),
-                block: Id::try_from(unreachable).unwrap()
-            }
-        );
+            .expect("unreachable blocks should be allowed");
     }
     #[test]
     fn capability_must_appear_before_types() {
@@ -9371,13 +9367,15 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
             "OpMemoryModel Logical GLSL450",
             "%void = OpTypeVoid",
             "%bool = OpTypeBool",
-            "%fn = OpTypeFunction %bool",
-            "%main = OpFunction %bool None %fn",
+            "%int = OpTypeInt 32 1",
+            "%one = OpConstant %int 1",
+            "%fn = OpTypeFunction %int",
+            "%main = OpFunction %int None %fn",
             "%entry = OpLabel",
             // Use a value defined only in an unreachable block.
             "OpReturnValue %undef",
             "%unreachable = OpLabel",
-            "%undef = OpConstantTrue %bool",
+            "%undef = OpIAdd %int %one %one",
             "OpReturnValue %undef",
             "OpFunctionEnd",
         ]
@@ -9387,13 +9385,11 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
             .as_slice()
             .validate(TargetEnv::Universal1_6)
             .expect_err("definitions in unreachable blocks cannot be used in reachable code");
-        assert_eq!(
+        // Value from unreachable block doesn't dominate the use
+        assert!(matches!(
             err,
-            ValidationError::UnreachableBlock {
-                function: Id::try_from(4).unwrap(),
-                block: Id::try_from(7).unwrap()
-            }
-        );
+            ValidationError::ValueNotDominated { .. }
+        ));
     }
     #[test]
     fn value_must_dominate_non_phi_uses() {
@@ -10917,13 +10913,11 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
             .as_slice()
             .validate(TargetEnv::Universal1_6)
             .expect_err("uses of values defined only in unreachable blocks must be rejected");
-        assert_eq!(
+        // Value from unreachable block doesn't dominate the use
+        assert!(matches!(
             err,
-            ValidationError::UnreachableBlock {
-                function: Id::try_from(5).unwrap(),
-                block: Id::try_from(8).unwrap()
-            }
-        );
+            ValidationError::ValueNotDominated { .. }
+        ));
     }
     #[test]
     fn operand_id_must_be_defined_globally() {

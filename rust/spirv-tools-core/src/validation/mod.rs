@@ -280,11 +280,6 @@ pub fn format_validation_error(error: &ValidationError, names: Option<&FriendlyN
             names.format_id((*function).into()),
             names.format_id((*target).into())
         ),
-        (ValidationError::UnreachableBlock { function, block }, Some(names)) => format!(
-            "{} contains unreachable block {}",
-            names.format_id((*function).into()),
-            names.format_id((*block).into())
-        ),
         (
             ValidationError::FunctionCallTargetNotFunction {
                 function,
@@ -2495,33 +2490,10 @@ fn validate_functions(
             }
         }
 
-        let reachable: std::collections::HashSet<Id> = {
-            let mut reachable = std::collections::HashSet::new();
-            let mut worklist = vec![entry_label_id];
-            while let Some(block) = worklist.pop() {
-                if !reachable.insert(block) {
-                    continue;
-                }
-                if let Some(succs) = successors.get(&block) {
-                    worklist.extend(succs.iter().copied());
-                }
-            }
-            reachable
-        };
-
-        for block_id in &block_ids {
-            if *block_id == entry_label_id {
-                continue;
-            }
-            if !reachable.contains(block_id) {
-                return Err(ValidationError::UnreachableBlock {
-                    function: function_id,
-                    block: *block_id,
-                });
-            }
-        }
-
         // Compute dominators.
+        // NOTE: Unreachable blocks are allowed by the SPIR-V spec. The C++ validator
+        // skips unreachable blocks during structured control flow validation. We simply
+        // skip blocks with no predecessors (other than entry) in dominator computation.
         let mut dominators: HashMap<Id, std::collections::HashSet<Id>> = HashMap::new();
         for id in &block_ids {
             let mut set: std::collections::HashSet<Id> = if *id == entry_label_id {

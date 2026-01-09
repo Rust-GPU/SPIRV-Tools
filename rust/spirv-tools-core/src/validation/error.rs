@@ -694,14 +694,6 @@ pub enum ValidationError {
         /// The missing block target.
         target: Id,
     },
-    /// A basic block is unreachable from the function's entry block.
-    #[error("function {function:?} contains unreachable block {block:?}")]
-    UnreachableBlock {
-        /// The function id containing the unreachable block.
-        function: Id,
-        /// The unreachable block's label id.
-        block: Id,
-    },
     /// A merge instruction was not placed immediately before the block terminator.
     #[error("merge instruction in block {block:?} of function {function:?} must immediately precede the terminator")]
     MergeInstructionNotBeforeTerminator {
