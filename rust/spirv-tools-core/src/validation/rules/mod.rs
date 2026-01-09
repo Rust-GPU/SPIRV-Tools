@@ -60,6 +60,7 @@ pub mod builtins;
 pub mod capabilities;
 pub mod cfg;
 pub mod composites;
+pub mod constants;
 pub mod conversion;
 pub mod decorations;
 pub mod derivatives;

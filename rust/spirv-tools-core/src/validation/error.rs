@@ -2048,4 +2048,50 @@ pub enum ValidationError {
         /// Expected type description.
         expected: &'static str,
     },
+    /// A constant instruction has an invalid result type.
+    #[error("{opcode:?} has result type {result_type:?} but expected {expected}")]
+    ConstantResultTypeInvalid {
+        /// The constant opcode.
+        opcode: rspirv::spirv::Op,
+        /// The invalid result type.
+        result_type: TypeId,
+        /// Expected type description.
+        expected: &'static str,
+    },
+    /// OpConstantNull has a type that cannot be null.
+    #[error("OpConstantNull has result type {result_type:?} which cannot have a null value")]
+    ConstantNullTypeNotNullable {
+        /// The non-nullable result type.
+        result_type: TypeId,
+    },
+    /// A constant composite has a constituent that is not a constant or undef.
+    #[error("{opcode:?} constituent {constituent:?} is not a constant or undef")]
+    ConstantCompositeConstituentNotConstant {
+        /// The composite constant opcode.
+        opcode: rspirv::spirv::Op,
+        /// The invalid constituent.
+        constituent: Id,
+    },
+    /// A constant composite has the wrong number of constituents.
+    #[error("{opcode:?} has {found} constituents but result type {result_type:?} expects {expected}")]
+    ConstantCompositeCountMismatch {
+        /// The composite constant opcode.
+        opcode: rspirv::spirv::Op,
+        /// The result type.
+        result_type: TypeId,
+        /// Expected constituent count.
+        expected: usize,
+        /// Actual constituent count.
+        found: usize,
+    },
+    /// OpSpecConstantOp uses an operation that requires a missing capability.
+    #[error(
+        "OpSpecConstantOp operation {inner_opcode:?} requires capability {required_capability:?}"
+    )]
+    SpecConstantOpMissingCapability {
+        /// The inner operation.
+        inner_opcode: rspirv::spirv::Op,
+        /// The required capability.
+        required_capability: rspirv::spirv::Capability,
+    },
 }
