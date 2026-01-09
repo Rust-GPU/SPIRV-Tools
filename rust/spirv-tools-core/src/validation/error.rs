@@ -1990,4 +1990,50 @@ pub enum ValidationError {
         /// The SPIR-V version in use.
         spirv_version: crate::version::SpirvVersion,
     },
+    /// An atomic instruction has an invalid result type.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} requires result type to be {expected} (found {result_type:?})"
+    )]
+    AtomicResultTypeInvalid {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode of the atomic operation.
+        opcode: rspirv::spirv::Op,
+        /// The invalid result type.
+        result_type: TypeId,
+        /// Expected type description.
+        expected: &'static str,
+    },
+    /// An atomic instruction uses a forbidden storage class.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} uses storage class {storage_class:?}: {reason}"
+    )]
+    AtomicStorageClassForbidden {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode of the atomic operation.
+        opcode: rspirv::spirv::Op,
+        /// The forbidden storage class.
+        storage_class: rspirv::spirv::StorageClass,
+        /// Why the storage class is forbidden.
+        reason: &'static str,
+    },
+    /// An atomic instruction requires a capability that is not declared.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} requires capability {required_capability:?}"
+    )]
+    AtomicMissingCapability {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode of the atomic operation.
+        opcode: rspirv::spirv::Op,
+        /// The required capability.
+        required_capability: rspirv::spirv::Capability,
+    },
 }

@@ -48,9 +48,11 @@
 //! - [`literals`]: Literal number encoding validation rules
 //! - [`derivatives`]: Derivative instruction validation rules
 //! - [`barriers`]: Barrier instruction validation rules
+//! - [`atomics`]: Atomic instruction validation rules
 
 pub mod adjacency;
 pub mod arithmetics;
+pub mod atomics;
 pub mod barriers;
 pub mod bitwise;
 pub mod block_layout;
