@@ -22006,10 +22006,11 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
     }
 
     #[test]
-    fn storage_buffer_8bit_requires_capability() {
+    fn storage_buffer_8bit_without_int8_requires_capability() {
+        // When Int8 capability is NOT declared, storage class restrictions apply
         let text = [
             "OpCapability Shader",
-            "OpCapability Int8",
+            // Note: No Int8 capability - this triggers storage class checks
             "OpCapability VariablePointers",
             "OpCapability VariablePointersStorageBuffer",
             "OpExtension \"SPV_KHR_storage_buffer_storage_class\"",
@@ -22042,6 +22043,107 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
                 required_capability: Capability::StorageBuffer8BitAccess
             }
         );
+    }
+
+    #[test]
+    fn int8_capability_allows_8bit_in_any_storage_class() {
+        // When Int8 capability IS declared, storage class restrictions are skipped
+        // (matches C++ validator behavior)
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Int8",
+            "OpCapability VariablePointers",
+            "OpCapability VariablePointersStorageBuffer",
+            "OpExtension \"SPV_KHR_storage_buffer_storage_class\"",
+            "OpExtension \"SPV_KHR_variable_pointers\"",
+            "OpExtension \"SPV_KHR_8bit_storage\"",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpName %main \"main\"",
+            "OpName %var \"var\"",
+            "OpDecorate %buf Block",
+            "OpMemberDecorate %buf 0 Offset 0",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u8 = OpTypeInt 8 0",
+            "%buf = OpTypeStruct %u8",
+            "%ptr = OpTypePointer StorageBuffer %buf",
+            "%var = OpVariable %ptr StorageBuffer",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        // With Int8 declared, no storage class capability is required
+        assemble_and_validate(text)
+            .expect("Int8 capability should allow 8-bit types without storage class restrictions");
+    }
+
+    #[test]
+    fn int16_capability_allows_16bit_int_in_any_storage_class() {
+        // When Int16 capability IS declared, storage class restrictions are skipped for 16-bit ints
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Int16",
+            "OpCapability VariablePointers",
+            "OpCapability VariablePointersStorageBuffer",
+            "OpExtension \"SPV_KHR_storage_buffer_storage_class\"",
+            "OpExtension \"SPV_KHR_variable_pointers\"",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpName %main \"main\"",
+            "OpName %var \"var\"",
+            "OpDecorate %buf Block",
+            "OpMemberDecorate %buf 0 Offset 0",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%u16 = OpTypeInt 16 0",
+            "%buf = OpTypeStruct %u16",
+            "%ptr = OpTypePointer StorageBuffer %buf",
+            "%var = OpVariable %ptr StorageBuffer",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        // With Int16 declared, no storage class capability is required for 16-bit ints
+        assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
+            .expect("Int16 capability should allow 16-bit int types without storage class restrictions");
+    }
+
+    #[test]
+    fn float16_capability_allows_16bit_float_in_any_storage_class() {
+        // When Float16 capability IS declared, storage class restrictions are skipped for 16-bit floats
+        let text = [
+            "OpCapability Shader",
+            "OpCapability Float16",
+            "OpCapability VariablePointers",
+            "OpCapability VariablePointersStorageBuffer",
+            "OpExtension \"SPV_KHR_storage_buffer_storage_class\"",
+            "OpExtension \"SPV_KHR_variable_pointers\"",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Vertex %main \"main\" %var",
+            "OpName %main \"main\"",
+            "OpName %var \"var\"",
+            "OpDecorate %buf Block",
+            "OpMemberDecorate %buf 0 Offset 0",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%f16 = OpTypeFloat 16",
+            "%buf = OpTypeStruct %f16",
+            "%ptr = OpTypePointer StorageBuffer %buf",
+            "%var = OpVariable %ptr StorageBuffer",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        // With Float16 declared, no storage class capability is required for 16-bit floats
+        assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
+            .expect("Float16 capability should allow 16-bit float types without storage class restrictions");
     }
 
     #[test]

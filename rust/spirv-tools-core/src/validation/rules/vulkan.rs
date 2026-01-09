@@ -188,6 +188,32 @@ impl ValidationRule for SmallTypeStorageCapabilitiesRule {
             };
 
             for bit_width in [8u32, 16u32] {
+                // The storage class restrictions only apply when the module does NOT
+                // declare the base capability for the type width. If Int8 is declared,
+                // 8-bit integers can be used in any storage class. Similarly for Int16/Float16.
+                // See C++ validator: validate_memory.cpp
+                if bit_width == 8 {
+                    // If Int8 is declared, skip all 8-bit storage class checks
+                    if ctx.declared_capabilities.contains(&Capability::Int8) {
+                        continue;
+                    }
+                } else {
+                    // bit_width == 16
+                    // If Int16 is declared, skip 16-bit int storage class checks
+                    // If Float16 is declared, skip 16-bit float storage class checks
+                    let has_int16_cap = ctx.declared_capabilities.contains(&Capability::Int16);
+                    let has_float16_cap = ctx.declared_capabilities.contains(&Capability::Float16);
+                    let has_int16 = contains_int(16);
+                    let has_float16 = contains_float(16);
+
+                    // Skip if all 16-bit types in this variable are covered by capabilities
+                    let int16_ok = !has_int16 || has_int16_cap;
+                    let float16_ok = !has_float16 || has_float16_cap;
+                    if int16_ok && float16_ok {
+                        continue;
+                    }
+                }
+
                 let has_width =
                     contains_int(bit_width) || (bit_width == 16 && contains_float(bit_width));
                 if !has_width {
