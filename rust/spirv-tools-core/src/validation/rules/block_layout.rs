@@ -291,7 +291,16 @@ impl BlockStructInfo {
         }
     }
 
-    /// Returns true if block layout rules apply to this struct.
+    /// Returns true if block layout rules apply to this struct based on its
+    /// decoration and the storage classes where it's used.
+    ///
+    /// From the C++ spirv-val (validate_decorations.cpp lines 1365-1369):
+    /// - Block rules: Uniform storage class + Block decoration
+    /// - Buffer rules: (Uniform + BufferBlock) OR
+    ///                 ((PushConstant | StorageBuffer | PhysicalStorageBuffer | Workgroup) + Block)
+    ///
+    /// Block-decorated structs that are not used in any variable (or used only in
+    /// non-buffer storage classes like Output/Input) do NOT require Offset decorations.
     fn requires_block_layout(&self) -> bool {
         let has_uniform = self.storage_classes.contains(&StorageClass::Uniform);
         let has_push_constant = self.storage_classes.contains(&StorageClass::PushConstant);
@@ -573,7 +582,8 @@ fn array_length(
     }
 }
 
-fn array_stride(module: &Module, array_type: ResultId) -> Option<u32> {
+/// Get the ArrayStride decoration for an array type.
+pub fn array_stride(module: &Module, array_type: ResultId) -> Option<u32> {
     for inst in &module.annotations {
         if inst.class.opcode == Op::Decorate {
             if let (

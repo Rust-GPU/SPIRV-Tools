@@ -14317,9 +14317,12 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
         ) -> Instruction {
             Instruction::new(opcode, result_type, result_id, operands)
         }
+        // Creates a Block-decorated struct used in Uniform storage class.
+        // Block structs require Offset decorations when used in buffer storage classes.
         fn make_block_struct(member_offsets: Option<Vec<u32>>) -> Vec<u32> {
             let mut module = Module::new();
-            module.header = Some(ModuleHeader::new(8));
+            // IDs: 1=void, 2=uint, 3=struct, 4=ptr, 5=var
+            module.header = Some(ModuleHeader::new(6));
             module.capabilities.push(inst(
                 rspirv::spirv::Op::Capability,
                 None,
@@ -14354,6 +14357,25 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
                     Some(3),
                     vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(2)],
                 ),
+                // TypePointer to struct with Uniform storage class
+                inst(
+                    rspirv::spirv::Op::TypePointer,
+                    None,
+                    Some(4),
+                    vec![
+                        rspirv::dr::Operand::StorageClass(rspirv::spirv::StorageClass::Uniform),
+                        rspirv::dr::Operand::IdRef(3),
+                    ],
+                ),
+                // Variable using the pointer type
+                inst(
+                    rspirv::spirv::Op::Variable,
+                    Some(4),
+                    Some(5),
+                    vec![rspirv::dr::Operand::StorageClass(
+                        rspirv::spirv::StorageClass::Uniform,
+                    )],
+                ),
             ]);
             module.annotations.push(inst(
                 rspirv::spirv::Op::Decorate,
@@ -14362,6 +14384,27 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
                 vec![
                     rspirv::dr::Operand::IdRef(3),
                     rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::Block),
+                ],
+            ));
+            // DescriptorSet and Binding decorations for the variable
+            module.annotations.push(inst(
+                rspirv::spirv::Op::Decorate,
+                None,
+                None,
+                vec![
+                    rspirv::dr::Operand::IdRef(5),
+                    rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::DescriptorSet),
+                    rspirv::dr::Operand::LiteralBit32(0),
+                ],
+            ));
+            module.annotations.push(inst(
+                rspirv::spirv::Op::Decorate,
+                None,
+                None,
+                vec![
+                    rspirv::dr::Operand::IdRef(5),
+                    rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::Binding),
+                    rspirv::dr::Operand::LiteralBit32(0),
                 ],
             ));
             if let Some(offsets) = member_offsets {
@@ -14427,7 +14470,8 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
             Instruction::new(opcode, result_type, result_id, operands)
         }
         let mut module = Module::new();
-        module.header = Some(ModuleHeader::new(8));
+        // IDs: 1=void, 2=uint, 3=struct, 4=ptr, 5=var
+        module.header = Some(ModuleHeader::new(6));
         module.capabilities.push(inst(
             rspirv::spirv::Op::Capability,
             None,
@@ -14462,6 +14506,25 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
                 Some(3),
                 vec![rspirv::dr::Operand::IdRef(2), rspirv::dr::Operand::IdRef(2)],
             ),
+            // TypePointer to struct with Uniform storage class
+            inst(
+                rspirv::spirv::Op::TypePointer,
+                None,
+                Some(4),
+                vec![
+                    rspirv::dr::Operand::StorageClass(rspirv::spirv::StorageClass::Uniform),
+                    rspirv::dr::Operand::IdRef(3),
+                ],
+            ),
+            // Variable using the pointer type
+            inst(
+                rspirv::spirv::Op::Variable,
+                Some(4),
+                Some(5),
+                vec![rspirv::dr::Operand::StorageClass(
+                    rspirv::spirv::StorageClass::Uniform,
+                )],
+            ),
         ]);
         module.annotations.extend([
             inst(
@@ -14471,6 +14534,27 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
                 vec![
                     rspirv::dr::Operand::IdRef(3),
                     rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::Block),
+                ],
+            ),
+            // DescriptorSet and Binding for the variable
+            inst(
+                rspirv::spirv::Op::Decorate,
+                None,
+                None,
+                vec![
+                    rspirv::dr::Operand::IdRef(5),
+                    rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::DescriptorSet),
+                    rspirv::dr::Operand::LiteralBit32(0),
+                ],
+            ),
+            inst(
+                rspirv::spirv::Op::Decorate,
+                None,
+                None,
+                vec![
+                    rspirv::dr::Operand::IdRef(5),
+                    rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::Binding),
+                    rspirv::dr::Operand::LiteralBit32(0),
                 ],
             ),
             inst(
@@ -14492,7 +14576,7 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
                     rspirv::dr::Operand::IdRef(3),
                     rspirv::dr::Operand::LiteralBit32(1),
                     rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::Offset),
-                    rspirv::dr::Operand::LiteralBit32(2),
+                    rspirv::dr::Operand::LiteralBit32(2), // Overlaps with first member (uint is 4 bytes)
                 ],
             ),
         ]);
@@ -14661,9 +14745,7 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
     }
     #[test]
     fn matrix_stride_alignment_and_size() {
-        use crate::validation::{
-            collect_result_instructions, enforce_block_layout_rules, parse_module,
-        };
+        // Test that matrix stride must be at least as large as the column size
         let text = [
             "OpCapability Shader",
             "OpCapability Float64",
@@ -14672,17 +14754,19 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
             "%v2 = OpTypeVector %f64 2",
             "%mat2 = OpTypeMatrix %v2 2",
             "%struct = OpTypeStruct %v2 %mat2",
+            "%ptr = OpTypePointer Uniform %struct",
+            "%var = OpVariable %ptr Uniform",
             "OpDecorate %struct Block",
+            "OpDecorate %var DescriptorSet 0",
+            "OpDecorate %var Binding 0",
             "OpMemberDecorate %struct 0 Offset 0",
             "OpMemberDecorate %struct 1 Offset 32",
-            "OpMemberDecorate %struct 1 RowMajor",
-            "OpMemberDecorate %struct 1 MatrixStride 8",
+            "OpMemberDecorate %struct 1 ColMajor",
+            "OpMemberDecorate %struct 1 MatrixStride 8", // Too small for vec2<f64> (16 bytes)
         ]
         .join("\n");
         let words = assemble_text(&text).expect("assemble");
-        let module = parse_module(&words).expect("parse");
-        let definitions = collect_result_instructions(&module);
-        let err = enforce_block_layout_rules(&module, &definitions, &ValidationOptions::default())
+        let err = validate_module(&words, TargetEnv::Universal1_6)
             .expect_err("matrix stride smaller than column size should fail");
         assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
         let aligned = [
@@ -14693,17 +14777,19 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
             "%v2 = OpTypeVector %f64 2",
             "%mat2 = OpTypeMatrix %v2 2",
             "%struct = OpTypeStruct %v2 %mat2",
+            "%ptr = OpTypePointer Uniform %struct",
+            "%var = OpVariable %ptr Uniform",
             "OpDecorate %struct Block",
+            "OpDecorate %var DescriptorSet 0",
+            "OpDecorate %var Binding 0",
             "OpMemberDecorate %struct 0 Offset 0",
             "OpMemberDecorate %struct 1 Offset 32",
-            "OpMemberDecorate %struct 1 RowMajor",
-            "OpMemberDecorate %struct 1 MatrixStride 16",
+            "OpMemberDecorate %struct 1 ColMajor",
+            "OpMemberDecorate %struct 1 MatrixStride 16", // Correct size for vec2<f64>
         ]
         .join("\n");
         let aligned_words = assemble_text(&aligned).expect("assemble");
-        let aligned_module = parse_module(&aligned_words).expect("parse");
-        let definitions = collect_result_instructions(&aligned_module);
-        enforce_block_layout_rules(&aligned_module, &definitions, &ValidationOptions::default())
+        validate_module(&aligned_words, TargetEnv::Universal1_6)
             .expect("aligned matrix stride should pass");
     }
     #[test]
