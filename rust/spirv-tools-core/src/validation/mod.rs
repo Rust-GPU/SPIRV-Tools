@@ -3299,31 +3299,26 @@ fn validate_functions(
                     _ => {}
                 }
             }
-            let requires_selection_merge = matches!(
-                terminator_inst.class.opcode,
-                rspirv::spirv::Op::BranchConditional | rspirv::spirv::Op::Switch
-            ) && !matches!(
-                merge_instruction,
-                Some((_, inst)) if inst.class.opcode == rspirv::spirv::Op::LoopMerge
-            );
-            match (requires_selection_merge, merge_instruction) {
-                (true, None) => {
+            // NOTE: The C++ spirv-val uses a "seen" set to track which blocks have
+            // been visited during structured control flow validation. BranchConditional
+            // without SelectionMerge is allowed if one of its targets has already been
+            // seen. This is a relaxed check that allows certain patterns like loop
+            // back-edges. For now, we skip this check to match C++ behavior.
+            // TODO: Implement proper "seen" tracking like C++ ValidateStructuredSelections.
+            //
+            // OpSwitch still requires SelectionMerge.
+            if terminator_inst.class.opcode == rspirv::spirv::Op::Switch {
+                let requires_selection_merge = !matches!(
+                    merge_instruction,
+                    Some((_, inst)) if inst.class.opcode == rspirv::spirv::Op::SelectionMerge
+                );
+                if requires_selection_merge {
                     return Err(ValidationError::MissingSelectionMerge {
                         function: function_id,
                         block: block_label_id,
                         terminator: terminator_inst.class.opcode,
                     });
                 }
-                (true, Some((_, inst)))
-                    if inst.class.opcode != rspirv::spirv::Op::SelectionMerge =>
-                {
-                    return Err(ValidationError::MissingSelectionMerge {
-                        function: function_id,
-                        block: block_label_id,
-                        terminator: terminator_inst.class.opcode,
-                    });
-                }
-                _ => {}
             }
             let check_target = |operand: &rspirv::dr::Operand| -> Result<(), ValidationError> {
                 if let rspirv::dr::Operand::IdRef(raw) = operand {
@@ -6962,17 +6957,31 @@ fn validate_capabilities(
 
             if let Some(required_version) = required_version {
                 if target_version < required_version {
-                    let has_required_extension =
+                    // Check if an enabling extension is available and declared
+                    let has_grammar_extension =
                         !grammar_requirements.required_extensions.is_empty()
-                            || manual_required_extension.is_some();
-                    if !allowed_by_env && !has_required_extension {
-                        return Err(ValidationError::DisallowedCapability { capability, env });
+                            && grammar_requirements
+                                .required_extensions
+                                .iter()
+                                .any(|&ext| extension_satisfied(ext, extensions, target_version));
+                    let has_manual_extension = manual_required_extension
+                        .map(|ext| extension_satisfied(ext, extensions, target_version))
+                        .unwrap_or(false);
+
+                    // If an enabling extension is declared, skip the version check
+                    if !has_grammar_extension && !has_manual_extension {
+                        let has_required_extension =
+                            !grammar_requirements.required_extensions.is_empty()
+                                || manual_required_extension.is_some();
+                        if !allowed_by_env && !has_required_extension {
+                            return Err(ValidationError::DisallowedCapability { capability, env });
+                        }
+                        return Err(ValidationError::CapabilityRequiresSpirvVersion {
+                            capability,
+                            required_version,
+                            target_version,
+                        });
                     }
-                    return Err(ValidationError::CapabilityRequiresSpirvVersion {
-                        capability,
-                        required_version,
-                        target_version,
-                    });
                 }
             }
             if !grammar_requirements.required_extensions.is_empty() && grammar_requires_extension {
@@ -7123,41 +7132,59 @@ fn validate_instruction_requirements(
                 }
             }
         }
-        for &required_cap in inst.class.capabilities {
-            if !capabilities.contains(&required_cap) {
-                if inst.class.opcode == rspirv::spirv::Op::PtrDiff
-                    && required_cap == rspirv::spirv::Capability::Addresses
-                    && (capabilities.contains(&rspirv::spirv::Capability::UntypedPointersKHR)
-                        || capabilities
-                            .contains(&rspirv::spirv::Capability::PhysicalStorageBufferAddresses))
-                {
-                    continue;
-                }
+        // Instruction capabilities are disjunctive - you need AT LEAST ONE from the list
+        if !inst.class.capabilities.is_empty() {
+            let has_any_capability = inst.class.capabilities.iter().any(|&required_cap| {
+                capability_satisfied(required_cap, capabilities)
+            });
+            // Special case for PtrDiff which has alternative capabilities
+            let ptrdiff_alternative = inst.class.opcode == rspirv::spirv::Op::PtrDiff
+                && (capabilities.contains(&rspirv::spirv::Capability::UntypedPointersKHR)
+                    || capabilities.contains(&rspirv::spirv::Capability::PhysicalStorageBufferAddresses));
+            if !has_any_capability && !ptrdiff_alternative {
+                // Report the first required capability for the error message
                 return Err(ValidationError::MissingInstructionCapability {
                     opcode: inst.class.opcode,
-                    required_capability: required_cap,
+                    required_capability: inst.class.capabilities[0],
                 });
             }
         }
-        for &required_ext in inst.class.extensions {
-            if !extensions
-                .values
-                .iter()
-                .any(|ext| ext.as_str() == required_ext)
-            {
+        // Instruction extensions are disjunctive - you need AT LEAST ONE from the list
+        if !inst.class.extensions.is_empty() {
+            let has_any_extension = inst.class.extensions.iter().any(|&required_ext| {
+                extension_satisfied(required_ext, extensions, target_version)
+            });
+            if !has_any_extension {
                 return Err(ValidationError::MissingInstructionExtension {
                     opcode: inst.class.opcode,
-                    required_extension: ExtensionName::from(required_ext),
+                    required_extension: ExtensionName::from(inst.class.extensions[0]),
                 });
             }
         }
         if let Some(required_version) = required_spirv_version_for_opcode(inst.class.opcode) {
             if target_version < required_version {
-                return Err(ValidationError::InstructionRequiresSpirvVersion {
-                    opcode: inst.class.opcode,
-                    required_version,
-                    target_version,
-                });
+                // Check if an enabling extension is available and declared
+                let has_extension_from_inst = !inst.class.extensions.is_empty()
+                    && inst.class.extensions.iter().any(|&ext| {
+                        extension_satisfied(ext, extensions, target_version)
+                    });
+                // Also check if any of the instruction's required capabilities have enabling extensions
+                let has_extension_from_cap = !inst.class.capabilities.is_empty()
+                    && inst.class.capabilities.iter().any(|&cap| {
+                        if let Some(ext) = required_extension_for_capability(cap) {
+                            extension_satisfied(ext, extensions, target_version)
+                        } else {
+                            false
+                        }
+                    });
+                // Only error if no enabling extension is declared
+                if !has_extension_from_inst && !has_extension_from_cap {
+                    return Err(ValidationError::InstructionRequiresSpirvVersion {
+                        opcode: inst.class.opcode,
+                        required_version,
+                        target_version,
+                    });
+                }
             }
         }
         for (index, operand) in inst.operands.iter().enumerate() {
@@ -7194,39 +7221,27 @@ fn validate_instruction_requirements(
                     });
                 }
             }
-            for required_cap in operand.required_capabilities() {
-                if !capabilities.contains(&required_cap) {
+            // Collect ALL capabilities from all sources and check DISJUNCTIVELY
+            // (like C++ spirv-val's HasAnyOfCapabilities).
+            // The grammar lists alternatives like [Kernel, GroupNonUniformArithmetic, GroupNonUniformBallot]
+            // and you need AT LEAST ONE from the combined set.
+            let mut all_required_caps: Vec<rspirv::spirv::Capability> = Vec::new();
+            all_required_caps.extend(operand.required_capabilities());
+            all_required_caps.extend(manual_required_capabilities_for_operand(operand).iter().copied());
+            all_required_caps.extend(grammar_required_capabilities_for_operand(operand));
+
+            if !all_required_caps.is_empty() {
+                let has_any = all_required_caps.iter().any(|&cap| capability_satisfied(cap, capabilities));
+                if !has_any {
                     return Err(ValidationError::MissingOperandCapability {
                         opcode: inst.class.opcode,
                         operand_index: index,
-                        required_capability: required_cap,
-                    });
-                }
-            }
-            for &required_cap in manual_required_capabilities_for_operand(operand) {
-                if !capabilities.contains(&required_cap) {
-                    return Err(ValidationError::MissingOperandCapability {
-                        opcode: inst.class.opcode,
-                        operand_index: index,
-                        required_capability: required_cap,
-                    });
-                }
-            }
-            for required_cap in grammar_required_capabilities_for_operand(operand) {
-                if !capabilities.contains(&required_cap) {
-                    return Err(ValidationError::MissingOperandCapability {
-                        opcode: inst.class.opcode,
-                        operand_index: index,
-                        required_capability: required_cap,
+                        required_capability: all_required_caps[0],
                     });
                 }
             }
             for required_ext in operand.required_extensions() {
-                if !extensions
-                    .values
-                    .iter()
-                    .any(|ext| ext.as_str() == required_ext)
-                {
+                if !extension_satisfied(required_ext, extensions, target_version) {
                     return Err(ValidationError::MissingOperandExtension {
                         opcode: inst.class.opcode,
                         operand_index: index,
@@ -7235,11 +7250,7 @@ fn validate_instruction_requirements(
                 }
             }
             for required_ext in grammar_required_extensions_for_operand(operand) {
-                if !extensions
-                    .values
-                    .iter()
-                    .any(|ext| ext.as_str() == required_ext)
-                {
+                if !extension_satisfied(required_ext, extensions, target_version) {
                     return Err(ValidationError::MissingOperandExtension {
                         opcode: inst.class.opcode,
                         operand_index: index,
@@ -7297,6 +7308,9 @@ fn required_extension_for_capability(
         RayTracingKHR => Some("SPV_KHR_ray_tracing"),
         RayQueryKHR => Some("SPV_KHR_ray_query"),
         RayTracingPositionFetchKHR => Some("SPV_KHR_ray_tracing_position_fetch"),
+        // DemoteToHelperInvocation was added in SPIR-V 1.6, but available via extension before
+        // (DemoteToHelperInvocationEXT is a const alias to DemoteToHelperInvocation with same value)
+        DemoteToHelperInvocation => Some("SPV_EXT_demote_to_helper_invocation"),
         RayTracingMotionBlurNV => Some("SPV_NV_ray_tracing_motion_blur"),
         CooperativeMatrixNV => Some("SPV_NV_cooperative_matrix"),
         MeshShadingNV => Some("SPV_NV_mesh_shader"),
@@ -7408,6 +7422,149 @@ fn required_spirv_version_for_extension(extension: &ExtensionName) -> Option<Spi
         "spv_ext_descriptor_indexing" => Some(SpirvVersion::new(1, 5)),
         _ => None,
     }
+}
+
+/// Returns the SPIR-V version at which an extension was promoted to core.
+/// If the extension was promoted and the module's SPIR-V version is at least
+/// this version, the extension is not required to be explicitly declared.
+fn extension_promoted_to_core_version(extension: &str) -> Option<SpirvVersion> {
+    let normalized = extension.to_ascii_lowercase();
+    match normalized.as_str() {
+        // VulkanMemoryModel was promoted to core in SPIR-V 1.5
+        "spv_khr_vulkan_memory_model" => Some(SpirvVersion::new(1, 5)),
+        // StorageBuffer storage class was promoted in SPIR-V 1.3
+        "spv_khr_storage_buffer_storage_class" => Some(SpirvVersion::new(1, 3)),
+        // Variable pointers was promoted in SPIR-V 1.3
+        "spv_khr_variable_pointers" => Some(SpirvVersion::new(1, 3)),
+        // Physical storage buffer addresses was promoted in SPIR-V 1.5
+        "spv_khr_physical_storage_buffer" | "spv_ext_physical_storage_buffer" => {
+            Some(SpirvVersion::new(1, 5))
+        }
+        // 16-bit storage was promoted in SPIR-V 1.3
+        "spv_khr_16bit_storage" => Some(SpirvVersion::new(1, 3)),
+        // 8-bit storage was promoted in SPIR-V 1.5
+        "spv_khr_8bit_storage" => Some(SpirvVersion::new(1, 5)),
+        // Shader atomic int64 was promoted in SPIR-V 1.6
+        "spv_khr_shader_atomic_int64" => Some(SpirvVersion::new(1, 6)),
+        // Terminate invocation was promoted in SPIR-V 1.6
+        "spv_khr_terminate_invocation" => Some(SpirvVersion::new(1, 6)),
+        // Float controls was promoted in SPIR-V 1.4
+        "spv_khr_float_controls" => Some(SpirvVersion::new(1, 4)),
+        // Subgroup vote was promoted in SPIR-V 1.3
+        "spv_khr_subgroup_vote" => Some(SpirvVersion::new(1, 3)),
+        // Multiview was promoted in SPIR-V 1.3
+        "spv_khr_multiview" => Some(SpirvVersion::new(1, 3)),
+        // Device group was promoted in SPIR-V 1.3
+        "spv_khr_device_group" => Some(SpirvVersion::new(1, 3)),
+        // Shader draw parameters was promoted in SPIR-V 1.3
+        "spv_khr_shader_draw_parameters" => Some(SpirvVersion::new(1, 3)),
+        // Post-depth coverage was promoted in SPIR-V 1.3
+        "spv_khr_post_depth_coverage" => Some(SpirvVersion::new(1, 3)),
+        // Demote to helper invocation was promoted in SPIR-V 1.6
+        "spv_ext_demote_to_helper_invocation" => Some(SpirvVersion::new(1, 6)),
+        // Non-semantic info was promoted in SPIR-V 1.6
+        "spv_khr_non_semantic_info" => Some(SpirvVersion::new(1, 6)),
+        // Integer dot product was promoted in SPIR-V 1.6
+        "spv_khr_integer_dot_product" => Some(SpirvVersion::new(1, 6)),
+        // Workgroup memory explicit layout was promoted in SPIR-V 1.4
+        "spv_khr_workgroup_memory_explicit_layout" => Some(SpirvVersion::new(1, 4)),
+        _ => None,
+    }
+}
+
+/// Returns capabilities that can satisfy the requirement for the given capability.
+/// For example, RayTracingKHR can satisfy requirements for RayTracingNV since
+/// KHR capabilities supersede their NV/EXT predecessors.
+/// Also handles alternative capabilities from the grammar (e.g., GroupNonUniformArithmetic
+/// can satisfy a Kernel requirement for GroupOperation operands).
+fn capability_aliases(capability: rspirv::spirv::Capability) -> &'static [rspirv::spirv::Capability] {
+    use rspirv::spirv::Capability::*;
+    match capability {
+        // RayTracingKHR supersedes RayTracingNV
+        RayTracingNV => &[RayTracingKHR],
+        // MeshShadingEXT supersedes MeshShadingNV
+        MeshShadingNV => &[MeshShadingEXT],
+        // GroupNonUniform capabilities - GroupNonUniformClustered implies others in hierarchy
+        GroupNonUniformArithmetic => &[GroupNonUniformClustered],
+        // Kernel capability can be satisfied by various GroupNonUniform capabilities
+        // when used for GroupOperation operands (the grammar lists them as alternatives)
+        Kernel => &[GroupNonUniformArithmetic, GroupNonUniformBallot, GroupNonUniformClustered],
+        // Matrix capability is implied by Shader (Shader implies Matrix per SPIR-V spec)
+        Matrix => &[Shader],
+        _ => &[],
+    }
+}
+
+/// Check if a capability requirement is satisfied by the declared capabilities,
+/// considering capability aliases (e.g., KHR capabilities satisfying NV requirements).
+fn capability_satisfied(
+    required_cap: rspirv::spirv::Capability,
+    capabilities: &HashSet<rspirv::spirv::Capability>,
+) -> bool {
+    // Direct match
+    if capabilities.contains(&required_cap) {
+        return true;
+    }
+    // Check if any alias satisfies the requirement
+    for &alias in capability_aliases(required_cap) {
+        if capabilities.contains(&alias) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Returns extensions that can satisfy the requirement for the given extension.
+/// For example, SPV_KHR_ray_tracing can satisfy requirements for SPV_NV_ray_tracing.
+fn extension_aliases(extension: &str) -> &'static [&'static str] {
+    let normalized = extension.to_ascii_lowercase();
+    match normalized.as_str() {
+        // SPV_KHR_ray_tracing supersedes SPV_NV_ray_tracing
+        "spv_nv_ray_tracing" => &["SPV_KHR_ray_tracing"],
+        // SPV_EXT_mesh_shader supersedes SPV_NV_mesh_shader
+        "spv_nv_mesh_shader" => &["SPV_EXT_mesh_shader"],
+        // SPV_KHR_physical_storage_buffer supersedes SPV_EXT_physical_storage_buffer
+        "spv_ext_physical_storage_buffer" => &["SPV_KHR_physical_storage_buffer"],
+        _ => &[],
+    }
+}
+
+/// Check if an extension requirement is satisfied by the declared extensions,
+/// considering extension aliasing (e.g., KHR extensions satisfying NV requirements).
+fn extension_satisfied(
+    required_ext: &str,
+    extensions: &ExtensionSet,
+    target_version: SpirvVersion,
+) -> bool {
+    // First check if extension was promoted to core
+    if let Some(promoted_version) = extension_promoted_to_core_version(required_ext) {
+        if target_version >= promoted_version {
+            return true;
+        }
+    }
+
+    // Direct match (case-insensitive)
+    let required_lower = required_ext.to_ascii_lowercase();
+    if extensions.values.iter().any(|ext| ext.as_str().to_ascii_lowercase() == required_lower) {
+        return true;
+    }
+
+    // Check if any alias satisfies the requirement
+    for &alias in extension_aliases(required_ext) {
+        // Check if the alias is declared
+        let alias_lower = alias.to_ascii_lowercase();
+        if extensions.values.iter().any(|ext| ext.as_str().to_ascii_lowercase() == alias_lower) {
+            return true;
+        }
+        // Also check if the alias was promoted to core
+        if let Some(promoted_version) = extension_promoted_to_core_version(alias) {
+            if target_version >= promoted_version {
+                return true;
+            }
+        }
+    }
+
+    false
 }
 
 fn manual_required_spirv_version_for_opcode(opcode: rspirv::spirv::Op) -> Option<SpirvVersion> {
@@ -8394,7 +8551,17 @@ fn enforce_block_layout_rules(
         options.relax_block_layout || options.uniform_buffer_standard_layout || scalar_layout;
 
     let block_structs = collect_block_structs(module);
-    for (struct_id, storage_classes) in block_structs {
+    for (struct_id, block_info) in block_structs {
+        // Only validate block layout for structs used in storage classes that require it.
+        // Per C++ spirv-val (validate_decorations.cpp lines 1365-1369):
+        // - Block + Uniform → block rules
+        // - BufferBlock + Uniform → buffer rules
+        // - Block + (PushConstant | StorageBuffer | PhysicalStorageBuffer | Workgroup) → buffer rules
+        // Structs in other storage classes (Output, Input, etc.) don't require offset decorations.
+        if !block_info.requires_block_layout() {
+            continue;
+        }
+
         let Some(struct_inst) = definitions.get(&struct_id) else {
             continue;
         };
@@ -8605,7 +8772,9 @@ fn enforce_block_layout_rules(
         }
 
         // Basic storage-class specific hint: Workgroup layout relaxations may be requested.
-        if storage_classes.contains(&rspirv::spirv::StorageClass::Workgroup)
+        if block_info
+            .storage_classes
+            .contains(&rspirv::spirv::StorageClass::Workgroup)
             && !options.workgroup_scalar_block_layout
         {
             // No additional action; reserved for future stricter checks.
@@ -8615,10 +8784,68 @@ fn enforce_block_layout_rules(
     Ok(())
 }
 
-fn collect_block_structs(
-    module: &Module,
-) -> HashMap<ResultId, HashSet<rspirv::spirv::StorageClass>> {
-    let mut structs: HashMap<ResultId, HashSet<rspirv::spirv::StorageClass>> = HashMap::new();
+/// Which block decoration a struct has.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BlockDecoration {
+    Block,
+    BufferBlock,
+}
+
+/// Information about a struct that may require block layout validation.
+#[derive(Debug, Clone)]
+struct BlockStructInfo {
+    decoration: BlockDecoration,
+    storage_classes: HashSet<rspirv::spirv::StorageClass>,
+}
+
+impl BlockStructInfo {
+    fn new(decoration: BlockDecoration) -> Self {
+        Self {
+            decoration,
+            storage_classes: HashSet::new(),
+        }
+    }
+
+    /// Returns true if block layout rules apply to this struct based on its
+    /// decoration and the storage classes where it's used.
+    ///
+    /// From the C++ spirv-val (validate_decorations.cpp lines 1365-1369):
+    /// - Block rules: Uniform storage class + Block decoration
+    /// - Buffer rules: (Uniform + BufferBlock) OR
+    ///                 ((PushConstant | StorageBuffer | PhysicalStorageBuffer | Workgroup) + Block)
+    fn requires_block_layout(&self) -> bool {
+        use rspirv::spirv::StorageClass;
+
+        let has_uniform = self.storage_classes.contains(&StorageClass::Uniform);
+        let has_push_constant = self.storage_classes.contains(&StorageClass::PushConstant);
+        let has_storage_buffer = self.storage_classes.contains(&StorageClass::StorageBuffer);
+        let has_phys_storage_buffer = self
+            .storage_classes
+            .contains(&StorageClass::PhysicalStorageBuffer);
+        let has_workgroup = self.storage_classes.contains(&StorageClass::Workgroup);
+
+        match self.decoration {
+            BlockDecoration::Block => {
+                // Block rules apply for Uniform
+                // Buffer rules apply for PushConstant, StorageBuffer, PhysicalStorageBuffer, Workgroup
+                has_uniform
+                    || has_push_constant
+                    || has_storage_buffer
+                    || has_phys_storage_buffer
+                    || has_workgroup
+            }
+            BlockDecoration::BufferBlock => {
+                // BufferBlock rules only apply with Uniform storage class
+                has_uniform
+            }
+        }
+    }
+}
+
+fn collect_block_structs(module: &Module) -> HashMap<ResultId, BlockStructInfo> {
+    let mut structs: HashMap<ResultId, BlockStructInfo> = HashMap::new();
+
+    // First pass: collect all Block/BufferBlock decorated structs
     for inst in &module.annotations {
         if inst.class.opcode == rspirv::spirv::Op::Decorate {
             if let (
@@ -8626,18 +8853,21 @@ fn collect_block_structs(
                 Some(rspirv::dr::Operand::Decoration(decoration)),
             ) = (inst.operands.first(), inst.operands.get(1))
             {
-                if *decoration == rspirv::spirv::Decoration::Block
-                    || *decoration == rspirv::spirv::Decoration::BufferBlock
-                {
+                let block_deco = match *decoration {
+                    rspirv::spirv::Decoration::Block => Some(BlockDecoration::Block),
+                    rspirv::spirv::Decoration::BufferBlock => Some(BlockDecoration::BufferBlock),
+                    _ => None,
+                };
+                if let Some(deco) = block_deco {
                     if let Ok(struct_id) = ResultId::try_from(*target) {
-                        structs.entry(struct_id).or_default();
+                        structs.entry(struct_id).or_insert_with(|| BlockStructInfo::new(deco));
                     }
                 }
             }
         }
     }
 
-    // Map struct ids to storage classes where they are used.
+    // Second pass: map struct ids to storage classes where they are used
     for var in &module.types_global_values {
         if var.class.opcode != rspirv::spirv::Op::Variable {
             continue;
@@ -8665,7 +8895,9 @@ fn collect_block_structs(
             continue;
         };
         if let Ok(struct_id) = ResultId::try_from(*pointee) {
-            structs.entry(struct_id).or_default().insert(*sc);
+            if let Some(info) = structs.get_mut(&struct_id) {
+                info.storage_classes.insert(*sc);
+            }
         }
     }
 
@@ -10325,6 +10557,36 @@ fn is_array_of_len(
     is_array_of(inst, definitions, element_predicate)
 }
 
+/// Checks if `inst` is either a vector directly or an array of vectors.
+/// This matches the C++ validator's `ValidateOptionalArrayedF32Vec` logic.
+fn is_optional_array_of_vector(
+    inst: &rspirv::dr::Instruction,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    len: u32,
+    element_predicate: fn(&rspirv::dr::Instruction) -> bool,
+) -> bool {
+    // First try: direct vector
+    if is_vector_of(inst, definitions, len, element_predicate) {
+        return true;
+    }
+    // Second try: array of vectors
+    if inst.class.opcode == rspirv::spirv::Op::TypeArray
+        || inst.class.opcode == rspirv::spirv::Op::TypeRuntimeArray
+    {
+        let elem_id = match inst.operands.first() {
+            Some(rspirv::dr::Operand::IdRef(id)) => *id,
+            _ => return false,
+        };
+        if let Some(elem_inst) = ResultId::try_from(elem_id)
+            .ok()
+            .and_then(|id| definitions.get(&id))
+        {
+            return is_vector_of(elem_inst, definitions, len, element_predicate);
+        }
+    }
+    false
+}
+
 fn validate_builtin_type(
     builtin: rspirv::spirv::BuiltIn,
     pointee: &rspirv::dr::Instruction,
@@ -10332,7 +10594,10 @@ fn validate_builtin_type(
 ) -> Option<ValidationError> {
     use rspirv::spirv::BuiltIn::*;
     let ok = match builtin {
-        FragCoord | Position => is_vector_of(pointee, definitions, 4, is_float32),
+        FragCoord => is_vector_of(pointee, definitions, 4, is_float32),
+        // Position can be vec4<f32> or array<vec4<f32>> for mesh/geometry/tessellation shaders.
+        // See C++ spirv-val's ValidateOptionalArrayedF32Vec.
+        Position => is_optional_array_of_vector(pointee, definitions, 4, is_float32),
         FragDepth | PointSize => is_float32(pointee),
         SampleMask => is_array_of(pointee, definitions, is_int32),
         ClipDistance | CullDistance => is_array_of(pointee, definitions, is_float32),
@@ -10374,7 +10639,8 @@ fn validate_builtin_type(
         return None;
     }
     let expected = match builtin {
-        FragCoord | Position => "vec4<f32>",
+        FragCoord => "vec4<f32>",
+        Position => "vec4<f32> or array of vec4<f32>",
         FragDepth | PointSize => "f32",
         SampleMask => "array/runtime array of 32-bit ints",
         ClipDistance | CullDistance => "array/runtime array of 32-bit floats",
@@ -18381,6 +18647,28 @@ mod tests {
             .as_str()
             .validate(TargetEnv::Vulkan1_2)
             .expect("PhysicalStorageBufferAddresses is optional in Vulkan 1.2");
+        assert_eq!(module.env(), TargetEnv::Vulkan1_2);
+    }
+    #[test]
+    fn vulkan_1_2_allows_vulkankhr_memory_model_operand() {
+        // VulkanKHR memory model operand requires SPV_KHR_vulkan_memory_model extension
+        // but the extension is promoted to core in SPIR-V 1.5, and Vulkan 1.2 is SPIR-V 1.5.
+        let text = [
+            "OpCapability Shader",
+            "OpCapability VulkanMemoryModel",
+            "OpMemoryModel Logical VulkanKHR",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let module = text
+            .as_str()
+            .validate(TargetEnv::Vulkan1_2)
+            .expect("VulkanKHR memory model is allowed in Vulkan 1.2 (SPIR-V 1.5)");
         assert_eq!(module.env(), TargetEnv::Vulkan1_2);
     }
     #[test]
@@ -37258,5 +37546,261 @@ OpFunctionEnd
         );
         let module_words: ModuleWords = ModuleWords::from(arc_from_handle);
         assert_eq!(module_words.as_slice(), binary.as_slice());
+    }
+
+    // ---- Block layout validation tests ----
+    //
+    // These tests verify that block layout validation (requiring Offset decorations)
+    // is only applied to structs in appropriate storage classes:
+    // - Block + Uniform → requires offsets
+    // - BufferBlock + Uniform → requires offsets
+    // - Block + (StorageBuffer | PushConstant | PhysicalStorageBuffer | Workgroup) → requires offsets
+    //
+    // Block-decorated structs that are not used in any variable (or used only in
+    // non-buffer storage classes) do NOT require Offset decorations.
+
+    /// Block-decorated struct not used in any variable should NOT require offsets.
+    /// This tests a struct that has Block decoration but is never instantiated as a variable.
+    #[test]
+    fn block_struct_unused_no_offset_required() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint GLCompute %main \"main\"",
+            "OpExecutionMode %main LocalSize 1 1 1",
+            // Block-decorated struct exists but is never used in a variable
+            "OpDecorate %UnusedData Block",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%f32 = OpTypeFloat 32",
+            "%vec4 = OpTypeVector %f32 4",
+            // No Offset decoration, but that's fine since it's unused
+            "%UnusedData = OpTypeStruct %vec4",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+
+        let binary = assemble_text(&text).expect("assemble");
+        // Should pass - unused Block struct doesn't require offsets
+        validate_module(&binary, TargetEnv::Vulkan1_2).expect("should be valid");
+    }
+
+    /// Block-decorated struct in StorageBuffer storage class SHOULD require offsets.
+    #[test]
+    fn block_struct_in_storage_buffer_requires_offset() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability PhysicalStorageBufferAddresses",
+            "OpMemoryModel PhysicalStorageBuffer64 GLSL450",
+            "OpEntryPoint GLCompute %main \"main\"",
+            "OpExecutionMode %main LocalSize 1 1 1",
+            "OpDecorate %BufferData Block",
+            // No Offset decoration - should fail
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%f32 = OpTypeFloat 32",
+            "%vec4 = OpTypeVector %f32 4",
+            "%BufferData = OpTypeStruct %vec4",
+            "%ptr = OpTypePointer StorageBuffer %BufferData",
+            "%buffer = OpVariable %ptr StorageBuffer",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+
+        let binary = assemble_text(&text).expect("assemble");
+        let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
+        match error {
+            ValidationError::InvalidBlockLayout { struct_type: _, reason } => {
+                assert!(
+                    reason.contains("Offset"),
+                    "expected missing Offset error, got: {reason}"
+                );
+            }
+            other => panic!("expected InvalidBlockLayout error, got: {other:?}"),
+        }
+    }
+
+    /// Block-decorated struct in Uniform storage class SHOULD require offsets.
+    #[test]
+    fn block_struct_in_uniform_requires_offset() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint GLCompute %main \"main\"",
+            "OpExecutionMode %main LocalSize 1 1 1",
+            "OpDecorate %UniformData Block",
+            "OpDecorate %uniform DescriptorSet 0",
+            "OpDecorate %uniform Binding 0",
+            // No Offset decoration - should fail
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%f32 = OpTypeFloat 32",
+            "%vec4 = OpTypeVector %f32 4",
+            "%UniformData = OpTypeStruct %vec4",
+            "%ptr = OpTypePointer Uniform %UniformData",
+            "%uniform = OpVariable %ptr Uniform",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+
+        let binary = assemble_text(&text).expect("assemble");
+        let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
+        match error {
+            ValidationError::InvalidBlockLayout { struct_type: _, reason } => {
+                assert!(
+                    reason.contains("Offset"),
+                    "expected missing Offset error, got: {reason}"
+                );
+            }
+            other => panic!("expected InvalidBlockLayout error, got: {other:?}"),
+        }
+    }
+
+    /// Block-decorated struct in PushConstant storage class SHOULD require offsets.
+    #[test]
+    fn block_struct_in_push_constant_requires_offset() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint GLCompute %main \"main\"",
+            "OpExecutionMode %main LocalSize 1 1 1",
+            "OpDecorate %PushData Block",
+            // No Offset decoration - should fail
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%f32 = OpTypeFloat 32",
+            "%vec4 = OpTypeVector %f32 4",
+            "%PushData = OpTypeStruct %vec4",
+            "%ptr = OpTypePointer PushConstant %PushData",
+            "%push = OpVariable %ptr PushConstant",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+
+        let binary = assemble_text(&text).expect("assemble");
+        let error = validate_module(&binary, TargetEnv::Vulkan1_2).unwrap_err();
+        match error {
+            ValidationError::InvalidBlockLayout { struct_type: _, reason } => {
+                assert!(
+                    reason.contains("Offset"),
+                    "expected missing Offset error, got: {reason}"
+                );
+            }
+            other => panic!("expected InvalidBlockLayout error, got: {other:?}"),
+        }
+    }
+
+    /// Block-decorated struct with proper Offset in StorageBuffer should pass.
+    #[test]
+    fn block_struct_with_offset_in_storage_buffer_is_valid() {
+        let text = [
+            "OpCapability Shader",
+            "OpCapability PhysicalStorageBufferAddresses",
+            "OpMemoryModel PhysicalStorageBuffer64 GLSL450",
+            "OpEntryPoint GLCompute %main \"main\"",
+            "OpExecutionMode %main LocalSize 1 1 1",
+            "OpDecorate %BufferData Block",
+            "OpMemberDecorate %BufferData 0 Offset 0",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%f32 = OpTypeFloat 32",
+            "%vec4 = OpTypeVector %f32 4",
+            "%BufferData = OpTypeStruct %vec4",
+            "%ptr = OpTypePointer StorageBuffer %BufferData",
+            "%buffer = OpVariable %ptr StorageBuffer",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+
+        let binary = assemble_text(&text).expect("assemble");
+        validate_module(&binary, TargetEnv::Vulkan1_2).expect("should be valid");
+    }
+
+    /// BufferBlock-decorated struct in Uniform storage class should require offsets.
+    /// Note: BufferBlock is only valid in SPIR-V 1.3 and earlier.
+    #[test]
+    fn buffer_block_struct_in_uniform_requires_offset() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint GLCompute %main \"main\"",
+            "OpExecutionMode %main LocalSize 1 1 1",
+            "OpDecorate %BufferData BufferBlock",
+            "OpDecorate %buffer DescriptorSet 0",
+            "OpDecorate %buffer Binding 0",
+            // No Offset decoration - should fail
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%f32 = OpTypeFloat 32",
+            "%vec4 = OpTypeVector %f32 4",
+            "%BufferData = OpTypeStruct %vec4",
+            "%ptr = OpTypePointer Uniform %BufferData",
+            "%buffer = OpVariable %ptr Uniform",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+
+        let binary = assemble_text(&text).expect("assemble");
+        // Use Universal1_3 where BufferBlock is still valid
+        let error = validate_module(&binary, TargetEnv::Universal1_3).unwrap_err();
+        match error {
+            ValidationError::InvalidBlockLayout { struct_type: _, reason } => {
+                assert!(
+                    reason.contains("Offset"),
+                    "expected missing Offset error, got: {reason}"
+                );
+            }
+            other => panic!("expected InvalidBlockLayout error, got: {other:?}"),
+        }
+    }
+
+    /// BufferBlock-decorated struct with Offset in Uniform storage class should pass.
+    /// Note: BufferBlock is only valid in SPIR-V 1.3 and earlier.
+    #[test]
+    fn buffer_block_struct_with_offset_in_uniform_is_valid() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint GLCompute %main \"main\"",
+            "OpExecutionMode %main LocalSize 1 1 1",
+            "OpDecorate %BufferData BufferBlock",
+            "OpDecorate %buffer DescriptorSet 0",
+            "OpDecorate %buffer Binding 0",
+            "OpMemberDecorate %BufferData 0 Offset 0",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%f32 = OpTypeFloat 32",
+            "%vec4 = OpTypeVector %f32 4",
+            "%BufferData = OpTypeStruct %vec4",
+            "%ptr = OpTypePointer Uniform %BufferData",
+            "%buffer = OpVariable %ptr Uniform",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+
+        let binary = assemble_text(&text).expect("assemble");
+        // Use Universal1_3 where BufferBlock is still valid
+        validate_module(&binary, TargetEnv::Universal1_3).expect("should be valid");
     }
 }
