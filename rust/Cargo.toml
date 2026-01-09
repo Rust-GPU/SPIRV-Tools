@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "spirv-tools",
     "spirv-tools-core",
     "spirv-tools-cli",
     "spirv-tools-ffi",

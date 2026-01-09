@@ -1,0 +1,18 @@
+[package]
+name = "spirv-tools"
+version = "0.1.0"
+edition = "2021"
+description = "API-compatible wrapper around our Rust SPIR-V tools implementation"
+license = "Apache-2.0"
+
+[dependencies]
+spirv-tools-core = { path = "../spirv-tools-core" }
+rspirv = "0.12"
+
+[features]
+default = []
+# Feature flags for compatibility with the original crates.io spirv-tools crate.
+# These are no-ops since we use a pure Rust implementation, but they're needed
+# for compatibility with crates that depend on spirv-tools with these features.
+use-compiled-tools = []
+use-installed-tools = []

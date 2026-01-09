@@ -1565,6 +1565,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "spirv-tools"
+version = "0.1.0"
+dependencies = [
+ "rspirv",
+ "spirv-tools-core",
+]
+
+[[package]]
 name = "spirv-tools-cli"
 version = "0.1.0"
 dependencies = [
