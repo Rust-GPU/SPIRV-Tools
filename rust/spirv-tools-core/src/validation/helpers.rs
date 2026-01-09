@@ -250,6 +250,49 @@ pub fn matrix_details(
     (column_type, column_count, component_type, component_count)
 }
 
+/// Returns matrix details by type id: (component_type, rows, columns, column_result_id).
+/// This is the original validation mod.rs signature used for matrix validation.
+pub fn matrix_details_by_id(
+    type_id: TypeId,
+    definitions: &HashMap<ResultId, Instruction>,
+) -> Option<(TypeId, u32, u32, ResultId)> {
+    let matrix_result = ResultId::try_from(u32::from(type_id)).ok()?;
+    let inst = definitions.get(&matrix_result)?;
+    if inst.class.opcode != Op::TypeMatrix {
+        return None;
+    }
+    let (column_type, columns) = matrix_info(inst);
+    let column_type = column_type?;
+    let columns = columns?;
+    let column_result = ResultId::try_from(u32::from(column_type)).ok()?;
+    let column_inst = definitions.get(&column_result)?;
+    if column_inst.class.opcode != Op::TypeVector {
+        return None;
+    }
+    let (component_type, rows) = vector_info(column_inst);
+    Some((component_type?, rows?, columns, column_result))
+}
+
+/// Returns the length of a fixed-size array from its length operand.
+pub fn array_length(
+    inst: &Instruction,
+    definitions: &HashMap<ResultId, Instruction>,
+) -> Option<u32> {
+    let len_id = match inst.operands.get(1) {
+        Some(Operand::IdRef(id)) => ResultId::try_from(*id).ok()?,
+        _ => return None,
+    };
+    let len_inst = definitions.get(&len_id)?;
+    if len_inst.class.opcode != Op::Constant {
+        return None;
+    }
+    match len_inst.operands.first() {
+        Some(Operand::LiteralBit32(v)) => Some(*v),
+        Some(Operand::LiteralBit64(v)) => u32::try_from(*v).ok(),
+        _ => None,
+    }
+}
+
 // ============================================================================
 // Operand extraction helpers
 // ============================================================================

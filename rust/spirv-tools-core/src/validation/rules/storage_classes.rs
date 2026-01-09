@@ -377,6 +377,12 @@ impl ValidationRule for StructBlockRequirementsRule {
                     }
                 }
             } else {
+                // Uniform and StorageBuffer require Block/BufferBlock decoration
+                if storage_class == StorageClass::Uniform
+                    || storage_class == StorageClass::PushConstant
+                {
+                    return Err(ValidationError::MissingBlockDecoration { storage_class });
+                }
                 // StorageBuffer requires Block decoration after SPIR-V 1.3
                 if storage_class == StorageClass::StorageBuffer
                     && target_version > SpirvVersion::new(1, 3)
@@ -394,7 +400,7 @@ impl ValidationRule for StructBlockRequirementsRule {
 // Location Storage Class Rule
 // ============================================================================
 
-/// Validates that Location decoration is used with valid storage classes.
+/// Validates that Location and Component decorations are used with valid storage classes.
 pub struct LocationStorageClassRule;
 
 impl ValidationRule for LocationStorageClassRule {
@@ -419,6 +425,8 @@ impl ValidationRule for LocationStorageClassRule {
             }
         }
 
+        // Collect which variables have Location decoration
+        let mut has_location: HashSet<ResultId> = HashSet::new();
         for inst in &module.annotations {
             if inst.class.opcode != Op::Decorate {
                 continue;
@@ -428,25 +436,68 @@ impl ValidationRule for LocationStorageClassRule {
                 Some(rspirv::dr::Operand::Decoration(Decoration::Location)),
             ) = (inst.operands.first(), inst.operands.get(1))
             {
-                let Ok(var_id) = ResultId::try_from(*target) else {
-                    continue;
-                };
-                let Some(storage_class) = var_storage_classes.get(&var_id) else {
-                    continue;
-                };
-                let allowed = matches!(
-                    storage_class,
-                    StorageClass::Input
-                        | StorageClass::Output
-                        | StorageClass::UniformConstant
-                        | StorageClass::StorageBuffer
-                        | StorageClass::Uniform
-                );
-                if !allowed {
-                    return Err(ValidationError::InvalidLocationStorageClass {
-                        storage_class: *storage_class,
-                    });
+                if let Ok(var_id) = ResultId::try_from(*target) {
+                    has_location.insert(var_id);
                 }
+            }
+        }
+
+        for inst in &module.annotations {
+            if inst.class.opcode != Op::Decorate {
+                continue;
+            }
+            let Some(rspirv::dr::Operand::IdRef(target)) = inst.operands.first() else {
+                continue;
+            };
+            let Some(rspirv::dr::Operand::Decoration(decoration)) = inst.operands.get(1) else {
+                continue;
+            };
+            let Ok(var_id) = ResultId::try_from(*target) else {
+                continue;
+            };
+
+            match decoration {
+                Decoration::Location => {
+                    let Some(storage_class) = var_storage_classes.get(&var_id) else {
+                        continue;
+                    };
+                    let allowed =
+                        matches!(storage_class, StorageClass::Input | StorageClass::Output);
+                    if !allowed {
+                        return Err(ValidationError::InvalidLocationStorageClass {
+                            storage_class: *storage_class,
+                        });
+                    }
+                }
+                Decoration::Component => {
+                    // Component decoration must have a valid value (0-3)
+                    if let Some(rspirv::dr::Operand::LiteralBit32(component)) = inst.operands.get(2)
+                    {
+                        if *component > 3 {
+                            return Err(ValidationError::ComponentOutOfRange {
+                                component: *component,
+                            });
+                        }
+                    }
+
+                    // Component decoration requires Location decoration
+                    if !has_location.contains(&var_id) {
+                        return Err(ValidationError::ComponentMissingLocation);
+                    }
+
+                    // Component decoration also requires Input/Output storage class
+                    let Some(storage_class) = var_storage_classes.get(&var_id) else {
+                        continue;
+                    };
+                    let allowed =
+                        matches!(storage_class, StorageClass::Input | StorageClass::Output);
+                    if !allowed {
+                        return Err(ValidationError::InvalidLocationStorageClass {
+                            storage_class: *storage_class,
+                        });
+                    }
+                }
+                _ => {}
             }
         }
 

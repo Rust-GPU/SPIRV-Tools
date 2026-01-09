@@ -600,12 +600,62 @@ fn validate_builtin_type(
                 });
             }
         }
+        BuiltIn::GlobalInvocationId
+        | BuiltIn::LocalInvocationId
+        | BuiltIn::NumWorkgroups
+        | BuiltIn::WorkgroupId
+        | BuiltIn::LaunchIdKHR
+        | BuiltIn::LaunchSizeKHR => {
+            // Must be vec3<i32>
+            if !is_vec3_i32(pointee, definitions) {
+                return Some(ValidationError::InvalidBuiltInType {
+                    builtin,
+                    expected: "vec3<i32>",
+                });
+            }
+        }
+        BuiltIn::BaryCoordKHR | BuiltIn::BaryCoordNoPerspKHR => {
+            // Must be vec3<f32>
+            if !is_vec3_f32(pointee, definitions) {
+                return Some(ValidationError::InvalidBuiltInType {
+                    builtin,
+                    expected: "vec3<f32>",
+                });
+            }
+        }
+        BuiltIn::ShadingRateKHR | BuiltIn::PrimitiveShadingRateKHR => {
+            // Must be i32
+            if !is_i32(pointee) {
+                return Some(ValidationError::InvalidBuiltInType {
+                    builtin,
+                    expected: "i32",
+                });
+            }
+        }
         _ => {}
     }
     None
 }
 
 fn is_vec4_f32(ty: &Instruction, definitions: &HashMap<ResultId, Instruction>) -> bool {
+    is_vec_of(ty, definitions, 4, Op::TypeFloat, 32)
+}
+
+fn is_vec3_f32(ty: &Instruction, definitions: &HashMap<ResultId, Instruction>) -> bool {
+    is_vec_of(ty, definitions, 3, Op::TypeFloat, 32)
+}
+
+fn is_vec3_i32(ty: &Instruction, definitions: &HashMap<ResultId, Instruction>) -> bool {
+    is_vec_of(ty, definitions, 3, Op::TypeInt, 32)
+}
+
+fn is_vec_of(
+    ty: &Instruction,
+    definitions: &HashMap<ResultId, Instruction>,
+    expected_count: u32,
+    expected_component_op: Op,
+    expected_width: u32,
+) -> bool {
     if ty.class.opcode != Op::TypeVector {
         return false;
     }
@@ -613,7 +663,7 @@ fn is_vec4_f32(ty: &Instruction, definitions: &HashMap<ResultId, Instruction>) -
         rspirv::dr::Operand::LiteralBit32(n) => Some(*n),
         _ => None,
     });
-    if component_count != Some(4) {
+    if component_count != Some(expected_count) {
         return false;
     }
     let component_type_id = ty.operands.first().and_then(|op| match op {
@@ -626,11 +676,21 @@ fn is_vec4_f32(ty: &Instruction, definitions: &HashMap<ResultId, Instruction>) -
     let Some(component_type) = definitions.get(&component_type_id) else {
         return false;
     };
-    if component_type.class.opcode != Op::TypeFloat {
+    if component_type.class.opcode != expected_component_op {
         return false;
     }
     matches!(
         component_type.operands.first(),
+        Some(rspirv::dr::Operand::LiteralBit32(w)) if *w == expected_width
+    )
+}
+
+fn is_i32(ty: &Instruction) -> bool {
+    if ty.class.opcode != Op::TypeInt {
+        return false;
+    }
+    matches!(
+        ty.operands.first(),
         Some(rspirv::dr::Operand::LiteralBit32(32))
     )
 }

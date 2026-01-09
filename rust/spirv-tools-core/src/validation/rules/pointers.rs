@@ -156,6 +156,195 @@ impl ValidationRule for LogicalPointerRule {
 }
 
 // ============================================================================
+// Load/Store Logical Pointer Rule
+// ============================================================================
+
+/// Returns true if the given opcode returns a logical pointer.
+/// These are the only opcodes that can produce pointers valid for
+/// OpLoad/OpStore in Logical addressing mode (without VariablePointers).
+fn opcode_returns_logical_pointer(opcode: Op) -> bool {
+    matches!(
+        opcode,
+        Op::Variable
+            | Op::UntypedVariableKHR
+            | Op::AccessChain
+            | Op::InBoundsAccessChain
+            | Op::UntypedAccessChainKHR
+            | Op::UntypedInBoundsAccessChainKHR
+            | Op::FunctionParameter
+            | Op::ImageTexelPointer
+            | Op::CopyObject
+            | Op::RawAccessChainNV
+            | Op::AllocateNodePayloadsAMDX
+    )
+}
+
+/// Returns true if the given opcode returns a logical variable pointer.
+/// These are the opcodes that can produce pointers valid for
+/// OpLoad/OpStore in Logical addressing mode WITH VariablePointers capability.
+fn opcode_returns_logical_variable_pointer(opcode: Op) -> bool {
+    if opcode_returns_logical_pointer(opcode) {
+        return true;
+    }
+    matches!(
+        opcode,
+        Op::PtrAccessChain
+            | Op::UntypedPtrAccessChainKHR
+            | Op::UntypedInBoundsPtrAccessChainKHR
+            | Op::Load
+            | Op::Select
+            | Op::Phi
+            | Op::FunctionCall
+            | Op::ConstantNull
+    )
+}
+
+/// Validates that OpLoad and OpStore use valid logical pointers.
+/// In Logical addressing mode, the pointer operand must come from a
+/// logical pointer-producing instruction.
+pub struct LoadStoreLogicalPointerRule;
+
+impl ValidationRule for LoadStoreLogicalPointerRule {
+    fn name(&self) -> &'static str {
+        "load-store-logical-pointers"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        if ctx.options.relax_logical_pointer {
+            return Ok(());
+        }
+
+        let addressing_model = ctx
+            .module
+            .memory_model
+            .as_ref()
+            .and_then(|inst| inst.operands.first())
+            .and_then(|op| match op {
+                rspirv::dr::Operand::AddressingModel(model) => Some(*model),
+                _ => None,
+            });
+
+        // Only validate in Logical addressing mode
+        let is_logical = matches!(addressing_model, Some(AddressingModel::Logical));
+        if !is_logical {
+            return Ok(());
+        }
+
+        let has_variable_pointers =
+            ctx.declared_capabilities
+                .contains(&Capability::VariablePointers)
+                || ctx
+                    .declared_capabilities
+                    .contains(&Capability::VariablePointersStorageBuffer);
+
+        for inst in ctx.module.all_inst_iter() {
+            let (opcode, ptr_operand_index) = match inst.class.opcode {
+                Op::Load => (Op::Load, 0),
+                Op::Store => (Op::Store, 0),
+                Op::CopyMemory => (Op::CopyMemory, 0),
+                Op::CopyMemorySized => (Op::CopyMemorySized, 0),
+                _ => continue,
+            };
+
+            let Some(rspirv::dr::Operand::IdRef(ptr_id_raw)) = inst.operands.get(ptr_operand_index)
+            else {
+                continue;
+            };
+            let Ok(ptr_id) = ResultId::try_from(*ptr_id_raw) else {
+                continue;
+            };
+            let Some(ptr_inst) = ctx.definitions.get(&ptr_id) else {
+                continue;
+            };
+
+            // Check if the pointer type has PhysicalStorageBuffer storage class
+            // If so, it's not subject to logical pointer restrictions
+            if let Some(ptr_type_raw) = ptr_inst.result_type {
+                if let Ok(ptr_type_id) = ResultId::try_from(ptr_type_raw) {
+                    if let Some(ptr_type_inst) = ctx.definitions.get(&ptr_type_id) {
+                        if ptr_type_inst.class.opcode == Op::TypePointer {
+                            if let Some(rspirv::dr::Operand::StorageClass(sc)) =
+                                ptr_type_inst.operands.first()
+                            {
+                                if *sc == StorageClass::PhysicalStorageBuffer {
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            let source_opcode = ptr_inst.class.opcode;
+
+            let is_valid = if has_variable_pointers {
+                opcode_returns_logical_variable_pointer(source_opcode)
+            } else {
+                opcode_returns_logical_pointer(source_opcode)
+            };
+
+            if !is_valid {
+                let pointer = Id::try_from(*ptr_id_raw).unwrap_or_else(|_| Id::try_from(1).unwrap());
+                return Err(ValidationError::NotALogicalPointer {
+                    instruction: opcode,
+                    pointer,
+                    source_opcode,
+                });
+            }
+
+            // For CopyMemory/CopyMemorySized, also check the source pointer
+            if opcode == Op::CopyMemory || opcode == Op::CopyMemorySized {
+                let Some(rspirv::dr::Operand::IdRef(src_ptr_id_raw)) = inst.operands.get(1) else {
+                    continue;
+                };
+                let Ok(src_ptr_id) = ResultId::try_from(*src_ptr_id_raw) else {
+                    continue;
+                };
+                let Some(src_ptr_inst) = ctx.definitions.get(&src_ptr_id) else {
+                    continue;
+                };
+
+                // Check PhysicalStorageBuffer for source pointer too
+                if let Some(ptr_type_raw) = src_ptr_inst.result_type {
+                    if let Ok(ptr_type_id) = ResultId::try_from(ptr_type_raw) {
+                        if let Some(ptr_type_inst) = ctx.definitions.get(&ptr_type_id) {
+                            if ptr_type_inst.class.opcode == Op::TypePointer {
+                                if let Some(rspirv::dr::Operand::StorageClass(sc)) =
+                                    ptr_type_inst.operands.first()
+                                {
+                                    if *sc == StorageClass::PhysicalStorageBuffer {
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                let src_source_opcode = src_ptr_inst.class.opcode;
+                let src_is_valid = if has_variable_pointers {
+                    opcode_returns_logical_variable_pointer(src_source_opcode)
+                } else {
+                    opcode_returns_logical_pointer(src_source_opcode)
+                };
+
+                if !src_is_valid {
+                    let pointer =
+                        Id::try_from(*src_ptr_id_raw).unwrap_or_else(|_| Id::try_from(1).unwrap());
+                    return Err(ValidationError::NotALogicalPointer {
+                        instruction: opcode,
+                        pointer,
+                        source_opcode: src_source_opcode,
+                    });
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
 // Store Type Compatibility Rule
 // ============================================================================
 
@@ -453,5 +642,9 @@ fn matrix_info(inst: &rspirv::dr::Instruction) -> (Option<TypeId>, Option<u32>) 
 
 /// Returns all pointer validation rules.
 pub fn all_pointer_rules() -> Vec<&'static dyn ValidationRule> {
-    vec![&LogicalPointerRule, &StoreTypeCompatibilityRule]
+    vec![
+        &LogicalPointerRule,
+        &LoadStoreLogicalPointerRule,
+        &StoreTypeCompatibilityRule,
+    ]
 }
