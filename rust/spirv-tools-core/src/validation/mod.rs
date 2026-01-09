@@ -7452,6 +7452,8 @@ fn extension_promoted_to_core_version(extension: &str) -> Option<SpirvVersion> {
         "spv_khr_float_controls" => Some(SpirvVersion::new(1, 4)),
         // Subgroup vote was promoted in SPIR-V 1.3
         "spv_khr_subgroup_vote" => Some(SpirvVersion::new(1, 3)),
+        // Shader ballot was promoted in SPIR-V 1.3
+        "spv_khr_shader_ballot" => Some(SpirvVersion::new(1, 3)),
         // Multiview was promoted in SPIR-V 1.3
         "spv_khr_multiview" => Some(SpirvVersion::new(1, 3)),
         // Device group was promoted in SPIR-V 1.3
@@ -35653,6 +35655,36 @@ OpFunctionEnd
 "#;
         assemble_and_validate_with_env(subgroup_ok, TargetEnv::Universal1_6)
             .expect("subgroup built-ins should be accepted when capabilities are declared");
+
+        // Test that SPV_KHR_shader_ballot extension is not required in SPIR-V 1.3+ when
+        // GroupNonUniformBallot capability is used (the extension was promoted to core in 1.3)
+        let subgroup_mask_without_extension_spirv13 = r#"
+OpCapability Shader
+OpCapability Kernel
+OpCapability GroupNonUniform
+OpCapability GroupNonUniformBallot
+OpMemoryModel Logical OpenCL
+OpEntryPoint Kernel %main "main" %mask
+OpDecorate %mask BuiltIn SubgroupEqMask
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%vec4 = OpTypeVector %u32 4
+%ptr_vec = OpTypePointer Input %vec4
+%mask = OpVariable %ptr_vec Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        assemble_and_validate_with_env(
+            subgroup_mask_without_extension_spirv13,
+            TargetEnv::Universal1_3,
+        )
+        .expect(
+            "SubgroupEqMask should be accepted without SPV_KHR_shader_ballot in SPIR-V 1.3+ \
+             when GroupNonUniformBallot capability is present",
+        );
 
         let subgroup_size_missing_capability = r#"
 OpCapability Shader
