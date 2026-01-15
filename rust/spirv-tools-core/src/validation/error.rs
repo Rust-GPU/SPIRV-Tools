@@ -2502,4 +2502,197 @@ pub enum ValidationError {
         /// The opcode.
         opcode: rspirv::spirv::Op,
     },
+
+    // =========================================================================
+    // Ray Tracing Errors
+    // =========================================================================
+
+    /// Ray tracing instruction requires specific execution model(s).
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} requires one of execution models: {allowed_models}"
+    )]
+    RayTracingInvalidExecutionModel {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+        /// The allowed execution models.
+        allowed_models: &'static str,
+    },
+    /// Expected Acceleration Structure type.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} expected Acceleration Structure to be of type OpTypeAccelerationStructureKHR"
+    )]
+    RayTracingExpectedAccelerationStructure {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Ray Flags must be a 32-bit int scalar.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} Ray Flags must be a 32-bit int scalar"
+    )]
+    RayTracingInvalidRayFlags {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Cull Mask must be a 32-bit int scalar.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} Cull Mask must be a 32-bit int scalar"
+    )]
+    RayTracingInvalidCullMask {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Ray Origin must be a 32-bit float 3-component vector.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} Ray Origin must be a 32-bit float 3-component vector"
+    )]
+    RayTracingInvalidRayOrigin {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Ray Direction must be a 32-bit float 3-component vector.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} Ray Direction must be a 32-bit float 3-component vector"
+    )]
+    RayTracingInvalidRayDirection {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Ray TMin/TMax must be a 32-bit float scalar.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} Ray {param_name} must be a 32-bit float scalar"
+    )]
+    RayTracingInvalidRayT {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+        /// The parameter name (TMin or TMax).
+        param_name: &'static str,
+    },
+    /// SBT Offset/Stride/Index must be a 32-bit int scalar.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} {param_name} must be a 32-bit int scalar"
+    )]
+    RayTracingInvalidSbtParam {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+        /// The parameter name.
+        param_name: &'static str,
+    },
+    /// Payload must be a variable with RayPayloadKHR or IncomingRayPayloadKHR storage class.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} Payload must be a variable with storage class RayPayloadKHR or IncomingRayPayloadKHR"
+    )]
+    RayTracingInvalidPayload {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Callable data must be a variable with CallableDataKHR or IncomingCallableDataKHR storage class.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} Callable Data must be a variable with storage class CallableDataKHR or IncomingCallableDataKHR"
+    )]
+    RayTracingInvalidCallableData {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Hit operand must be a 32-bit float scalar.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} Hit must be a 32-bit float scalar"
+    )]
+    RayTracingInvalidHit {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Hit Kind must be a 32-bit unsigned int scalar.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} Hit Kind must be a 32-bit unsigned int scalar"
+    )]
+    RayTracingInvalidHitKind {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Ray Query must be a pointer to OpTypeRayQueryKHR.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} Ray Query must be a pointer to OpTypeRayQueryKHR"
+    )]
+    RayQueryInvalidPointer {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Intersection ID must be a 32-bit int constant.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} Intersection ID must be a constant 32-bit int scalar"
+    )]
+    RayQueryInvalidIntersectionId {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Ray Query result type is invalid.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} expected Result Type to be {expected}"
+    )]
+    RayQueryInvalidResultType {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+        /// Expected type description.
+        expected: &'static str,
+    },
 }

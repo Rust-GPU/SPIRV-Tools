@@ -77,6 +77,7 @@ pub mod logicals;
 pub mod memory;
 pub mod non_uniform;
 pub mod pointers;
+pub mod ray_tracing;
 pub mod storage_classes;
 pub mod types;
 pub mod vulkan;
