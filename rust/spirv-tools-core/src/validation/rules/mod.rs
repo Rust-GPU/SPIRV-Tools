@@ -68,6 +68,7 @@ pub mod entry_points;
 pub mod execution_modes;
 pub mod extensions;
 pub mod functions;
+pub mod image;
 pub mod interpolation;
 pub mod layout;
 pub mod limits;

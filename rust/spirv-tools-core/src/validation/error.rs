@@ -2098,4 +2098,219 @@ pub enum ValidationError {
         /// The required capability.
         required_capability: rspirv::spirv::Capability,
     },
+
+    // ========================================================================
+    // Image Instruction Errors
+    // ========================================================================
+
+    /// OpTypeImage has invalid operand count.
+    #[error("OpTypeImage {type_id:?} has {actual} operands, expected at least {expected}")]
+    ImageTypeInvalidOperandCount {
+        /// The image type ID.
+        type_id: Option<TypeId>,
+        /// Expected minimum operand count.
+        expected: usize,
+        /// Actual operand count.
+        actual: usize,
+    },
+    /// OpTypeImage with SubpassData dimension must not be arrayed.
+    #[error("OpTypeImage {type_id:?} with SubpassData dimension must not be arrayed")]
+    ImageTypeSubpassDataMustNotBeArrayed {
+        /// The image type ID.
+        type_id: Option<TypeId>,
+    },
+    /// OpTypeImage with SubpassData dimension must have Sampled = 2.
+    #[error("OpTypeImage {type_id:?} with SubpassData dimension must have Sampled = 2")]
+    ImageTypeSubpassDataSampledMustBeTwo {
+        /// The image type ID.
+        type_id: Option<TypeId>,
+    },
+    /// OpTypeImage with Buffer dimension requires a format in Vulkan.
+    #[error("OpTypeImage {type_id:?} with Buffer dimension requires a format in Vulkan")]
+    ImageTypeBufferFormatRequired {
+        /// The image type ID.
+        type_id: Option<TypeId>,
+    },
+    /// Multisampled image requires Sample operand.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} operates on multisampled image but missing Sample operand"
+    )]
+    ImageOperandSampleRequiredForMultisampled {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Multiple offset operands specified.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} has multiple offset operands (Offset, ConstOffset, ConstOffsets are mutually exclusive)"
+    )]
+    ImageOperandMultipleOffsets {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Bias operand requires implicit LOD operation.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} uses Bias operand but is not an implicit LOD operation"
+    )]
+    ImageOperandBiasRequiresImplicitLod {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Lod operand requires explicit LOD or fetch operation.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} uses Lod operand but is not an explicit LOD or fetch operation"
+    )]
+    ImageOperandLodRequiresExplicitLodOrFetch {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Lod and Grad operands are mutually exclusive.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} uses both Lod and Grad operands which are mutually exclusive"
+    )]
+    ImageOperandLodAndGradMutuallyExclusive {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Grad operand requires explicit LOD operation.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} uses Grad operand but is not an explicit LOD operation"
+    )]
+    ImageOperandGradRequiresExplicitLod {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
+    /// ConstOffsets operand requires gather operation.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} uses ConstOffsets operand but is not a gather operation"
+    )]
+    ImageOperandConstOffsetsRequiresGather {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Offset operands cannot be used with Cube dimension.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} uses offset operand with Cube dimension which is not allowed"
+    )]
+    ImageOperandOffsetCannotBeUsedWithCube {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Implicit LOD requires Fragment execution model.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} uses implicit LOD which requires Fragment execution model"
+    )]
+    ImageImplicitLodRequiresFragment {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Image read requires storage image (Sampled = 0 or 2).
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} reads from image with Sampled=1 (sampling-only), requires Sampled=0 or 2"
+    )]
+    ImageReadRequiresStorageImage {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Image write requires storage image (Sampled = 0 or 2).
+    #[error(
+        "OpImageWrite in block {block:?} of function {function:?} writes to image with Sampled=1 (sampling-only), requires Sampled=0 or 2"
+    )]
+    ImageWriteRequiresStorageImage {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+    /// Image query has invalid result type.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} requires result type to be {expected}"
+    )]
+    ImageQueryResultTypeInvalid {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the query operation.
+        opcode: rspirv::spirv::Op,
+        /// Expected type description.
+        expected: &'static str,
+    },
+    /// OpImageQuerySizeLod used with invalid dimension.
+    #[error(
+        "OpImageQuerySizeLod in block {block:?} of function {function:?} cannot be used with dimension {dim:?}"
+    )]
+    ImageQuerySizeLodInvalidDim {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The invalid dimension.
+        dim: rspirv::spirv::Dim,
+    },
+    /// OpImageQuerySize used with invalid dimension.
+    #[error(
+        "OpImageQuerySize in block {block:?} of function {function:?} cannot be used with dimension {dim:?} for sampling-only images"
+    )]
+    ImageQuerySizeInvalidDim {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The invalid dimension.
+        dim: rspirv::spirv::Dim,
+    },
+    /// OpImageQueryLod result must be float vector of size 2.
+    #[error(
+        "OpImageQueryLod in block {block:?} of function {function:?} requires result type to be float vector of size 2 (found size {actual})"
+    )]
+    ImageQueryLodResultSizeInvalid {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// Expected size.
+        expected: u32,
+        /// Actual size.
+        actual: u32,
+    },
 }

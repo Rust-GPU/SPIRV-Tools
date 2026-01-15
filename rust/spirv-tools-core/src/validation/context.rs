@@ -126,6 +126,12 @@ impl<'a> ValidationContext<'a> {
         crate::validation::helpers::is_vulkan_env(self.env)
     }
 
+    /// Alias for is_vulkan() - checks if this is a Vulkan environment.
+    #[inline]
+    pub fn is_vulkan_env(&self) -> bool {
+        self.is_vulkan()
+    }
+
     /// Checks if a result ID is defined.
     #[inline]
     pub fn is_defined(&self, id: ResultId) -> bool {
