@@ -78,6 +78,8 @@ const SPIRV_EGGLOG_PROGRAM: &str = concat!(
     include_str!("rules/cleanup.egg"),
     "\n",
     include_str!("rules/subgroup.egg"),
+    "\n",
+    include_str!("rules/bitfield.egg"),
 );
 
 /// Rules that use custom primitives (must be loaded after primitives are registered).
@@ -2332,6 +2334,149 @@ mod tests {
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
         assert!(check.is_ok(), "ImageSample with loop-invariant coord should be loop-invariant");
+    }
+
+    // =========================================================================
+    // Bitfield Operation Tests
+    // =========================================================================
+
+    #[test]
+    fn test_bitfield_extract_full_word() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // BitFieldUExtract(x, 0, 32) = x (full word extract is identity)
+        egraph.parse_and_run_program(None, r#"
+            (let x (Sym "x"))
+            (let root (BitFieldUExtract x (Const 0) (Const 32)))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root x))");
+        assert!(check.is_ok(), "BitFieldUExtract of full word should be identity");
+    }
+
+    #[test]
+    fn test_bitfield_extract_zero_count() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // BitFieldUExtract(x, offset, 0) = 0 (extracting 0 bits)
+        egraph.parse_and_run_program(None, r#"
+            (let x (Sym "x"))
+            (let root (BitFieldUExtract x (Const 5) (Const 0)))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let result = format!("{}", results[0]);
+        assert!(result.contains("Const 0"), "BitFieldUExtract with 0 count should be 0, got: {}", result);
+    }
+
+    #[test]
+    fn test_bitfield_insert_zero_count() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // BitFieldInsert(base, val, offset, 0) = base (inserting 0 bits)
+        egraph.parse_and_run_program(None, r#"
+            (let base (Sym "base"))
+            (let val (Sym "val"))
+            (let root (BitFieldInsert base val (Const 5) (Const 0)))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root base))");
+        assert!(check.is_ok(), "BitFieldInsert with 0 count should be identity");
+    }
+
+    #[test]
+    fn test_bit_reverse_double() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // BitReverse(BitReverse(x)) = x
+        egraph.parse_and_run_program(None, r#"
+            (let x (Sym "x"))
+            (let root (BitReverse (BitReverse x)))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root x))");
+        assert!(check.is_ok(), "Double BitReverse should be identity");
+    }
+
+    #[test]
+    fn test_bit_count_zero() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // BitCount(0) = 0
+        egraph.parse_and_run_program(None, r#"
+            (let root (BitCount (Const 0)))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let result = format!("{}", results[0]);
+        assert!(result.contains("Const 0"), "BitCount of 0 should be 0, got: {}", result);
+    }
+
+    #[test]
+    fn test_bit_count_power_of_two() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // BitCount(power of 2) = 1
+        egraph.parse_and_run_program(None, r#"
+            (let root (BitCount (Const 128)))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let result = format!("{}", results[0]);
+        assert!(result.contains("Const 1"), "BitCount of power of 2 should be 1, got: {}", result);
+    }
+
+    #[test]
+    fn test_find_lsb_power_of_two() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // FindILsb(16) = 4 (bit 4 is set)
+        egraph.parse_and_run_program(None, r#"
+            (let root (FindILsb (Const 16)))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let result = format!("{}", results[0]);
+        assert!(result.contains("Const 4"), "FindILsb(16) should be 4, got: {}", result);
+    }
+
+    #[test]
+    fn test_bit_count_invariant_to_reverse() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // BitCount(BitReverse(x)) = BitCount(x)
+        egraph.parse_and_run_program(None, r#"
+            (let x (Sym "x"))
+            (let root (BitCount (BitReverse x)))
+            (let expected (BitCount x))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+        assert!(check.is_ok(), "BitCount should be invariant to BitReverse");
+    }
+
+    #[test]
+    fn test_bitfield_extract_low_byte() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // BitFieldUExtract(x, 0, 8) = BitAnd(x, 255)
+        egraph.parse_and_run_program(None, r#"
+            (let x (Sym "x"))
+            (let root (BitFieldUExtract x (Const 0) (Const 8)))
+            (let expected (BitAnd x (Const 255)))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+        assert!(check.is_ok(), "BitFieldUExtract low byte should be BitAnd with 255");
     }
 
 }

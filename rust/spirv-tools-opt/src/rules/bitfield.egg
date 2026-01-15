@@ -1,0 +1,136 @@
+; =============================================================================
+; Bitfield Operation Optimizations for E-Graph
+; =============================================================================
+;
+; This module provides optimizations for bitfield insert/extract operations.
+; NOTE: BitReverse, BitCount, FindILsb, FindSMsb, FindUMsb rules are in glsl.egg
+;       and bitwise.egg. This file only adds BitFieldInsert/Extract rules.
+;
+; =============================================================================
+; BitFieldExtract Simplifications
+; =============================================================================
+
+; Extract with offset 0 and count 32 (full word) is identity
+; BitFieldUExtract(x, 0, 32) = x
+(rule ((= e (BitFieldUExtract x (Const 0) (Const 32))))
+      ((union e x)))
+(rule ((= e (BitFieldSExtract x (Const 0) (Const 32))))
+      ((union e x)))
+
+; Extract with count 0 is always 0
+(rule ((= e (BitFieldUExtract _ _ (Const 0))))
+      ((union e (Const 0))))
+(rule ((= e (BitFieldSExtract _ _ (Const 0))))
+      ((union e (Const 0))))
+
+; Extract low bits (offset 0) is just mask
+; BitFieldUExtract(x, 0, 1) = x & 1
+(rule ((= e (BitFieldUExtract x (Const 0) (Const 1))))
+      ((union e (BitAnd x (Const 1)))))
+(rule ((= e (BitFieldUExtract x (Const 0) (Const 8))))
+      ((union e (BitAnd x (Const 255)))))
+(rule ((= e (BitFieldUExtract x (Const 0) (Const 16))))
+      ((union e (BitAnd x (Const 65535)))))
+
+; =============================================================================
+; BitFieldInsert Simplifications
+; =============================================================================
+
+; Insert with count 0 is identity (no bits inserted)
+(rule ((= e (BitFieldInsert base _ _ (Const 0))))
+      ((union e base)))
+
+; Insert at offset 0 with full word replaces base
+(rule ((= e (BitFieldInsert _ insert (Const 0) (Const 32))))
+      ((union e insert)))
+
+; Insert same value that would be extracted = identity
+; BitFieldInsert(x, BitFieldUExtract(x, off, cnt), off, cnt) = x
+(rule ((= e (BitFieldInsert x (BitFieldUExtract x off cnt) off cnt)))
+      ((union e x)))
+
+; =============================================================================
+; BitCount Additional Optimizations (not in glsl.egg)
+; =============================================================================
+
+; BitCount of -1 (all ones) is 32 (assuming 32-bit integers)
+(rule ((= e (BitCount (Const -1))))
+      ((union e (Const 32))))
+
+; BitCount of power of 2 is 1
+(rule ((= e (BitCount (Const 1))))
+      ((union e (Const 1))))
+(rule ((= e (BitCount (Const 2))))
+      ((union e (Const 1))))
+(rule ((= e (BitCount (Const 4))))
+      ((union e (Const 1))))
+(rule ((= e (BitCount (Const 8))))
+      ((union e (Const 1))))
+(rule ((= e (BitCount (Const 16))))
+      ((union e (Const 1))))
+(rule ((= e (BitCount (Const 32))))
+      ((union e (Const 1))))
+(rule ((= e (BitCount (Const 64))))
+      ((union e (Const 1))))
+(rule ((= e (BitCount (Const 128))))
+      ((union e (Const 1))))
+(rule ((= e (BitCount (Const 256))))
+      ((union e (Const 1))))
+
+; BitCount is invariant to bit reversal
+(rule ((= e (BitCount (BitReverse x))))
+      ((union e (BitCount x))))
+
+; =============================================================================
+; FindILsb Additional Optimizations (not in glsl.egg)
+; =============================================================================
+
+; FindILsb of power of 2
+(rule ((= e (FindILsb (Const 1))))
+      ((union e (Const 0))))
+(rule ((= e (FindILsb (Const 2))))
+      ((union e (Const 1))))
+(rule ((= e (FindILsb (Const 4))))
+      ((union e (Const 2))))
+(rule ((= e (FindILsb (Const 8))))
+      ((union e (Const 3))))
+(rule ((= e (FindILsb (Const 16))))
+      ((union e (Const 4))))
+
+; FindUMsb of power of 2
+(rule ((= e (FindUMsb (Const 1))))
+      ((union e (Const 0))))
+(rule ((= e (FindUMsb (Const 2))))
+      ((union e (Const 1))))
+(rule ((= e (FindUMsb (Const 4))))
+      ((union e (Const 2))))
+(rule ((= e (FindUMsb (Const 8))))
+      ((union e (Const 3))))
+(rule ((= e (FindUMsb (Const 16))))
+      ((union e (Const 4))))
+
+; =============================================================================
+; Loop Invariant BitField Operations
+; =============================================================================
+
+(rule ((= e (BitFieldUExtract (LoopInvariant x) (LoopInvariant off) (LoopInvariant cnt))))
+      ((union e (LoopInvariant (BitFieldUExtract x off cnt)))))
+(rule ((= e (BitFieldSExtract (LoopInvariant x) (LoopInvariant off) (LoopInvariant cnt))))
+      ((union e (LoopInvariant (BitFieldSExtract x off cnt)))))
+(rule ((= e (BitFieldInsert (LoopInvariant base) (LoopInvariant insert) (LoopInvariant off) (LoopInvariant cnt))))
+      ((union e (LoopInvariant (BitFieldInsert base insert off cnt)))))
+
+; =============================================================================
+; Image Query Optimizations
+; =============================================================================
+
+; Image queries with loop-invariant inputs are loop-invariant
+(rule ((= e (ImageQuerySize (LoopInvariant img))))
+      ((union e (LoopInvariant (ImageQuerySize img)))))
+(rule ((= e (ImageQuerySizeLod (LoopInvariant img) (LoopInvariant lod))))
+      ((union e (LoopInvariant (ImageQuerySizeLod img lod)))))
+(rule ((= e (ImageQueryLevels (LoopInvariant img))))
+      ((union e (LoopInvariant (ImageQueryLevels img)))))
+(rule ((= e (ImageQuerySamples (LoopInvariant img))))
+      ((union e (LoopInvariant (ImageQuerySamples img)))))
+

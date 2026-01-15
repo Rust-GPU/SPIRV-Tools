@@ -480,6 +480,34 @@
     (Fwidth Expr)       ; abs(dPdx) + abs(dPdy)
     (FwidthFine Expr)
     (FwidthCoarse Expr)
+
+    ; ==========================================================================
+    ; Bitfield Operations (OpBitField*)
+    ; ==========================================================================
+    ; BitFieldInsert(base, insert, offset, count): Insert bits into base
+    ; Result = (base & ~mask) | ((insert << offset) & mask)
+    ; where mask = ((1 << count) - 1) << offset
+    (BitFieldInsert Expr Expr Expr Expr)  ; (base, insert, offset, count)
+
+    ; BitFieldSExtract(base, offset, count): Extract signed bits
+    ; Extracts 'count' bits starting at 'offset', sign-extended
+    (BitFieldSExtract Expr Expr Expr)     ; (base, offset, count)
+
+    ; BitFieldUExtract(base, offset, count): Extract unsigned bits
+    ; Extracts 'count' bits starting at 'offset', zero-extended
+    (BitFieldUExtract Expr Expr Expr)     ; (base, offset, count)
+
+    ; NOTE: BitReverse, BitCount, FindILsb, FindSMsb, FindUMsb are already
+    ; defined earlier in this file as core bitwise operations
+
+    ; ==========================================================================
+    ; Image Query Operations
+    ; ==========================================================================
+    (ImageQuerySize Expr)          ; Get image dimensions
+    (ImageQuerySizeLod Expr Expr)  ; Get image dimensions at LOD
+    (ImageQueryLevels Expr)        ; Get number of mip levels
+    (ImageQuerySamples Expr)       ; Get number of samples
+    (ImageQueryLod Expr Expr)      ; Query LOD for coordinates
 )
 
 ; =============================================================================
@@ -1108,6 +1136,29 @@
 (rule ((Live e) (= e (GroupLogAnd val))) ((Live val)))
 (rule ((Live e) (= e (GroupLogOr val))) ((Live val)))
 (rule ((Live e) (= e (GroupLogXor val))) ((Live val)))
+
+; =============================================================================
+; Liveness for Bitfield Operations
+; =============================================================================
+
+(rule ((Live e) (= e (BitFieldInsert base insert offset count)))
+      ((Live base) (Live insert) (Live offset) (Live count)))
+(rule ((Live e) (= e (BitFieldSExtract base offset count)))
+      ((Live base) (Live offset) (Live count)))
+(rule ((Live e) (= e (BitFieldUExtract base offset count)))
+      ((Live base) (Live offset) (Live count)))
+; NOTE: BitReverse, BitCount, FindILsb, FindSMsb, FindUMsb liveness rules
+; are already defined in the main bitwise liveness section above
+
+; =============================================================================
+; Liveness for Image Query Operations
+; =============================================================================
+
+(rule ((Live e) (= e (ImageQuerySize img))) ((Live img)))
+(rule ((Live e) (= e (ImageQuerySizeLod img lod))) ((Live img) (Live lod)))
+(rule ((Live e) (= e (ImageQueryLevels img))) ((Live img)))
+(rule ((Live e) (= e (ImageQuerySamples img))) ((Live img)))
+(rule ((Live e) (= e (ImageQueryLod img coord))) ((Live img) (Live coord)))
 
 ; =============================================================================
 ; Liveness for Function Calls
