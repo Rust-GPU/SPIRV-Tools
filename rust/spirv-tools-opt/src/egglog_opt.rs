@@ -2024,4 +2024,244 @@ mod tests {
                 "Fwidth of constant should be 0, got: {}", result);
     }
 
+    // =========================================================================
+    // Subgroup/Wave Operation Tests
+    // =========================================================================
+
+    #[test]
+    fn test_group_broadcast_constant() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // GroupBroadcast(Const c, lane) = Const c
+        egraph.parse_and_run_program(None, r#"
+            (let root (GroupBroadcast (Const 42) (Const 0)))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let result = format!("{}", results[0]);
+        assert!(result.contains("Const 42") && !result.contains("GroupBroadcast"),
+                "GroupBroadcast of constant should be that constant, got: {}", result);
+    }
+
+    #[test]
+    fn test_group_broadcast_first_constant() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // GroupBroadcastFirst(Const c) = Const c
+        egraph.parse_and_run_program(None, r#"
+            (let root (GroupBroadcastFirst (Const 123)))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let result = format!("{}", results[0]);
+        assert!(result.contains("Const 123") && !result.contains("GroupBroadcastFirst"),
+                "GroupBroadcastFirst of constant should be that constant, got: {}", result);
+    }
+
+    #[test]
+    fn test_group_all_constant_true() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // GroupAll(true) = true
+        egraph.parse_and_run_program(None, r#"
+            (let root (GroupAll (Const 1)))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let result = format!("{}", results[0]);
+        assert!(result.contains("Const 1") && !result.contains("GroupAll"),
+                "GroupAll(true) should be true, got: {}", result);
+    }
+
+    #[test]
+    fn test_group_any_constant_false() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // GroupAny(false) = false
+        egraph.parse_and_run_program(None, r#"
+            (let root (GroupAny (Const 0)))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let result = format!("{}", results[0]);
+        assert!(result.contains("Const 0") && !result.contains("GroupAny"),
+                "GroupAny(false) should be false, got: {}", result);
+    }
+
+    #[test]
+    fn test_group_all_equal_constant() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // GroupAllEqual(Const c) = true (all lanes have same constant)
+        egraph.parse_and_run_program(None, r#"
+            (let root (GroupAllEqual (Const 42)))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let result = format!("{}", results[0]);
+        assert!(result.contains("Const 1"),
+                "GroupAllEqual of constant should be true, got: {}", result);
+    }
+
+    #[test]
+    fn test_group_shuffle_xor_zero() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // GroupShuffleXor(x, 0) = x (identity shuffle)
+        egraph.parse_and_run_program(None, r#"
+            (let val (Sym "x"))
+            (let root (GroupShuffleXor val (Const 0)))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root val))");
+        assert!(check.is_ok(), "GroupShuffleXor(x, 0) should equal x");
+    }
+
+    #[test]
+    fn test_group_iadd_zero() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // GroupIAdd(0) = 0 (sum of zeros)
+        egraph.parse_and_run_program(None, r#"
+            (let root (GroupIAdd (Const 0)))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let result = format!("{}", results[0]);
+        assert!(result.contains("Const 0"),
+                "GroupIAdd(0) should be 0, got: {}", result);
+    }
+
+    #[test]
+    fn test_group_imul_one() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // GroupIMul(1) = 1 (product of ones)
+        egraph.parse_and_run_program(None, r#"
+            (let root (GroupIMul (Const 1)))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let result = format!("{}", results[0]);
+        assert!(result.contains("Const 1"),
+                "GroupIMul(1) should be 1, got: {}", result);
+    }
+
+    #[test]
+    fn test_group_bit_or_zero() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // GroupBitOr(0) = 0 (OR of zeros)
+        egraph.parse_and_run_program(None, r#"
+            (let root (GroupBitOr (Const 0)))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let result = format!("{}", results[0]);
+        assert!(result.contains("Const 0"),
+                "GroupBitOr(0) should be 0, got: {}", result);
+    }
+
+    // =========================================================================
+    // Access Chain Optimization Tests
+    // =========================================================================
+
+    #[test]
+    fn test_access_chain_combining() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // AccessChain1(AccessChain1(base, i1), i2) = AccessChain2(base, i1, i2)
+        egraph.parse_and_run_program(None, r#"
+            (let base (Var "arr" 0))
+            (let root (AccessChain1 (AccessChain1 base 0) 1))
+            (let expected (AccessChain2 base 0 1))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+        assert!(check.is_ok(), "Nested AccessChain1 should combine into AccessChain2");
+    }
+
+    #[test]
+    fn test_access_chain_combining_three_levels() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // AccessChain1(AccessChain2(base, i1, i2), i3) = AccessChain3(base, i1, i2, i3)
+        egraph.parse_and_run_program(None, r#"
+            (let base (Var "struct" 0))
+            (let root (AccessChain1 (AccessChain2 base 0 1) 2))
+            (let expected (AccessChain3 base 0 1 2))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+        assert!(check.is_ok(), "AccessChain1 of AccessChain2 should combine into AccessChain3");
+    }
+
+    #[test]
+    fn test_dynamic_access_chain_const() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // AccessChainDyn(base, Const i) = AccessChain1(base, i)
+        egraph.parse_and_run_program(None, r#"
+            (let base (Var "arr" 0))
+            (let root (AccessChainDyn base (Const 5)))
+            (let expected (AccessChain1 base 5))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+        assert!(check.is_ok(), "AccessChainDyn with constant should become AccessChain1");
+    }
+
+    #[test]
+    fn test_load_loop_invariant() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // Load from loop-invariant pointer and memory is loop-invariant
+        egraph.parse_and_run_program(None, r#"
+            (let ptr (LoopInvariant (Var "p" 0)))
+            (let mem (LoopInvariant (InitMem)))
+            (let root (Load ptr mem))
+            (let inner_load (Load (Var "p" 0) (InitMem)))
+            (let expected (LoopInvariant inner_load))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+        assert!(check.is_ok(), "Load from loop-invariant ptr and mem should be loop-invariant");
+    }
+
+    #[test]
+    fn test_dead_store_across_branches() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // Store followed by MergeMem where both branches overwrite eliminates first store
+        egraph.parse_and_run_program(None, r#"
+            (let ptr (Var "p" 0))
+            (let cond (Sym "c"))
+            (let prev (InitMem))
+            (let inner (StoreMem ptr (Const 0) prev))
+            (let branch1 (StoreMem ptr (Const 1) inner))
+            (let branch2 (StoreMem ptr (Const 2) inner))
+            (let root (MergeMem cond branch1 branch2))
+            (let expected_b1 (StoreMem ptr (Const 1) prev))
+            (let expected_b2 (StoreMem ptr (Const 2) prev))
+            (let expected (MergeMem cond expected_b1 expected_b2))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+        assert!(check.is_ok(), "Dead store before branch should be eliminated");
+    }
+
 }

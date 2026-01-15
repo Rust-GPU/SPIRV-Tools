@@ -102,3 +102,110 @@
 (rule ((= e (DPdx (LoopInvariant x)))) ((union e (Const 0))))
 (rule ((= e (DPdy (LoopInvariant x)))) ((union e (Const 0))))
 
+; =============================================================================
+; Private-to-Local Optimization
+; =============================================================================
+; Variables in Private storage class used only in one function can be
+; moved to Function storage class. In e-graph, we model this by preferring
+; Function storage (7) over Private storage (6).
+;
+; Note: Storage class 6 = Private, 7 = Function
+; This is modeled but the actual transformation happens during extraction.
+
+; =============================================================================
+; Copy Propagation Through Memory
+; =============================================================================
+
+; Load after load from same pointer/memory = same value
+; (Automatic via e-graph equality)
+
+; Store then immediately load = stored value (already covered above)
+
+; =============================================================================
+; Scalar Replacement Patterns
+; =============================================================================
+; Composite load followed by extract can sometimes become direct field load.
+; CompositeExtract(Load(ptr, mem), idx) could become Load(AccessChain(ptr, idx), mem)
+; But we need to be careful about memory ordering.
+
+; Extract from loaded composite - if we can prove it's safe
+; This enables field-level dead store elimination
+(rule ((= e (CompositeExtract (Load ptr mem) idx)))
+      ((union e (Load (AccessChain1 ptr idx) mem))))
+
+; =============================================================================
+; Vector Load/Store Optimization
+; =============================================================================
+; Loading a vector then extracting one component can become scalar load
+; (Requires knowing the pointer type - modeled but may not always apply)
+
+; =============================================================================
+; Access Chain Combining (C++ CombineAccessChains pass)
+; =============================================================================
+; Sequential access chains can be combined into a single chain with more indices.
+; AccessChain1(AccessChain1(base, i1), i2) -> AccessChain2(base, i1, i2)
+
+; Combine AccessChain1 + AccessChain1 -> AccessChain2
+(rule ((= e (AccessChain1 (AccessChain1 base i1) i2)))
+      ((union e (AccessChain2 base i1 i2))))
+
+; Combine AccessChain1 + AccessChain2 -> AccessChain3
+(rule ((= e (AccessChain1 (AccessChain2 base i1 i2) i3)))
+      ((union e (AccessChain3 base i1 i2 i3))))
+
+; Combine AccessChain2 + AccessChain1 -> AccessChain3
+(rule ((= e (AccessChain2 (AccessChain1 base i1) i2 i3)))
+      ((union e (AccessChain3 base i1 i2 i3))))
+
+; =============================================================================
+; Dynamic Access Chain Optimization
+; =============================================================================
+; Dynamic access chains with constant indices can become static chains
+
+; AccessChainDyn(base, Const i) -> AccessChain1(base, i)
+(rule ((= e (AccessChainDyn base (Const i))))
+      ((union e (AccessChain1 base i))))
+
+; =============================================================================
+; Redundant Load Elimination Across Branches
+; =============================================================================
+; Loading after MergeMem when both branches load from same location
+
+; Load from merged memory where neither branch modified the target
+; Load(ptr, MergeMem(cond, s, s)) = Load(ptr, s) - but MergeMem simplifies first
+
+; =============================================================================
+; Store Value Forwarding Through Memory Merge
+; =============================================================================
+; When storing the same value in both branches, the load after merge is that value
+; (Already covered by the Load/MergeMem/StoreMem rule above)
+
+; =============================================================================
+; Loop Memory Optimization
+; =============================================================================
+; Loop-invariant memory operations can be hoisted
+
+; Load from pointer that's loop-invariant, from memory state that's loop-invariant
+(rule ((= e (Load (LoopInvariant ptr) (LoopInvariant mem))))
+      ((union e (LoopInvariant (Load ptr mem)))))
+
+; =============================================================================
+; Unused Store Elimination
+; =============================================================================
+; Store to a location that's immediately overwritten in both branches
+
+; StoreMem followed by MergeMem where both branches overwrite the location
+(rule ((= m (MergeMem cond (StoreMem ptr val1 (StoreMem ptr val0 prev))
+                           (StoreMem ptr val2 (StoreMem ptr val0 prev)))))
+      ((union m (MergeMem cond (StoreMem ptr val1 prev) (StoreMem ptr val2 prev)))))
+
+; =============================================================================
+; Atomic Operation Optimization
+; =============================================================================
+
+; AtomicLoad followed by AtomicStore with no intervening operations
+; This is conservative - only applies when we can prove atomics are to same location
+
+; AtomicExchange with value that was just atomically loaded returns same value
+; (This is tricky with concurrency - be very conservative)
+
