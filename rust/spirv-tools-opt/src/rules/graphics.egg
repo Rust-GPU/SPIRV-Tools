@@ -67,6 +67,19 @@
       ((union e (FMul (Const c) (DPdy x)))))
 
 ; =============================================================================
+; SampledImage Optimization
+; =============================================================================
+; Combining and extracting image/sampler pairs.
+
+; Extracting image from combined and immediately recombining = original
+(rule ((= e (SampledImage (Image combined) sampler))
+       (= combined (SampledImage img sampler)))
+      ((union e combined)))
+
+; CSE: Same image + same sampler = same combined result
+; (Automatic in e-graph through structural equality)
+
+; =============================================================================
 ; Robustness Transformations
 ; =============================================================================
 ; Ensure robust access to buffers and images.
