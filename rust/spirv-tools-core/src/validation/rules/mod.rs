@@ -61,6 +61,8 @@
 //! - [`misc`]: Miscellaneous instruction validation rules
 //! - [`graph`]: ARM graph instruction validation rules
 //! - [`invalid_type`]: BFloat16/FP8 type restriction validation rules
+//! - [`primitives`]: Primitive instruction validation rules
+//! - [`tensor_layout`]: NVIDIA tensor layout/view validation rules
 
 pub mod adjacency;
 pub mod annotation;
@@ -98,10 +100,12 @@ pub mod misc;
 pub mod mode_setting;
 pub mod non_uniform;
 pub mod pointers;
+pub mod primitives;
 pub mod ray_tracing;
 pub mod scopes;
 pub mod small_type_uses;
 pub mod storage_classes;
 pub mod tensor;
+pub mod tensor_layout;
 pub mod types;
 pub mod vulkan;

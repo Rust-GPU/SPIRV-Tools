@@ -3644,4 +3644,106 @@ pub enum ValidationError {
         /// The opcode.
         opcode: rspirv::spirv::Op,
     },
+
+    // ==================== Primitive Instruction Errors ====================
+    /// Primitive instruction requires Geometry execution model.
+    #[error("In function {function:?} block {block:?}: {opcode:?} requires Geometry execution model")]
+    PrimitiveRequiresGeometry {
+        /// The function ID.
+        function: Option<Id>,
+        /// The block ID.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+
+    /// Stream primitive instruction requires Stream to be int scalar.
+    #[error("In function {function:?} block {block:?}: {opcode:?} Stream must be int scalar")]
+    StreamNotIntScalar {
+        /// The function ID.
+        function: Option<Id>,
+        /// The block ID.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+
+    /// Stream primitive instruction requires Stream to be constant.
+    #[error("In function {function:?} block {block:?}: {opcode:?} Stream must be constant instruction")]
+    StreamNotConstant {
+        /// The function ID.
+        function: Option<Id>,
+        /// The block ID.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+
+    // ========================================================================
+    // Tensor layout errors (NVIDIA extension)
+    // ========================================================================
+    /// Tensor layout instruction has invalid result type.
+    #[error("In function {function:?} block {block:?}: {opcode:?} result type is not {expected}")]
+    TensorLayoutInvalidResultType {
+        /// The function ID.
+        function: Option<Id>,
+        /// The block ID.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+        /// Expected type name.
+        expected: &'static str,
+    },
+
+    /// Tensor view instruction has invalid result type.
+    #[error("In function {function:?} block {block:?}: {opcode:?} result type is not {expected}")]
+    TensorViewInvalidResultType {
+        /// The function ID.
+        function: Option<Id>,
+        /// The block ID.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+        /// Expected type name.
+        expected: &'static str,
+    },
+
+    /// Tensor operation has mismatched tensor type.
+    #[error("In function {function:?} block {block:?}: {opcode:?} tensor operand type does not match result type")]
+    TensorTypeMismatch {
+        /// The function ID.
+        function: Option<Id>,
+        /// The block ID.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+
+    /// Tensor operation has unexpected number of operands.
+    #[error("In function {function:?} block {block:?}: {opcode:?} unexpected number of operands: expected {expected}, got {actual}")]
+    TensorUnexpectedOperandCount {
+        /// The function ID.
+        function: Option<Id>,
+        /// The block ID.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+        /// Expected operand count.
+        expected: usize,
+        /// Actual operand count.
+        actual: usize,
+    },
+
+    /// Tensor operation operand is not a 32-bit integer.
+    #[error("In function {function:?} block {block:?}: {opcode:?} operand {operand_id} is not a 32-bit integer")]
+    TensorOperandNotInt32 {
+        /// The function ID.
+        function: Option<Id>,
+        /// The block ID.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+        /// The operand ID.
+        operand_id: Id,
+    },
 }
