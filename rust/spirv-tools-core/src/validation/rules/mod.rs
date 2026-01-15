@@ -60,6 +60,7 @@
 //! - [`small_type_uses`]: 8/16-bit type usage validation rules
 //! - [`misc`]: Miscellaneous instruction validation rules
 //! - [`graph`]: ARM graph instruction validation rules
+//! - [`invalid_type`]: BFloat16/FP8 type restriction validation rules
 
 pub mod adjacency;
 pub mod annotation;
@@ -84,6 +85,7 @@ pub mod functions;
 pub mod graph;
 pub mod image;
 pub mod interfaces;
+pub mod invalid_type;
 pub mod interpolation;
 pub mod layout;
 pub mod limits;

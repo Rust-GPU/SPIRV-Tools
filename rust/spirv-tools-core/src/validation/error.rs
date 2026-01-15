@@ -3621,4 +3621,27 @@ pub enum ValidationError {
         /// The duplicate output index.
         output_index: u64,
     },
+
+    // ==================== Invalid Type Errors ====================
+    /// Operation doesn't support BFloat16 type.
+    #[error("In function {function:?} block {block:?}: {opcode:?} doesn't support BFloat16 type")]
+    InvalidTypeBFloat16 {
+        /// The function ID.
+        function: Option<Id>,
+        /// The block ID.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+
+    /// Operation doesn't support FP8 E4M3/E5M2 types.
+    #[error("In function {function:?} block {block:?}: {opcode:?} doesn't support FP8 E4M3/E5M2 types")]
+    InvalidTypeFP8 {
+        /// The function ID.
+        function: Option<Id>,
+        /// The block ID.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
 }
