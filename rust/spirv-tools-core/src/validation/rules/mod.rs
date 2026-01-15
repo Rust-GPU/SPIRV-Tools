@@ -55,8 +55,10 @@
 //! - [`scopes`]: Scope validation rules
 //! - [`interfaces`]: Interface variable validation rules
 //! - [`mode_setting`]: Mode setting validation rules
+//! - [`annotation`]: Annotation and decoration validation rules
 
 pub mod adjacency;
+pub mod annotation;
 pub mod arithmetics;
 pub mod atomics;
 pub mod barriers;

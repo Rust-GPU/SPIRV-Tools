@@ -3122,4 +3122,116 @@ pub enum ValidationError {
         /// The execution mode.
         mode: rspirv::spirv::ExecutionMode,
     },
+
+    // ==================== Annotation Errors ====================
+    /// Vulkan does not allow GLSLShared or GLSLPacked decorations.
+    #[error("Decoration {decoration:?} is not valid for the Vulkan execution environment")]
+    VulkanDecorationNotAllowed {
+        /// The decoration.
+        decoration: rspirv::spirv::Decoration,
+    },
+    /// FPFastMathMode and NoContraction cannot be on the same target.
+    #[error("FPFastMathMode and NoContraction cannot decorate the same target <{target_id:?}>")]
+    FPFastMathModeConflictsWithNoContraction {
+        /// The target ID.
+        target_id: Id,
+    },
+    /// FPFastMathMode with AllowTransform requires AllowContract and AllowReassoc.
+    #[error("AllowReassoc and AllowContract must be specified when AllowTransform is specified on target <{target_id:?}>")]
+    FPFastMathAllowTransformRequiresContractReassoc {
+        /// The target ID.
+        target_id: Id,
+    },
+    /// Decoration requires OpDecorateId instead of OpDecorate.
+    #[error("Decoration {decoration:?} taking ID parameters may not be used with OpDecorate")]
+    DecorationRequiresDecorateId {
+        /// The decoration.
+        decoration: rspirv::spirv::Decoration,
+    },
+    /// Member decoration applied to non-member target.
+    #[error("Decoration {decoration:?} can only be applied to structure members, not to <{target_id:?}>")]
+    MemberDecorationOnNonMember {
+        /// The decoration.
+        decoration: rspirv::spirv::Decoration,
+        /// The target ID.
+        target_id: Id,
+    },
+    /// OpDecorateId target is a decoration group.
+    #[error("OpDecorateId Target <id> {target_id:?} must not be an OpDecorationGroup instruction")]
+    DecorateIdTargetIsDecorationGroup {
+        /// The target ID.
+        target_id: Id,
+    },
+    /// OpDecorateId used with decoration that doesn't take ID parameters.
+    #[error("Decoration {decoration:?} that doesn't take ID parameters may not be used with OpDecorateId")]
+    DecorationDoesNotTakeIdParameters {
+        /// The decoration.
+        decoration: rspirv::spirv::Decoration,
+    },
+    /// OpMemberDecorate target is not a struct type.
+    #[error("OpMemberDecorate Structure type <id> {target_id:?} is not a struct type")]
+    MemberDecorateTargetNotStruct {
+        /// The target ID.
+        target_id: Id,
+    },
+    /// OpMemberDecorate member index is out of bounds.
+    #[error("Index {member_index} provided in OpMemberDecorate for struct <id> {struct_id:?} is out of bounds (struct has {member_count} members)")]
+    MemberDecorateIndexOutOfBounds {
+        /// The struct ID.
+        struct_id: Id,
+        /// The member index.
+        member_index: u32,
+        /// The actual member count.
+        member_count: u32,
+    },
+    /// Decoration cannot be applied to structure members.
+    #[error("Decoration {decoration:?} cannot be applied to structure member {member_index} of struct <{struct_id:?}>")]
+    DecorationCannotBeOnMember {
+        /// The decoration.
+        decoration: rspirv::spirv::Decoration,
+        /// The struct ID.
+        struct_id: Id,
+        /// The member index.
+        member_index: u32,
+    },
+    /// Decoration group used in invalid context.
+    #[error("Result id of OpDecorationGroup <{group_id:?}> can only be targeted by OpName, OpGroupDecorate, OpDecorate, OpDecorateId, and OpGroupMemberDecorate")]
+    DecorationGroupInvalidUse {
+        /// The decoration group ID.
+        group_id: Id,
+    },
+    /// OpGroupDecorate first operand is not a decoration group.
+    #[error("OpGroupDecorate Decoration group <id> {target_id:?} is not a decoration group")]
+    GroupDecorateNotDecorationGroup {
+        /// The target ID.
+        target_id: Id,
+    },
+    /// OpGroupDecorate target is a decoration group.
+    #[error("OpGroupDecorate may not target OpDecorationGroup <id> {target_id:?}")]
+    GroupDecorateTargetIsDecorationGroup {
+        /// The target ID.
+        target_id: Id,
+    },
+    /// OpGroupMemberDecorate first operand is not a decoration group.
+    #[error("OpGroupMemberDecorate Decoration group <id> {target_id:?} is not a decoration group")]
+    GroupMemberDecorateNotDecorationGroup {
+        /// The target ID.
+        target_id: Id,
+    },
+    /// OpGroupMemberDecorate target is not a struct type.
+    #[error("OpGroupMemberDecorate Structure type <id> {struct_id:?} is not a struct type")]
+    GroupMemberDecorateTargetNotStruct {
+        /// The struct ID.
+        struct_id: Id,
+    },
+    /// OpGroupMemberDecorate member index is out of bounds.
+    #[error("Index {member_index} provided in OpGroupMemberDecorate for struct <id> {struct_id:?} is out of bounds (struct has {member_count} members)")]
+    GroupMemberDecorateIndexOutOfBounds {
+        /// The struct ID.
+        struct_id: Id,
+        /// The member index.
+        member_index: u32,
+        /// The actual member count.
+        member_count: u32,
+    },
 }
