@@ -2737,4 +2737,22 @@ mod tests {
         assert!(check.is_ok(), "Storing Undef should be equivalent to no-op (dead store)");
     }
 
+    #[test]
+    fn test_nclamp_idempotence() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // NClamp(NClamp(x, lo, hi), lo, hi) = NClamp(x, lo, hi)
+        egraph.parse_and_run_program(None, r#"
+            (let x (Sym "x"))
+            (let lo (Sym "lo"))
+            (let hi (Sym "hi"))
+            (let inner (NClamp x lo hi))
+            (let root (NClamp inner lo hi))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root inner))");
+        assert!(check.is_ok(), "NClamp(NClamp(x, lo, hi), lo, hi) should equal NClamp(x, lo, hi)");
+    }
+
 }

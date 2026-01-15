@@ -98,3 +98,13 @@
 ; sum = sum + (half)a * (half)b
 ; Can be: sum = fma((float)(half)a, (float)(half)b, sum)
 
+; =============================================================================
+; IsNan/IsInf rules are already in glsl.egg
+; =============================================================================
+; NOTE: IsNan/IsInf optimization rules are defined in glsl.egg to avoid
+; duplication. See glsl.egg for:
+; - IsNan(ConvertSToF(x)) = 0
+; - IsNan(ConvertUToF(x)) = 0
+; - IsInf variants
+; - FAbs/FNeg preservation
+

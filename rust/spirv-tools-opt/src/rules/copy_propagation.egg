@@ -107,3 +107,28 @@
 ; we can move it earlier (to dominator) to compute it on all paths.
 ; This is implicitly handled by the e-graph's global view.
 
+; =============================================================================
+; Additional Redundancy Elimination Patterns
+; =============================================================================
+; NOTE: Most redundancy elimination patterns are already defined elsewhere:
+; - FAbs(FAbs(x)) = FAbs(x) is in floating_point.egg
+; - FMin(x, x) = x is in floating_point.egg
+; - SMin(x, x) = x is in logical.egg
+; - UMin(x, x) = x is in logical.egg
+; - SMax(x, x) = x, UMax(x, x) = x are in logical.egg
+; - Sign(Sign(x)) = Sign(x) is in glsl.egg
+; - SAbs(SAbs(x)) = SAbs(x) is in glsl.egg
+; - Floor/Ceil/Trunc/Round idempotence is in glsl.egg
+; - FClamp(FClamp(...)) = FClamp(...) is in glsl.egg
+; - SClamp(SClamp(...)) = SClamp(...) is in glsl.egg
+; - UClamp(UClamp(...)) = UClamp(...) is in glsl.egg
+; - NMin(x, x) = x, NMax(x, x) = x are in type_conversion.egg
+; - Nested min/max absorption is in logical.egg
+;
+; The rules below are for patterns NOT defined elsewhere.
+
+; NClamp idempotence (NaN-ignoring clamp, not covered elsewhere)
+; NClamp(NClamp(x, lo, hi), lo, hi) = NClamp(x, lo, hi)
+(rule ((= e (NClamp (NClamp x lo hi) lo hi)))
+      ((union e (NClamp x lo hi))))
+
