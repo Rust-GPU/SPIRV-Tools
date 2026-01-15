@@ -1,0 +1,740 @@
+; =============================================================================
+; SPIR-V Validation Rules in the E-Graph
+; =============================================================================
+;
+; This module models SPIR-V validation as e-graph relations and rules.
+; By running validation in the same saturation pass as optimization, we get:
+; 1. ONE-PASS validation and optimization
+; 2. Type information available for type-aware optimizations
+; 3. Early error detection during transformation
+;
+; Key relations:
+; - HasType: Associates expressions with their SPIR-V types
+; - TypeError: Marks expressions with type errors
+; - ValidOp: Marks validated operations
+; - InvalidOp: Marks invalid operations with error codes
+;
+; The Rust code extracts errors after saturation by querying Invalid* relations.
+
+; =============================================================================
+; Type Representation
+; =============================================================================
+; We model SPIR-V types as a datatype to enable type-aware optimization.
+; Types are propagated through the e-graph alongside value optimization.
+
+; Forward declare type list sort (needed for recursive types)
+(sort TypeList)
+
+(datatype SpirvType
+    ; Scalar types
+    (TBool)
+    (TInt i64 i64)          ; (width, signedness: 0=unsigned, 1=signed)
+    (TFloat i64)            ; width: 16, 32, 64
+
+    ; Composite types
+    (TVec SpirvType i64)    ; (element_type, count: 2, 3, 4, 8, 16)
+    (TMat SpirvType i64 i64); (column_type, cols, rows)
+    (TArray SpirvType i64)  ; (element_type, length)
+    (TRuntimeArray SpirvType) ; (element_type)
+    (TStruct TypeList)      ; (member_types)
+
+    ; Pointer types
+    (TPtr SpirvType i64)    ; (pointee_type, storage_class)
+
+    ; Image types
+    (TImage SpirvType i64 i64 i64 i64 i64 i64) ; (sampled_type, dim, depth, arrayed, ms, sampled, format)
+    (TSampler)
+    (TSampledImage SpirvType) ; (image_type)
+
+    ; Special types
+    (TVoid)
+    (TFunction SpirvType TypeList) ; (return_type, param_types)
+
+    ; Opaque types
+    (TOpaque String)        ; name
+
+    ; Unknown type (for unresolved references)
+    (TUnknown)
+)
+
+; Type list constructors for struct members and function params
+(function TLNil () TypeList :merge old)
+(function TLCons (SpirvType TypeList) TypeList :merge old)
+
+; =============================================================================
+; Type Assignment Relation
+; =============================================================================
+; HasType(expr, type) means expr has SPIR-V type `type`
+; This is populated by the Rust code when converting SPIR-V to e-graph,
+; and propagated by these rules.
+
+(relation HasType (Expr SpirvType))
+
+; =============================================================================
+; Type Inference Rules
+; =============================================================================
+; These rules propagate types through the e-graph. Unlike traditional type
+; checking which fails on error, we continue propagation and mark errors.
+
+; Constants have integer type (32-bit by default)
+(rule ((= e (Const _)))
+      ((HasType e (TInt 32 0))))
+(rule ((= e (Const64 _)))
+      ((HasType e (TInt 64 0))))
+
+; Arithmetic operations preserve operand type
+(rule ((= e (Add a b)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (Sub a b)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (Mul a b)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (Neg a)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (SDiv a b)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (UDiv a b)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (SRem a b)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (SMod a b)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (UMod a b)) (HasType a t))
+      ((HasType e t)))
+
+; Bitwise operations preserve operand type
+(rule ((= e (Shl a b)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (ShrS a b)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (ShrU a b)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (BitAnd a b)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (BitOr a b)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (BitXor a b)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (BitNot a)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (BitReverse a)) (HasType a t))
+      ((HasType e t)))
+
+; Comparison operations return bool
+(rule ((= e (Eq a b)))
+      ((HasType e (TBool))))
+(rule ((= e (Ne a b)))
+      ((HasType e (TBool))))
+(rule ((= e (SLt a b)))
+      ((HasType e (TBool))))
+(rule ((= e (SLe a b)))
+      ((HasType e (TBool))))
+(rule ((= e (SGt a b)))
+      ((HasType e (TBool))))
+(rule ((= e (SGe a b)))
+      ((HasType e (TBool))))
+(rule ((= e (ULt a b)))
+      ((HasType e (TBool))))
+(rule ((= e (ULe a b)))
+      ((HasType e (TBool))))
+(rule ((= e (UGt a b)))
+      ((HasType e (TBool))))
+(rule ((= e (UGe a b)))
+      ((HasType e (TBool))))
+
+; Floating-point comparisons return bool
+(rule ((= e (FOrdEq a b)))
+      ((HasType e (TBool))))
+(rule ((= e (FOrdNe a b)))
+      ((HasType e (TBool))))
+(rule ((= e (FOrdLt a b)))
+      ((HasType e (TBool))))
+(rule ((= e (FOrdLe a b)))
+      ((HasType e (TBool))))
+(rule ((= e (FOrdGt a b)))
+      ((HasType e (TBool))))
+(rule ((= e (FOrdGe a b)))
+      ((HasType e (TBool))))
+(rule ((= e (FUnordEq a b)))
+      ((HasType e (TBool))))
+(rule ((= e (FUnordNe a b)))
+      ((HasType e (TBool))))
+(rule ((= e (FUnordLt a b)))
+      ((HasType e (TBool))))
+(rule ((= e (FUnordLe a b)))
+      ((HasType e (TBool))))
+(rule ((= e (FUnordGt a b)))
+      ((HasType e (TBool))))
+(rule ((= e (FUnordGe a b)))
+      ((HasType e (TBool))))
+(rule ((= e (IsNan a)))
+      ((HasType e (TBool))))
+(rule ((= e (IsInf a)))
+      ((HasType e (TBool))))
+
+; Logical operations return bool (and require bool operands)
+(rule ((= e (LogNot a)))
+      ((HasType e (TBool))))
+(rule ((= e (LogAnd a b)))
+      ((HasType e (TBool))))
+(rule ((= e (LogOr a b)))
+      ((HasType e (TBool))))
+(rule ((= e (LogEq a b)))
+      ((HasType e (TBool))))
+(rule ((= e (LogNe a b)))
+      ((HasType e (TBool))))
+
+; Min/Max preserve operand type
+(rule ((= e (SMin a b)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (SMax a b)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (UMin a b)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (UMax a b)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (FMin a b)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (FMax a b)) (HasType a t))
+      ((HasType e t)))
+
+; Floating-point operations preserve operand type
+(rule ((= e (FAdd a b)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (FSub a b)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (FMul a b)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (FDiv a b)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (FNeg a)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (FRem a b)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (FAbs a)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (FFloor a)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (FCeil a)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (FRound a)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (FTrunc a)) (HasType a t))
+      ((HasType e t)))
+
+; Gamma/Select preserves branch type
+(rule ((= e (Gamma c t f)) (HasType t ty))
+      ((HasType e ty)))
+(rule ((= e (Select c t f)) (HasType t ty))
+      ((HasType e ty)))
+(rule ((= e (If c t f)) (HasType t ty))
+      ((HasType e ty)))
+
+; Vector construction
+(rule ((= e (Vec2 a b)) (HasType a st))
+      ((HasType e (TVec st 2))))
+(rule ((= e (Vec3 a b c)) (HasType a st))
+      ((HasType e (TVec st 3))))
+(rule ((= e (Vec4 a b c d)) (HasType a st))
+      ((HasType e (TVec st 4))))
+
+; Vector extraction returns element type
+(rule ((= e (VecExtract v _)) (HasType v (TVec st _)))
+      ((HasType e st)))
+
+; Vector operations preserve vector type
+(rule ((= e (VecAdd a b)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (VecSub a b)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (VecMul a b)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (VecDiv a b)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (VecNeg a)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (VecFAdd a b)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (VecFSub a b)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (VecFMul a b)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (VecFDiv a b)) (HasType a t))
+      ((HasType e t)))
+(rule ((= e (VecFNeg a)) (HasType a t))
+      ((HasType e t)))
+
+; Dot product returns scalar from vector element type
+(rule ((= e (Dot a b)) (HasType a (TVec st _)))
+      ((HasType e st)))
+
+; Type conversions
+(rule ((= e (ConvertFToS a)) (HasType a (TFloat _)))
+      ((HasType e (TInt 32 1))))
+(rule ((= e (ConvertFToU a)) (HasType a (TFloat _)))
+      ((HasType e (TInt 32 0))))
+(rule ((= e (ConvertSToF a)) (HasType a (TInt _ _)))
+      ((HasType e (TFloat 32))))
+(rule ((= e (ConvertUToF a)) (HasType a (TInt _ _)))
+      ((HasType e (TFloat 32))))
+
+; CopyObject preserves type
+(rule ((= e (CopyObject x)) (HasType x t))
+      ((HasType e t)))
+
+; Undef can have any type (set by Rust code)
+
+; Load returns pointee type
+(rule ((= e (Load ptr mem)) (HasType ptr (TPtr pt _)))
+      ((HasType e pt)))
+
+; =============================================================================
+; Type Error Detection
+; =============================================================================
+; TypeError(expr) marks an expression as having a type error.
+; TypeErrorMsg(expr, msg) provides the error message.
+
+(relation TypeError (Expr))
+(relation TypeErrorMsg (Expr String))
+
+; Binary operations require matching operand types
+(rule ((= e (Add a b)) (HasType a ta) (HasType b tb) (!= ta tb))
+      ((TypeError e) (TypeErrorMsg e "Add operands have mismatched types")))
+(rule ((= e (Sub a b)) (HasType a ta) (HasType b tb) (!= ta tb))
+      ((TypeError e) (TypeErrorMsg e "Sub operands have mismatched types")))
+(rule ((= e (Mul a b)) (HasType a ta) (HasType b tb) (!= ta tb))
+      ((TypeError e) (TypeErrorMsg e "Mul operands have mismatched types")))
+
+; Comparison operations require matching operand types
+(rule ((= e (Eq a b)) (HasType a ta) (HasType b tb) (!= ta tb))
+      ((TypeError e) (TypeErrorMsg e "Eq operands have mismatched types")))
+(rule ((= e (Ne a b)) (HasType a ta) (HasType b tb) (!= ta tb))
+      ((TypeError e) (TypeErrorMsg e "Ne operands have mismatched types")))
+(rule ((= e (SLt a b)) (HasType a ta) (HasType b tb) (!= ta tb))
+      ((TypeError e) (TypeErrorMsg e "SLt operands have mismatched types")))
+(rule ((= e (ULt a b)) (HasType a ta) (HasType b tb) (!= ta tb))
+      ((TypeError e) (TypeErrorMsg e "ULt operands have mismatched types")))
+
+; Logical operations require boolean operands
+(rule ((= e (LogNot a)) (HasType a t) (!= t (TBool)))
+      ((TypeError e) (TypeErrorMsg e "LogNot operand must be boolean")))
+(rule ((= e (LogAnd a b)) (HasType a ta) (!= ta (TBool)))
+      ((TypeError e) (TypeErrorMsg e "LogAnd operands must be boolean")))
+(rule ((= e (LogOr a b)) (HasType a ta) (!= ta (TBool)))
+      ((TypeError e) (TypeErrorMsg e "LogOr operands must be boolean")))
+
+; Gamma/Select condition must be boolean
+(rule ((= e (Gamma c t f)) (HasType c tc) (!= tc (TBool)))
+      ((TypeError e) (TypeErrorMsg e "Gamma condition must be boolean")))
+(rule ((= e (Select c t f)) (HasType c tc) (!= tc (TBool)))
+      ((TypeError e) (TypeErrorMsg e "Select condition must be boolean")))
+
+; Gamma/Select branches must have matching types
+(rule ((= e (Gamma c t f)) (HasType t tt) (HasType f tf) (!= tt tf))
+      ((TypeError e) (TypeErrorMsg e "Gamma branches have mismatched types")))
+(rule ((= e (Select c t f)) (HasType t tt) (HasType f tf) (!= tt tf))
+      ((TypeError e) (TypeErrorMsg e "Select branches have mismatched types")))
+
+; Vector construction requires matching element types
+(rule ((= e (Vec2 a b)) (HasType a ta) (HasType b tb) (!= ta tb))
+      ((TypeError e) (TypeErrorMsg e "Vec2 elements have mismatched types")))
+(rule ((= e (Vec3 a b c)) (HasType a ta) (HasType b tb) (!= ta tb))
+      ((TypeError e) (TypeErrorMsg e "Vec3 elements have mismatched types")))
+(rule ((= e (Vec4 a b c d)) (HasType a ta) (HasType b tb) (!= ta tb))
+      ((TypeError e) (TypeErrorMsg e "Vec4 elements have mismatched types")))
+
+; Vector operations require vector types
+(rule ((= e (VecExtract v _)) (HasType v t) (!= t (TVec _ _)))
+      ((TypeError e) (TypeErrorMsg e "VecExtract operand must be vector")))
+(rule ((= e (Dot a b)) (HasType a t) (!= t (TVec _ _)))
+      ((TypeError e) (TypeErrorMsg e "Dot operand must be vector")))
+
+; =============================================================================
+; Execution Limitation Validation
+; =============================================================================
+; These rules validate execution limitations during saturation.
+
+; Relation to track uniform control flow requirements
+(relation RequiresUniformControlFlow (Expr))
+(relation InNonUniformControlFlow (Expr))
+(relation UniformControlFlowViolation (Expr))
+
+; Derivative operations require uniform control flow
+(rule ((= e (DPdx _)))
+      ((RequiresUniformControlFlow e)))
+(rule ((= e (DPdy _)))
+      ((RequiresUniformControlFlow e)))
+(rule ((= e (DPdxFine _)))
+      ((RequiresUniformControlFlow e)))
+(rule ((= e (DPdyFine _)))
+      ((RequiresUniformControlFlow e)))
+(rule ((= e (DPdxCoarse _)))
+      ((RequiresUniformControlFlow e)))
+(rule ((= e (DPdyCoarse _)))
+      ((RequiresUniformControlFlow e)))
+(rule ((= e (Fwidth _)))
+      ((RequiresUniformControlFlow e)))
+
+; Subgroup operations that require uniform control flow
+(rule ((= e (GroupElect)))
+      ((RequiresUniformControlFlow e)))
+(rule ((= e (GroupAll _)))
+      ((RequiresUniformControlFlow e)))
+(rule ((= e (GroupAny _)))
+      ((RequiresUniformControlFlow e)))
+
+; Violation: operation requires uniform CF but is in non-uniform CF
+(rule ((RequiresUniformControlFlow e) (InNonUniformControlFlow e))
+      ((UniformControlFlowViolation e)))
+
+; =============================================================================
+; Primitive Operation Validation
+; =============================================================================
+; These rules validate primitive operations.
+
+; Division by zero detection (static case)
+(relation DivisionByZero (Expr))
+
+(rule ((= e (SDiv _ (Const 0))))
+      ((DivisionByZero e)))
+(rule ((= e (UDiv _ (Const 0))))
+      ((DivisionByZero e)))
+(rule ((= e (SMod _ (Const 0))))
+      ((DivisionByZero e)))
+(rule ((= e (UMod _ (Const 0))))
+      ((DivisionByZero e)))
+(rule ((= e (SRem _ (Const 0))))
+      ((DivisionByZero e)))
+
+; Shift amount validation (shift by >= width is undefined)
+; For 32-bit integers, shift must be < 32
+(relation InvalidShiftAmount (Expr))
+
+; Check shift amounts >= 32 for 32-bit ops
+(rule ((= e (Shl (Const _) (Const shift))) (>= shift 32))
+      ((InvalidShiftAmount e)))
+(rule ((= e (ShrU (Const _) (Const shift))) (>= shift 32))
+      ((InvalidShiftAmount e)))
+(rule ((= e (ShrS (Const _) (Const shift))) (>= shift 32))
+      ((InvalidShiftAmount e)))
+
+; =============================================================================
+; Memory Access Validation
+; =============================================================================
+; These rules validate memory access patterns.
+
+(relation ValidMemoryAccess (Expr))
+(relation InvalidMemoryAccess (Expr String))
+
+; Load from valid pointer is valid
+(rule ((= e (Load ptr _)) (HasType ptr (TPtr _ _)))
+      ((ValidMemoryAccess e)))
+
+; Load from non-pointer is invalid
+(rule ((= e (Load ptr _)) (HasType ptr t) (!= t (TPtr _ _)))
+      ((InvalidMemoryAccess e "Load requires pointer operand")))
+
+; Store to valid pointer is valid
+(rule ((= e (StoreMem ptr _ _)) (HasType ptr (TPtr _ _)))
+      ((ValidMemoryAccess e)))
+
+; =============================================================================
+; Capability Requirement Tracking
+; =============================================================================
+; Track which capabilities are required by expressions.
+; The Rust code populates declared capabilities and these rules propagate
+; capability requirements through the program.
+
+(datatype Capability
+    (CapShader)
+    (CapFloat16)
+    (CapFloat64)
+    (CapInt8)
+    (CapInt16)
+    (CapInt64)
+    (CapMatrix)
+    (CapAtomicFloat32AddEXT)
+    (CapDerivativeControl)
+    (CapGroupNonUniform)
+    (CapGroupNonUniformVote)
+    (CapGroupNonUniformArithmetic)
+    (CapGroupNonUniformBallot)
+    (CapGroupNonUniformShuffle)
+    (CapPhysicalStorageBufferAddresses)
+)
+
+(relation RequiresCapability (Expr Capability))
+(relation HasCapability (Capability))
+(relation MissingCapability (Expr Capability))
+
+; 64-bit integers require Int64
+(rule ((HasType e (TInt 64 _)))
+      ((RequiresCapability e (CapInt64))))
+
+; 16-bit floats require Float16
+(rule ((HasType e (TFloat 16)))
+      ((RequiresCapability e (CapFloat16))))
+
+; 64-bit floats require Float64
+(rule ((HasType e (TFloat 64)))
+      ((RequiresCapability e (CapFloat64))))
+
+; Fine derivatives require DerivativeControl
+(rule ((= e (DPdxFine _)))
+      ((RequiresCapability e (CapDerivativeControl))))
+(rule ((= e (DPdyFine _)))
+      ((RequiresCapability e (CapDerivativeControl))))
+(rule ((= e (DPdxCoarse _)))
+      ((RequiresCapability e (CapDerivativeControl))))
+(rule ((= e (DPdyCoarse _)))
+      ((RequiresCapability e (CapDerivativeControl))))
+(rule ((= e (FwidthFine _)))
+      ((RequiresCapability e (CapDerivativeControl))))
+(rule ((= e (FwidthCoarse _)))
+      ((RequiresCapability e (CapDerivativeControl))))
+
+; Subgroup operations require various capabilities
+(rule ((= e (GroupElect)))
+      ((RequiresCapability e (CapGroupNonUniform))))
+(rule ((= e (GroupAll _)))
+      ((RequiresCapability e (CapGroupNonUniformVote))))
+(rule ((= e (GroupAny _)))
+      ((RequiresCapability e (CapGroupNonUniformVote))))
+(rule ((= e (GroupAllEqual _)))
+      ((RequiresCapability e (CapGroupNonUniformVote))))
+(rule ((= e (GroupBroadcast _ _)))
+      ((RequiresCapability e (CapGroupNonUniformBallot))))
+(rule ((= e (GroupBroadcastFirst _)))
+      ((RequiresCapability e (CapGroupNonUniformBallot))))
+(rule ((= e (GroupShuffle _ _)))
+      ((RequiresCapability e (CapGroupNonUniformShuffle))))
+(rule ((= e (GroupShuffleXor _ _)))
+      ((RequiresCapability e (CapGroupNonUniformShuffle))))
+(rule ((= e (GroupIAdd _)))
+      ((RequiresCapability e (CapGroupNonUniformArithmetic))))
+(rule ((= e (GroupFAdd _)))
+      ((RequiresCapability e (CapGroupNonUniformArithmetic))))
+
+; Note: Missing capability detection is done by the Rust code after saturation.
+; It queries RequiresCapability and HasCapability relations and finds mismatches.
+; egglog doesn't support negative matching in rules.
+
+; =============================================================================
+; Storage Class Validation
+; =============================================================================
+; Validate storage class usage in pointers.
+
+(datatype StorageClass
+    (SCUniformConstant)     ; 0
+    (SCInput)               ; 1
+    (SCUniform)             ; 2
+    (SCOutput)              ; 3
+    (SCWorkgroup)           ; 4
+    (SCCrossWorkgroup)      ; 5
+    (SCPrivate)             ; 6
+    (SCFunction)            ; 7
+    (SCGeneric)             ; 8
+    (SCPushConstant)        ; 9
+    (SCAtomicCounter)       ; 10
+    (SCImage)               ; 11
+    (SCStorageBuffer)       ; 12
+    (SCPhysicalStorageBuffer) ; 5349
+)
+
+; Track storage class of variables
+(relation VarStorageClass (Expr StorageClass))
+
+; Physical storage buffer pointers require PhysicalStorageBufferAddresses
+(rule ((VarStorageClass e (SCPhysicalStorageBuffer)))
+      ((RequiresCapability e (CapPhysicalStorageBufferAddresses))))
+
+; =============================================================================
+; Vector Component Validation
+; =============================================================================
+; Validate vector component counts.
+
+(relation InvalidVectorSize (Expr i64))
+
+; Standard SPIR-V allows 2, 3, 4 components
+; Vector16 capability adds 8, 16 components
+(rule ((HasType e (TVec _ count))
+       (!= count 2) (!= count 3) (!= count 4)
+       (!= count 8) (!= count 16))
+      ((InvalidVectorSize e count)))
+
+; =============================================================================
+; Spec Constant Validation
+; =============================================================================
+; Validate specialization constant operations.
+
+(relation ValidSpecOp (Expr))
+(relation InvalidSpecOp (Expr String))
+
+; Spec constant ops are valid if operands are spec constants or constants
+(relation IsSpecConstantCompatible (Expr))
+
+(rule ((= e (Const _)))
+      ((IsSpecConstantCompatible e)))
+(rule ((= e (Const64 _)))
+      ((IsSpecConstantCompatible e)))
+(rule ((= e (SpecConst _ _)))
+      ((IsSpecConstantCompatible e)))
+
+; Spec ops with compatible operands are valid
+(rule ((= e (SpecAdd a b)) (IsSpecConstantCompatible a) (IsSpecConstantCompatible b))
+      ((ValidSpecOp e) (IsSpecConstantCompatible e)))
+(rule ((= e (SpecSub a b)) (IsSpecConstantCompatible a) (IsSpecConstantCompatible b))
+      ((ValidSpecOp e) (IsSpecConstantCompatible e)))
+(rule ((= e (SpecMul a b)) (IsSpecConstantCompatible a) (IsSpecConstantCompatible b))
+      ((ValidSpecOp e) (IsSpecConstantCompatible e)))
+(rule ((= e (SpecSelect c t f)) (IsSpecConstantCompatible c)
+       (IsSpecConstantCompatible t) (IsSpecConstantCompatible f))
+      ((ValidSpecOp e) (IsSpecConstantCompatible e)))
+
+; =============================================================================
+; Image Operation Validation
+; =============================================================================
+; Validate image operations.
+
+(relation ValidImageOp (Expr))
+(relation InvalidImageOp (Expr String))
+
+; Image sample requires sampled image
+(rule ((= e (ImageSample img _)) (HasType img (TSampledImage _)))
+      ((ValidImageOp e)))
+
+; SampledImage requires image and sampler
+(rule ((= e (SampledImage img sampler))
+       (HasType img (TImage _ _ _ _ _ _ _))
+       (HasType sampler (TSampler)))
+      ((ValidImageOp e)))
+
+; =============================================================================
+; Aggregate Validation Error Relations
+; =============================================================================
+; These are the top-level error relations that Rust queries after saturation.
+
+(relation ValidationError (Expr String))
+
+; Propagate type errors
+(rule ((TypeErrorMsg e msg))
+      ((ValidationError e msg)))
+
+; Propagate memory errors
+(rule ((InvalidMemoryAccess e msg))
+      ((ValidationError e msg)))
+
+; Propagate spec constant errors
+(rule ((InvalidSpecOp e msg))
+      ((ValidationError e msg)))
+
+; Propagate image errors
+(rule ((InvalidImageOp e msg))
+      ((ValidationError e msg)))
+
+; Division by zero is an error
+(rule ((DivisionByZero e))
+      ((ValidationError e "Division by constant zero")))
+
+; Invalid shift amount is an error
+(rule ((InvalidShiftAmount e))
+      ((ValidationError e "Shift amount >= type width")))
+
+; Uniform control flow violation
+(rule ((UniformControlFlowViolation e))
+      ((ValidationError e "Operation requires uniform control flow")))
+
+; =============================================================================
+; Type-Aware Optimization Enablers
+; =============================================================================
+; These rules enable type-aware optimizations by providing type information
+; during the same saturation pass.
+
+; Integer type width extraction (for width-aware optimizations)
+(relation IntWidth (Expr i64))
+(rule ((HasType e (TInt width _)))
+      ((IntWidth e width)))
+
+; Float type width extraction
+(relation FloatWidth (Expr i64))
+(rule ((HasType e (TFloat width)))
+      ((FloatWidth e width)))
+
+; Vector element count extraction
+(relation VecSize (Expr i64))
+(rule ((HasType e (TVec _ count)))
+      ((VecSize e count)))
+
+; Is signed integer
+(relation IsSigned (Expr))
+(rule ((HasType e (TInt _ 1)))
+      ((IsSigned e)))
+
+; Is unsigned integer
+(relation IsUnsigned (Expr))
+(rule ((HasType e (TInt _ 0)))
+      ((IsUnsigned e)))
+
+; Is floating point
+(relation IsFloat (Expr))
+(rule ((HasType e (TFloat _)))
+      ((IsFloat e)))
+
+; Is boolean
+(relation IsBool (Expr))
+(rule ((HasType e (TBool)))
+      ((IsBool e)))
+
+; Is vector
+(relation IsVector (Expr))
+(rule ((HasType e (TVec _ _)))
+      ((IsVector e)))
+
+; Is matrix
+(relation IsMatrix (Expr))
+(rule ((HasType e (TMat _ _ _)))
+      ((IsMatrix e)))
+
+; =============================================================================
+; Ray Query and Ray Tracing Validation
+; =============================================================================
+; Validate ray query and ray tracing instructions (SPV_KHR_ray_query,
+; SPV_NV_shader_execution_reorder).
+
+; Ray query types
+(datatype RayQueryType
+    (TRayQuery)
+    (TAccelerationStructure)
+    (THitObject)
+)
+
+; Ray query capability requirements
+(relation RequiresRayQueryCapability (Expr))
+(relation RequiresRayTracingCapability (Expr))
+(relation RequiresHitObjectCapability (Expr))
+
+; Ray query operations require RayQueryKHR capability
+; (These would be added to datatypes.egg as Expr constructors in practice)
+
+; Ray vector type requirements (ray origin and direction must be vec3 of float32)
+(relation IsRayVector (Expr))
+(rule ((HasType e (TVec (TFloat 32) 3)))
+      ((IsRayVector e)))
+
+; Ray scalar requirements (tmin, tmax must be float32)
+(relation IsRayScalar (Expr))
+(rule ((HasType e (TFloat 32)))
+      ((IsRayScalar e)))
+
+; Ray flags and cull mask must be 32-bit int
+(relation IsRayFlags (Expr))
+(rule ((HasType e (TInt 32 _)))
+      ((IsRayFlags e)))
+
+; =============================================================================
+; Liveness Propagation for Type Relations
+; =============================================================================
+; Ensure type information is propagated alongside liveness.
+
+; If an expression is live, its type-related expressions should be computed
+; (This ensures type info is available for error reporting)
