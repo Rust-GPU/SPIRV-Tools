@@ -49,6 +49,8 @@
 //! - [`derivatives`]: Derivative instruction validation rules
 //! - [`barriers`]: Barrier instruction validation rules
 //! - [`atomics`]: Atomic instruction validation rules
+//! - [`mesh_shading`]: Mesh shading instruction validation rules
+//! - [`debug`]: Debug instruction validation rules
 
 pub mod adjacency;
 pub mod arithmetics;
@@ -62,6 +64,7 @@ pub mod cfg;
 pub mod composites;
 pub mod constants;
 pub mod conversion;
+pub mod debug;
 pub mod decorations;
 pub mod derivatives;
 pub mod entry_points;
@@ -75,6 +78,7 @@ pub mod limits;
 pub mod literals;
 pub mod logicals;
 pub mod memory;
+pub mod mesh_shading;
 pub mod non_uniform;
 pub mod pointers;
 pub mod ray_tracing;

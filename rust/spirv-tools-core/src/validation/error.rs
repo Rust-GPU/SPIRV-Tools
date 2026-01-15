@@ -2695,4 +2695,108 @@ pub enum ValidationError {
         /// Expected type description.
         expected: &'static str,
     },
+
+    // ==================== Mesh Shading Errors ====================
+    /// OpEmitMeshTasksEXT requires TaskEXT execution model.
+    #[error("OpEmitMeshTasksEXT requires TaskEXT execution model")]
+    MeshShadingEmitMeshTasksWrongExecutionModel {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+    /// OpEmitMeshTasksEXT Group Count must be a 32-bit unsigned int scalar.
+    #[error(
+        "instruction OpEmitMeshTasksEXT in block {block:?} of function {function:?} Group Count {component} must be a 32-bit unsigned int scalar"
+    )]
+    MeshShadingInvalidGroupCount {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The component (X, Y, or Z).
+        component: &'static str,
+    },
+    /// OpEmitMeshTasksEXT Payload must be a variable.
+    #[error(
+        "instruction OpEmitMeshTasksEXT in block {block:?} of function {function:?} Payload must be the result of an OpVariable"
+    )]
+    MeshShadingPayloadMustBeVariable {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+    /// OpEmitMeshTasksEXT Payload must have TaskPayloadWorkgroupEXT storage class.
+    #[error(
+        "instruction OpEmitMeshTasksEXT in block {block:?} of function {function:?} Payload OpVariable must have a storage class of TaskPayloadWorkgroupEXT"
+    )]
+    MeshShadingPayloadWrongStorageClass {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+    /// OpSetMeshOutputsEXT requires MeshEXT execution model.
+    #[error("OpSetMeshOutputsEXT requires MeshEXT execution model")]
+    MeshShadingSetMeshOutputsWrongExecutionModel {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+    /// OpSetMeshOutputsEXT count must be a 32-bit unsigned int scalar.
+    #[error(
+        "instruction OpSetMeshOutputsEXT in block {block:?} of function {function:?} {count_name} must be a 32-bit unsigned int scalar"
+    )]
+    MeshShadingInvalidOutputCount {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The count name (Vertex Count or Primitive Count).
+        count_name: &'static str,
+    },
+    /// PerPrimitiveEXT decoration applied to wrong storage class in Fragment.
+    #[error(
+        "PerPrimitiveEXT decoration must be applied only to variables in the Input Storage Class in the Fragment Execution Model"
+    )]
+    MeshShadingPerPrimitiveFragmentWrongStorageClass {
+        /// The variable ID.
+        variable_id: Id,
+    },
+    /// PerPrimitiveEXT decoration applied to wrong storage class in MeshEXT.
+    #[error(
+        "PerPrimitiveEXT decoration must be applied only to variables in the Output Storage Class in the MeshEXT Execution Model"
+    )]
+    MeshShadingPerPrimitiveMeshWrongStorageClass {
+        /// The variable ID.
+        variable_id: Id,
+    },
+
+    // ==================== Debug Instruction Errors ====================
+    /// OpMemberName Type must be a struct type.
+    #[error("OpMemberName Type <id> {type_id:?} is not a struct type")]
+    DebugMemberNameNotStruct {
+        /// The type ID.
+        type_id: Id,
+    },
+    /// OpMemberName Member index is out of bounds.
+    #[error(
+        "OpMemberName Member <id> {member_index} index is larger than Type <id> {type_id:?}'s member count ({member_count})"
+    )]
+    DebugMemberNameIndexOutOfBounds {
+        /// The type ID.
+        type_id: Id,
+        /// The member index provided.
+        member_index: u32,
+        /// The actual member count.
+        member_count: u32,
+    },
+    /// OpLine Target must be an OpString.
+    #[error("OpLine Target <id> {file_id:?} is not an OpString")]
+    DebugLineTargetNotString {
+        /// The file ID.
+        file_id: Id,
+    },
 }
