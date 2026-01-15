@@ -298,6 +298,179 @@ impl EgglogContext {
             Op::ExtInst => {
                 self.extended_instruction_to_term(inst)?
             }
+            // Memory operations - model in e-graph for load-store forwarding and dead store elimination
+            Op::Load => {
+                // Load %type %pointer [memory_access]
+                let ptr_id = inst.operands.iter().find_map(|op| op.id_ref_any())?;
+                let ptr = self.get_or_create_term(ptr_id);
+                // Use InitMem as the memory state - real memory threading would need more work
+                format!("(Load {} (InitMem))", ptr)
+            }
+            Op::Store => {
+                // Store %pointer %object [memory_access]
+                // Store has no result, but we model it for dead store elimination
+                // We don't add it to the e-graph directly - stores are handled at block level
+                return None;
+            }
+            Op::AccessChain => {
+                // AccessChain %type %base indices...
+                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                if ops.is_empty() {
+                    return None;
+                }
+                let base = self.get_or_create_term(ops[0]);
+                // Get literal indices
+                let indices: Vec<u32> = inst.operands.iter().skip(1).filter_map(|op| match op {
+                    Operand::LiteralBit32(v) => Some(*v),
+                    _ => None,
+                }).collect();
+                // Also check for ID references as indices (dynamic access)
+                let id_indices: Vec<Word> = ops.iter().skip(1).copied().collect();
+
+                if !indices.is_empty() {
+                    // Static indices - use AccessChain1/2/3
+                    match indices.len() {
+                        1 => format!("(AccessChain1 {} {})", base, indices[0]),
+                        2 => format!("(AccessChain2 {} {} {})", base, indices[0], indices[1]),
+                        3 => format!("(AccessChain3 {} {} {} {})", base, indices[0], indices[1], indices[2]),
+                        _ => return None,
+                    }
+                } else if !id_indices.is_empty() {
+                    // Dynamic index - use AccessChainDyn
+                    let idx = self.get_or_create_term(id_indices[0]);
+                    format!("(AccessChainDyn {} {})", base, idx)
+                } else {
+                    return None;
+                }
+            }
+            Op::InBoundsAccessChain => {
+                // Same as AccessChain for optimization purposes
+                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                if ops.is_empty() {
+                    return None;
+                }
+                let base = self.get_or_create_term(ops[0]);
+                let indices: Vec<u32> = inst.operands.iter().skip(1).filter_map(|op| match op {
+                    Operand::LiteralBit32(v) => Some(*v),
+                    _ => None,
+                }).collect();
+                let id_indices: Vec<Word> = ops.iter().skip(1).copied().collect();
+
+                if !indices.is_empty() {
+                    match indices.len() {
+                        1 => format!("(AccessChain1 {} {})", base, indices[0]),
+                        2 => format!("(AccessChain2 {} {} {})", base, indices[0], indices[1]),
+                        3 => format!("(AccessChain3 {} {} {} {})", base, indices[0], indices[1], indices[2]),
+                        _ => return None,
+                    }
+                } else if !id_indices.is_empty() {
+                    let idx = self.get_or_create_term(id_indices[0]);
+                    format!("(AccessChainDyn {} {})", base, idx)
+                } else {
+                    return None;
+                }
+            }
+            Op::Variable => {
+                // Variable %type storage_class [initializer]
+                // Model as Var node with storage class
+                let storage_class = inst.operands.iter().find_map(|op| match op {
+                    Operand::StorageClass(sc) => Some(*sc as i64),
+                    _ => None,
+                }).unwrap_or(0);
+                let name = inst.result_id.map(|id| format!("var_{}", id)).unwrap_or_default();
+                format!("(Var \"{}\" {})", name, storage_class)
+            }
+            // Image operations - model for texture hoisting and CSE
+            Op::ImageSampleImplicitLod | Op::ImageSampleExplicitLod => {
+                // ImageSample* %type %sampled_image %coordinate [operands]
+                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                if ops.len() >= 2 {
+                    let img = self.get_or_create_term(ops[0]);
+                    let coord = self.get_or_create_term(ops[1]);
+                    format!("(ImageSample {} {})", img, coord)
+                } else {
+                    return None;
+                }
+            }
+            Op::ImageFetch => {
+                // ImageFetch %type %image %coordinate [operands]
+                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                if ops.len() >= 2 {
+                    let img = self.get_or_create_term(ops[0]);
+                    let coord = self.get_or_create_term(ops[1]);
+                    format!("(ImageFetch {} {})", img, coord)
+                } else {
+                    return None;
+                }
+            }
+            Op::ImageRead => {
+                // ImageRead %type %image %coordinate [operands]
+                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                if ops.len() >= 2 {
+                    let img = self.get_or_create_term(ops[0]);
+                    let coord = self.get_or_create_term(ops[1]);
+                    format!("(ImageRead {} {})", img, coord)
+                } else {
+                    return None;
+                }
+            }
+            Op::SampledImage => {
+                // SampledImage %type %image %sampler -> combined image+sampler
+                // Model as binary operation for CSE
+                self.binary_op("SampledImage", inst)?
+            }
+            Op::Image => {
+                // Image %type %sampled_image -> extract image from combined
+                self.unary_op("Image", inst)?
+            }
+            // Atomic operations - model for optimization across atomics
+            Op::AtomicLoad => {
+                // AtomicLoad %type %pointer %scope %semantics
+                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                if !ops.is_empty() {
+                    let ptr = self.get_or_create_term(ops[0]);
+                    format!("(AtomicLoad {} (InitMem))", ptr)
+                } else {
+                    return None;
+                }
+            }
+            Op::AtomicStore => {
+                // AtomicStore has no result - skip
+                return None;
+            }
+            Op::AtomicExchange => {
+                // AtomicExchange %type %pointer %scope %semantics %value
+                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                if ops.len() >= 2 {
+                    let ptr = self.get_or_create_term(ops[0]);
+                    // Value is typically the last ID operand
+                    let val = self.get_or_create_term(*ops.last().unwrap());
+                    format!("(AtomicExchange {} {} (InitMem))", ptr, val)
+                } else {
+                    return None;
+                }
+            }
+            Op::AtomicCompareExchange => {
+                // AtomicCompareExchange %type %ptr %scope %eq_sem %neq_sem %value %comparator
+                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                if ops.len() >= 3 {
+                    let ptr = self.get_or_create_term(ops[0]);
+                    let val = self.get_or_create_term(ops[ops.len() - 2]);
+                    let cmp = self.get_or_create_term(ops[ops.len() - 1]);
+                    format!("(AtomicCompareExchange {} {} {} (InitMem))", ptr, cmp, val)
+                } else {
+                    return None;
+                }
+            }
+            Op::AtomicIAdd => self.atomic_binary_op("AtomicIAdd", inst)?,
+            Op::AtomicISub => self.atomic_binary_op("AtomicISub", inst)?,
+            Op::AtomicSMin => self.atomic_binary_op("AtomicSMin", inst)?,
+            Op::AtomicUMin => self.atomic_binary_op("AtomicUMin", inst)?,
+            Op::AtomicSMax => self.atomic_binary_op("AtomicSMax", inst)?,
+            Op::AtomicUMax => self.atomic_binary_op("AtomicUMax", inst)?,
+            Op::AtomicAnd => self.atomic_binary_op("AtomicAnd", inst)?,
+            Op::AtomicOr => self.atomic_binary_op("AtomicOr", inst)?,
+            Op::AtomicXor => self.atomic_binary_op("AtomicXor", inst)?,
             Op::Phi => {
                 // For Phi, check if all incoming values are the same
                 // Phi operands are pairs: (value, block) repeated
@@ -515,6 +688,20 @@ impl EgglogContext {
             let b = self.get_or_create_term(op_ids[1]);
             let c = self.get_or_create_term(op_ids[2]);
             Some(format!("({} {} {} {})", op, a, b, c))
+        } else {
+            None
+        }
+    }
+
+    /// Convert atomic binary operations (ptr, value) to e-graph term.
+    fn atomic_binary_op(&mut self, op: &str, inst: &Instruction) -> Option<String> {
+        // Atomic binary ops: %type %ptr %scope %semantics %value
+        let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+        if ops.len() >= 2 {
+            let ptr = self.get_or_create_term(ops[0]);
+            // Value is the last ID operand
+            let val = self.get_or_create_term(*ops.last().unwrap());
+            Some(format!("({} {} {} (InitMem))", op, ptr, val))
         } else {
             None
         }

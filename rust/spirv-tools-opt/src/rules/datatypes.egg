@@ -358,6 +358,10 @@
     (ImageFetch Expr Expr)      ; (image, coord) -> texel
     (ImageRead Expr Expr)       ; (image, coord) -> data
 
+    ; Sampler/Image combination
+    (SampledImage Expr Expr)    ; (image, sampler) -> combined sampled_image
+    (Image Expr)                ; Extract image from sampled_image
+
     ; Image write returns new memory state: (ImageWrite image coord data mem)
     (ImageWrite Expr Expr Expr Expr)
 
@@ -1032,6 +1036,8 @@
 (rule ((Live e) (= e (ImageRead img coord))) ((Live img) (Live coord)))
 (rule ((Live e) (= e (ImageWrite img coord data mem)))
       ((Live img) (Live coord) (Live data) (Live mem)))
+(rule ((Live e) (= e (SampledImage img sampler))) ((Live img) (Live sampler)))
+(rule ((Live e) (= e (Image sampled))) ((Live sampled)))
 
 ; Atomic operations
 (rule ((Live e) (= e (AtomicLoad ptr mem))) ((Live ptr) (Live mem)))

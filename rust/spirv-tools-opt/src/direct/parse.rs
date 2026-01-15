@@ -239,6 +239,69 @@ pub fn term_to_instruction_with_ext(
         }
     }
 
+    // Parse Load (Load ptr mem) - extract just the pointer
+    if let Some(rest) = term.strip_prefix("(Load ") {
+        if let Some(inner) = rest.strip_suffix(')') {
+            let terms = split_terms(inner);
+            if !terms.is_empty() {
+                if let Some(ptr) = resolve_term_to_id(&terms[0], id_map) {
+                    return Some(Instruction::new(
+                        Op::Load,
+                        Some(result_type),
+                        Some(result_id),
+                        vec![rspirv::dr::Operand::IdRef(ptr)],
+                    ));
+                }
+            }
+        }
+    }
+
+    // Parse AccessChain variants
+    for (prefix, num_indices) in [("(AccessChain1 ", 1), ("(AccessChain2 ", 2), ("(AccessChain3 ", 3)] {
+        if let Some(rest) = term.strip_prefix(prefix) {
+            if let Some(inner) = rest.strip_suffix(')') {
+                let terms = split_terms(inner);
+                if terms.len() >= 1 + num_indices {
+                    if let Some(base) = resolve_term_to_id(&terms[0], id_map) {
+                        let mut operands = vec![rspirv::dr::Operand::IdRef(base)];
+                        for i in 0..num_indices {
+                            if let Ok(idx) = terms[1 + i].parse::<u32>() {
+                                // Need to create constant for the index - for now skip static indices
+                                // Static access chains need constant IDs which we don't have here
+                                // This would need module-level constant creation
+                            }
+                        }
+                        // For now, we can't extract static access chains without constant pool
+                        // Dynamic access chains are handled below
+                    }
+                }
+            }
+        }
+    }
+
+    // Parse AccessChainDyn (dynamic index)
+    if let Some(rest) = term.strip_prefix("(AccessChainDyn ") {
+        if let Some(inner) = rest.strip_suffix(')') {
+            let terms = split_terms(inner);
+            if terms.len() >= 2 {
+                if let (Some(base), Some(idx)) = (
+                    resolve_term_to_id(&terms[0], id_map),
+                    resolve_term_to_id(&terms[1], id_map),
+                ) {
+                    return Some(Instruction::new(
+                        Op::AccessChain,
+                        Some(result_type),
+                        Some(result_id),
+                        vec![
+                            rspirv::dr::Operand::IdRef(base),
+                            rspirv::dr::Operand::IdRef(idx),
+                        ],
+                    ));
+                }
+            }
+        }
+    }
+
     // Parse VectorInsertDynamic (ternary: vector, component, index)
     if let Some(rest) = term.strip_prefix("(VectorInsertDynamic ") {
         if let Some((vec, component, idx)) = parse_ternary_args(rest, id_map) {
