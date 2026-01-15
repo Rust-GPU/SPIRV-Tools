@@ -1,0 +1,62 @@
+; =============================================================================
+; Subgroup/Wave Operation Optimizations for E-Graph
+; =============================================================================
+;
+; This module provides optimizations for subgroup (wave) operations:
+; - Constant propagation through broadcasts
+; - Redundant operation elimination
+; - CSE for identical subgroup operations
+;
+; Key insight: Subgroup operations with uniform inputs can be simplified.
+;
+; =============================================================================
+; Constant Propagation for Broadcasts
+; =============================================================================
+; Broadcasting a constant is just the constant
+(rule ((= e (GroupBroadcast (Const c) _)))
+      ((union e (Const c))))
+(rule ((= e (GroupBroadcastFirst (Const c))))
+      ((union e (Const c))))
+
+; =============================================================================
+; Redundant Voting Operations
+; =============================================================================
+; All(true) = true, Any(false) = false with uniform values
+(rule ((= e (GroupAll (Const 1))))
+      ((union e (Const 1))))
+(rule ((= e (GroupAny (Const 0))))
+      ((union e (Const 0))))
+
+; AllEqual on constant is always true
+(rule ((= e (GroupAllEqual (Const _))))
+      ((union e (Const 1))))
+
+; =============================================================================
+; Reduction of Constants
+; =============================================================================
+; Reduction of a constant is the constant (modulo subgroup size, but safe for identities)
+(rule ((= e (GroupIAdd (Const 0))))
+      ((union e (Const 0))))
+(rule ((= e (GroupIMul (Const 1))))
+      ((union e (Const 1))))
+(rule ((= e (GroupBitAnd (Const -1))))
+      ((union e (Const -1))))
+(rule ((= e (GroupBitOr (Const 0))))
+      ((union e (Const 0))))
+(rule ((= e (GroupBitXor (Const 0))))
+      ((union e (Const 0))))
+(rule ((= e (GroupLogAnd (Const 1))))
+      ((union e (Const 1))))
+(rule ((= e (GroupLogOr (Const 0))))
+      ((union e (Const 0))))
+
+; =============================================================================
+; Shuffle Optimizations
+; =============================================================================
+; Shuffle with constant index 0 from first is like BroadcastFirst
+; (Could add more shuffle patterns)
+
+; ShuffleXor with mask 0 is identity
+(rule ((= e (GroupShuffleXor x (Const 0))))
+      ((union e x)))
+

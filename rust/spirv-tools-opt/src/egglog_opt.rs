@@ -76,6 +76,8 @@ const SPIRV_EGGLOG_PROGRAM: &str = concat!(
     include_str!("rules/float_conversion.egg"),
     "\n",
     include_str!("rules/cleanup.egg"),
+    "\n",
+    include_str!("rules/subgroup.egg"),
 );
 
 /// Rules that use custom primitives (must be loaded after primitives are registered).
