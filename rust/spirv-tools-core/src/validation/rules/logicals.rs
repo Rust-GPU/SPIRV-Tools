@@ -681,6 +681,232 @@ impl ValidationRule for IntComparisonRule {
 }
 
 // ============================================================================
+// Select Rule
+// ============================================================================
+
+/// Validates OpSelect operations.
+///
+/// Ensures that:
+/// - Result type is scalar, vector, pointer, image/sampler (with capability), or composite (SPIR-V 1.4+)
+/// - Condition is bool scalar or vector
+/// - Condition dimension matches result dimension (or scalar condition with composites feature)
+/// - Both objects match result type
+/// - Pointer select requires VariablePointers capability in Logical addressing
+/// - Image/sampler select requires BindlessTextureNV capability
+pub struct SelectRule;
+
+impl ValidationRule for SelectRule {
+    fn name(&self) -> &'static str {
+        "select"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        use rspirv::spirv::{AddressingModel, Capability};
+
+        let resolver = DefaultTypeResolver;
+
+        // Check addressing model for pointer select rules
+        let addressing_model = ctx
+            .module
+            .memory_model
+            .as_ref()
+            .and_then(|inst| inst.operands.first())
+            .and_then(|op| match op {
+                rspirv::dr::Operand::AddressingModel(model) => Some(*model),
+                _ => None,
+            });
+
+        let is_logical = matches!(addressing_model, Some(AddressingModel::Logical));
+        let has_variable_pointers = ctx.has_capability(Capability::VariablePointers)
+            || ctx.has_capability(Capability::VariablePointersStorageBuffer);
+        let has_bindless_texture = ctx.has_capability(Capability::BindlessTextureNV);
+
+        // Check SPIR-V version for composite select support
+        let supports_composite_select = ctx.module.header.as_ref().map_or(false, |h| {
+            let version = h.version();
+            version >= (1, 4)
+        });
+
+        for function in &ctx.module.functions {
+            let function_id = function
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .and_then(|id| Id::try_from(id).ok());
+
+            for block in &function.blocks {
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .and_then(|id| Id::try_from(id).ok());
+
+                for inst in &block.instructions {
+                    if inst.class.opcode != Op::Select {
+                        continue;
+                    }
+
+                    let Some(result_type_id) = inst.result_type else {
+                        continue;
+                    };
+
+                    // Get result type opcode
+                    let result_type_opcode = crate::validation::types::ResultId::try_from(result_type_id)
+                        .ok()
+                        .and_then(|rid| ctx.definitions.get(&rid))
+                        .map(|inst| inst.class.opcode);
+
+                    let result_dim = resolver.get_dimension(result_type_id, ctx.definitions);
+
+                    // Validate result type
+                    let is_valid_result_type = match result_type_opcode {
+                        Some(Op::TypePointer | Op::TypeUntypedPointerKHR) => {
+                            if is_logical && !has_variable_pointers {
+                                if let (Some(func), Some(block), Some(result_type)) = (
+                                    function_id,
+                                    block_id,
+                                    crate::validation::types::TypeId::try_from(result_type_id).ok(),
+                                ) {
+                                    return Err(ValidationError::SelectPointerRequiresCapability {
+                                        function: func,
+                                        block,
+                                        result_type,
+                                    });
+                                }
+                            }
+                            true
+                        }
+                        Some(Op::TypeImage | Op::TypeSampler | Op::TypeSampledImage) => {
+                            if !has_bindless_texture {
+                                if let (Some(func), Some(block), Some(result_type)) = (
+                                    function_id,
+                                    block_id,
+                                    crate::validation::types::TypeId::try_from(result_type_id).ok(),
+                                ) {
+                                    return Err(ValidationError::SelectImageRequiresCapability {
+                                        function: func,
+                                        block,
+                                        result_type,
+                                    });
+                                }
+                            }
+                            true
+                        }
+                        Some(Op::TypeVector) => true,
+                        Some(Op::TypeBool | Op::TypeInt | Op::TypeFloat) => true,
+                        Some(Op::TypeArray | Op::TypeMatrix | Op::TypeStruct) => {
+                            supports_composite_select
+                        }
+                        _ => false,
+                    };
+
+                    if !is_valid_result_type {
+                        if let (Some(func), Some(block), Some(result_type)) = (
+                            function_id,
+                            block_id,
+                            crate::validation::types::TypeId::try_from(result_type_id).ok(),
+                        ) {
+                            return Err(ValidationError::SelectResultTypeInvalid {
+                                function: func,
+                                block,
+                                result_type,
+                                supports_composites: supports_composite_select,
+                            });
+                        }
+                    }
+
+                    // Condition (operand 0) must be bool scalar or vector
+                    let condition_type = inst
+                        .operands
+                        .first()
+                        .and_then(|op| match op {
+                            rspirv::dr::Operand::IdRef(id) => Some(*id),
+                            _ => None,
+                        })
+                        .and_then(|id| {
+                            crate::validation::types::ResultId::try_from(id)
+                                .ok()
+                                .and_then(|rid| ctx.definitions.get(&rid))
+                        })
+                        .and_then(|inst| inst.result_type);
+
+                    if let Some(cond_type_id) = condition_type {
+                        if !resolver.is_bool_scalar_or_vector(cond_type_id, ctx.definitions) {
+                            if let (Some(func), Some(block), Some(result_type)) = (
+                                function_id,
+                                block_id,
+                                crate::validation::types::TypeId::try_from(result_type_id).ok(),
+                            ) {
+                                return Err(ValidationError::SelectConditionNotBool {
+                                    function: func,
+                                    block,
+                                    result_type,
+                                });
+                            }
+                        }
+
+                        let cond_dim = resolver.get_dimension(cond_type_id, ctx.definitions);
+
+                        // Dimension check: condition must match result unless scalar condition with composites
+                        if cond_dim != result_dim {
+                            let is_scalar_cond = cond_dim == 1;
+                            if !supports_composite_select || !is_scalar_cond {
+                                if let (Some(func), Some(block), Some(result_type)) = (
+                                    function_id,
+                                    block_id,
+                                    crate::validation::types::TypeId::try_from(result_type_id).ok(),
+                                ) {
+                                    return Err(ValidationError::SelectDimensionMismatch {
+                                        function: func,
+                                        block,
+                                        result_type,
+                                    });
+                                }
+                            }
+                        }
+                    }
+
+                    // Both objects (operands 1 and 2) must match result type
+                    for operand_idx in [1, 2] {
+                        let object_type = inst
+                            .operands
+                            .get(operand_idx)
+                            .and_then(|op| match op {
+                                rspirv::dr::Operand::IdRef(id) => Some(*id),
+                                _ => None,
+                            })
+                            .and_then(|id| {
+                                crate::validation::types::ResultId::try_from(id)
+                                    .ok()
+                                    .and_then(|rid| ctx.definitions.get(&rid))
+                            })
+                            .and_then(|inst| inst.result_type);
+
+                        if let Some(obj_type_id) = object_type {
+                            if obj_type_id != result_type_id {
+                                if let (Some(func), Some(block), Some(result_type)) = (
+                                    function_id,
+                                    block_id,
+                                    crate::validation::types::TypeId::try_from(result_type_id).ok(),
+                                ) {
+                                    return Err(ValidationError::SelectObjectTypeMismatch {
+                                        function: func,
+                                        block,
+                                        result_type,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
 // All logical rules
 // ============================================================================
 
@@ -692,5 +918,6 @@ pub fn all_logical_rules() -> Vec<&'static dyn ValidationRule> {
         &FloatComparisonRule,
         &LogicalOperationsRule,
         &IntComparisonRule,
+        &SelectRule,
     ]
 }

@@ -3276,4 +3276,73 @@ pub enum ValidationError {
         /// The opcode of the instruction using the small type.
         opcode: rspirv::spirv::Op,
     },
+
+    // ==================== Select Errors ====================
+    /// OpSelect with pointer type requires VariablePointers capability.
+    #[error("In function {function:?} block {block:?}: OpSelect with pointer result type {result_type:?} requires VariablePointers or VariablePointersStorageBuffer capability")]
+    SelectPointerRequiresCapability {
+        /// The function ID.
+        function: Id,
+        /// The block ID.
+        block: Id,
+        /// The result type ID.
+        result_type: TypeId,
+    },
+
+    /// OpSelect with image/sampler type requires BindlessTextureNV capability.
+    #[error("In function {function:?} block {block:?}: OpSelect with image/sampler result type {result_type:?} requires BindlessTextureNV capability")]
+    SelectImageRequiresCapability {
+        /// The function ID.
+        function: Id,
+        /// The block ID.
+        block: Id,
+        /// The result type ID.
+        result_type: TypeId,
+    },
+
+    /// OpSelect result type is invalid.
+    #[error("In function {function:?} block {block:?}: OpSelect result type {result_type:?} must be scalar, vector{}", if *supports_composites { ", or composite" } else { "" })]
+    SelectResultTypeInvalid {
+        /// The function ID.
+        function: Id,
+        /// The block ID.
+        block: Id,
+        /// The result type ID.
+        result_type: TypeId,
+        /// Whether composite types are supported (SPIR-V 1.4+).
+        supports_composites: bool,
+    },
+
+    /// OpSelect condition must be bool scalar or vector.
+    #[error("In function {function:?} block {block:?}: OpSelect condition must be bool scalar or vector, result type was {result_type:?}")]
+    SelectConditionNotBool {
+        /// The function ID.
+        function: Id,
+        /// The block ID.
+        block: Id,
+        /// The result type ID.
+        result_type: TypeId,
+    },
+
+    /// OpSelect condition dimension must match result dimension.
+    #[error("In function {function:?} block {block:?}: OpSelect condition and result {result_type:?} dimensions must match")]
+    SelectDimensionMismatch {
+        /// The function ID.
+        function: Id,
+        /// The block ID.
+        block: Id,
+        /// The result type ID.
+        result_type: TypeId,
+    },
+
+    /// OpSelect objects must match result type.
+    #[error("In function {function:?} block {block:?}: OpSelect objects must match result type {result_type:?}")]
+    SelectObjectTypeMismatch {
+        /// The function ID.
+        function: Id,
+        /// The block ID.
+        block: Id,
+        /// The result type ID.
+        result_type: TypeId,
+    },
 }
