@@ -3345,4 +3345,84 @@ pub enum ValidationError {
         /// The result type ID.
         result_type: TypeId,
     },
+
+    // ==================== Misc Instruction Errors ====================
+    /// OpUndef cannot create void type.
+    #[error("OpUndef {instruction_id:?}: Cannot create undefined values with void type")]
+    UndefCannotBeVoid {
+        /// The instruction ID.
+        instruction_id: Option<Id>,
+    },
+
+    /// OpUndef cannot create 8- or 16-bit types.
+    #[error("OpUndef {instruction_id:?}: Cannot create undefined values with 8- or 16-bit types")]
+    UndefCannotBeSmallType {
+        /// The instruction ID.
+        instruction_id: Option<Id>,
+    },
+
+    /// OpReadClockKHR has invalid scope.
+    #[error("In function {function:?} block {block:?}: OpReadClockKHR scope must be {expected}")]
+    ShaderClockInvalidScope {
+        /// The function ID.
+        function: Option<Id>,
+        /// The block ID.
+        block: Option<Id>,
+        /// Expected scope description.
+        expected: &'static str,
+    },
+
+    /// OpReadClockKHR has invalid result type.
+    #[error("In function {function:?} block {block:?}: OpReadClockKHR result must be 64-bit uint or vec2<u32>")]
+    ShaderClockInvalidResultType {
+        /// The function ID.
+        function: Option<Id>,
+        /// The block ID.
+        block: Option<Id>,
+    },
+
+    /// OpAssumeTrueKHR value must be bool.
+    #[error("In function {function:?} block {block:?}: OpAssumeTrueKHR value must be a boolean scalar")]
+    AssumeTrueNotBool {
+        /// The function ID.
+        function: Option<Id>,
+        /// The block ID.
+        block: Option<Id>,
+    },
+
+    /// OpExpectKHR has invalid result type.
+    #[error("In function {function:?} block {block:?}: OpExpectKHR result must be int or bool scalar/vector")]
+    ExpectInvalidResultType {
+        /// The function ID.
+        function: Option<Id>,
+        /// The block ID.
+        block: Option<Id>,
+    },
+
+    /// OpExpectKHR value type mismatch.
+    #[error("In function {function:?} block {block:?}: OpExpectKHR Value type does not match result type")]
+    ExpectValueTypeMismatch {
+        /// The function ID.
+        function: Option<Id>,
+        /// The block ID.
+        block: Option<Id>,
+    },
+
+    /// OpExpectKHR expected value type mismatch.
+    #[error("In function {function:?} block {block:?}: OpExpectKHR ExpectedValue type does not match result type")]
+    ExpectExpectedValueTypeMismatch {
+        /// The function ID.
+        function: Option<Id>,
+        /// The block ID.
+        block: Option<Id>,
+    },
+
+    /// OpIsHelperInvocationEXT must return bool.
+    #[error("In function {function:?} block {block:?}: OpIsHelperInvocationEXT result must be bool scalar")]
+    IsHelperInvocationNotBool {
+        /// The function ID.
+        function: Option<Id>,
+        /// The block ID.
+        block: Option<Id>,
+    },
 }
