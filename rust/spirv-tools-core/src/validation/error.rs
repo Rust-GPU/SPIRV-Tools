@@ -2974,4 +2974,64 @@ pub enum ValidationError {
         /// The opcode.
         opcode: rspirv::spirv::Op,
     },
+
+    // ==================== Interface Validation Errors ====================
+    /// Interface variable contains a PhysicalStorageBuffer pointer.
+    #[error(
+        "Input/Output interface variable id <{variable_id:?}> contains a PhysicalStorageBuffer pointer"
+    )]
+    InterfaceContainsPhysicalStorageBuffer {
+        /// The variable ID.
+        variable_id: Id,
+    },
+    /// Entry point has more than one PushConstant variable.
+    #[error("Entry-point {entry_point:?} has more than one variable with the PushConstant storage class")]
+    InterfaceMultiplePushConstant {
+        /// The entry point ID.
+        entry_point: Option<Id>,
+    },
+    /// Entry point has more than one IncomingRayPayloadKHR variable.
+    #[error("Entry-point {entry_point:?} has more than one variable with the IncomingRayPayloadKHR storage class")]
+    InterfaceMultipleIncomingRayPayload {
+        /// The entry point ID.
+        entry_point: Option<Id>,
+    },
+    /// Entry point has more than one HitAttributeKHR variable.
+    #[error("Entry-point {entry_point:?} has more than one variable with the HitAttributeKHR storage class")]
+    InterfaceMultipleHitAttribute {
+        /// The entry point ID.
+        entry_point: Option<Id>,
+    },
+    /// Entry point has more than one IncomingCallableDataKHR variable.
+    #[error("Entry-point {entry_point:?} has more than one variable with the IncomingCallableDataKHR storage class")]
+    InterfaceMultipleIncomingCallableData {
+        /// The entry point ID.
+        entry_point: Option<Id>,
+    },
+    /// Entry point has conflicting location assignment.
+    #[error(
+        "Entry-point {entry_point:?} has conflicting {storage_class} location assignment at location {location}, component {component}"
+    )]
+    InterfaceLocationConflict {
+        /// The entry point ID.
+        entry_point: Option<Id>,
+        /// The storage class (input or output).
+        storage_class: &'static str,
+        /// The conflicting location.
+        location: u32,
+        /// The conflicting component.
+        component: u32,
+    },
+    /// Index decoration can only be applied to Output storage class variables.
+    #[error("Index decoration on variable <{variable_id:?}> must be on Output storage class")]
+    IndexDecorationNotOutput {
+        /// The variable ID.
+        variable_id: Id,
+    },
+    /// Index decoration can only be applied to Fragment execution model outputs.
+    #[error("Index decoration on variable <{variable_id:?}> can only be applied to Fragment output variables")]
+    IndexDecorationNotFragment {
+        /// The variable ID.
+        variable_id: Id,
+    },
 }
