@@ -2799,4 +2799,179 @@ pub enum ValidationError {
         /// The file ID.
         file_id: Id,
     },
+
+    // ==================== Memory Semantics Errors ====================
+    /// Memory Semantics must be a 32-bit int.
+    #[error("{opcode:?}: expected Memory Semantics to be a 32-bit int")]
+    MemorySemanticsNotInt32 {
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Memory Semantics ids must be OpConstant when Shader capability is present.
+    #[error("Memory Semantics ids must be OpConstant when Shader capability is present")]
+    MemorySemanticsNotConstantWithShader,
+    /// Memory Semantics UniformMemory requires capability Shader.
+    #[error("{opcode:?}: Memory Semantics UniformMemory requires capability Shader")]
+    MemorySemanticsUniformMemoryRequiresShader {
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Memory Semantics OutputMemoryKHR requires capability VulkanMemoryModelKHR.
+    #[error("{opcode:?}: Memory Semantics OutputMemoryKHR requires capability VulkanMemoryModelKHR")]
+    MemorySemanticsOutputMemoryRequiresVulkanMemoryModel {
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Memory Semantics must have at most one non-relaxed memory order bit set.
+    #[error("{opcode:?}: Memory Semantics must have at most one non-relaxed memory order bit set")]
+    MemorySemanticsMultipleOrderBits {
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// SequentiallyConsistent not allowed in Vulkan.
+    #[error("{opcode:?}: Memory Semantics with SequentiallyConsistent memory order must not be used in the Vulkan API")]
+    MemorySemanticsSequentiallyConsistentInVulkan {
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Invalid memory order for atomic store/flag clear.
+    #[error("{opcode:?}: MemorySemantics must not use Acquire or AcquireRelease memory order")]
+    MemorySemanticsInvalidOrderForStore {
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Invalid memory order for atomic load.
+    #[error("{opcode:?}: MemorySemantics must not use Release or AcquireRelease memory order")]
+    MemorySemanticsInvalidOrderForLoad {
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Memory barrier must not use relaxed memory order in Vulkan.
+    #[error("{opcode:?}: MemorySemantics must not use Relaxed memory order with OpMemoryBarrier")]
+    MemorySemanticsRelaxedBarrierInVulkan {
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Non-relaxed memory order requires storage class in Vulkan.
+    #[error("{opcode:?}: Memory Semantics with a non-relaxed memory order must have at least one Vulkan-supported storage class semantics bit set")]
+    MemorySemanticsOrderWithoutStorageClass {
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Storage class semantics without memory order in Vulkan.
+    #[error("{opcode:?}: Memory Semantics with at least one Vulkan-supported storage class semantics bit set must use a non-relaxed memory order")]
+    MemorySemanticsStorageClassWithoutOrder {
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// MakeAvailableKHR requires VulkanMemoryModelKHR capability.
+    #[error("{opcode:?}: Memory Semantics MakeAvailableKHR requires capability VulkanMemoryModelKHR")]
+    MemorySemanticsMakeAvailableRequiresVulkanMemoryModel {
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// MakeAvailableKHR requires Release or AcquireRelease.
+    #[error("{opcode:?}: Memory Semantics with MakeAvailable bit set must use Release or AcquireRelease memory order")]
+    MemorySemanticsMakeAvailableRequiresRelease {
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// MakeVisibleKHR requires VulkanMemoryModelKHR capability.
+    #[error("{opcode:?}: Memory Semantics MakeVisibleKHR requires capability VulkanMemoryModelKHR")]
+    MemorySemanticsMakeVisibleRequiresVulkanMemoryModel {
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// MakeVisibleKHR requires Acquire or AcquireRelease.
+    #[error("{opcode:?}: Memory Semantics with MakeVisible bit set must use Acquire or AcquireRelease memory order")]
+    MemorySemanticsMakeVisibleRequiresAcquire {
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Volatile requires VulkanMemoryModelKHR capability.
+    #[error("{opcode:?}: Memory Semantics Volatile requires capability VulkanMemoryModelKHR")]
+    MemorySemanticsVolatileRequiresVulkanMemoryModel {
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Volatile must not be used with barrier instructions.
+    #[error("{opcode:?}: Memory Semantics with Volatile bit set must not be used with barrier instructions")]
+    MemorySemanticsVolatileWithBarrier {
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Unequal memory semantics must not use Release or AcquireRelease.
+    #[error("{opcode:?}: Unequal Memory Semantics must not use Release or AcquireRelease memory order")]
+    MemorySemanticsUnequalInvalidOrder {
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Unequal memory semantics must not be stronger than equal.
+    #[error("{opcode:?}: Unequal Memory Semantics must not use a stronger memory order than the corresponding Equal Memory Semantics")]
+    MemorySemanticsUnequalStrongerThanEqual {
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Relaxed memory with Invocation scope in Vulkan.
+    #[error("{opcode:?}: Vulkan specification requires Memory Semantics to be Relaxed if used with Invocation Memory Scope")]
+    MemorySemanticsRequiresRelaxedWithInvocation {
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+
+    // ==================== Scope Errors ====================
+    /// Scope must be a 32-bit int.
+    #[error("{opcode:?}: expected scope to be a 32-bit int")]
+    ScopeNotInt32 {
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Scope ids must be OpConstant when Shader capability is present.
+    #[error("Scope ids must be OpConstant when Shader capability is present")]
+    ScopeNotConstantWithShader,
+    /// Invalid scope value.
+    #[error("Invalid scope value: {value}")]
+    ScopeInvalidValue {
+        /// The invalid scope value.
+        value: u32,
+    },
+    /// Execution scope limited in Vulkan.
+    #[error("{opcode:?}: in Vulkan environment Execution Scope is limited to Workgroup and Subgroup")]
+    ScopeExecutionLimitedInVulkan {
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Non-uniform group operations require Subgroup scope in Vulkan.
+    #[error("{opcode:?}: in Vulkan environment Execution scope is limited to Subgroup")]
+    ScopeNonUniformRequiresSubgroup {
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Non-uniform group operations execution scope limited.
+    #[error("{opcode:?}: Execution scope is limited to Subgroup or Workgroup")]
+    ScopeNonUniformLimited {
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// QueueFamilyKHR scope requires VulkanMemoryModelKHR capability.
+    #[error("{opcode:?}: Memory Scope QueueFamilyKHR requires capability VulkanMemoryModelKHR")]
+    ScopeQueueFamilyRequiresVulkanMemoryModel {
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Device scope with VulkanMemoryModel requires VulkanMemoryModelDeviceScopeKHR.
+    #[error("Use of device scope with VulkanKHR memory model requires the VulkanMemoryModelDeviceScopeKHR capability")]
+    ScopeDeviceRequiresDeviceScopeCapability,
+    /// Memory scope limited in Vulkan.
+    #[error("{opcode:?}: in Vulkan environment Memory Scope is limited to Device, QueueFamily, Workgroup, ShaderCallKHR, Subgroup, or Invocation")]
+    ScopeMemoryLimitedInVulkan {
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Subgroup memory scope not allowed in Vulkan 1.0 without specific capabilities.
+    #[error("{opcode:?}: in Vulkan 1.0 environment Memory Scope can not be Subgroup without SubgroupBallotKHR or SubgroupVoteKHR declared")]
+    ScopeSubgroupNotAllowedVulkan10 {
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
 }
