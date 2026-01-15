@@ -41,7 +41,7 @@ fn build_sample_module() -> (Vec<u32>, u32) {
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let int = b.type_int(32, 0);
     let func_ty = b.type_function(int, vec![]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let _ = b.begin_block(None).unwrap();
@@ -52,6 +52,8 @@ fn build_sample_module() -> (Vec<u32>, u32) {
     let sub = b.i_sub(int, None, add, c2).expect("sub");
     b.ret_value(sub).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", []);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), sub)
 }
 
@@ -61,7 +63,7 @@ fn build_mul_identity_module() -> (Vec<u32>, u32) {
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let int = b.type_int(32, 0);
     let func_ty = b.type_function(int, vec![]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let _ = b.begin_block(None).unwrap();
@@ -74,6 +76,8 @@ fn build_mul_identity_module() -> (Vec<u32>, u32) {
     let sum = b.i_add(int, None, left, right).expect("add folded terms");
     b.ret_value(sum).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", []);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), sum)
 }
 
@@ -84,7 +88,7 @@ fn build_select_true_module() -> (Vec<u32>, u32, u32) {
     let int = b.type_int(32, 0);
     let bool_ty = b.type_bool();
     let func_ty = b.type_function(int, vec![]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let _ = b.begin_block(None).unwrap();
@@ -94,6 +98,8 @@ fn build_select_true_module() -> (Vec<u32>, u32, u32) {
     let sel = b.select(int, None, cond, c10, c20).expect("select");
     b.ret_value(sel).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", []);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), sel, c10)
 }
 
@@ -105,7 +111,7 @@ fn build_redundant_phi_module() -> (Vec<u32>, u32, u32) {
     let int = b.type_int(32, 0);
     let bool_ty = b.type_bool();
     let func_ty = b.type_function(void, vec![]);
-    let _func = b
+    let func = b
         .begin_function(void, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let val = b.constant_bit32(int, 7);
@@ -132,6 +138,8 @@ fn build_redundant_phi_module() -> (Vec<u32>, u32, u32) {
         .expect("phi");
     b.ret().unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", []);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
 
     (b.module().assemble(), phi, val)
 }
@@ -143,7 +151,7 @@ fn build_eq_self_module() -> (Vec<u32>, u32) {
     let int = b.type_int(32, 0);
     let bool_ty = b.type_bool();
     let func_ty = b.type_function(bool_ty, vec![int]);
-    let _func = b
+    let func = b
         .begin_function(bool_ty, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let x = b.function_parameter(int).unwrap();
@@ -151,6 +159,8 @@ fn build_eq_self_module() -> (Vec<u32>, u32) {
     let eq = b.i_equal(bool_ty, None, x, x).expect("i_equal");
     b.ret_value(eq).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [x]);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), eq)
 }
 
@@ -160,7 +170,7 @@ fn build_logical_and_module() -> (Vec<u32>, u32) {
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let bool_ty = b.type_bool();
     let func_ty = b.type_function(bool_ty, vec![]);
-    let _func = b
+    let func = b
         .begin_function(bool_ty, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let _ = b.begin_block(None).unwrap();
@@ -169,6 +179,8 @@ fn build_logical_and_module() -> (Vec<u32>, u32) {
     let and = b.logical_and(bool_ty, None, t, f).expect("logical_and");
     b.ret_value(and).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", []);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), and)
 }
 
@@ -179,7 +191,7 @@ fn build_mul_identity_module_s32() -> (Vec<u32>, u32) {
     let void = b.type_void();
     let int = b.type_int(32, 1);
     let func_ty = b.type_function(void, vec![]);
-    let _func = b
+    let func = b
         .begin_function(void, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let _ = b.begin_block(None).unwrap();
@@ -194,6 +206,8 @@ fn build_mul_identity_module_s32() -> (Vec<u32>, u32) {
         .expect("add folded terms s32");
     b.ret().unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", []);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), sum)
 }
 
@@ -312,11 +326,12 @@ fn cli_opt_block_disable_overrides_force() {
 fn build_mul_identity_module_s64() -> (Vec<u32>, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
+    b.capability(Capability::Int64);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let void = b.type_void();
     let int = b.type_int(64, 1);
     let func_ty = b.type_function(void, vec![]);
-    let _func = b
+    let func = b
         .begin_function(void, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let _ = b.begin_block(None).unwrap();
@@ -331,17 +346,20 @@ fn build_mul_identity_module_s64() -> (Vec<u32>, u32) {
         .expect("add folded terms s64");
     b.ret().unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", []);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), sum)
 }
 
 fn build_mul_identity_module_u64() -> (Vec<u32>, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
+    b.capability(Capability::Int64);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let void = b.type_void();
     let int = b.type_int(64, 0);
     let func_ty = b.type_function(void, vec![]);
-    let _func = b
+    let func = b
         .begin_function(void, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let _ = b.begin_block(None).unwrap();
@@ -356,6 +374,8 @@ fn build_mul_identity_module_u64() -> (Vec<u32>, u32) {
         .expect("add folded terms u64");
     b.ret().unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", []);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), sum)
 }
 
@@ -366,7 +386,7 @@ fn build_div_rem_identity_module() -> (Vec<u32>, (u32, u32)) {
     let void = b.type_void();
     let int = b.type_int(32, 0);
     let func_ty = b.type_function(void, vec![]);
-    let _func = b
+    let func = b
         .begin_function(void, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let _ = b.begin_block(None).unwrap();
@@ -376,17 +396,20 @@ fn build_div_rem_identity_module() -> (Vec<u32>, (u32, u32)) {
     let rem = b.u_mod(int, None, c42, c1).expect("rem by one");
     b.ret().unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", []);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), (div, rem))
 }
 
 fn build_udiv_rem_identity_module_u64() -> (Vec<u32>, (u32, u32)) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
+    b.capability(Capability::Int64);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let void = b.type_void();
     let int = b.type_int(64, 0);
     let func_ty = b.type_function(void, vec![]);
-    let _func = b
+    let func = b
         .begin_function(void, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let _ = b.begin_block(None).unwrap();
@@ -396,16 +419,19 @@ fn build_udiv_rem_identity_module_u64() -> (Vec<u32>, (u32, u32)) {
     let rem = b.u_mod(int, None, c42, c1).expect("umod by one");
     b.ret().unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", []);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), (div, rem))
 }
 
 fn build_band_complement_u64_module() -> (Vec<u32>, (u32, u32)) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
+    b.capability(Capability::Int64);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let int = b.type_int(64, 0);
     let func_ty = b.type_function(int, vec![int]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let param = b.function_parameter(int).expect("param");
@@ -416,6 +442,8 @@ fn build_band_complement_u64_module() -> (Vec<u32>, (u32, u32)) {
         .expect("bitwise and");
     b.ret_value(band).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), (band, int))
 }
 
@@ -425,7 +453,7 @@ fn build_band_complement_u32_module() -> (Vec<u32>, (u32, u32)) {
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let int = b.type_int(32, 0);
     let func_ty = b.type_function(int, vec![int]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let param = b.function_parameter(int).expect("param");
@@ -436,6 +464,8 @@ fn build_band_complement_u32_module() -> (Vec<u32>, (u32, u32)) {
         .expect("bitwise and");
     b.ret_value(band).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), (band, int))
 }
 
@@ -446,7 +476,7 @@ fn build_band_all_ones_u32_module() -> (Vec<u32>, u32, u32) {
     let void = b.type_void();
     let int = b.type_int(32, 0);
     let func_ty = b.type_function(void, vec![]);
-    let _func = b
+    let func = b
         .begin_function(void, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let _ = b.begin_block(None).unwrap();
@@ -455,17 +485,20 @@ fn build_band_all_ones_u32_module() -> (Vec<u32>, u32, u32) {
     let band = b.bitwise_and(int, None, x, mask).expect("band");
     b.ret().unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", []);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), band, int)
 }
 
 fn build_band_all_ones_u64_module() -> (Vec<u32>, u32, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
+    b.capability(Capability::Int64);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let void = b.type_void();
     let int = b.type_int(64, 0);
     let func_ty = b.type_function(void, vec![]);
-    let _func = b
+    let func = b
         .begin_function(void, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let _ = b.begin_block(None).unwrap();
@@ -474,6 +507,8 @@ fn build_band_all_ones_u64_module() -> (Vec<u32>, u32, u32) {
     let band = b.bitwise_and(int, None, x, mask).expect("band");
     b.ret().unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", []);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), band, int)
 }
 
@@ -484,7 +519,7 @@ fn build_bor_zero_u32_module() -> (Vec<u32>, u32, u32) {
     let void = b.type_void();
     let int = b.type_int(32, 0);
     let func_ty = b.type_function(void, vec![]);
-    let _func = b
+    let func = b
         .begin_function(void, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let _ = b.begin_block(None).unwrap();
@@ -493,17 +528,20 @@ fn build_bor_zero_u32_module() -> (Vec<u32>, u32, u32) {
     let bor = b.bitwise_or(int, None, x, zero).expect("bor");
     b.ret().unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", []);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), bor, int)
 }
 
 fn build_bor_zero_u64_module() -> (Vec<u32>, u32, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
+    b.capability(Capability::Int64);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let void = b.type_void();
     let int = b.type_int(64, 0);
     let func_ty = b.type_function(void, vec![]);
-    let _func = b
+    let func = b
         .begin_function(void, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let _ = b.begin_block(None).unwrap();
@@ -512,6 +550,8 @@ fn build_bor_zero_u64_module() -> (Vec<u32>, u32, u32) {
     let bor = b.bitwise_or(int, None, x, zero).expect("bor");
     b.ret().unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", []);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), bor, int)
 }
 
@@ -522,7 +562,7 @@ fn build_bxor_self_u32_module() -> (Vec<u32>, u32, u32) {
     let void = b.type_void();
     let int = b.type_int(32, 0);
     let func_ty = b.type_function(void, vec![]);
-    let _func = b
+    let func = b
         .begin_function(void, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let _ = b.begin_block(None).unwrap();
@@ -530,17 +570,20 @@ fn build_bxor_self_u32_module() -> (Vec<u32>, u32, u32) {
     let bxor = b.bitwise_xor(int, None, x, x).expect("bxor self");
     b.ret().unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", []);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), bxor, int)
 }
 
 fn build_bxor_self_u64_module() -> (Vec<u32>, u32, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
+    b.capability(Capability::Int64);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let void = b.type_void();
     let int = b.type_int(64, 0);
     let func_ty = b.type_function(void, vec![]);
-    let _func = b
+    let func = b
         .begin_function(void, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let _ = b.begin_block(None).unwrap();
@@ -548,6 +591,8 @@ fn build_bxor_self_u64_module() -> (Vec<u32>, u32, u32) {
     let bxor = b.bitwise_xor(int, None, x, x).expect("bxor self");
     b.ret().unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", []);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), bxor, int)
 }
 
@@ -558,7 +603,7 @@ fn build_band_absorb_or_module() -> Vec<u32> {
     let void = b.type_void();
     let int = b.type_int(32, 0);
     let func_ty = b.type_function(void, vec![int]);
-    let _func = b
+    let func = b
         .begin_function(void, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let x = b.function_parameter(int).expect("param x");
@@ -568,6 +613,8 @@ fn build_band_absorb_or_module() -> Vec<u32> {
     let _band = b.bitwise_and(int, None, x, bor).expect("band");
     b.ret().unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [x]);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     b.module().assemble()
 }
 
@@ -578,7 +625,7 @@ fn build_bor_absorb_and_module() -> Vec<u32> {
     let void = b.type_void();
     let int = b.type_int(32, 0);
     let func_ty = b.type_function(void, vec![int]);
-    let _func = b
+    let func = b
         .begin_function(void, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let x = b.function_parameter(int).expect("param x");
@@ -588,6 +635,8 @@ fn build_bor_absorb_and_module() -> Vec<u32> {
     let _bor = b.bitwise_or(int, None, x, band).expect("bor");
     b.ret().unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [x]);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     b.module().assemble()
 }
 
@@ -648,7 +697,7 @@ fn build_signed_div_rem_identity_module() -> (Vec<u32>, (u32, u32)) {
     let void = b.type_void();
     let int = b.type_int(32, 1);
     let func_ty = b.type_function(void, vec![]);
-    let _func = b
+    let func = b
         .begin_function(void, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let _ = b.begin_block(None).unwrap();
@@ -658,17 +707,20 @@ fn build_signed_div_rem_identity_module() -> (Vec<u32>, (u32, u32)) {
     let rem = b.s_rem(int, None, c42, c1).expect("srem by one");
     b.ret().unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", []);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), (div, rem))
 }
 
 fn build_signed_div_rem_identity_module_u64() -> (Vec<u32>, (u32, u32)) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
+    b.capability(Capability::Int64);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let void = b.type_void();
     let int = b.type_int(64, 1);
     let func_ty = b.type_function(void, vec![]);
-    let _func = b
+    let func = b
         .begin_function(void, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let _ = b.begin_block(None).unwrap();
@@ -678,6 +730,8 @@ fn build_signed_div_rem_identity_module_u64() -> (Vec<u32>, (u32, u32)) {
     let rem = b.s_rem(int, None, c42, c1).expect("srem by one s64");
     b.ret().unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", []);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), (div, rem))
 }
 
@@ -687,7 +741,7 @@ fn build_mul_pow2_module() -> (Vec<u32>, (u32, u32)) {
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let int = b.type_int(32, 0);
     let func_ty = b.type_function(int, vec![int]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let param = b.function_parameter(int).unwrap();
@@ -697,6 +751,8 @@ fn build_mul_pow2_module() -> (Vec<u32>, (u32, u32)) {
     let mul = b.i_mul(int, None, param, c8).expect("mul pow2");
     b.ret_value(mul).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), (mul, c3))
 }
 
@@ -706,7 +762,7 @@ fn build_mul_pow2_module_s32() -> (Vec<u32>, (u32, u32)) {
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let int = b.type_int(32, 1);
     let func_ty = b.type_function(int, vec![int]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let param = b.function_parameter(int).unwrap();
@@ -716,16 +772,19 @@ fn build_mul_pow2_module_s32() -> (Vec<u32>, (u32, u32)) {
     let mul = b.i_mul(int, None, param, c8).expect("mul pow2 s32");
     b.ret_value(mul).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), (mul, c3))
 }
 
 fn build_mul_pow2_module_s64() -> (Vec<u32>, (u32, u32)) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
+    b.capability(Capability::Int64);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let int = b.type_int(64, 1);
     let func_ty = b.type_function(int, vec![int]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let param = b.function_parameter(int).unwrap();
@@ -735,16 +794,19 @@ fn build_mul_pow2_module_s64() -> (Vec<u32>, (u32, u32)) {
     let mul = b.i_mul(int, None, param, c8).expect("mul pow2 s64");
     b.ret_value(mul).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), (mul, c3))
 }
 
 fn build_mul_pow2_module_u64() -> (Vec<u32>, (u32, u32)) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
+    b.capability(Capability::Int64);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let int = b.type_int(64, 0);
     let func_ty = b.type_function(int, vec![int]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let param = b.function_parameter(int).unwrap();
@@ -754,6 +816,8 @@ fn build_mul_pow2_module_u64() -> (Vec<u32>, (u32, u32)) {
     let mul = b.i_mul(int, None, param, c8).expect("mul pow2 u64");
     b.ret_value(mul).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), (mul, c3))
 }
 
@@ -763,7 +827,7 @@ fn build_mul_neg_one_module() -> (Vec<u32>, u32) {
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let int = b.type_int(32, 1);
     let func_ty = b.type_function(int, vec![int]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let param = b.function_parameter(int).unwrap();
@@ -772,16 +836,19 @@ fn build_mul_neg_one_module() -> (Vec<u32>, u32) {
     let mul = b.i_mul(int, None, param, c_neg_one).expect("mul -1");
     b.ret_value(mul).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), mul)
 }
 
 fn build_mul_neg_one_module_s64() -> (Vec<u32>, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
+    b.capability(Capability::Int64);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let int = b.type_int(64, 1);
     let func_ty = b.type_function(int, vec![int]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let param = b.function_parameter(int).unwrap();
@@ -790,16 +857,19 @@ fn build_mul_neg_one_module_s64() -> (Vec<u32>, u32) {
     let mul = b.i_mul(int, None, param, c_neg_one).expect("mul -1 s64");
     b.ret_value(mul).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), mul)
 }
 
 fn build_mul_neg_one_module_u64() -> (Vec<u32>, u32) {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
+    b.capability(Capability::Int64);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let int = b.type_int(64, 1);
     let func_ty = b.type_function(int, vec![int]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let param = b.function_parameter(int).unwrap();
@@ -808,6 +878,8 @@ fn build_mul_neg_one_module_u64() -> (Vec<u32>, u32) {
     let mul = b.i_mul(int, None, param, c_neg_one).expect("mul -1 u64");
     b.ret_value(mul).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), mul)
 }
 
@@ -817,7 +889,7 @@ fn build_udiv_pow2_module() -> Vec<u32> {
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let int = b.type_int(32, 0);
     let func_ty = b.type_function(int, vec![int]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let param = b.function_parameter(int).unwrap();
@@ -826,6 +898,8 @@ fn build_udiv_pow2_module() -> Vec<u32> {
     let div = b.u_div(int, None, param, c8).expect("udiv pow2");
     b.ret_value(div).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     b.module().assemble()
 }
 
@@ -835,7 +909,7 @@ fn build_umod_pow2_module() -> Vec<u32> {
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let int = b.type_int(32, 0);
     let func_ty = b.type_function(int, vec![int]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let param = b.function_parameter(int).unwrap();
@@ -844,16 +918,19 @@ fn build_umod_pow2_module() -> Vec<u32> {
     let rem = b.u_mod(int, None, param, c8).expect("umod pow2");
     b.ret_value(rem).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     b.module().assemble()
 }
 
 fn build_udiv_pow2_module_u64() -> Vec<u32> {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
+    b.capability(Capability::Int64);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let int = b.type_int(64, 0);
     let func_ty = b.type_function(int, vec![int]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let param = b.function_parameter(int).unwrap();
@@ -862,16 +939,19 @@ fn build_udiv_pow2_module_u64() -> Vec<u32> {
     let div = b.u_div(int, None, param, c8).expect("udiv pow2 u64");
     b.ret_value(div).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     b.module().assemble()
 }
 
 fn build_umod_pow2_module_u64() -> Vec<u32> {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
+    b.capability(Capability::Int64);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let int = b.type_int(64, 0);
     let func_ty = b.type_function(int, vec![int]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let param = b.function_parameter(int).unwrap();
@@ -880,6 +960,8 @@ fn build_umod_pow2_module_u64() -> Vec<u32> {
     let rem = b.u_mod(int, None, param, c8).expect("umod pow2 u64");
     b.ret_value(rem).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     b.module().assemble()
 }
 
@@ -889,7 +971,7 @@ fn build_sdiv_pow2_module() -> Vec<u32> {
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let int = b.type_int(32, 1);
     let func_ty = b.type_function(int, vec![int]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let param = b.function_parameter(int).unwrap();
@@ -898,6 +980,8 @@ fn build_sdiv_pow2_module() -> Vec<u32> {
     let div = b.s_div(int, None, param, c8).expect("sdiv pow2");
     b.ret_value(div).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     b.module().assemble()
 }
 
@@ -907,7 +991,7 @@ fn build_srem_pow2_module() -> Vec<u32> {
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let int = b.type_int(32, 1);
     let func_ty = b.type_function(int, vec![int]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let param = b.function_parameter(int).unwrap();
@@ -916,16 +1000,19 @@ fn build_srem_pow2_module() -> Vec<u32> {
     let rem = b.s_rem(int, None, param, c8).expect("srem pow2");
     b.ret_value(rem).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     b.module().assemble()
 }
 
 fn build_sdiv_pow2_module_u64() -> Vec<u32> {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
+    b.capability(Capability::Int64);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let int = b.type_int(64, 1);
     let func_ty = b.type_function(int, vec![int]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let param = b.function_parameter(int).unwrap();
@@ -934,16 +1021,19 @@ fn build_sdiv_pow2_module_u64() -> Vec<u32> {
     let div = b.s_div(int, None, param, c8).expect("sdiv pow2 u64");
     b.ret_value(div).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     b.module().assemble()
 }
 
 fn build_srem_pow2_module_u64() -> Vec<u32> {
     let mut b = Builder::new();
     b.capability(Capability::Shader);
+    b.capability(Capability::Int64);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let int = b.type_int(64, 1);
     let func_ty = b.type_function(int, vec![int]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let param = b.function_parameter(int).unwrap();
@@ -952,6 +1042,8 @@ fn build_srem_pow2_module_u64() -> Vec<u32> {
     let rem = b.s_rem(int, None, param, c8).expect("srem pow2 u64");
     b.ret_value(rem).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     b.module().assemble()
 }
 
@@ -961,7 +1053,7 @@ fn build_dead_arith_module() -> (Vec<u32>, u32, u32) {
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let int = b.type_int(32, 1);
     let func_ty = b.type_function(int, vec![]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let _ = b.begin_block(None).unwrap();
@@ -971,6 +1063,8 @@ fn build_dead_arith_module() -> (Vec<u32>, u32, u32) {
     let live_add = b.i_add(int, None, c4, c4).expect("live add");
     b.ret_value(live_add).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", []);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), dead_add, c5)
 }
 
@@ -980,7 +1074,7 @@ fn build_two_block_arith_module() -> (Vec<u32>, u32) {
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let int = b.type_int(32, 0);
     let func_ty = b.type_function(int, vec![]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
 
@@ -996,6 +1090,8 @@ fn build_two_block_arith_module() -> (Vec<u32>, u32) {
     let sub = b.i_sub(int, None, add, c2).expect("sub in block2");
     b.ret_value(sub).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", []);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), sub)
 }
 
@@ -1005,7 +1101,7 @@ fn build_two_block_affine_cancel_module() -> (Vec<u32>, u32, u32) {
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let int = b.type_int(32, 1);
     let func_ty = b.type_function(int, vec![int, int]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let x = b.function_parameter(int).unwrap();
@@ -1020,6 +1116,8 @@ fn build_two_block_affine_cancel_module() -> (Vec<u32>, u32, u32) {
     let sub = b.i_sub(int, None, add, y).expect("sub");
     b.ret_value(sub).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [x, y]);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), sub, x)
 }
 
@@ -1029,7 +1127,7 @@ fn build_cse_across_blocks_module() -> (Vec<u32>, u32, u32) {
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let int = b.type_int(32, 1);
     let func_ty = b.type_function(int, vec![int, int]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let x = b.function_parameter(int).unwrap();
@@ -1044,6 +1142,8 @@ fn build_cse_across_blocks_module() -> (Vec<u32>, u32, u32) {
     let add1 = b.i_add(int, None, x, y).expect("second add");
     b.ret_value(add1).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [x, y]);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     let _ = entry;
     (b.module().assemble(), add0, add1)
 }
@@ -1055,7 +1155,7 @@ fn build_selection_return_merge_module() -> (Vec<u32>, u32, u32, u32, u32, u32) 
     let int = b.type_int(32, 1);
     let bool_ty = b.type_bool();
     let func_ty = b.type_function(int, vec![int, int]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let x = b.function_parameter(int).unwrap();
@@ -1081,6 +1181,8 @@ fn build_selection_return_merge_module() -> (Vec<u32>, u32, u32, u32, u32, u32) 
     b.begin_block(Some(merge_label)).unwrap();
     b.unreachable().unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [x, y]);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
 
     (
         b.module().assemble(),
@@ -1098,7 +1200,7 @@ fn build_switch_return_merge_module() -> SwitchReturnModule {
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let int = b.type_int(32, 1);
     let func_ty = b.type_function(int, vec![int, int]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let x = b.function_parameter(int).unwrap();
@@ -1135,6 +1237,8 @@ fn build_switch_return_merge_module() -> SwitchReturnModule {
     b.begin_block(Some(merge_label)).unwrap();
     b.unreachable().unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [x, y]);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
 
     let expected_pairs = vec![(x, case0_label), (y, case1_label), (x, default_label)];
     (
@@ -1153,7 +1257,7 @@ fn build_branch_shared_expr_pre_module() -> (Vec<u32>, u32, u32, u32, u32, u32, 
     let int = b.type_int(32, 1);
     let bool_ty = b.type_bool();
     let func_ty = b.type_function(void, vec![int, int]);
-    let _func = b
+    let func = b
         .begin_function(void, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let x = b.function_parameter(int).unwrap();
@@ -1204,6 +1308,8 @@ fn build_branch_shared_expr_pre_module() -> (Vec<u32>, u32, u32, u32, u32, u32, 
     b.branch(block_b).unwrap();
 
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [x, y]);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (
         b.module().assemble(),
         block_c,
@@ -1222,7 +1328,7 @@ fn build_copy_chain_module() -> (Vec<u32>, u32, u32) {
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let int = b.type_int(32, 1);
     let func_ty = b.type_function(int, vec![int]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let x = b.function_parameter(int).unwrap();
@@ -1232,6 +1338,8 @@ fn build_copy_chain_module() -> (Vec<u32>, u32, u32) {
     let copy2 = b.copy_object(int, None, copy1).expect("copy2");
     b.ret_value(copy2).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [x]);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), copy1, copy2)
 }
 
@@ -1241,7 +1349,7 @@ fn build_duplicate_constants_module() -> (Vec<u32>, u32, u32) {
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let int = b.type_int(32, 0);
     let func_ty = b.type_function(int, vec![]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let _ = b.begin_block(None).unwrap();
@@ -1250,6 +1358,8 @@ fn build_duplicate_constants_module() -> (Vec<u32>, u32, u32) {
     let add = b.i_add(int, None, c1, c2).expect("add dup const");
     b.ret_value(add).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", []);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), c1, c2)
 }
 
@@ -1261,7 +1371,7 @@ fn build_cross_block_factor_module() -> (Vec<u32>, u32, u32) {
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let int = b.type_int(32, 1);
     let func_ty = b.type_function(int, vec![int]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let x = b.function_parameter(int).unwrap();
@@ -1278,6 +1388,8 @@ fn build_cross_block_factor_module() -> (Vec<u32>, u32, u32) {
     let add = b.i_add(int, None, m2, m3).expect("add muls");
     b.ret_value(add).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [x]);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), add, x)
 }
 
@@ -4531,7 +4643,7 @@ fn build_select_constant_propagation_module() -> (Vec<u32>, u32) {
     let int = b.type_int(32, 0);
     let bool_ty = b.type_bool();
     let func_ty = b.type_function(int, vec![]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let _ = b.begin_block(None).unwrap();
@@ -4542,6 +4654,8 @@ fn build_select_constant_propagation_module() -> (Vec<u32>, u32) {
     let sel = b.select(int, None, true_const, c10, c20).expect("select");
     b.ret_value(sel).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", []);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), sel)
 }
 
@@ -4593,7 +4707,7 @@ fn build_copy_propagation_module() -> (Vec<u32>, u32) {
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let int = b.type_int(32, 0);
     let func_ty = b.type_function(int, vec![]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let _ = b.begin_block(None).unwrap();
@@ -4603,6 +4717,8 @@ fn build_copy_propagation_module() -> (Vec<u32>, u32) {
     let add = b.i_add(int, None, copy, copy).expect("add");
     b.ret_value(add).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", []);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), copy)
 }
 
@@ -4654,7 +4770,7 @@ fn build_select_bool_module() -> (Vec<u32>, u32) {
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let bool_ty = b.type_bool();
     let func_ty = b.type_function(bool_ty, vec![bool_ty]);
-    let _func = b
+    let func = b
         .begin_function(bool_ty, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let cond = b.function_parameter(bool_ty).unwrap();
@@ -4665,6 +4781,8 @@ fn build_select_bool_module() -> (Vec<u32>, u32) {
     let sel = b.select(bool_ty, None, cond, true_val, false_val).expect("select");
     b.ret_value(sel).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [cond]);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), sel)
 }
 
@@ -4711,7 +4829,7 @@ fn build_bool_eq_true_module() -> (Vec<u32>, u32) {
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let bool_ty = b.type_bool();
     let func_ty = b.type_function(bool_ty, vec![bool_ty]);
-    let _func = b
+    let func = b
         .begin_function(bool_ty, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let x = b.function_parameter(bool_ty).unwrap();
@@ -4721,6 +4839,8 @@ fn build_bool_eq_true_module() -> (Vec<u32>, u32) {
     let eq = b.logical_equal(bool_ty, None, x, true_val).expect("eq");
     b.ret_value(eq).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [x]);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), eq)
 }
 
@@ -4762,7 +4882,7 @@ fn build_bool_ne_false_module() -> (Vec<u32>, u32) {
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
     let bool_ty = b.type_bool();
     let func_ty = b.type_function(bool_ty, vec![bool_ty]);
-    let _func = b
+    let func = b
         .begin_function(bool_ty, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let x = b.function_parameter(bool_ty).unwrap();
@@ -4772,6 +4892,8 @@ fn build_bool_ne_false_module() -> (Vec<u32>, u32) {
     let ne = b.logical_not_equal(bool_ty, None, x, false_val).expect("ne");
     b.ret_value(ne).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [x]);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), ne)
 }
 
@@ -4819,7 +4941,7 @@ fn build_sqrt_square_module() -> (Vec<u32>, u32) {
     b.memory_model(AddressingModel::Logical, MemoryModel::GLSL450);
     let float = b.type_float(32, None);
     let func_ty = b.type_function(float, vec![float]);
-    let _func = b
+    let func = b
         .begin_function(float, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let x = b.function_parameter(float).unwrap();
@@ -4834,6 +4956,8 @@ fn build_sqrt_square_module() -> (Vec<u32>, u32) {
     let sqrt = b.ext_inst(float, None, glsl_id, 31, vec![rspirv::dr::Operand::IdRef(square)]).expect("sqrt");
     b.ret_value(sqrt).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [x]);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), sqrt)
 }
 
@@ -4890,7 +5014,7 @@ fn build_branch_hoist_module() -> (Vec<u32>, u32) {
     let int = b.type_int(32, 0);
     let bool_ty = b.type_bool();
     let func_ty = b.type_function(int, vec![bool_ty]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let cond = b.function_parameter(bool_ty).unwrap();
@@ -4919,6 +5043,8 @@ fn build_branch_hoist_module() -> (Vec<u32>, u32) {
     let phi = b.phi(int, None, vec![(c42, then_label), (c42, else_label)]).expect("phi");
     b.ret_value(phi).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [cond]);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), phi)
 }
 
@@ -4979,7 +5105,7 @@ fn build_graphics_constant_fold_module() -> (Vec<u32>, u32) {
     b.memory_model(AddressingModel::Logical, MemoryModel::GLSL450);
     let int = b.type_int(32, 0);
     let func_ty = b.type_function(int, vec![]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let _ = b.begin_block(None).unwrap();
@@ -4991,6 +5117,8 @@ fn build_graphics_constant_fold_module() -> (Vec<u32>, u32) {
     let div = b.u_div(int, None, mul, c2).expect("div");
     b.ret_value(div).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", []);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), div)
 }
 
@@ -5050,7 +5178,7 @@ fn build_nested_select_same_module() -> (Vec<u32>, u32) {
     let int = b.type_int(32, 0);
     let bool_ty = b.type_bool();
     let func_ty = b.type_function(int, vec![bool_ty, bool_ty]);
-    let _func = b
+    let func = b
         .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let c1 = b.function_parameter(bool_ty).unwrap();
@@ -5063,6 +5191,8 @@ fn build_nested_select_same_module() -> (Vec<u32>, u32) {
     let outer = b.select(int, None, c1, inner1, inner2).expect("outer");
     b.ret_value(outer).unwrap();
     b.end_function().unwrap();
+    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [c1, c2]);
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), outer)
 }
 
