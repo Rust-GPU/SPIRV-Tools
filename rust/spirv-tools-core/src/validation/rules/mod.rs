@@ -75,6 +75,7 @@ pub mod limits;
 pub mod literals;
 pub mod logicals;
 pub mod memory;
+pub mod non_uniform;
 pub mod pointers;
 pub mod storage_classes;
 pub mod types;

@@ -2313,4 +2313,193 @@ pub enum ValidationError {
         /// Actual size.
         actual: u32,
     },
+
+    // =========================================================================
+    // Non-Uniform Group Operation Errors
+    // =========================================================================
+
+    /// Non-uniform group operation result must be a boolean scalar.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} requires result to be a boolean scalar"
+    )]
+    NonUniformResultMustBeBoolScalar {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Non-uniform predicate operand must be a boolean scalar.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} requires predicate to be a boolean scalar"
+    )]
+    NonUniformPredicateMustBeBoolScalar {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Non-uniform value operand must be a scalar or vector.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} requires value to be a scalar or vector of integer, floating-point, or boolean type"
+    )]
+    NonUniformValueInvalidType {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Non-uniform value type must match result type.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} requires value type to match result type"
+    )]
+    NonUniformValueTypeMismatch {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Non-uniform ID/Index/Mask/Delta operand must be unsigned integer scalar.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} requires {operand_name} to be an unsigned integer scalar"
+    )]
+    NonUniformIdMustBeUnsignedInt {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+        /// The operand name (Id, Index, Mask, Delta, etc.).
+        operand_name: &'static str,
+    },
+    /// Non-uniform ID operand must be a constant in SPIR-V 1.4 or earlier.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} requires {operand_name} to be a constant in SPIR-V 1.4 or earlier"
+    )]
+    NonUniformIdMustBeConstant {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+        /// The operand name.
+        operand_name: &'static str,
+    },
+    /// Non-uniform result must be a scalar or vector of the expected type.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} requires result to be a {expected}"
+    )]
+    NonUniformResultTypeInvalid {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+        /// Expected type description.
+        expected: &'static str,
+    },
+    /// Non-uniform ballot result must be a 4-component unsigned integer vector.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} requires result to be a 4-component unsigned integer vector"
+    )]
+    NonUniformBallotResultInvalid {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Non-uniform ballot value must be a 4-component unsigned integer vector.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} requires value to be a 4-component unsigned integer vector"
+    )]
+    NonUniformBallotValueInvalid {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// ClusterSize operand is required for ClusteredReduce group operation.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} with ClusteredReduce operation requires ClusterSize operand"
+    )]
+    NonUniformClusterSizeRequired {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Ballot operand is required for partitioned group operations.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} with partitioned operation requires Ballot operand"
+    )]
+    NonUniformBallotRequired {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// ClusterSize must be an unsigned integer scalar constant.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} requires ClusterSize to be an unsigned integer scalar constant"
+    )]
+    NonUniformClusterSizeInvalid {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Ballot operand must be a 4-component integer vector.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} requires Ballot to be a 4-component integer vector"
+    )]
+    NonUniformPartitionedBallotInvalid {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Vulkan restricts OpGroupNonUniformBallotBitCount group operations.
+    #[error(
+        "instruction OpGroupNonUniformBallotBitCount in block {block:?} of function {function:?} group operation must be Reduce, InclusiveScan, or ExclusiveScan in Vulkan"
+    )]
+    NonUniformBallotBitCountInvalidGroupOp {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+    /// ClusterSize must be at least 1 and a power of 2.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} ClusterSize must be at least 1 and a power of 2"
+    )]
+    NonUniformClusterSizeMustBePowerOfTwo {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
 }
