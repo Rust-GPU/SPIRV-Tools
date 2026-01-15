@@ -3034,4 +3034,92 @@ pub enum ValidationError {
         /// The variable ID.
         variable_id: Id,
     },
+
+    // ==================== Mode Setting Errors ====================
+    /// Entry point must be a function.
+    #[error("OpEntryPoint Entry Point <id> {entry_point:?} is not a function")]
+    EntryPointNotFunction {
+        /// The entry point ID.
+        entry_point: Id,
+    },
+    /// Entry point return type must be void.
+    #[error("OpEntryPoint Entry Point <id> {entry_point:?}'s function return type is not void")]
+    EntryPointReturnTypeNotVoid {
+        /// The entry point ID.
+        entry_point: Id,
+    },
+    /// Non-Kernel entry point must have zero parameters.
+    #[error(
+        "OpEntryPoint Entry Point <id> {entry_point:?}'s function parameter count is {param_count}, expected 0"
+    )]
+    EntryPointNonZeroParameters {
+        /// The entry point ID.
+        entry_point: Id,
+        /// The actual parameter count.
+        param_count: u32,
+    },
+    /// Fragment entry point has both OriginUpperLeft and OriginLowerLeft.
+    #[error("Fragment execution model entry point {entry_point:?} can only specify one of OriginUpperLeft or OriginLowerLeft")]
+    FragmentMultipleOriginModes {
+        /// The entry point ID.
+        entry_point: Id,
+    },
+    /// Fragment entry point is missing origin mode.
+    #[error("Fragment execution model entry point {entry_point:?} requires either OriginUpperLeft or OriginLowerLeft")]
+    FragmentMissingOriginMode {
+        /// The entry point ID.
+        entry_point: Id,
+    },
+    /// Fragment entry point has multiple depth modes.
+    #[error(
+        "Fragment execution model entry point {entry_point:?} can specify at most one of DepthGreater, DepthLess or DepthUnchanged"
+    )]
+    FragmentMultipleDepthModes {
+        /// The entry point ID.
+        entry_point: Id,
+    },
+    /// Fragment entry point has multiple interlock modes.
+    #[error("Fragment execution model entry point {entry_point:?} can specify at most one fragment shader interlock execution mode")]
+    FragmentMultipleInterlockModes {
+        /// The entry point ID.
+        entry_point: Id,
+    },
+    /// OriginLowerLeft not allowed in Vulkan.
+    #[error("In the Vulkan environment, the OriginLowerLeft execution mode must not be used")]
+    VulkanOriginLowerLeftNotAllowed,
+    /// PixelCenterInteger not allowed in Vulkan.
+    #[error("In the Vulkan environment, the PixelCenterInteger execution mode must not be used")]
+    VulkanPixelCenterIntegerNotAllowed,
+    /// VulkanMemoryModelKHR capability requires VulkanKHR memory model.
+    #[error("VulkanMemoryModelKHR capability must only be specified if the VulkanKHR memory model is used")]
+    VulkanMemoryModelCapabilityRequiresVulkanKHR,
+    /// Vulkan requires Logical or PhysicalStorageBuffer64 addressing model.
+    #[error("Addressing model {addressing_model:?} is not valid in the Vulkan environment")]
+    VulkanInvalidAddressingModel {
+        /// The addressing model.
+        addressing_model: rspirv::spirv::AddressingModel,
+    },
+    /// OpenCL requires Physical32 or Physical64 addressing model.
+    #[error("Addressing model {addressing_model:?} is not valid in the OpenCL environment")]
+    OpenCLInvalidAddressingModel {
+        /// The addressing model.
+        addressing_model: rspirv::spirv::AddressingModel,
+    },
+    /// OpenCL requires OpenCL memory model.
+    #[error("Memory model {memory_model:?} is not valid in the OpenCL environment")]
+    OpenCLInvalidMemoryModel {
+        /// The memory model.
+        memory_model: rspirv::spirv::MemoryModel,
+    },
+    /// CooperativeMatrixKHR with Shader requires VulkanMemoryModel.
+    #[error("If the Shader and CooperativeMatrixKHR capabilities are declared, the VulkanMemoryModel capability must also be declared")]
+    CooperativeMatrixRequiresVulkanMemoryModel,
+    /// Duplicate execution mode.
+    #[error("Execution mode {mode:?} for entry point {entry_point:?} is specified multiple times")]
+    DuplicateExecutionMode {
+        /// The entry point ID.
+        entry_point: Id,
+        /// The execution mode.
+        mode: rspirv::spirv::ExecutionMode,
+    },
 }

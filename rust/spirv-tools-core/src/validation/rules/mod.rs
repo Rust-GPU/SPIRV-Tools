@@ -54,6 +54,7 @@
 //! - [`memory_semantics`]: Memory semantics validation rules
 //! - [`scopes`]: Scope validation rules
 //! - [`interfaces`]: Interface variable validation rules
+//! - [`mode_setting`]: Mode setting validation rules
 
 pub mod adjacency;
 pub mod arithmetics;
@@ -84,6 +85,7 @@ pub mod logicals;
 pub mod memory;
 pub mod memory_semantics;
 pub mod mesh_shading;
+pub mod mode_setting;
 pub mod non_uniform;
 pub mod pointers;
 pub mod ray_tracing;
