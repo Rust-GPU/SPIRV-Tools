@@ -2264,4 +2264,74 @@ mod tests {
         assert!(check.is_ok(), "Dead store before branch should be eliminated");
     }
 
+    // =========================================================================
+    // Derivative Operation Tests (Graphics)
+    // =========================================================================
+
+    #[test]
+    fn test_dpdx_sum_linearity() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // DPdx(a + b) = DPdx(a) + DPdx(b)
+        egraph.parse_and_run_program(None, r#"
+            (let a (Sym "a"))
+            (let b (Sym "b"))
+            (let root (DPdx (FAdd a b)))
+            (let expected (FAdd (DPdx a) (DPdx b)))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+        assert!(check.is_ok(), "DPdx should distribute over FAdd");
+    }
+
+    #[test]
+    fn test_dpdx_negation() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // DPdx(-x) = -DPdx(x)
+        egraph.parse_and_run_program(None, r#"
+            (let x (Sym "x"))
+            (let root (DPdx (FNeg x)))
+            (let expected (FNeg (DPdx x)))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+        assert!(check.is_ok(), "DPdx should distribute through FNeg");
+    }
+
+    #[test]
+    fn test_fwidth_negation_invariant() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // Fwidth(-x) = Fwidth(x) since fwidth uses absolute values
+        egraph.parse_and_run_program(None, r#"
+            (let x (Sym "x"))
+            (let root (Fwidth (FNeg x)))
+            (let expected (Fwidth x))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+        assert!(check.is_ok(), "Fwidth of negated value should equal Fwidth of original");
+    }
+
+    #[test]
+    fn test_image_sample_loop_invariant() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // ImageSample with loop-invariant coordinate is loop-invariant
+        egraph.parse_and_run_program(None, r#"
+            (let img (Sym "texture"))
+            (let coord (LoopInvariant (Sym "uv")))
+            (let root (ImageSample img coord))
+            (let expected (LoopInvariant (ImageSample img (Sym "uv"))))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+        assert!(check.is_ok(), "ImageSample with loop-invariant coord should be loop-invariant");
+    }
+
 }

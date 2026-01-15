@@ -66,6 +66,42 @@
 (rule ((= e (DPdy (FMul (Const c) x))))
       ((union e (FMul (Const c) (DPdy x)))))
 
+; Derivative of negation
+; d/dx(-x) = -d/dx(x)
+(rule ((= e (DPdx (FNeg x))))
+      ((union e (FNeg (DPdx x)))))
+(rule ((= e (DPdy (FNeg x))))
+      ((union e (FNeg (DPdy x)))))
+
+; Derivative of subtraction
+; d/dx(a - b) = d/dx(a) - d/dx(b)
+(rule ((= e (DPdx (FSub a b))))
+      ((union e (FSub (DPdx a) (DPdx b)))))
+(rule ((= e (DPdy (FSub a b))))
+      ((union e (FSub (DPdy a) (DPdy b)))))
+
+; Derivative of division (quotient rule) when divisor is constant
+; d/dx(x / c) = d/dx(x) / c
+(rule ((= e (DPdx (FDiv x (Const c)))))
+      ((union e (FDiv (DPdx x) (Const c)))))
+(rule ((= e (DPdy (FDiv x (Const c)))))
+      ((union e (FDiv (DPdy x) (Const c)))))
+
+; Fwidth distribution over addition
+; fwidth(a + b) can be approximated as fwidth(a) + fwidth(b)
+; Note: This is an approximation - fwidth = abs(dFdx) + abs(dFdy)
+(rule ((= e (Fwidth (FAdd a b))))
+      ((union e (FAdd (Fwidth a) (Fwidth b)))))
+
+; Fwidth of scaled value
+(rule ((= e (Fwidth (FMul (Const c) x))))
+      ((union e (FMul (FAbs (Const c)) (Fwidth x)))))
+
+; Fwidth of negation is same as fwidth of original
+; fwidth(-x) = fwidth(x) since fwidth uses absolute values
+(rule ((= e (Fwidth (FNeg x))))
+      ((union e (Fwidth x))))
+
 ; =============================================================================
 ; SampledImage Optimization
 ; =============================================================================
