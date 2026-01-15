@@ -15,7 +15,7 @@ use rspirv::spirv::{AddressingModel, Capability, ExecutionMode, ExecutionModel, 
 
 use crate::validation::context::{ValidationContext, ValidationRule};
 use crate::validation::error::ValidationError;
-use crate::validation::types::{Id, ResultId};
+use crate::validation::types::Id;
 
 /// Helper to convert a u32 to Id (with fallback to id 1).
 fn to_id(id: u32) -> Id {
@@ -291,7 +291,7 @@ impl ValidationRule for MemoryModelValidationRule {
         let mut memory_model: Option<MemoryModel> = None;
         let mut addressing_model: Option<AddressingModel> = None;
 
-        for inst in &module.memory_model {
+        if let Some(inst) = &module.memory_model {
             if inst.class.opcode == Op::MemoryModel {
                 if let Some(Operand::AddressingModel(addr)) = inst.operands.first() {
                     addressing_model = Some(*addr);

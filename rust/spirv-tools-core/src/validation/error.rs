@@ -3266,4 +3266,14 @@ pub enum ValidationError {
         /// The instruction ID.
         instruction_id: Option<Id>,
     },
+
+    // ==================== Small Type Uses Errors ====================
+    /// Invalid use of 8- or 16-bit result type.
+    #[error("{opcode:?} {instruction_id:?}: Invalid use of 8- or 16-bit result")]
+    InvalidSmallTypeUse {
+        /// The instruction ID of the invalid use.
+        instruction_id: Option<Id>,
+        /// The opcode of the instruction using the small type.
+        opcode: rspirv::spirv::Op,
+    },
 }

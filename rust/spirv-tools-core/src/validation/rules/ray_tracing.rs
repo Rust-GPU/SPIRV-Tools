@@ -1004,6 +1004,208 @@ impl ValidationRule for RayQueryGenerateIntersectionRule {
     }
 }
 
+/// Validates ray query matrix result instructions (Object/World transformations).
+pub struct RayQueryMatrixResultRule;
+
+impl ValidationRule for RayQueryMatrixResultRule {
+    fn name(&self) -> &'static str {
+        "ray-query-matrix-result"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        for func in &ctx.module.functions {
+            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(|id| {
+                Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
+            });
+
+            for block in &func.blocks {
+                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(|id| {
+                    Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
+                });
+
+                for inst in &block.instructions {
+                    let opcode = inst.class.opcode;
+
+                    if !matches!(
+                        opcode,
+                        Op::RayQueryGetIntersectionObjectToWorldKHR
+                            | Op::RayQueryGetIntersectionWorldToObjectKHR
+                    ) {
+                        continue;
+                    }
+
+                    validate_ray_query_pointer(inst, 2, ctx, func_id, block_id)?;
+                    validate_intersection_id(inst, 3, ctx, func_id, block_id)?;
+
+                    // Result must be a 3x4 matrix of 32-bit floats
+                    if let Some(result_type_id) = inst.result_type {
+                        if let Ok(type_id) = TypeId::try_from(result_type_id) {
+                            let ty = get_type_structure(type_id, ctx.definitions);
+                            let is_valid_matrix = match ty {
+                                TypeStructure::Matrix {
+                                    component: ScalarKind::Float(w),
+                                    rows,
+                                    cols,
+                                } => w.get() == 32 && rows == VectorSize::VEC3 && cols.get() == 4,
+                                _ => false,
+                            };
+                            if !is_valid_matrix {
+                                return Err(ValidationError::RayQueryInvalidResultType {
+                                    function: func_id,
+                                    block: block_id,
+                                    opcode,
+                                    expected: "matrix of 4 columns of 32-bit float 3-component vectors",
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Validates NVIDIA ray query cluster ID instruction.
+pub struct RayQueryClusterIdNVRule;
+
+impl ValidationRule for RayQueryClusterIdNVRule {
+    fn name(&self) -> &'static str {
+        "ray-query-cluster-id-nv"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        for func in &ctx.module.functions {
+            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(|id| {
+                Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
+            });
+
+            for block in &func.blocks {
+                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(|id| {
+                    Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
+                });
+
+                for inst in &block.instructions {
+                    if inst.class.opcode != Op::RayQueryGetClusterIdNV {
+                        continue;
+                    }
+
+                    validate_ray_query_pointer(inst, 2, ctx, func_id, block_id)?;
+                    validate_intersection_id(inst, 3, ctx, func_id, block_id)?;
+
+                    // Result must be 32-bit int scalar
+                    if let Some(result_type_id) = inst.result_type {
+                        if let Ok(type_id) = TypeId::try_from(result_type_id) {
+                            let ty = get_type_structure(type_id, ctx.definitions);
+                            if !is_int32_scalar(&ty) {
+                                return Err(ValidationError::RayQueryInvalidResultType {
+                                    function: func_id,
+                                    block: block_id,
+                                    opcode: Op::RayQueryGetClusterIdNV,
+                                    expected: "32-bit int scalar type",
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Validates NVIDIA sphere and LSS ray query instructions.
+pub struct RayQuerySphereAndLSSNVRule;
+
+impl ValidationRule for RayQuerySphereAndLSSNVRule {
+    fn name(&self) -> &'static str {
+        "ray-query-sphere-lss-nv"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        for func in &ctx.module.functions {
+            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(|id| {
+                Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
+            });
+
+            for block in &func.blocks {
+                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(|id| {
+                    Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
+                });
+
+                for inst in &block.instructions {
+                    let opcode = inst.class.opcode;
+
+                    // Handle sphere position (vec3 result)
+                    if opcode == Op::RayQueryGetIntersectionSpherePositionNV {
+                        validate_ray_query_pointer(inst, 2, ctx, func_id, block_id)?;
+                        validate_intersection_id(inst, 3, ctx, func_id, block_id)?;
+
+                        if let Some(result_type_id) = inst.result_type {
+                            if let Ok(type_id) = TypeId::try_from(result_type_id) {
+                                let ty = get_type_structure(type_id, ctx.definitions);
+                                if !is_float32_vec3(&ty) {
+                                    return Err(ValidationError::RayQueryInvalidResultType {
+                                        function: func_id,
+                                        block: block_id,
+                                        opcode,
+                                        expected: "32-bit float 3-component vector type",
+                                    });
+                                }
+                            }
+                        }
+                    }
+
+                    // Handle sphere radius and LSS hit value (float scalar result)
+                    if matches!(
+                        opcode,
+                        Op::RayQueryGetIntersectionSphereRadiusNV
+                            | Op::RayQueryGetIntersectionLSSHitValueNV
+                    ) {
+                        validate_ray_query_pointer(inst, 2, ctx, func_id, block_id)?;
+                        validate_intersection_id(inst, 3, ctx, func_id, block_id)?;
+
+                        if let Some(result_type_id) = inst.result_type {
+                            if let Ok(type_id) = TypeId::try_from(result_type_id) {
+                                let ty = get_type_structure(type_id, ctx.definitions);
+                                if !is_float32_scalar(&ty) {
+                                    return Err(ValidationError::RayQueryInvalidResultType {
+                                        function: func_id,
+                                        block: block_id,
+                                        opcode,
+                                        expected: "32-bit float scalar type",
+                                    });
+                                }
+                            }
+                        }
+                    }
+
+                    // Handle sphere/LSS hit tests (bool result)
+                    if matches!(opcode, Op::RayQueryIsSphereHitNV | Op::RayQueryIsLSSHitNV) {
+                        validate_ray_query_pointer(inst, 2, ctx, func_id, block_id)?;
+                        validate_intersection_id(inst, 3, ctx, func_id, block_id)?;
+
+                        if let Some(result_type_id) = inst.result_type {
+                            if let Ok(type_id) = TypeId::try_from(result_type_id) {
+                                let ty = get_type_structure(type_id, ctx.definitions);
+                                if !ty.is_bool_scalar() {
+                                    return Err(ValidationError::RayQueryInvalidResultType {
+                                        function: func_id,
+                                        block: block_id,
+                                        opcode,
+                                        expected: "bool scalar type",
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Returns all ray tracing validation rules.
 pub fn all_ray_tracing_rules() -> Vec<Box<dyn ValidationRule>> {
     vec![
@@ -1018,6 +1220,9 @@ pub fn all_ray_tracing_rules() -> Vec<Box<dyn ValidationRule>> {
         Box::new(RayQueryVec3ResultRule),
         Box::new(RayQueryBarycentricsRule),
         Box::new(RayQueryGenerateIntersectionRule),
+        Box::new(RayQueryMatrixResultRule),
+        Box::new(RayQueryClusterIdNVRule),
+        Box::new(RayQuerySphereAndLSSNVRule),
     ]
 }
 
@@ -1101,7 +1306,7 @@ mod tests {
     #[test]
     fn test_all_ray_tracing_rules() {
         let rules = all_ray_tracing_rules();
-        assert_eq!(rules.len(), 11);
+        assert_eq!(rules.len(), 14);
 
         let names: Vec<_> = rules.iter().map(|r| r.name()).collect();
         assert!(names.contains(&"trace-ray"));
@@ -1115,5 +1320,8 @@ mod tests {
         assert!(names.contains(&"ray-query-vec3-result"));
         assert!(names.contains(&"ray-query-barycentrics"));
         assert!(names.contains(&"ray-query-generate-intersection"));
+        assert!(names.contains(&"ray-query-matrix-result"));
+        assert!(names.contains(&"ray-query-cluster-id-nv"));
+        assert!(names.contains(&"ray-query-sphere-lss-nv"));
     }
 }

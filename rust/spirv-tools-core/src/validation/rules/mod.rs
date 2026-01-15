@@ -57,6 +57,7 @@
 //! - [`mode_setting`]: Mode setting validation rules
 //! - [`annotation`]: Annotation and decoration validation rules
 //! - [`tensor`]: Tensor instruction validation rules
+//! - [`small_type_uses`]: 8/16-bit type usage validation rules
 
 pub mod adjacency;
 pub mod annotation;
@@ -93,6 +94,7 @@ pub mod non_uniform;
 pub mod pointers;
 pub mod ray_tracing;
 pub mod scopes;
+pub mod small_type_uses;
 pub mod storage_classes;
 pub mod tensor;
 pub mod types;
