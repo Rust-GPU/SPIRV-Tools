@@ -492,3 +492,126 @@
       ((union (SLt a c) (Const 1))))
 (rule ((= e (LogAnd (ULe a b) (ULt b c))))
       ((union (ULt a c) (Const 1))))
+
+; =============================================================================
+; LogAnd/LogOr with Gamma Identity Patterns
+; =============================================================================
+; These patterns optimize logical operations combined with conditionals.
+
+; c && select(c, a, b) = c && a (if c is true, we pick a; if false, result is false anyway)
+(rule ((= e (LogAnd c (Gamma c a b))))
+      ((union e (LogAnd c a))))
+(rule ((= e (LogAnd (Gamma c a b) c)))
+      ((union e (LogAnd c a))))
+
+; !c && select(c, a, b) = !c && b (if c is false, we pick b)
+(rule ((= e (LogAnd (LogNot c) (Gamma c a b))))
+      ((union e (LogAnd (LogNot c) b))))
+(rule ((= e (LogAnd (Gamma c a b) (LogNot c))))
+      ((union e (LogAnd (LogNot c) b))))
+
+; c || select(c, a, b) = c || b (if c is true, result is true; if false, pick b)
+(rule ((= e (LogOr c (Gamma c a b))))
+      ((union e (LogOr c b))))
+(rule ((= e (LogOr (Gamma c a b) c)))
+      ((union e (LogOr c b))))
+
+; !c || select(c, a, b) = !c || a
+(rule ((= e (LogOr (LogNot c) (Gamma c a b))))
+      ((union e (LogOr (LogNot c) a))))
+(rule ((= e (LogOr (Gamma c a b) (LogNot c))))
+      ((union e (LogOr (LogNot c) a))))
+
+; =============================================================================
+; Additional Boolean Gamma Patterns
+; =============================================================================
+
+; select(c, c && a, x) = c && select(c, a, false) when short-circuiting (c true means use a)
+; Simplified: select(c, c && a, x) -> c && select(c, a, x) doesn't quite work
+; But: select(c, c && a, false) = c && a (proved by truth table)
+(rule ((= e (Gamma c (LogAnd c a) (Const 0))))
+      ((union e (LogAnd c a))))
+
+; select(c, c || a, true) = true (c true means c||a=true; c false means result is true)
+(rule ((= e (Gamma c (LogOr c a) (Const 1))))
+      ((union e (Const 1))))
+
+; select(c, !c, x) = select(c, false, x) = !c && x via existing rules
+; But also: select(c, !c, true) = !c || c = true? No wait: c?!c:true = c?false:true = !c
+; Actually if c is true, !c is false; if c is false, we get true. So = !c
+(rule ((= e (Gamma c (LogNot c) (Const 1))))
+      ((union e (LogNot c))))
+
+; select(c, true, c) = true (c?true:c = if c then true else c, but c is false so false = c)
+; Actually: true when c is true, c (false) when c is false = c || true when c, c when !c
+; Truth table: c=T -> true, c=F -> false. So this is just c? No: c=T->true, c=F->c=F
+; So select(c, true, c) = c || true = true? No... c?true:c. c=T:true, c=F:F. So = c.
+; Already covered by select(c,1,x) rules
+
+; =============================================================================
+; Logical Operation Gamma Fusion
+; =============================================================================
+
+; select(c, a, b) && select(c, x, y) = select(c, a && x, b && y)
+(rule ((= e (LogAnd (Gamma c a b) (Gamma c x y))))
+      ((union e (Gamma c (LogAnd a x) (LogAnd b y)))))
+
+; select(c, a, b) || select(c, x, y) = select(c, a || x, b || y)
+(rule ((= e (LogOr (Gamma c a b) (Gamma c x y))))
+      ((union e (Gamma c (LogOr a x) (LogOr b y)))))
+
+; =============================================================================
+; Comparison with Shift Patterns
+; =============================================================================
+
+; (x << n) == 0 is same as (x & mask) == 0 where mask has high bits
+; But simpler: (x << n) == 0 implies x has no bits in positions that survive shift
+; For n >= 32, (x << n) is 0 (for 32-bit), so comparison is always true
+; We don't have bit width info, so skip those
+
+; (x >> n) == 0 for unsigned: x has no bits in high positions (x < 2^(32-n))
+; (x >> 1) == 0 means x < 2, i.e., x is 0 or 1
+; These don't simplify nicely without value range analysis
+
+; (x << n) != 0 when we know x != 0 and n < 32
+; Can't express without more type info
+
+; x == (x << 0) is always true (shift by 0 is identity, but identity rules handle this)
+; x == (x >> 0) is always true
+
+; =============================================================================
+; Zero Extension/Sign Extension Comparison Patterns
+; =============================================================================
+
+; Comparing bit-extracted values
+; (x & 0xFF) < 256 is always true (byte comparison)
+(rule ((= e (ULt (BitAnd x (Const 255)) (Const 256))))
+      ((union e (Const 1))))
+(rule ((= e (ULe (BitAnd x (Const 255)) (Const 255))))
+      ((union e (Const 1))))
+(rule ((= e (ULt (BitAnd x (Const 65535)) (Const 65536))))
+      ((union e (Const 1))))
+(rule ((= e (ULe (BitAnd x (Const 65535)) (Const 65535))))
+      ((union e (Const 1))))
+
+; (x & mask) >= 0 is always true for unsigned (handled by UGe x 0 rule)
+
+; =============================================================================
+; Comparison with Masked Values
+; =============================================================================
+
+; (x & 1) == 0 || (x & 1) == 1 is always true (covers all cases)
+(rule ((= e (LogOr (Eq (BitAnd x (Const 1)) (Const 0)) (Eq (BitAnd x (Const 1)) (Const 1)))))
+      ((union e (Const 1))))
+
+; (x & 1) == 0 && (x & 1) == 1 is always false (contradiction)
+(rule ((= e (LogAnd (Eq (BitAnd x (Const 1)) (Const 0)) (Eq (BitAnd x (Const 1)) (Const 1)))))
+      ((union e (Const 0))))
+
+; (x & 1) != 0 is same as (x & 1) == 1 for single bit
+(rule ((= e (Ne (BitAnd x (Const 1)) (Const 0))))
+      ((union e (Eq (BitAnd x (Const 1)) (Const 1)))))
+
+; (x & 1) != 1 is same as (x & 1) == 0 for single bit
+(rule ((= e (Ne (BitAnd x (Const 1)) (Const 1))))
+      ((union e (Eq (BitAnd x (Const 1)) (Const 0)))))

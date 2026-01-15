@@ -2479,4 +2479,152 @@ mod tests {
         assert!(check.is_ok(), "BitFieldUExtract low byte should be BitAnd with 255");
     }
 
+    // =========================================================================
+    // LogAnd/LogOr with Gamma Pattern Tests
+    // =========================================================================
+
+    #[test]
+    fn test_logand_gamma_same_condition() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // c && select(c, a, b) = c && a
+        egraph.parse_and_run_program(None, r#"
+            (let c (Sym "c"))
+            (let a (Sym "a"))
+            (let b (Sym "b"))
+            (let root (LogAnd c (Gamma c a b)))
+            (let expected (LogAnd c a))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+        assert!(check.is_ok(), "c && select(c, a, b) should simplify to c && a");
+    }
+
+    #[test]
+    fn test_logor_gamma_same_condition() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // c || select(c, a, b) = c || b
+        egraph.parse_and_run_program(None, r#"
+            (let c (Sym "c"))
+            (let a (Sym "a"))
+            (let b (Sym "b"))
+            (let root (LogOr c (Gamma c a b)))
+            (let expected (LogOr c b))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+        assert!(check.is_ok(), "c || select(c, a, b) should simplify to c || b");
+    }
+
+    #[test]
+    fn test_logand_gamma_negated_condition() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // !c && select(c, a, b) = !c && b
+        egraph.parse_and_run_program(None, r#"
+            (let c (Sym "c"))
+            (let a (Sym "a"))
+            (let b (Sym "b"))
+            (let root (LogAnd (LogNot c) (Gamma c a b)))
+            (let expected (LogAnd (LogNot c) b))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+        assert!(check.is_ok(), "!c && select(c, a, b) should simplify to !c && b");
+    }
+
+    #[test]
+    fn test_logand_gamma_fusion() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // select(c, a, b) && select(c, x, y) = select(c, a && x, b && y)
+        egraph.parse_and_run_program(None, r#"
+            (let c (Sym "c"))
+            (let a (Sym "a"))
+            (let b (Sym "b"))
+            (let x (Sym "x"))
+            (let y (Sym "y"))
+            (let root (LogAnd (Gamma c a b) (Gamma c x y)))
+            (let expected (Gamma c (LogAnd a x) (LogAnd b y)))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+        assert!(check.is_ok(), "LogAnd of two Gammas with same condition should fuse");
+    }
+
+    #[test]
+    fn test_logor_gamma_fusion() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // select(c, a, b) || select(c, x, y) = select(c, a || x, b || y)
+        egraph.parse_and_run_program(None, r#"
+            (let c (Sym "c"))
+            (let a (Sym "a"))
+            (let b (Sym "b"))
+            (let x (Sym "x"))
+            (let y (Sym "y"))
+            (let root (LogOr (Gamma c a b) (Gamma c x y)))
+            (let expected (Gamma c (LogOr a x) (LogOr b y)))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+        assert!(check.is_ok(), "LogOr of two Gammas with same condition should fuse");
+    }
+
+    #[test]
+    fn test_gamma_logand_condition_true() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // select(c, c && a, false) = c && a
+        egraph.parse_and_run_program(None, r#"
+            (let c (Sym "c"))
+            (let a (Sym "a"))
+            (let root (Gamma c (LogAnd c a) (Const 0)))
+            (let expected (LogAnd c a))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+        assert!(check.is_ok(), "select(c, c && a, false) should simplify to c && a");
+    }
+
+    #[test]
+    fn test_masked_value_comparison_byte() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // (x & 0xFF) < 256 is always true
+        egraph.parse_and_run_program(None, r#"
+            (let x (Sym "x"))
+            (let root (ULt (BitAnd x (Const 255)) (Const 256)))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let result = format!("{}", results[0]);
+        assert!(result.contains("Const 1"), "Byte mask comparison should be true, got: {}", result);
+    }
+
+    #[test]
+    fn test_bit_mask_equality_contradiction() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // (x & 1) == 0 && (x & 1) == 1 is always false
+        egraph.parse_and_run_program(None, r#"
+            (let x (Sym "x"))
+            (let root (LogAnd (Eq (BitAnd x (Const 1)) (Const 0))
+                             (Eq (BitAnd x (Const 1)) (Const 1))))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let result = format!("{}", results[0]);
+        assert!(result.contains("Const 0"), "Bit mask contradiction should be false, got: {}", result);
+    }
+
 }
