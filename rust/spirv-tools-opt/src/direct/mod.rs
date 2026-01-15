@@ -16,7 +16,7 @@ use rspirv::spirv::{Op, Word};
 use std::collections::{HashMap, HashSet};
 
 use context::EgglogContext;
-use parse::{find_inline_constants, parse_extract_result, term_to_instruction, term_to_instruction_with_ext};
+use parse::{find_inline_constants, parse_extract_result, term_to_instruction};
 
 /// Optimize an entire SPIR-V module in ONE egglog pass.
 ///
