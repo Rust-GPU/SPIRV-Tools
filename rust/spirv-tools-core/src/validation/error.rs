@@ -3425,4 +3425,200 @@ pub enum ValidationError {
         /// The block ID.
         block: Option<Id>,
     },
+
+    // ==================== ARM Graph Instruction Errors ====================
+    /// OpTypeGraphARM has too few I/O types for the number of inputs.
+    #[error("OpTypeGraphARM {instruction_id:?}: {num_io_types} I/O types provided but graph has {num_inputs} inputs")]
+    GraphTypeTooFewIOTypes {
+        /// The instruction ID.
+        instruction_id: Option<Id>,
+        /// Number of I/O types provided.
+        num_io_types: usize,
+        /// Number of inputs declared.
+        num_inputs: u32,
+    },
+
+    /// OpTypeGraphARM must have at least one output.
+    #[error("OpTypeGraphARM {instruction_id:?}: A graph type must have at least one output")]
+    GraphTypeNoOutputs {
+        /// The instruction ID.
+        instruction_id: Option<Id>,
+    },
+
+    /// OpTypeGraphARM I/O type is not a graph interface type.
+    #[error("OpTypeGraphARM {instruction_id:?}: I/O type {io_type:?} is not a Graph Interface Type (tensor or tensor array)")]
+    GraphTypeInvalidIOType {
+        /// The instruction ID.
+        instruction_id: Option<Id>,
+        /// The invalid I/O type.
+        io_type: Id,
+    },
+
+    /// OpGraphConstantARM result type must be a tensor type.
+    #[error("OpGraphConstantARM {instruction_id:?}: Result Type must be a tensor type")]
+    GraphConstantNotTensorType {
+        /// The instruction ID.
+        instruction_id: Option<Id>,
+    },
+
+    /// OpGraphConstantARM duplicate constant ID.
+    #[error("OpGraphConstantARM {instruction_id:?}: No two OpGraphConstantARM may have the same GraphConstantID ({constant_id})")]
+    GraphConstantDuplicateId {
+        /// The instruction ID.
+        instruction_id: Option<Id>,
+        /// The duplicate constant ID.
+        constant_id: u32,
+    },
+
+    /// OpGraphARM result type must be OpTypeGraphARM.
+    #[error("OpGraphARM {instruction_id:?}: Result Type must be an OpTypeGraphARM")]
+    GraphInvalidResultType {
+        /// The instruction ID.
+        instruction_id: Option<Id>,
+    },
+
+    /// OpGraphEntryPointARM Graph operand must be an OpGraphARM.
+    #[error("OpGraphEntryPointARM {instruction_id:?}: Graph {graph_id:?} must be an OpGraphARM")]
+    GraphEntryPointInvalidGraph {
+        /// The instruction ID.
+        instruction_id: Option<Id>,
+        /// The invalid graph ID.
+        graph_id: Id,
+    },
+
+    /// OpGraphEntryPointARM interface count mismatch.
+    #[error("OpGraphEntryPointARM {instruction_id:?}: Interface list contains {actual} IDs but graph type has {expected} I/Os")]
+    GraphEntryPointInterfaceCountMismatch {
+        /// The instruction ID.
+        instruction_id: Option<Id>,
+        /// Expected number of interfaces.
+        expected: usize,
+        /// Actual number of interfaces.
+        actual: usize,
+    },
+
+    /// OpGraphEntryPointARM interface must be OpVariable.
+    #[error("OpGraphEntryPointARM {instruction_id:?}: Interface {interface_id:?} must come from OpVariable")]
+    GraphEntryPointInterfaceNotVariable {
+        /// The instruction ID.
+        instruction_id: Option<Id>,
+        /// The interface ID.
+        interface_id: Id,
+    },
+
+    /// OpGraphEntryPointARM interface must have UniformConstant storage class.
+    #[error("OpGraphEntryPointARM {instruction_id:?}: Interface {interface_id:?} must have UniformConstant Storage Class")]
+    GraphEntryPointInterfaceNotUniformConstant {
+        /// The instruction ID.
+        instruction_id: Option<Id>,
+        /// The interface ID.
+        interface_id: Id,
+    },
+
+    /// OpGraphEntryPointARM interface type mismatch.
+    #[error("OpGraphEntryPointARM {instruction_id:?}: Interface {interface_id:?} type {actual_type:?} must match graph I/O type {expected_type:?}")]
+    GraphEntryPointInterfaceTypeMismatch {
+        /// The instruction ID.
+        instruction_id: Option<Id>,
+        /// The interface ID.
+        interface_id: Id,
+        /// Expected type.
+        expected_type: Id,
+        /// Actual type.
+        actual_type: Id,
+    },
+
+    /// OpGraphInputARM/OpGraphSetOutputARM index must be 32-bit integer.
+    #[error("OpGraphInputARM {instruction_id:?}: {operand} must be a 32-bit integer")]
+    GraphInputIndexNotInt32 {
+        /// The instruction ID.
+        instruction_id: Option<Id>,
+        /// The operand name.
+        operand: &'static str,
+    },
+
+    /// OpGraphInputARM InputIndex out of range.
+    #[error("OpGraphInputARM {instruction_id:?}: InputIndex {input_index} out of range (graph has {num_inputs} inputs)")]
+    GraphInputIndexOutOfRange {
+        /// The instruction ID.
+        instruction_id: Option<Id>,
+        /// The input index value.
+        input_index: u64,
+        /// Number of inputs in graph.
+        num_inputs: u64,
+    },
+
+    /// OpGraphInputARM ElementIndex not allowed.
+    #[error("OpGraphInputARM {instruction_id:?}: ElementIndex not allowed when input is not an array")]
+    GraphInputElementIndexNotAllowed {
+        /// The instruction ID.
+        instruction_id: Option<Id>,
+    },
+
+    /// OpGraphInputARM result type mismatch.
+    #[error("OpGraphInputARM {instruction_id:?}: Result type {actual_type:?} does not match expected type {expected_type:?}")]
+    GraphInputTypeMismatch {
+        /// The instruction ID.
+        instruction_id: Option<Id>,
+        /// Expected type.
+        expected_type: Id,
+        /// Actual type.
+        actual_type: Id,
+    },
+
+    /// OpGraphSetOutputARM index must be 32-bit integer.
+    #[error("OpGraphSetOutputARM {instruction_id:?}: {operand} must be a 32-bit integer")]
+    GraphOutputIndexNotInt32 {
+        /// The instruction ID.
+        instruction_id: Option<Id>,
+        /// The operand name.
+        operand: &'static str,
+    },
+
+    /// OpGraphSetOutputARM OutputIndex out of range.
+    #[error("OpGraphSetOutputARM {instruction_id:?}: OutputIndex {output_index} out of range (graph has {num_outputs} outputs)")]
+    GraphOutputIndexOutOfRange {
+        /// The instruction ID.
+        instruction_id: Option<Id>,
+        /// The output index value.
+        output_index: u64,
+        /// Number of outputs in graph.
+        num_outputs: u64,
+    },
+
+    /// OpGraphSetOutputARM ElementIndex not allowed.
+    #[error("OpGraphSetOutputARM {instruction_id:?}: ElementIndex not allowed when output is not an array")]
+    GraphOutputElementIndexNotAllowed {
+        /// The instruction ID.
+        instruction_id: Option<Id>,
+    },
+
+    /// OpGraphSetOutputARM value type mismatch.
+    #[error("OpGraphSetOutputARM {instruction_id:?}: Value type {actual_type:?} does not match expected type {expected_type:?}")]
+    GraphOutputTypeMismatch {
+        /// The instruction ID.
+        instruction_id: Option<Id>,
+        /// Expected type.
+        expected_type: Id,
+        /// Actual type.
+        actual_type: Id,
+    },
+
+    /// Duplicate OpGraphInputARM with same InputIndex.
+    #[error("OpGraphInputARM {instruction_id:?}: Duplicate InputIndex {input_index} in graph definition")]
+    GraphDuplicateInputIndex {
+        /// The instruction ID.
+        instruction_id: Option<Id>,
+        /// The duplicate input index.
+        input_index: u64,
+    },
+
+    /// Duplicate OpGraphSetOutputARM with same OutputIndex.
+    #[error("OpGraphSetOutputARM {instruction_id:?}: Duplicate OutputIndex {output_index} in graph definition")]
+    GraphDuplicateOutputIndex {
+        /// The instruction ID.
+        instruction_id: Option<Id>,
+        /// The duplicate output index.
+        output_index: u64,
+    },
 }

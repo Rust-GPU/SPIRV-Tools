@@ -59,6 +59,7 @@
 //! - [`tensor`]: Tensor instruction validation rules
 //! - [`small_type_uses`]: 8/16-bit type usage validation rules
 //! - [`misc`]: Miscellaneous instruction validation rules
+//! - [`graph`]: ARM graph instruction validation rules
 
 pub mod adjacency;
 pub mod annotation;
@@ -80,6 +81,7 @@ pub mod entry_points;
 pub mod execution_modes;
 pub mod extensions;
 pub mod functions;
+pub mod graph;
 pub mod image;
 pub mod interfaces;
 pub mod interpolation;
