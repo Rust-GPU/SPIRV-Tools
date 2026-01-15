@@ -471,6 +471,107 @@ impl EgglogContext {
             Op::AtomicAnd => self.atomic_binary_op("AtomicAnd", inst)?,
             Op::AtomicOr => self.atomic_binary_op("AtomicOr", inst)?,
             Op::AtomicXor => self.atomic_binary_op("AtomicXor", inst)?,
+            // Barrier operations - model for barrier hoisting/merging
+            Op::ControlBarrier => {
+                // ControlBarrier %execution_scope %memory_scope %semantics
+                // Model as effect for barrier motion optimization
+                // Barriers have no result, but we track them for control flow
+                return None;
+            }
+            Op::MemoryBarrier => {
+                // MemoryBarrier %memory_scope %semantics
+                return None;
+            }
+            // Subgroup operations - model for CSE and optimization
+            Op::GroupNonUniformElect => {
+                // GroupNonUniformElect %type %scope -> bool (true for first invocation)
+                "(GroupElect)".to_string()
+            }
+            Op::GroupNonUniformAll => {
+                // GroupNonUniformAll %type %scope %predicate
+                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                if !ops.is_empty() {
+                    let pred = self.get_or_create_term(*ops.last().unwrap());
+                    format!("(GroupAll {})", pred)
+                } else {
+                    return None;
+                }
+            }
+            Op::GroupNonUniformAny => {
+                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                if !ops.is_empty() {
+                    let pred = self.get_or_create_term(*ops.last().unwrap());
+                    format!("(GroupAny {})", pred)
+                } else {
+                    return None;
+                }
+            }
+            Op::GroupNonUniformAllEqual => {
+                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                if !ops.is_empty() {
+                    let val = self.get_or_create_term(*ops.last().unwrap());
+                    format!("(GroupAllEqual {})", val)
+                } else {
+                    return None;
+                }
+            }
+            Op::GroupNonUniformBroadcast => {
+                // GroupNonUniformBroadcast %type %scope %value %id
+                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                if ops.len() >= 2 {
+                    let val = self.get_or_create_term(ops[ops.len() - 2]);
+                    let id = self.get_or_create_term(ops[ops.len() - 1]);
+                    format!("(GroupBroadcast {} {})", val, id)
+                } else {
+                    return None;
+                }
+            }
+            Op::GroupNonUniformBroadcastFirst => {
+                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                if !ops.is_empty() {
+                    let val = self.get_or_create_term(*ops.last().unwrap());
+                    format!("(GroupBroadcastFirst {})", val)
+                } else {
+                    return None;
+                }
+            }
+            Op::GroupNonUniformShuffle => {
+                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                if ops.len() >= 2 {
+                    let val = self.get_or_create_term(ops[ops.len() - 2]);
+                    let id = self.get_or_create_term(ops[ops.len() - 1]);
+                    format!("(GroupShuffle {} {})", val, id)
+                } else {
+                    return None;
+                }
+            }
+            Op::GroupNonUniformShuffleXor => {
+                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                if ops.len() >= 2 {
+                    let val = self.get_or_create_term(ops[ops.len() - 2]);
+                    let mask = self.get_or_create_term(ops[ops.len() - 1]);
+                    format!("(GroupShuffleXor {} {})", val, mask)
+                } else {
+                    return None;
+                }
+            }
+            // Subgroup arithmetic reductions
+            Op::GroupNonUniformIAdd => self.subgroup_reduction_op("GroupIAdd", inst)?,
+            Op::GroupNonUniformFAdd => self.subgroup_reduction_op("GroupFAdd", inst)?,
+            Op::GroupNonUniformIMul => self.subgroup_reduction_op("GroupIMul", inst)?,
+            Op::GroupNonUniformFMul => self.subgroup_reduction_op("GroupFMul", inst)?,
+            Op::GroupNonUniformSMin => self.subgroup_reduction_op("GroupSMin", inst)?,
+            Op::GroupNonUniformUMin => self.subgroup_reduction_op("GroupUMin", inst)?,
+            Op::GroupNonUniformFMin => self.subgroup_reduction_op("GroupFMin", inst)?,
+            Op::GroupNonUniformSMax => self.subgroup_reduction_op("GroupSMax", inst)?,
+            Op::GroupNonUniformUMax => self.subgroup_reduction_op("GroupUMax", inst)?,
+            Op::GroupNonUniformFMax => self.subgroup_reduction_op("GroupFMax", inst)?,
+            Op::GroupNonUniformBitwiseAnd => self.subgroup_reduction_op("GroupBitAnd", inst)?,
+            Op::GroupNonUniformBitwiseOr => self.subgroup_reduction_op("GroupBitOr", inst)?,
+            Op::GroupNonUniformBitwiseXor => self.subgroup_reduction_op("GroupBitXor", inst)?,
+            Op::GroupNonUniformLogicalAnd => self.subgroup_reduction_op("GroupLogAnd", inst)?,
+            Op::GroupNonUniformLogicalOr => self.subgroup_reduction_op("GroupLogOr", inst)?,
+            Op::GroupNonUniformLogicalXor => self.subgroup_reduction_op("GroupLogXor", inst)?,
             Op::Phi => {
                 // For Phi, check if all incoming values are the same
                 // Phi operands are pairs: (value, block) repeated
@@ -702,6 +803,19 @@ impl EgglogContext {
             // Value is the last ID operand
             let val = self.get_or_create_term(*ops.last().unwrap());
             Some(format!("({} {} {} (InitMem))", op, ptr, val))
+        } else {
+            None
+        }
+    }
+
+    /// Convert subgroup reduction operations to e-graph term.
+    fn subgroup_reduction_op(&mut self, op: &str, inst: &Instruction) -> Option<String> {
+        // GroupNonUniform* %type %scope %operation %value [cluster_size]
+        let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+        if !ops.is_empty() {
+            // Value is the last ID operand
+            let val = self.get_or_create_term(*ops.last().unwrap());
+            Some(format!("({} {})", op, val))
         } else {
             None
         }

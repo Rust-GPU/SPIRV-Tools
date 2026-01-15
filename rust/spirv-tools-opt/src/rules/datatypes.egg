@@ -381,6 +381,34 @@
     (AtomicOr Expr Expr Expr)
     (AtomicXor Expr Expr Expr)
 
+    ; Subgroup/Wave operations for compute shaders
+    (GroupElect)                        ; Returns true for first active invocation
+    (GroupAll Expr)                     ; All predicate: all invocations true?
+    (GroupAny Expr)                     ; Any predicate: any invocation true?
+    (GroupAllEqual Expr)                ; All values equal across invocations?
+    (GroupBroadcast Expr Expr)          ; Broadcast value from specific invocation
+    (GroupBroadcastFirst Expr)          ; Broadcast from first active invocation
+    (GroupShuffle Expr Expr)            ; Shuffle by invocation ID
+    (GroupShuffleXor Expr Expr)         ; Shuffle by XOR mask
+
+    ; Subgroup arithmetic reductions
+    (GroupIAdd Expr)                    ; Integer addition reduction
+    (GroupFAdd Expr)                    ; Float addition reduction
+    (GroupIMul Expr)                    ; Integer multiplication reduction
+    (GroupFMul Expr)                    ; Float multiplication reduction
+    (GroupSMin Expr)                    ; Signed min reduction
+    (GroupUMin Expr)                    ; Unsigned min reduction
+    (GroupFMin Expr)                    ; Float min reduction
+    (GroupSMax Expr)                    ; Signed max reduction
+    (GroupUMax Expr)                    ; Unsigned max reduction
+    (GroupFMax Expr)                    ; Float max reduction
+    (GroupBitAnd Expr)                  ; Bitwise AND reduction
+    (GroupBitOr Expr)                   ; Bitwise OR reduction
+    (GroupBitXor Expr)                  ; Bitwise XOR reduction
+    (GroupLogAnd Expr)                  ; Logical AND reduction
+    (GroupLogOr Expr)                   ; Logical OR reduction
+    (GroupLogXor Expr)                  ; Logical XOR reduction
+
     ; ==========================================================================
     ; Function Calls and Inlining (for global optimization)
     ; ==========================================================================
@@ -1054,6 +1082,32 @@
 (rule ((Live e) (= e (AtomicAnd ptr val mem))) ((Live ptr) (Live val) (Live mem)))
 (rule ((Live e) (= e (AtomicOr ptr val mem))) ((Live ptr) (Live val) (Live mem)))
 (rule ((Live e) (= e (AtomicXor ptr val mem))) ((Live ptr) (Live val) (Live mem)))
+
+; Subgroup operations
+(rule ((Live e) (= e (GroupElect))) ())
+(rule ((Live e) (= e (GroupAll pred))) ((Live pred)))
+(rule ((Live e) (= e (GroupAny pred))) ((Live pred)))
+(rule ((Live e) (= e (GroupAllEqual val))) ((Live val)))
+(rule ((Live e) (= e (GroupBroadcast val id))) ((Live val) (Live id)))
+(rule ((Live e) (= e (GroupBroadcastFirst val))) ((Live val)))
+(rule ((Live e) (= e (GroupShuffle val id))) ((Live val) (Live id)))
+(rule ((Live e) (= e (GroupShuffleXor val mask))) ((Live val) (Live mask)))
+(rule ((Live e) (= e (GroupIAdd val))) ((Live val)))
+(rule ((Live e) (= e (GroupFAdd val))) ((Live val)))
+(rule ((Live e) (= e (GroupIMul val))) ((Live val)))
+(rule ((Live e) (= e (GroupFMul val))) ((Live val)))
+(rule ((Live e) (= e (GroupSMin val))) ((Live val)))
+(rule ((Live e) (= e (GroupUMin val))) ((Live val)))
+(rule ((Live e) (= e (GroupFMin val))) ((Live val)))
+(rule ((Live e) (= e (GroupSMax val))) ((Live val)))
+(rule ((Live e) (= e (GroupUMax val))) ((Live val)))
+(rule ((Live e) (= e (GroupFMax val))) ((Live val)))
+(rule ((Live e) (= e (GroupBitAnd val))) ((Live val)))
+(rule ((Live e) (= e (GroupBitOr val))) ((Live val)))
+(rule ((Live e) (= e (GroupBitXor val))) ((Live val)))
+(rule ((Live e) (= e (GroupLogAnd val))) ((Live val)))
+(rule ((Live e) (= e (GroupLogOr val))) ((Live val)))
+(rule ((Live e) (= e (GroupLogXor val))) ((Live val)))
 
 ; =============================================================================
 ; Liveness for Function Calls
