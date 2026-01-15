@@ -3234,4 +3234,36 @@ pub enum ValidationError {
         /// The actual member count.
         member_count: u32,
     },
+
+    // ==================== Tensor Errors ====================
+    /// OpTensorReadARM result type must be a scalar or array of scalar.
+    #[error("OpTensorReadARM {instruction_id:?} Result Type must be a scalar type or array of scalar type")]
+    TensorReadResultNotScalar {
+        /// The instruction ID.
+        instruction_id: Option<Id>,
+    },
+    /// Tensor operand must be a ranked tensor.
+    #[error("Tensor {instruction_id:?} must be an OpTypeTensorARM whose Rank is specified")]
+    TensorNotRankedTensor {
+        /// The instruction ID.
+        instruction_id: Option<Id>,
+    },
+    /// OpTensorQuerySizeARM result type must be an integer scalar.
+    #[error("OpTensorQuerySizeARM {instruction_id:?} Result Type must be an integer type scalar")]
+    TensorQuerySizeResultNotInt {
+        /// The instruction ID.
+        instruction_id: Option<Id>,
+    },
+    /// OpCreateTensorLayoutNV result type must be OpTypeTensorLayoutNV.
+    #[error("OpCreateTensorLayoutNV {instruction_id:?} Result Type must be a tensor layout type")]
+    TensorLayoutResultNotTensorLayout {
+        /// The instruction ID.
+        instruction_id: Option<Id>,
+    },
+    /// OpCreateTensorViewNV result type must be OpTypeTensorViewNV.
+    #[error("OpCreateTensorViewNV {instruction_id:?} Result Type must be a tensor view type")]
+    TensorViewResultNotTensorView {
+        /// The instruction ID.
+        instruction_id: Option<Id>,
+    },
 }
