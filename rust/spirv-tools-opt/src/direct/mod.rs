@@ -16,7 +16,7 @@ use rspirv::spirv::{Op, Word};
 use std::collections::{HashMap, HashSet};
 
 use context::EgglogContext;
-use parse::{find_inline_constants, parse_extract_result, term_to_instruction};
+use parse::{find_inline_constants, parse_extract_result, term_to_instruction, term_to_instruction_with_ext};
 
 /// Optimize an entire SPIR-V module in ONE egglog pass.
 ///
@@ -29,6 +29,19 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
 
     // Step 2: Collect ALL SSA values (for id_map) and optimizable instructions
     let mut ctx = EgglogContext::new(&type_widths);
+
+    // Detect GLSL.std.450 extended instruction set
+    for inst in &module.ext_inst_imports {
+        if inst.class.opcode == Op::ExtInstImport {
+            if let Some(rspirv::dr::Operand::LiteralString(name)) = inst.operands.first() {
+                if name == "GLSL.std.450" {
+                    if let Some(id) = inst.result_id {
+                        ctx.set_glsl_ext_id(id);
+                    }
+                }
+            }
+        }
+    }
 
     // Collect ALL SSA value IDs that can be referenced
     let mut all_ssa_ids: HashSet<Word> = HashSet::new();

@@ -1,6 +1,6 @@
 //! Context for building egglog expressions from SPIR-V instructions.
 
-use rspirv::dr::Instruction;
+use rspirv::dr::{Instruction, Operand};
 use rspirv::spirv::{Op, Word};
 use std::collections::HashMap;
 
@@ -14,6 +14,8 @@ pub struct EgglogContext {
     type_widths: HashMap<Word, u32>,
     /// All root IDs (instructions we're optimizing)
     pub root_ids: Vec<Word>,
+    /// GLSL.std.450 extended instruction set ID (if any)
+    glsl_ext_id: Option<Word>,
 }
 
 impl EgglogContext {
@@ -23,7 +25,13 @@ impl EgglogContext {
             id_to_type: HashMap::new(),
             type_widths: type_widths.clone(),
             root_ids: Vec::new(),
+            glsl_ext_id: None,
         }
+    }
+
+    /// Set the GLSL.std.450 extended instruction set ID.
+    pub fn set_glsl_ext_id(&mut self, id: Word) {
+        self.glsl_ext_id = Some(id);
     }
 
     /// Add an instruction to the context.
@@ -247,8 +255,48 @@ impl EgglogContext {
                 }
             }
             Op::VectorShuffle => {
-                // VectorShuffle is complex - skip for now
-                return None;
+                // VectorShuffle %type %vec1 %vec2 indices...
+                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                let indices: Vec<i64> = inst.operands.iter().filter_map(|op| match op {
+                    Operand::LiteralBit32(v) => Some(*v as i64),
+                    _ => None,
+                }).collect();
+                if ops.len() >= 2 {
+                    let v1 = self.get_or_create_term(ops[0]);
+                    let v2 = self.get_or_create_term(ops[1]);
+                    match indices.len() {
+                        2 => format!("(VecShuffle2 {} {} {} {})", v1, v2, indices[0], indices[1]),
+                        3 => format!("(VecShuffle3 {} {} {} {} {})", v1, v2, indices[0], indices[1], indices[2]),
+                        4 => format!("(VecShuffle4 {} {} {} {} {} {})", v1, v2, indices[0], indices[1], indices[2], indices[3]),
+                        _ => return None,
+                    }
+                } else {
+                    return None;
+                }
+            }
+            // Additional type conversions
+            Op::SConvert => self.unary_op("SConvert", inst)?,
+            Op::UConvert => self.unary_op("UConvert", inst)?,
+            Op::FConvert => self.unary_op("FConvert", inst)?,
+            Op::Bitcast => self.unary_op("Bitcast", inst)?,
+            Op::QuantizeToF16 => self.unary_op("QuantizeToF16", inst)?,
+            // FP predicates
+            Op::IsNan => self.unary_op("IsNan", inst)?,
+            Op::IsInf => self.unary_op("IsInf", inst)?,
+            // Dot product
+            Op::Dot => self.binary_op("Dot", inst)?,
+            // Matrix operations
+            Op::MatrixTimesScalar => self.binary_op("MatTimesScalar", inst)?,
+            Op::MatrixTimesVector => self.binary_op("MatTimesVec", inst)?,
+            Op::VectorTimesMatrix => self.binary_op("VecTimesMat", inst)?,
+            Op::MatrixTimesMatrix => self.binary_op("MatTimesMat", inst)?,
+            Op::Transpose => self.unary_op("Transpose", inst)?,
+            Op::OuterProduct => self.binary_op("OuterProduct", inst)?,
+            // Bit counting
+            Op::BitCount => self.unary_op("BitCount", inst)?,
+            // Extended instructions (GLSL.std.450)
+            Op::ExtInst => {
+                self.extended_instruction_to_term(inst)?
             }
             Op::Phi => {
                 // For Phi, check if all incoming values are the same
@@ -295,5 +343,180 @@ impl EgglogContext {
         let operand_id = inst.operands.iter().find_map(|op| op.id_ref_any())?;
         let operand = self.get_or_create_term(operand_id);
         Some(format!("({} {})", op, operand))
+    }
+
+    fn ternary_op(&mut self, op: &str, inst: &Instruction) -> Option<String> {
+        let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+        if ops.len() >= 3 {
+            let a = self.get_or_create_term(ops[0]);
+            let b = self.get_or_create_term(ops[1]);
+            let c = self.get_or_create_term(ops[2]);
+            Some(format!("({} {} {} {})", op, a, b, c))
+        } else {
+            None
+        }
+    }
+
+    /// Convert GLSL.std.450 extended instruction to egglog term.
+    fn extended_instruction_to_term(&mut self, inst: &Instruction) -> Option<String> {
+        // ExtInst operands: %set %instruction operands...
+        // operands[0] = extended instruction set ID
+        // operands[1] = instruction number (LiteralExtInstInteger)
+        // operands[2..] = instruction operands
+        let set_id = inst.operands.first()?.id_ref_any()?;
+
+        // Check if this is GLSL.std.450
+        if self.glsl_ext_id != Some(set_id) {
+            return None;
+        }
+
+        let ext_opcode = match &inst.operands.get(1)? {
+            Operand::LiteralExtInstInteger(n) => *n,
+            _ => return None,
+        };
+
+        // Get operand IDs (skip set ID and opcode)
+        let op_ids: Vec<Word> = inst.operands.iter().skip(2).filter_map(|op| op.id_ref_any()).collect();
+
+        // GLSL.std.450 instruction numbers
+        // See: https://registry.khronos.org/SPIR-V/specs/unified1/GLSL.std.450.html
+        match ext_opcode {
+            // Trigonometric
+            13 => self.ext_unary("Sin", &op_ids),      // Sin
+            14 => self.ext_unary("Cos", &op_ids),      // Cos
+            15 => self.ext_unary("Tan", &op_ids),      // Tan
+            16 => self.ext_unary("Asin", &op_ids),     // Asin
+            17 => self.ext_unary("Acos", &op_ids),     // Acos
+            18 => self.ext_unary("Atan", &op_ids),     // Atan
+            19 => self.ext_unary("Sinh", &op_ids),     // Sinh
+            20 => self.ext_unary("Cosh", &op_ids),     // Cosh
+            21 => self.ext_unary("Tanh", &op_ids),     // Tanh
+            22 => self.ext_unary("Asinh", &op_ids),    // Asinh
+            23 => self.ext_unary("Acosh", &op_ids),    // Acosh
+            24 => self.ext_unary("Atanh", &op_ids),    // Atanh
+            25 => self.ext_binary("Atan2", &op_ids),   // Atan2
+
+            // Exponential
+            26 => self.ext_binary("Pow", &op_ids),     // Pow
+            27 => self.ext_unary("Exp", &op_ids),      // Exp
+            28 => self.ext_unary("Log", &op_ids),      // Log
+            29 => self.ext_unary("Exp2", &op_ids),     // Exp2
+            30 => self.ext_unary("Log2", &op_ids),     // Log2
+            31 => self.ext_unary("Sqrt", &op_ids),     // Sqrt
+            32 => self.ext_unary("InverseSqrt", &op_ids), // InverseSqrt
+
+            // Common
+            33 => self.ext_unary("Determinant", &op_ids), // Determinant
+            34 => self.ext_unary("MatInverse", &op_ids),  // MatrixInverse
+
+            // Modf/Frexp with struct return
+            35 => self.ext_unary("ModfStruct", &op_ids),  // ModfStruct
+            36 => self.ext_unary("Modf", &op_ids),        // Modf (returns fraction)
+            51 => self.ext_unary("FrexpStruct", &op_ids), // FrexpStruct
+            52 => self.ext_unary("Frexp", &op_ids),       // Frexp (returns sig)
+            53 => self.ext_binary("Ldexp", &op_ids),      // Ldexp
+
+            // Pack/Unpack
+            54 => self.ext_unary("PackSnorm4x8", &op_ids),
+            55 => self.ext_unary("PackUnorm4x8", &op_ids),
+            56 => self.ext_unary("PackSnorm2x16", &op_ids),
+            57 => self.ext_unary("PackUnorm2x16", &op_ids),
+            58 => self.ext_unary("PackHalf2x16", &op_ids),
+            59 => self.ext_unary("PackDouble2x32", &op_ids),
+            60 => self.ext_unary("UnpackSnorm2x16", &op_ids),
+            61 => self.ext_unary("UnpackUnorm2x16", &op_ids),
+            62 => self.ext_unary("UnpackHalf2x16", &op_ids),
+            63 => self.ext_unary("UnpackSnorm4x8", &op_ids),
+            64 => self.ext_unary("UnpackUnorm4x8", &op_ids),
+            65 => self.ext_unary("UnpackDouble2x32", &op_ids),
+
+            // Length/Distance/Cross
+            66 => self.ext_unary("Length", &op_ids),      // Length
+            67 => self.ext_binary("Distance", &op_ids),   // Distance
+            68 => self.ext_binary("Cross", &op_ids),      // Cross
+            69 => self.ext_unary("Normalize", &op_ids),   // Normalize
+            70 => self.ext_ternary("FaceForward", &op_ids), // FaceForward
+            71 => self.ext_binary("Reflect", &op_ids),    // Reflect
+            72 => self.ext_ternary("Refract", &op_ids),   // Refract
+
+            // Integer bit manipulation
+            73 => self.ext_unary("FindILsb", &op_ids),    // FindILsb
+            74 => self.ext_unary("FindSMsb", &op_ids),    // FindSMsb
+            75 => self.ext_unary("FindUMsb", &op_ids),    // FindUMsb
+
+            // Abs/Sign
+            4 => self.ext_unary("FAbs", &op_ids),         // FAbs
+            5 => self.ext_unary("SAbs", &op_ids),         // SAbs
+            6 => self.ext_unary("FSign", &op_ids),        // FSign
+            7 => self.ext_unary("Sign", &op_ids),         // SSign
+
+            // Floor/Ceil/Round/Trunc/Fract
+            8 => self.ext_unary("FFloor", &op_ids),       // Floor
+            9 => self.ext_unary("FCeil", &op_ids),        // Ceil
+            10 => self.ext_unary("Fract", &op_ids),       // Fract
+            11 => self.ext_unary("Radians", &op_ids),     // Radians
+            12 => self.ext_unary("Degrees", &op_ids),     // Degrees
+
+            // Round/Trunc
+            1 => self.ext_unary("FRound", &op_ids),       // Round
+            2 => self.ext_unary("FRound", &op_ids),       // RoundEven (same as Round for now)
+            3 => self.ext_unary("FTrunc", &op_ids),       // Trunc
+
+            // Min/Max/Clamp (GLSL.std.450 opcodes)
+            37 => self.ext_binary("FMin", &op_ids),       // FMin
+            38 => self.ext_binary("UMin", &op_ids),       // UMin
+            39 => self.ext_binary("SMin", &op_ids),       // SMin
+            40 => self.ext_binary("FMax", &op_ids),       // FMax
+            41 => self.ext_binary("UMax", &op_ids),       // UMax
+            42 => self.ext_binary("SMax", &op_ids),       // SMax
+            43 => self.ext_ternary("FClamp", &op_ids),    // FClamp
+            44 => self.ext_ternary("UClamp", &op_ids),    // UClamp
+            45 => self.ext_ternary("SClamp", &op_ids),    // SClamp
+            46 => self.ext_ternary("FMix", &op_ids),      // FMix
+
+            // Step/SmoothStep
+            48 => self.ext_binary("Step", &op_ids),       // Step
+            49 => self.ext_ternary("SmoothStep", &op_ids), // SmoothStep
+
+            // Fma
+            50 => self.ext_ternary("Fma", &op_ids),       // Fma
+
+            // NMin/NMax/NClamp
+            79 => self.ext_binary("NMin", &op_ids),       // NMin
+            80 => self.ext_binary("NMax", &op_ids),       // NMax
+            81 => self.ext_ternary("NClamp", &op_ids),    // NClamp
+
+            _ => None,
+        }
+    }
+
+    fn ext_unary(&mut self, op: &str, op_ids: &[Word]) -> Option<String> {
+        if !op_ids.is_empty() {
+            let a = self.get_or_create_term(op_ids[0]);
+            Some(format!("({} {})", op, a))
+        } else {
+            None
+        }
+    }
+
+    fn ext_binary(&mut self, op: &str, op_ids: &[Word]) -> Option<String> {
+        if op_ids.len() >= 2 {
+            let a = self.get_or_create_term(op_ids[0]);
+            let b = self.get_or_create_term(op_ids[1]);
+            Some(format!("({} {} {})", op, a, b))
+        } else {
+            None
+        }
+    }
+
+    fn ext_ternary(&mut self, op: &str, op_ids: &[Word]) -> Option<String> {
+        if op_ids.len() >= 3 {
+            let a = self.get_or_create_term(op_ids[0]);
+            let b = self.get_or_create_term(op_ids[1]);
+            let c = self.get_or_create_term(op_ids[2]);
+            Some(format!("({} {} {} {})", op, a, b, c))
+        } else {
+            None
+        }
     }
 }
