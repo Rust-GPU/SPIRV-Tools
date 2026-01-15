@@ -170,6 +170,86 @@ impl EgglogContext {
                 let operand_id = inst.operands.iter().find_map(|op| op.id_ref_any())?;
                 self.get_or_create_term(operand_id)
             }
+            // Derivative operations (fragment shader)
+            Op::DPdx => self.unary_op("DPdx", inst)?,
+            Op::DPdy => self.unary_op("DPdy", inst)?,
+            Op::Fwidth => self.unary_op("Fwidth", inst)?,
+            Op::DPdxFine => self.unary_op("DPdxFine", inst)?,
+            Op::DPdyFine => self.unary_op("DPdyFine", inst)?,
+            Op::FwidthFine => self.unary_op("FwidthFine", inst)?,
+            Op::DPdxCoarse => self.unary_op("DPdxCoarse", inst)?,
+            Op::DPdyCoarse => self.unary_op("DPdyCoarse", inst)?,
+            Op::FwidthCoarse => self.unary_op("FwidthCoarse", inst)?,
+            // Composite operations
+            Op::CompositeExtract => {
+                // CompositeExtract %type %composite indices...
+                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                let indices: Vec<u32> = inst.operands.iter().filter_map(|op| match op {
+                    rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+                    _ => None,
+                }).collect();
+                if !ops.is_empty() && !indices.is_empty() {
+                    let composite = self.get_or_create_term(ops[0]);
+                    // For now, only handle single-level extraction (most common case)
+                    format!("(CompositeExtract {} {})", composite, indices[0])
+                } else {
+                    return None;
+                }
+            }
+            Op::CompositeInsert => {
+                // CompositeInsert %type %object %composite indices...
+                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                let indices: Vec<u32> = inst.operands.iter().filter_map(|op| match op {
+                    rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+                    _ => None,
+                }).collect();
+                if ops.len() >= 2 && !indices.is_empty() {
+                    let object = self.get_or_create_term(ops[0]);
+                    let composite = self.get_or_create_term(ops[1]);
+                    format!("(CompositeInsert {} {} {})", composite, object, indices[0])
+                } else {
+                    return None;
+                }
+            }
+            Op::CompositeConstruct => {
+                // CompositeConstruct %type constituents...
+                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                if ops.is_empty() {
+                    return None;
+                }
+                // Build ExprList for components
+                let mut expr_list = "(ENil)".to_string();
+                for &op_id in ops.iter().rev() {
+                    let term = self.get_or_create_term(op_id);
+                    expr_list = format!("(ECons {} {})", term, expr_list);
+                }
+                format!("(CompositeConstruct {})", expr_list)
+            }
+            Op::VectorExtractDynamic => {
+                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                if ops.len() >= 2 {
+                    let vec = self.get_or_create_term(ops[0]);
+                    let idx = self.get_or_create_term(ops[1]);
+                    format!("(VectorExtractDynamic {} {})", vec, idx)
+                } else {
+                    return None;
+                }
+            }
+            Op::VectorInsertDynamic => {
+                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                if ops.len() >= 3 {
+                    let vec = self.get_or_create_term(ops[0]);
+                    let component = self.get_or_create_term(ops[1]);
+                    let idx = self.get_or_create_term(ops[2]);
+                    format!("(VectorInsertDynamic {} {} {})", vec, component, idx)
+                } else {
+                    return None;
+                }
+            }
+            Op::VectorShuffle => {
+                // VectorShuffle is complex - skip for now
+                return None;
+            }
             Op::Phi => {
                 // For Phi, check if all incoming values are the same
                 // Phi operands are pairs: (value, block) repeated

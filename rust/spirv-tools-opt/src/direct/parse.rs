@@ -109,6 +109,29 @@ pub fn term_to_instruction(
         ("LogOr", Op::LogicalOr),
         ("LogEq", Op::LogicalEqual),
         ("LogNe", Op::LogicalNotEqual),
+        // Floating-point operations
+        ("FAdd", Op::FAdd),
+        ("FSub", Op::FSub),
+        ("FMul", Op::FMul),
+        ("FDiv", Op::FDiv),
+        ("FRem", Op::FRem),
+        ("FMod", Op::FMod),
+        // Floating-point comparisons (ordered)
+        ("FOrdEq", Op::FOrdEqual),
+        ("FOrdNe", Op::FOrdNotEqual),
+        ("FOrdLt", Op::FOrdLessThan),
+        ("FOrdLe", Op::FOrdLessThanEqual),
+        ("FOrdGt", Op::FOrdGreaterThan),
+        ("FOrdGe", Op::FOrdGreaterThanEqual),
+        // Floating-point comparisons (unordered)
+        ("FUnordEq", Op::FUnordEqual),
+        ("FUnordNe", Op::FUnordNotEqual),
+        ("FUnordLt", Op::FUnordLessThan),
+        ("FUnordLe", Op::FUnordLessThanEqual),
+        ("FUnordGt", Op::FUnordGreaterThan),
+        ("FUnordGe", Op::FUnordGreaterThanEqual),
+        // Vector operations
+        ("VectorExtractDynamic", Op::VectorExtractDynamic),
     ];
 
     for (name, opcode) in &binary_ops {
@@ -134,6 +157,23 @@ pub fn term_to_instruction(
         ("BitNot", Op::Not),
         ("BitReverse", Op::BitReverse),
         ("LogNot", Op::LogicalNot),
+        // Floating-point unary
+        ("FNeg", Op::FNegate),
+        // Conversion operations
+        ("ConvertFToU", Op::ConvertFToU),
+        ("ConvertFToS", Op::ConvertFToS),
+        ("ConvertSToF", Op::ConvertSToF),
+        ("ConvertUToF", Op::ConvertUToF),
+        // Derivative operations (fragment shader)
+        ("DPdx", Op::DPdx),
+        ("DPdy", Op::DPdy),
+        ("Fwidth", Op::Fwidth),
+        ("DPdxFine", Op::DPdxFine),
+        ("DPdyFine", Op::DPdyFine),
+        ("FwidthFine", Op::FwidthFine),
+        ("DPdxCoarse", Op::DPdxCoarse),
+        ("DPdyCoarse", Op::DPdyCoarse),
+        ("FwidthCoarse", Op::FwidthCoarse),
     ];
 
     for (name, opcode) in &unary_ops {
@@ -166,7 +206,112 @@ pub fn term_to_instruction(
         }
     }
 
+    // Parse VectorInsertDynamic (ternary: vector, component, index)
+    if let Some(rest) = term.strip_prefix("(VectorInsertDynamic ") {
+        if let Some((vec, component, idx)) = parse_ternary_args(rest, id_map) {
+            return Some(Instruction::new(
+                Op::VectorInsertDynamic,
+                Some(result_type),
+                Some(result_id),
+                vec![
+                    rspirv::dr::Operand::IdRef(vec),
+                    rspirv::dr::Operand::IdRef(component),
+                    rspirv::dr::Operand::IdRef(idx),
+                ],
+            ));
+        }
+    }
+
+    // Parse CompositeExtract (binary: composite, index as literal)
+    if let Some(rest) = term.strip_prefix("(CompositeExtract ") {
+        if let Some(inner) = rest.strip_suffix(')') {
+            let terms = split_terms(inner);
+            if terms.len() >= 2 {
+                if let Some(composite_id) = resolve_term_to_id(&terms[0], id_map) {
+                    if let Ok(index) = terms[1].parse::<u32>() {
+                        return Some(Instruction::new(
+                            Op::CompositeExtract,
+                            Some(result_type),
+                            Some(result_id),
+                            vec![
+                                rspirv::dr::Operand::IdRef(composite_id),
+                                rspirv::dr::Operand::LiteralBit32(index),
+                            ],
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    // Parse CompositeInsert (ternary: composite, object, index as literal)
+    if let Some(rest) = term.strip_prefix("(CompositeInsert ") {
+        if let Some(inner) = rest.strip_suffix(')') {
+            let terms = split_terms(inner);
+            if terms.len() >= 3 {
+                if let (Some(composite_id), Some(object_id)) = (
+                    resolve_term_to_id(&terms[0], id_map),
+                    resolve_term_to_id(&terms[1], id_map),
+                ) {
+                    if let Ok(index) = terms[2].parse::<u32>() {
+                        return Some(Instruction::new(
+                            Op::CompositeInsert,
+                            Some(result_type),
+                            Some(result_id),
+                            vec![
+                                rspirv::dr::Operand::IdRef(object_id),
+                                rspirv::dr::Operand::IdRef(composite_id),
+                                rspirv::dr::Operand::LiteralBit32(index),
+                            ],
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    // Parse CompositeConstruct (ECons/ENil list of components)
+    if let Some(rest) = term.strip_prefix("(CompositeConstruct ") {
+        if let Some(inner) = rest.strip_suffix(')') {
+            let components = parse_expr_list(inner.trim(), id_map);
+            if !components.is_empty() {
+                let operands: Vec<rspirv::dr::Operand> = components
+                    .into_iter()
+                    .map(rspirv::dr::Operand::IdRef)
+                    .collect();
+                return Some(Instruction::new(
+                    Op::CompositeConstruct,
+                    Some(result_type),
+                    Some(result_id),
+                    operands,
+                ));
+            }
+        }
+    }
+
     None
+}
+
+/// Parse an ECons/ENil expression list into a vector of IDs.
+fn parse_expr_list(term: &str, id_map: &HashMap<String, Word>) -> Vec<Word> {
+    let term = term.trim();
+    if term == "(ENil)" {
+        return Vec::new();
+    }
+    if let Some(rest) = term.strip_prefix("(ECons ") {
+        if let Some(inner) = rest.strip_suffix(')') {
+            let terms = split_terms(inner);
+            if terms.len() >= 2 {
+                let mut result = Vec::new();
+                if let Some(id) = resolve_term_to_id(&terms[0], id_map) {
+                    result.push(id);
+                }
+                result.extend(parse_expr_list(&terms[1], id_map));
+                return result;
+            }
+        }
+    }
+    Vec::new()
 }
 
 fn parse_binary_args(rest: &str, id_map: &HashMap<String, Word>) -> Option<(Word, Word)> {
