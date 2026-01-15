@@ -2627,4 +2627,114 @@ mod tests {
         assert!(result.contains("Const 0"), "Bit mask contradiction should be false, got: {}", result);
     }
 
+    // =========================================================================
+    // Undef Optimization Tests
+    // =========================================================================
+
+    #[test]
+    fn test_mul_undef_by_zero() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // 0 * Undef = 0 (zero multiplication dominates)
+        egraph.parse_and_run_program(None, r#"
+            (let root (Mul (Const 0) (Undef)))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let result = format!("{}", results[0]);
+        assert!(result.contains("Const 0"), "0 * Undef should be 0, got: {}", result);
+    }
+
+    #[test]
+    fn test_bitand_undef_with_zero() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // Undef & 0 = 0
+        egraph.parse_and_run_program(None, r#"
+            (let root (BitAnd (Undef) (Const 0)))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let result = format!("{}", results[0]);
+        assert!(result.contains("Const 0"), "Undef & 0 should be 0, got: {}", result);
+    }
+
+    #[test]
+    fn test_bitor_undef_with_all_ones() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // Undef | -1 = -1 (all bits set)
+        egraph.parse_and_run_program(None, r#"
+            (let root (BitOr (Undef) (Const -1)))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let result = format!("{}", results[0]);
+        assert!(result.contains("Const -1"), "Undef | -1 should be -1, got: {}", result);
+    }
+
+    #[test]
+    fn test_logand_undef_with_false() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // false && Undef = false
+        egraph.parse_and_run_program(None, r#"
+            (let root (LogAnd (Const 0) (Undef)))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let result = format!("{}", results[0]);
+        assert!(result.contains("Const 0"), "false && Undef should be false, got: {}", result);
+    }
+
+    #[test]
+    fn test_logor_undef_with_true() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // true || Undef = true
+        egraph.parse_and_run_program(None, r#"
+            (let root (LogOr (Const 1) (Undef)))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let result = format!("{}", results[0]);
+        assert!(result.contains("Const 1"), "true || Undef should be true, got: {}", result);
+    }
+
+    #[test]
+    fn test_vec_extract_from_undef() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // VecExtract(Undef, i) = Undef
+        egraph.parse_and_run_program(None, r#"
+            (let root (VecExtract (Undef) 2))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let result = format!("{}", results[0]);
+        assert!(result.contains("Undef"), "VecExtract from Undef should be Undef, got: {}", result);
+    }
+
+    #[test]
+    fn test_store_undef_is_dead() {
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        // StoreMem(ptr, Undef, prev) = prev (dead store)
+        egraph.parse_and_run_program(None, r#"
+            (let prev (InitMem))
+            (let ptr (Sym "ptr"))
+            (let root (StoreMem ptr (Undef) prev))
+        "#).unwrap();
+        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root prev))");
+        assert!(check.is_ok(), "Storing Undef should be equivalent to no-op (dead store)");
+    }
+
 }

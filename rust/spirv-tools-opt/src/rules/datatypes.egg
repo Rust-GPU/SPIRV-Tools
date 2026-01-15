@@ -251,6 +251,11 @@
     ; CopyObject just makes a copy - it's always equal to the original
     (CopyObject Expr)
 
+    ; Undefined value (OpUndef)
+    ; Represents an undefined value of any type
+    ; Operations on Undef have special optimization rules
+    (Undef)
+
     ; ==========================================================================
     ; Type Conversion Operations (SPIR-V OpConvert* and OpBitcast)
     ; ==========================================================================
@@ -658,6 +663,70 @@
       ((union e v)))
 (rule ((= e (Vec4 (VecExtract v 0) (VecExtract v 1) (VecExtract v 2) (VecExtract v 3))))
       ((union e v)))
+
+; =============================================================================
+; Undef (Undefined Value) Optimization Rules
+; =============================================================================
+; OpUndef represents an undefined value. Operations on Undef can often be
+; optimized away or simplified. These rules implement C++ StoringUndef and
+; related optimizations.
+
+; Selecting Undef when condition is known - ONE-DIRECTIONAL
+; Gamma(true, Undef, x) can be simplified (x is always returned if cond is false)
+; But we don't know which branch is taken without constant condition
+
+; Operations that absorb Undef:
+; - Storing Undef is a dead store (handled in memory.egg via StoreMem)
+; - CompositeExtract from Undef is Undef
+(rule ((= e (CompositeExtract (Undef) _)))
+      ((union e (Undef))))
+(rule ((= e (VecExtract (Undef) _)))
+      ((union e (Undef))))
+
+; Operations where one Undef operand makes result Undef:
+; Arithmetic with Undef propagates to Undef (conservative but safe)
+; Note: Some operations like x | 0xFFFFFFFF don't need the other operand,
+; but we're conservative here.
+
+; Multiplication by zero beats Undef (0 * Undef = 0)
+(rule ((= e (Mul (Const 0) (Undef))))
+      ((union e (Const 0))))
+(rule ((= e (Mul (Undef) (Const 0))))
+      ((union e (Const 0))))
+(rule ((= e (FMul (Const 0) (Undef))))
+      ((union e (Const 0))))
+(rule ((= e (FMul (Undef) (Const 0))))
+      ((union e (Const 0))))
+
+; Bitwise operations that can determine result:
+; x & 0 = 0 regardless of x (including Undef)
+(rule ((= e (BitAnd (Const 0) (Undef))))
+      ((union e (Const 0))))
+(rule ((= e (BitAnd (Undef) (Const 0))))
+      ((union e (Const 0))))
+
+; x | -1 = -1 regardless of x (including Undef)
+(rule ((= e (BitOr (Const -1) (Undef))))
+      ((union e (Const -1))))
+(rule ((= e (BitOr (Undef) (Const -1))))
+      ((union e (Const -1))))
+
+; Logical operations that can determine result:
+; false && x = false
+(rule ((= e (LogAnd (Const 0) (Undef))))
+      ((union e (Const 0))))
+(rule ((= e (LogAnd (Undef) (Const 0))))
+      ((union e (Const 0))))
+
+; true || x = true
+(rule ((= e (LogOr (Const 1) (Undef))))
+      ((union e (Const 1))))
+(rule ((= e (LogOr (Undef) (Const 1))))
+      ((union e (Const 1))))
+
+; CopyObject of Undef is Undef
+(rule ((= e (CopyObject (Undef))))
+      ((union e (Undef))))
 
 ; =============================================================================
 ; Effect Sort (side effects and control flow)

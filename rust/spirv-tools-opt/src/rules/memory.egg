@@ -33,6 +33,11 @@
 (rule ((= m (StoreMem ptr val2 (StoreMem ptr val1 prev))))
       ((union m (StoreMem ptr val2 prev))))
 
+; Storing Undef is a dead store (C++ StoringUndef parity)
+; StoreMem(ptr, Undef, prev) = prev (the store has no observable effect)
+(rule ((= m (StoreMem ptr (Undef) prev)))
+      ((union m prev)))
+
 ; =============================================================================
 ; Redundant Load Elimination
 ; =============================================================================
