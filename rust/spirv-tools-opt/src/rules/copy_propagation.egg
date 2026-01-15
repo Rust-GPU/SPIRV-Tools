@@ -1,0 +1,109 @@
+; =============================================================================
+; Copy Propagation and Redundancy Elimination for E-Graph
+; =============================================================================
+;
+; This module provides:
+; - Copy propagation (replace copies with originals)
+; - Common subexpression elimination (CSE) - inherent in e-graph
+; - Value numbering - inherent in e-graph
+; - Redundant load/store elimination
+;
+; Many of these optimizations are INHERENT to the e-graph approach:
+; - CSE: Same expressions are automatically unified in e-graph
+; - Value numbering: E-graph equivalence classes ARE value numbers
+; - GVN: Global value numbering is the entire e-graph
+;
+; =============================================================================
+; Copy Propagation
+; =============================================================================
+; When a value is copied (loaded then stored elsewhere), use original.
+
+; Load from location that was just stored from another location
+; This chains load-after-store forwarding
+(rule ((= v (Load src mem))
+       (= e (Load dst (StoreMem dst v mem))))
+      ((union e v)))
+
+; =============================================================================
+; Redundant Load Elimination
+; =============================================================================
+; Multiple loads from same location in same memory state = same value
+
+; Two loads from same pointer in same memory state
+; (This is automatic in e-graph - same expression = same e-class)
+
+; Load after store to DIFFERENT location = load from previous state
+; (Requires alias analysis - conservative for now)
+
+; =============================================================================
+; Common Subexpression Elimination (CSE)
+; =============================================================================
+; CSE is AUTOMATIC in e-graphs!
+; Any two expressions that are syntactically equal will be in the same e-class.
+; The e-graph's union-find handles this.
+
+; However, we can add rules to recognize semantically equivalent expressions:
+
+; Commutative operations - already handled in arithmetic.egg
+; a + b = b + a (creates equivalence)
+
+; Reassociation - already handled
+; (a + b) + c = a + (b + c)
+
+; =============================================================================
+; Algebraic Reassociation for Better CSE
+; =============================================================================
+; Normalize expressions to canonical form to improve CSE.
+
+; Prefer constants on the right
+; (Handled in arithmetic.egg with commutativity)
+
+; Prefer lower-numbered symbols on the left for associative ops
+; This is complex to express in egglog - rely on extraction cost
+
+; =============================================================================
+; Phi/Gamma Simplification (SSA Optimization)
+; =============================================================================
+; Gamma nodes that select the same value = that value (already in rvsdg.egg)
+
+; Gamma where both branches compute same result
+(rule ((= e (Gamma cond then_val then_val)))
+      ((union e then_val)))
+
+; Nested Gamma simplification
+; Gamma(c1, Gamma(c2, a, b), Gamma(c2, a, b)) = Gamma(c2, a, b)
+(rule ((= e (Gamma c1 (Gamma c2 a b) (Gamma c2 a b))))
+      ((union e (Gamma c2 a b))))
+
+; Gamma(c, Gamma(c, a, b), x) where c is same = Gamma(c, a, x)
+; If outer condition is true, we take inner's true branch
+(rule ((= e (Gamma c (Gamma c a b) x)))
+      ((union e (Gamma c a x))))
+
+; Gamma(c, x, Gamma(c, a, b)) where c is same = Gamma(c, x, b)
+; If outer condition is false, we take inner's false branch
+(rule ((= e (Gamma c x (Gamma c a b))))
+      ((union e (Gamma c x b))))
+
+; =============================================================================
+; Predicated Execution Optimization
+; =============================================================================
+; Convert conditional code to predicated operations when beneficial.
+
+; Gamma selecting between x and x+1 based on condition
+; This might be better as: x + (cond ? 1 : 0)
+(rule ((= e (Gamma cond (Add x (Const 1)) x)))
+      ((union e (Add x (Gamma cond (Const 1) (Const 0))))))
+(rule ((= e (Gamma cond x (Add x (Const 1)))))
+      ((union e (Add x (Gamma cond (Const 0) (Const 1))))))
+
+; =============================================================================
+; Partial Redundancy Elimination (PRE)
+; =============================================================================
+; PRE moves computations to make them fully redundant.
+; In e-graph, this is handled by finding equivalent expressions.
+
+; The key insight: if an expression is computed on some paths but not others,
+; we can move it earlier (to dominator) to compute it on all paths.
+; This is implicitly handled by the e-graph's global view.
+

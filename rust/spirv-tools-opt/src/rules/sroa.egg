@@ -1,0 +1,62 @@
+; =============================================================================
+; Scalar Replacement of Aggregates (SROA) for E-Graph Optimization
+; =============================================================================
+;
+; SROA breaks down aggregate types (structs, arrays) into individual scalars
+; when the aggregate is only accessed through known constant indices.
+;
+; This enables:
+; - Better register allocation (scalars vs aggregate in memory)
+; - More optimization opportunities (scalar rules apply)
+; - Dead store elimination per-field
+; - Copy propagation per-field
+;
+; Key insight for e-graph: We model aggregates as tuples of scalars.
+; When we see Load(AccessChain(var, idx)), we can rewrite to LoadField(var, idx)
+; which represents loading just that scalar field.
+;
+; NOTE: CompositeInsert is a function, not a constructor, so we cannot pattern
+; match on nested CompositeInsert in rule conditions. The rules in datatypes.egg
+; handle the basic cases of CompositeExtract/Insert optimization.
+;
+; =============================================================================
+; Copy Propagation for Aggregates
+; =============================================================================
+; If we copy a struct (load then store), propagate through
+
+; Load-store sequence with same type = copy, can be eliminated if unused
+(rule ((= m2 (StoreMem dst (Load src m1) m1))
+       (= dst src))
+      ((union m2 m1)))
+
+; =============================================================================
+; Basic Dead Store Elimination
+; =============================================================================
+; Store to same pointer twice in sequence = first store is dead
+; NOTE: The basic rule StoreMem(ptr, val2, StoreMem(ptr, val1, prev)) is in memory.egg
+
+; =============================================================================
+; Field-wise Dead Store Elimination
+; =============================================================================
+; Store to field followed by store to same field = dead store
+
+(rule ((= m (StoreMem (AccessChain1 base idx) val2
+                      (StoreMem (AccessChain1 base idx) val1 prev))))
+      ((union m (StoreMem (AccessChain1 base idx) val2 prev))))
+
+(rule ((= m (StoreMem (AccessChain2 base i1 i2) val2
+                      (StoreMem (AccessChain2 base i1 i2) val1 prev))))
+      ((union m (StoreMem (AccessChain2 base i1 i2) val2 prev))))
+
+; =============================================================================
+; Struct/Array Literal Propagation
+; =============================================================================
+; When a struct is constructed from constants, propagate through extracts
+; (Already handled in datatypes.egg for CompositeConstruct)
+
+; =============================================================================
+; Array Optimization
+; =============================================================================
+; Arrays with constant indices can be treated like structs
+; Array element access through constant index uses AccessChain rules from memory.egg
+

@@ -312,6 +312,142 @@
     (NMin Expr Expr)        ; NaN-ignoring minimum (GLSLstd450NMin)
     (NMax Expr Expr)        ; NaN-ignoring maximum (GLSLstd450NMax)
     (NClamp Expr Expr Expr) ; NaN-ignoring clamp (GLSLstd450NClamp)
+
+    ; ==========================================================================
+    ; Memory Operations (for global e-graph optimization)
+    ; ==========================================================================
+    ; Memory state is modeled as an Expr to enable state threading through the
+    ; e-graph. This allows load-after-store forwarding, dead store elimination,
+    ; and other memory optimizations in ONE pass.
+    ;
+    ; Memory state forms a chain: InitMem -> Store -> Store -> ...
+    ; Loads read from a memory state, producing a value.
+    ; The e-graph unifies equivalent memory states and values.
+
+    ; Initial memory state (function/shader entry)
+    (InitMem)
+
+    ; Memory state after a store: (StoreMem ptr value prev_state)
+    ; Returns the new memory state
+    (StoreMem Expr Expr Expr)
+
+    ; Memory state at control flow merge: (MergeMem cond then_mem else_mem)
+    (MergeMem Expr Expr Expr)
+
+    ; Memory state after a loop: (LoopMem cond body_mem init_mem)
+    (LoopMem Expr Expr Expr)
+
+    ; Load from memory: (Load ptr mem_state) -> value
+    (Load Expr Expr)
+
+    ; Variable/pointer reference: (Var name storage_class)
+    ; storage_class: 0=Function, 1=Private, 2=Workgroup, 3=Uniform, etc.
+    (Var String i64)
+
+    ; Access chain: (AccessChain1/2/3 base idx1 [idx2 [idx3]])
+    ; Specialized for common depths to avoid ExprList dependency
+    (AccessChain1 Expr i64)
+    (AccessChain2 Expr i64 i64)
+    (AccessChain3 Expr i64 i64 i64)
+
+    ; Dynamic access chain: (AccessChainDyn base index_expr)
+    (AccessChainDyn Expr Expr)
+
+    ; Image operations (pure reads)
+    (ImageSample Expr Expr)     ; (image, coord) -> color
+    (ImageFetch Expr Expr)      ; (image, coord) -> texel
+    (ImageRead Expr Expr)       ; (image, coord) -> data
+
+    ; Image write returns new memory state: (ImageWrite image coord data mem)
+    (ImageWrite Expr Expr Expr Expr)
+
+    ; Atomic operations: return (value, new_mem_state) encoded as pair
+    ; For simplicity, we return just the loaded value; mem state is implicit
+    (AtomicLoad Expr Expr)              ; (ptr, mem) -> value
+    (AtomicStore Expr Expr Expr)        ; (ptr, value, mem) -> new_mem
+    (AtomicExchange Expr Expr Expr)     ; (ptr, value, mem) -> old_value
+    (AtomicCompareExchange Expr Expr Expr Expr) ; (ptr, cmp, val, mem) -> old
+    (AtomicIAdd Expr Expr Expr)         ; (ptr, value, mem) -> old_value
+    (AtomicISub Expr Expr Expr)
+    (AtomicSMin Expr Expr Expr)
+    (AtomicUMin Expr Expr Expr)
+    (AtomicSMax Expr Expr Expr)
+    (AtomicUMax Expr Expr Expr)
+    (AtomicAnd Expr Expr Expr)
+    (AtomicOr Expr Expr Expr)
+    (AtomicXor Expr Expr Expr)
+
+    ; ==========================================================================
+    ; Function Calls and Inlining (for global optimization)
+    ; ==========================================================================
+    ; Functions are modeled in the e-graph to enable cross-function optimization.
+    ; Inlining is a rewrite: Call(f, args) = Subst(body_of_f, args)
+
+    ; Function call with 1-4 arguments (common cases)
+    (Call1 String Expr)
+    (Call2 String Expr Expr)
+    (Call3 String Expr Expr Expr)
+    (Call4 String Expr Expr Expr Expr)
+
+    ; Substitution: (Subst body arg_index value)
+    ; Replaces Arg(arg_index) with value in body
+    (Subst Expr i64 Expr)
+
+    ; ==========================================================================
+    ; Specialization Constants
+    ; ==========================================================================
+    ; Spec constants are compile-time constants with runtime-specializable values.
+    ; Modeled as Expr to enable algebraic optimization before specialization.
+
+    ; Spec constant reference: (SpecConst spec_id default_value)
+    (SpecConst i64 i64)
+
+    ; Spec constant operations (OpSpecConstantOp)
+    ; These compute at specialization time
+    (SpecAdd Expr Expr)
+    (SpecSub Expr Expr)
+    (SpecMul Expr Expr)
+    (SpecSDiv Expr Expr)
+    (SpecUDiv Expr Expr)
+    (SpecSMod Expr Expr)
+    (SpecUMod Expr Expr)
+    (SpecShl Expr Expr)
+    (SpecShrS Expr Expr)
+    (SpecShrU Expr Expr)
+    (SpecBitAnd Expr Expr)
+    (SpecBitOr Expr Expr)
+    (SpecBitXor Expr Expr)
+    (SpecEq Expr Expr)
+    (SpecNe Expr Expr)
+    (SpecSLt Expr Expr)
+    (SpecULt Expr Expr)
+    (SpecSelect Expr Expr Expr)
+
+    ; ==========================================================================
+    ; Loop Unrolling Support
+    ; ==========================================================================
+    ; Bounded loops can be unrolled when trip count is known.
+
+    ; Bounded theta: (BoundedTheta trip_count body init)
+    ; A loop with known iteration count
+    (BoundedTheta i64 Expr Expr)
+
+    ; Loop iteration: (LoopIter iteration_number value)
+    ; Represents the value at a specific iteration (for unrolling)
+    (LoopIter i64 Expr)
+
+    ; ==========================================================================
+    ; Derivative Operations (for fragment shaders)
+    ; ==========================================================================
+    (DPdx Expr)         ; Partial derivative in x
+    (DPdy Expr)         ; Partial derivative in y
+    (DPdxFine Expr)     ; Fine partial derivative in x
+    (DPdyFine Expr)     ; Fine partial derivative in y
+    (DPdxCoarse Expr)   ; Coarse partial derivative in x
+    (DPdyCoarse Expr)   ; Coarse partial derivative in y
+    (Fwidth Expr)       ; abs(dPdx) + abs(dPdy)
+    (FwidthFine Expr)
+    (FwidthCoarse Expr)
 )
 
 ; =============================================================================
@@ -862,3 +998,115 @@
 ; Determinant and inverse
 (rule ((Live e) (= e (Determinant m))) ((Live m)))
 (rule ((Live e) (= e (MatInverse m))) ((Live m)))
+
+; =============================================================================
+; Liveness for Memory Operations
+; =============================================================================
+
+; Load: both pointer and memory state are live
+(rule ((Live e) (= e (Load ptr mem))) ((Live ptr) (Live mem)))
+
+; StoreMem: pointer, value, and previous state are live
+(rule ((Live e) (= e (StoreMem ptr val prev))) ((Live ptr) (Live val) (Live prev)))
+
+; MergeMem: condition and both branch states are live
+(rule ((Live e) (= e (MergeMem cond then_mem else_mem)))
+      ((Live cond) (Live then_mem) (Live else_mem)))
+
+; LoopMem: condition, body state, and init state are live
+(rule ((Live e) (= e (LoopMem cond body init)))
+      ((Live cond) (Live body) (Live init)))
+
+; Var is a leaf - no propagation needed
+(rule ((Live e) (= e (Var _ _))) ())
+
+; Access chains propagate to base
+(rule ((Live e) (= e (AccessChain1 base _))) ((Live base)))
+(rule ((Live e) (= e (AccessChain2 base _ _))) ((Live base)))
+(rule ((Live e) (= e (AccessChain3 base _ _ _))) ((Live base)))
+(rule ((Live e) (= e (AccessChainDyn base idx))) ((Live base) (Live idx)))
+
+; Image operations
+(rule ((Live e) (= e (ImageSample img coord))) ((Live img) (Live coord)))
+(rule ((Live e) (= e (ImageFetch img coord))) ((Live img) (Live coord)))
+(rule ((Live e) (= e (ImageRead img coord))) ((Live img) (Live coord)))
+(rule ((Live e) (= e (ImageWrite img coord data mem)))
+      ((Live img) (Live coord) (Live data) (Live mem)))
+
+; Atomic operations
+(rule ((Live e) (= e (AtomicLoad ptr mem))) ((Live ptr) (Live mem)))
+(rule ((Live e) (= e (AtomicStore ptr val mem))) ((Live ptr) (Live val) (Live mem)))
+(rule ((Live e) (= e (AtomicExchange ptr val mem))) ((Live ptr) (Live val) (Live mem)))
+(rule ((Live e) (= e (AtomicCompareExchange ptr cmp val mem)))
+      ((Live ptr) (Live cmp) (Live val) (Live mem)))
+(rule ((Live e) (= e (AtomicIAdd ptr val mem))) ((Live ptr) (Live val) (Live mem)))
+(rule ((Live e) (= e (AtomicISub ptr val mem))) ((Live ptr) (Live val) (Live mem)))
+(rule ((Live e) (= e (AtomicSMin ptr val mem))) ((Live ptr) (Live val) (Live mem)))
+(rule ((Live e) (= e (AtomicUMin ptr val mem))) ((Live ptr) (Live val) (Live mem)))
+(rule ((Live e) (= e (AtomicSMax ptr val mem))) ((Live ptr) (Live val) (Live mem)))
+(rule ((Live e) (= e (AtomicUMax ptr val mem))) ((Live ptr) (Live val) (Live mem)))
+(rule ((Live e) (= e (AtomicAnd ptr val mem))) ((Live ptr) (Live val) (Live mem)))
+(rule ((Live e) (= e (AtomicOr ptr val mem))) ((Live ptr) (Live val) (Live mem)))
+(rule ((Live e) (= e (AtomicXor ptr val mem))) ((Live ptr) (Live val) (Live mem)))
+
+; =============================================================================
+; Liveness for Function Calls
+; =============================================================================
+
+(rule ((Live e) (= e (Call1 _ a))) ((Live a)))
+(rule ((Live e) (= e (Call2 _ a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (Call3 _ a b c))) ((Live a) (Live b) (Live c)))
+(rule ((Live e) (= e (Call4 _ a b c d))) ((Live a) (Live b) (Live c) (Live d)))
+(rule ((Live e) (= e (Subst body _ val))) ((Live body) (Live val)))
+(rule ((Live e) (= e (Arg _))) ())
+
+; =============================================================================
+; Liveness for Specialization Constants
+; =============================================================================
+
+; SpecConst is a leaf
+(rule ((Live e) (= e (SpecConst _ _))) ())
+
+; Spec constant operations
+(rule ((Live e) (= e (SpecAdd a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (SpecSub a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (SpecMul a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (SpecSDiv a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (SpecUDiv a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (SpecSMod a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (SpecUMod a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (SpecShl a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (SpecShrS a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (SpecShrU a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (SpecBitAnd a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (SpecBitOr a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (SpecBitXor a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (SpecEq a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (SpecNe a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (SpecSLt a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (SpecULt a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (SpecSelect c t f))) ((Live c) (Live t) (Live f)))
+
+; =============================================================================
+; Liveness for Loop Unrolling
+; =============================================================================
+
+(rule ((Live e) (= e (BoundedTheta _ body init))) ((Live body) (Live init)))
+(rule ((Live e) (= e (LoopIter _ val))) ((Live val)))
+
+; =============================================================================
+; Liveness for Derivative Operations
+; =============================================================================
+
+(rule ((Live e) (= e (DPdx a))) ((Live a)))
+(rule ((Live e) (= e (DPdy a))) ((Live a)))
+(rule ((Live e) (= e (DPdxFine a))) ((Live a)))
+(rule ((Live e) (= e (DPdyFine a))) ((Live a)))
+(rule ((Live e) (= e (DPdxCoarse a))) ((Live a)))
+(rule ((Live e) (= e (DPdyCoarse a))) ((Live a)))
+(rule ((Live e) (= e (Fwidth a))) ((Live a)))
+(rule ((Live e) (= e (FwidthFine a))) ((Live a)))
+(rule ((Live e) (= e (FwidthCoarse a))) ((Live a)))
+
+; InitMem is a leaf
+(rule ((Live e) (= e (InitMem))) ())

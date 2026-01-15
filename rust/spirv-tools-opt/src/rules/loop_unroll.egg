@@ -1,0 +1,94 @@
+; =============================================================================
+; Loop Optimization Rules for E-Graph (ONE PASS Global Optimization)
+; =============================================================================
+;
+; This module provides additional loop optimizations beyond rvsdg.egg:
+; - Loop strength reduction for LoopVar
+; - Bounded loop unrolling
+; - LoopIter simplifications
+;
+; NOTE: Loop invariant propagation rules are in rvsdg.egg to avoid duplicates.
+;
+; Key concepts:
+; - Theta: General loop node (Theta cond body_result loop_var_init)
+; - BoundedTheta: Loop with known trip count (BoundedTheta count body init)
+; - LoopVar: Reference to loop-carried variable
+; - LoopInvariant: Expression that doesn't depend on LoopVar
+; - LoopIter: Value at specific iteration (for unrolling)
+;
+; =============================================================================
+; Loop Strength Reduction for LoopVar
+; =============================================================================
+; Replace expensive operations with cheaper equivalents inside loops.
+
+; LoopVar * 2 = LoopVar + LoopVar (addition is cheaper than multiplication)
+(rule ((= e (Mul (LoopVar) (Const 2))))
+      ((union e (Add (LoopVar) (LoopVar)))))
+(rule ((= e (Mul (Const 2) (LoopVar))))
+      ((union e (Add (LoopVar) (LoopVar)))))
+
+; Shift instead of multiply by power of 2
+(rule ((= e (Mul (LoopVar) (Const 4))))
+      ((union e (Shl (LoopVar) (Const 2)))))
+(rule ((= e (Mul (LoopVar) (Const 8))))
+      ((union e (Shl (LoopVar) (Const 3)))))
+(rule ((= e (Mul (LoopVar) (Const 16))))
+      ((union e (Shl (LoopVar) (Const 4)))))
+(rule ((= e (Mul (LoopVar) (Const 32))))
+      ((union e (Shl (LoopVar) (Const 5)))))
+(rule ((= e (Mul (LoopVar) (Const 64))))
+      ((union e (Shl (LoopVar) (Const 6)))))
+(rule ((= e (Mul (Const 4) (LoopVar))))
+      ((union e (Shl (LoopVar) (Const 2)))))
+(rule ((= e (Mul (Const 8) (LoopVar))))
+      ((union e (Shl (LoopVar) (Const 3)))))
+(rule ((= e (Mul (Const 16) (LoopVar))))
+      ((union e (Shl (LoopVar) (Const 4)))))
+(rule ((= e (Mul (Const 32) (LoopVar))))
+      ((union e (Shl (LoopVar) (Const 5)))))
+(rule ((= e (Mul (Const 64) (LoopVar))))
+      ((union e (Shl (LoopVar) (Const 6)))))
+
+; Division by power of 2 becomes shift
+(rule ((= e (UDiv (LoopVar) (Const 2))))
+      ((union e (ShrU (LoopVar) (Const 1)))))
+(rule ((= e (UDiv (LoopVar) (Const 4))))
+      ((union e (ShrU (LoopVar) (Const 2)))))
+(rule ((= e (UDiv (LoopVar) (Const 8))))
+      ((union e (ShrU (LoopVar) (Const 3)))))
+
+; =============================================================================
+; BoundedTheta (Loop with Known Trip Count)
+; =============================================================================
+; When we know the exact number of iterations, we can unroll or simplify.
+
+; BoundedTheta with 0 iterations - return init
+(rule ((= e (BoundedTheta 0 body init)))
+      ((union e init)))
+
+; BoundedTheta with 1 iteration - execute body once with init
+(rule ((= e (BoundedTheta 1 body init)))
+      ((union e (Subst body 0 init))))
+
+; Small loop unrolling (2-4 iterations)
+; BoundedTheta(2, body, init) = body(body(init))
+(rule ((= e (BoundedTheta 2 body init)))
+      ((union e (Subst body 0 (Subst body 0 init)))))
+
+; BoundedTheta(3, body, init) = body(body(body(init)))
+(rule ((= e (BoundedTheta 3 body init)))
+      ((union e (Subst body 0 (Subst body 0 (Subst body 0 init))))))
+
+; BoundedTheta(4, body, init) = body(body(body(body(init))))
+(rule ((= e (BoundedTheta 4 body init)))
+      ((union e (Subst body 0 (Subst body 0 (Subst body 0 (Subst body 0 init)))))))
+
+; =============================================================================
+; LoopIter (Iteration-Specific Values)
+; =============================================================================
+; LoopIter marks values at specific iterations for unrolling.
+
+; LoopIter(0, x) = x (iteration 0 is the initial value)
+(rule ((= e (LoopIter 0 x)))
+      ((union e x)))
+

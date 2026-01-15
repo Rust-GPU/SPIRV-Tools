@@ -1,0 +1,104 @@
+; =============================================================================
+; Memory Optimization Rules for E-Graph (ONE PASS Global Optimization)
+; =============================================================================
+;
+; This module implements comprehensive memory optimizations in the e-graph:
+; - Load-after-store forwarding
+; - Dead store elimination
+; - Redundant load elimination
+; - Access chain combining
+; - Memory state simplifications
+;
+; All optimizations happen in ONE pass via equality saturation.
+;
+; =============================================================================
+; Load-After-Store Forwarding
+; =============================================================================
+; When we load from a pointer that was just stored to, return the stored value.
+
+; Direct load-after-store: Load from ptr after storing val to ptr = val
+(rule ((= e (Load ptr (StoreMem ptr val prev))))
+      ((union e val)))
+
+; Load from different pointer passes through store
+; (Load p1 (StoreMem p2 val prev)) where p1 != p2 could equal (Load p1 prev)
+; But we need aliasing analysis - for now, be conservative
+
+; =============================================================================
+; Dead Store Elimination
+; =============================================================================
+; A store followed by another store to the same location makes the first dead.
+
+; Store-after-store: second store kills the first
+(rule ((= m (StoreMem ptr val2 (StoreMem ptr val1 prev))))
+      ((union m (StoreMem ptr val2 prev))))
+
+; =============================================================================
+; Redundant Load Elimination
+; =============================================================================
+
+; Load from MergeMem where both branches stored the same value
+(rule ((= e (Load ptr (MergeMem cond (StoreMem ptr val s1) (StoreMem ptr val s2)))))
+      ((union e val)))
+
+; Two loads from the same pointer and memory state are equivalent
+; (This is handled automatically by e-graph union-find)
+
+; =============================================================================
+; Memory State Simplifications
+; =============================================================================
+
+; MergeMem with identical states on both branches
+(rule ((= m (MergeMem cond s s)))
+      ((union m s)))
+
+; MergeMem with constant condition
+(rule ((= m (MergeMem (Const 0) then_m else_m)))
+      ((union m else_m)))
+(rule ((= m (MergeMem (Const c) then_m else_m)) (!= c 0))
+      ((union m then_m)))
+
+; MergeMem with negated condition - swap branches
+(rule ((= m (MergeMem (LogNot cond) then_m else_m)))
+      ((union m (MergeMem cond else_m then_m))))
+
+; LoopMem with constant false condition - loop never executes
+(rule ((= m (LoopMem (Const 0) body init)))
+      ((union m init)))
+
+; =============================================================================
+; Access Chain Optimizations
+; =============================================================================
+
+; Access chain to same base with same indices are equivalent
+; (Handled automatically by e-graph)
+
+; Load through access chain from store through same access chain
+(rule ((= e (Load (AccessChain1 base idx) (StoreMem (AccessChain1 base idx) val prev))))
+      ((union e val)))
+(rule ((= e (Load (AccessChain2 base i1 i2) (StoreMem (AccessChain2 base i1 i2) val prev))))
+      ((union e val)))
+(rule ((= e (Load (AccessChain3 base i1 i2 i3) (StoreMem (AccessChain3 base i1 i2 i3) val prev))))
+      ((union e val)))
+
+; =============================================================================
+; Derivative Operation Optimizations
+; =============================================================================
+
+; Derivative of constant is zero
+(rule ((= e (DPdx (Const _)))) ((union e (Const 0))))
+(rule ((= e (DPdy (Const _)))) ((union e (Const 0))))
+(rule ((= e (DPdxFine (Const _)))) ((union e (Const 0))))
+(rule ((= e (DPdyFine (Const _)))) ((union e (Const 0))))
+(rule ((= e (DPdxCoarse (Const _)))) ((union e (Const 0))))
+(rule ((= e (DPdyCoarse (Const _)))) ((union e (Const 0))))
+
+; Fwidth of constant is zero
+(rule ((= e (Fwidth (Const _)))) ((union e (Const 0))))
+(rule ((= e (FwidthFine (Const _)))) ((union e (Const 0))))
+(rule ((= e (FwidthCoarse (Const _)))) ((union e (Const 0))))
+
+; Derivative of loop-invariant is zero (if hoisted out)
+(rule ((= e (DPdx (LoopInvariant x)))) ((union e (Const 0))))
+(rule ((= e (DPdy (LoopInvariant x)))) ((union e (Const 0))))
+

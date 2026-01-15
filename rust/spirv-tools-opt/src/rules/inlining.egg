@@ -1,0 +1,142 @@
+; =============================================================================
+; Function Inlining Support for E-Graph Optimization
+; =============================================================================
+;
+; This module provides argument substitution support for function inlining.
+;
+; Key concepts:
+; - Arg: Reference to a function argument by index
+; - Subst: Substitute a value for an argument reference
+;
+; The Arg and Subst constructors are defined in datatypes.egg.
+;
+; =============================================================================
+; Core Substitution Rules
+; =============================================================================
+
+; Subst on Arg - the core substitution
+; When we substitute for Arg(n) with value val, if the body IS Arg(n), return val
+(rule ((= e (Subst (Arg n) n val)))
+      ((union e val)))
+
+; Subst on Arg with different index - leave unchanged
+; (This needs to handle the case where we're substituting for arg 0 but see arg 1)
+; For now, we leave the Arg unchanged - the substitution doesn't apply
+
+; Substituting into constants - constants are unchanged
+(rule ((= e (Subst (Const c) _ _)))
+      ((union e (Const c))))
+(rule ((= e (Subst (Const64 c) _ _)))
+      ((union e (Const64 c))))
+(rule ((= e (Subst (Sym s) _ _)))
+      ((union e (Sym s))))
+
+; Substituting into binary operations - recurse
+(rule ((= e (Subst (Add a b) idx val)))
+      ((union e (Add (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (Sub a b) idx val)))
+      ((union e (Sub (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (Mul a b) idx val)))
+      ((union e (Mul (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (SDiv a b) idx val)))
+      ((union e (SDiv (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (UDiv a b) idx val)))
+      ((union e (UDiv (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (SRem a b) idx val)))
+      ((union e (SRem (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (UMod a b) idx val)))
+      ((union e (UMod (Subst a idx val) (Subst b idx val)))))
+
+; Unary operations
+(rule ((= e (Subst (Neg a) idx val)))
+      ((union e (Neg (Subst a idx val)))))
+(rule ((= e (Subst (BitNot a) idx val)))
+      ((union e (BitNot (Subst a idx val)))))
+(rule ((= e (Subst (LogNot a) idx val)))
+      ((union e (LogNot (Subst a idx val)))))
+
+; Bitwise operations
+(rule ((= e (Subst (BitAnd a b) idx val)))
+      ((union e (BitAnd (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (BitOr a b) idx val)))
+      ((union e (BitOr (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (BitXor a b) idx val)))
+      ((union e (BitXor (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (Shl a b) idx val)))
+      ((union e (Shl (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (ShrS a b) idx val)))
+      ((union e (ShrS (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (ShrU a b) idx val)))
+      ((union e (ShrU (Subst a idx val) (Subst b idx val)))))
+
+; Comparisons
+(rule ((= e (Subst (Eq a b) idx val)))
+      ((union e (Eq (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (Ne a b) idx val)))
+      ((union e (Ne (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (SLt a b) idx val)))
+      ((union e (SLt (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (SLe a b) idx val)))
+      ((union e (SLe (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (SGt a b) idx val)))
+      ((union e (SGt (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (SGe a b) idx val)))
+      ((union e (SGe (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (ULt a b) idx val)))
+      ((union e (ULt (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (ULe a b) idx val)))
+      ((union e (ULe (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (UGt a b) idx val)))
+      ((union e (UGt (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (UGe a b) idx val)))
+      ((union e (UGe (Subst a idx val) (Subst b idx val)))))
+
+; Gamma (conditional)
+(rule ((= e (Subst (Gamma c t f) idx val)))
+      ((union e (Gamma (Subst c idx val) (Subst t idx val) (Subst f idx val)))))
+
+; Select/If (aliases for Gamma)
+(rule ((= e (Subst (Select c t f) idx val)))
+      ((union e (Select (Subst c idx val) (Subst t idx val) (Subst f idx val)))))
+(rule ((= e (Subst (If c t f) idx val)))
+      ((union e (If (Subst c idx val) (Subst t idx val) (Subst f idx val)))))
+
+; Floating-point operations
+(rule ((= e (Subst (FAdd a b) idx val)))
+      ((union e (FAdd (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (FSub a b) idx val)))
+      ((union e (FSub (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (FMul a b) idx val)))
+      ((union e (FMul (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (FDiv a b) idx val)))
+      ((union e (FDiv (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (FNeg a) idx val)))
+      ((union e (FNeg (Subst a idx val)))))
+(rule ((= e (Subst (FRem a b) idx val)))
+      ((union e (FRem (Subst a idx val) (Subst b idx val)))))
+
+; Min/Max
+(rule ((= e (Subst (SMin a b) idx val)))
+      ((union e (SMin (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (SMax a b) idx val)))
+      ((union e (SMax (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (UMin a b) idx val)))
+      ((union e (UMin (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (UMax a b) idx val)))
+      ((union e (UMax (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (FMin a b) idx val)))
+      ((union e (FMin (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (FMax a b) idx val)))
+      ((union e (FMax (Subst a idx val) (Subst b idx val)))))
+
+; =============================================================================
+; Liveness Propagation
+; =============================================================================
+
+; Subst propagates liveness to both body and value
+(rule ((Live e) (= e (Subst body idx val)))
+      ((Live body) (Live val)))
+
+; Arg is a leaf - no sub-expressions to propagate
+(rule ((Live e) (= e (Arg _))) ())
+

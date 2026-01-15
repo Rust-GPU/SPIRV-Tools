@@ -1,0 +1,145 @@
+; =============================================================================
+; Specialization Constant Optimization Rules (ONE PASS Global Optimization)
+; =============================================================================
+;
+; SPIR-V specialization constants (OpSpecConstant*) are compile-time constants
+; whose values can be specialized at pipeline creation time. This module
+; implements spec constant optimizations in the e-graph.
+;
+; Key constructors (defined in datatypes.egg):
+; - SpecConst: Reference to a spec constant (SpecConst spec_id default_value)
+; - SpecAdd/Sub/Mul/...: Spec constant operations (OpSpecConstantOp)
+; - SpecSelect: Spec constant conditional
+;
+; All spec constant operations are evaluated at specialization time.
+; The e-graph finds equivalent expressions that may be simpler.
+;
+; =============================================================================
+; Spec Constant Algebraic Identities
+; =============================================================================
+; These mirror the regular algebraic rules but for spec constant operations.
+
+; SpecAdd identities
+(rule ((= e (SpecAdd x (Const 0)))) ((union e x)))
+(rule ((= e (SpecAdd (Const 0) x))) ((union e x)))
+(rule ((= e (SpecAdd x (SpecConst _ 0)))) ((union e x)))
+(rule ((= e (SpecAdd (SpecConst _ 0) x))) ((union e x)))
+
+; SpecSub identities
+(rule ((= e (SpecSub x (Const 0)))) ((union e x)))
+(rule ((= e (SpecSub x x))) ((union e (Const 0))))
+
+; SpecMul identities
+(rule ((= e (SpecMul x (Const 0)))) ((union e (Const 0))))
+(rule ((= e (SpecMul (Const 0) x))) ((union e (Const 0))))
+(rule ((= e (SpecMul x (Const 1)))) ((union e x)))
+(rule ((= e (SpecMul (Const 1) x))) ((union e x)))
+
+; SpecDiv identities
+(rule ((= e (SpecSDiv x (Const 1)))) ((union e x)))
+(rule ((= e (SpecUDiv x (Const 1)))) ((union e x)))
+
+; SpecBitwise identities
+(rule ((= e (SpecBitAnd x (Const 0)))) ((union e (Const 0))))
+(rule ((= e (SpecBitAnd (Const 0) x))) ((union e (Const 0))))
+(rule ((= e (SpecBitOr x (Const 0)))) ((union e x)))
+(rule ((= e (SpecBitOr (Const 0) x))) ((union e x)))
+(rule ((= e (SpecBitXor x (Const 0)))) ((union e x)))
+(rule ((= e (SpecBitXor (Const 0) x))) ((union e x)))
+(rule ((= e (SpecBitXor x x))) ((union e (Const 0))))
+
+; =============================================================================
+; Spec Constant Select Simplifications
+; =============================================================================
+
+; SpecSelect with constant condition
+(rule ((= e (SpecSelect (Const 0) then_val else_val)))
+      ((union e else_val)))
+(rule ((= e (SpecSelect (Const c) then_val else_val)) (!= c 0))
+      ((union e then_val)))
+
+; SpecSelect with same branches
+(rule ((= e (SpecSelect cond x x)))
+      ((union e x)))
+
+; =============================================================================
+; Spec Constant Comparison Simplifications
+; =============================================================================
+
+; Self-comparisons
+(rule ((= e (SpecEq x x))) ((union e (Const 1))))
+(rule ((= e (SpecNe x x))) ((union e (Const 0))))
+(rule ((= e (SpecSLt x x))) ((union e (Const 0))))
+(rule ((= e (SpecULt x x))) ((union e (Const 0))))
+
+; =============================================================================
+; Spec Constant Strength Reduction
+; =============================================================================
+; Replace expensive spec ops with cheaper equivalents.
+
+; Multiply by power of 2 -> shift
+(rule ((= e (SpecMul x (Const 2))))
+      ((union e (SpecShl x (Const 1)))))
+(rule ((= e (SpecMul x (Const 4))))
+      ((union e (SpecShl x (Const 2)))))
+(rule ((= e (SpecMul x (Const 8))))
+      ((union e (SpecShl x (Const 3)))))
+(rule ((= e (SpecMul (Const 2) x)))
+      ((union e (SpecShl x (Const 1)))))
+(rule ((= e (SpecMul (Const 4) x)))
+      ((union e (SpecShl x (Const 2)))))
+(rule ((= e (SpecMul (Const 8) x)))
+      ((union e (SpecShl x (Const 3)))))
+
+; Unsigned divide by power of 2 -> shift
+(rule ((= e (SpecUDiv x (Const 2))))
+      ((union e (SpecShrU x (Const 1)))))
+(rule ((= e (SpecUDiv x (Const 4))))
+      ((union e (SpecShrU x (Const 2)))))
+(rule ((= e (SpecUDiv x (Const 8))))
+      ((union e (SpecShrU x (Const 3)))))
+
+; Unsigned mod by power of 2 -> bitwise and
+(rule ((= e (SpecUMod x (Const 2))))
+      ((union e (SpecBitAnd x (Const 1)))))
+(rule ((= e (SpecUMod x (Const 4))))
+      ((union e (SpecBitAnd x (Const 3)))))
+(rule ((= e (SpecUMod x (Const 8))))
+      ((union e (SpecBitAnd x (Const 7)))))
+(rule ((= e (SpecUMod x (Const 16))))
+      ((union e (SpecBitAnd x (Const 15)))))
+
+; =============================================================================
+; Spec Constant to Regular Constant Folding
+; =============================================================================
+; When both operands are known constants, fold to a regular constant.
+; (The actual folding values would be computed by primitives)
+
+; Two constants added -> constant
+; Note: Full constant folding requires Rust primitives for evaluation
+
+; =============================================================================
+; SpecConst Default Value Usage
+; =============================================================================
+; When a spec constant is used with its default value known, we can sometimes
+; simplify. But we keep the SpecConst form to allow runtime specialization.
+
+; SpecConst with default 0 in certain contexts
+(rule ((= e (SpecAdd (SpecConst id 0) x)))
+      ((union e x)))  ; Only if spec constant remains 0 (conservative)
+
+; =============================================================================
+; Condition Analysis for Spec Constants
+; =============================================================================
+; Spec constants can be either true or false (unknown at compile time).
+
+(rule ((= e (SpecConst _ _))) ((CanBeTrue e) (CanBeFalse e)))
+(rule ((= e (SpecAdd _ _))) ((CanBeTrue e) (CanBeFalse e)))
+(rule ((= e (SpecSub _ _))) ((CanBeTrue e) (CanBeFalse e)))
+(rule ((= e (SpecMul _ _))) ((CanBeTrue e) (CanBeFalse e)))
+(rule ((= e (SpecEq _ _))) ((CanBeTrue e) (CanBeFalse e)))
+(rule ((= e (SpecNe _ _))) ((CanBeTrue e) (CanBeFalse e)))
+(rule ((= e (SpecSLt _ _))) ((CanBeTrue e) (CanBeFalse e)))
+(rule ((= e (SpecULt _ _))) ((CanBeTrue e) (CanBeFalse e)))
+(rule ((= e (SpecSelect _ _ _))) ((CanBeTrue e) (CanBeFalse e)))
+

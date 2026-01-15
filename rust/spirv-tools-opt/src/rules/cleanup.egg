@@ -1,0 +1,169 @@
+; =============================================================================
+; Cleanup and Utility Optimizations for E-Graph
+; =============================================================================
+;
+; This module provides cleanup optimizations:
+; - Dead code elimination (additional patterns)
+; - Unreachable code elimination
+; - Trivial operation removal
+; - Identity operation removal
+;
+; Note: Many cleanup operations are inherent to the e-graph approach:
+; - Dead code is handled by liveness propagation
+; - Compact IDs is done during extraction/serialization
+; - Strip debug is done during extraction (filter debug instructions)
+;
+; =============================================================================
+; Identity Operation Removal
+; =============================================================================
+; Operations that have no effect.
+
+; Already covered in arithmetic.egg:
+; x + 0 = x, x * 1 = x, x / 1 = x, x - 0 = x, etc.
+
+; Bitwise identities already covered in bitwise.egg:
+; x & -1 = x, x | 0 = x, x ^ 0 = x, etc.
+
+; =============================================================================
+; Trivial Phi/Gamma Elimination
+; =============================================================================
+; Gamma nodes that always return the same value.
+
+; Already covered in rvsdg.egg and copy_propagation.egg:
+; Gamma(c, x, x) = x
+
+; Single-predecessor Gamma can be simplified
+; If we know condition is always true/false, use that branch
+
+; =============================================================================
+; Unreachable Code Patterns
+; =============================================================================
+; Code after unconditional branch/return/discard is unreachable.
+
+; In RVSDG, unreachable code doesn't really exist as a concept
+; since control flow is structured. The Gamma/Theta nodes
+; inherently represent reachable computation.
+
+; =============================================================================
+; Redundant Cast Elimination
+; =============================================================================
+; Casts that don't change the value.
+
+; Cast to same type is identity
+; (Requires type information - handled during lowering)
+
+; Widening then narrowing to original = original
+; (int)(float)(int)x may not equal x due to precision
+; But (int)(uint)(int)x where widths are same = x
+
+; =============================================================================
+; Trivial Select Elimination
+; =============================================================================
+; Select/Gamma with constant selectors.
+
+; Already covered in logical.egg and rvsdg.egg:
+; Select(true, a, b) = a
+; Select(false, a, b) = b
+; Select(c, a, a) = a
+
+; Select of booleans
+(rule ((= e (Select cond (Const 1) (Const 0))))
+      ((union e cond)))
+(rule ((= e (Select cond (Const 0) (Const 1))))
+      ((union e (LogNot cond))))
+(rule ((= e (Gamma cond (Const 1) (Const 0))))
+      ((union e cond)))
+(rule ((= e (Gamma cond (Const 0) (Const 1))))
+      ((union e (LogNot cond))))
+
+; =============================================================================
+; Redundant Comparison Elimination
+; =============================================================================
+; Comparisons that can be simplified.
+
+; Already covered in comparison.egg:
+; x == x = true, x != x = false
+; x < x = false, x <= x = true (for non-NaN)
+
+; Chained comparisons
+; (x < y) && (y < z) implies (x < z) - transitivity
+; This is complex to express generally
+
+; =============================================================================
+; Boolean Simplification
+; =============================================================================
+
+; Already covered in logical.egg, but a few more:
+
+; Double application of comparison negation
+; !(x == y) = (x != y) - already covered
+; !(x != y) = (x == y) - already covered
+
+; Comparison with boolean result and boolean constant
+; LogEq(x, true) = x
+(rule ((= e (LogEq x (Const 1))))
+      ((union e x)))
+; LogEq(x, false) = !x
+(rule ((= e (LogEq x (Const 0))))
+      ((union e (LogNot x))))
+; LogNe(x, false) = x
+(rule ((= e (LogNe x (Const 0))))
+      ((union e x)))
+; LogNe(x, true) = !x
+(rule ((= e (LogNe x (Const 1))))
+      ((union e (LogNot x))))
+; Commuted versions
+(rule ((= e (LogEq (Const 1) x)))
+      ((union e x)))
+(rule ((= e (LogEq (Const 0) x)))
+      ((union e (LogNot x))))
+(rule ((= e (LogNe (Const 0) x)))
+      ((union e x)))
+(rule ((= e (LogNe (Const 1) x)))
+      ((union e (LogNot x))))
+
+; =============================================================================
+; Constant Condition Propagation
+; =============================================================================
+; When a condition is known to be constant, propagate it.
+
+; This is largely handled by constant folding and Gamma simplification.
+
+; Additional pattern: condition computed from constants
+(rule ((= cond (Eq (Const a) (Const b))) (= a b))
+      ((union cond (Const 1))))
+(rule ((= cond (Eq (Const a) (Const b))) (!= a b))
+      ((union cond (Const 0))))
+
+; =============================================================================
+; Normalization for Extraction
+; =============================================================================
+; Prefer certain forms for better code generation.
+
+; Prefer Add over Sub when possible (some hardware)
+; x - c = x + (-c) when -c is representable
+; (Already handled by arithmetic rules)
+
+; Prefer left-shifts over multiplies by power of 2
+; (Already handled by strength reduction)
+
+; =============================================================================
+; Debug Info Handling
+; =============================================================================
+; Debug info (OpLine, OpNoLine, etc.) is NOT in the e-graph.
+; The e-graph contains only semantic content.
+; Debug info is preserved separately during parsing and
+; re-attached during extraction if needed.
+;
+; "Strip debug" is simply: don't output debug info during extraction.
+
+; =============================================================================
+; Compact IDs
+; =============================================================================
+; ID compaction is NOT an e-graph operation.
+; It happens during extraction/serialization:
+; - Assign new sequential IDs to results
+; - Update all references
+;
+; This is a trivial renumbering pass done after extraction.
+

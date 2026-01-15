@@ -1,0 +1,136 @@
+; =============================================================================
+; Graphics-Specific Optimizations for E-Graph
+; =============================================================================
+;
+; This module provides optimizations specific to graphics shaders:
+; - Interpolation optimization
+; - Texture sampling optimization
+; - Fragment shader optimizations
+; - Robustness transformations
+; - Descriptor access optimization
+;
+; =============================================================================
+; Interpolation Optimization
+; =============================================================================
+; Interpolated values in fragment shaders have special properties.
+
+; Multiple uses of same interpolated value are automatically CSE'd by e-graph
+
+; Interpolation of constant = constant
+; (Interpolating a constant across a triangle gives the same constant)
+
+; =============================================================================
+; Texture Sampling Optimization
+; =============================================================================
+
+; Same texture sampled at same coordinate = same result
+; (Automatic in e-graph - same ImageSample expression)
+
+; ImageSample with constant coordinate can be hoisted
+(rule ((= e (ImageSample img (LoopInvariant coord))))
+      ((union e (LoopInvariant (ImageSample img coord)))))
+
+(rule ((= e (ImageFetch img (LoopInvariant coord))))
+      ((union e (LoopInvariant (ImageFetch img coord)))))
+
+; =============================================================================
+; Fragment Derivative Optimization
+; =============================================================================
+; Derivatives have special properties.
+
+; Already in memory.egg:
+; - DPdx/DPdy of constant = 0
+; - Fwidth of constant = 0
+
+; Derivative of sum = sum of derivatives
+(rule ((= e (DPdx (Add a b))))
+      ((union e (Add (DPdx a) (DPdx b)))))
+(rule ((= e (DPdy (Add a b))))
+      ((union e (Add (DPdy a) (DPdy b)))))
+(rule ((= e (DPdx (FAdd a b))))
+      ((union e (FAdd (DPdx a) (DPdx b)))))
+(rule ((= e (DPdy (FAdd a b))))
+      ((union e (FAdd (DPdy a) (DPdy b)))))
+
+; Derivative of product (product rule)
+; d/dx(a*b) = a*d/dx(b) + b*d/dx(a)
+(rule ((= e (DPdx (FMul a b))))
+      ((union e (FAdd (FMul a (DPdx b)) (FMul b (DPdx a))))))
+(rule ((= e (DPdy (FMul a b))))
+      ((union e (FAdd (FMul a (DPdy b)) (FMul b (DPdy a))))))
+
+; Derivative of scaled value
+; d/dx(c * x) where c is constant = c * d/dx(x)
+(rule ((= e (DPdx (FMul (Const c) x))))
+      ((union e (FMul (Const c) (DPdx x)))))
+(rule ((= e (DPdy (FMul (Const c) x))))
+      ((union e (FMul (Const c) (DPdy x)))))
+
+; =============================================================================
+; Robustness Transformations
+; =============================================================================
+; Ensure robust access to buffers and images.
+
+; Clamp array index to valid range
+; For robustness, index should be: clamp(idx, 0, array_size - 1)
+; This transformation is typically done by the driver/runtime,
+; but we can represent clamped access in the e-graph.
+
+; Robust buffer access pattern:
+; Load(AccessChain(buf, idx), mem) where idx might be out of bounds
+; Could become: Load(AccessChain(buf, Clamp(idx, 0, size-1)), mem)
+
+; =============================================================================
+; Descriptor Optimization
+; =============================================================================
+; Optimize access to descriptor sets.
+
+; Multiple loads from same descriptor = same value (for uniform/readonly)
+; (Automatic in e-graph)
+
+; Descriptor accessed in uniform control flow is uniform
+; (Handled by loop invariant rules)
+
+; =============================================================================
+; Workgroup/Shared Memory Optimization
+; =============================================================================
+; Optimize access to workgroup shared memory.
+
+; Shared memory is indexed by local invocation ID patterns
+; Barrier synchronization affects memory state
+
+; Barrier splits memory state (no forwarding across barrier)
+; For now, treat barriers as opaque memory operations
+
+; =============================================================================
+; Subgroup Operations
+; =============================================================================
+; Subgroup operations have special semantics.
+
+; SubgroupBroadcast of uniform value = that value
+; SubgroupShuffle with constant lane = extract from known position
+
+; =============================================================================
+; Kill/Terminate Optimization
+; =============================================================================
+; OpKill/OpTerminateInvocation handling.
+
+; Code after kill is dead
+; (Handled by control flow analysis)
+
+; Conditional kill can sometimes be converted to conditional output
+; (Complex - depends on shader requirements)
+
+; =============================================================================
+; Output Optimization
+; =============================================================================
+; Optimize writes to output variables.
+
+; Multiple writes to same output = last write wins (like dead store)
+; (Handled by StoreMem rules)
+
+; Conditional output can use select
+; if (cond) { output = a; } else { output = b; }
+; becomes: output = select(cond, a, b)
+; (Handled by Gamma rules)
+

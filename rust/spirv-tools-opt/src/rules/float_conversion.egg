@@ -1,0 +1,100 @@
+; =============================================================================
+; Float Conversion and Relaxed Float Optimizations for E-Graph
+; =============================================================================
+;
+; This module provides:
+; - FP16 (half precision) conversion optimizations
+; - FP32/FP64 conversion optimizations
+; - Relaxed floating-point optimizations
+; - Fast math optimizations
+;
+; NOTE: FMA rules are in glsl.egg to avoid duplicates.
+;
+; =============================================================================
+; FP16 Conversion Optimization
+; =============================================================================
+; Converting to half precision and back can often be eliminated.
+
+; Convert to half then back to float = original (with precision loss)
+; This is only safe when we don't care about precision
+; (ConvertFToHalf x) then (ConvertHToF) could equal x in relaxed mode
+
+; Pack/unpack elimination
+(rule ((= e (UnpackHalf2x16 (PackHalf2x16 v))))
+      ((union e v)))
+
+; Half precision intermediates that are immediately converted back
+; This pattern appears in shaders that compute in half then output float
+
+; =============================================================================
+; FP32 <-> FP64 Conversion
+; =============================================================================
+; Double precision conversion elimination.
+
+; Convert F32 to F64 then back = original (with potential precision loss)
+; (FConvert64to32 (FConvert32to64 x)) = x (exact)
+; (FConvert32to64 (FConvert64to32 x)) may lose precision - keep as is
+
+; =============================================================================
+; Fast Math Optimizations
+; =============================================================================
+; These assume IEEE non-compliance is acceptable.
+
+; Division by constant can become multiply by reciprocal
+; x / c = x * (1/c) when c is constant
+; (This is only approximately equal for floats)
+; For now, rely on strength reduction rules
+
+; Square root of square = absolute value
+; sqrt(x*x) = abs(x) (for real x)
+(rule ((= e (Sqrt (FMul x x))))
+      ((union e (FAbs x))))
+
+; pow(x, 0.5) = sqrt(x)
+; (Already handled in glsl.egg)
+
+; pow(x, 2) = x * x
+; (Already handled in glsl.egg)
+
+; =============================================================================
+; NaN/Inf Handling
+; =============================================================================
+; Special handling for NaN and infinity.
+
+; NaN-safe min/max (NMin, NMax are in datatypes.egg)
+; These ignore NaN values
+
+; IsNan/IsInf simplification
+; IsNan(constant) = false for non-NaN constant
+; IsInf(constant) = false for finite constant
+
+; =============================================================================
+; Denormal Handling
+; =============================================================================
+; Denormal (subnormal) float handling.
+; Some hardware flushes denormals to zero (FTZ).
+; In FTZ mode, very small values become zero.
+
+; For robustness, we don't assume FTZ behavior in the e-graph.
+; The driver/runtime handles this.
+
+; =============================================================================
+; Precision-Preserving Transformations
+; =============================================================================
+; These transformations preserve or improve precision.
+
+; Kahan summation pattern recognition
+; (Would require multi-statement patterns - complex)
+
+; Compensated summation: track error term
+; (Complex - not currently modeled)
+
+; =============================================================================
+; Mixed Precision Optimization
+; =============================================================================
+; Optimize computation across different precisions.
+
+; FP16 arithmetic with FP32 accumulator pattern
+; sum = sum + (half)a * (half)b
+; Can be: sum = fma((float)(half)a, (float)(half)b, sum)
+
