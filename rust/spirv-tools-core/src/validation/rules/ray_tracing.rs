@@ -1206,6 +1206,154 @@ impl ValidationRule for RayQuerySphereAndLSSNVRule {
     }
 }
 
+/// Validates NVIDIA LSS array result ray query instructions.
+///
+/// - `OpRayQueryGetIntersectionLSSPositionsNV` - 2-element array of vec3
+/// - `OpRayQueryGetIntersectionLSSRadiiNV` - 2-element array of float
+pub struct RayQueryLSSArrayNVRule;
+
+impl RayQueryLSSArrayNVRule {
+    /// Helper to get array length from array type instruction.
+    fn get_array_length(
+        array_type_id: u32,
+        definitions: &std::collections::HashMap<ResultId, rspirv::dr::Instruction>,
+    ) -> Option<u32> {
+        let type_result_id = ResultId::try_from(array_type_id).ok()?;
+        let array_type_inst = definitions.get(&type_result_id)?;
+
+        if array_type_inst.class.opcode != Op::TypeArray {
+            return None;
+        }
+
+        // Length is the second operand (index 1)
+        let length_id = array_type_inst.operands.get(1).and_then(id_ref)?;
+        let length_result_id = ResultId::try_from(length_id).ok()?;
+        let length_inst = definitions.get(&length_result_id)?;
+
+        if length_inst.class.opcode != Op::Constant {
+            return None;
+        }
+
+        match length_inst.operands.first() {
+            Some(Operand::LiteralBit32(val)) => Some(*val),
+            _ => None,
+        }
+    }
+
+    /// Helper to get array element type from array type instruction.
+    fn get_array_element_type(
+        array_type_id: u32,
+        definitions: &std::collections::HashMap<ResultId, rspirv::dr::Instruction>,
+    ) -> Option<TypeId> {
+        let type_result_id = ResultId::try_from(array_type_id).ok()?;
+        let array_type_inst = definitions.get(&type_result_id)?;
+
+        if array_type_inst.class.opcode != Op::TypeArray {
+            return None;
+        }
+
+        // Element type is the first operand (index 0)
+        let element_type_id = array_type_inst.operands.first().and_then(id_ref)?;
+        TypeId::try_from(element_type_id).ok()
+    }
+}
+
+impl ValidationRule for RayQueryLSSArrayNVRule {
+    fn name(&self) -> &'static str {
+        "ray-query-lss-array-nv"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        for func in &ctx.module.functions {
+            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(|id| {
+                Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
+            });
+
+            for block in &func.blocks {
+                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(|id| {
+                    Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
+                });
+
+                for inst in &block.instructions {
+                    let opcode = inst.class.opcode;
+
+                    // Handle LSS Positions (2-element array of vec3)
+                    if opcode == Op::RayQueryGetIntersectionLSSPositionsNV {
+                        validate_ray_query_pointer(inst, 2, ctx, func_id, block_id)?;
+                        validate_intersection_id(inst, 3, ctx, func_id, block_id)?;
+
+                        if let Some(result_type_id) = inst.result_type {
+                            // Check it's a 2-element array
+                            let length = Self::get_array_length(result_type_id, ctx.definitions);
+                            if length != Some(2) {
+                                return Err(ValidationError::RayQueryInvalidResultType {
+                                    function: func_id,
+                                    block: block_id,
+                                    opcode,
+                                    expected: "2-element array of 32-bit float 3-component vectors",
+                                });
+                            }
+
+                            // Check element type is vec3 of float32
+                            if let Some(element_type_id) =
+                                Self::get_array_element_type(result_type_id, ctx.definitions)
+                            {
+                                let element_ty =
+                                    get_type_structure(element_type_id, ctx.definitions);
+                                if !is_float32_vec3(&element_ty) {
+                                    return Err(ValidationError::RayQueryInvalidResultType {
+                                        function: func_id,
+                                        block: block_id,
+                                        opcode,
+                                        expected:
+                                            "2-element array of 32-bit float 3-component vectors",
+                                    });
+                                }
+                            }
+                        }
+                    }
+
+                    // Handle LSS Radii (2-element array of float)
+                    if opcode == Op::RayQueryGetIntersectionLSSRadiiNV {
+                        validate_ray_query_pointer(inst, 2, ctx, func_id, block_id)?;
+                        validate_intersection_id(inst, 3, ctx, func_id, block_id)?;
+
+                        if let Some(result_type_id) = inst.result_type {
+                            // Check it's a 2-element array
+                            let length = Self::get_array_length(result_type_id, ctx.definitions);
+                            if length != Some(2) {
+                                return Err(ValidationError::RayQueryInvalidResultType {
+                                    function: func_id,
+                                    block: block_id,
+                                    opcode,
+                                    expected: "2-element array of 32-bit float scalars",
+                                });
+                            }
+
+                            // Check element type is float32 scalar
+                            if let Some(element_type_id) =
+                                Self::get_array_element_type(result_type_id, ctx.definitions)
+                            {
+                                let element_ty =
+                                    get_type_structure(element_type_id, ctx.definitions);
+                                if !is_float32_scalar(&element_ty) {
+                                    return Err(ValidationError::RayQueryInvalidResultType {
+                                        function: func_id,
+                                        block: block_id,
+                                        opcode,
+                                        expected: "2-element array of 32-bit float scalars",
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Returns all ray tracing validation rules.
 pub fn all_ray_tracing_rules() -> Vec<Box<dyn ValidationRule>> {
     vec![
@@ -1223,6 +1371,7 @@ pub fn all_ray_tracing_rules() -> Vec<Box<dyn ValidationRule>> {
         Box::new(RayQueryMatrixResultRule),
         Box::new(RayQueryClusterIdNVRule),
         Box::new(RayQuerySphereAndLSSNVRule),
+        Box::new(RayQueryLSSArrayNVRule),
     ]
 }
 
@@ -1306,7 +1455,7 @@ mod tests {
     #[test]
     fn test_all_ray_tracing_rules() {
         let rules = all_ray_tracing_rules();
-        assert_eq!(rules.len(), 14);
+        assert_eq!(rules.len(), 15);
 
         let names: Vec<_> = rules.iter().map(|r| r.name()).collect();
         assert!(names.contains(&"trace-ray"));
@@ -1323,5 +1472,6 @@ mod tests {
         assert!(names.contains(&"ray-query-matrix-result"));
         assert!(names.contains(&"ray-query-cluster-id-nv"));
         assert!(names.contains(&"ray-query-sphere-lss-nv"));
+        assert!(names.contains(&"ray-query-lss-array-nv"));
     }
 }
