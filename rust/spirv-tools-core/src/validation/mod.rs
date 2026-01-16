@@ -44,6 +44,10 @@ pub use type_ext::{TypeInstructionExt, TypeResolver, DefaultTypeResolver};
 pub mod context;
 pub use context::{ValidationContext, ValidationRule, run_rules, TestContextData};
 
+// CFG analysis utilities
+pub mod cfg_analysis;
+pub use cfg_analysis::{ControlFlowGraph, MergeInfo, get_block_label, get_merge_info, get_terminator};
+
 // Validation rules organized by category
 pub mod rules;
 use rules::limits::all_limit_rules;
