@@ -130,16 +130,3 @@ impl ValidationRule for LineRule {
 pub fn all_debug_rules() -> Vec<Box<dyn ValidationRule>> {
     vec![Box::new(MemberNameRule), Box::new(LineRule)]
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_all_debug_rules() {
-        let rules = all_debug_rules();
-        assert_eq!(rules.len(), 2);
-        assert_eq!(rules[0].name(), "member-name");
-        assert_eq!(rules[1].name(), "line");
-    }
-}

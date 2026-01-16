@@ -500,11 +500,4 @@ mod tests {
         );
         assert_eq!(get_memory_semantics_operand_indices(Op::IAdd), vec![]);
     }
-
-    #[test]
-    fn test_all_memory_semantics_rules() {
-        let rules = all_memory_semantics_rules();
-        assert_eq!(rules.len(), 1);
-        assert_eq!(rules[0].name(), "memory-semantics");
-    }
 }

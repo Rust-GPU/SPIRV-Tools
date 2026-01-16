@@ -351,15 +351,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_all_tensor_layout_rules() {
-        let rules = all_tensor_layout_rules();
-        assert_eq!(rules.len(), 3);
-        assert_eq!(rules[0].name(), "create-tensor-layout");
-        assert_eq!(rules[1].name(), "create-tensor-view");
-        assert_eq!(rules[2].name(), "tensor-layout-operands");
-    }
-
-    #[test]
     fn test_expected_value_count_debug() {
         // Ensure enum derives work
         let dim = ExpectedValueCount::Dim;

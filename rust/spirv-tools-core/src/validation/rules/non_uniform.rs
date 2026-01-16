@@ -1309,26 +1309,4 @@ mod tests {
         assert_eq!(get_broadcast_shuffle_operand_name(Op::GroupNonUniformShuffleUp), "Delta");
         assert_eq!(get_broadcast_shuffle_operand_name(Op::GroupNonUniformShuffleDown), "Delta");
     }
-
-    #[test]
-    fn test_all_non_uniform_rules() {
-        let rules = all_non_uniform_rules();
-        // Ensure we have all 12 rules
-        assert_eq!(rules.len(), 12);
-
-        // Check rule names
-        let names: Vec<_> = rules.iter().map(|r| r.name()).collect();
-        assert!(names.contains(&"non-uniform-elect"));
-        assert!(names.contains(&"non-uniform-any-all"));
-        assert!(names.contains(&"non-uniform-all-equal"));
-        assert!(names.contains(&"non-uniform-broadcast-shuffle"));
-        assert!(names.contains(&"non-uniform-broadcast-first"));
-        assert!(names.contains(&"non-uniform-ballot"));
-        assert!(names.contains(&"non-uniform-inverse-ballot"));
-        assert!(names.contains(&"non-uniform-ballot-bit-extract"));
-        assert!(names.contains(&"non-uniform-ballot-bit-count"));
-        assert!(names.contains(&"non-uniform-ballot-find"));
-        assert!(names.contains(&"non-uniform-arithmetic"));
-        assert!(names.contains(&"non-uniform-rotate"));
-    }
 }

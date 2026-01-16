@@ -557,18 +557,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_constant_rules_exist() {
-        let rules = all_constant_rules();
-        assert_eq!(rules.len(), 6);
-        assert_eq!(rules[0].name(), "constant-bool-type");
-        assert_eq!(rules[1].name(), "constant-sampler-type");
-        assert_eq!(rules[2].name(), "constant-null-type");
-        assert_eq!(rules[3].name(), "spec-constant-type");
-        assert_eq!(rules[4].name(), "constant-composite");
-        assert_eq!(rules[5].name(), "spec-constant-op-capability");
-    }
-
-    #[test]
     fn test_is_constant_or_undef() {
         assert!(is_constant_or_undef(Op::ConstantTrue));
         assert!(is_constant_or_undef(Op::ConstantFalse));

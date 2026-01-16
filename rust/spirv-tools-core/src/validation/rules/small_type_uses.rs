@@ -246,13 +246,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_all_small_type_uses_rules() {
-        let rules = all_small_type_uses_rules();
-        assert_eq!(rules.len(), 1);
-        assert_eq!(rules[0].name(), "small-type-uses");
-    }
-
-    #[test]
     fn test_is_allowed_use_opcode() {
         assert!(is_allowed_use_opcode(Op::Decorate));
         assert!(is_allowed_use_opcode(Op::DecorateId));

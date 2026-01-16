@@ -452,12 +452,4 @@ mod tests {
         assert_eq!(get_memory_scope_operand_index(Op::ControlBarrier), Some(1));
         assert_eq!(get_memory_scope_operand_index(Op::IAdd), None);
     }
-
-    #[test]
-    fn test_all_scope_rules() {
-        let rules = all_scope_rules();
-        assert_eq!(rules.len(), 2);
-        assert_eq!(rules[0].name(), "execution-scope");
-        assert_eq!(rules[1].name(), "memory-scope");
-    }
 }

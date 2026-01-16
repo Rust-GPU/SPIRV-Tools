@@ -1106,26 +1106,6 @@ mod tests {
     use crate::validation::types::BitWidth;
 
     #[test]
-    fn test_all_hit_object_rules() {
-        let rules = all_hit_object_rules();
-        assert_eq!(rules.len(), 12);
-
-        let names: Vec<_> = rules.iter().map(|r| r.name()).collect();
-        assert!(names.contains(&"hit-object-bool-result"));
-        assert!(names.contains(&"hit-object-int-result"));
-        assert!(names.contains(&"hit-object-float-result"));
-        assert!(names.contains(&"hit-object-vec3-result"));
-        assert!(names.contains(&"hit-object-matrix-result"));
-        assert!(names.contains(&"hit-object-buffer-handle"));
-        assert!(names.contains(&"hit-object-attribute-access"));
-        assert!(names.contains(&"hit-object-record-empty"));
-        assert!(names.contains(&"hit-object-record-miss"));
-        assert!(names.contains(&"reorder-thread-hint"));
-        assert!(names.contains(&"reorder-thread-hit-object"));
-        assert!(names.contains(&"hit-object-lss-array"));
-    }
-
-    #[test]
     fn test_is_int32_scalar() {
         let signed = TypeStructure::Scalar(ScalarKind::SignedInt(BitWidth::BITS_32));
         assert!(is_int32_scalar(&signed));

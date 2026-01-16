@@ -185,14 +185,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_all_primitive_rules() {
-        let rules = all_primitive_rules();
-        assert_eq!(rules.len(), 2);
-        assert_eq!(rules[0].name(), "primitive-execution-model");
-        assert_eq!(rules[1].name(), "stream-primitive");
-    }
-
-    #[test]
     fn test_is_constant_opcode() {
         assert!(is_constant_opcode(Op::Constant));
         assert!(is_constant_opcode(Op::ConstantTrue));

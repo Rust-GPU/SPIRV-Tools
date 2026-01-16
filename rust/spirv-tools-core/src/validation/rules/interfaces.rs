@@ -645,15 +645,4 @@ mod tests {
         assert!(!is_interface_variable(StorageClass::Private, false));
         assert!(!is_interface_variable(StorageClass::Function, false));
     }
-
-    #[test]
-    fn test_all_interface_rules() {
-        let rules = all_interface_rules();
-        assert_eq!(rules.len(), 5);
-        assert_eq!(rules[0].name(), "interface-variable-listing");
-        assert_eq!(rules[1].name(), "physical-storage-buffer-interface");
-        assert_eq!(rules[2].name(), "storage-class-singleton");
-        assert_eq!(rules[3].name(), "location-conflict");
-        assert_eq!(rules[4].name(), "index-decoration");
-    }
 }

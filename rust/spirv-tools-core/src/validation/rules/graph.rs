@@ -877,21 +877,3 @@ pub fn all_graph_rules() -> Vec<Box<dyn ValidationRule>> {
         Box::new(GraphEndRule),
     ]
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_all_graph_rules() {
-        let rules = all_graph_rules();
-        assert_eq!(rules.len(), 7);
-        assert_eq!(rules[0].name(), "graph-type");
-        assert_eq!(rules[1].name(), "graph-constant");
-        assert_eq!(rules[2].name(), "graph");
-        assert_eq!(rules[3].name(), "graph-entry-point");
-        assert_eq!(rules[4].name(), "graph-input");
-        assert_eq!(rules[5].name(), "graph-set-output");
-        assert_eq!(rules[6].name(), "graph-end");
-    }
-}

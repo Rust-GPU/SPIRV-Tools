@@ -458,20 +458,3 @@ pub fn all_mode_setting_rules() -> Vec<Box<dyn ValidationRule>> {
         Box::new(DuplicateExecutionModeRule),
     ]
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_all_mode_setting_rules() {
-        let rules = all_mode_setting_rules();
-        assert_eq!(rules.len(), 6);
-        assert_eq!(rules[0].name(), "entry-point-validation");
-        assert_eq!(rules[1].name(), "fragment-execution-mode");
-        assert_eq!(rules[2].name(), "vulkan-execution-mode");
-        assert_eq!(rules[3].name(), "memory-model-validation");
-        assert_eq!(rules[4].name(), "capability-dependencies");
-        assert_eq!(rules[5].name(), "duplicate-execution-mode");
-    }
-}

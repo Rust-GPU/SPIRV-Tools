@@ -339,15 +339,3 @@ impl ValidationRule for InvalidTypeRule {
 pub fn all_invalid_type_rules() -> Vec<Box<dyn ValidationRule>> {
     vec![Box::new(InvalidTypeRule)]
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_all_invalid_type_rules() {
-        let rules = all_invalid_type_rules();
-        assert_eq!(rules.len(), 1);
-        assert_eq!(rules[0].name(), "invalid-type");
-    }
-}

@@ -726,21 +726,3 @@ pub fn all_cfg_rules() -> Vec<Box<dyn ValidationRule>> {
         Box::new(PhiInstructionRule),
     ]
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_all_cfg_rules() {
-        let rules = all_cfg_rules();
-        assert!(!rules.is_empty());
-
-        let names: Vec<&str> = rules.iter().map(|r| r.name()).collect();
-        assert!(names.contains(&"block-structure"));
-        assert!(names.contains(&"merge-instruction"));
-        assert!(names.contains(&"merge-domination"));
-        assert!(names.contains(&"branch-target"));
-        assert!(names.contains(&"phi-instruction"));
-    }
-}

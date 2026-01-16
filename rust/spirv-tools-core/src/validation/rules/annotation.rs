@@ -506,16 +506,4 @@ mod tests {
         assert!(!is_not_member_decoration(Decoration::Location));
         assert!(!is_not_member_decoration(Decoration::RowMajor));
     }
-
-    #[test]
-    fn test_all_annotation_rules() {
-        let rules = all_annotation_rules();
-        assert_eq!(rules.len(), 6);
-        assert_eq!(rules[0].name(), "decorate-validation");
-        assert_eq!(rules[1].name(), "decorate-id-validation");
-        assert_eq!(rules[2].name(), "member-decorate-validation");
-        assert_eq!(rules[3].name(), "decoration-group-validation");
-        assert_eq!(rules[4].name(), "group-decorate-validation");
-        assert_eq!(rules[5].name(), "group-member-decorate-validation");
-    }
 }

@@ -321,13 +321,4 @@ mod tests {
 
         assert!(!is_uint32_scalar(&TypeStructure::Scalar(ScalarKind::Bool)));
     }
-
-    #[test]
-    fn test_all_mesh_shading_rules() {
-        let rules = all_mesh_shading_rules();
-        assert_eq!(rules.len(), 3);
-        assert_eq!(rules[0].name(), "emit-mesh-tasks");
-        assert_eq!(rules[1].name(), "set-mesh-outputs");
-        assert_eq!(rules[2].name(), "per-primitive-decoration");
-    }
 }

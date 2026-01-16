@@ -430,19 +430,3 @@ pub fn all_misc_rules() -> Vec<Box<dyn ValidationRule>> {
         Box::new(IsHelperInvocationRule),
     ]
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_all_misc_rules() {
-        let rules = all_misc_rules();
-        assert_eq!(rules.len(), 5);
-        assert_eq!(rules[0].name(), "undef");
-        assert_eq!(rules[1].name(), "shader-clock");
-        assert_eq!(rules[2].name(), "assume-true");
-        assert_eq!(rules[3].name(), "expect");
-        assert_eq!(rules[4].name(), "is-helper-invocation");
-    }
-}

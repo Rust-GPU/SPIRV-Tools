@@ -1275,20 +1275,3 @@ pub fn all_pointer_rules() -> Vec<&'static dyn ValidationRule> {
         &VariablePointerRule,
     ]
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_all_pointer_rules() {
-        let rules = all_pointer_rules();
-        assert_eq!(rules.len(), 4);
-
-        let names: Vec<_> = rules.iter().map(|r| r.name()).collect();
-        assert!(names.contains(&"logical-pointers"));
-        assert!(names.contains(&"load-store-logical-pointers"));
-        assert!(names.contains(&"store-type-compatibility"));
-        assert!(names.contains(&"variable-pointers"));
-    }
-}

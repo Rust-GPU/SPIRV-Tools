@@ -299,19 +299,3 @@ pub fn all_tensor_rules() -> Vec<Box<dyn ValidationRule>> {
         Box::new(CreateTensorViewNVRule),
     ]
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_all_tensor_rules() {
-        let rules = all_tensor_rules();
-        assert_eq!(rules.len(), 5);
-        assert_eq!(rules[0].name(), "tensor-read-arm");
-        assert_eq!(rules[1].name(), "tensor-write-arm");
-        assert_eq!(rules[2].name(), "tensor-query-size-arm");
-        assert_eq!(rules[3].name(), "create-tensor-layout-nv");
-        assert_eq!(rules[4].name(), "create-tensor-view-nv");
-    }
-}

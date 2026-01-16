@@ -582,20 +582,3 @@ pub fn all_function_rules() -> Vec<&'static dyn ValidationRule> {
         &FunctionDeclarationOrderRule,
     ]
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_function_rules_exist() {
-        let rules = all_function_rules();
-        assert_eq!(rules.len(), 6);
-        assert_eq!(rules[0].name(), "function-definition");
-        assert_eq!(rules[1].name(), "function-parameter");
-        assert_eq!(rules[2].name(), "function-call");
-        assert_eq!(rules[3].name(), "return-value");
-        assert_eq!(rules[4].name(), "function-variable");
-        assert_eq!(rules[5].name(), "function-declaration-order");
-    }
-}

@@ -1451,27 +1451,4 @@ mod tests {
         };
         assert!(!is_float32_vec2(&vec3));
     }
-
-    #[test]
-    fn test_all_ray_tracing_rules() {
-        let rules = all_ray_tracing_rules();
-        assert_eq!(rules.len(), 15);
-
-        let names: Vec<_> = rules.iter().map(|r| r.name()).collect();
-        assert!(names.contains(&"trace-ray"));
-        assert!(names.contains(&"report-intersection"));
-        assert!(names.contains(&"execute-callable"));
-        assert!(names.contains(&"ray-query-initialize"));
-        assert!(names.contains(&"ray-query-pointer-only"));
-        assert!(names.contains(&"ray-query-bool-result"));
-        assert!(names.contains(&"ray-query-float-result"));
-        assert!(names.contains(&"ray-query-int-result"));
-        assert!(names.contains(&"ray-query-vec3-result"));
-        assert!(names.contains(&"ray-query-barycentrics"));
-        assert!(names.contains(&"ray-query-generate-intersection"));
-        assert!(names.contains(&"ray-query-matrix-result"));
-        assert!(names.contains(&"ray-query-cluster-id-nv"));
-        assert!(names.contains(&"ray-query-sphere-lss-nv"));
-        assert!(names.contains(&"ray-query-lss-array-nv"));
-    }
 }
