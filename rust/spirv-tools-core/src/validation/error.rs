@@ -11,6 +11,7 @@ use crate::{target_env::TargetEnv, version::SpirvVersion};
 /// Errors that can arise when validating a SPIR-V module.
 #[derive(Debug, Error, PartialEq, Eq, Clone)]
 pub enum ValidationError {
+    // ========== CORE ==========
     /// The module failed to parse before validation could run.
     #[error("failed to parse module: {0}")]
     Parse(String),
@@ -82,6 +83,8 @@ pub enum ValidationError {
         /// The result id that was defined multiple times.
         id: Id,
     },
+
+    // ========== CAPABILITIES ==========
     /// Duplicate capability declarations were found.
     #[error("capability {capability:?} is declared more than once")]
     DuplicateCapability {
@@ -210,6 +213,8 @@ pub enum ValidationError {
         /// The storage class of the variable.
         storage_class: rspirv::spirv::StorageClass,
     },
+
+    // ========== EXTENSIONS ==========
     /// An extension requires a newer SPIR-V version than the target environment provides.
     #[error(
         "extension {extension} requires SPIR-V version {required_version}, but target provides {target_version}"
@@ -413,12 +418,16 @@ pub enum ValidationError {
         /// The target environment in use.
         env: TargetEnv,
     },
+
+    // ========== DECORATIONS ==========
     /// `OpExecutionModeId LocalSizeId` is not permitted for the current environment/options.
     #[error("LocalSizeId execution mode is not allowed for target environment {env:?}")]
     LocalSizeIdNotAllowed {
         /// The target environment in use.
         env: TargetEnv,
     },
+
+    // ========== MEMORY ==========
     /// Logical addressing forbids pointers to pointers for the given storage class.
     #[error(
         "In Logical addressing, variables cannot allocate a pointer to storage class {pointee_storage_class:?}"
@@ -511,6 +520,8 @@ pub enum ValidationError {
         /// The target id that is missing.
         target: Id,
     },
+
+    // ========== ENTRY_POINTS ==========
     /// An entry point referenced an undefined id.
     #[error("entry point references unknown id {target}")]
     MissingEntryPointTarget {
@@ -676,6 +687,8 @@ pub enum ValidationError {
         /// The opcode containing the invalid id.
         opcode: rspirv::spirv::Op,
     },
+
+    // ========== CFG ==========
     /// A function definition is missing its required entry block label.
     #[error("function {function:?} is missing its entry label")]
     MissingFunctionEntryBlock {
@@ -1094,6 +1107,8 @@ pub enum ValidationError {
         /// The incoming value's type.
         found: TypeId,
     },
+
+    // ========== TYPES ==========
     /// A result type refers to an instruction that is not a type declaration.
     #[error("instruction {instruction:?} has result type {result_type:?} defined by non-type opcode {found:?}")]
     ResultTypeNotType {
@@ -1514,6 +1529,8 @@ pub enum ValidationError {
         /// Found component type.
         found: TypeId,
     },
+
+    // ========== FUNCTIONS ==========
     /// A function references a missing or invalid function type.
     #[error("function {function:?} has an invalid function type {type_id:?}")]
     InvalidFunctionType {
@@ -1592,6 +1609,8 @@ pub enum ValidationError {
         /// The parameter type that was void.
         parameter: TypeId,
     },
+
+    // ========== ARITHMETIC ==========
     /// An arithmetic operation has an invalid result type.
     #[error(
         "instruction {opcode:?} in block {block:?} of function {function:?} requires result type to be {expected} (found {result_type:?})"
@@ -1690,6 +1709,8 @@ pub enum ValidationError {
         /// The result type.
         result_type: TypeId,
     },
+
+    // ========== CONVERSION ==========
     /// A conversion operation has an invalid result type.
     #[error(
         "instruction {opcode:?} in block {block:?} of function {function:?} requires result type to be {expected} (found {result_type:?})"
@@ -1764,6 +1785,8 @@ pub enum ValidationError {
         /// The result type.
         result_type: TypeId,
     },
+
+    // ========== LOGICALS ==========
     /// A logical operation has an invalid result type.
     #[error(
         "instruction {opcode:?} in block {block:?} of function {function:?} requires result type to be {expected} (found {result_type:?})"
@@ -1838,6 +1861,8 @@ pub enum ValidationError {
         /// The result type.
         result_type: TypeId,
     },
+
+    // ========== COMPOSITES ==========
     /// A composite operation has an invalid result type.
     #[error(
         "instruction {opcode:?} in block {block:?} of function {function:?} requires result type to be {expected} (found {result_type:?})"
@@ -2099,10 +2124,7 @@ pub enum ValidationError {
         required_capability: rspirv::spirv::Capability,
     },
 
-    // ========================================================================
-    // Image Instruction Errors
-    // ========================================================================
-
+    // ========== IMAGE ==========
     /// OpTypeImage has invalid operand count.
     #[error("OpTypeImage {type_id:?} has {actual} operands, expected at least {expected}")]
     ImageTypeInvalidOperandCount {
@@ -2314,10 +2336,7 @@ pub enum ValidationError {
         actual: u32,
     },
 
-    // =========================================================================
-    // Non-Uniform Group Operation Errors
-    // =========================================================================
-
+    // ========== NON_UNIFORM ==========
     /// Non-uniform group operation result must be a boolean scalar.
     #[error(
         "instruction {opcode:?} in block {block:?} of function {function:?} requires result to be a boolean scalar"
@@ -2503,10 +2522,7 @@ pub enum ValidationError {
         opcode: rspirv::spirv::Op,
     },
 
-    // =========================================================================
-    // Ray Tracing Errors
-    // =========================================================================
-
+    // ========== RAY_TRACING ==========
     /// Ray tracing instruction requires specific execution model(s).
     #[error(
         "instruction {opcode:?} in block {block:?} of function {function:?} requires one of execution models: {allowed_models}"
@@ -2696,7 +2712,7 @@ pub enum ValidationError {
         expected: &'static str,
     },
 
-    // ==================== Mesh Shading Errors ====================
+    // ========== MESH_SHADING ==========
     /// OpEmitMeshTasksEXT requires TaskEXT execution model.
     #[error("OpEmitMeshTasksEXT requires TaskEXT execution model")]
     MeshShadingEmitMeshTasksWrongExecutionModel {
@@ -2774,7 +2790,7 @@ pub enum ValidationError {
         variable_id: Id,
     },
 
-    // ==================== Debug Instruction Errors ====================
+    // ========== DEBUG ==========
     /// OpMemberName Type must be a struct type.
     #[error("OpMemberName Type <id> {type_id:?} is not a struct type")]
     DebugMemberNameNotStruct {
@@ -2800,7 +2816,7 @@ pub enum ValidationError {
         file_id: Id,
     },
 
-    // ==================== Memory Semantics Errors ====================
+    // ========== MEMORY_SEMANTICS ==========
     /// Memory Semantics must be a 32-bit int.
     #[error("{opcode:?}: expected Memory Semantics to be a 32-bit int")]
     MemorySemanticsNotInt32 {
@@ -2919,7 +2935,7 @@ pub enum ValidationError {
         opcode: rspirv::spirv::Op,
     },
 
-    // ==================== Scope Errors ====================
+    // ========== SCOPE ==========
     /// Scope must be a 32-bit int.
     #[error("{opcode:?}: expected scope to be a 32-bit int")]
     ScopeNotInt32 {
@@ -2975,7 +2991,7 @@ pub enum ValidationError {
         opcode: rspirv::spirv::Op,
     },
 
-    // ==================== Interface Validation Errors ====================
+    // ========== INTERFACE ==========
     /// Interface variable contains a PhysicalStorageBuffer pointer.
     #[error(
         "Input/Output interface variable id <{variable_id:?}> contains a PhysicalStorageBuffer pointer"
@@ -3035,7 +3051,7 @@ pub enum ValidationError {
         variable_id: Id,
     },
 
-    // ==================== Mode Setting Errors ====================
+    // ========== MODE_SETTING ==========
     /// Entry point must be a function.
     #[error("OpEntryPoint Entry Point <id> {entry_point:?} is not a function")]
     EntryPointNotFunction {
@@ -3123,7 +3139,7 @@ pub enum ValidationError {
         mode: rspirv::spirv::ExecutionMode,
     },
 
-    // ==================== Annotation Errors ====================
+    // ========== ANNOTATIONS ==========
     /// Vulkan does not allow GLSLShared or GLSLPacked decorations.
     #[error("Decoration {decoration:?} is not valid for the Vulkan execution environment")]
     VulkanDecorationNotAllowed {
@@ -3235,7 +3251,7 @@ pub enum ValidationError {
         member_count: u32,
     },
 
-    // ==================== Tensor Errors ====================
+    // ========== TENSORS ==========
     /// OpTensorReadARM result type must be a scalar or array of scalar.
     #[error("OpTensorReadARM {instruction_id:?} Result Type must be a scalar type or array of scalar type")]
     TensorReadResultNotScalar {
@@ -3267,7 +3283,7 @@ pub enum ValidationError {
         instruction_id: Option<Id>,
     },
 
-    // ==================== Small Type Uses Errors ====================
+    // ========== MISC ==========
     /// Invalid use of 8- or 16-bit result type.
     #[error("{opcode:?} {instruction_id:?}: Invalid use of 8- or 16-bit result")]
     InvalidSmallTypeUse {
@@ -3276,8 +3292,6 @@ pub enum ValidationError {
         /// The opcode of the instruction using the small type.
         opcode: rspirv::spirv::Op,
     },
-
-    // ==================== Select Errors ====================
     /// OpSelect with pointer type requires VariablePointers capability.
     #[error("In function {function:?} block {block:?}: OpSelect with pointer result type {result_type:?} requires VariablePointers or VariablePointersStorageBuffer capability")]
     SelectPointerRequiresCapability {
@@ -3345,8 +3359,6 @@ pub enum ValidationError {
         /// The result type ID.
         result_type: TypeId,
     },
-
-    // ==================== Misc Instruction Errors ====================
     /// OpUndef cannot create void type.
     #[error("OpUndef {instruction_id:?}: Cannot create undefined values with void type")]
     UndefCannotBeVoid {
@@ -3426,7 +3438,7 @@ pub enum ValidationError {
         block: Option<Id>,
     },
 
-    // ==================== ARM Graph Instruction Errors ====================
+    // ========== GRAPH ==========
     /// OpTypeGraphARM has too few I/O types for the number of inputs.
     #[error("OpTypeGraphARM {instruction_id:?}: {num_io_types} I/O types provided but graph has {num_inputs} inputs")]
     GraphTypeTooFewIOTypes {
@@ -3622,7 +3634,7 @@ pub enum ValidationError {
         output_index: u64,
     },
 
-    // ==================== Invalid Type Errors ====================
+    // ========== INVALID_TYPES ==========
     /// Operation doesn't support BFloat16 type.
     #[error("In function {function:?} block {block:?}: {opcode:?} doesn't support BFloat16 type")]
     InvalidTypeBFloat16 {
@@ -3645,7 +3657,7 @@ pub enum ValidationError {
         opcode: rspirv::spirv::Op,
     },
 
-    // ==================== Primitive Instruction Errors ====================
+    // ========== PRIMITIVES ==========
     /// Primitive instruction requires Geometry execution model.
     #[error("In function {function:?} block {block:?}: {opcode:?} requires Geometry execution model")]
     PrimitiveRequiresGeometry {
@@ -3679,9 +3691,7 @@ pub enum ValidationError {
         opcode: rspirv::spirv::Op,
     },
 
-    // ========================================================================
-    // Tensor layout errors (NVIDIA extension)
-    // ========================================================================
+    // ========== TENSOR_LAYOUTS ==========
     /// Tensor layout instruction has invalid result type.
     #[error("In function {function:?} block {block:?}: {opcode:?} result type is not {expected}")]
     TensorLayoutInvalidResultType {
