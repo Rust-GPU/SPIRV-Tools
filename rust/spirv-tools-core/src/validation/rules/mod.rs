@@ -63,6 +63,7 @@
 //! - [`invalid_type`]: BFloat16/FP8 type restriction validation rules
 //! - [`primitives`]: Primitive instruction validation rules
 //! - [`tensor_layout`]: NVIDIA tensor layout/view validation rules
+//! - [`hit_object`]: Hit object validation rules (SPV_NV_shader_execution_reorder)
 
 pub mod adjacency;
 pub mod annotation;
@@ -85,6 +86,7 @@ pub mod execution_modes;
 pub mod extensions;
 pub mod functions;
 pub mod graph;
+pub mod hit_object;
 pub mod image;
 pub mod interfaces;
 pub mod invalid_type;

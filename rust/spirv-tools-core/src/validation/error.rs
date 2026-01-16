@@ -2712,6 +2712,148 @@ pub enum ValidationError {
         expected: &'static str,
     },
 
+    // ========== HIT_OBJECT ==========
+    /// Hit object operand must be a memory object declaration.
+    #[error("instruction {opcode:?} in block {block:?} of function {function:?}: Hit Object must be a memory object declaration")]
+    HitObjectNotMemoryObject {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+
+    /// Hit object operand must be a pointer.
+    #[error("instruction {opcode:?} in block {block:?} of function {function:?}: Hit Object must be a pointer")]
+    HitObjectNotPointer {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+
+    /// Hit object type must be OpTypeHitObjectNV.
+    #[error("instruction {opcode:?} in block {block:?} of function {function:?}: Type must be OpTypeHitObjectNV")]
+    HitObjectInvalidType {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+
+    /// Hit object attribute operand is invalid.
+    #[error("instruction {opcode:?} in block {block:?} of function {function:?}: Hit Object Attributes must be OpVariable of storage class HitObjectAttributeNV")]
+    HitObjectAttributeInvalid {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+
+    /// Hit object payload operand is invalid.
+    #[error("instruction {opcode:?} in block {block:?} of function {function:?}: Payload must be OpVariable of storage class RayPayloadKHR or IncomingRayPayloadKHR")]
+    HitObjectPayloadInvalid {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+
+    /// Hit object instruction result type is invalid.
+    #[error("instruction {opcode:?} in block {block:?} of function {function:?}: expected Result Type to be {expected}")]
+    HitObjectInvalidResultType {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+        /// Expected type description.
+        expected: &'static str,
+    },
+
+    /// Hit object miss index must be 32-bit unsigned int.
+    #[error("instruction OpHitObjectRecordMissNV in block {block:?} of function {function:?}: Miss Index must be a 32-bit unsigned int scalar")]
+    HitObjectInvalidMissIndex {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+
+    /// Hit object ray origin must be 32-bit float vec3.
+    #[error("instruction {opcode:?} in block {block:?} of function {function:?}: Ray Origin must be a 32-bit float 3-component vector")]
+    HitObjectInvalidRayOrigin {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+
+    /// Hit object ray direction must be 32-bit float vec3.
+    #[error("instruction {opcode:?} in block {block:?} of function {function:?}: Ray Direction must be a 32-bit float 3-component vector")]
+    HitObjectInvalidRayDirection {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+
+    /// Hit object ray T value must be 32-bit float.
+    #[error("instruction {opcode:?} in block {block:?} of function {function:?}: Ray {param_name} must be a 32-bit float scalar")]
+    HitObjectInvalidRayT {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+        /// Parameter name (TMin or TMax).
+        param_name: &'static str,
+    },
+
+    /// Hit object hint must be 32-bit int.
+    #[error("instruction in block {block:?} of function {function:?}: Hint must be a 32-bit int scalar")]
+    HitObjectInvalidHint {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+
+    /// Hit object bits must be 32-bit int.
+    #[error("instruction in block {block:?} of function {function:?}: Bits must be a 32-bit int scalar")]
+    HitObjectInvalidBits {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+
+    /// Hit object optional operands mismatch (Hint and Bits must both be present or neither).
+    #[error("instruction {opcode:?} in block {block:?} of function {function:?}: Hint and Bits are optional together")]
+    HitObjectOptionalOperandsMismatch {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+
     // ========== MESH_SHADING ==========
     /// OpEmitMeshTasksEXT requires TaskEXT execution model.
     #[error("OpEmitMeshTasksEXT requires TaskEXT execution model")]
