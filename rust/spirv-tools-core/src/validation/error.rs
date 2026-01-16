@@ -552,6 +552,189 @@ pub enum ValidationError {
         /// The target id that is missing.
         target: Id,
     },
+    /// OpVariable result type is not a pointer type.
+    #[error("OpVariable {variable:?} result type must be a pointer")]
+    VariableResultTypeNotPointer {
+        /// The offending variable.
+        variable: Id,
+    },
+    /// OpVariable storage class in operand doesn't match result type.
+    #[error("OpVariable {variable:?} storage class {operand_class:?} doesn't match type storage class {type_class:?}")]
+    VariableStorageClassMismatch {
+        /// The offending variable.
+        variable: Id,
+        /// Storage class from operand.
+        operand_class: rspirv::spirv::StorageClass,
+        /// Storage class from type.
+        type_class: rspirv::spirv::StorageClass,
+    },
+    /// OpVariable cannot use Generic storage class.
+    #[error("OpVariable {variable:?} cannot use Generic storage class")]
+    VariableGenericStorageClass {
+        /// The offending variable.
+        variable: Id,
+    },
+    /// OpVariable cannot use PhysicalStorageBuffer storage class.
+    #[error("OpVariable {variable:?} cannot use PhysicalStorageBuffer storage class")]
+    VariablePhysicalStorageBuffer {
+        /// The offending variable.
+        variable: Id,
+    },
+    /// OpVariable pointee type contains bool in storage class that doesn't allow it.
+    #[error("OpVariable {variable:?} contains bool type which is not allowed in {storage_class:?} storage class")]
+    VariableContainsBool {
+        /// The offending variable.
+        variable: Id,
+        /// The variable's storage class.
+        storage_class: rspirv::spirv::StorageClass,
+    },
+    /// OpVariable initializer not found.
+    #[error("OpVariable {variable:?} initializer {initializer:?} not found")]
+    VariableInitializerNotFound {
+        /// The offending variable.
+        variable: Id,
+        /// The missing initializer.
+        initializer: Id,
+    },
+    /// OpVariable initializer is not a constant.
+    #[error("OpVariable {variable:?} initializer {initializer:?} must be a constant")]
+    VariableInitializerNotConstant {
+        /// The offending variable.
+        variable: Id,
+        /// The non-constant initializer.
+        initializer: Id,
+    },
+    /// OpVariable with Input storage class cannot have an initializer.
+    #[error("OpVariable {variable:?} with Input storage class cannot have an initializer")]
+    VariableInputHasInitializer {
+        /// The offending variable.
+        variable: Id,
+    },
+    /// OpLoad pointer operand is not a pointer type.
+    #[error("OpLoad pointer operand {pointer:?} is not a pointer type")]
+    LoadPointerNotPointerType {
+        /// The pointer operand.
+        pointer: Id,
+    },
+    /// OpLoad result type doesn't match pointee type.
+    #[error("OpLoad result type {result_type:?} doesn't match pointee type {pointee_type:?}")]
+    LoadResultTypeMismatch {
+        /// The result type.
+        result_type: TypeId,
+        /// The expected pointee type.
+        pointee_type: TypeId,
+    },
+    /// Cannot load a runtime array.
+    #[error("OpLoad cannot load a runtime array")]
+    LoadRuntimeArray,
+    /// OpLoad cannot use MakePointerAvailable memory access.
+    #[error("OpLoad cannot use MakePointerAvailable memory access")]
+    LoadMakePointerAvailable,
+    /// MakePointerVisible requires NonPrivatePointer.
+    #[error("MakePointerVisible requires NonPrivatePointer memory access")]
+    MakeVisibleRequiresNonPrivate,
+    /// NonPrivatePointer used with invalid storage class.
+    #[error("NonPrivatePointer memory access is not valid for {storage_class:?} storage class")]
+    NonPrivatePointerInvalidStorageClass {
+        /// The storage class.
+        storage_class: rspirv::spirv::StorageClass,
+    },
+    /// OpStore pointer operand is not a pointer type.
+    #[error("OpStore pointer operand {pointer:?} is not a pointer type")]
+    StorePointerNotPointerType {
+        /// The pointer operand.
+        pointer: Id,
+    },
+    /// OpStore to read-only storage class.
+    #[error("OpStore cannot write to {storage_class:?} storage class (pointer {pointer:?})")]
+    StoreToReadOnlyStorageClass {
+        /// The pointer being stored through.
+        pointer: Id,
+        /// The read-only storage class.
+        storage_class: rspirv::spirv::StorageClass,
+    },
+    /// OpStore cannot use MakePointerVisible memory access.
+    #[error("OpStore cannot use MakePointerVisible memory access")]
+    StoreMakePointerVisible,
+    /// MakePointerAvailable requires NonPrivatePointer.
+    #[error("MakePointerAvailable requires NonPrivatePointer memory access")]
+    MakeAvailableRequiresNonPrivate,
+    /// OpArrayLength result type is not an integer.
+    #[error("OpArrayLength {instruction:?} result type must be an integer")]
+    ArrayLengthResultTypeNotInt {
+        /// The instruction.
+        instruction: Id,
+    },
+    /// OpArrayLength result type has invalid width.
+    #[error("OpArrayLength {instruction:?} result type must be 32 or 64 bits (found {width})")]
+    ArrayLengthResultTypeInvalidWidth {
+        /// The instruction.
+        instruction: Id,
+        /// The invalid width.
+        width: u32,
+    },
+    /// OpArrayLength result type is signed.
+    #[error("OpArrayLength {instruction:?} result type must be unsigned")]
+    ArrayLengthResultTypeSigned {
+        /// The instruction.
+        instruction: Id,
+    },
+    /// OpArrayLength structure operand is not a pointer.
+    #[error("OpArrayLength {instruction:?} structure operand must be a pointer")]
+    ArrayLengthStructureNotPointer {
+        /// The instruction.
+        instruction: Id,
+    },
+    /// OpArrayLength structure pointee is not a struct.
+    #[error("OpArrayLength {instruction:?} must point to a struct")]
+    ArrayLengthPointeeNotStruct {
+        /// The instruction.
+        instruction: Id,
+    },
+    /// OpArrayLength member index must be the last member.
+    #[error("OpArrayLength {instruction:?} member index {member_index} must be last member {last_member}")]
+    ArrayLengthMemberNotLast {
+        /// The instruction.
+        instruction: Id,
+        /// The specified member index.
+        member_index: usize,
+        /// The last member index.
+        last_member: usize,
+    },
+    /// OpArrayLength last member is not a runtime array.
+    #[error("OpArrayLength {instruction:?} last member must be a runtime array")]
+    ArrayLengthMemberNotRuntimeArray {
+        /// The instruction.
+        instruction: Id,
+    },
+    /// OpCopyMemory operand is not a pointer.
+    #[error("OpCopyMemory {operand_name} operand {operand:?} must be a pointer")]
+    CopyMemoryOperandNotPointer {
+        /// The operand id.
+        operand: Id,
+        /// Which operand (target or source).
+        operand_name: &'static str,
+    },
+    /// OpCopyMemory types don't match.
+    #[error("OpCopyMemory target type {target_type:?} doesn't match source type {source_type:?}")]
+    CopyMemoryTypeMismatch {
+        /// Target pointee type.
+        target_type: TypeId,
+        /// Source pointee type.
+        source_type: TypeId,
+    },
+    /// OpCopyMemorySized size is not an integer.
+    #[error("OpCopyMemorySized size {size:?} must be an integer")]
+    CopyMemorySizeNotInteger {
+        /// The size operand.
+        size: Id,
+    },
+    /// OpCopyMemorySized size is zero.
+    #[error("OpCopyMemorySized size {size:?} must not be zero")]
+    CopyMemorySizeZero {
+        /// The size operand.
+        size: Id,
+    },
 
     // ========== ENTRY_POINTS ==========
     /// An entry point referenced an undefined id.
