@@ -593,29 +593,9 @@ impl ValidationRule for StoreRule {
                 }
             }
 
-            // Get object type
-            let Some(object_rid) = ResultId::try_from(*object_id).ok() else {
-                continue;
-            };
-            let Some(object_inst) = ctx.definitions.get(&object_rid) else {
-                continue;
-            };
-            let Some(object_type_id) = object_inst.result_type else {
-                continue;
-            };
-
-            // For typed pointers, check pointee type matches object type
-            if pointer_type.class.opcode == Op::TypePointer {
-                if let Some(pointee_id) = get_pointee_type(pointer_type) {
-                    if pointee_id != object_type_id {
-                        return Err(ValidationError::StoreTypeMismatch {
-                            pointer: result_id_from_u32(*pointer_id),
-                            pointer_type: type_id_from_u32(pointee_id),
-                            object_type: type_id_from_u32(object_type_id),
-                        });
-                    }
-                }
-            }
+            // Note: Store type compatibility (pointer vs object type) is checked by
+            // StoreTypeCompatibilityRule in pointers.rs, which properly handles
+            // the relax_struct_store option.
 
             // Check memory access operands if present
             if let Some(Operand::MemoryAccess(access)) = inst.operands.get(2) {

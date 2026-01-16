@@ -7163,11 +7163,14 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
     }
     #[test]
     fn cooperative_matrix_khr_capability_rejected_outside_vulkan_even_with_extension() {
+        // CooperativeMatrixKHR + Shader requires VulkanMemoryModel capability
         let text = [
             "OpCapability Shader",
             "OpCapability CooperativeMatrixKHR",
+            "OpCapability VulkanMemoryModel",
             "OpExtension \"SPV_KHR_cooperative_matrix\"",
-            "OpMemoryModel Logical GLSL450",
+            "OpExtension \"SPV_KHR_vulkan_memory_model\"",
+            "OpMemoryModel Logical VulkanKHR",
             "%void = OpTypeVoid",
             "%fn = OpTypeFunction %void",
             "%main = OpFunction %void None %fn",
@@ -12932,8 +12935,8 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
         use rspirv::binary::Assemble;
         use rspirv::dr::Builder;
         use rspirv::spirv::{
-            AddressingModel, Capability, Dim, ExecutionModel, FunctionControl, ImageFormat,
-            ImageOperands, MemoryModel,
+            AddressingModel, Capability, Decoration, Dim, ExecutionMode, ExecutionModel,
+            FunctionControl, ImageFormat, ImageOperands, MemoryModel, StorageClass,
         };
         let mut builder = Builder::new();
         builder.set_version(1, 6);
@@ -12943,26 +12946,32 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
         let void = builder.type_void();
         let float = builder.type_float(32, None);
         let v2float = builder.type_vector(float, 2);
+        let v4float = builder.type_vector(float, 4);
         let i32 = builder.type_int(32, 1);
         let v2i = builder.type_vector(i32, 2);
         let float_zero = builder.constant_bit32(float, 0.0f32.to_bits());
         let int_zero = builder.constant_bit32(i32, 0);
         let zero_offset = builder.constant_composite(v2i, [int_zero, int_zero]);
+        let coord_init = builder.constant_composite(v2float, [float_zero, float_zero]);
         let image = builder.type_image(float, Dim::Dim2D, 0, 0, 0, 1, ImageFormat::Unknown, None);
         let sampled_image = builder.type_sampled_image(image);
-        let fn_ty = builder.type_function(void, [sampled_image, v2float]);
+        // Use UniformConstant for sampler/image
+        let ptr_sampled_image = builder.type_pointer(None, StorageClass::UniformConstant, sampled_image);
+        let sampler_var = builder.variable(ptr_sampled_image, None, StorageClass::UniformConstant, None);
+        builder.decorate(sampler_var, Decoration::DescriptorSet, [rspirv::dr::Operand::LiteralBit32(0)]);
+        builder.decorate(sampler_var, Decoration::Binding, [rspirv::dr::Operand::LiteralBit32(0)]);
+        let fn_ty = builder.type_function(void, []);
         let entry = builder
             .begin_function(void, None, FunctionControl::NONE, fn_ty)
             .unwrap();
-        let image_param = builder.function_parameter(sampled_image).unwrap();
-        let coord_param = builder.function_parameter(v2float).unwrap();
         builder.begin_block(None).unwrap();
+        let sampler_val = builder.load(sampled_image, None, sampler_var, None, []).unwrap();
         builder
             .image_sample_explicit_lod(
-                v2float,
+                v4float,
                 None,
-                image_param,
-                coord_param,
+                sampler_val,
+                coord_init,
                 ImageOperands::LOD | ImageOperands::OFFSET,
                 [
                     rspirv::dr::Operand::IdRef(float_zero),
@@ -12972,7 +12981,8 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-        builder.entry_point(ExecutionModel::Fragment, entry, "main", []);
+        builder.entry_point(ExecutionModel::Fragment, entry, "main", [sampler_var]);
+        builder.execution_mode(entry, ExecutionMode::OriginUpperLeft, []);
         let binary = builder.module().assemble();
         let options = ValidationOptions {
             allow_offset_texture_operand: true,
@@ -12989,8 +12999,8 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
         use rspirv::binary::Assemble;
         use rspirv::dr::Builder;
         use rspirv::spirv::{
-            AddressingModel, Capability, Dim, ExecutionModel, FunctionControl, ImageFormat,
-            ImageOperands, MemoryModel,
+            AddressingModel, Capability, Decoration, Dim, ExecutionMode, ExecutionModel,
+            FunctionControl, ImageFormat, ImageOperands, MemoryModel, StorageClass,
         };
         let mut builder = Builder::new();
         builder.set_version(1, 6);
@@ -13000,26 +13010,32 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
         let void = builder.type_void();
         let float = builder.type_float(32, None);
         let v2float = builder.type_vector(float, 2);
+        let v4float = builder.type_vector(float, 4);
         let i32 = builder.type_int(32, 1);
         let v2i = builder.type_vector(i32, 2);
         let float_zero = builder.constant_bit32(float, 0.0f32.to_bits());
         let int_zero = builder.constant_bit32(i32, 0);
         let zero_offset = builder.constant_composite(v2i, [int_zero, int_zero]);
+        let coord_init = builder.constant_composite(v2float, [float_zero, float_zero]);
         let image = builder.type_image(float, Dim::Dim2D, 0, 0, 0, 1, ImageFormat::Unknown, None);
         let sampled_image = builder.type_sampled_image(image);
-        let fn_ty = builder.type_function(void, [sampled_image, v2float]);
+        // Use UniformConstant for sampler/image
+        let ptr_sampled_image = builder.type_pointer(None, StorageClass::UniformConstant, sampled_image);
+        let sampler_var = builder.variable(ptr_sampled_image, None, StorageClass::UniformConstant, None);
+        builder.decorate(sampler_var, Decoration::DescriptorSet, [rspirv::dr::Operand::LiteralBit32(0)]);
+        builder.decorate(sampler_var, Decoration::Binding, [rspirv::dr::Operand::LiteralBit32(0)]);
+        let fn_ty = builder.type_function(void, []);
         let entry = builder
             .begin_function(void, None, FunctionControl::NONE, fn_ty)
             .unwrap();
-        let image_param = builder.function_parameter(sampled_image).unwrap();
-        let coord_param = builder.function_parameter(v2float).unwrap();
         builder.begin_block(None).unwrap();
+        let sampler_val = builder.load(sampled_image, None, sampler_var, None, []).unwrap();
         builder
             .image_sample_explicit_lod(
-                v2float,
+                v4float,
                 None,
-                image_param,
-                coord_param,
+                sampler_val,
+                coord_init,
                 ImageOperands::LOD | ImageOperands::OFFSET,
                 [
                     rspirv::dr::Operand::IdRef(float_zero),
@@ -13029,7 +13045,8 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
             .unwrap();
         builder.ret().unwrap();
         builder.end_function().unwrap();
-        builder.entry_point(ExecutionModel::Fragment, entry, "main", []);
+        builder.entry_point(ExecutionModel::Fragment, entry, "main", [sampler_var]);
+        builder.execution_mode(entry, ExecutionMode::OriginUpperLeft, []);
         let binary = builder.module().assemble();
         let options = ValidationOptions {
             before_hlsl_legalization: true,
@@ -15642,10 +15659,13 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
     }
     #[test]
     fn cooperative_matrix_khr_capability_requires_extension() {
+        // Test without the extension - should fail (also needs VulkanMemoryModel)
         let text = [
             "OpCapability Shader",
             "OpCapability CooperativeMatrixKHR",
-            "OpMemoryModel Logical GLSL450",
+            "OpCapability VulkanMemoryModel",
+            "OpExtension \"SPV_KHR_vulkan_memory_model\"",
+            "OpMemoryModel Logical VulkanKHR",
             "%void = OpTypeVoid",
             "%fn = OpTypeFunction %void",
             "%main = OpFunction %void None %fn",
@@ -15665,11 +15685,14 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
                 required_extension: "SPV_KHR_cooperative_matrix".to_string()
             }
         );
+        // With extension - should pass
         let with_extension = [
             "OpCapability Shader",
             "OpCapability CooperativeMatrixKHR",
+            "OpCapability VulkanMemoryModel",
             "OpExtension \"SPV_KHR_cooperative_matrix\"",
-            "OpMemoryModel Logical GLSL450",
+            "OpExtension \"SPV_KHR_vulkan_memory_model\"",
+            "OpMemoryModel Logical VulkanKHR",
             "%void = OpTypeVoid",
             "%fn = OpTypeFunction %void",
             "%main = OpFunction %void None %fn",
@@ -16059,11 +16082,20 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
         )
     }
     fn opencl_module_with_extension(extension: &str) -> String {
-        module_with_extension_custom(
-            extension,
+        // Note: OpenCL requires Physical32/Physical64 addressing model
+        [
             "OpCapability Kernel",
-            "OpMemoryModel Logical OpenCL",
-        )
+            "OpCapability Addresses",
+            &format!("OpExtension \"{extension}\""),
+            "OpMemoryModel Physical64 OpenCL",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n")
     }
     fn module_with_extension_custom(
         extension: &str,
@@ -22716,6 +22748,7 @@ OpFunctionEnd
             "OpCapability Shader",
             "OpMemoryModel Logical GLSL450",
             "OpEntryPoint Fragment %main \"main\" %in %out",
+            "OpExecutionMode %main OriginUpperLeft",
             "OpDecorate %in NoPerspective",
             "OpDecorate %out Centroid",
             "%void = OpTypeVoid",

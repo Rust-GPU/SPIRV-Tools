@@ -376,6 +376,7 @@ impl ValidationRule for LocationConflictRule {
         let mut var_locations: HashMap<u32, u32> = HashMap::new();
         let mut var_components: HashMap<u32, u32> = HashMap::new();
         let mut var_builtins: HashSet<u32> = HashSet::new();
+        let mut var_patches: HashSet<u32> = HashSet::new();
 
         for inst in &module.annotations {
             if inst.class.opcode == Op::Decorate {
@@ -399,6 +400,9 @@ impl ValidationRule for LocationConflictRule {
                     }
                     Decoration::BuiltIn => {
                         var_builtins.insert(*target_id);
+                    }
+                    Decoration::Patch => {
+                        var_patches.insert(*target_id);
                     }
                     _ => {}
                 }
@@ -446,9 +450,11 @@ impl ValidationRule for LocationConflictRule {
                 _ => None,
             });
 
-            // Collect input and output locations
+            // Collect input and output locations - patch and non-patch have separate domains
             let mut input_locations: HashSet<u32> = HashSet::new();
             let mut output_locations: HashSet<u32> = HashSet::new();
+            let mut input_patch_locations: HashSet<u32> = HashSet::new();
+            let mut output_patch_locations: HashSet<u32> = HashSet::new();
             let mut seen_vars: HashSet<u32> = HashSet::new();
 
             for operand in ep.operands.iter().skip(3) {
@@ -479,6 +485,7 @@ impl ValidationRule for LocationConflictRule {
                 };
 
                 let component = var_components.get(var_id).copied().unwrap_or(0);
+                let is_patch = var_patches.contains(var_id);
 
                 // Compute the location index (location * 4 + component)
                 let loc_index = location.saturating_mul(4).saturating_add(component);
@@ -487,10 +494,13 @@ impl ValidationRule for LocationConflictRule {
                     continue;
                 }
 
-                let locations = if *sc == StorageClass::Input {
-                    &mut input_locations
-                } else {
-                    &mut output_locations
+                // Patch and non-patch variables have separate location domains
+                let locations = match (*sc, is_patch) {
+                    (StorageClass::Input, false) => &mut input_locations,
+                    (StorageClass::Input, true) => &mut input_patch_locations,
+                    (StorageClass::Output, false) => &mut output_locations,
+                    (StorageClass::Output, true) => &mut output_patch_locations,
+                    _ => continue,
                 };
 
                 if !locations.insert(loc_index) {

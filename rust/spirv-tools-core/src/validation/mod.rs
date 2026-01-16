@@ -42,7 +42,7 @@ pub use type_ext::{TypeInstructionExt, TypeResolver, DefaultTypeResolver};
 
 // Validation context and rule trait
 pub mod context;
-pub use context::{ValidationContext, ValidationRule, run_rules, TestContextData};
+pub use context::{ValidationContext, ValidationRule, run_rules, run_boxed_rules, TestContextData};
 
 // CFG analysis utilities
 pub mod cfg_analysis;
@@ -909,7 +909,27 @@ fn validate_words(
     run_rules(&validation_ctx, &rules::image::all_image_rules())?;
     run_rules(&validation_ctx, &rules::literals::all_literal_rules())?;
     run_rules(&validation_ctx, &rules::logicals::all_logical_rules())?;
-    // Note: memory rules are not wired up yet as they need to check relax_struct_store option
+    run_rules(&validation_ctx, &rules::memory::all_memory_rules())?;
+
+    // Box-based rules (return Vec<Box<dyn ValidationRule>>)
+    run_boxed_rules(&validation_ctx, &rules::annotation::all_annotation_rules())?;
+    run_boxed_rules(&validation_ctx, &rules::debug::all_debug_rules())?;
+    run_boxed_rules(&validation_ctx, &rules::graph::all_graph_rules())?;
+    run_boxed_rules(&validation_ctx, &rules::hit_object::all_hit_object_rules())?;
+    run_boxed_rules(&validation_ctx, &rules::interfaces::all_interface_rules())?;
+    run_boxed_rules(&validation_ctx, &rules::invalid_type::all_invalid_type_rules())?;
+    run_boxed_rules(&validation_ctx, &rules::memory_semantics::all_memory_semantics_rules())?;
+    run_boxed_rules(&validation_ctx, &rules::mesh_shading::all_mesh_shading_rules())?;
+    run_boxed_rules(&validation_ctx, &rules::misc::all_misc_rules())?;
+    run_boxed_rules(&validation_ctx, &rules::mode_setting::all_mode_setting_rules())?;
+    run_boxed_rules(&validation_ctx, &rules::non_uniform::all_non_uniform_rules())?;
+    run_boxed_rules(&validation_ctx, &rules::primitives::all_primitive_rules())?;
+    run_boxed_rules(&validation_ctx, &rules::ray_tracing::all_ray_tracing_rules())?;
+    run_boxed_rules(&validation_ctx, &rules::scopes::all_scope_rules())?;
+    run_boxed_rules(&validation_ctx, &rules::small_type_uses::all_small_type_uses_rules())?;
+    run_boxed_rules(&validation_ctx, &rules::tensor::all_tensor_rules())?;
+    run_boxed_rules(&validation_ctx, &rules::tensor_layout::all_tensor_layout_rules())?;
+
     let friendly_names = options
         .use_friendly_names
         .then(|| build_friendly_name_table(&module));

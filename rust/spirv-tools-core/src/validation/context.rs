@@ -183,6 +183,21 @@ pub fn run_rules(
     Ok(())
 }
 
+/// Runs a sequence of boxed validation rules.
+///
+/// Runs each rule in order, stopping at the first error.
+pub fn run_boxed_rules(
+    ctx: &ValidationContext<'_>,
+    rules: &[Box<dyn ValidationRule>],
+) -> Result<(), ValidationError> {
+    for rule in rules {
+        if !rule.should_skip(ctx) {
+            rule.validate(ctx)?;
+        }
+    }
+    Ok(())
+}
+
 /// Owned data for constructing a [`ValidationContext`] in tests.
 ///
 /// Since `ValidationContext` holds references, tests need somewhere to own the data.
