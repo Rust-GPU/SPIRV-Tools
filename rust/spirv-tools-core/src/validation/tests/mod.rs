@@ -21647,11 +21647,15 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
     }
     #[test]
     fn bfloat16_interface_is_rejected_for_vulkan_input_output() {
+        // Include StorageInputOutput16 to pass the small type capability check,
+        // so we specifically test the BFloat16 encoding rejection for interface variables
         let text = [
             "OpCapability Shader",
             "OpCapability BFloat16TypeKHR",
+            "OpCapability StorageInputOutput16",
             "OpExtension \"SPV_KHR_bfloat16\"",
             "OpExtension \"SPV_KHR_bfloat16_conversion\"",
+            "OpExtension \"SPV_KHR_16bit_storage\"",
             "OpMemoryModel Logical GLSL450",
             "%void = OpTypeVoid",
             "%fn = OpTypeFunction %void",
@@ -21668,6 +21672,7 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
         let error = MaybeValidModule::Text(&text)
             .validate(TargetEnv::Vulkan1_2)
             .unwrap_err();
+        // ID layout: void=1, fn=2, bf16=3, ptr=4, var=5, main=6, entry=7
         assert_eq!(
             error,
             ValidationError::EntryPointInterfaceFloatEncodingInvalid {
