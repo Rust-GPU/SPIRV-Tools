@@ -358,6 +358,12 @@ impl ValidationRule for StorageClassSingletonRule {
 }
 
 /// Validates that interface variables have non-conflicting location assignments.
+///
+/// This rule checks that no two interface variables in an entry point consume
+/// the same location/component. It properly handles:
+/// - Patch vs non-patch variables (separate location domains)
+/// - Type-based component consumption (vectors, matrices, arrays, structs)
+/// - BuiltIn variables (skipped, they don't use locations)
 pub struct LocationConflictRule;
 
 impl ValidationRule for LocationConflictRule {
@@ -409,14 +415,14 @@ impl ValidationRule for LocationConflictRule {
             }
         }
 
-        // Build map of variable ID -> storage class
-        let mut var_storage_classes: HashMap<u32, StorageClass> = HashMap::new();
+        // Build map of variable ID -> (storage class, result_type)
+        let mut var_info: HashMap<u32, (StorageClass, Option<u32>)> = HashMap::new();
         for inst in &module.types_global_values {
             if inst.class.opcode == Op::Variable || inst.class.opcode == Op::UntypedVariableKHR {
                 if let (Some(var_id), Some(Operand::StorageClass(sc))) =
                     (inst.result_id, inst.operands.first())
                 {
-                    var_storage_classes.insert(var_id, *sc);
+                    var_info.insert(var_id, (*sc, inst.result_type));
                 }
             }
         }
@@ -446,15 +452,16 @@ impl ValidationRule for LocationConflictRule {
             }
 
             let entry_point_id = ep.operands.get(1).and_then(|op| match op {
-                Operand::IdRef(id) => Some(*id),
+                Operand::IdRef(id) => Id::try_from(*id).ok(),
                 _ => None,
-            });
+            }).unwrap_or_else(|| Id::try_from(1u32).unwrap());
 
             // Collect input and output locations - patch and non-patch have separate domains
-            let mut input_locations: HashSet<u32> = HashSet::new();
-            let mut output_locations: HashSet<u32> = HashSet::new();
-            let mut input_patch_locations: HashSet<u32> = HashSet::new();
-            let mut output_patch_locations: HashSet<u32> = HashSet::new();
+            // Use (location, component) tuples to properly track occupancy
+            let mut input_locations: HashSet<(u32, u32)> = HashSet::new();
+            let mut output_locations: HashSet<(u32, u32)> = HashSet::new();
+            let mut input_patch_locations: HashSet<(u32, u32)> = HashSet::new();
+            let mut output_patch_locations: HashSet<(u32, u32)> = HashSet::new();
             let mut seen_vars: HashSet<u32> = HashSet::new();
 
             for operand in ep.operands.iter().skip(3) {
@@ -471,7 +478,7 @@ impl ValidationRule for LocationConflictRule {
                     continue;
                 }
 
-                let Some(sc) = var_storage_classes.get(var_id) else {
+                let Some((sc, result_type)) = var_info.get(var_id) else {
                     continue;
                 };
 
@@ -487,12 +494,23 @@ impl ValidationRule for LocationConflictRule {
                 let component = var_components.get(var_id).copied().unwrap_or(0);
                 let is_patch = var_patches.contains(var_id);
 
-                // Compute the location index (location * 4 + component)
-                let loc_index = location.saturating_mul(4).saturating_add(component);
-
-                if loc_index >= MAX_LOCATIONS {
-                    continue;
-                }
+                // Get the pointee type from the pointer type and calculate consumed components
+                let consumed = result_type
+                    .and_then(|ptr_type| ResultId::try_from(ptr_type).ok())
+                    .and_then(|ptr_id| ctx.definitions.get(&ptr_id))
+                    .and_then(|ptr_inst| ptr_inst.operands.get(1))
+                    .and_then(|op| match op {
+                        Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                        _ => None,
+                    })
+                    .and_then(|pointee_type| {
+                        crate::validation::helpers::consumed_components_for_type(
+                            pointee_type,
+                            ctx.definitions,
+                            &mut HashSet::new(),
+                        )
+                    })
+                    .unwrap_or(1);
 
                 // Patch and non-patch variables have separate location domains
                 let locations = match (*sc, is_patch) {
@@ -503,18 +521,22 @@ impl ValidationRule for LocationConflictRule {
                     _ => continue,
                 };
 
-                if !locations.insert(loc_index) {
-                    let storage_class_str = if *sc == StorageClass::Input {
-                        "input"
-                    } else {
-                        "output"
-                    };
-                    return Err(ValidationError::InterfaceLocationConflict {
-                        entry_point: entry_point_id.map(to_id),
-                        storage_class: storage_class_str,
-                        location: *location,
-                        component,
-                    });
+                // Check all consumed location slots
+                let start_index = location.saturating_mul(4).saturating_add(component);
+                for offset in 0..consumed {
+                    let linear = start_index.saturating_add(offset);
+                    if linear >= MAX_LOCATIONS {
+                        continue;
+                    }
+                    let loc_component = (linear / 4, linear % 4);
+                    if !locations.insert(loc_component) {
+                        return Err(ValidationError::EntryPointInterfaceLocationConflict {
+                            entry_point: entry_point_id,
+                            storage_class: *sc,
+                            location: loc_component.0,
+                            component: loc_component.1,
+                        });
+                    }
                 }
             }
         }

@@ -3381,20 +3381,7 @@ pub enum ValidationError {
         /// The entry point ID.
         entry_point: Option<Id>,
     },
-    /// Entry point has conflicting location assignment.
-    #[error(
-        "Entry-point {entry_point:?} has conflicting {storage_class} location assignment at location {location}, component {component}"
-    )]
-    InterfaceLocationConflict {
-        /// The entry point ID.
-        entry_point: Option<Id>,
-        /// The storage class (input or output).
-        storage_class: &'static str,
-        /// The conflicting location.
-        location: u32,
-        /// The conflicting component.
-        component: u32,
-    },
+    // Note: InterfaceLocationConflict was consolidated into EntryPointInterfaceLocationConflict
     /// Index decoration can only be applied to Output storage class variables.
     #[error("Index decoration on variable <{variable_id:?}> must be on Output storage class")]
     IndexDecorationNotOutput {

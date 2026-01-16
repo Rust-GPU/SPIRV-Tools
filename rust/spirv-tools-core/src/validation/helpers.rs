@@ -917,3 +917,79 @@ pub fn get_operand_type_structure(
     let operand_type_id = TypeId::try_from(operand_inst.result_type?).ok()?;
     Some(get_type_structure(operand_type_id, definitions))
 }
+
+/// Calculates how many location components a type consumes.
+///
+/// This is used for interface location validation. Different types consume
+/// different numbers of location slots:
+/// - Scalars (int, float): 1 component
+/// - Vectors: component_count components
+/// - Matrices: column_count * components_per_column
+/// - Arrays: element_count * components_per_element
+/// - Structs: sum of all member components
+///
+/// Returns None for types with runtime-sized arrays or other indeterminate sizes.
+pub fn consumed_components_for_type(
+    ty: ResultId,
+    definitions: &HashMap<ResultId, Instruction>,
+    seen: &mut HashSet<ResultId>,
+) -> Option<u32> {
+    // Prevent infinite recursion
+    if !seen.insert(ty) {
+        return Some(0);
+    }
+
+    let inst = definitions.get(&ty)?;
+    match inst.class.opcode {
+        Op::TypeInt | Op::TypeFloat => Some(1),
+        Op::TypeVector => inst.operands.get(1).and_then(|op| match op {
+            Operand::LiteralBit32(count) => Some(*count),
+            _ => None,
+        }),
+        Op::TypeMatrix => {
+            let column_type = inst.operands.first().and_then(|op| match op {
+                Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                _ => None,
+            })?;
+            let columns = inst.operands.get(1).and_then(|op| match op {
+                Operand::LiteralBit32(count) => Some(*count),
+                _ => None,
+            })?;
+            let mut seen = seen.clone();
+            consumed_components_for_type(column_type, definitions, &mut seen)
+                .map(|per_column| per_column.saturating_mul(columns))
+        }
+        Op::TypeArray => {
+            let element = inst.operands.first().and_then(|op| match op {
+                Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                _ => None,
+            })?;
+            let length_id = inst.operands.get(1).and_then(|op| match op {
+                Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                _ => None,
+            })?;
+            let length = constant_u32_from_defs(definitions, length_id)?;
+            let mut seen = seen.clone();
+            consumed_components_for_type(element, definitions, &mut seen)
+                .map(|per_element| per_element.saturating_mul(length))
+        }
+        Op::TypeRuntimeArray => None, // Size not known at compile time
+        Op::TypeStruct => {
+            let mut total: u32 = 0;
+            for op in &inst.operands {
+                if let Operand::IdRef(member) = op {
+                    if let Ok(member_id) = ResultId::try_from(*member) {
+                        let mut seen = seen.clone();
+                        if let Some(components) =
+                            consumed_components_for_type(member_id, definitions, &mut seen)
+                        {
+                            total = total.saturating_add(components);
+                        }
+                    }
+                }
+            }
+            Some(total)
+        }
+        _ => Some(1), // Default for other types
+    }
+}
