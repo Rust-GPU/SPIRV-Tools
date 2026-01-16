@@ -362,6 +362,212 @@ impl ValidationRule for FunctionCallRule {
 }
 
 // ============================================================================
+// Return Value Rule
+// ============================================================================
+
+/// Validates OpReturn and OpReturnValue instructions.
+///
+/// Ensures that:
+/// - OpReturn is only used in void-returning functions
+/// - OpReturnValue is only used in non-void functions
+/// - OpReturnValue type matches the function's return type
+pub struct ReturnValueRule;
+
+impl ValidationRule for ReturnValueRule {
+    fn name(&self) -> &'static str {
+        "return-value"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        for function in &ctx.module.functions {
+            let Some(def) = &function.def else {
+                continue;
+            };
+
+            let function_id = def
+                .result_id
+                .and_then(|id| Id::try_from(id).ok())
+                .unwrap_or_else(|| Id::try_from(1u32).unwrap());
+
+            // Get the return type from the function definition
+            let return_type_id = def.result_type;
+            let Some(return_type_id) = return_type_id else {
+                continue;
+            };
+
+            // Check if the return type is void
+            let return_type_inst = ResultId::try_from(return_type_id)
+                .ok()
+                .and_then(|rid| ctx.definitions.get(&rid));
+
+            let is_void = return_type_inst
+                .map(|inst| inst.class.opcode == Op::TypeVoid)
+                .unwrap_or(false);
+
+            let return_type = TypeId::try_from(return_type_id).ok();
+
+            for block in &function.blocks {
+                for inst in &block.instructions {
+                    match inst.class.opcode {
+                        Op::Return => {
+                            if !is_void {
+                                if let Some(expected) = return_type {
+                                    return Err(ValidationError::MissingReturnValue {
+                                        function: function_id,
+                                        expected,
+                                    });
+                                }
+                            }
+                        }
+                        Op::ReturnValue => {
+                            if is_void {
+                                return Err(ValidationError::ReturnValueInVoidFunction {
+                                    function: function_id,
+                                });
+                            }
+
+                            // Check that the returned value has the correct type
+                            if let Some(Operand::IdRef(value_id)) = inst.operands.first() {
+                                if let Ok(value_rid) = ResultId::try_from(*value_id) {
+                                    if let Some(value_type) = ctx.result_types.get(&value_rid) {
+                                        if let Some(expected) = return_type {
+                                            if *value_type != expected {
+                                                return Err(
+                                                    ValidationError::InvalidReturnValueType {
+                                                        function: function_id,
+                                                        expected,
+                                                        found: *value_type,
+                                                    },
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Function Variable Rule
+// ============================================================================
+
+/// Validates OpVariable instructions within functions.
+///
+/// Ensures that:
+/// - Variables in functions must have Function storage class
+/// - Variables must be declared in the entry block
+pub struct FunctionVariableRule;
+
+impl ValidationRule for FunctionVariableRule {
+    fn name(&self) -> &'static str {
+        "function-variable"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        for function in &ctx.module.functions {
+            let function_id = function
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .and_then(|id| Id::try_from(id).ok())
+                .unwrap_or_else(|| Id::try_from(1u32).unwrap());
+
+            for (block_index, block) in function.blocks.iter().enumerate() {
+                for inst in &block.instructions {
+                    if inst.class.opcode == Op::Variable {
+                        // Get the storage class
+                        let storage_class = inst.operands.first().and_then(|op| {
+                            if let Operand::StorageClass(sc) = op {
+                                Some(*sc)
+                            } else {
+                                None
+                            }
+                        });
+
+                        let variable_id = inst
+                            .result_id
+                            .and_then(|id| Id::try_from(id).ok())
+                            .unwrap_or(function_id);
+
+                        // Check storage class is Function
+                        if let Some(sc) = storage_class {
+                            if sc != rspirv::spirv::StorageClass::Function {
+                                return Err(ValidationError::FunctionVariableStorageClassMismatch {
+                                    function: function_id,
+                                    variable: variable_id,
+                                    storage_class: sc,
+                                });
+                            }
+                        }
+
+                        // Check variable is in entry block
+                        if block_index != 0 {
+                            return Err(ValidationError::FunctionVariableNotInEntryBlock {
+                                function: function_id,
+                                variable: variable_id,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Function Declaration Order Rule
+// ============================================================================
+
+/// Validates that function declarations come before definitions.
+///
+/// In SPIR-V, function declarations (functions with no blocks) must all
+/// appear before any function definitions (functions with blocks).
+pub struct FunctionDeclarationOrderRule;
+
+impl ValidationRule for FunctionDeclarationOrderRule {
+    fn name(&self) -> &'static str {
+        "function-declaration-order"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        let mut seen_definition = false;
+
+        for function in &ctx.module.functions {
+            let is_declaration = function.blocks.is_empty() && function.parameters.is_empty();
+
+            if is_declaration {
+                if seen_definition {
+                    let function_id = function
+                        .def
+                        .as_ref()
+                        .and_then(|d| d.result_id)
+                        .and_then(|id| Id::try_from(id).ok())
+                        .unwrap_or_else(|| Id::try_from(1u32).unwrap());
+
+                    return Err(ValidationError::FunctionDeclarationAfterDefinition {
+                        function: function_id,
+                    });
+                }
+            } else {
+                seen_definition = true;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
 // All function rules
 // ============================================================================
 
@@ -371,6 +577,9 @@ pub fn all_function_rules() -> Vec<&'static dyn ValidationRule> {
         &FunctionDefinitionRule,
         &FunctionParameterRule,
         &FunctionCallRule,
+        &ReturnValueRule,
+        &FunctionVariableRule,
+        &FunctionDeclarationOrderRule,
     ]
 }
 
@@ -381,9 +590,12 @@ mod tests {
     #[test]
     fn test_function_rules_exist() {
         let rules = all_function_rules();
-        assert_eq!(rules.len(), 3);
+        assert_eq!(rules.len(), 6);
         assert_eq!(rules[0].name(), "function-definition");
         assert_eq!(rules[1].name(), "function-parameter");
         assert_eq!(rules[2].name(), "function-call");
+        assert_eq!(rules[3].name(), "return-value");
+        assert_eq!(rules[4].name(), "function-variable");
+        assert_eq!(rules[5].name(), "function-declaration-order");
     }
 }
