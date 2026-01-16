@@ -8984,47 +8984,41 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
     }
     #[test]
     fn loop_merge_targets_must_exist() {
-        use rspirv::{binary::Assemble, dr::Builder};
-        let mut b = Builder::new();
-        b.set_version(1, 6);
-        b.capability(rspirv::spirv::Capability::Shader);
-        b.memory_model(
-            rspirv::spirv::AddressingModel::Logical,
-            rspirv::spirv::MemoryModel::Simple,
-        );
-        let void = b.type_void();
-        let bool_ty = b.type_bool();
-        let fn_ty = b.type_function(void, std::iter::empty::<u32>());
-        let main = b
-            .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
-            .unwrap();
-        let header = b.begin_block(None).unwrap();
-        let missing_merge = b.constant_true(bool_ty);
-        let missing_continue = b.constant_false(bool_ty);
-        let body = b.id();
-        b.loop_merge(
-            missing_merge,
-            missing_continue,
-            rspirv::spirv::LoopControl::NONE,
-            std::iter::empty::<rspirv::dr::Operand>(),
-        )
-        .unwrap();
-        b.branch(body).unwrap();
-        b.begin_block(Some(body)).unwrap();
-        b.branch(header).unwrap();
-        b.end_function().unwrap();
-        let words = b.module().assemble();
-        let err = words
+        // Create a properly structured module where the merge target doesn't exist (is a non-block ID).
+        // %entry -> %header with LoopMerge pointing to non-existent block
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%void = OpTypeVoid",
+            "%fn = OpTypeFunction %void",
+            "%bool = OpTypeBool",
+            "%missing_merge = OpConstantTrue %bool",   // Use a constant as merge target (invalid)
+            "%missing_continue = OpConstantFalse %bool", // Use a constant as continue target (invalid)
+            "%main = OpFunction %void None %fn",
+            "%entry = OpLabel",
+            "OpBranch %header",
+            "%header = OpLabel",
+            // Merge and continue targets point to constants, not blocks - this is invalid
+            "OpLoopMerge %missing_merge %missing_continue None",
+            "OpBranch %body",
+            "%body = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ]
+        .join("\n");
+        let binary = assemble_text(&text).expect("assemble");
+        let err = binary
             .as_slice()
             .validate(TargetEnv::Universal1_6)
-            .expect_err("loop merge/continue targets must be blocks in the same function");
+            .expect_err("loop merge targets must be blocks in the same function");
+        // ID layout: void=1, fn=2, bool=3, missing_merge=4, missing_continue=5, main=6, entry=7, header=8, body=9
         assert_eq!(
             err,
             ValidationError::MergeTargetMissing {
-                function: Id::try_from(main).unwrap(),
-                block: Id::try_from(header).unwrap(),
+                function: Id::try_from(6).unwrap(),
+                block: Id::try_from(8).unwrap(),
                 kind: MergeTargetKind::Merge,
-                target: Id::try_from(missing_merge).unwrap(),
+                target: Id::try_from(4).unwrap(),
             }
         );
     }
@@ -9109,6 +9103,8 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
     }
     #[test]
     fn selection_merge_target_cannot_be_header() {
+        // Create a properly structured module where the header block references itself as merge target.
+        // %entry -> %header (where header has SelectionMerge %header which is invalid)
         let text = [
             "OpCapability Shader",
             "OpMemoryModel Logical GLSL450",
@@ -9118,9 +9114,15 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
             "%true = OpConstantTrue %bool",
             "%main = OpFunction %void None %fn",
             "%entry = OpLabel",
-            // Merge target aliases the header block.
-            "OpSelectionMerge %entry None",
-            "OpBranchConditional %true %entry %entry",
+            "OpBranch %header",
+            "%header = OpLabel",
+            // Merge target aliases the header block - this is invalid
+            "OpSelectionMerge %header None",
+            "OpBranchConditional %true %then %else",
+            "%then = OpLabel",
+            "OpReturn",
+            "%else = OpLabel",
+            "OpReturn",
             "OpFunctionEnd",
         ]
         .join("\n");
@@ -9129,18 +9131,21 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
             .as_slice()
             .validate(TargetEnv::Universal1_6)
             .expect_err("selection merge target cannot equal its own block");
+        // ID layout: void=1, fn=2, bool=3, true=4, main=5, entry=6, header=7, then=8, else=9
         assert_eq!(
             err,
             ValidationError::MergeTargetIsBlock {
                 function: Id::try_from(5).unwrap(),
-                block: Id::try_from(6).unwrap(),
+                block: Id::try_from(7).unwrap(),
                 kind: MergeTargetKind::Merge,
-                target: Id::try_from(6).unwrap()
+                target: Id::try_from(7).unwrap()
             }
         );
     }
     #[test]
     fn loop_merge_targets_cannot_be_header() {
+        // Create a properly structured module where the loop header references itself as merge target.
+        // %entry -> %header (where header has LoopMerge %header %header which is invalid)
         let text = [
             "OpCapability Shader",
             "OpMemoryModel Logical GLSL450",
@@ -9148,9 +9153,13 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
             "%fn = OpTypeFunction %void",
             "%main = OpFunction %void None %fn",
             "%entry = OpLabel",
-            // Merge and continue targets both alias the header block.
-            "OpLoopMerge %entry %entry None",
-            "OpBranch %entry",
+            "OpBranch %header",
+            "%header = OpLabel",
+            // Merge and continue targets both alias the header block - this is invalid
+            "OpLoopMerge %header %header None",
+            "OpBranch %body",
+            "%body = OpLabel",
+            "OpReturn",
             "OpFunctionEnd",
         ]
         .join("\n");
@@ -9159,13 +9168,14 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
             .as_slice()
             .validate(TargetEnv::Universal1_6)
             .expect_err("loop merge cannot target its own header");
+        // ID layout: void=1, fn=2, main=3, entry=4, header=5, body=6
         assert_eq!(
             err,
             ValidationError::MergeTargetIsBlock {
                 function: Id::try_from(3).unwrap(),
-                block: Id::try_from(4).unwrap(),
+                block: Id::try_from(5).unwrap(),
                 kind: MergeTargetKind::Merge,
-                target: Id::try_from(4).unwrap()
+                target: Id::try_from(5).unwrap()
             }
         );
     }

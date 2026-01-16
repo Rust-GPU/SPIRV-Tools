@@ -716,13 +716,20 @@ impl ValidationRule for PhiInstructionRule {
     }
 }
 
+/// Static rule instances
+static BLOCK_STRUCTURE_RULE: BlockStructureRule = BlockStructureRule;
+static MERGE_INSTRUCTION_RULE: MergeInstructionRule = MergeInstructionRule;
+static MERGE_DOMINATION_RULE: MergeDominationRule = MergeDominationRule;
+static BRANCH_TARGET_RULE: BranchTargetRule = BranchTargetRule;
+static PHI_INSTRUCTION_RULE: PhiInstructionRule = PhiInstructionRule;
+
 /// Returns all CFG validation rules.
-pub fn all_cfg_rules() -> Vec<Box<dyn ValidationRule>> {
+pub fn all_cfg_rules() -> Vec<&'static dyn ValidationRule> {
     vec![
-        Box::new(BlockStructureRule),
-        Box::new(MergeInstructionRule),
-        Box::new(MergeDominationRule),
-        Box::new(BranchTargetRule),
-        Box::new(PhiInstructionRule),
+        &BLOCK_STRUCTURE_RULE,
+        &MERGE_INSTRUCTION_RULE,
+        &MERGE_DOMINATION_RULE,
+        &BRANCH_TARGET_RULE,
+        &PHI_INSTRUCTION_RULE,
     ]
 }

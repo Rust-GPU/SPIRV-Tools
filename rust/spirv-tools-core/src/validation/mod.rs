@@ -894,6 +894,7 @@ fn validate_words(
     run_rules(&validation_ctx, &rules::builtins::all_builtin_rules())?;
     run_rules(&validation_ctx, &rules::interpolation::all_interpolation_rules())?;
     run_rules(&validation_ctx, &rules::composites::all_composite_rules())?;
+    run_rules(&validation_ctx, &rules::cfg::all_cfg_rules())?;
     let friendly_names = options
         .use_friendly_names
         .then(|| build_friendly_name_table(&module));
@@ -970,7 +971,7 @@ fn validate_functions(
         let signature = validate_function_signature(function_id, function, &definitions)?;
         signatures.insert(function_id, signature);
     }
-    let mut recorded_merges: Vec<(Id, Id, MergeTargetKind, Id)> = Vec::new(); // (function, header, kind, target)
+    // Merge tracking is now handled by MergeInstructionRule and MergeDominationRule in cfg.rs
     let mut definition_blocks: HashMap<ResultId, Option<Id>> = HashMap::new();
     for inst in module.all_inst_iter() {
         if let Some(result_id) = inst.result_id {
@@ -1062,20 +1063,8 @@ fn validate_functions(
             }
         }
 
-        for (block_index, block) in function.blocks.iter().enumerate() {
-            let label_inst = block
-                .label
-                .as_ref()
-                .ok_or(ValidationError::MissingBlockLabel {
-                    function: function_id,
-                    block_index,
-                })?;
-            if label_inst.class.opcode != rspirv::spirv::Op::Label {
-                return Err(ValidationError::MissingBlockLabel {
-                    function: function_id,
-                    block_index,
-                });
-            }
+        for (_block_index, block) in function.blocks.iter().enumerate() {
+            // Block label validation is handled by BlockStructureRule in cfg.rs
             let block_label_id = block
                 .label
                 .as_ref()
@@ -1083,8 +1072,7 @@ fn validate_functions(
                 .and_then(|raw| Id::try_from(raw).ok())
                 .unwrap_or(entry_label_id);
             let mut first_terminator_index = None;
-            let mut merge_instruction: Option<(usize, &rspirv::dr::Instruction)> = None;
-            let mut seen_non_phi = false;
+            // Phi ordering, block structure, and merge instruction validation is handled by cfg.rs rules
             for (index, inst) in block.instructions.iter().enumerate() {
                 if let Some(result_id) = inst.result_id {
                     if let Ok(result_id) = ResultId::try_from(result_id) {
@@ -1095,194 +1083,15 @@ fn validate_functions(
                     first_terminator_index = Some(index);
                     break;
                 }
-                if inst.class.opcode == rspirv::spirv::Op::Phi {
-                    if seen_non_phi {
-                        return Err(ValidationError::PhiAfterNonPhi {
-                            function: function_id,
-                            block: block_label_id,
-                        });
-                    }
-                } else {
-                    seen_non_phi = true;
-                }
-                if inst.class.opcode == rspirv::spirv::Op::SelectionMerge
-                    || inst.class.opcode == rspirv::spirv::Op::LoopMerge
-                {
-                    if merge_instruction.is_some() {
-                        return Err(ValidationError::DuplicateMergeInstruction {
-                            function: function_id,
-                            block: block_label_id,
-                        });
-                    }
-                    merge_instruction = Some((index, inst));
-                }
             }
-            if first_terminator_index.is_none() {
-                return Err(ValidationError::MissingBlockTerminator {
-                    function: function_id,
-                    block: block_label_id,
-                });
-            }
-            let terminator_index = first_terminator_index.unwrap();
-            if terminator_index + 1 < block.instructions.len() {
-                return Err(ValidationError::InstructionsAfterTerminator {
-                    function: function_id,
-                    block: block_label_id,
-                });
-            }
+            // Terminator and instructions-after-terminator validation is handled by BlockStructureRule in cfg.rs
+            let Some(terminator_index) = first_terminator_index else {
+                continue; // Skip block if no terminator (will be caught by cfg.rs rule)
+            };
 
+            // Merge instruction validation (placement, targets, OpSwitch requirements)
+            // is handled by MergeInstructionRule in cfg.rs
             let terminator_inst = &block.instructions[terminator_index];
-            if let Some((merge_index, merge_inst)) = merge_instruction {
-                if merge_index + 1 != terminator_index {
-                    return Err(ValidationError::MergeInstructionNotBeforeTerminator {
-                        function: function_id,
-                        block: block_label_id,
-                    });
-                }
-                match merge_inst.class.opcode {
-                    rspirv::spirv::Op::SelectionMerge => {
-                        match terminator_inst.class.opcode {
-                            rspirv::spirv::Op::BranchConditional | rspirv::spirv::Op::Switch => {}
-                            other => {
-                                return Err(ValidationError::InvalidMergeTerminator {
-                                    function: function_id,
-                                    block: block_label_id,
-                                    terminator: other,
-                                });
-                            }
-                        }
-                        if let Some(rspirv::dr::Operand::IdRef(raw_merge)) =
-                            merge_inst.operands.first()
-                        {
-                            if let Ok(target) = Id::try_from(*raw_merge) {
-                                if target == block_label_id {
-                                    return Err(ValidationError::MergeTargetIsBlock {
-                                        function: function_id,
-                                        block: block_label_id,
-                                        kind: MergeTargetKind::Merge,
-                                        target,
-                                    });
-                                }
-                                if !block_ids.contains(&target) {
-                                    return Err(ValidationError::MergeTargetMissing {
-                                        function: function_id,
-                                        block: block_label_id,
-                                        kind: MergeTargetKind::Merge,
-                                        target,
-                                    });
-                                }
-                                recorded_merges.push((
-                                    function_id,
-                                    block_label_id,
-                                    MergeTargetKind::Merge,
-                                    target,
-                                ));
-                            }
-                        }
-                    }
-                    rspirv::spirv::Op::LoopMerge => {
-                        match terminator_inst.class.opcode {
-                            rspirv::spirv::Op::Branch | rspirv::spirv::Op::BranchConditional => {}
-                            other => {
-                                return Err(ValidationError::InvalidMergeTerminator {
-                                    function: function_id,
-                                    block: block_label_id,
-                                    terminator: other,
-                                });
-                            }
-                        }
-                        let merge_target = merge_inst.operands.first().and_then(|op| match op {
-                            rspirv::dr::Operand::IdRef(raw) => Id::try_from(*raw).ok(),
-                            _ => None,
-                        });
-                        let continue_target = merge_inst.operands.get(1).and_then(|op| match op {
-                            rspirv::dr::Operand::IdRef(raw) => Id::try_from(*raw).ok(),
-                            _ => None,
-                        });
-                        if let Some(target) = merge_target {
-                            if target == block_label_id {
-                                return Err(ValidationError::MergeTargetIsBlock {
-                                    function: function_id,
-                                    block: block_label_id,
-                                    kind: MergeTargetKind::Merge,
-                                    target,
-                                });
-                            }
-                            if !block_ids.contains(&target) {
-                                return Err(ValidationError::MergeTargetMissing {
-                                    function: function_id,
-                                    block: block_label_id,
-                                    kind: MergeTargetKind::Merge,
-                                    target,
-                                });
-                            }
-                            recorded_merges.push((
-                                function_id,
-                                block_label_id,
-                                MergeTargetKind::Merge,
-                                target,
-                            ));
-                        }
-                        if let Some(target) = continue_target {
-                            if target == block_label_id {
-                                return Err(ValidationError::MergeTargetIsBlock {
-                                    function: function_id,
-                                    block: block_label_id,
-                                    kind: MergeTargetKind::Continue,
-                                    target,
-                                });
-                            }
-                            if !block_ids.contains(&target) {
-                                return Err(ValidationError::MergeTargetMissing {
-                                    function: function_id,
-                                    block: block_label_id,
-                                    kind: MergeTargetKind::Continue,
-                                    target,
-                                });
-                            }
-                            recorded_merges.push((
-                                function_id,
-                                block_label_id,
-                                MergeTargetKind::Continue,
-                                target,
-                            ));
-                        }
-                        if let (Some(merge_target), Some(continue_target)) =
-                            (merge_target, continue_target)
-                        {
-                            if merge_target == continue_target {
-                                return Err(ValidationError::ContinueTargetMatchesMerge {
-                                    function: function_id,
-                                    block: block_label_id,
-                                    target: merge_target,
-                                });
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            // NOTE: The C++ spirv-val uses a "seen" set to track which blocks have
-            // been visited during structured control flow validation. BranchConditional
-            // without SelectionMerge is allowed if one of its targets has already been
-            // seen. This is a relaxed check that allows certain patterns like loop
-            // back-edges. For now, we skip this check to match C++ behavior.
-            // TODO: Implement proper "seen" tracking like C++ ValidateStructuredSelections.
-            //
-            // OpSwitch still requires SelectionMerge.
-            if terminator_inst.class.opcode == rspirv::spirv::Op::Switch {
-                let requires_selection_merge = !matches!(
-                    merge_instruction,
-                    Some((_, inst)) if inst.class.opcode == rspirv::spirv::Op::SelectionMerge
-                );
-                if requires_selection_merge {
-                    return Err(ValidationError::MissingSelectionMerge {
-                        function: function_id,
-                        block: block_label_id,
-                        terminator: terminator_inst.class.opcode,
-                    });
-                }
-            }
             let check_target = |operand: &rspirv::dr::Operand| -> Result<(), ValidationError> {
                 if let rspirv::dr::Operand::IdRef(raw) = operand {
                     if let Ok(target) = Id::try_from(*raw) {
@@ -2139,23 +1948,7 @@ fn validate_functions(
             }
         }
 
-        for (function, header, kind, target) in recorded_merges
-            .iter()
-            .copied()
-            .filter(|(func, _, _, _)| *func == function_id)
-        {
-            let Some(target_doms) = dominators.get(&target) else {
-                continue;
-            };
-            if !target_doms.contains(&header) && header != target {
-                return Err(ValidationError::MergeTargetNotDominated {
-                    function,
-                    block: header,
-                    kind,
-                    target,
-                });
-            }
-        }
+        // Merge target domination validation is handled by MergeDominationRule in cfg.rs
 
         let integer_shape = |ty_inst: &rspirv::dr::Instruction| -> Option<(usize, u32)> {
             match ty_inst.class.opcode {
