@@ -15,7 +15,7 @@ use rspirv::spirv::{Op, StorageClass};
 use crate::validation::context::{ValidationContext, ValidationRule};
 use crate::validation::error::ValidationError;
 use crate::validation::helpers::{get_type_structure, id_ref};
-use crate::validation::types::{BitWidth, Id, ResultId, ScalarKind, TypeId, TypeStructure, VectorSize};
+use crate::validation::types::{Id, ResultId, ScalarKind, TypeId, TypeStructure, VectorSize};
 
 fn to_id(id: u32) -> Id {
     Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
@@ -1103,6 +1103,7 @@ pub fn all_hit_object_rules() -> Vec<Box<dyn ValidationRule>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::validation::types::BitWidth;
 
     #[test]
     fn test_all_hit_object_rules() {

@@ -484,6 +484,38 @@ pub enum ValidationError {
         /// The stored object's type.
         object_type: TypeId,
     },
+    /// Variable pointer points to an array of Block/BufferBlock-decorated structs.
+    #[error(
+        "Variable pointer {pointer:?} must not point to an array of Block- or BufferBlock-decorated structs"
+    )]
+    VariablePointerToBlockArray {
+        /// The variable pointer instruction.
+        pointer: Id,
+    },
+    /// Variable pointer points to a type containing a matrix.
+    #[error(
+        "Variable pointer {pointer:?} must not point to an object that is or contains a matrix"
+    )]
+    VariablePointerToMatrixType {
+        /// The variable pointer instruction.
+        pointer: Id,
+    },
+    /// Variable pointer points to a matrix column or component.
+    #[error(
+        "Variable pointer {pointer:?} must not point to a column or a component of a column of a matrix"
+    )]
+    VariablePointerToMatrixElement {
+        /// The variable pointer instruction.
+        pointer: Id,
+    },
+    /// Variable pointers selected from different buffers without VariablePointers capability.
+    #[error(
+        "Variable pointers in {pointer:?} must point into the same structure (or OpConstantNull) without VariablePointers capability"
+    )]
+    VariablePointerDifferentBuffers {
+        /// The select/phi instruction producing the variable pointer.
+        pointer: Id,
+    },
     /// A struct decorated for block layout violates layout rules.
     #[error("Struct {struct_type:?} has an invalid block layout: {reason}")]
     InvalidBlockLayout {

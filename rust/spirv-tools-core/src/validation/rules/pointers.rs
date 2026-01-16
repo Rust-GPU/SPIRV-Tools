@@ -4,11 +4,12 @@
 //!
 //! - Logical pointer storage class restrictions
 //! - Store type compatibility
+//! - Variable pointer constraints (matrix, block array, same-buffer)
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-use rspirv::dr::Module;
-use rspirv::spirv::{AddressingModel, Capability, Op, StorageClass};
+use rspirv::dr::{Module, Operand};
+use rspirv::spirv::{AddressingModel, Capability, Decoration, Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
 use crate::validation::error::ValidationError;
@@ -637,6 +638,631 @@ fn matrix_info(inst: &rspirv::dr::Instruction) -> (Option<TypeId>, Option<u32>) 
 }
 
 // ============================================================================
+// Variable Pointer Validation
+// ============================================================================
+
+/// Returns true if inst is a logical pointer (not PhysicalStorageBuffer).
+fn is_logical_pointer(
+    inst: &rspirv::dr::Instruction,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+) -> bool {
+    let Some(type_id) = inst.result_type else {
+        return false;
+    };
+    let Ok(type_result_id) = ResultId::try_from(type_id) else {
+        return false;
+    };
+    let Some(type_inst) = definitions.get(&type_result_id) else {
+        return false;
+    };
+
+    match type_inst.class.opcode {
+        Op::TypePointer => {
+            if let Some(Operand::StorageClass(sc)) = type_inst.operands.first() {
+                *sc != StorageClass::PhysicalStorageBuffer
+            } else {
+                false
+            }
+        }
+        Op::TypeUntypedPointerKHR => {
+            if let Some(Operand::StorageClass(sc)) = type_inst.operands.first() {
+                *sc != StorageClass::PhysicalStorageBuffer
+            } else {
+                true
+            }
+        }
+        _ => false,
+    }
+}
+
+/// Returns the storage class of a pointer instruction's type.
+fn get_pointer_storage_class(
+    inst: &rspirv::dr::Instruction,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+) -> Option<StorageClass> {
+    let type_id = inst.result_type?;
+    let type_result_id = ResultId::try_from(type_id).ok()?;
+    let type_inst = definitions.get(&type_result_id)?;
+
+    match type_inst.class.opcode {
+        Op::TypePointer | Op::TypeUntypedPointerKHR => {
+            if let Some(Operand::StorageClass(sc)) = type_inst.operands.first() {
+                Some(*sc)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Returns true if the instruction is a variable pointer.
+/// Variable pointers are pointers that can have multiple possible values at runtime.
+fn is_variable_pointer(
+    inst_id: ResultId,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    cache: &mut HashMap<ResultId, bool>,
+) -> bool {
+    if let Some(&cached) = cache.get(&inst_id) {
+        return cached;
+    }
+
+    let Some(inst) = definitions.get(&inst_id) else {
+        return false;
+    };
+
+    if !is_logical_pointer(inst, definitions) {
+        cache.insert(inst_id, false);
+        return false;
+    }
+
+    let is_var_ptr = match inst.class.opcode {
+        // These opcodes always produce variable pointers
+        Op::PtrAccessChain
+        | Op::UntypedPtrAccessChainKHR
+        | Op::UntypedInBoundsPtrAccessChainKHR
+        | Op::Load
+        | Op::Select
+        | Op::Phi
+        | Op::FunctionCall
+        | Op::ConstantNull => true,
+
+        // Function parameters may be variable pointers depending on call sites
+        Op::FunctionParameter => true,
+
+        // For other instructions, check if any operand is a variable pointer
+        _ => {
+            let mut result = false;
+            for operand in &inst.operands {
+                if let Operand::IdRef(op_id) = operand {
+                    if let Ok(op_result_id) = ResultId::try_from(*op_id) {
+                        if let Some(op_inst) = definitions.get(&op_result_id) {
+                            if is_logical_pointer(op_inst, definitions)
+                                && is_variable_pointer(op_result_id, definitions, cache)
+                            {
+                                result = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            result
+        }
+    };
+
+    cache.insert(inst_id, is_var_ptr);
+    is_var_ptr
+}
+
+/// Check if a type contains a matrix type.
+fn type_contains_matrix(
+    type_id: TypeId,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    visited: &mut HashSet<TypeId>,
+) -> bool {
+    if !visited.insert(type_id) {
+        return false;
+    }
+
+    let Ok(result_id) = ResultId::try_from(u32::from(type_id)) else {
+        return false;
+    };
+    let Some(type_inst) = definitions.get(&result_id) else {
+        return false;
+    };
+
+    match type_inst.class.opcode {
+        Op::TypeMatrix => true,
+        Op::TypeArray | Op::TypeRuntimeArray => {
+            if let Some(Operand::IdRef(elem_id)) = type_inst.operands.first() {
+                if let Ok(elem_type_id) = TypeId::try_from(*elem_id) {
+                    return type_contains_matrix(elem_type_id, definitions, visited);
+                }
+            }
+            false
+        }
+        Op::TypeStruct => {
+            for operand in &type_inst.operands {
+                if let Operand::IdRef(member_id) = operand {
+                    if let Ok(member_type_id) = TypeId::try_from(*member_id) {
+                        if type_contains_matrix(member_type_id, definitions, visited) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            false
+        }
+        _ => false,
+    }
+}
+
+/// Check if an array type points to Block or BufferBlock decorated structs.
+fn is_block_array(
+    type_inst: &rspirv::dr::Instruction,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    module: &Module,
+) -> bool {
+    if type_inst.class.opcode != Op::TypeArray
+        && type_inst.class.opcode != Op::TypeRuntimeArray
+    {
+        return false;
+    }
+
+    let Some(Operand::IdRef(elem_id)) = type_inst.operands.first() else {
+        return false;
+    };
+    let Ok(elem_result_id) = ResultId::try_from(*elem_id) else {
+        return false;
+    };
+    let Some(elem_inst) = definitions.get(&elem_result_id) else {
+        return false;
+    };
+
+    if elem_inst.class.opcode != Op::TypeStruct {
+        return false;
+    }
+
+    // Check if the struct has Block or BufferBlock decoration
+    for annotation in &module.annotations {
+        if annotation.class.opcode != Op::Decorate {
+            continue;
+        }
+        if let (Some(Operand::IdRef(target)), Some(Operand::Decoration(dec))) =
+            (annotation.operands.first(), annotation.operands.get(1))
+        {
+            if *target == *elem_id
+                && (*dec == Decoration::Block || *dec == Decoration::BufferBlock)
+            {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+/// Trace variable pointer back through access chains to check for matrix access.
+fn traces_through_matrix(
+    inst: &rspirv::dr::Instruction,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    visited: &mut HashSet<ResultId>,
+) -> bool {
+    let Some(inst_id) = inst.result_id.and_then(|id| ResultId::try_from(id).ok()) else {
+        return false;
+    };
+    if !visited.insert(inst_id) {
+        return false;
+    }
+
+    match inst.class.opcode {
+        Op::AccessChain | Op::InBoundsAccessChain | Op::PtrAccessChain => {
+            // Get the base pointer operand
+            let base_idx = if inst.class.opcode == Op::PtrAccessChain {
+                2
+            } else {
+                2
+            };
+
+            // First check if base type is a matrix
+            if let Some(Operand::IdRef(base_id)) = inst.operands.get(base_idx - 2) {
+                if let Ok(base_result_id) = ResultId::try_from(*base_id) {
+                    if let Some(base_inst) = definitions.get(&base_result_id) {
+                        if let Some(base_type_raw) = base_inst.result_type {
+                            if let Ok(base_type_id) = ResultId::try_from(base_type_raw) {
+                                if let Some(base_type_inst) = definitions.get(&base_type_id) {
+                                    if base_type_inst.class.opcode == Op::TypePointer {
+                                        if let Some(Operand::IdRef(pointee_id)) =
+                                            base_type_inst.operands.get(1)
+                                        {
+                                            if let Ok(pointee_result_id) =
+                                                ResultId::try_from(*pointee_id)
+                                            {
+                                                if let Some(pointee_inst) =
+                                                    definitions.get(&pointee_result_id)
+                                                {
+                                                    if pointee_inst.class.opcode == Op::TypeMatrix
+                                                    {
+                                                        return true;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Recursively check base
+                        if traces_through_matrix(base_inst, definitions, visited) {
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            // Check if any index accesses a matrix
+            let start_idx = if inst.class.opcode == Op::PtrAccessChain {
+                3
+            } else {
+                3
+            };
+            let mut current_type: Option<ResultId> = None;
+
+            // Get base pointee type
+            if let Some(Operand::IdRef(base_id)) = inst.operands.first() {
+                if let Ok(base_result_id) = ResultId::try_from(*base_id) {
+                    if let Some(base_inst) = definitions.get(&base_result_id) {
+                        if let Some(base_type_raw) = base_inst.result_type {
+                            if let Ok(base_type_id) = ResultId::try_from(base_type_raw) {
+                                if let Some(base_type_inst) = definitions.get(&base_type_id) {
+                                    if base_type_inst.class.opcode == Op::TypePointer {
+                                        if let Some(Operand::IdRef(pointee_id)) =
+                                            base_type_inst.operands.get(1)
+                                        {
+                                            current_type = ResultId::try_from(*pointee_id).ok();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Walk through indices
+            for i in (start_idx - 1)..inst.operands.len() {
+                let Some(type_id) = current_type else {
+                    break;
+                };
+                let Some(type_inst) = definitions.get(&type_id) else {
+                    break;
+                };
+
+                if type_inst.class.opcode == Op::TypeMatrix {
+                    return true;
+                }
+
+                // Get next type
+                current_type = match type_inst.class.opcode {
+                    Op::TypeStruct => {
+                        // Need to get the constant index value
+                        if let Some(Operand::IdRef(idx_id)) = inst.operands.get(i) {
+                            if let Ok(idx_result_id) = ResultId::try_from(*idx_id) {
+                                if let Some(idx_inst) = definitions.get(&idx_result_id) {
+                                    if idx_inst.class.opcode == Op::Constant {
+                                        if let Some(Operand::LiteralBit32(val)) =
+                                            idx_inst.operands.first()
+                                        {
+                                            if let Some(Operand::IdRef(member_id)) =
+                                                type_inst.operands.get(*val as usize)
+                                            {
+                                                ResultId::try_from(*member_id).ok()
+                                            } else {
+                                                None
+                                            }
+                                        } else {
+                                            None
+                                        }
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    }
+                    Op::TypeArray | Op::TypeRuntimeArray | Op::TypeVector | Op::TypeMatrix => {
+                        if let Some(Operand::IdRef(elem_id)) = type_inst.operands.first() {
+                            ResultId::try_from(*elem_id).ok()
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                };
+            }
+
+            false
+        }
+        Op::Phi => {
+            for i in (0..inst.operands.len()).step_by(2) {
+                if let Some(Operand::IdRef(val_id)) = inst.operands.get(i) {
+                    if let Ok(val_result_id) = ResultId::try_from(*val_id) {
+                        if let Some(val_inst) = definitions.get(&val_result_id) {
+                            if traces_through_matrix(val_inst, definitions, visited) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+            false
+        }
+        Op::Select => {
+            for i in [1, 2] {
+                if let Some(Operand::IdRef(val_id)) = inst.operands.get(i) {
+                    if let Ok(val_result_id) = ResultId::try_from(*val_id) {
+                        if let Some(val_inst) = definitions.get(&val_result_id) {
+                            if traces_through_matrix(val_inst, definitions, visited) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+            false
+        }
+        Op::CopyObject => {
+            if let Some(Operand::IdRef(src_id)) = inst.operands.first() {
+                if let Ok(src_result_id) = ResultId::try_from(*src_id) {
+                    if let Some(src_inst) = definitions.get(&src_result_id) {
+                        return traces_through_matrix(src_inst, definitions, visited);
+                    }
+                }
+            }
+            false
+        }
+        _ => false,
+    }
+}
+
+/// Validates variable pointer constraints.
+///
+/// Variable pointers must not:
+/// - Point to arrays of Block/BufferBlock decorated structs
+/// - Point to objects containing matrices
+/// - Point to columns or components of matrices
+/// - (Without VariablePointers capability) be selected from different buffers
+pub struct VariablePointerRule;
+
+impl ValidationRule for VariablePointerRule {
+    fn name(&self) -> &'static str {
+        "variable-pointers"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        if ctx.options.relax_logical_pointer {
+            return Ok(());
+        }
+
+        let addressing_model = ctx
+            .module
+            .memory_model
+            .as_ref()
+            .and_then(|inst| inst.operands.first())
+            .and_then(|op| match op {
+                Operand::AddressingModel(model) => Some(*model),
+                _ => None,
+            });
+
+        // Only validate in Logical or PhysicalStorageBuffer64 addressing mode
+        if !matches!(
+            addressing_model,
+            Some(AddressingModel::Logical | AddressingModel::PhysicalStorageBuffer64)
+        ) {
+            return Ok(());
+        }
+
+        let has_variable_pointers = ctx
+            .declared_capabilities
+            .contains(&Capability::VariablePointers);
+        let has_variable_pointers_storage_buffer = ctx
+            .declared_capabilities
+            .contains(&Capability::VariablePointersStorageBuffer);
+
+        // Build variable pointer cache
+        let mut var_ptr_cache: HashMap<ResultId, bool> = HashMap::new();
+
+        // First pass: identify all variable pointers
+        for inst in ctx.module.all_inst_iter() {
+            if let Some(result_id) = inst.result_id {
+                if let Ok(id) = ResultId::try_from(result_id) {
+                    if is_logical_pointer(inst, ctx.definitions) {
+                        is_variable_pointer(id, ctx.definitions, &mut var_ptr_cache);
+                    }
+                }
+            }
+        }
+
+        // Second pass: validate variable pointer constraints
+        for inst in ctx.module.all_inst_iter() {
+            let Some(result_id_raw) = inst.result_id else {
+                continue;
+            };
+            let Ok(result_id) = ResultId::try_from(result_id_raw) else {
+                continue;
+            };
+
+            // Skip if not a variable pointer
+            if !var_ptr_cache.get(&result_id).copied().unwrap_or(false) {
+                continue;
+            }
+
+            let inst_id = Id::try_from(result_id_raw).unwrap_or_else(|_| Id::try_from(1).unwrap());
+
+            // Get the storage class
+            let storage_class = get_pointer_storage_class(inst, ctx.definitions);
+
+            // Check if this is a typed pointer with pointee type
+            if let Some(type_id) = inst.result_type {
+                if let Ok(type_result_id) = ResultId::try_from(type_id) {
+                    if let Some(type_inst) = ctx.definitions.get(&type_result_id) {
+                        if type_inst.class.opcode == Op::TypePointer {
+                            if let Some(Operand::IdRef(pointee_id)) = type_inst.operands.get(1) {
+                                if let Ok(pointee_type_id) = TypeId::try_from(*pointee_id) {
+                                    // Check: variable pointer must not point to block array
+                                    if let Ok(pointee_result_id) =
+                                        ResultId::try_from(*pointee_id)
+                                    {
+                                        if let Some(pointee_inst) =
+                                            ctx.definitions.get(&pointee_result_id)
+                                        {
+                                            if is_block_array(
+                                                pointee_inst,
+                                                ctx.definitions,
+                                                ctx.module,
+                                            ) {
+                                                return Err(
+                                                    ValidationError::VariablePointerToBlockArray {
+                                                        pointer: inst_id,
+                                                    },
+                                                );
+                                            }
+                                        }
+                                    }
+
+                                    // Check: variable pointer must not point to matrix-containing type
+                                    let mut visited = HashSet::new();
+                                    if type_contains_matrix(
+                                        pointee_type_id,
+                                        ctx.definitions,
+                                        &mut visited,
+                                    ) {
+                                        return Err(
+                                            ValidationError::VariablePointerToMatrixType {
+                                                pointer: inst_id,
+                                            },
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Check: variable pointer must not point to matrix column/component
+            let mut trace_visited = HashSet::new();
+            if traces_through_matrix(inst, ctx.definitions, &mut trace_visited) {
+                return Err(ValidationError::VariablePointerToMatrixElement {
+                    pointer: inst_id,
+                });
+            }
+
+            // Check same-buffer constraint for OpSelect/OpPhi without VariablePointers capability
+            if !has_variable_pointers
+                && matches!(inst.class.opcode, Op::Select | Op::Phi)
+                && matches!(
+                    storage_class,
+                    Some(StorageClass::StorageBuffer | StorageClass::Workgroup)
+                )
+            {
+                // For StorageBuffer, need VariablePointersStorageBuffer
+                // For Workgroup, need VariablePointers
+                let needs_full_capability = storage_class == Some(StorageClass::Workgroup);
+
+                if needs_full_capability
+                    || (storage_class == Some(StorageClass::StorageBuffer)
+                        && !has_variable_pointers_storage_buffer)
+                {
+                    // Collect source variables
+                    let mut source_vars: HashSet<ResultId> = HashSet::new();
+                    let operand_indices: Vec<usize> = match inst.class.opcode {
+                        Op::Select => vec![1, 2],
+                        Op::Phi => (0..inst.operands.len()).step_by(2).collect(),
+                        _ => vec![],
+                    };
+
+                    for idx in operand_indices {
+                        if let Some(Operand::IdRef(val_id)) = inst.operands.get(idx) {
+                            if let Some(var_id) =
+                                trace_to_variable(*val_id, ctx.definitions, &mut HashSet::new())
+                            {
+                                source_vars.insert(var_id);
+                            }
+                        }
+                    }
+
+                    // Without full VariablePointers, must point to same structure
+                    if source_vars.len() > 1 {
+                        return Err(ValidationError::VariablePointerDifferentBuffers {
+                            pointer: inst_id,
+                        });
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Trace a pointer value back to its source variable.
+fn trace_to_variable(
+    id: u32,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    visited: &mut HashSet<u32>,
+) -> Option<ResultId> {
+    if !visited.insert(id) {
+        return None;
+    }
+
+    let result_id = ResultId::try_from(id).ok()?;
+    let inst = definitions.get(&result_id)?;
+
+    match inst.class.opcode {
+        Op::Variable | Op::UntypedVariableKHR => {
+            // Check if it's StorageBuffer or Workgroup
+            if let Some(Operand::StorageClass(sc)) = inst.operands.first() {
+                if *sc == StorageClass::StorageBuffer || *sc == StorageClass::Workgroup {
+                    return Some(result_id);
+                }
+            }
+            None
+        }
+        Op::AccessChain
+        | Op::InBoundsAccessChain
+        | Op::PtrAccessChain
+        | Op::UntypedAccessChainKHR
+        | Op::UntypedInBoundsAccessChainKHR
+        | Op::UntypedPtrAccessChainKHR => {
+            // Trace to base pointer
+            if let Some(Operand::IdRef(base_id)) = inst.operands.first() {
+                trace_to_variable(*base_id, definitions, visited)
+            } else {
+                None
+            }
+        }
+        Op::CopyObject => {
+            if let Some(Operand::IdRef(src_id)) = inst.operands.first() {
+                trace_to_variable(*src_id, definitions, visited)
+            } else {
+                None
+            }
+        }
+        Op::ConstantNull => None, // Null is allowed
+        _ => None,
+    }
+}
+
+// ============================================================================
 // All pointer rules
 // ============================================================================
 
@@ -646,5 +1272,23 @@ pub fn all_pointer_rules() -> Vec<&'static dyn ValidationRule> {
         &LogicalPointerRule,
         &LoadStoreLogicalPointerRule,
         &StoreTypeCompatibilityRule,
+        &VariablePointerRule,
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_all_pointer_rules() {
+        let rules = all_pointer_rules();
+        assert_eq!(rules.len(), 4);
+
+        let names: Vec<_> = rules.iter().map(|r| r.name()).collect();
+        assert!(names.contains(&"logical-pointers"));
+        assert!(names.contains(&"load-store-logical-pointers"));
+        assert!(names.contains(&"store-type-compatibility"));
+        assert!(names.contains(&"variable-pointers"));
+    }
 }
