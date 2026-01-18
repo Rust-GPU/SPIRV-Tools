@@ -1710,6 +1710,63 @@ pub enum ValidationError {
     },
 
     // ============================================================================
+    // Cooperative Matrix MulAdd Errors
+    // ============================================================================
+
+    /// Cooperative matrix MulAdd operand is not a cooperative matrix type.
+    #[error("{op_name} {operand_name} is not a cooperative matrix type")]
+    CooperativeMatrixMulAddTypeMismatch {
+        /// The opcode name.
+        op_name: &'static str,
+        /// The operand name (A, B, C, or Result Type).
+        operand_name: &'static str,
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+    /// Cooperative matrix MulAdd scope mismatch.
+    #[error("{op_name} cooperative matrix scopes must match")]
+    CooperativeMatrixMulAddScopeMismatch {
+        /// The opcode name.
+        op_name: &'static str,
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+    /// Cooperative matrix MulAdd M dimension mismatch.
+    #[error("{op_name} cooperative matrix 'M' dimension mismatch")]
+    CooperativeMatrixMulAddMDimensionMismatch {
+        /// The opcode name.
+        op_name: &'static str,
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+    /// Cooperative matrix MulAdd N dimension mismatch.
+    #[error("{op_name} cooperative matrix 'N' dimension mismatch")]
+    CooperativeMatrixMulAddNDimensionMismatch {
+        /// The opcode name.
+        op_name: &'static str,
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+    /// Cooperative matrix MulAdd K dimension mismatch.
+    #[error("{op_name} cooperative matrix 'K' dimension mismatch")]
+    CooperativeMatrixMulAddKDimensionMismatch {
+        /// The opcode name.
+        op_name: &'static str,
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+
+    // ============================================================================
     // Cooperative Vector Errors
     // ============================================================================
 
@@ -6498,5 +6555,43 @@ pub enum ValidationError {
     DebugTypeVectorInvalidComponentCount {
         /// The invalid component count.
         count: u32,
+    },
+
+    // ========== ID VALIDATION ==========
+    /// Reserved opcode used.
+    #[error("Opcode {opcode:?} is reserved and cannot be used")]
+    ReservedOpcode {
+        /// The reserved opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Operand cannot be a type in this instruction.
+    #[error("Operand {operand:?} cannot be a type")]
+    OperandCannotBeType {
+        /// The operand that was incorrectly a type.
+        operand: Id,
+    },
+    /// Operand requires a type but received a non-typed value.
+    #[error("Operand {operand:?} requires a type")]
+    OperandRequiresType {
+        /// The operand that required a type.
+        operand: Id,
+    },
+    /// Non-semantic instruction result used in semantic instruction.
+    #[error("Operand {operand:?} in semantic instruction cannot be a non-semantic instruction result")]
+    NonSemanticUsedInSemantic {
+        /// The non-semantic operand.
+        operand: Id,
+    },
+    /// OpExtInstWithForwardRefsKHR only allowed with non-semantic instructions.
+    #[error("OpExtInstWithForwardRefsKHR is only allowed with non-semantic instructions")]
+    ExtInstWithForwardRefsNotNonSemantic,
+    /// OpExtInstWithForwardRefsKHR must have at least one forward declared ID.
+    #[error("OpExtInstWithForwardRefsKHR must have at least one forward declared ID")]
+    ExtInstWithForwardRefsNoForwardRefs,
+    /// Forward reference in type-generating instruction requires forward pointer.
+    #[error("Operand {operand:?} requires a previous definition")]
+    ForwardRefInTypeRequiresPreviousDef {
+        /// The forward-referenced operand.
+        operand: Id,
     },
 }

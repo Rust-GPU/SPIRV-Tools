@@ -1632,12 +1632,264 @@ impl ValidationRule for TypeUniquenessRule {
 }
 
 // ============================================================================
+// Reserved Opcode Rule
+// ============================================================================
+
+/// Validates that reserved opcodes are not used.
+///
+/// Certain opcodes are technically defined but are reserved for future use
+/// and should never appear in valid SPIR-V modules.
+pub struct ReservedOpcodeRule;
+
+impl ValidationRule for ReservedOpcodeRule {
+    fn name(&self) -> &'static str {
+        "reserved-opcode"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        for inst in ctx.module.all_inst_iter() {
+            // These instructions are enabled by a capability but should never be used
+            let is_reserved = matches!(
+                inst.class.opcode,
+                Op::ImageSparseSampleProjImplicitLod
+                    | Op::ImageSparseSampleProjExplicitLod
+                    | Op::ImageSparseSampleProjDrefImplicitLod
+                    | Op::ImageSparseSampleProjDrefExplicitLod
+            );
+
+            if is_reserved {
+                return Err(ValidationError::ReservedOpcode {
+                    opcode: inst.class.opcode,
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+// ============================================================================
+// IdPass Validation Rule
+// ============================================================================
+
+/// Validates ID operand usage according to SPIR-V specification.
+///
+/// This rule implements checks from the C++ IdPass function, including:
+/// - Type operands cannot be used where values are expected
+/// - Value operands with no type cannot be used where types are expected
+/// - Non-semantic instruction results cannot be used in semantic instructions
+/// - OpExtInstWithForwardRefsKHR is only allowed with non-semantic instructions
+pub struct IdPassRule;
+
+/// Instructions that are allowed to have type operands (without being type-generating).
+fn instruction_can_have_type_operand(opcode: Op) -> bool {
+    matches!(
+        opcode,
+        Op::SizeOf
+            | Op::CooperativeMatrixLengthNV
+            | Op::CooperativeMatrixLengthKHR
+            | Op::UntypedArrayLengthKHR
+            | Op::Function
+            | Op::AsmINTEL
+    )
+}
+
+/// Instructions that are exempt from the "operand must have a type" requirement.
+fn instruction_requires_type_operand(opcode: Op) -> bool {
+    // These instructions don't require their operands to have types
+    !matches!(
+        opcode,
+        Op::ExtInst
+            | Op::ExtInstWithForwardRefsKHR
+            | Op::ExtInstImport
+            | Op::SelectionMerge
+            | Op::LoopMerge
+            | Op::Function
+            | Op::SizeOf
+            | Op::CooperativeMatrixLengthNV
+            | Op::CooperativeMatrixLengthKHR
+            | Op::Phi
+            | Op::UntypedArrayLengthKHR
+            | Op::AsmINTEL
+    )
+}
+
+/// Checks if an opcode is a debug instruction.
+fn is_debug_opcode(opcode: Op) -> bool {
+    matches!(
+        opcode,
+        Op::SourceContinued
+            | Op::Source
+            | Op::SourceExtension
+            | Op::Name
+            | Op::MemberName
+            | Op::String
+            | Op::Line
+            | Op::NoLine
+            | Op::ModuleProcessed
+    )
+}
+
+/// Checks if an opcode is a decoration instruction.
+fn is_decoration_opcode(opcode: Op) -> bool {
+    matches!(
+        opcode,
+        Op::Decorate
+            | Op::MemberDecorate
+            | Op::DecorationGroup
+            | Op::GroupDecorate
+            | Op::GroupMemberDecorate
+            | Op::DecorateId
+            | Op::DecorateString
+            | Op::MemberDecorateString
+    )
+}
+
+/// Checks if an opcode is a branch instruction.
+fn is_branch_opcode(opcode: Op) -> bool {
+    matches!(
+        opcode,
+        Op::Branch
+            | Op::BranchConditional
+            | Op::Switch
+            | Op::Return
+            | Op::ReturnValue
+            | Op::Kill
+            | Op::Unreachable
+            | Op::TerminateInvocation
+            | Op::IgnoreIntersectionKHR
+            | Op::TerminateRayKHR
+    )
+}
+
+/// Checks if an opcode generates an untyped pointer (KHR extensions).
+fn generates_untyped_pointer(opcode: Op) -> bool {
+    matches!(
+        opcode,
+        Op::UntypedVariableKHR
+            | Op::UntypedAccessChainKHR
+            | Op::UntypedInBoundsAccessChainKHR
+            | Op::UntypedPtrAccessChainKHR
+            | Op::UntypedInBoundsPtrAccessChainKHR
+    )
+}
+
+/// Checks if an instruction is part of a non-semantic extended instruction set.
+fn is_non_semantic_instruction(inst: &rspirv::dr::Instruction, ctx: &ValidationContext<'_>) -> bool {
+    if inst.class.opcode != Op::ExtInst && inst.class.opcode != Op::ExtInstWithForwardRefsKHR {
+        return false;
+    }
+
+    // Get the extended instruction set ID (first operand)
+    let ext_inst_set_id = match inst.operands.first() {
+        Some(Operand::IdRef(id)) => *id,
+        _ => return false,
+    };
+
+    // Look up the instruction set import to check if it's non-semantic
+    for import_inst in &ctx.module.ext_inst_imports {
+        if import_inst.result_id == Some(ext_inst_set_id) {
+            // Check if the name starts with "NonSemantic."
+            if let Some(Operand::LiteralString(name)) = import_inst.operands.first() {
+                return name.starts_with("NonSemantic.");
+            }
+        }
+    }
+    false
+}
+
+impl ValidationRule for IdPassRule {
+    fn name(&self) -> &'static str {
+        "id-pass"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        // Validate all instructions in the module
+        for inst in ctx.module.all_inst_iter() {
+            let opcode = inst.class.opcode;
+
+            // Check if this instruction can have type operands
+            let can_have_type_ops = is_type_opcode(opcode)
+                || is_debug_opcode(opcode)
+                || is_decoration_opcode(opcode)
+                || instruction_can_have_type_operand(opcode)
+                || generates_untyped_pointer(opcode)
+                || is_non_semantic_instruction(inst, ctx);
+
+            // Check if this instruction requires typed operands
+            let requires_typed_ops = !is_debug_opcode(opcode)
+                && !is_decoration_opcode(opcode)
+                && !is_branch_opcode(opcode)
+                && !generates_untyped_pointer(opcode)
+                && instruction_requires_type_operand(opcode)
+                && !is_non_semantic_instruction(inst, ctx);
+
+            // Is this a semantic instruction?
+            let is_semantic = !is_non_semantic_instruction(inst, ctx);
+
+            // Check each operand
+            for operand in &inst.operands {
+                if let Operand::IdRef(operand_id) = operand {
+                    let operand_result_id = match ResultId::try_from(*operand_id) {
+                        Ok(id) => id,
+                        Err(_) => continue,
+                    };
+
+                    // Look up the operand's definition
+                    if let Some(def_inst) = ctx.definitions.get(&operand_result_id) {
+                        let def_opcode = def_inst.class.opcode;
+
+                        // Check: Type operand cannot be used where value is expected
+                        if is_type_opcode(def_opcode) && !can_have_type_ops {
+                            return Err(ValidationError::OperandCannotBeType {
+                                operand: Id::try_from(*operand_id).unwrap_or(Id::try_from(1u32).unwrap()),
+                            });
+                        }
+
+                        // Check: Operand must have a type if required
+                        if def_inst.result_type.is_none()
+                            && !is_type_opcode(def_opcode)
+                            && requires_typed_ops
+                        {
+                            return Err(ValidationError::OperandRequiresType {
+                                operand: Id::try_from(*operand_id).unwrap_or(Id::try_from(1u32).unwrap()),
+                            });
+                        }
+
+                        // Check: Non-semantic result cannot be used in semantic instruction
+                        if is_semantic && is_non_semantic_instruction(def_inst, ctx) {
+                            return Err(ValidationError::NonSemanticUsedInSemantic {
+                                operand: Id::try_from(*operand_id).unwrap_or(Id::try_from(1u32).unwrap()),
+                            });
+                        }
+                    }
+                }
+            }
+
+            // Check OpExtInstWithForwardRefsKHR specific requirements
+            if opcode == Op::ExtInstWithForwardRefsKHR {
+                // Must be a non-semantic instruction
+                if !is_non_semantic_instruction(inst, ctx) {
+                    return Err(ValidationError::ExtInstWithForwardRefsNotNonSemantic);
+                }
+
+                // Must have at least one forward reference
+                // (This is hard to check without tracking forward declarations,
+                // so we'll skip this for now - the C++ version tracks this during parsing)
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
 // All type rules
 // ============================================================================
 
 /// Returns all type validation rules.
 pub fn all_type_rules() -> Vec<&'static dyn ValidationRule> {
     vec![
+        &ReservedOpcodeRule,
         &TypeUniquenessRule,
         &ResultTypesAreTypesRule,
         &TypeFunctionsRule,
@@ -1652,5 +1904,6 @@ pub fn all_type_rules() -> Vec<&'static dyn ValidationRule> {
         &TypeStructRule,
         &TypePointerRule,
         &TypeForwardPointerRule,
+        &IdPassRule,
     ]
 }

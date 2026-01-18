@@ -21,7 +21,8 @@ mod variables;
 pub use access_chain::{AccessChainRule, PtrAccessChainRule, RawAccessChainRule};
 pub use cooperative::{
     CooperativeMatrixLengthRule, CooperativeMatrixLoadStoreKHRRule,
-    CooperativeMatrixLoadStoreNVRule, CooperativeVectorLoadStoreNVRule,
+    CooperativeMatrixLoadStoreNVRule, CooperativeMatrixMulAddKHRRule,
+    CooperativeMatrixMulAddNVRule, CooperativeVectorLoadStoreNVRule,
 };
 pub use load_store::{LoadRule, StoreRule};
 pub use misc::{ArrayLengthRule, CopyMemoryRule, MemoryModelRule, PointerComparisonRule};
@@ -46,6 +47,8 @@ pub fn all_memory_rules() -> Vec<&'static dyn ValidationRule> {
         &CooperativeMatrixLengthRule,
         &CooperativeMatrixLoadStoreNVRule,
         &CooperativeMatrixLoadStoreKHRRule,
+        &CooperativeMatrixMulAddNVRule,
+        &CooperativeMatrixMulAddKHRRule,
         // Cooperative vector rules
         &CooperativeVectorLoadStoreNVRule,
     ]

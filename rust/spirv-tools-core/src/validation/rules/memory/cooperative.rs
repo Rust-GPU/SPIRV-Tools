@@ -879,3 +879,428 @@ impl ValidationRule for CooperativeVectorLoadStoreNVRule {
         Ok(())
     }
 }
+
+// ============================================================================
+// Cooperative Matrix MulAdd Validation
+// ============================================================================
+
+/// Helper to extract constant u32 value from an ID.
+fn get_constant_u32(id: u32, ctx: &ValidationContext<'_>) -> Option<u32> {
+    let result_id = ResultId::try_from(id).ok()?;
+    let inst = ctx.definitions.get(&result_id)?;
+    if !matches!(
+        inst.class.opcode,
+        Op::Constant | Op::SpecConstant
+    ) {
+        return None;
+    }
+    match inst.operands.first() {
+        Some(Operand::LiteralBit32(val)) => Some(*val),
+        _ => None,
+    }
+}
+
+/// Helper to check if a type is OpTypeCooperativeMatrixNV.
+fn is_cooperative_matrix_nv_type(type_id: u32, ctx: &ValidationContext<'_>) -> bool {
+    ResultId::try_from(type_id)
+        .ok()
+        .and_then(|id| ctx.definitions.get(&id))
+        .map(|inst| inst.class.opcode == Op::TypeCooperativeMatrixNV)
+        .unwrap_or(false)
+}
+
+/// Helper to check if a type is OpTypeCooperativeMatrixKHR.
+fn is_cooperative_matrix_khr_type(type_id: u32, ctx: &ValidationContext<'_>) -> bool {
+    ResultId::try_from(type_id)
+        .ok()
+        .and_then(|id| ctx.definitions.get(&id))
+        .map(|inst| inst.class.opcode == Op::TypeCooperativeMatrixKHR)
+        .unwrap_or(false)
+}
+
+/// Extracts cooperative matrix type parameters (Scope, Rows, Cols).
+fn get_matrix_params(
+    type_id: u32,
+    ctx: &ValidationContext<'_>,
+) -> Option<(Option<u32>, Option<u32>, Option<u32>)> {
+    let result_id = ResultId::try_from(type_id).ok()?;
+    let type_inst = ctx.definitions.get(&result_id)?;
+
+    // For both NV and KHR types:
+    // Operand 0: Component Type
+    // Operand 1 (NV) / 1 (KHR): Scope
+    // Operand 2 (NV) / 2 (KHR): Rows
+    // Operand 3 (NV) / 3 (KHR): Columns
+    // KHR also has Use at operand 4
+
+    let scope_idx = match type_inst.class.opcode {
+        Op::TypeCooperativeMatrixNV | Op::TypeCooperativeMatrixKHR => 1,
+        _ => return None,
+    };
+
+    let scope_id = type_inst.operands.get(scope_idx).and_then(|op| {
+        if let Operand::IdRef(id) = op {
+            Some(*id)
+        } else {
+            None
+        }
+    });
+    let rows_id = type_inst.operands.get(scope_idx + 1).and_then(|op| {
+        if let Operand::IdRef(id) = op {
+            Some(*id)
+        } else {
+            None
+        }
+    });
+    let cols_id = type_inst.operands.get(scope_idx + 2).and_then(|op| {
+        if let Operand::IdRef(id) = op {
+            Some(*id)
+        } else {
+            None
+        }
+    });
+
+    Some((
+        scope_id.and_then(|id| get_constant_u32(id, ctx)),
+        rows_id.and_then(|id| get_constant_u32(id, ctx)),
+        cols_id.and_then(|id| get_constant_u32(id, ctx)),
+    ))
+}
+
+/// Validates OpCooperativeMatrixMulAddNV instructions.
+pub struct CooperativeMatrixMulAddNVRule;
+
+impl ValidationRule for CooperativeMatrixMulAddNVRule {
+    fn name(&self) -> &'static str {
+        "cooperative-matrix-muladd-nv"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        for function in &ctx.module.functions {
+            let function_id = function.def.as_ref().and_then(|d| d.result_id).map(id_from_u32);
+
+            for block in &function.blocks {
+                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(id_from_u32);
+
+                for inst in &block.instructions {
+                    if inst.class.opcode != Op::CooperativeMatrixMulAddNV {
+                        continue;
+                    }
+
+                    let op_name = "OpCooperativeMatrixMulAddNV";
+
+                    // Get types for D (result), A, B, C operands
+                    let d_type_id = inst.result_type.unwrap_or(0);
+
+                    // Operands: A, B, C
+                    let a_id = inst.operands.first().and_then(|op| {
+                        if let Operand::IdRef(id) = op { Some(*id) } else { None }
+                    });
+                    let b_id = inst.operands.get(1).and_then(|op| {
+                        if let Operand::IdRef(id) = op { Some(*id) } else { None }
+                    });
+                    let c_id = inst.operands.get(2).and_then(|op| {
+                        if let Operand::IdRef(id) = op { Some(*id) } else { None }
+                    });
+
+                    // Get operand types
+                    let a_type_id = a_id
+                        .and_then(|id| ResultId::try_from(id).ok())
+                        .and_then(|rid| ctx.definitions.get(&rid))
+                        .and_then(|inst| inst.result_type)
+                        .unwrap_or(0);
+                    let b_type_id = b_id
+                        .and_then(|id| ResultId::try_from(id).ok())
+                        .and_then(|rid| ctx.definitions.get(&rid))
+                        .and_then(|inst| inst.result_type)
+                        .unwrap_or(0);
+                    let c_type_id = c_id
+                        .and_then(|id| ResultId::try_from(id).ok())
+                        .and_then(|rid| ctx.definitions.get(&rid))
+                        .and_then(|inst| inst.result_type)
+                        .unwrap_or(0);
+
+                    // Check all are cooperative matrix NV types
+                    if !is_cooperative_matrix_nv_type(a_type_id, ctx) {
+                        return Err(ValidationError::CooperativeMatrixMulAddTypeMismatch {
+                            op_name,
+                            operand_name: "A",
+                            function: function_id,
+                            block: block_id,
+                        });
+                    }
+                    if !is_cooperative_matrix_nv_type(b_type_id, ctx) {
+                        return Err(ValidationError::CooperativeMatrixMulAddTypeMismatch {
+                            op_name,
+                            operand_name: "B",
+                            function: function_id,
+                            block: block_id,
+                        });
+                    }
+                    if !is_cooperative_matrix_nv_type(c_type_id, ctx) {
+                        return Err(ValidationError::CooperativeMatrixMulAddTypeMismatch {
+                            op_name,
+                            operand_name: "C",
+                            function: function_id,
+                            block: block_id,
+                        });
+                    }
+                    if !is_cooperative_matrix_nv_type(d_type_id, ctx) {
+                        return Err(ValidationError::CooperativeMatrixMulAddTypeMismatch {
+                            op_name,
+                            operand_name: "Result Type",
+                            function: function_id,
+                            block: block_id,
+                        });
+                    }
+
+                    // Get matrix parameters
+                    let a_params = get_matrix_params(a_type_id, ctx);
+                    let b_params = get_matrix_params(b_type_id, ctx);
+                    let c_params = get_matrix_params(c_type_id, ctx);
+                    let d_params = get_matrix_params(d_type_id, ctx);
+
+                    if let (Some(a), Some(b), Some(c), Some(d)) = (a_params, b_params, c_params, d_params) {
+                        // Check scopes match
+                        let scopes = [a.0, b.0, c.0, d.0];
+                        for i in 0..scopes.len() {
+                            for j in (i + 1)..scopes.len() {
+                                if let (Some(s1), Some(s2)) = (scopes[i], scopes[j]) {
+                                    if s1 != s2 {
+                                        return Err(ValidationError::CooperativeMatrixMulAddScopeMismatch {
+                                            op_name,
+                                            function: function_id,
+                                            block: block_id,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+
+                        // Check M dimension: A_rows == C_rows == D_rows
+                        if let (Some(a_rows), Some(c_rows)) = (a.1, c.1) {
+                            if a_rows != c_rows {
+                                return Err(ValidationError::CooperativeMatrixMulAddMDimensionMismatch {
+                                    op_name,
+                                    function: function_id,
+                                    block: block_id,
+                                });
+                            }
+                        }
+                        if let (Some(a_rows), Some(d_rows)) = (a.1, d.1) {
+                            if a_rows != d_rows {
+                                return Err(ValidationError::CooperativeMatrixMulAddMDimensionMismatch {
+                                    op_name,
+                                    function: function_id,
+                                    block: block_id,
+                                });
+                            }
+                        }
+
+                        // Check N dimension: B_cols == C_cols == D_cols
+                        if let (Some(b_cols), Some(c_cols)) = (b.2, c.2) {
+                            if b_cols != c_cols {
+                                return Err(ValidationError::CooperativeMatrixMulAddNDimensionMismatch {
+                                    op_name,
+                                    function: function_id,
+                                    block: block_id,
+                                });
+                            }
+                        }
+                        if let (Some(b_cols), Some(d_cols)) = (b.2, d.2) {
+                            if b_cols != d_cols {
+                                return Err(ValidationError::CooperativeMatrixMulAddNDimensionMismatch {
+                                    op_name,
+                                    function: function_id,
+                                    block: block_id,
+                                });
+                            }
+                        }
+
+                        // Check K dimension: A_cols == B_rows
+                        if let (Some(a_cols), Some(b_rows)) = (a.2, b.1) {
+                            if a_cols != b_rows {
+                                return Err(ValidationError::CooperativeMatrixMulAddKDimensionMismatch {
+                                    op_name,
+                                    function: function_id,
+                                    block: block_id,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Validates OpCooperativeMatrixMulAddKHR instructions.
+pub struct CooperativeMatrixMulAddKHRRule;
+
+impl ValidationRule for CooperativeMatrixMulAddKHRRule {
+    fn name(&self) -> &'static str {
+        "cooperative-matrix-muladd-khr"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        for function in &ctx.module.functions {
+            let function_id = function.def.as_ref().and_then(|d| d.result_id).map(id_from_u32);
+
+            for block in &function.blocks {
+                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(id_from_u32);
+
+                for inst in &block.instructions {
+                    if inst.class.opcode != Op::CooperativeMatrixMulAddKHR {
+                        continue;
+                    }
+
+                    let op_name = "OpCooperativeMatrixMulAddKHR";
+
+                    // Get types for D (result), A, B, C operands
+                    let d_type_id = inst.result_type.unwrap_or(0);
+
+                    // Operands: A, B, C, (optional operands)
+                    let a_id = inst.operands.first().and_then(|op| {
+                        if let Operand::IdRef(id) = op { Some(*id) } else { None }
+                    });
+                    let b_id = inst.operands.get(1).and_then(|op| {
+                        if let Operand::IdRef(id) = op { Some(*id) } else { None }
+                    });
+                    let c_id = inst.operands.get(2).and_then(|op| {
+                        if let Operand::IdRef(id) = op { Some(*id) } else { None }
+                    });
+
+                    // Get operand types
+                    let a_type_id = a_id
+                        .and_then(|id| ResultId::try_from(id).ok())
+                        .and_then(|rid| ctx.definitions.get(&rid))
+                        .and_then(|inst| inst.result_type)
+                        .unwrap_or(0);
+                    let b_type_id = b_id
+                        .and_then(|id| ResultId::try_from(id).ok())
+                        .and_then(|rid| ctx.definitions.get(&rid))
+                        .and_then(|inst| inst.result_type)
+                        .unwrap_or(0);
+                    let c_type_id = c_id
+                        .and_then(|id| ResultId::try_from(id).ok())
+                        .and_then(|rid| ctx.definitions.get(&rid))
+                        .and_then(|inst| inst.result_type)
+                        .unwrap_or(0);
+
+                    // For KHR version, A, B, C, D must all be OpTypeCooperativeMatrixKHR
+                    if !is_cooperative_matrix_khr_type(a_type_id, ctx) {
+                        return Err(ValidationError::CooperativeMatrixMulAddTypeMismatch {
+                            op_name,
+                            operand_name: "A",
+                            function: function_id,
+                            block: block_id,
+                        });
+                    }
+                    if !is_cooperative_matrix_khr_type(b_type_id, ctx) {
+                        return Err(ValidationError::CooperativeMatrixMulAddTypeMismatch {
+                            op_name,
+                            operand_name: "B",
+                            function: function_id,
+                            block: block_id,
+                        });
+                    }
+                    if !is_cooperative_matrix_khr_type(c_type_id, ctx) {
+                        return Err(ValidationError::CooperativeMatrixMulAddTypeMismatch {
+                            op_name,
+                            operand_name: "C",
+                            function: function_id,
+                            block: block_id,
+                        });
+                    }
+                    if !is_cooperative_matrix_khr_type(d_type_id, ctx) {
+                        return Err(ValidationError::CooperativeMatrixMulAddTypeMismatch {
+                            op_name,
+                            operand_name: "Result Type",
+                            function: function_id,
+                            block: block_id,
+                        });
+                    }
+
+                    // Get matrix parameters and check dimensions
+                    let a_params = get_matrix_params(a_type_id, ctx);
+                    let b_params = get_matrix_params(b_type_id, ctx);
+                    let c_params = get_matrix_params(c_type_id, ctx);
+                    let d_params = get_matrix_params(d_type_id, ctx);
+
+                    if let (Some(a), Some(b), Some(c), Some(d)) = (a_params, b_params, c_params, d_params) {
+                        // Check scopes match
+                        let scopes = [a.0, b.0, c.0, d.0];
+                        for i in 0..scopes.len() {
+                            for j in (i + 1)..scopes.len() {
+                                if let (Some(s1), Some(s2)) = (scopes[i], scopes[j]) {
+                                    if s1 != s2 {
+                                        return Err(ValidationError::CooperativeMatrixMulAddScopeMismatch {
+                                            op_name,
+                                            function: function_id,
+                                            block: block_id,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+
+                        // Check M dimension: A_rows == C_rows == D_rows
+                        if let (Some(a_rows), Some(c_rows)) = (a.1, c.1) {
+                            if a_rows != c_rows {
+                                return Err(ValidationError::CooperativeMatrixMulAddMDimensionMismatch {
+                                    op_name,
+                                    function: function_id,
+                                    block: block_id,
+                                });
+                            }
+                        }
+                        if let (Some(a_rows), Some(d_rows)) = (a.1, d.1) {
+                            if a_rows != d_rows {
+                                return Err(ValidationError::CooperativeMatrixMulAddMDimensionMismatch {
+                                    op_name,
+                                    function: function_id,
+                                    block: block_id,
+                                });
+                            }
+                        }
+
+                        // Check N dimension: B_cols == C_cols == D_cols
+                        if let (Some(b_cols), Some(c_cols)) = (b.2, c.2) {
+                            if b_cols != c_cols {
+                                return Err(ValidationError::CooperativeMatrixMulAddNDimensionMismatch {
+                                    op_name,
+                                    function: function_id,
+                                    block: block_id,
+                                });
+                            }
+                        }
+                        if let (Some(b_cols), Some(d_cols)) = (b.2, d.2) {
+                            if b_cols != d_cols {
+                                return Err(ValidationError::CooperativeMatrixMulAddNDimensionMismatch {
+                                    op_name,
+                                    function: function_id,
+                                    block: block_id,
+                                });
+                            }
+                        }
+
+                        // Check K dimension: A_cols == B_rows
+                        if let (Some(a_cols), Some(b_rows)) = (a.2, b.1) {
+                            if a_cols != b_rows {
+                                return Err(ValidationError::CooperativeMatrixMulAddKDimensionMismatch {
+                                    op_name,
+                                    function: function_id,
+                                    block: block_id,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
