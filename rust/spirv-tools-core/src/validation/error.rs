@@ -4242,6 +4242,215 @@ pub enum ValidationError {
         block: Option<Id>,
     },
 
+    /// ModfStruct result type must be a struct with two identical float members.
+    #[error("GLSL.std.450 ModfStruct in block {block:?} of function {function:?} requires result to be a struct with two identical float scalar/vector members")]
+    GlslModfStructBadResult {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+
+    /// ModfStruct operand type must match struct member type.
+    #[error("GLSL.std.450 ModfStruct in block {block:?} of function {function:?} requires operand X to have the same type as struct members")]
+    GlslModfStructOperandMismatch {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+
+    /// FrexpStruct result type must be a struct with float and 32-bit int members.
+    #[error("GLSL.std.450 FrexpStruct in block {block:?} of function {function:?} requires result to be a struct with float member and 32-bit int member")]
+    GlslFrexpStructBadResult {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+
+    /// FrexpStruct operand type must match first struct member type.
+    #[error("GLSL.std.450 FrexpStruct in block {block:?} of function {function:?} requires operand X to have the same type as the first struct member")]
+    GlslFrexpStructOperandMismatch {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+
+    /// Ldexp Exp operand must be int scalar or vector.
+    #[error("GLSL.std.450 Ldexp in block {block:?} of function {function:?} requires Exp operand to be int scalar or vector")]
+    GlslLdexpExpMustBeInt {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+
+    /// Ldexp Exp operand must be 32-bit.
+    #[error("GLSL.std.450 Ldexp in block {block:?} of function {function:?} requires Exp operand to be 32-bit int")]
+    GlslLdexpExpMustBe32Bit {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+
+    /// Ldexp component count mismatch between result and Exp.
+    #[error("GLSL.std.450 Ldexp in block {block:?} of function {function:?} requires Exp operand to have the same component count as result")]
+    GlslLdexpComponentCountMismatch {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+
+    /// Interpolate requires InterpolationFunction capability.
+    #[error("GLSL.std.450 {ext_inst_name} in block {block:?} of function {function:?} requires InterpolationFunction capability")]
+    GlslInterpolateRequiresCapability {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The name of the extended instruction.
+        ext_inst_name: &'static str,
+    },
+
+    /// Interpolate result must be 32-bit float.
+    #[error("GLSL.std.450 {ext_inst_name} in block {block:?} of function {function:?} requires result to be 32-bit float scalar or vector")]
+    GlslInterpolateResultMustBe32BitFloat {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The name of the extended instruction.
+        ext_inst_name: &'static str,
+    },
+
+    /// Interpolate interpolant must be Input storage class.
+    #[error("GLSL.std.450 {ext_inst_name} in block {block:?} of function {function:?} requires Interpolant storage class to be Input")]
+    GlslInterpolateInputStorageClass {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The name of the extended instruction.
+        ext_inst_name: &'static str,
+    },
+
+    /// Interpolate interpolant pointee type must match result type.
+    #[error("GLSL.std.450 {ext_inst_name} in block {block:?} of function {function:?} requires Interpolant pointee type to match result type")]
+    GlslInterpolateTypeMismatch {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The name of the extended instruction.
+        ext_inst_name: &'static str,
+    },
+
+    /// InterpolateAtSample Sample must be 32-bit int.
+    #[error("GLSL.std.450 InterpolateAtSample in block {block:?} of function {function:?} requires Sample to be int scalar")]
+    GlslInterpolateSampleMustBeInt {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+
+    /// InterpolateAtSample Sample must be 32-bit.
+    #[error("GLSL.std.450 InterpolateAtSample in block {block:?} of function {function:?} requires Sample to be 32-bit int")]
+    GlslInterpolateSampleMustBe32Bit {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+
+    /// InterpolateAtOffset Offset must be vec2 of float.
+    #[error("GLSL.std.450 InterpolateAtOffset in block {block:?} of function {function:?} requires Offset to be a vector of 2 floats")]
+    GlslInterpolateOffsetMustBeVec2Float {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+
+    /// InterpolateAtOffset Offset must be 32-bit float.
+    #[error("GLSL.std.450 InterpolateAtOffset in block {block:?} of function {function:?} requires Offset to be a vector of 2 32-bit floats")]
+    GlslInterpolateOffsetMustBe32Bit {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+
+    // ========== OPENCL EXTENDED INSTRUCTIONS ==========
+    /// OpenCL.std extended instruction result type must be float.
+    #[error("OpenCL.std extended instruction in block {block:?} of function {function:?} requires result type to be a float scalar or vector")]
+    OpenClExtInstResultTypeMustBeFloat {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+    /// OpenCL.std extended instruction result type must be int.
+    #[error("OpenCL.std extended instruction in block {block:?} of function {function:?} requires result type to be an integer scalar or vector")]
+    OpenClExtInstResultTypeMustBeInt {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+    /// OpenCL.std extended instruction has invalid vector dimension.
+    #[error("OpenCL.std extended instruction in block {block:?} of function {function:?} requires result type to be a scalar or vector with 2, 3, 4, 8, or 16 components")]
+    OpenClExtInstBadVectorDimension {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+    /// OpenCL.std extended instruction operand type mismatch.
+    #[error("OpenCL.std extended instruction in block {block:?} of function {function:?} requires all operands to match result type")]
+    OpenClExtInstOperandTypeMismatch {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+    /// OpenCL.std cross result must be float vector.
+    #[error("OpenCL.std cross in block {block:?} of function {function:?} requires result type to be a float vector")]
+    OpenClCrossResultMustBeFloatVector {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+    /// OpenCL.std cross result must be 3 or 4 component.
+    #[error("OpenCL.std cross in block {block:?} of function {function:?} requires result type to be a 3 or 4 component vector")]
+    OpenClCrossBadVectorDimension {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+    /// OpenCL.std distance/length result must be float scalar.
+    #[error("OpenCL.std geometry function in block {block:?} of function {function:?} requires result type to be a float scalar")]
+    OpenClGeometryResultMustBeFloatScalar {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+    /// OpenCL.std normalize result must be float vector.
+    #[error("OpenCL.std normalize in block {block:?} of function {function:?} requires result type to be a float vector")]
+    OpenClNormalizeResultMustBeFloatVector {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+
     // ========== NON_UNIFORM ==========
     /// Non-uniform group operation result must be a boolean scalar.
     #[error(
