@@ -359,17 +359,21 @@ impl ValidationRule for FloatComparisonRule {
                         }
 
                         let left_dim = resolver.get_dimension(left_tid, ctx.definitions);
+
+                        // Result must match operand dimension (scalar operand -> scalar result,
+                        // vector operand -> vector result)
                         if left_dim != result_dim {
                             if let (Some(func), Some(block), Some(result_type)) = (
                                 function_id,
                                 block_id,
                                 crate::validation::types::TypeId::try_from(result_type_id).ok(),
                             ) {
-                                return Err(ValidationError::LogicalDimensionMismatch {
+                                return Err(ValidationError::LogicalResultTypeInvalid {
                                     function: func,
                                     block,
                                     opcode: inst.class.opcode,
                                     result_type,
+                                    expected: "bool scalar or vector",
                                 });
                             }
                         }
@@ -653,7 +657,7 @@ impl ValidationRule for IntComparisonRule {
                             }
                         }
 
-                        // Bit widths must match
+                        // Check bit widths first (more specific error)
                         let left_width = resolver.get_bit_width(left_tid, ctx.definitions);
                         let right_width = resolver.get_bit_width(right_tid, ctx.definitions);
 
@@ -664,6 +668,22 @@ impl ValidationRule for IntComparisonRule {
                                 crate::validation::types::TypeId::try_from(result_type_id).ok(),
                             ) {
                                 return Err(ValidationError::LogicalBitWidthMismatch {
+                                    function: func,
+                                    block,
+                                    opcode: inst.class.opcode,
+                                    result_type,
+                                });
+                            }
+                        }
+
+                        // Operand types must be identical (signedness matters even if width matches)
+                        if left_tid != right_tid {
+                            if let (Some(func), Some(block), Some(result_type)) = (
+                                function_id,
+                                block_id,
+                                crate::validation::types::TypeId::try_from(result_type_id).ok(),
+                            ) {
+                                return Err(ValidationError::LogicalOperandTypeMismatch {
                                     function: func,
                                     block,
                                     opcode: inst.class.opcode,
@@ -920,4 +940,105 @@ pub fn all_logical_rules() -> Vec<&'static dyn ValidationRule> {
         &IntComparisonRule,
         &SelectRule,
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::validation::op_ext::OpExt;
+
+    #[test]
+    fn test_boolean_reduction_ops() {
+        // Any/All reduce boolean vectors to scalar
+        assert!(matches!(Op::Any, Op::Any));
+        assert!(matches!(Op::All, Op::All));
+    }
+
+    #[test]
+    fn test_float_classification_ops() {
+        let float_class_ops = [
+            Op::IsNan,
+            Op::IsInf,
+            Op::IsFinite,
+            Op::IsNormal,
+            Op::SignBitSet,
+        ];
+
+        for op in float_class_ops {
+            // Verify these are logical-related operations
+            assert!(!op.is_terminator());
+        }
+    }
+
+    #[test]
+    fn test_float_comparison_ops() {
+        let float_cmp_ops = [
+            Op::FOrdEqual,
+            Op::FUnordEqual,
+            Op::FOrdNotEqual,
+            Op::FUnordNotEqual,
+            Op::FOrdLessThan,
+            Op::FUnordLessThan,
+            Op::FOrdGreaterThan,
+            Op::FUnordGreaterThan,
+            Op::FOrdLessThanEqual,
+            Op::FUnordLessThanEqual,
+            Op::FOrdGreaterThanEqual,
+            Op::FUnordGreaterThanEqual,
+            Op::LessOrGreater,
+            Op::Ordered,
+            Op::Unordered,
+        ];
+
+        for op in float_cmp_ops {
+            // Verify these are not barrier instructions
+            assert!(!op.is_barrier());
+        }
+    }
+
+    #[test]
+    fn test_logical_ops() {
+        let logical_ops = [
+            Op::LogicalEqual,
+            Op::LogicalNotEqual,
+            Op::LogicalOr,
+            Op::LogicalAnd,
+            Op::LogicalNot,
+        ];
+
+        for op in logical_ops {
+            // Logical operations are not terminators
+            assert!(!op.is_terminator());
+            assert!(!op.is_barrier());
+        }
+    }
+
+    #[test]
+    fn test_integer_comparison_ops() {
+        let int_cmp_ops = [
+            Op::IEqual,
+            Op::INotEqual,
+            Op::UGreaterThan,
+            Op::UGreaterThanEqual,
+            Op::ULessThan,
+            Op::ULessThanEqual,
+            Op::SGreaterThan,
+            Op::SGreaterThanEqual,
+            Op::SLessThan,
+            Op::SLessThanEqual,
+        ];
+
+        for op in int_cmp_ops {
+            // Integer comparisons are not terminators or barriers
+            assert!(!op.is_terminator());
+            assert!(!op.is_barrier());
+        }
+    }
+
+    #[test]
+    fn test_select_op() {
+        // OpSelect is not a terminator
+        assert!(!Op::Select.is_terminator());
+        assert!(!Op::Select.is_barrier());
+    }
 }

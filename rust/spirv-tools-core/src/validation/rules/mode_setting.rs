@@ -7,11 +7,16 @@
 //! - Memory model validation
 //! - Capability dependencies
 //! - Duplicate execution mode detection
+//! - LocalSize validation
+//! - Execution mode to execution model compatibility
 
 use std::collections::{HashMap, HashSet};
 
 use rspirv::dr::Operand;
-use rspirv::spirv::{AddressingModel, Capability, ExecutionMode, ExecutionModel, MemoryModel, Op};
+use rspirv::spirv::{
+    AddressingModel, BuiltIn, Capability, Decoration, ExecutionMode, ExecutionModel, MemoryModel,
+    Op,
+};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
 use crate::validation::error::ValidationError;
@@ -227,6 +232,604 @@ impl ValidationRule for FragmentExecutionModeRule {
                         entry_point: to_id(*func_id),
                     });
                 }
+
+                // Check AMD stencil ref front modes
+                let stencil_front_count = [
+                    ExecutionMode::StencilRefUnchangedFrontAMD,
+                    ExecutionMode::StencilRefLessFrontAMD,
+                    ExecutionMode::StencilRefGreaterFrontAMD,
+                ]
+                .iter()
+                .filter(|m| modes.contains(m))
+                .count();
+
+                if stencil_front_count > 1 {
+                    return Err(ValidationError::FragmentMultipleStencilRefFrontModes {
+                        entry_point: to_id(*func_id),
+                    });
+                }
+
+                // Check AMD stencil ref back modes
+                let stencil_back_count = [
+                    ExecutionMode::StencilRefUnchangedBackAMD,
+                    ExecutionMode::StencilRefLessBackAMD,
+                    ExecutionMode::StencilRefGreaterBackAMD,
+                ]
+                .iter()
+                .filter(|m| modes.contains(m))
+                .count();
+
+                if stencil_back_count > 1 {
+                    return Err(ValidationError::FragmentMultipleStencilRefBackModes {
+                        entry_point: to_id(*func_id),
+                    });
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Validates tessellation shader execution mode requirements.
+///
+/// - At most one spacing mode (SpacingEqual, SpacingFractionalEven/Odd)
+/// - At most one primitive type (Triangles, Quads, Isolines)
+/// - At most one vertex order (VertexOrderCw, VertexOrderCcw)
+pub struct TessellationExecutionModeRule;
+
+impl ValidationRule for TessellationExecutionModeRule {
+    fn name(&self) -> &'static str {
+        "tessellation-execution-mode"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        if !ctx.declared_capabilities.contains(&Capability::Shader) {
+            return Ok(());
+        }
+
+        let module = ctx.module();
+
+        // Build map of entry point -> execution model
+        let mut entry_point_models: HashMap<u32, ExecutionModel> = HashMap::new();
+        for ep in &module.entry_points {
+            if ep.class.opcode != Op::EntryPoint {
+                continue;
+            }
+            if let (Some(Operand::ExecutionModel(model)), Some(Operand::IdRef(func_id))) =
+                (ep.operands.first(), ep.operands.get(1))
+            {
+                entry_point_models.insert(*func_id, *model);
+            }
+        }
+
+        // Build map of entry point -> execution modes
+        let mut entry_point_modes: HashMap<u32, HashSet<ExecutionMode>> = HashMap::new();
+        for mode in &module.execution_modes {
+            let Some(Operand::IdRef(func_id)) = mode.operands.first() else {
+                continue;
+            };
+            let Some(Operand::ExecutionMode(exec_mode)) = mode.operands.get(1) else {
+                continue;
+            };
+            entry_point_modes
+                .entry(*func_id)
+                .or_default()
+                .insert(*exec_mode);
+        }
+
+        // Check tessellation entry points
+        for (func_id, model) in &entry_point_models {
+            if *model != ExecutionModel::TessellationControl
+                && *model != ExecutionModel::TessellationEvaluation
+            {
+                continue;
+            }
+
+            let Some(modes) = entry_point_modes.get(func_id) else {
+                continue;
+            };
+
+            // Check spacing modes
+            let spacing_count = [
+                ExecutionMode::SpacingEqual,
+                ExecutionMode::SpacingFractionalEven,
+                ExecutionMode::SpacingFractionalOdd,
+            ]
+            .iter()
+            .filter(|m| modes.contains(m))
+            .count();
+
+            if spacing_count > 1 {
+                return Err(ValidationError::TessellationMultipleSpacingModes {
+                    entry_point: to_id(*func_id),
+                });
+            }
+
+            // Check primitive types
+            let primitive_count = [
+                ExecutionMode::Triangles,
+                ExecutionMode::Quads,
+                ExecutionMode::Isolines,
+            ]
+            .iter()
+            .filter(|m| modes.contains(m))
+            .count();
+
+            if primitive_count > 1 {
+                return Err(ValidationError::TessellationMultiplePrimitiveTypes {
+                    entry_point: to_id(*func_id),
+                });
+            }
+
+            // Check vertex order modes
+            let vertex_order_count = [ExecutionMode::VertexOrderCw, ExecutionMode::VertexOrderCcw]
+                .iter()
+                .filter(|m| modes.contains(m))
+                .count();
+
+            if vertex_order_count > 1 {
+                return Err(ValidationError::TessellationMultipleVertexOrderModes {
+                    entry_point: to_id(*func_id),
+                });
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Validates geometry shader execution mode requirements.
+///
+/// - Exactly one input primitive type (InputPoints, InputLines, etc.)
+/// - Exactly one output primitive type (OutputPoints, OutputLineStrip, OutputTriangleStrip)
+pub struct GeometryExecutionModeRule;
+
+impl ValidationRule for GeometryExecutionModeRule {
+    fn name(&self) -> &'static str {
+        "geometry-execution-mode"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        if !ctx.declared_capabilities.contains(&Capability::Shader) {
+            return Ok(());
+        }
+
+        let module = ctx.module();
+
+        // Build map of entry point -> execution model
+        let mut entry_point_models: HashMap<u32, ExecutionModel> = HashMap::new();
+        for ep in &module.entry_points {
+            if ep.class.opcode != Op::EntryPoint {
+                continue;
+            }
+            if let (Some(Operand::ExecutionModel(model)), Some(Operand::IdRef(func_id))) =
+                (ep.operands.first(), ep.operands.get(1))
+            {
+                entry_point_models.insert(*func_id, *model);
+            }
+        }
+
+        // Build map of entry point -> execution modes
+        let mut entry_point_modes: HashMap<u32, HashSet<ExecutionMode>> = HashMap::new();
+        for mode in &module.execution_modes {
+            let Some(Operand::IdRef(func_id)) = mode.operands.first() else {
+                continue;
+            };
+            let Some(Operand::ExecutionMode(exec_mode)) = mode.operands.get(1) else {
+                continue;
+            };
+            entry_point_modes
+                .entry(*func_id)
+                .or_default()
+                .insert(*exec_mode);
+        }
+
+        // Check geometry entry points
+        for (func_id, model) in &entry_point_models {
+            if *model != ExecutionModel::Geometry {
+                continue;
+            }
+
+            let modes = entry_point_modes.get(func_id);
+
+            // Check input primitive types - exactly one required
+            let input_count = [
+                ExecutionMode::InputPoints,
+                ExecutionMode::InputLines,
+                ExecutionMode::InputLinesAdjacency,
+                ExecutionMode::Triangles,
+                ExecutionMode::InputTrianglesAdjacency,
+            ]
+            .iter()
+            .filter(|m| modes.map_or(false, |s| s.contains(m)))
+            .count();
+
+            if input_count != 1 {
+                return Err(ValidationError::GeometryMissingInputPrimitiveType {
+                    entry_point: to_id(*func_id),
+                });
+            }
+
+            // Check output primitive types - exactly one required
+            let output_count = [
+                ExecutionMode::OutputPoints,
+                ExecutionMode::OutputLineStrip,
+                ExecutionMode::OutputTriangleStrip,
+            ]
+            .iter()
+            .filter(|m| modes.map_or(false, |s| s.contains(m)))
+            .count();
+
+            if output_count != 1 {
+                return Err(ValidationError::GeometryMissingOutputPrimitiveType {
+                    entry_point: to_id(*func_id),
+                });
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Validates MeshEXT shader execution mode requirements.
+///
+/// - Exactly one output primitive type (OutputPoints, OutputLinesEXT, OutputTrianglesEXT)
+/// - Both OutputPrimitivesEXT and OutputVertices must be specified
+pub struct MeshExtExecutionModeRule;
+
+impl ValidationRule for MeshExtExecutionModeRule {
+    fn name(&self) -> &'static str {
+        "mesh-ext-execution-mode"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        if !ctx.declared_capabilities.contains(&Capability::Shader) {
+            return Ok(());
+        }
+
+        let module = ctx.module();
+
+        // Build map of entry point -> execution model
+        let mut entry_point_models: HashMap<u32, ExecutionModel> = HashMap::new();
+        for ep in &module.entry_points {
+            if ep.class.opcode != Op::EntryPoint {
+                continue;
+            }
+            if let (Some(Operand::ExecutionModel(model)), Some(Operand::IdRef(func_id))) =
+                (ep.operands.first(), ep.operands.get(1))
+            {
+                entry_point_models.insert(*func_id, *model);
+            }
+        }
+
+        // Build map of entry point -> execution modes
+        let mut entry_point_modes: HashMap<u32, HashSet<ExecutionMode>> = HashMap::new();
+        for mode in &module.execution_modes {
+            let Some(Operand::IdRef(func_id)) = mode.operands.first() else {
+                continue;
+            };
+            let Some(Operand::ExecutionMode(exec_mode)) = mode.operands.get(1) else {
+                continue;
+            };
+            entry_point_modes
+                .entry(*func_id)
+                .or_default()
+                .insert(*exec_mode);
+        }
+
+        // Check MeshEXT entry points
+        for (func_id, model) in &entry_point_models {
+            if *model != ExecutionModel::MeshEXT {
+                continue;
+            }
+
+            let modes = entry_point_modes.get(func_id);
+
+            // Check output primitive types - exactly one required
+            let output_prim_count = [
+                ExecutionMode::OutputPoints,
+                ExecutionMode::OutputLinesEXT,
+                ExecutionMode::OutputTrianglesEXT,
+            ]
+            .iter()
+            .filter(|m| modes.map_or(false, |s| s.contains(m)))
+            .count();
+
+            if output_prim_count != 1 {
+                return Err(ValidationError::MeshExtMissingOutputPrimitiveType {
+                    entry_point: to_id(*func_id),
+                });
+            }
+
+            // Check that both OutputPrimitivesEXT and OutputVertices are specified
+            let has_output_prims =
+                modes.map_or(false, |s| s.contains(&ExecutionMode::OutputPrimitivesEXT));
+            let has_output_verts =
+                modes.map_or(false, |s| s.contains(&ExecutionMode::OutputVertices));
+
+            if !has_output_prims || !has_output_verts {
+                return Err(ValidationError::MeshExtMissingOutputModes {
+                    entry_point: to_id(*func_id),
+                });
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Validates GLCompute LocalSize requirements in Vulkan.
+///
+/// In Vulkan, GLCompute entry points require LocalSize, LocalSizeId, or WorkgroupSize.
+pub struct VulkanGLComputeLocalSizeRule;
+
+impl ValidationRule for VulkanGLComputeLocalSizeRule {
+    fn name(&self) -> &'static str {
+        "vulkan-glcompute-localsize"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        if !ctx.env.is_vulkan() {
+            return Ok(());
+        }
+
+        let module = ctx.module();
+
+        // Check for WorkgroupSize decoration
+        let mut has_workgroup_size = false;
+        for inst in &module.annotations {
+            if inst.class.opcode == Op::Decorate {
+                if let (Some(Operand::Decoration(Decoration::BuiltIn)), Some(Operand::BuiltIn(bi))) =
+                    (inst.operands.get(1), inst.operands.get(2))
+                {
+                    if *bi == BuiltIn::WorkgroupSize {
+                        has_workgroup_size = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Build map of entry point -> execution modes with values
+        let mut entry_point_modes: HashMap<u32, HashSet<ExecutionMode>> = HashMap::new();
+        let mut has_local_size_id = false;
+        for mode in &module.execution_modes {
+            let Some(Operand::IdRef(func_id)) = mode.operands.first() else {
+                continue;
+            };
+            let Some(Operand::ExecutionMode(exec_mode)) = mode.operands.get(1) else {
+                continue;
+            };
+            entry_point_modes
+                .entry(*func_id)
+                .or_default()
+                .insert(*exec_mode);
+
+            if mode.class.opcode == Op::ExecutionModeId
+                && *exec_mode == ExecutionMode::LocalSizeId
+            {
+                has_local_size_id = true;
+            }
+        }
+
+        // Check GLCompute entry points
+        for ep in &module.entry_points {
+            if ep.class.opcode != Op::EntryPoint {
+                continue;
+            }
+            let Some(Operand::ExecutionModel(ExecutionModel::GLCompute)) = ep.operands.first()
+            else {
+                continue;
+            };
+            let Some(Operand::IdRef(func_id)) = ep.operands.get(1) else {
+                continue;
+            };
+
+            let modes = entry_point_modes.get(func_id);
+            let has_local_size = modes.map_or(false, |s| s.contains(&ExecutionMode::LocalSize));
+
+            // For TileShadingQCOM capability, TileShadingRateQCOM mode is also acceptable
+            let has_tile_shading = ctx
+                .declared_capabilities
+                .contains(&Capability::TileShadingQCOM)
+                && modes.map_or(false, |s| s.contains(&ExecutionMode::TileShadingRateQCOM));
+
+            if !has_local_size && !has_workgroup_size && !has_local_size_id && !has_tile_shading {
+                return Err(ValidationError::VulkanGLComputeMissingLocalSize {
+                    entry_point: to_id(*func_id),
+                });
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Validates LocalSize execution mode constraints.
+///
+/// - Product of X, Y, Z must not be zero
+/// - DerivativeGroupQuadsKHR requires X and Y to be multiples of 2
+/// - DerivativeGroupLinearKHR requires product to be a multiple of 4
+pub struct LocalSizeValidationRule;
+
+impl ValidationRule for LocalSizeValidationRule {
+    fn name(&self) -> &'static str {
+        "localsize-validation"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        let module = ctx.module();
+
+        // Build map of entry point -> execution modes
+        let mut entry_point_modes: HashMap<u32, HashSet<ExecutionMode>> = HashMap::new();
+        let mut local_size_values: HashMap<u32, (u32, u32, u32)> = HashMap::new();
+
+        for mode in &module.execution_modes {
+            let Some(Operand::IdRef(func_id)) = mode.operands.first() else {
+                continue;
+            };
+            let Some(Operand::ExecutionMode(exec_mode)) = mode.operands.get(1) else {
+                continue;
+            };
+
+            entry_point_modes
+                .entry(*func_id)
+                .or_default()
+                .insert(*exec_mode);
+
+            // Capture LocalSize values
+            if *exec_mode == ExecutionMode::LocalSize {
+                if let (
+                    Some(Operand::LiteralBit32(x)),
+                    Some(Operand::LiteralBit32(y)),
+                    Some(Operand::LiteralBit32(z)),
+                ) = (
+                    mode.operands.get(2),
+                    mode.operands.get(3),
+                    mode.operands.get(4),
+                ) {
+                    local_size_values.insert(*func_id, (*x, *y, *z));
+                }
+            }
+        }
+
+        // Validate LocalSize for each entry point
+        for (func_id, (x, y, z)) in &local_size_values {
+            let product = (*x as u64) * (*y as u64) * (*z as u64);
+
+            // Product must not be zero
+            if product == 0 {
+                return Err(ValidationError::LocalSizeProductZero {
+                    x: *x,
+                    y: *y,
+                    z: *z,
+                });
+            }
+
+            let modes = entry_point_modes.get(func_id);
+
+            // Check DerivativeGroupQuadsKHR
+            if modes.map_or(false, |s| s.contains(&ExecutionMode::DerivativeGroupQuadsKHR)) {
+                if *x % 2 != 0 || *y % 2 != 0 {
+                    return Err(ValidationError::DerivativeGroupQuadsRequiresMultipleOf2 {
+                        x: *x as u64,
+                        y: *y as u64,
+                    });
+                }
+            }
+
+            // Check DerivativeGroupLinearKHR
+            if modes.map_or(false, |s| s.contains(&ExecutionMode::DerivativeGroupLinearKHR)) {
+                if product % 4 != 0 {
+                    return Err(ValidationError::DerivativeGroupLinearRequiresMultipleOf4 {
+                        product,
+                    });
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Validates FPFastMathDefault execution mode conflicts.
+///
+/// - Cannot be combined with ContractionOff
+/// - Cannot be combined with SignedZeroInfNanPreserve
+pub struct FPFastMathDefaultConflictsRule;
+
+impl ValidationRule for FPFastMathDefaultConflictsRule {
+    fn name(&self) -> &'static str {
+        "fp-fast-math-default-conflicts"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        let module = ctx.module();
+
+        // Build map of entry point -> execution modes
+        let mut entry_point_modes: HashMap<u32, HashSet<ExecutionMode>> = HashMap::new();
+
+        for mode in &module.execution_modes {
+            let Some(Operand::IdRef(func_id)) = mode.operands.first() else {
+                continue;
+            };
+            let Some(Operand::ExecutionMode(exec_mode)) = mode.operands.get(1) else {
+                continue;
+            };
+
+            entry_point_modes
+                .entry(*func_id)
+                .or_default()
+                .insert(*exec_mode);
+        }
+
+        // Check for conflicts
+        for (_func_id, modes) in &entry_point_modes {
+            if modes.contains(&ExecutionMode::FPFastMathDefault) {
+                if modes.contains(&ExecutionMode::ContractionOff) {
+                    return Err(ValidationError::FPFastMathDefaultConflictsWithContractionOff);
+                }
+                if modes.contains(&ExecutionMode::SignedZeroInfNanPreserve) {
+                    return Err(
+                        ValidationError::FPFastMathDefaultConflictsWithSignedZeroInfNanPreserve,
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Validates TileShadingRateQCOM execution mode.
+///
+/// In Vulkan, the x and y values must be powers of 2.
+pub struct TileShadingRateQCOMRule;
+
+impl ValidationRule for TileShadingRateQCOMRule {
+    fn name(&self) -> &'static str {
+        "tile-shading-rate-qcom"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        if !ctx.env.is_vulkan() {
+            return Ok(());
+        }
+
+        let module = ctx.module();
+
+        for mode in &module.execution_modes {
+            let Some(Operand::ExecutionMode(ExecutionMode::TileShadingRateQCOM)) =
+                mode.operands.get(1)
+            else {
+                continue;
+            };
+
+            // Get x and y values
+            let x = mode
+                .operands
+                .get(2)
+                .and_then(|op| match op {
+                    Operand::LiteralBit32(v) => Some(*v),
+                    _ => None,
+                })
+                .unwrap_or(0);
+
+            let y = mode
+                .operands
+                .get(3)
+                .and_then(|op| match op {
+                    Operand::LiteralBit32(v) => Some(*v),
+                    _ => None,
+                })
+                .unwrap_or(0);
+
+            // Check that x and y are powers of 2
+            let is_power_of_2 = |n: u32| n > 0 && (n & (n - 1)) == 0;
+
+            if !is_power_of_2(x) || !is_power_of_2(y) {
+                return Err(ValidationError::TileShadingRateQCOMNotPowerOf2);
             }
         }
 
@@ -452,9 +1055,16 @@ pub fn all_mode_setting_rules() -> Vec<Box<dyn ValidationRule>> {
     vec![
         Box::new(EntryPointValidationRule),
         Box::new(FragmentExecutionModeRule),
+        Box::new(TessellationExecutionModeRule),
+        Box::new(GeometryExecutionModeRule),
+        Box::new(MeshExtExecutionModeRule),
         Box::new(VulkanExecutionModeRule),
+        Box::new(VulkanGLComputeLocalSizeRule),
+        Box::new(LocalSizeValidationRule),
         Box::new(MemoryModelValidationRule),
         Box::new(CapabilityDependenciesRule),
+        Box::new(FPFastMathDefaultConflictsRule),
+        Box::new(TileShadingRateQCOMRule),
         Box::new(DuplicateExecutionModeRule),
     ]
 }

@@ -254,108 +254,8 @@ impl ValidationRule for PhysicalStorageBufferInterfaceRule {
     }
 }
 
-/// Validates storage class singleton constraints per entry point.
-/// Vulkan requires that entry points have at most one variable of certain storage classes.
-pub struct StorageClassSingletonRule;
-
-impl ValidationRule for StorageClassSingletonRule {
-    fn name(&self) -> &'static str {
-        "storage-class-singleton"
-    }
-
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
-        if !ctx.env.is_vulkan() {
-            return Ok(());
-        }
-
-        let module = ctx.module();
-
-        // Build map of variable ID -> storage class
-        let mut var_storage_classes: HashMap<u32, StorageClass> = HashMap::new();
-        for inst in &module.types_global_values {
-            if inst.class.opcode == Op::Variable || inst.class.opcode == Op::UntypedVariableKHR {
-                if let (Some(var_id), Some(Operand::StorageClass(sc))) =
-                    (inst.result_id, inst.operands.first())
-                {
-                    var_storage_classes.insert(var_id, *sc);
-                }
-            }
-        }
-
-        // Check each entry point
-        for ep in &module.entry_points {
-            if ep.class.opcode != Op::EntryPoint {
-                continue;
-            }
-
-            let entry_point_id = ep.operands.get(1).and_then(|op| match op {
-                Operand::IdRef(id) => Some(*id),
-                _ => None,
-            });
-
-            // Count storage classes in interface
-            let mut has_push_constant = false;
-            let mut has_ray_payload = false;
-            let mut has_hit_attribute = false;
-            let mut has_callable_data = false;
-
-            // Interface variables start at operand 3
-            for operand in ep.operands.iter().skip(3) {
-                let Operand::IdRef(var_id) = operand else {
-                    continue;
-                };
-
-                let Some(sc) = var_storage_classes.get(var_id) else {
-                    continue;
-                };
-
-                match sc {
-                    StorageClass::PushConstant => {
-                        if has_push_constant {
-                            return Err(
-                                ValidationError::InterfaceMultiplePushConstant {
-                                    entry_point: entry_point_id.map(to_id),
-                                },
-                            );
-                        }
-                        has_push_constant = true;
-                    }
-                    StorageClass::IncomingRayPayloadKHR => {
-                        if has_ray_payload {
-                            return Err(
-                                ValidationError::InterfaceMultipleIncomingRayPayload {
-                                    entry_point: entry_point_id.map(to_id),
-                                },
-                            );
-                        }
-                        has_ray_payload = true;
-                    }
-                    StorageClass::HitAttributeKHR => {
-                        if has_hit_attribute {
-                            return Err(ValidationError::InterfaceMultipleHitAttribute {
-                                entry_point: entry_point_id.map(to_id),
-                            });
-                        }
-                        has_hit_attribute = true;
-                    }
-                    StorageClass::IncomingCallableDataKHR => {
-                        if has_callable_data {
-                            return Err(
-                                ValidationError::InterfaceMultipleIncomingCallableData {
-                                    entry_point: entry_point_id.map(to_id),
-                                },
-                            );
-                        }
-                        has_callable_data = true;
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        Ok(())
-    }
-}
+// Note: Storage class singleton validation (e.g., only one PushConstant variable per entry point)
+// is handled by the EntryPointInterfaceValidationRule in entry_points.rs.
 
 /// Validates that interface variables have non-conflicting location assignments.
 ///
@@ -651,7 +551,7 @@ pub fn all_interface_rules() -> Vec<Box<dyn ValidationRule>> {
     vec![
         Box::new(InterfaceVariableListingRule),
         Box::new(PhysicalStorageBufferInterfaceRule),
-        Box::new(StorageClassSingletonRule),
+        // Note: Storage class singleton validation is in entry_points.rs
         Box::new(LocationConflictRule),
         Box::new(IndexDecorationRule),
     ]

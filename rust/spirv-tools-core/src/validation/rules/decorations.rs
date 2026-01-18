@@ -408,6 +408,181 @@ impl ValidationRule for DecorationTargetCategoriesRule {
 }
 
 // ============================================================================
+// Decoration Compatibility Rule
+// ============================================================================
+
+/// Validates that mutually exclusive decorations are not both applied.
+pub struct DecorationCompatibilityRule;
+
+impl ValidationRule for DecorationCompatibilityRule {
+    fn name(&self) -> &'static str {
+        "decoration-compatibility"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        let module = ctx.module;
+
+        // Mutually exclusive decorations per ID
+        const MUTUALLY_EXCLUSIVE_PER_ID: &[(Decoration, Decoration)] = &[
+            (Decoration::Block, Decoration::BufferBlock),
+            (Decoration::Restrict, Decoration::Aliased),
+            (Decoration::RestrictPointer, Decoration::AliasedPointer),
+        ];
+
+        // Mutually exclusive decorations per member
+        const MUTUALLY_EXCLUSIVE_PER_MEMBER: &[(Decoration, Decoration)] = &[
+            (Decoration::RowMajor, Decoration::ColMajor),
+        ];
+
+        // Track seen decorations per ID
+        let mut seen_per_id: HashSet<(Decoration, u32)> = HashSet::new();
+        // Track seen decorations per (ID, member)
+        let mut seen_per_member: HashSet<(Decoration, u32, u32)> = HashSet::new();
+
+        for inst in &module.annotations {
+            match inst.class.opcode {
+                Op::Decorate => {
+                    let Some(rspirv::dr::Operand::IdRef(target)) = inst.operands.first() else {
+                        continue;
+                    };
+                    let Some(rspirv::dr::Operand::Decoration(decoration)) = inst.operands.get(1) else {
+                        continue;
+                    };
+                    let key = (*decoration, *target);
+
+                    // Check for duplicate at-most-once decorations
+                    if at_most_once_per_id(*decoration) && seen_per_id.contains(&key) {
+                        return Err(ValidationError::DuplicateDecorationOnId {
+                            decoration: *decoration,
+                            target: *target,
+                        });
+                    }
+                    seen_per_id.insert(key);
+
+                    // Check for mutually exclusive decorations
+                    for &(dec_a, dec_b) in MUTUALLY_EXCLUSIVE_PER_ID {
+                        let excl_dec = if dec_a == *decoration {
+                            Some(dec_b)
+                        } else if dec_b == *decoration {
+                            Some(dec_a)
+                        } else {
+                            None
+                        };
+
+                        if let Some(excl_dec) = excl_dec {
+                            if seen_per_id.contains(&(excl_dec, *target)) {
+                                return Err(ValidationError::MutuallyExclusiveDecorations {
+                                    decoration1: *decoration,
+                                    decoration2: excl_dec,
+                                    target: *target,
+                                });
+                            }
+                        }
+                    }
+                }
+                Op::MemberDecorate => {
+                    let Some(rspirv::dr::Operand::IdRef(target)) = inst.operands.first() else {
+                        continue;
+                    };
+                    let Some(rspirv::dr::Operand::LiteralBit32(member)) = inst.operands.get(1) else {
+                        continue;
+                    };
+                    let Some(rspirv::dr::Operand::Decoration(decoration)) = inst.operands.get(2) else {
+                        continue;
+                    };
+                    let key = (*decoration, *target, *member);
+
+                    // Check for duplicate at-most-once member decorations
+                    if at_most_once_per_member(*decoration) && seen_per_member.contains(&key) {
+                        return Err(ValidationError::DuplicateMemberDecoration {
+                            decoration: *decoration,
+                            target: *target,
+                            member: *member,
+                        });
+                    }
+                    seen_per_member.insert(key);
+
+                    // Check for mutually exclusive member decorations
+                    for &(dec_a, dec_b) in MUTUALLY_EXCLUSIVE_PER_MEMBER {
+                        let excl_dec = if dec_a == *decoration {
+                            Some(dec_b)
+                        } else if dec_b == *decoration {
+                            Some(dec_a)
+                        } else {
+                            None
+                        };
+
+                        if let Some(excl_dec) = excl_dec {
+                            if seen_per_member.contains(&(excl_dec, *target, *member)) {
+                                return Err(ValidationError::MutuallyExclusiveMemberDecorations {
+                                    decoration1: *decoration,
+                                    decoration2: excl_dec,
+                                    target: *target,
+                                    member: *member,
+                                });
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Returns true if the decoration can only be applied once per ID.
+fn at_most_once_per_id(decoration: Decoration) -> bool {
+    matches!(
+        decoration,
+        Decoration::Block
+            | Decoration::BufferBlock
+            | Decoration::RowMajor
+            | Decoration::ColMajor
+            | Decoration::ArrayStride
+            | Decoration::MatrixStride
+            | Decoration::BuiltIn
+            | Decoration::NoPerspective
+            | Decoration::Flat
+            | Decoration::Patch
+            | Decoration::Centroid
+            | Decoration::Sample
+            | Decoration::Invariant
+            | Decoration::Restrict
+            | Decoration::Aliased
+            | Decoration::Volatile
+            | Decoration::Coherent
+            | Decoration::NonWritable
+            | Decoration::NonReadable
+            | Decoration::Uniform
+            | Decoration::Location
+            | Decoration::Component
+            | Decoration::Index
+            | Decoration::Binding
+            | Decoration::DescriptorSet
+            | Decoration::Offset
+            | Decoration::XfbBuffer
+            | Decoration::XfbStride
+            | Decoration::NoContraction
+            | Decoration::InputAttachmentIndex
+            | Decoration::Alignment
+    )
+}
+
+/// Returns true if the decoration can only be applied once per struct member.
+fn at_most_once_per_member(decoration: Decoration) -> bool {
+    matches!(
+        decoration,
+        Decoration::RowMajor
+            | Decoration::ColMajor
+            | Decoration::MatrixStride
+            | Decoration::Offset
+            | Decoration::Alignment
+    )
+}
+
+// ============================================================================
 // Helper Functions
 // ============================================================================
 
@@ -443,6 +618,275 @@ fn is_pointer_type(
 }
 
 // ============================================================================
+// Linkage Attribute Rule
+// ============================================================================
+
+/// Validates linkage attributes on functions and variables.
+///
+/// - Function declarations (no basic blocks) must have Import linkage
+/// - Function definitions (with basic blocks) must not have Import linkage
+/// - Imported variables cannot have initializers
+pub struct LinkageAttributeRule;
+
+impl ValidationRule for LinkageAttributeRule {
+    fn name(&self) -> &'static str {
+        "linkage-attributes"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        use crate::validation::types::Id;
+        use rspirv::spirv::LinkageType;
+
+        let module = ctx.module;
+
+        // Only apply linkage validation if Linkage capability is declared
+        // Without the Linkage capability, function declarations are not valid anyway
+        // and will be caught by other validation rules
+        let has_linkage_capability = ctx.declared_capabilities.contains(&Capability::Linkage);
+
+        // Build a map of IDs with Import linkage
+        let mut import_linkage_ids: HashSet<u32> = HashSet::new();
+        let mut has_any_linkage_decoration = false;
+        for inst in &module.annotations {
+            if inst.class.opcode != Op::Decorate {
+                continue;
+            }
+            let Some(rspirv::dr::Operand::IdRef(target)) = inst.operands.first() else {
+                continue;
+            };
+            let Some(rspirv::dr::Operand::Decoration(Decoration::LinkageAttributes)) =
+                inst.operands.get(1)
+            else {
+                continue;
+            };
+            has_any_linkage_decoration = true;
+            // LinkageAttributes has: name (string), linkage type
+            // The linkage type is typically the last operand
+            for operand in inst.operands.iter().rev() {
+                if let rspirv::dr::Operand::LinkageType(linkage) = operand {
+                    if *linkage == LinkageType::Import {
+                        import_linkage_ids.insert(*target);
+                    }
+                    break;
+                }
+            }
+        }
+
+        // Only enforce linkage rules if we have linkage capability or linkage decorations
+        if !has_linkage_capability && !has_any_linkage_decoration {
+            return Ok(());
+        }
+
+        // Check function declarations/definitions
+        for func in &module.functions {
+            let Some(func_id) = func.def.as_ref().and_then(|d| d.result_id) else {
+                continue;
+            };
+
+            let has_import_linkage = import_linkage_ids.contains(&func_id);
+
+            // A true declaration has no blocks AND no parameters in blocks
+            // (a malformed function that's missing OpLabel is not a declaration)
+            let is_declaration = func.blocks.is_empty() && func.parameters.is_empty();
+
+            if is_declaration && !has_import_linkage && has_linkage_capability {
+                // Function declarations must have Import linkage
+                // However, entry points are exempt from this rule
+                let is_entry_point = module.entry_points.iter().any(|ep| {
+                    ep.operands.get(1).map(|op| {
+                        if let rspirv::dr::Operand::IdRef(id) = op {
+                            *id == func_id
+                        } else {
+                            false
+                        }
+                    }).unwrap_or(false)
+                });
+
+                if !is_entry_point {
+                    return Err(ValidationError::FunctionDeclarationMissingImportLinkage {
+                        function: Id::try_from(func_id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()),
+                    });
+                }
+            }
+
+            // A function with blocks has a definition - check it doesn't have import linkage
+            if !func.blocks.is_empty() && has_import_linkage {
+                return Err(ValidationError::FunctionDefinitionHasImportLinkage {
+                    function: Id::try_from(func_id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()),
+                });
+            }
+        }
+
+        // Check imported variables for initializers
+        for inst in &module.types_global_values {
+            if inst.class.opcode != Op::Variable {
+                continue;
+            }
+            let Some(var_id) = inst.result_id else {
+                continue;
+            };
+            // OpVariable: result_type, result_id, storage_class, [initializer]
+            // If there's an initializer (5th word / 4th operand index)
+            let has_initializer = inst.operands.len() > 1; // storage_class + initializer
+
+            if has_initializer && import_linkage_ids.contains(&var_id) {
+                return Err(ValidationError::ImportedVariableHasInitializer {
+                    variable: Id::try_from(var_id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()),
+                });
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Vulkan Memory Model Deprecation Rule
+// ============================================================================
+
+/// Validates that deprecated decorations are not used with the Vulkan memory model.
+pub struct VulkanMemoryModelDecorationRule;
+
+impl ValidationRule for VulkanMemoryModelDecorationRule {
+    fn name(&self) -> &'static str {
+        "vulkan-memory-model-decorations"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        use rspirv::spirv::MemoryModel;
+
+        // Only check if using Vulkan memory model
+        let uses_vulkan_memory_model = ctx.module.memory_model.as_ref().map(|mm| {
+            mm.operands.get(1).map(|op| {
+                matches!(op, rspirv::dr::Operand::MemoryModel(MemoryModel::Vulkan))
+            }).unwrap_or(false)
+        }).unwrap_or(false);
+
+        if !uses_vulkan_memory_model {
+            return Ok(());
+        }
+
+        // Check for deprecated decorations
+        for inst in &ctx.module.annotations {
+            if inst.class.opcode != Op::Decorate && inst.class.opcode != Op::MemberDecorate {
+                continue;
+            }
+            let decoration_idx = if inst.class.opcode == Op::Decorate { 1 } else { 2 };
+            let Some(rspirv::dr::Operand::Decoration(decoration)) = inst.operands.get(decoration_idx) else {
+                continue;
+            };
+
+            // Coherent and Volatile are deprecated with Vulkan memory model
+            if matches!(decoration, Decoration::Coherent | Decoration::Volatile) {
+                return Err(ValidationError::VulkanMemoryModelDeprecatesDecoration {
+                    decoration: *decoration,
+                });
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Integer Wrap Decoration Rule
+// ============================================================================
+
+/// Validates NoSignedWrap and NoUnsignedWrap decorations are only applied to integer operations.
+pub struct IntegerWrapDecorationRule;
+
+impl ValidationRule for IntegerWrapDecorationRule {
+    fn name(&self) -> &'static str {
+        "integer-wrap-decorations"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        for inst in &ctx.module.annotations {
+            if inst.class.opcode != Op::Decorate {
+                continue;
+            }
+            let Some(rspirv::dr::Operand::IdRef(target)) = inst.operands.first() else {
+                continue;
+            };
+            let Some(rspirv::dr::Operand::Decoration(decoration)) = inst.operands.get(1) else {
+                continue;
+            };
+
+            if !matches!(decoration, Decoration::NoSignedWrap | Decoration::NoUnsignedWrap) {
+                continue;
+            }
+
+            // Check that the target is an integer arithmetic operation
+            let target_id = match ResultId::try_from(*target) {
+                Ok(id) => id,
+                Err(_) => continue,
+            };
+            let Some(opcode) = ctx.opcodes.get(&target_id) else {
+                continue;
+            };
+
+            // Valid opcodes for NoSignedWrap/NoUnsignedWrap
+            let is_valid_op = matches!(
+                opcode,
+                Op::IAdd
+                    | Op::ISub
+                    | Op::IMul
+                    | Op::ShiftLeftLogical
+                    | Op::SNegate
+                    // Extended integer arithmetic
+                    | Op::SMulExtended
+                    | Op::UMulExtended
+            );
+
+            if !is_valid_op {
+                return Err(ValidationError::IntegerWrapDecorationInvalidOp { opcode: *opcode });
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
+// RelaxedPrecision Decoration Rule
+// ============================================================================
+
+/// Validates RelaxedPrecision decoration is only used with Shader capability.
+pub struct RelaxedPrecisionDecorationRule;
+
+impl ValidationRule for RelaxedPrecisionDecorationRule {
+    fn name(&self) -> &'static str {
+        "relaxed-precision-decoration"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        let has_shader = ctx.declared_capabilities.contains(&Capability::Shader);
+
+        for inst in &ctx.module.annotations {
+            let is_relaxed_precision = match inst.class.opcode {
+                Op::Decorate => inst
+                    .operands
+                    .get(1)
+                    .map(|op| matches!(op, rspirv::dr::Operand::Decoration(Decoration::RelaxedPrecision)))
+                    .unwrap_or(false),
+                Op::MemberDecorate => inst
+                    .operands
+                    .get(2)
+                    .map(|op| matches!(op, rspirv::dr::Operand::Decoration(Decoration::RelaxedPrecision)))
+                    .unwrap_or(false),
+                _ => false,
+            };
+
+            if is_relaxed_precision && !has_shader {
+                return Err(ValidationError::RelaxedPrecisionRequiresShader);
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
 // All decoration rules
 // ============================================================================
 
@@ -453,5 +897,10 @@ pub fn all_decoration_rules() -> Vec<&'static dyn ValidationRule> {
         &DecorationGroupsRule,
         &BasicDecorationRule,
         &DecorationTargetCategoriesRule,
+        &DecorationCompatibilityRule,
+        &LinkageAttributeRule,
+        &VulkanMemoryModelDecorationRule,
+        &IntegerWrapDecorationRule,
+        &RelaxedPrecisionDecorationRule,
     ]
 }

@@ -472,11 +472,36 @@ fn type_layout_size(
     size
 }
 
+/// Rounds a value up to the next multiple of align.
+#[inline]
+fn round_up(value: u32, align: u32) -> u32 {
+    if align == 0 {
+        value
+    } else {
+        value.wrapping_add(align.wrapping_sub(1)) / align * align
+    }
+}
+
 fn type_alignment(
     ty: TypeId,
     definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
     visiting: &mut HashSet<TypeId>,
     scalar_layout: bool,
+) -> Option<u32> {
+    type_alignment_extended(ty, definitions, visiting, scalar_layout, false)
+}
+
+/// Calculates type alignment with optional extended alignment for std140 rules.
+///
+/// In std140:
+/// - Arrays and structs have their base alignment rounded up to 16 bytes
+/// - This is called "extended alignment"
+fn type_alignment_extended(
+    ty: TypeId,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    visiting: &mut HashSet<TypeId>,
+    scalar_layout: bool,
+    use_extended: bool,
 ) -> Option<u32> {
     if !visiting.insert(ty) {
         return None;
@@ -490,25 +515,33 @@ fn type_alignment(
         Op::TypeVector => {
             let (elem, count) = vector_info(inst);
             let (elem, count) = (elem?, count?);
-            let elem_align = type_alignment(elem, definitions, visiting, scalar_layout)?;
+            let elem_align = type_alignment_extended(elem, definitions, visiting, scalar_layout, false)?;
             if scalar_layout {
                 Some(elem_align)
             } else {
-                elem_align.checked_mul(count)
+                // vec2 aligns to 2N, vec3/vec4 align to 4N (where N is scalar alignment)
+                let multiplier = if count == 2 { 2 } else { 4 };
+                elem_align.checked_mul(multiplier)
             }
         }
         Op::TypeMatrix => {
             // Matrix alignment follows its column vector alignment.
             let (column, _) = matrix_info(inst);
             let column = column?;
-            type_alignment(column, definitions, visiting, scalar_layout)
+            type_alignment_extended(column, definitions, visiting, scalar_layout, use_extended)
         }
         Op::TypeArray | Op::TypeRuntimeArray => {
             let elem = inst.operands.first().and_then(|op| match op {
                 rspirv::dr::Operand::IdRef(id) => TypeId::try_from(*id).ok(),
                 _ => None,
             })?;
-            type_alignment(elem, definitions, visiting, scalar_layout)
+            // In std140, array element alignment is rounded up to 16 bytes (extended alignment)
+            let base_align = type_alignment_extended(elem, definitions, visiting, scalar_layout, true)?;
+            if use_extended && !scalar_layout {
+                Some(round_up(base_align, 16))
+            } else {
+                Some(base_align)
+            }
         }
         Op::TypeStruct => {
             let mut max_align = 1;
@@ -517,10 +550,15 @@ fn type_alignment(
                     rspirv::dr::Operand::IdRef(id) => TypeId::try_from(*id).ok()?,
                     _ => return None,
                 };
-                let align = type_alignment(ty, definitions, visiting, scalar_layout)?;
+                let align = type_alignment_extended(ty, definitions, visiting, scalar_layout, true)?;
                 max_align = max_align.max(align);
             }
-            Some(max_align)
+            // In std140, struct alignment is rounded up to 16 bytes (extended alignment)
+            if use_extended && !scalar_layout {
+                Some(round_up(max_align, 16))
+            } else {
+                Some(max_align)
+            }
         }
         _ => None,
     };

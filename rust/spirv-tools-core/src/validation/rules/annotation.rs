@@ -11,7 +11,7 @@
 use std::collections::{HashMap, HashSet};
 
 use rspirv::dr::Operand;
-use rspirv::spirv::{Decoration, Op};
+use rspirv::spirv::{Decoration, Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
 use crate::validation::error::ValidationError;
@@ -464,6 +464,163 @@ impl ValidationRule for GroupMemberDecorateValidationRule {
     }
 }
 
+/// Validates Vulkan-specific decoration storage class restrictions.
+///
+/// In Vulkan, certain decorations can only be applied to variables
+/// with specific storage classes:
+/// - Location/Component: Input, Output, or ray tracing storage classes (VUID-6672)
+/// - Index: Output only
+/// - Binding/DescriptorSet: StorageBuffer, Uniform, or UniformConstant (VUID-6491)
+/// - InputAttachmentIndex: UniformConstant only (VUID-6678)
+/// - Flat/NoPerspective/Centroid/Sample: Input or Output (VUID-4670)
+/// - PerVertexKHR: Input only (VUID-6777)
+pub struct VulkanDecorationStorageClassRule;
+
+impl ValidationRule for VulkanDecorationStorageClassRule {
+    fn name(&self) -> &'static str {
+        "vulkan-decoration-storage-class"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        // Only apply in Vulkan environments
+        if !ctx.env.is_vulkan() {
+            return Ok(());
+        }
+
+        let module = ctx.module();
+
+        // Build a map of variable IDs to their storage classes
+        let mut variable_storage_classes: HashMap<u32, StorageClass> = HashMap::new();
+        for inst in &module.types_global_values {
+            if matches!(inst.class.opcode, Op::Variable | Op::UntypedVariableKHR) {
+                if let Some(var_id) = inst.result_id {
+                    if let Some(Operand::StorageClass(sc)) = inst.operands.first() {
+                        variable_storage_classes.insert(var_id, *sc);
+                    }
+                }
+            }
+        }
+        // Also check function-local variables
+        for func in &module.functions {
+            for block in &func.blocks {
+                for inst in &block.instructions {
+                    if matches!(inst.class.opcode, Op::Variable | Op::UntypedVariableKHR) {
+                        if let Some(var_id) = inst.result_id {
+                            if let Some(Operand::StorageClass(sc)) = inst.operands.first() {
+                                variable_storage_classes.insert(var_id, *sc);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Storage classes allowed for Location/Component decorations
+        let location_valid_storage_classes = |sc: StorageClass| -> bool {
+            matches!(
+                sc,
+                StorageClass::Input
+                    | StorageClass::Output
+                    | StorageClass::RayPayloadKHR
+                    | StorageClass::IncomingRayPayloadKHR
+                    | StorageClass::HitAttributeKHR
+                    | StorageClass::CallableDataKHR
+                    | StorageClass::IncomingCallableDataKHR
+                    | StorageClass::ShaderRecordBufferKHR
+                    | StorageClass::HitObjectAttributeNV
+                    | StorageClass::TileImageEXT
+            )
+        };
+
+        for inst in &module.annotations {
+            if inst.class.opcode != Op::Decorate {
+                continue;
+            }
+            let Some(Operand::IdRef(target_id)) = inst.operands.first() else {
+                continue;
+            };
+            let Some(Operand::Decoration(dec)) = inst.operands.get(1) else {
+                continue;
+            };
+
+            // Get storage class if target is a variable
+            let Some(&storage_class) = variable_storage_classes.get(target_id) else {
+                continue;
+            };
+
+            match dec {
+                Decoration::Location | Decoration::Component => {
+                    if !location_valid_storage_classes(storage_class) {
+                        return Err(ValidationError::VulkanDecorationStorageClassMismatch {
+                            decoration: *dec,
+                            target_id: to_id(*target_id),
+                            storage_class,
+                            vuid: 6672,
+                        });
+                    }
+                }
+                Decoration::Index => {
+                    if storage_class != StorageClass::Output {
+                        return Err(ValidationError::VulkanIndexDecorationNotOutput {
+                            target_id: to_id(*target_id),
+                            storage_class,
+                        });
+                    }
+                }
+                Decoration::Binding | Decoration::DescriptorSet => {
+                    if !matches!(
+                        storage_class,
+                        StorageClass::StorageBuffer
+                            | StorageClass::Uniform
+                            | StorageClass::UniformConstant
+                            | StorageClass::TileAttachmentQCOM
+                    ) {
+                        return Err(ValidationError::VulkanBindingDecorationInvalidStorageClass {
+                            target_id: to_id(*target_id),
+                            storage_class,
+                        });
+                    }
+                }
+                Decoration::InputAttachmentIndex => {
+                    if storage_class != StorageClass::UniformConstant {
+                        return Err(
+                            ValidationError::VulkanInputAttachmentIndexInvalidStorageClass {
+                                target_id: to_id(*target_id),
+                                storage_class,
+                            },
+                        );
+                    }
+                }
+                Decoration::Flat
+                | Decoration::NoPerspective
+                | Decoration::Centroid
+                | Decoration::Sample => {
+                    if !matches!(storage_class, StorageClass::Input | StorageClass::Output) {
+                        return Err(
+                            ValidationError::VulkanInterpolationDecorationInvalidStorageClass {
+                                decoration: *dec,
+                                target_id: to_id(*target_id),
+                                storage_class,
+                            },
+                        );
+                    }
+                }
+                Decoration::PerVertexKHR => {
+                    if storage_class != StorageClass::Input {
+                        return Err(ValidationError::VulkanPerVertexDecorationNotInput {
+                            target_id: to_id(*target_id),
+                            storage_class,
+                        });
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+}
+
 /// Returns all annotation validation rules.
 pub fn all_annotation_rules() -> Vec<Box<dyn ValidationRule>> {
     vec![
@@ -473,6 +630,7 @@ pub fn all_annotation_rules() -> Vec<Box<dyn ValidationRule>> {
         Box::new(DecorationGroupValidationRule),
         Box::new(GroupDecorateValidationRule),
         Box::new(GroupMemberDecorateValidationRule),
+        Box::new(VulkanDecorationStorageClassRule),
     ]
 }
 

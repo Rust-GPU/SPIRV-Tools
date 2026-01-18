@@ -10,7 +10,7 @@
 //! parameter counts and types, and proper function usage.
 
 use rspirv::dr::Operand;
-use rspirv::spirv::Op;
+use rspirv::spirv::{FunctionControl, Op};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
 use crate::validation::error::ValidationError;
@@ -568,6 +568,56 @@ impl ValidationRule for FunctionDeclarationOrderRule {
 }
 
 // ============================================================================
+// Function Control Rule
+// ============================================================================
+
+/// Validates function control flags in OpFunction.
+///
+/// Checks:
+/// - Inline and DontInline cannot both be specified
+pub struct FunctionControlRule;
+
+impl ValidationRule for FunctionControlRule {
+    fn name(&self) -> &'static str {
+        "function-control"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        for function in &ctx.module.functions {
+            let Some(def) = &function.def else {
+                continue;
+            };
+
+            let function_id = def
+                .result_id
+                .and_then(|id| Id::try_from(id).ok())
+                .unwrap_or_else(|| Id::try_from(1u32).unwrap());
+
+            // Get function control (operand 0 in OpFunction)
+            let function_control = def.operands.first().and_then(|op| match op {
+                Operand::FunctionControl(ctrl) => Some(*ctrl),
+                _ => None,
+            });
+
+            let Some(function_control) = function_control else {
+                continue;
+            };
+
+            // Check Inline and DontInline cannot both be specified
+            if function_control.contains(FunctionControl::INLINE)
+                && function_control.contains(FunctionControl::DONT_INLINE)
+            {
+                return Err(ValidationError::FunctionControlInlineAndDontInline {
+                    function: function_id,
+                });
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
 // All function rules
 // ============================================================================
 
@@ -580,5 +630,6 @@ pub fn all_function_rules() -> Vec<&'static dyn ValidationRule> {
         &ReturnValueRule,
         &FunctionVariableRule,
         &FunctionDeclarationOrderRule,
+        &FunctionControlRule,
     ]
 }

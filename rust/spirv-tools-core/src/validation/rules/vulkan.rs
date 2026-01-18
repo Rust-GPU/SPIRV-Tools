@@ -388,6 +388,534 @@ fn contains_sized_int_or_float(
 }
 
 // ============================================================================
+// Vulkan Descriptor Binding Rule
+// ============================================================================
+
+/// Validates that variables in Uniform, UniformConstant, and StorageBuffer storage classes
+/// have DescriptorSet and Binding decorations in Vulkan.
+///
+/// From Vulkan spec (VUID-06677):
+/// These variables must have DescriptorSet and Binding decorations specified.
+pub struct VulkanDescriptorBindingRule;
+
+impl ValidationRule for VulkanDescriptorBindingRule {
+    fn name(&self) -> &'static str {
+        "vulkan-descriptor-binding"
+    }
+
+    fn should_skip(&self, ctx: &ValidationContext<'_>) -> bool {
+        !is_vulkan_env(ctx.env) || ctx.options.before_hlsl_legalization
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        use crate::validation::types::Id;
+
+        for inst in &ctx.module.types_global_values {
+            if inst.class.opcode != Op::Variable && inst.class.opcode != Op::UntypedVariableKHR {
+                continue;
+            }
+
+            let Some(var_id) = inst.result_id else {
+                continue;
+            };
+
+            let storage_class = match inst.operands.first() {
+                Some(rspirv::dr::Operand::StorageClass(sc)) => *sc,
+                _ => continue,
+            };
+
+            // Check if this storage class requires DescriptorSet/Binding
+            let requires_descriptor = matches!(
+                storage_class,
+                StorageClass::Uniform | StorageClass::UniformConstant | StorageClass::StorageBuffer
+            );
+
+            if !requires_descriptor {
+                continue;
+            }
+
+            // Skip if variable is not used by any entry point (HLSL legalization case)
+            // We check if the variable appears in any entry point interface
+            let is_referenced = ctx.module.entry_points.iter().any(|ep| {
+                ep.operands.iter().skip(2).any(|op| {
+                    matches!(op, rspirv::dr::Operand::IdRef(id) if *id == var_id)
+                })
+            });
+
+            if !is_referenced && ctx.options.before_hlsl_legalization {
+                continue;
+            }
+
+            // Check for DescriptorSet decoration
+            let has_descriptor_set = has_decoration(ctx, var_id, Decoration::DescriptorSet);
+            if !has_descriptor_set {
+                return Err(ValidationError::MissingDescriptorSetDecoration {
+                    variable: Id::try_from(var_id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()),
+                });
+            }
+
+            // Check for Binding decoration
+            let has_binding = has_decoration(ctx, var_id, Decoration::Binding);
+            if !has_binding {
+                return Err(ValidationError::MissingBindingDecoration {
+                    variable: Id::try_from(var_id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()),
+                });
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Vulkan Push Constant Block Rule
+// ============================================================================
+
+/// Validates that there is at most one PushConstant interface per entry point in Vulkan.
+///
+/// From Vulkan spec (VUID-06674):
+/// There must be no more than one push constant block statically used per shader entry point.
+pub struct VulkanPushConstantBlockRule;
+
+impl ValidationRule for VulkanPushConstantBlockRule {
+    fn name(&self) -> &'static str {
+        "vulkan-push-constant-block"
+    }
+
+    fn should_skip(&self, ctx: &ValidationContext<'_>) -> bool {
+        !is_vulkan_env(ctx.env)
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        use crate::validation::types::Id;
+
+        // Collect all PushConstant variables
+        let push_constant_vars: HashSet<u32> = ctx
+            .module
+            .types_global_values
+            .iter()
+            .filter(|inst| {
+                (inst.class.opcode == Op::Variable || inst.class.opcode == Op::UntypedVariableKHR)
+                    && matches!(
+                        inst.operands.first(),
+                        Some(rspirv::dr::Operand::StorageClass(StorageClass::PushConstant))
+                    )
+            })
+            .filter_map(|inst| inst.result_id)
+            .collect();
+
+        if push_constant_vars.len() <= 1 {
+            return Ok(());
+        }
+
+        // Check each entry point for multiple push constants
+        for ep in &ctx.module.entry_points {
+            let ep_id = ep.operands.get(1).and_then(|op| {
+                if let rspirv::dr::Operand::IdRef(id) = op {
+                    Some(*id)
+                } else {
+                    None
+                }
+            });
+
+            let interface_push_constants: Vec<u32> = ep
+                .operands
+                .iter()
+                .skip(3) // Skip execution model, entry point id, name
+                .filter_map(|op| {
+                    if let rspirv::dr::Operand::IdRef(id) = op {
+                        if push_constant_vars.contains(id) {
+                            return Some(*id);
+                        }
+                    }
+                    None
+                })
+                .collect();
+
+            if interface_push_constants.len() > 1 {
+                return Err(ValidationError::EntryPointInterfaceStorageClassDuplicate {
+                    entry_point: ep_id
+                        .and_then(|id| Id::try_from(id).ok())
+                        .unwrap_or_else(|| Id::try_from(1u32).unwrap()),
+                    storage_class: StorageClass::PushConstant,
+                });
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Vulkan Buffer Block Decorations Rule
+// ============================================================================
+
+/// Validates that buffer variables have required Block/BufferBlock decorations in Vulkan.
+///
+/// From Vulkan spec (VUID-06675, VUID-06676):
+/// - PushConstant and StorageBuffer must be decorated with Block
+/// - Uniform must be decorated with Block or BufferBlock
+/// - StorageBuffer must NOT be decorated with BufferBlock
+pub struct VulkanBufferBlockDecorationsRule;
+
+impl ValidationRule for VulkanBufferBlockDecorationsRule {
+    fn name(&self) -> &'static str {
+        "vulkan-buffer-block-decorations"
+    }
+
+    fn should_skip(&self, ctx: &ValidationContext<'_>) -> bool {
+        !is_vulkan_env(ctx.env)
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        for inst in &ctx.module.types_global_values {
+            if inst.class.opcode != Op::Variable && inst.class.opcode != Op::UntypedVariableKHR {
+                continue;
+            }
+
+            let storage_class = match inst.operands.first() {
+                Some(rspirv::dr::Operand::StorageClass(sc)) => *sc,
+                _ => continue,
+            };
+
+            // Get the pointee struct type
+            let pointee_type_id = get_variable_pointee_type(inst, ctx);
+            let Some(struct_id) = pointee_type_id else {
+                continue;
+            };
+
+            // Skip if pointee is not a struct (arrays of structs handled separately)
+            let pointee_opcode = ResultId::try_from(struct_id)
+                .ok()
+                .and_then(|rid| ctx.opcodes.get(&rid))
+                .copied();
+
+            // If it's an array, get the element type
+            let final_struct_id = if matches!(pointee_opcode, Some(Op::TypeArray) | Some(Op::TypeRuntimeArray)) {
+                get_array_element_struct(struct_id, ctx)
+            } else if pointee_opcode == Some(Op::TypeStruct) {
+                Some(struct_id)
+            } else {
+                None
+            };
+
+            let Some(struct_id) = final_struct_id else {
+                continue;
+            };
+
+            let has_block = has_decoration(ctx, struct_id, Decoration::Block);
+            let has_buffer_block = has_decoration(ctx, struct_id, Decoration::BufferBlock);
+
+            match storage_class {
+                StorageClass::PushConstant => {
+                    if !has_block {
+                        return Err(ValidationError::VulkanBufferMissingBlockDecoration {
+                            storage_class,
+                            struct_id,
+                        });
+                    }
+                }
+                StorageClass::StorageBuffer => {
+                    if has_buffer_block {
+                        return Err(ValidationError::VulkanStorageBufferHasBufferBlock {
+                            struct_id,
+                        });
+                    }
+                    if !has_block {
+                        return Err(ValidationError::VulkanBufferMissingBlockDecoration {
+                            storage_class,
+                            struct_id,
+                        });
+                    }
+                }
+                StorageClass::Uniform => {
+                    if !has_block && !has_buffer_block {
+                        return Err(ValidationError::VulkanUniformMissingBlockDecoration {
+                            struct_id,
+                        });
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Gets the pointee type ID from a variable instruction.
+fn get_variable_pointee_type(inst: &rspirv::dr::Instruction, ctx: &ValidationContext<'_>) -> Option<u32> {
+    // For untyped variables, the data type is in operand 1
+    if inst.class.opcode == Op::UntypedVariableKHR {
+        return inst.operands.get(1).and_then(|op| {
+            if let rspirv::dr::Operand::IdRef(id) = op {
+                Some(*id)
+            } else {
+                None
+            }
+        });
+    }
+
+    // For typed variables, get from pointer type
+    let ptr_type_id = inst.result_type?;
+    let ptr_type_inst = ResultId::try_from(ptr_type_id)
+        .ok()
+        .and_then(|rid| ctx.definitions.get(&rid))?;
+
+    if ptr_type_inst.class.opcode != Op::TypePointer {
+        return None;
+    }
+
+    ptr_type_inst.operands.get(1).and_then(|op| {
+        if let rspirv::dr::Operand::IdRef(id) = op {
+            Some(*id)
+        } else {
+            None
+        }
+    })
+}
+
+/// Gets the struct element type from an array type.
+fn get_array_element_struct(array_type_id: u32, ctx: &ValidationContext<'_>) -> Option<u32> {
+    let array_inst = ResultId::try_from(array_type_id)
+        .ok()
+        .and_then(|rid| ctx.definitions.get(&rid))?;
+
+    let elem_id = array_inst.operands.first().and_then(|op| {
+        if let rspirv::dr::Operand::IdRef(id) = op {
+            Some(*id)
+        } else {
+            None
+        }
+    })?;
+
+    let elem_opcode = ResultId::try_from(elem_id)
+        .ok()
+        .and_then(|rid| ctx.opcodes.get(&rid))
+        .copied()?;
+
+    if elem_opcode == Op::TypeStruct {
+        Some(elem_id)
+    } else {
+        None
+    }
+}
+
+// ============================================================================
+// Block Layout Decorations Rule
+// ============================================================================
+
+/// Validates that Block/BufferBlock structs have required layout decorations.
+///
+/// Block and BufferBlock decorated structs must have:
+/// - ArrayStride on all OpTypeArray members
+/// - MatrixStride on all OpTypeMatrix members
+/// - RowMajor or ColMajor on all OpTypeMatrix members
+pub struct BlockLayoutDecorationsRule;
+
+impl ValidationRule for BlockLayoutDecorationsRule {
+    fn name(&self) -> &'static str {
+        "block-layout-decorations"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        // Find all Block and BufferBlock decorated structs
+        for inst in &ctx.module.annotations {
+            if inst.class.opcode != Op::Decorate {
+                continue;
+            }
+
+            let struct_id = match inst.operands.first() {
+                Some(rspirv::dr::Operand::IdRef(id)) => *id,
+                _ => continue,
+            };
+
+            let decoration = match inst.operands.get(1) {
+                Some(rspirv::dr::Operand::Decoration(dec)) => *dec,
+                _ => continue,
+            };
+
+            let decoration_type = match decoration {
+                Decoration::Block => "Block",
+                Decoration::BufferBlock => "BufferBlock",
+                _ => continue,
+            };
+
+            // Verify this is actually a struct
+            let struct_opcode = ResultId::try_from(struct_id)
+                .ok()
+                .and_then(|rid| ctx.opcodes.get(&rid))
+                .copied();
+
+            if struct_opcode != Some(Op::TypeStruct) {
+                continue;
+            }
+
+            // Check for required decorations recursively
+            check_struct_layout_decorations(struct_id, decoration_type, ctx)?;
+        }
+
+        Ok(())
+    }
+}
+
+/// Recursively checks a struct for required layout decorations.
+fn check_struct_layout_decorations(
+    struct_id: u32,
+    decoration_type: &'static str,
+    ctx: &ValidationContext<'_>,
+) -> Result<(), ValidationError> {
+    let struct_inst = ResultId::try_from(struct_id)
+        .ok()
+        .and_then(|rid| ctx.definitions.get(&rid));
+
+    let Some(struct_inst) = struct_inst else {
+        return Ok(());
+    };
+
+    if struct_inst.class.opcode != Op::TypeStruct {
+        return Ok(());
+    }
+
+    // Check each member
+    for (member_idx, operand) in struct_inst.operands.iter().enumerate() {
+        let member_type_id = match operand {
+            rspirv::dr::Operand::IdRef(id) => *id,
+            _ => continue,
+        };
+
+        // Get the actual type, unwrapping arrays for matrix checks
+        let member_opcode = ResultId::try_from(member_type_id)
+            .ok()
+            .and_then(|rid| ctx.opcodes.get(&rid))
+            .copied();
+
+        match member_opcode {
+            Some(Op::TypeArray) | Some(Op::TypeRuntimeArray) => {
+                // Check ArrayStride decoration on the array type
+                if !has_decoration(ctx, member_type_id, Decoration::ArrayStride) {
+                    return Err(ValidationError::BlockMissingArrayStride {
+                        struct_id,
+                        decoration_type,
+                    });
+                }
+
+                // For matrix members inside arrays, check the element type
+                let elem_type_id = get_array_element_type(member_type_id, ctx);
+                if let Some(elem_id) = elem_type_id {
+                    check_matrix_decorations(struct_id, member_idx, elem_id, decoration_type, ctx)?;
+                    // Recursively check nested structs
+                    let elem_opcode = ResultId::try_from(elem_id)
+                        .ok()
+                        .and_then(|rid| ctx.opcodes.get(&rid))
+                        .copied();
+                    if elem_opcode == Some(Op::TypeStruct) {
+                        check_struct_layout_decorations(elem_id, decoration_type, ctx)?;
+                    }
+                }
+            }
+            Some(Op::TypeMatrix) => {
+                check_matrix_decorations(struct_id, member_idx, member_type_id, decoration_type, ctx)?;
+            }
+            Some(Op::TypeStruct) => {
+                // Recursively check nested structs
+                check_struct_layout_decorations(member_type_id, decoration_type, ctx)?;
+            }
+            _ => {}
+        }
+    }
+
+    Ok(())
+}
+
+/// Gets the element type of an array (unwrapping nested arrays).
+fn get_array_element_type(array_type_id: u32, ctx: &ValidationContext<'_>) -> Option<u32> {
+    let mut current_id = array_type_id;
+
+    loop {
+        let inst = ResultId::try_from(current_id)
+            .ok()
+            .and_then(|rid| ctx.definitions.get(&rid))?;
+
+        match inst.class.opcode {
+            Op::TypeArray | Op::TypeRuntimeArray => {
+                current_id = inst.operands.first().and_then(|op| {
+                    if let rspirv::dr::Operand::IdRef(id) = op {
+                        Some(*id)
+                    } else {
+                        None
+                    }
+                })?;
+            }
+            _ => return Some(current_id),
+        }
+    }
+}
+
+/// Checks matrix decorations (MatrixStride and RowMajor/ColMajor).
+fn check_matrix_decorations(
+    struct_id: u32,
+    member_idx: usize,
+    type_id: u32,
+    decoration_type: &'static str,
+    ctx: &ValidationContext<'_>,
+) -> Result<(), ValidationError> {
+    let type_opcode = ResultId::try_from(type_id)
+        .ok()
+        .and_then(|rid| ctx.opcodes.get(&rid))
+        .copied();
+
+    if type_opcode != Some(Op::TypeMatrix) {
+        return Ok(());
+    }
+
+    // Check MatrixStride on the type itself or as a member decoration
+    let has_matrix_stride = has_decoration(ctx, type_id, Decoration::MatrixStride)
+        || has_member_decoration(ctx, struct_id, member_idx as u32, Decoration::MatrixStride);
+
+    if !has_matrix_stride {
+        return Err(ValidationError::BlockMissingMatrixStride {
+            struct_id,
+            decoration_type,
+        });
+    }
+
+    // Check RowMajor or ColMajor on the type itself or as a member decoration
+    let has_row_major = has_decoration(ctx, type_id, Decoration::RowMajor)
+        || has_member_decoration(ctx, struct_id, member_idx as u32, Decoration::RowMajor);
+    let has_col_major = has_decoration(ctx, type_id, Decoration::ColMajor)
+        || has_member_decoration(ctx, struct_id, member_idx as u32, Decoration::ColMajor);
+
+    if !has_row_major && !has_col_major {
+        return Err(ValidationError::BlockMissingMatrixOrder {
+            struct_id,
+            decoration_type,
+        });
+    }
+
+    Ok(())
+}
+
+/// Checks if a struct member has a specific decoration.
+fn has_member_decoration(
+    ctx: &ValidationContext<'_>,
+    struct_id: u32,
+    member_idx: u32,
+    decoration: Decoration,
+) -> bool {
+    ctx.module.annotations.iter().any(|inst| {
+        inst.class.opcode == Op::MemberDecorate
+            && matches!(
+                (&inst.operands[..], inst.operands.get(2)),
+                (
+                    [rspirv::dr::Operand::IdRef(id), rspirv::dr::Operand::LiteralBit32(idx), ..],
+                    Some(rspirv::dr::Operand::Decoration(dec))
+                ) if *id == struct_id && *idx == member_idx && *dec == decoration
+            )
+    })
+}
+
+// ============================================================================
 // All Vulkan rules
 // ============================================================================
 
@@ -397,5 +925,9 @@ pub fn all_vulkan_rules() -> Vec<&'static dyn ValidationRule> {
         &OffsetTextureOperandRule,
         &VulkanBitwiseWidthsRule,
         &SmallTypeStorageCapabilitiesRule,
+        &VulkanDescriptorBindingRule,
+        &VulkanPushConstantBlockRule,
+        &VulkanBufferBlockDecorationsRule,
+        &BlockLayoutDecorationsRule,
     ]
 }

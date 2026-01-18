@@ -976,6 +976,630 @@ impl ValidationRule for ReorderThreadWithHitObjectRule {
     }
 }
 
+/// Validates OpHitObjectTraceRayNV.
+pub struct HitObjectTraceRayRule;
+
+impl ValidationRule for HitObjectTraceRayRule {
+    fn name(&self) -> &'static str {
+        "hit-object-trace-ray"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        for func in &ctx.module.functions {
+            let func_id = func
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .map(to_id);
+
+            for block in &func.blocks {
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .map(to_id);
+
+                for inst in &block.instructions {
+                    if inst.class.opcode != Op::HitObjectTraceRayNV {
+                        continue;
+                    }
+
+                    // Hit object pointer at operand 0
+                    validate_hit_object_pointer(inst, 0, ctx, func_id, block_id)?;
+
+                    // Acceleration structure (operand 1) must be OpTypeAccelerationStructureKHR
+                    if let Some(accel_id) = inst.operands.get(1).and_then(id_ref) {
+                        if let Some(accel_inst) = ResultId::try_from(accel_id)
+                            .ok()
+                            .and_then(|id| ctx.definitions.get(&id))
+                        {
+                            if let Some(type_id) = accel_inst.result_type {
+                                let type_opcode = ResultId::try_from(type_id)
+                                    .ok()
+                                    .and_then(|id| ctx.definitions.get(&id))
+                                    .map(|i| i.class.opcode);
+                                if type_opcode != Some(Op::TypeAccelerationStructureKHR) {
+                                    return Err(ValidationError::HitObjectInvalidAccelStruct {
+                                        function: func_id,
+                                        block: block_id,
+                                        opcode: inst.class.opcode,
+                                    });
+                                }
+                            }
+                        }
+                    }
+
+                    // Ray flags (operand 2) must be 32-bit int
+                    if let Some(ty) = get_operand_type(inst, 2, ctx) {
+                        if !is_int32_scalar(&ty) {
+                            return Err(ValidationError::HitObjectInvalidRayFlags {
+                                function: func_id,
+                                block: block_id,
+                                opcode: inst.class.opcode,
+                            });
+                        }
+                    }
+
+                    // Cull mask (operand 3) must be 32-bit unsigned int
+                    if let Some(ty) = get_operand_type(inst, 3, ctx) {
+                        if !is_uint32_scalar(&ty) {
+                            return Err(ValidationError::HitObjectInvalidCullMask {
+                                function: func_id,
+                                block: block_id,
+                                opcode: inst.class.opcode,
+                            });
+                        }
+                    }
+
+                    // SBT Offset (operand 4) must be 32-bit unsigned int
+                    if let Some(ty) = get_operand_type(inst, 4, ctx) {
+                        if !is_uint32_scalar(&ty) {
+                            return Err(ValidationError::HitObjectInvalidSBTOffset {
+                                function: func_id,
+                                block: block_id,
+                                opcode: inst.class.opcode,
+                            });
+                        }
+                    }
+
+                    // SBT Stride (operand 5) must be 32-bit unsigned int
+                    if let Some(ty) = get_operand_type(inst, 5, ctx) {
+                        if !is_uint32_scalar(&ty) {
+                            return Err(ValidationError::HitObjectInvalidSBTStride {
+                                function: func_id,
+                                block: block_id,
+                                opcode: inst.class.opcode,
+                            });
+                        }
+                    }
+
+                    // Miss index (operand 6) must be 32-bit unsigned int
+                    if let Some(ty) = get_operand_type(inst, 6, ctx) {
+                        if !is_uint32_scalar(&ty) {
+                            return Err(ValidationError::HitObjectInvalidMissIndex {
+                                function: func_id,
+                                block: block_id,
+                            });
+                        }
+                    }
+
+                    // Ray origin (operand 7) must be 32-bit float vec3
+                    if let Some(ty) = get_operand_type(inst, 7, ctx) {
+                        if !is_float32_vec3(&ty) {
+                            return Err(ValidationError::HitObjectInvalidRayOrigin {
+                                function: func_id,
+                                block: block_id,
+                                opcode: inst.class.opcode,
+                            });
+                        }
+                    }
+
+                    // Ray TMin (operand 8) must be 32-bit float
+                    if let Some(ty) = get_operand_type(inst, 8, ctx) {
+                        if !is_float32_scalar(&ty) {
+                            return Err(ValidationError::HitObjectInvalidRayT {
+                                function: func_id,
+                                block: block_id,
+                                opcode: inst.class.opcode,
+                                param_name: "TMin",
+                            });
+                        }
+                    }
+
+                    // Ray direction (operand 9) must be 32-bit float vec3
+                    if let Some(ty) = get_operand_type(inst, 9, ctx) {
+                        if !is_float32_vec3(&ty) {
+                            return Err(ValidationError::HitObjectInvalidRayDirection {
+                                function: func_id,
+                                block: block_id,
+                                opcode: inst.class.opcode,
+                            });
+                        }
+                    }
+
+                    // Ray TMax (operand 10) must be 32-bit float
+                    if let Some(ty) = get_operand_type(inst, 10, ctx) {
+                        if !is_float32_scalar(&ty) {
+                            return Err(ValidationError::HitObjectInvalidRayT {
+                                function: func_id,
+                                block: block_id,
+                                opcode: inst.class.opcode,
+                                param_name: "TMax",
+                            });
+                        }
+                    }
+
+                    // Payload (operand 11) must be RayPayloadKHR or IncomingRayPayloadKHR
+                    if let Some(payload_id) = inst.operands.get(11).and_then(id_ref) {
+                        if let Some(variable) = ResultId::try_from(payload_id)
+                            .ok()
+                            .and_then(|id| ctx.definitions.get(&id))
+                        {
+                            if variable.class.opcode != Op::Variable {
+                                return Err(ValidationError::HitObjectPayloadInvalid {
+                                    function: func_id,
+                                    block: block_id,
+                                    opcode: inst.class.opcode,
+                                });
+                            }
+                            if let Some(Operand::StorageClass(sc)) = variable.operands.first() {
+                                if *sc != StorageClass::RayPayloadKHR
+                                    && *sc != StorageClass::IncomingRayPayloadKHR
+                                {
+                                    return Err(ValidationError::HitObjectPayloadInvalid {
+                                        function: func_id,
+                                        block: block_id,
+                                        opcode: inst.class.opcode,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Validates OpHitObjectTraceRayMotionNV.
+pub struct HitObjectTraceRayMotionRule;
+
+impl ValidationRule for HitObjectTraceRayMotionRule {
+    fn name(&self) -> &'static str {
+        "hit-object-trace-ray-motion"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        for func in &ctx.module.functions {
+            let func_id = func
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .map(to_id);
+
+            for block in &func.blocks {
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .map(to_id);
+
+                for inst in &block.instructions {
+                    if inst.class.opcode != Op::HitObjectTraceRayMotionNV {
+                        continue;
+                    }
+
+                    // Hit object pointer at operand 0
+                    validate_hit_object_pointer(inst, 0, ctx, func_id, block_id)?;
+
+                    // Acceleration structure (operand 1) must be OpTypeAccelerationStructureKHR
+                    if let Some(accel_id) = inst.operands.get(1).and_then(id_ref) {
+                        if let Some(accel_inst) = ResultId::try_from(accel_id)
+                            .ok()
+                            .and_then(|id| ctx.definitions.get(&id))
+                        {
+                            if let Some(type_id) = accel_inst.result_type {
+                                let type_opcode = ResultId::try_from(type_id)
+                                    .ok()
+                                    .and_then(|id| ctx.definitions.get(&id))
+                                    .map(|i| i.class.opcode);
+                                if type_opcode != Some(Op::TypeAccelerationStructureKHR) {
+                                    return Err(ValidationError::HitObjectInvalidAccelStruct {
+                                        function: func_id,
+                                        block: block_id,
+                                        opcode: inst.class.opcode,
+                                    });
+                                }
+                            }
+                        }
+                    }
+
+                    // Ray flags (operand 2) must be 32-bit int
+                    if let Some(ty) = get_operand_type(inst, 2, ctx) {
+                        if !is_int32_scalar(&ty) {
+                            return Err(ValidationError::HitObjectInvalidRayFlags {
+                                function: func_id,
+                                block: block_id,
+                                opcode: inst.class.opcode,
+                            });
+                        }
+                    }
+
+                    // Cull mask (operand 3) must be 32-bit unsigned int
+                    if let Some(ty) = get_operand_type(inst, 3, ctx) {
+                        if !is_uint32_scalar(&ty) {
+                            return Err(ValidationError::HitObjectInvalidCullMask {
+                                function: func_id,
+                                block: block_id,
+                                opcode: inst.class.opcode,
+                            });
+                        }
+                    }
+
+                    // SBT Offset (operand 4) must be 32-bit unsigned int
+                    if let Some(ty) = get_operand_type(inst, 4, ctx) {
+                        if !is_uint32_scalar(&ty) {
+                            return Err(ValidationError::HitObjectInvalidSBTOffset {
+                                function: func_id,
+                                block: block_id,
+                                opcode: inst.class.opcode,
+                            });
+                        }
+                    }
+
+                    // SBT Stride (operand 5) must be 32-bit unsigned int
+                    if let Some(ty) = get_operand_type(inst, 5, ctx) {
+                        if !is_uint32_scalar(&ty) {
+                            return Err(ValidationError::HitObjectInvalidSBTStride {
+                                function: func_id,
+                                block: block_id,
+                                opcode: inst.class.opcode,
+                            });
+                        }
+                    }
+
+                    // Miss index (operand 6) must be 32-bit unsigned int
+                    if let Some(ty) = get_operand_type(inst, 6, ctx) {
+                        if !is_uint32_scalar(&ty) {
+                            return Err(ValidationError::HitObjectInvalidMissIndex {
+                                function: func_id,
+                                block: block_id,
+                            });
+                        }
+                    }
+
+                    // Ray origin (operand 7) must be 32-bit float vec3
+                    if let Some(ty) = get_operand_type(inst, 7, ctx) {
+                        if !is_float32_vec3(&ty) {
+                            return Err(ValidationError::HitObjectInvalidRayOrigin {
+                                function: func_id,
+                                block: block_id,
+                                opcode: inst.class.opcode,
+                            });
+                        }
+                    }
+
+                    // Ray TMin (operand 8) must be 32-bit float
+                    if let Some(ty) = get_operand_type(inst, 8, ctx) {
+                        if !is_float32_scalar(&ty) {
+                            return Err(ValidationError::HitObjectInvalidRayT {
+                                function: func_id,
+                                block: block_id,
+                                opcode: inst.class.opcode,
+                                param_name: "TMin",
+                            });
+                        }
+                    }
+
+                    // Ray direction (operand 9) must be 32-bit float vec3
+                    if let Some(ty) = get_operand_type(inst, 9, ctx) {
+                        if !is_float32_vec3(&ty) {
+                            return Err(ValidationError::HitObjectInvalidRayDirection {
+                                function: func_id,
+                                block: block_id,
+                                opcode: inst.class.opcode,
+                            });
+                        }
+                    }
+
+                    // Ray TMax (operand 10) must be 32-bit float
+                    if let Some(ty) = get_operand_type(inst, 10, ctx) {
+                        if !is_float32_scalar(&ty) {
+                            return Err(ValidationError::HitObjectInvalidRayT {
+                                function: func_id,
+                                block: block_id,
+                                opcode: inst.class.opcode,
+                                param_name: "TMax",
+                            });
+                        }
+                    }
+
+                    // Current time (operand 11) must be 32-bit float
+                    if let Some(ty) = get_operand_type(inst, 11, ctx) {
+                        if !is_float32_scalar(&ty) {
+                            return Err(ValidationError::HitObjectInvalidCurrentTime {
+                                function: func_id,
+                                block: block_id,
+                                opcode: inst.class.opcode,
+                            });
+                        }
+                    }
+
+                    // Payload (operand 12) must be RayPayloadKHR or IncomingRayPayloadKHR
+                    if let Some(payload_id) = inst.operands.get(12).and_then(id_ref) {
+                        if let Some(variable) = ResultId::try_from(payload_id)
+                            .ok()
+                            .and_then(|id| ctx.definitions.get(&id))
+                        {
+                            if variable.class.opcode != Op::Variable {
+                                return Err(ValidationError::HitObjectPayloadInvalid {
+                                    function: func_id,
+                                    block: block_id,
+                                    opcode: inst.class.opcode,
+                                });
+                            }
+                            if let Some(Operand::StorageClass(sc)) = variable.operands.first() {
+                                if *sc != StorageClass::RayPayloadKHR
+                                    && *sc != StorageClass::IncomingRayPayloadKHR
+                                {
+                                    return Err(ValidationError::HitObjectPayloadInvalid {
+                                        function: func_id,
+                                        block: block_id,
+                                        opcode: inst.class.opcode,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Validates OpHitObjectRecordHitNV and OpHitObjectRecordHitWithIndexNV.
+pub struct HitObjectRecordHitRule;
+
+impl ValidationRule for HitObjectRecordHitRule {
+    fn name(&self) -> &'static str {
+        "hit-object-record-hit"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        for func in &ctx.module.functions {
+            let func_id = func
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .map(to_id);
+
+            for block in &func.blocks {
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .map(to_id);
+
+                for inst in &block.instructions {
+                    let opcode = inst.class.opcode;
+                    let is_with_index = opcode == Op::HitObjectRecordHitWithIndexNV;
+                    let is_record_hit = opcode == Op::HitObjectRecordHitNV;
+
+                    if !is_with_index && !is_record_hit {
+                        continue;
+                    }
+
+                    // Hit object pointer at operand 0
+                    validate_hit_object_pointer(inst, 0, ctx, func_id, block_id)?;
+
+                    // Acceleration structure (operand 1) must be OpTypeAccelerationStructureKHR
+                    if let Some(accel_id) = inst.operands.get(1).and_then(id_ref) {
+                        if let Some(accel_inst) = ResultId::try_from(accel_id)
+                            .ok()
+                            .and_then(|id| ctx.definitions.get(&id))
+                        {
+                            if let Some(type_id) = accel_inst.result_type {
+                                let type_opcode = ResultId::try_from(type_id)
+                                    .ok()
+                                    .and_then(|id| ctx.definitions.get(&id))
+                                    .map(|i| i.class.opcode);
+                                if type_opcode != Some(Op::TypeAccelerationStructureKHR) {
+                                    return Err(ValidationError::HitObjectInvalidAccelStruct {
+                                        function: func_id,
+                                        block: block_id,
+                                        opcode,
+                                    });
+                                }
+                            }
+                        }
+                    }
+
+                    // Instance ID (operand 2) must be 32-bit int
+                    if let Some(ty) = get_operand_type(inst, 2, ctx) {
+                        if !is_int32_scalar(&ty) {
+                            return Err(ValidationError::HitObjectInvalidInstanceId {
+                                function: func_id,
+                                block: block_id,
+                                opcode,
+                            });
+                        }
+                    }
+
+                    // Primitive ID (operand 3) must be 32-bit int
+                    if let Some(ty) = get_operand_type(inst, 3, ctx) {
+                        if !is_int32_scalar(&ty) {
+                            return Err(ValidationError::HitObjectInvalidPrimitiveId {
+                                function: func_id,
+                                block: block_id,
+                                opcode,
+                            });
+                        }
+                    }
+
+                    // Geometry Index (operand 4) must be 32-bit int
+                    if let Some(ty) = get_operand_type(inst, 4, ctx) {
+                        if !is_int32_scalar(&ty) {
+                            return Err(ValidationError::HitObjectInvalidGeometryIndex {
+                                function: func_id,
+                                block: block_id,
+                                opcode,
+                            });
+                        }
+                    }
+
+                    // Hit Kind (operand 5) must be 32-bit unsigned int
+                    if let Some(ty) = get_operand_type(inst, 5, ctx) {
+                        if !is_uint32_scalar(&ty) {
+                            return Err(ValidationError::HitObjectInvalidHitKind {
+                                function: func_id,
+                                block: block_id,
+                                opcode,
+                            });
+                        }
+                    }
+
+                    // Different layout for WithIndex vs regular
+                    if is_with_index {
+                        // SBT Index (operand 6) must be 32-bit unsigned int
+                        if let Some(ty) = get_operand_type(inst, 6, ctx) {
+                            if !is_uint32_scalar(&ty) {
+                                return Err(ValidationError::HitObjectInvalidSBTIndex {
+                                    function: func_id,
+                                    block: block_id,
+                                    opcode,
+                                });
+                            }
+                        }
+
+                        // Ray origin (operand 7) must be 32-bit float vec3
+                        if let Some(ty) = get_operand_type(inst, 7, ctx) {
+                            if !is_float32_vec3(&ty) {
+                                return Err(ValidationError::HitObjectInvalidRayOrigin {
+                                    function: func_id,
+                                    block: block_id,
+                                    opcode,
+                                });
+                            }
+                        }
+
+                        // Ray TMin (operand 8) must be 32-bit float
+                        if let Some(ty) = get_operand_type(inst, 8, ctx) {
+                            if !is_float32_scalar(&ty) {
+                                return Err(ValidationError::HitObjectInvalidRayT {
+                                    function: func_id,
+                                    block: block_id,
+                                    opcode,
+                                    param_name: "TMin",
+                                });
+                            }
+                        }
+
+                        // Ray direction (operand 9) must be 32-bit float vec3
+                        if let Some(ty) = get_operand_type(inst, 9, ctx) {
+                            if !is_float32_vec3(&ty) {
+                                return Err(ValidationError::HitObjectInvalidRayDirection {
+                                    function: func_id,
+                                    block: block_id,
+                                    opcode,
+                                });
+                            }
+                        }
+
+                        // Ray TMax (operand 10) must be 32-bit float
+                        if let Some(ty) = get_operand_type(inst, 10, ctx) {
+                            if !is_float32_scalar(&ty) {
+                                return Err(ValidationError::HitObjectInvalidRayT {
+                                    function: func_id,
+                                    block: block_id,
+                                    opcode,
+                                    param_name: "TMax",
+                                });
+                            }
+                        }
+
+                        // Hit object attribute at operand 11
+                        validate_hit_object_attribute(inst, 11, ctx, func_id, block_id)?;
+                    } else {
+                        // SBT Record Offset (operand 6) must be 32-bit unsigned int
+                        if let Some(ty) = get_operand_type(inst, 6, ctx) {
+                            if !is_uint32_scalar(&ty) {
+                                return Err(ValidationError::HitObjectInvalidSBTRecordOffset {
+                                    function: func_id,
+                                    block: block_id,
+                                    opcode,
+                                });
+                            }
+                        }
+
+                        // SBT Record Stride (operand 7) must be 32-bit unsigned int
+                        if let Some(ty) = get_operand_type(inst, 7, ctx) {
+                            if !is_uint32_scalar(&ty) {
+                                return Err(ValidationError::HitObjectInvalidSBTRecordStride {
+                                    function: func_id,
+                                    block: block_id,
+                                    opcode,
+                                });
+                            }
+                        }
+
+                        // Ray origin (operand 8) must be 32-bit float vec3
+                        if let Some(ty) = get_operand_type(inst, 8, ctx) {
+                            if !is_float32_vec3(&ty) {
+                                return Err(ValidationError::HitObjectInvalidRayOrigin {
+                                    function: func_id,
+                                    block: block_id,
+                                    opcode,
+                                });
+                            }
+                        }
+
+                        // Ray TMin (operand 9) must be 32-bit float
+                        if let Some(ty) = get_operand_type(inst, 9, ctx) {
+                            if !is_float32_scalar(&ty) {
+                                return Err(ValidationError::HitObjectInvalidRayT {
+                                    function: func_id,
+                                    block: block_id,
+                                    opcode,
+                                    param_name: "TMin",
+                                });
+                            }
+                        }
+
+                        // Ray direction (operand 10) must be 32-bit float vec3
+                        if let Some(ty) = get_operand_type(inst, 10, ctx) {
+                            if !is_float32_vec3(&ty) {
+                                return Err(ValidationError::HitObjectInvalidRayDirection {
+                                    function: func_id,
+                                    block: block_id,
+                                    opcode,
+                                });
+                            }
+                        }
+
+                        // Ray TMax (operand 11) must be 32-bit float
+                        if let Some(ty) = get_operand_type(inst, 11, ctx) {
+                            if !is_float32_scalar(&ty) {
+                                return Err(ValidationError::HitObjectInvalidRayT {
+                                    function: func_id,
+                                    block: block_id,
+                                    opcode,
+                                    param_name: "TMax",
+                                });
+                            }
+                        }
+
+                        // Hit object attribute at operand 12
+                        validate_hit_object_attribute(inst, 12, ctx, func_id, block_id)?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Validates hit object LSS array result instructions.
 ///
 /// OpHitObjectGetLSSPositionsNV, OpHitObjectGetLSSRadiiNV
@@ -1094,6 +1718,9 @@ pub fn all_hit_object_rules() -> Vec<Box<dyn ValidationRule>> {
         Box::new(HitObjectAttributeAccessRule),
         Box::new(HitObjectRecordEmptyRule),
         Box::new(HitObjectRecordMissRule),
+        Box::new(HitObjectRecordHitRule),
+        Box::new(HitObjectTraceRayRule),
+        Box::new(HitObjectTraceRayMotionRule),
         Box::new(ReorderThreadWithHintRule),
         Box::new(ReorderThreadWithHitObjectRule),
         Box::new(HitObjectLSSArrayRule),

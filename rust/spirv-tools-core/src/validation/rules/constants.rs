@@ -17,7 +17,9 @@ use rspirv::spirv::{Capability, Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
 use crate::validation::error::ValidationError;
-use crate::validation::types::{Id, ResultId, TypeId};
+use crate::validation::helpers::{get_type_structure, is_constant_opcode};
+use crate::validation::types::{Id, ResultId, ScalarKind, TypeId, TypeStructure};
+use crate::version::SpirvVersion;
 
 // ============================================================================
 // Helper Functions
@@ -42,7 +44,7 @@ fn is_constant_or_undef(opcode: Op) -> bool {
     )
 }
 
-/// Returns true if the given opcode is a composite type.
+/// Returns true if the given opcode is a composite type (excluding shaped tensors which need special handling).
 fn is_composite_type(opcode: Op) -> bool {
     matches!(
         opcode,
@@ -54,6 +56,12 @@ fn is_composite_type(opcode: Op) -> bool {
             | Op::TypeCooperativeMatrixKHR
             | Op::TypeCooperativeVectorNV
     )
+}
+
+/// Check if a type instruction is a shaped TensorARM (has shape operand).
+/// A shaped tensor has: opcode, result_id, element_type, rank, shape (5 operands total in words).
+fn is_shaped_tensor(type_inst: &rspirv::dr::Instruction) -> bool {
+    type_inst.class.opcode == Op::TypeTensorARM && type_inst.operands.len() >= 3
 }
 
 /// Check if a type is nullable (can have a null value).
@@ -105,8 +113,117 @@ fn is_type_nullable(type_id: u32, ctx: &ValidationContext<'_>) -> bool {
             });
             storage_class != Some(StorageClass::PhysicalStorageBuffer)
         }
+        // TensorARM is nullable if it has a shape and its element type is nullable
+        Op::TypeTensorARM => {
+            // Shaped tensors (with shape operand) can be null if element type is nullable
+            // Unshaped tensors cannot be null
+            if !is_shaped_tensor(type_inst) {
+                return false;
+            }
+            let element_type_id = type_inst.operands.first().and_then(|op| match op {
+                Operand::IdRef(id) => Some(*id),
+                _ => None,
+            });
+            element_type_id
+                .map(|id| is_type_nullable(id, ctx))
+                .unwrap_or(false)
+        }
         _ => false,
     }
+}
+
+/// Check if a type is a pointer type.
+fn is_pointer_type(type_id: TypeId, ctx: &ValidationContext<'_>) -> bool {
+    let ty = get_type_structure(type_id, ctx.definitions);
+    matches!(
+        ty,
+        TypeStructure::Pointer { .. } | TypeStructure::ForwardPointer { .. }
+    )
+}
+
+/// Check if a type contains a limited-use 8/16-bit int or float.
+///
+/// Returns true if the type contains 8-bit int (without Int8 capability),
+/// 16-bit int (without Int16 capability), or 16-bit float (without Float16 capability).
+fn contains_limited_use_type(type_id: TypeId, ctx: &ValidationContext<'_>) -> bool {
+    let has_int8 = ctx.has_capability(Capability::Int8);
+    let has_int16 = ctx.has_capability(Capability::Int16);
+    let has_float16 = ctx.has_capability(Capability::Float16);
+
+    contains_limited_use_type_impl(type_id, ctx, has_int8, has_int16, has_float16)
+}
+
+fn contains_limited_use_type_impl(
+    type_id: TypeId,
+    ctx: &ValidationContext<'_>,
+    has_int8: bool,
+    has_int16: bool,
+    has_float16: bool,
+) -> bool {
+    let ty = get_type_structure(type_id, ctx.definitions);
+    match ty {
+        TypeStructure::Scalar(kind) => match kind {
+            ScalarKind::SignedInt(w) | ScalarKind::UnsignedInt(w) => {
+                let width = w.get();
+                (width == 8 && !has_int8) || (width == 16 && !has_int16)
+            }
+            ScalarKind::Float(w) => {
+                let width = w.get();
+                width == 16 && !has_float16
+            }
+            _ => false,
+        },
+        TypeStructure::Vector { component, .. } | TypeStructure::Matrix { component, .. } => {
+            match component {
+                ScalarKind::SignedInt(w) | ScalarKind::UnsignedInt(w) => {
+                    let width = w.get();
+                    (width == 8 && !has_int8) || (width == 16 && !has_int16)
+                }
+                ScalarKind::Float(w) => {
+                    let width = w.get();
+                    width == 16 && !has_float16
+                }
+                _ => false,
+            }
+        }
+        TypeStructure::Array { element, .. } | TypeStructure::RuntimeArray { element } => {
+            contains_limited_use_type_impl(element, ctx, has_int8, has_int16, has_float16)
+        }
+        TypeStructure::Struct { members } => members
+            .iter()
+            .any(|m| contains_limited_use_type_impl(*m, ctx, has_int8, has_int16, has_float16)),
+        TypeStructure::Pointer { pointee, .. } => {
+            if let Some(p) = pointee {
+                contains_limited_use_type_impl(p, ctx, has_int8, has_int16, has_float16)
+            } else {
+                false
+            }
+        }
+        _ => false,
+    }
+}
+
+/// Check if the opcode is a constant instruction.
+fn is_constant_op(opcode: Op) -> bool {
+    is_constant_opcode(opcode)
+}
+
+/// Evaluate a value ID as a constant 32-bit unsigned integer if possible.
+fn eval_const_u32(id: u32, ctx: &ValidationContext<'_>) -> Option<u32> {
+    let result_id = ResultId::try_from(id).ok()?;
+    let inst = ctx.definitions.get(&result_id)?;
+
+    if !is_constant_opcode(inst.class.opcode) {
+        return None;
+    }
+
+    if inst.class.opcode == Op::Constant || inst.class.opcode == Op::SpecConstant {
+        if let Some(Operand::LiteralBit32(value)) = inst.operands.first() {
+            return Some(*value);
+        }
+    }
+
+    None
 }
 
 // ============================================================================
@@ -321,8 +438,8 @@ impl ValidationRule for ConstantCompositeRule {
                 continue;
             };
 
-            // Check that result type is a composite type
-            if !is_composite_type(result_type_inst.class.opcode) {
+            // Check that result type is a composite type (or shaped tensor)
+            if !is_composite_type(result_type_inst.class.opcode) && !is_shaped_tensor(result_type_inst) {
                 if let Ok(result_type) = TypeId::try_from(result_type_id) {
                     return Err(ValidationError::ConstantResultTypeInvalid {
                         opcode,
@@ -403,6 +520,30 @@ impl ValidationRule for ConstantCompositeRule {
                                 expected: column_count,
                                 found: constituent_count,
                             });
+                        }
+                    }
+                }
+                Op::TypeArray => {
+                    // Get array length from the Length operand (second operand)
+                    let length_id = result_type_inst.operands.get(1).and_then(|op| match op {
+                        Operand::IdRef(id) => Some(*id),
+                        _ => None,
+                    });
+
+                    if let Some(length_id) = length_id {
+                        // Try to evaluate the length as a constant
+                        if let Some(array_length) = eval_const_u32(length_id, ctx) {
+                            let constituent_count = inst.operands.len();
+                            if constituent_count != array_length as usize {
+                                if let Ok(result_type) = TypeId::try_from(result_type_id) {
+                                    return Err(ValidationError::ConstantCompositeCountMismatch {
+                                        opcode,
+                                        result_type,
+                                        expected: array_length as usize,
+                                        found: constituent_count,
+                                    });
+                                }
+                            }
                         }
                     }
                 }
@@ -537,6 +678,118 @@ impl ValidationRule for SpecConstantOpCapabilityRule {
 }
 
 // ============================================================================
+// Small Type Constant Rule
+// ============================================================================
+
+/// Validates that 8- or 16-bit constants are not formed without full capabilities.
+///
+/// When the Shader capability is present but full 8/16-bit capabilities are not,
+/// creating constants of these types is disallowed.
+pub struct SmallTypeConstantRule;
+
+impl ValidationRule for SmallTypeConstantRule {
+    fn name(&self) -> &'static str {
+        "small-type-constant"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        // Only applies when Shader capability is present
+        if !ctx.has_capability(Capability::Shader) {
+            return Ok(());
+        }
+
+        for inst in &ctx.module.types_global_values {
+            // Check constant instructions
+            if !is_constant_op(inst.class.opcode) {
+                continue;
+            }
+
+            let Some(result_type_id) = inst.result_type else {
+                continue;
+            };
+
+            let Ok(type_id) = TypeId::try_from(result_type_id) else {
+                continue;
+            };
+
+            // Skip pointer types
+            if is_pointer_type(type_id, ctx) {
+                continue;
+            }
+
+            // Check for limited-use small types
+            if contains_limited_use_type(type_id, ctx) {
+                return Err(ValidationError::ConstantSmallTypeNotAllowed);
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
+// UConvert Spec Constant Op Rule
+// ============================================================================
+
+/// Validates OpSpecConstantOp UConvert requirements before SPIR-V 1.4.
+///
+/// Prior to SPIR-V 1.4, OpSpecConstantOp with UConvert requires:
+/// - Kernel capability, OR
+/// - SPV_AMD_gpu_shader_int16 extension
+pub struct SpecConstantOpUConvertRule;
+
+impl ValidationRule for SpecConstantOpUConvertRule {
+    fn name(&self) -> &'static str {
+        "spec-constant-op-uconvert"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        // Only check before SPIR-V 1.4
+        let v1_4 = SpirvVersion::new(1, 4);
+        if ctx.target_version >= v1_4 {
+            return Ok(());
+        }
+
+        // UConvert is allowed with Kernel capability
+        if ctx.has_capability(Capability::Kernel) {
+            return Ok(());
+        }
+
+        // Check if SPV_AMD_gpu_shader_int16 extension is present
+        let has_amd_ext = ctx.module.extensions.iter().any(|ext| {
+            ext.operands.first().map_or(false, |op| {
+                matches!(op, Operand::LiteralString(s) if s == "SPV_AMD_gpu_shader_int16")
+            })
+        });
+
+        if has_amd_ext {
+            return Ok(());
+        }
+
+        // Check for OpSpecConstantOp with UConvert
+        // UConvert opcode number is 113
+        const UCONVERT_OPCODE: u32 = 113;
+
+        for inst in &ctx.module.types_global_values {
+            if inst.class.opcode != Op::SpecConstantOp {
+                continue;
+            }
+
+            let inner_op_num = inst.operands.first().and_then(|op| match op {
+                Operand::LiteralBit32(n) => Some(*n),
+                _ => None,
+            });
+
+            if inner_op_num == Some(UCONVERT_OPCODE) {
+                return Err(ValidationError::SpecConstantOpUConvertRequiresKernel);
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
 // All constant rules
 // ============================================================================
 
@@ -549,6 +802,8 @@ pub fn all_constant_rules() -> Vec<&'static dyn ValidationRule> {
         &SpecConstantTypeRule,
         &ConstantCompositeRule,
         &SpecConstantOpCapabilityRule,
+        &SmallTypeConstantRule,
+        &SpecConstantOpUConvertRule,
     ]
 }
 

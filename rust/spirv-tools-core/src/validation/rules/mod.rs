@@ -51,6 +51,7 @@
 //! - [`atomics`]: Atomic instruction validation rules
 //! - [`mesh_shading`]: Mesh shading instruction validation rules
 //! - [`debug`]: Debug instruction validation rules
+//! - [`debug_info`]: Debug info extended instruction validation (OpenCL.DebugInfo.100, NonSemantic.Shader.DebugInfo.100)
 //! - [`memory_semantics`]: Memory semantics validation rules
 //! - [`scopes`]: Scope validation rules
 //! - [`interfaces`]: Interface variable validation rules
@@ -79,7 +80,9 @@ pub mod composites;
 pub mod constants;
 pub mod conversion;
 pub mod debug;
+pub mod debug_info;
 pub mod decorations;
+pub mod ext_inst;
 pub mod derivatives;
 pub mod entry_points;
 pub mod execution_modes;

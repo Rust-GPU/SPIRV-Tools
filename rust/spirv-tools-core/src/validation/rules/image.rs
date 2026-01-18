@@ -16,6 +16,7 @@ use rspirv::spirv::{Capability, Dim, ExecutionModel, ImageFormat, ImageOperands,
 
 use crate::validation::context::{ValidationContext, ValidationRule};
 use crate::validation::error::ValidationError;
+use crate::validation::op_ext::OpExt;
 use crate::validation::type_ext::{DefaultTypeResolver, TypeInstructionExt, TypeResolver};
 use crate::validation::types::{Id, ResultId, TypeId};
 
@@ -110,162 +111,13 @@ impl ImageTypeInfo {
     }
 }
 
-// ============================================================================
-// Image Opcode Classification
-// ============================================================================
-
-/// Sample instructions that use implicit LOD.
-const IMPLICIT_LOD_OPS: &[Op] = &[
-    Op::ImageSampleImplicitLod,
-    Op::ImageSampleDrefImplicitLod,
-    Op::ImageSampleProjImplicitLod,
-    Op::ImageSampleProjDrefImplicitLod,
-    Op::ImageSparseSampleImplicitLod,
-    Op::ImageSparseSampleDrefImplicitLod,
-    Op::ImageSparseSampleProjImplicitLod,
-    Op::ImageSparseSampleProjDrefImplicitLod,
-];
-
-/// Sample instructions that use explicit LOD.
-const EXPLICIT_LOD_OPS: &[Op] = &[
-    Op::ImageSampleExplicitLod,
-    Op::ImageSampleDrefExplicitLod,
-    Op::ImageSampleProjExplicitLod,
-    Op::ImageSampleProjDrefExplicitLod,
-    Op::ImageSparseSampleExplicitLod,
-    Op::ImageSparseSampleDrefExplicitLod,
-    Op::ImageSparseSampleProjExplicitLod,
-    Op::ImageSparseSampleProjDrefExplicitLod,
-];
-
-/// Projection sample operations.
-#[allow(dead_code)]
-const PROJ_OPS: &[Op] = &[
-    Op::ImageSampleProjImplicitLod,
-    Op::ImageSampleProjDrefImplicitLod,
-    Op::ImageSparseSampleProjImplicitLod,
-    Op::ImageSparseSampleProjDrefImplicitLod,
-    Op::ImageSampleProjExplicitLod,
-    Op::ImageSampleProjDrefExplicitLod,
-    Op::ImageSparseSampleProjExplicitLod,
-    Op::ImageSparseSampleProjDrefExplicitLod,
-];
-
-/// Gather operations.
-const GATHER_OPS: &[Op] = &[
-    Op::ImageGather,
-    Op::ImageDrefGather,
-    Op::ImageSparseGather,
-    Op::ImageSparseDrefGather,
-];
-
-/// Fetch operations.
-const FETCH_OPS: &[Op] = &[Op::ImageFetch, Op::ImageSparseFetch];
-
-/// Read/write operations.
-const READ_WRITE_OPS: &[Op] = &[
-    Op::ImageRead,
-    Op::ImageWrite,
-    Op::ImageSparseRead,
-];
-
-/// Query operations.
-const QUERY_OPS: &[Op] = &[
-    Op::ImageQueryFormat,
-    Op::ImageQueryOrder,
-    Op::ImageQuerySizeLod,
-    Op::ImageQuerySize,
-    Op::ImageQueryLod,
-    Op::ImageQueryLevels,
-    Op::ImageQuerySamples,
-];
-
-/// All image operations that need validation.
-const ALL_IMAGE_OPS: &[Op] = &[
-    // Sampling
-    Op::ImageSampleImplicitLod,
-    Op::ImageSampleExplicitLod,
-    Op::ImageSampleDrefImplicitLod,
-    Op::ImageSampleDrefExplicitLod,
-    Op::ImageSampleProjImplicitLod,
-    Op::ImageSampleProjExplicitLod,
-    Op::ImageSampleProjDrefImplicitLod,
-    Op::ImageSampleProjDrefExplicitLod,
-    // Sparse sampling
-    Op::ImageSparseSampleImplicitLod,
-    Op::ImageSparseSampleExplicitLod,
-    Op::ImageSparseSampleDrefImplicitLod,
-    Op::ImageSparseSampleDrefExplicitLod,
-    Op::ImageSparseSampleProjImplicitLod,
-    Op::ImageSparseSampleProjExplicitLod,
-    Op::ImageSparseSampleProjDrefImplicitLod,
-    Op::ImageSparseSampleProjDrefExplicitLod,
-    // Fetch
-    Op::ImageFetch,
-    Op::ImageSparseFetch,
-    // Gather
-    Op::ImageGather,
-    Op::ImageDrefGather,
-    Op::ImageSparseGather,
-    Op::ImageSparseDrefGather,
-    // Read/Write
-    Op::ImageRead,
-    Op::ImageWrite,
-    Op::ImageSparseRead,
-    // Query
-    Op::ImageQueryFormat,
-    Op::ImageQueryOrder,
-    Op::ImageQuerySizeLod,
-    Op::ImageQuerySize,
-    Op::ImageQueryLod,
-    Op::ImageQueryLevels,
-    Op::ImageQuerySamples,
-    // Texel
-    Op::ImageTexelPointer,
-    // Sampled image
-    Op::SampledImage,
-    Op::Image,
-];
-
-fn is_implicit_lod(op: Op) -> bool {
-    IMPLICIT_LOD_OPS.contains(&op)
-}
-
-fn is_explicit_lod(op: Op) -> bool {
-    EXPLICIT_LOD_OPS.contains(&op)
-}
-
-#[allow(dead_code)]
-fn is_proj(op: Op) -> bool {
-    PROJ_OPS.contains(&op)
-}
-
-fn is_gather(op: Op) -> bool {
-    GATHER_OPS.contains(&op)
-}
-
-fn is_fetch(op: Op) -> bool {
-    FETCH_OPS.contains(&op)
-}
-
-fn is_read_write(op: Op) -> bool {
-    READ_WRITE_OPS.contains(&op)
-}
-
-fn is_query(op: Op) -> bool {
-    QUERY_OPS.contains(&op)
-}
-
-fn is_image_op(op: Op) -> bool {
-    ALL_IMAGE_OPS.contains(&op)
-}
+// Note: Image opcode classification is provided by the OpExt trait from op_ext module.
 
 // ============================================================================
 // Coordinate Size Calculation
 // ============================================================================
 
 /// Get the number of coordinate components for a single plane.
-#[allow(dead_code)]
 fn get_plane_coord_size(info: &ImageTypeInfo) -> u32 {
     match info.dim {
         Dim::Dim1D | Dim::DimBuffer => 1,
@@ -275,13 +127,12 @@ fn get_plane_coord_size(info: &ImageTypeInfo) -> u32 {
 }
 
 /// Get the minimum coordinate size for an image operation.
-#[allow(dead_code)]
 fn get_min_coord_size(op: Op, info: &ImageTypeInfo) -> u32 {
     // Read/Write on Cube use UV (2D), not direction vector
-    if info.dim == Dim::DimCube && is_read_write(op) {
+    if info.dim == Dim::DimCube && op.is_image_read_write() {
         return 3;
     }
-    get_plane_coord_size(info) + info.arrayed + if is_proj(op) { 1 } else { 0 }
+    get_plane_coord_size(info) + info.arrayed + if op.is_proj() { 1 } else { 0 }
 }
 
 // ============================================================================
@@ -390,12 +241,12 @@ impl ValidationRule for ImageOperandRule {
                     .and_then(|id| Id::try_from(id).ok());
 
                 for inst in &block.instructions {
-                    if !is_image_op(inst.class.opcode) {
+                    if !inst.class.opcode.is_image_op() {
                         continue;
                     }
 
                     // Skip query operations - they don't have image operands
-                    if is_query(inst.class.opcode) {
+                    if inst.class.opcode.is_image_query() {
                         continue;
                     }
 
@@ -437,7 +288,7 @@ impl ValidationRule for ImageOperandRule {
 
                     // Validate Bias operand
                     if mask.contains(ImageOperands::BIAS) {
-                        if !is_implicit_lod(inst.class.opcode) {
+                        if !inst.class.opcode.is_implicit_lod() {
                             return Err(ValidationError::ImageOperandBiasRequiresImplicitLod {
                                 function: function_id,
                                 block: block_id,
@@ -448,9 +299,9 @@ impl ValidationRule for ImageOperandRule {
 
                     // Validate Lod operand
                     if mask.contains(ImageOperands::LOD) {
-                        let valid_for_lod = is_explicit_lod(inst.class.opcode)
-                            || is_fetch(inst.class.opcode)
-                            || (is_read_write(inst.class.opcode)
+                        let valid_for_lod = inst.class.opcode.is_explicit_lod()
+                            || inst.class.opcode.is_fetch()
+                            || (inst.class.opcode.is_image_read_write()
                                 && ctx.has_capability(Capability::ImageReadWriteLodAMD));
 
                         if !valid_for_lod {
@@ -473,7 +324,7 @@ impl ValidationRule for ImageOperandRule {
 
                     // Validate Grad operand
                     if mask.contains(ImageOperands::GRAD) {
-                        if !is_explicit_lod(inst.class.opcode) {
+                        if !inst.class.opcode.is_explicit_lod() {
                             return Err(ValidationError::ImageOperandGradRequiresExplicitLod {
                                 function: function_id,
                                 block: block_id,
@@ -484,7 +335,7 @@ impl ValidationRule for ImageOperandRule {
 
                     // Validate ConstOffsets operand
                     if mask.contains(ImageOperands::CONST_OFFSETS) {
-                        if !is_gather(inst.class.opcode) {
+                        if !inst.class.opcode.is_gather() {
                             return Err(ValidationError::ImageOperandConstOffsetsRequiresGather {
                                 function: function_id,
                                 block: block_id,
@@ -534,7 +385,7 @@ impl ValidationRule for ImageSampleExecutionModelRule {
             f.blocks.iter().any(|b| {
                 b.instructions
                     .iter()
-                    .any(|i| is_implicit_lod(i.class.opcode))
+                    .any(|i| i.class.opcode.is_implicit_lod())
             })
         });
 
@@ -563,7 +414,7 @@ impl ValidationRule for ImageSampleExecutionModelRule {
                         .and_then(|id| Id::try_from(id).ok());
 
                     for inst in &block.instructions {
-                        if is_implicit_lod(inst.class.opcode) {
+                        if inst.class.opcode.is_implicit_lod() {
                             return Err(ValidationError::ImageImplicitLodRequiresFragment {
                                 function: function_id,
                                 block: block_id,
@@ -790,6 +641,539 @@ impl ValidationRule for ImageQueryRule {
 }
 
 // ============================================================================
+// Sampled Image Rule
+// ============================================================================
+
+/// Validates OpSampledImage instructions.
+pub struct SampledImageRule;
+
+impl ValidationRule for SampledImageRule {
+    fn name(&self) -> &'static str {
+        "sampled-image"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        for function in &ctx.module.functions {
+            let function_id = function
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .and_then(|id| Id::try_from(id).ok());
+
+            for block in &function.blocks {
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .and_then(|id| Id::try_from(id).ok());
+
+                for inst in &block.instructions {
+                    if inst.class.opcode != Op::SampledImage {
+                        continue;
+                    }
+
+                    // Validate result type is OpTypeSampledImage
+                    if let Some(result_type) = inst.result_type {
+                        if let Ok(type_id) = ResultId::try_from(result_type) {
+                            if let Some(type_inst) = ctx.definitions.get(&type_id) {
+                                if type_inst.class.opcode != Op::TypeSampledImage {
+                                    return Err(ValidationError::SampledImageResultTypeMustBeSampledImage {
+                                        function: function_id,
+                                        block: block_id,
+                                    });
+                                }
+                            }
+                        }
+                    }
+
+                    // Get image type info and validate Sampled flag
+                    if let Some(info) = get_image_type_from_instruction(inst, ctx) {
+                        // In Vulkan, Sampled must be 1
+                        if ctx.is_vulkan_env() && info.sampled != 1 {
+                            return Err(ValidationError::SampledImageRequiresSampledOne {
+                                function: function_id,
+                                block: block_id,
+                            });
+                        }
+
+                        // SubpassData dimension cannot be used with OpSampledImage
+                        if info.dim == Dim::DimSubpassData {
+                            return Err(ValidationError::SampledImageCannotUseSubpassData {
+                                function: function_id,
+                                block: block_id,
+                            });
+                        }
+
+                        // In SPIR-V 1.6+, Buffer dimension is not allowed
+                        if ctx.target_version.major() > 1
+                            || (ctx.target_version.major() == 1
+                                && ctx.target_version.minor() >= 6)
+                        {
+                            if info.dim == Dim::DimBuffer {
+                                return Err(ValidationError::SampledImageBufferDimInvalid {
+                                    function: function_id,
+                                    block: block_id,
+                                });
+                            }
+                        }
+                    }
+
+                    // Validate image operand type matches result type (except depth)
+                    if let (Some(result_type), Some(Operand::IdRef(image_id))) =
+                        (inst.result_type, inst.operands.first())
+                    {
+                        if let Ok(result_type_id) = ResultId::try_from(result_type) {
+                            if let Some(result_type_inst) = ctx.definitions.get(&result_type_id) {
+                                // Get the image type from the result (OpTypeSampledImage)
+                                if let Some(Operand::IdRef(expected_image_type)) =
+                                    result_type_inst.operands.first()
+                                {
+                                    // Get the actual image type from the operand
+                                    if let Ok(image_result_id) = ResultId::try_from(*image_id) {
+                                        if let Some(image_inst) =
+                                            ctx.definitions.get(&image_result_id)
+                                        {
+                                            if let Some(actual_image_type) = image_inst.result_type {
+                                                // Image types should match (except depth is allowed to differ)
+                                                if *expected_image_type != actual_image_type {
+                                                    // Check if they only differ in depth
+                                                    if let (Some(expected_info), Some(actual_info)) = (
+                                                        ImageTypeInfo::from_type_id(
+                                                            *expected_image_type,
+                                                            ctx,
+                                                        ),
+                                                        ImageTypeInfo::from_type_id(
+                                                            actual_image_type,
+                                                            ctx,
+                                                        ),
+                                                    ) {
+                                                        // All fields except depth must match
+                                                        if expected_info.sampled_type
+                                                            != actual_info.sampled_type
+                                                            || expected_info.dim != actual_info.dim
+                                                            || expected_info.arrayed
+                                                                != actual_info.arrayed
+                                                            || expected_info.multisampled
+                                                                != actual_info.multisampled
+                                                            || expected_info.sampled
+                                                                != actual_info.sampled
+                                                            || expected_info.format
+                                                                != actual_info.format
+                                                        {
+                                                            return Err(
+                                                                ValidationError::SampledImageOperandTypeMismatch {
+                                                                    function: function_id,
+                                                                    block: block_id,
+                                                                },
+                                                            );
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Validate Sampler operand is OpTypeSampler
+                    if let Some(Operand::IdRef(sampler_id)) = inst.operands.get(1) {
+                        if let Ok(sampler_result_id) = ResultId::try_from(*sampler_id) {
+                            if let Some(sampler_inst) = ctx.definitions.get(&sampler_result_id) {
+                                if let Some(sampler_type) = sampler_inst.result_type {
+                                    if let Ok(sampler_type_id) = ResultId::try_from(sampler_type) {
+                                        if let Some(sampler_type_inst) =
+                                            ctx.definitions.get(&sampler_type_id)
+                                        {
+                                            if sampler_type_inst.class.opcode != Op::TypeSampler {
+                                                return Err(ValidationError::SampledImageSamplerMustBeSamplerType {
+                                                    function: function_id,
+                                                    block: block_id,
+                                                });
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Image Texel Pointer Rule
+// ============================================================================
+
+/// Validates OpImageTexelPointer instructions.
+pub struct ImageTexelPointerRule;
+
+impl ValidationRule for ImageTexelPointerRule {
+    fn name(&self) -> &'static str {
+        "image-texel-pointer"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        let resolver = DefaultTypeResolver;
+
+        for function in &ctx.module.functions {
+            let function_id = function
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .and_then(|id| Id::try_from(id).ok());
+
+            for block in &function.blocks {
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .and_then(|id| Id::try_from(id).ok());
+
+                for inst in &block.instructions {
+                    if inst.class.opcode != Op::ImageTexelPointer {
+                        continue;
+                    }
+
+                    // Validate result type is a pointer
+                    if let Some(result_type) = inst.result_type {
+                        if let Ok(type_id) = ResultId::try_from(result_type) {
+                            if let Some(type_inst) = ctx.definitions.get(&type_id) {
+                                if type_inst.class.opcode != Op::TypePointer
+                                    && type_inst.class.opcode != Op::TypeUntypedPointerKHR
+                                {
+                                    return Err(ValidationError::ImageTexelPointerResultMustBePointer {
+                                        function: function_id,
+                                        block: block_id,
+                                    });
+                                }
+
+                                // Validate storage class is Image
+                                if let Some(Operand::StorageClass(sc)) = type_inst.operands.first() {
+                                    if *sc != rspirv::spirv::StorageClass::Image {
+                                        return Err(ValidationError::ImageTexelPointerStorageClassMustBeImage {
+                                            function: function_id,
+                                            block: block_id,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Validate Coordinate is integer scalar or vector
+                    if let Some(Operand::IdRef(coord_id)) = inst.operands.get(1) {
+                        if let Ok(coord_result_id) = ResultId::try_from(*coord_id) {
+                            if let Some(coord_inst) = ctx.definitions.get(&coord_result_id) {
+                                if let Some(coord_type) = coord_inst.result_type {
+                                    if !resolver.is_int_scalar_or_vector(coord_type, ctx.definitions) {
+                                        return Err(ValidationError::ImageTexelPointerCoordMustBeIntScalarOrVector {
+                                            function: function_id,
+                                            block: block_id,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Validate Sample is integer scalar
+                    if let Some(Operand::IdRef(sample_id)) = inst.operands.get(2) {
+                        if let Ok(sample_result_id) = ResultId::try_from(*sample_id) {
+                            if let Some(sample_inst) = ctx.definitions.get(&sample_result_id) {
+                                if let Some(sample_type) = sample_inst.result_type {
+                                    if !resolver.is_int_scalar(sample_type, ctx.definitions) {
+                                        return Err(ValidationError::ImageTexelPointerSampleMustBeIntScalar {
+                                            function: function_id,
+                                            block: block_id,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Get image type info and validate dimensions
+                    if let Some(info) = get_image_type_from_texel_pointer(inst, ctx) {
+                        // SubpassData cannot be used with ImageTexelPointer
+                        if info.dim == Dim::DimSubpassData {
+                            return Err(ValidationError::ImageTexelPointerCannotUseSubpassData {
+                                function: function_id,
+                                block: block_id,
+                            });
+                        }
+
+                        // TileImageDataEXT cannot be used with ImageTexelPointer
+                        if info.dim == Dim::DimTileImageDataEXT {
+                            return Err(ValidationError::ImageTexelPointerCannotUseTileImageData {
+                                function: function_id,
+                                block: block_id,
+                            });
+                        }
+
+                        // Validate format for Vulkan
+                        if ctx.is_vulkan_env() {
+                            let valid_format = matches!(
+                                info.format,
+                                ImageFormat::R64i
+                                    | ImageFormat::R64ui
+                                    | ImageFormat::R32f
+                                    | ImageFormat::R32i
+                                    | ImageFormat::R32ui
+                            );
+                            if !valid_format {
+                                return Err(ValidationError::ImageTexelPointerFormatInvalidForVulkan {
+                                    function: function_id,
+                                    block: block_id,
+                                    format: info.format,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Type Sampled Image Rule
+// ============================================================================
+
+/// Validates OpTypeSampledImage instructions.
+pub struct TypeSampledImageRule;
+
+impl ValidationRule for TypeSampledImageRule {
+    fn name(&self) -> &'static str {
+        "type-sampled-image"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        for inst in &ctx.module.types_global_values {
+            if inst.class.opcode != Op::TypeSampledImage {
+                continue;
+            }
+
+            let type_id = inst.result_id.and_then(|id| TypeId::try_from(id).ok());
+
+            // Validate that operand is OpTypeImage
+            let image_type_id = match inst.operands.first() {
+                Some(Operand::IdRef(id)) => *id,
+                _ => continue,
+            };
+
+            let image_result_id = match ResultId::try_from(image_type_id) {
+                Ok(id) => id,
+                Err(_) => continue,
+            };
+
+            let image_type_inst = match ctx.definitions.get(&image_result_id) {
+                Some(inst) => inst,
+                None => continue,
+            };
+
+            if image_type_inst.class.opcode != Op::TypeImage {
+                return Err(ValidationError::TypeSampledImageOperandMustBeImage { type_id });
+            }
+
+            // Get image type info
+            if let Some(info) = ImageTypeInfo::from_type_id(image_type_id, ctx) {
+                // Sampled must be 0 or 1
+                if info.sampled != 0 && info.sampled != 1 {
+                    return Err(ValidationError::TypeSampledImageSampledMustBeZeroOrOne { type_id });
+                }
+
+                // In SPIR-V 1.6+, Buffer dimension is not allowed
+                if ctx.target_version.major() > 1
+                    || (ctx.target_version.major() == 1 && ctx.target_version.minor() >= 6)
+                {
+                    if info.dim == Dim::DimBuffer {
+                        return Err(ValidationError::TypeSampledImageBufferDimInvalid { type_id });
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Image Rule (OpImage)
+// ============================================================================
+
+/// Validates OpImage instructions.
+pub struct ImageRule;
+
+impl ValidationRule for ImageRule {
+    fn name(&self) -> &'static str {
+        "image"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        for function in &ctx.module.functions {
+            let function_id = function
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .and_then(|id| Id::try_from(id).ok());
+
+            for block in &function.blocks {
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .and_then(|id| Id::try_from(id).ok());
+
+                for inst in &block.instructions {
+                    if inst.class.opcode != Op::Image {
+                        continue;
+                    }
+
+                    // Validate result type is OpTypeImage
+                    if let Some(result_type) = inst.result_type {
+                        if let Ok(type_id) = ResultId::try_from(result_type) {
+                            if let Some(type_inst) = ctx.definitions.get(&type_id) {
+                                if type_inst.class.opcode != Op::TypeImage {
+                                    return Err(ValidationError::ImageResultTypeMustBeImage {
+                                        function: function_id,
+                                        block: block_id,
+                                    });
+                                }
+                            }
+                        }
+                    }
+
+                    // Validate operand is OpTypeSampledImage
+                    if let Some(Operand::IdRef(sampled_image_id)) = inst.operands.first() {
+                        if let Ok(sampled_image_result_id) = ResultId::try_from(*sampled_image_id) {
+                            if let Some(sampled_image_inst) =
+                                ctx.definitions.get(&sampled_image_result_id)
+                            {
+                                if let Some(operand_type) = sampled_image_inst.result_type {
+                                    if let Ok(operand_type_id) = ResultId::try_from(operand_type) {
+                                        if let Some(operand_type_inst) =
+                                            ctx.definitions.get(&operand_type_id)
+                                        {
+                                            if operand_type_inst.class.opcode
+                                                != Op::TypeSampledImage
+                                            {
+                                                return Err(
+                                                    ValidationError::ImageOperandMustBeSampledImage {
+                                                        function: function_id,
+                                                        block: block_id,
+                                                    },
+                                                );
+                                            }
+
+                                            // Validate inner image type matches result type
+                                            if let Some(Operand::IdRef(inner_image_type)) =
+                                                operand_type_inst.operands.first()
+                                            {
+                                                if let Some(result_type) = inst.result_type {
+                                                    if *inner_image_type != result_type {
+                                                        return Err(
+                                                            ValidationError::ImageSampledImageTypeMismatch {
+                                                                function: function_id,
+                                                                block: block_id,
+                                                            },
+                                                        );
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Image Sparse Texels Resident Rule
+// ============================================================================
+
+/// Validates OpImageSparseTexelsResident instructions.
+pub struct ImageSparseTexelsResidentRule;
+
+impl ValidationRule for ImageSparseTexelsResidentRule {
+    fn name(&self) -> &'static str {
+        "image-sparse-texels-resident"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        let resolver = DefaultTypeResolver;
+
+        for function in &ctx.module.functions {
+            let function_id = function
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .and_then(|id| Id::try_from(id).ok());
+
+            for block in &function.blocks {
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .and_then(|id| Id::try_from(id).ok());
+
+                for inst in &block.instructions {
+                    if inst.class.opcode != Op::ImageSparseTexelsResident {
+                        continue;
+                    }
+
+                    // Validate result type is bool scalar
+                    if let Some(result_type) = inst.result_type {
+                        if !resolver.is_bool_scalar(result_type, ctx.definitions) {
+                            return Err(
+                                ValidationError::ImageSparseTexelsResidentResultMustBeBool {
+                                    function: function_id,
+                                    block: block_id,
+                                },
+                            );
+                        }
+                    }
+
+                    // Validate Resident Code is int scalar
+                    if let Some(Operand::IdRef(code_id)) = inst.operands.first() {
+                        if let Ok(code_result_id) = ResultId::try_from(*code_id) {
+                            if let Some(code_inst) = ctx.definitions.get(&code_result_id) {
+                                if let Some(code_type) = code_inst.result_type {
+                                    if !resolver.is_int_scalar(code_type, ctx.definitions) {
+                                        return Err(
+                                            ValidationError::ImageSparseTexelsResidentCodeMustBeInt {
+                                                function: function_id,
+                                                block: block_id,
+                                            },
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
 // Helper Functions
 // ============================================================================
 
@@ -829,6 +1213,85 @@ fn find_image_operand_mask(inst: &Instruction) -> Option<(ImageOperands, usize)>
     Some((ImageOperands::empty(), inst.operands.len()))
 }
 
+/// Get image type info for OpImageTexelPointer.
+/// The image is accessed through a pointer operand (operand 0).
+fn get_image_type_from_texel_pointer(
+    inst: &Instruction,
+    ctx: &ValidationContext<'_>,
+) -> Option<ImageTypeInfo> {
+    // OpImageTexelPointer: operand 0 is Image (a pointer to an image)
+    let image_ptr_id = inst.operands.first()?.id_ref_any()?;
+    let image_ptr_result_id = ResultId::try_from(image_ptr_id).ok()?;
+    let image_ptr_inst = ctx.definitions.get(&image_ptr_result_id)?;
+
+    // Get the type of the pointer (should be OpTypePointer)
+    let ptr_type_id = image_ptr_inst.result_type?;
+    let ptr_type_result_id = ResultId::try_from(ptr_type_id).ok()?;
+    let ptr_type_inst = ctx.definitions.get(&ptr_type_result_id)?;
+
+    if ptr_type_inst.class.opcode != Op::TypePointer {
+        return None;
+    }
+
+    // Get the pointed-to type (should be OpTypeImage)
+    let image_type_id = ptr_type_inst.operands.get(1)?.id_ref_any()?;
+
+    ImageTypeInfo::from_type_id(image_type_id, ctx)
+}
+
+// ============================================================================
+// Reserved/Invalid Image Opcodes Rule
+// ============================================================================
+
+/// Reserved sparse projection sampling opcodes that should never be used.
+const RESERVED_IMAGE_OPCODES: &[Op] = &[
+    Op::ImageSparseSampleProjImplicitLod,
+    Op::ImageSparseSampleProjExplicitLod,
+    Op::ImageSparseSampleProjDrefImplicitLod,
+    Op::ImageSparseSampleProjDrefExplicitLod,
+];
+
+/// Validates that reserved image opcodes are not used.
+///
+/// These instructions are enabled by a capability but are reserved and
+/// should never actually be used in valid SPIR-V modules.
+pub struct ReservedImageOpcodeRule;
+
+impl ValidationRule for ReservedImageOpcodeRule {
+    fn name(&self) -> &'static str {
+        "reserved-image-opcode"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        for function in &ctx.module.functions {
+            let function_id = function
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .and_then(|id| Id::try_from(id).ok());
+
+            for block in &function.blocks {
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .and_then(|id| Id::try_from(id).ok());
+
+                for inst in &block.instructions {
+                    if RESERVED_IMAGE_OPCODES.contains(&inst.class.opcode) {
+                        return Err(ValidationError::ReservedOpcodeUsed {
+                            function: function_id,
+                            block: block_id,
+                            opcode: inst.class.opcode,
+                        });
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 // ============================================================================
 // All Image Rules
 // ============================================================================
@@ -837,10 +1300,16 @@ fn find_image_operand_mask(inst: &Instruction) -> Option<(ImageOperands, usize)>
 pub fn all_image_rules() -> Vec<&'static dyn ValidationRule> {
     vec![
         &ImageTypeRule,
+        &TypeSampledImageRule,
         &ImageOperandRule,
         &ImageSampleExecutionModelRule,
         &ImageReadWriteRule,
         &ImageQueryRule,
+        &SampledImageRule,
+        &ImageTexelPointerRule,
+        &ImageRule,
+        &ImageSparseTexelsResidentRule,
+        &ReservedImageOpcodeRule,
     ]
 }
 
@@ -850,34 +1319,34 @@ mod tests {
 
     #[test]
     fn test_is_implicit_lod() {
-        assert!(is_implicit_lod(Op::ImageSampleImplicitLod));
-        assert!(is_implicit_lod(Op::ImageSampleDrefImplicitLod));
-        assert!(!is_implicit_lod(Op::ImageSampleExplicitLod));
-        assert!(!is_implicit_lod(Op::ImageFetch));
+        assert!(Op::ImageSampleImplicitLod.is_implicit_lod());
+        assert!(Op::ImageSampleDrefImplicitLod.is_implicit_lod());
+        assert!(!Op::ImageSampleExplicitLod.is_implicit_lod());
+        assert!(!Op::ImageFetch.is_implicit_lod());
     }
 
     #[test]
     fn test_is_explicit_lod() {
-        assert!(is_explicit_lod(Op::ImageSampleExplicitLod));
-        assert!(is_explicit_lod(Op::ImageSampleDrefExplicitLod));
-        assert!(!is_explicit_lod(Op::ImageSampleImplicitLod));
-        assert!(!is_explicit_lod(Op::ImageFetch));
+        assert!(Op::ImageSampleExplicitLod.is_explicit_lod());
+        assert!(Op::ImageSampleDrefExplicitLod.is_explicit_lod());
+        assert!(!Op::ImageSampleImplicitLod.is_explicit_lod());
+        assert!(!Op::ImageFetch.is_explicit_lod());
     }
 
     #[test]
     fn test_is_proj() {
-        assert!(is_proj(Op::ImageSampleProjImplicitLod));
-        assert!(is_proj(Op::ImageSampleProjExplicitLod));
-        assert!(!is_proj(Op::ImageSampleImplicitLod));
-        assert!(!is_proj(Op::ImageFetch));
+        assert!(Op::ImageSampleProjImplicitLod.is_proj());
+        assert!(Op::ImageSampleProjExplicitLod.is_proj());
+        assert!(!Op::ImageSampleImplicitLod.is_proj());
+        assert!(!Op::ImageFetch.is_proj());
     }
 
     #[test]
     fn test_is_gather() {
-        assert!(is_gather(Op::ImageGather));
-        assert!(is_gather(Op::ImageDrefGather));
-        assert!(!is_gather(Op::ImageFetch));
-        assert!(!is_gather(Op::ImageSampleImplicitLod));
+        assert!(Op::ImageGather.is_gather());
+        assert!(Op::ImageDrefGather.is_gather());
+        assert!(!Op::ImageFetch.is_gather());
+        assert!(!Op::ImageSampleImplicitLod.is_gather());
     }
 
     #[test]

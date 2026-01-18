@@ -7,7 +7,7 @@
 //! - Dot product (Dot, DotKHR)
 //! - Linear algebra (VectorTimesScalar, MatrixTimesVector, VectorTimesMatrix, MatrixTimesMatrix)
 
-use rspirv::spirv::Op;
+use rspirv::spirv::{Capability, Op};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
 use crate::validation::error::ValidationError;
@@ -234,7 +234,7 @@ impl ValidationRule for IntArithmeticRule {
                         }
                     }
 
-                    // All operands must have matching dimensions and bit widths
+                    // All operands must be integer types with matching dimensions and bit widths
                     let result_width = resolver.get_bit_width(result_type_id, ctx.definitions);
                     let result_dim = resolver.get_dimension(result_type_id, ctx.definitions);
 
@@ -256,8 +256,21 @@ impl ValidationRule for IntArithmeticRule {
                             continue;
                         };
 
-                        // Only check int operands
+                        // Operands must be integer types
                         if !resolver.is_int_scalar_or_vector(operand_type_id, ctx.definitions) {
+                            if let (Some(func), Some(block), Some(result_type)) = (
+                                function_id,
+                                block_id,
+                                crate::validation::types::TypeId::try_from(result_type_id).ok(),
+                            ) {
+                                return Err(ValidationError::ArithmeticResultTypeInvalid {
+                                    function: func,
+                                    block,
+                                    opcode: inst.class.opcode,
+                                    result_type,
+                                    expected: "int scalar or vector",
+                                });
+                            }
                             continue;
                         }
 
@@ -346,6 +359,26 @@ impl ValidationRule for DotProductRule {
                                 result_type,
                                 expected: "float scalar",
                             });
+                        }
+                    }
+
+                    // If result type is BFloat16, require BFloat16DotProductKHR capability
+                    if resolver.is_bfloat16_scalar(result_type_id, ctx.definitions) {
+                        if !ctx
+                            .declared_capabilities
+                            .contains(&Capability::BFloat16DotProductKHR)
+                        {
+                            if let (Some(func), Some(block), Some(result_type)) = (
+                                function_id,
+                                block_id,
+                                crate::validation::types::TypeId::try_from(result_type_id).ok(),
+                            ) {
+                                return Err(ValidationError::DotBFloat16RequiresCapability {
+                                    function: func,
+                                    block,
+                                    result_type,
+                                });
+                            }
                         }
                     }
 
@@ -513,7 +546,7 @@ impl ValidationRule for VectorTimesScalarRule {
                         });
                     }
 
-                    // Get vector operand type
+                    // Get vector operand type and check it's a float vector
                     let vector_operand = inst.operands.first().and_then(|op| match op {
                         rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
                         _ => None,
@@ -523,6 +556,28 @@ impl ValidationRule for VectorTimesScalarRule {
                         let vector_inst = ctx.definitions.get(&vector_operand);
                         if let Some(vector_inst) = vector_inst {
                             if let Some(vector_type_id) = vector_inst.result_type {
+                                // Check that vector operand is a float vector
+                                let vector_type_inst = ResultId::try_from(vector_type_id)
+                                    .ok()
+                                    .and_then(|rid| ctx.definitions.get(&rid));
+                                if let Some(vt_inst) = vector_type_inst {
+                                    if vt_inst.is_vector_type() {
+                                        let (vec_component, _) = vector_info(vt_inst);
+                                        if let Some(vec_comp) = vec_component {
+                                            if !resolver.is_float_scalar(vec_comp.into(), ctx.definitions) {
+                                                // Vector operand is not a float vector
+                                                return Err(ValidationError::ArithmeticResultTypeInvalid {
+                                                    function: func,
+                                                    block,
+                                                    opcode: inst.class.opcode,
+                                                    result_type,
+                                                    expected: "float vector",
+                                                });
+                                            }
+                                        }
+                                    }
+                                }
+
                                 if vector_type_id != result_type_id {
                                     let found = TypeId::try_from(vector_type_id).ok();
                                     if let Some(found) = found {
@@ -812,7 +867,15 @@ impl ValidationRule for MatrixVectorMultiplyRule {
                         };
 
                         if result_len != expected_len {
-                            if is_vector_times_matrix {
+                            if is_matrix_times_vector {
+                                return Err(ValidationError::ArithmeticResultTypeInvalid {
+                                    function: func,
+                                    block,
+                                    opcode: inst.class.opcode,
+                                    result_type,
+                                    expected: "matching column vector",
+                                });
+                            } else {
                                 return Err(
                                     ValidationError::VectorTimesMatrixResultDimensionMismatch {
                                         function: func,
@@ -989,6 +1052,444 @@ impl ValidationRule for MatrixTimesMatrixRule {
 }
 
 // ============================================================================
+// Matrix Times Scalar Rule
+// ============================================================================
+
+/// Validates OpMatrixTimesScalar operations.
+///
+/// Ensures that:
+/// - Result type is a float matrix
+/// - Matrix operand matches result type
+/// - Scalar operand matches matrix component type
+pub struct MatrixTimesScalarRule;
+
+impl ValidationRule for MatrixTimesScalarRule {
+    fn name(&self) -> &'static str {
+        "matrix-times-scalar"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        for function in &ctx.module.functions {
+            let function_id = function
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .and_then(|id| Id::try_from(id).ok());
+
+            for block in &function.blocks {
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .and_then(|id| Id::try_from(id).ok());
+
+                for inst in &block.instructions {
+                    if inst.class.opcode != Op::MatrixTimesScalar {
+                        continue;
+                    }
+
+                    let (Some(func), Some(blk)) = (function_id, block_id) else {
+                        continue;
+                    };
+
+                    let Some(result_type_id) = inst.result_type else {
+                        continue;
+                    };
+
+                    let Ok(result_type) = TypeId::try_from(result_type_id) else {
+                        continue;
+                    };
+
+                    // Result type must be a matrix (component_type, rows, cols, column_result_id)
+                    let Some((_component_type, _rows, _cols, _column_id)) =
+                        matrix_details_by_id(result_type, ctx.definitions)
+                    else {
+                        return Err(ValidationError::ArithmeticResultTypeInvalid {
+                            function: func,
+                            block: blk,
+                            opcode: inst.class.opcode,
+                            result_type,
+                            expected: "float matrix",
+                        });
+                    };
+
+                    // Matrix operand must match result type
+                    let matrix_operand = inst.operands.first().and_then(|op| match op {
+                        rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                        _ => None,
+                    });
+                    let Some(matrix_operand) = matrix_operand else {
+                        continue;
+                    };
+                    let matrix_type_id = ctx
+                        .definitions
+                        .get(&matrix_operand)
+                        .and_then(|inst| inst.result_type);
+
+                    if matrix_type_id != Some(result_type_id) {
+                        return Err(ValidationError::ArithmeticOperandTypeMismatch {
+                            function: func,
+                            block: blk,
+                            opcode: inst.class.opcode,
+                            operand_index: 0,
+                            result_type,
+                        });
+                    }
+
+                    // Scalar operand must match matrix component type
+                    let scalar_operand = inst.operands.get(1).and_then(|op| match op {
+                        rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                        _ => None,
+                    });
+                    let Some(scalar_operand) = scalar_operand else {
+                        continue;
+                    };
+                    let scalar_type_id = ctx
+                        .definitions
+                        .get(&scalar_operand)
+                        .and_then(|inst| inst.result_type);
+
+                    if scalar_type_id != Some(u32::from(_component_type)) {
+                        return Err(ValidationError::ArithmeticOperandTypeMismatch {
+                            function: func,
+                            block: blk,
+                            opcode: inst.class.opcode,
+                            operand_index: 1,
+                            result_type,
+                        });
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Outer Product Rule
+// ============================================================================
+
+/// Validates OpOuterProduct operations.
+///
+/// Ensures that:
+/// - Result type is a float matrix
+/// - Left operand is a float vector matching the result column type
+/// - Right operand is a float vector with size matching result columns
+/// - Component types match
+pub struct OuterProductRule;
+
+impl ValidationRule for OuterProductRule {
+    fn name(&self) -> &'static str {
+        "outer-product"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        let resolver = DefaultTypeResolver;
+
+        for function in &ctx.module.functions {
+            let function_id = function
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .and_then(|id| Id::try_from(id).ok());
+
+            for block in &function.blocks {
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .and_then(|id| Id::try_from(id).ok());
+
+                for inst in &block.instructions {
+                    if inst.class.opcode != Op::OuterProduct {
+                        continue;
+                    }
+
+                    let (Some(func), Some(blk)) = (function_id, block_id) else {
+                        continue;
+                    };
+
+                    let Some(result_type_id) = inst.result_type else {
+                        continue;
+                    };
+
+                    let Ok(result_type) = TypeId::try_from(result_type_id) else {
+                        continue;
+                    };
+
+                    // Result type must be a matrix (component_type, rows, cols, column_result_id)
+                    let Some((_component_type, result_rows, result_cols, _column_id)) =
+                        matrix_details_by_id(result_type, ctx.definitions)
+                    else {
+                        return Err(ValidationError::ArithmeticResultTypeInvalid {
+                            function: func,
+                            block: blk,
+                            opcode: inst.class.opcode,
+                            result_type,
+                            expected: "float matrix",
+                        });
+                    };
+
+                    // Left operand must be a float vector
+                    let left_operand = inst.operands.first().and_then(|op| match op {
+                        rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                        _ => None,
+                    });
+                    let Some(left_operand) = left_operand else {
+                        continue;
+                    };
+                    let left_type_id = ctx
+                        .definitions
+                        .get(&left_operand)
+                        .and_then(|inst| inst.result_type);
+                    let Some(left_type_id) = left_type_id else {
+                        continue;
+                    };
+
+                    if !resolver.is_float_scalar_or_vector(left_type_id, ctx.definitions) {
+                        return Err(ValidationError::ArithmeticOperandTypeMismatch {
+                            function: func,
+                            block: blk,
+                            opcode: inst.class.opcode,
+                            operand_index: 0,
+                            result_type,
+                        });
+                    }
+
+                    let left_dim = resolver.get_dimension(left_type_id, ctx.definitions) as u32;
+                    if left_dim != result_rows {
+                        return Err(ValidationError::OuterProductVectorSizeMismatch {
+                            function: func,
+                            block: blk,
+                            operand_index: 0,
+                            expected: result_rows,
+                            found: left_dim,
+                        });
+                    }
+
+                    // Right operand must be a float vector
+                    let right_operand = inst.operands.get(1).and_then(|op| match op {
+                        rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                        _ => None,
+                    });
+                    let Some(right_operand) = right_operand else {
+                        continue;
+                    };
+                    let right_type_id = ctx
+                        .definitions
+                        .get(&right_operand)
+                        .and_then(|inst| inst.result_type);
+                    let Some(right_type_id) = right_type_id else {
+                        continue;
+                    };
+
+                    if !resolver.is_float_scalar_or_vector(right_type_id, ctx.definitions) {
+                        return Err(ValidationError::ArithmeticOperandTypeMismatch {
+                            function: func,
+                            block: blk,
+                            opcode: inst.class.opcode,
+                            operand_index: 1,
+                            result_type,
+                        });
+                    }
+
+                    let right_dim = resolver.get_dimension(right_type_id, ctx.definitions) as u32;
+                    if right_dim != result_cols {
+                        return Err(ValidationError::OuterProductVectorSizeMismatch {
+                            function: func,
+                            block: blk,
+                            operand_index: 1,
+                            expected: result_cols,
+                            found: right_dim,
+                        });
+                    }
+
+                    // Component types must match - get component types via vector_info
+                    let left_comp_type = ResultId::try_from(left_type_id)
+                        .ok()
+                        .and_then(|rid| ctx.definitions.get(&rid))
+                        .and_then(|inst| vector_info(inst).0);
+                    let right_comp_type = ResultId::try_from(right_type_id)
+                        .ok()
+                        .and_then(|rid| ctx.definitions.get(&rid))
+                        .and_then(|inst| vector_info(inst).0);
+                    if left_comp_type != right_comp_type {
+                        return Err(ValidationError::OuterProductComponentTypeMismatch {
+                            function: func,
+                            block: blk,
+                        });
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Extended Arithmetic Rule
+// ============================================================================
+
+/// Validates extended arithmetic operations (IAddCarry, ISubBorrow, UMulExtended, SMulExtended).
+///
+/// Ensures that:
+/// - Result type is a struct with exactly 2 members
+/// - Struct members are identical integer types
+/// - For SMulExtended: members can be any integer scalar or vector
+/// - For IAddCarry, ISubBorrow, UMulExtended: members must be unsigned integer scalar or vector
+/// - Both operands match the struct member type
+pub struct ExtendedArithmeticRule;
+
+impl ValidationRule for ExtendedArithmeticRule {
+    fn name(&self) -> &'static str {
+        "extended-arithmetic"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        let extended_ops = [
+            Op::IAddCarry,
+            Op::ISubBorrow,
+            Op::UMulExtended,
+            Op::SMulExtended,
+        ];
+
+        for function in &ctx.module.functions {
+            let function_id = function
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .and_then(|id| Id::try_from(id).ok());
+
+            for block in &function.blocks {
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .and_then(|id| Id::try_from(id).ok());
+
+                for inst in &block.instructions {
+                    if !extended_ops.contains(&inst.class.opcode) {
+                        continue;
+                    }
+
+                    let (Some(func), Some(blk)) = (function_id, block_id) else {
+                        continue;
+                    };
+
+                    let Some(result_type_id) = inst.result_type else {
+                        continue;
+                    };
+
+                    // Result type must be a struct
+                    let result_type_inst = ResultId::try_from(result_type_id)
+                        .ok()
+                        .and_then(|rid| ctx.definitions.get(&rid));
+                    let Some(result_type_inst) = result_type_inst else {
+                        continue;
+                    };
+
+                    if result_type_inst.class.opcode != Op::TypeStruct {
+                        return Err(ValidationError::ExtendedArithmeticResultNotStruct {
+                            function: func,
+                            block: blk,
+                            opcode: inst.class.opcode,
+                        });
+                    }
+
+                    // Struct must have exactly 2 members
+                    if result_type_inst.operands.len() != 2 {
+                        return Err(ValidationError::ExtendedArithmeticStructMemberCount {
+                            function: func,
+                            block: blk,
+                            opcode: inst.class.opcode,
+                            found: result_type_inst.operands.len(),
+                        });
+                    }
+
+                    // Get struct member types
+                    let member0_type = result_type_inst.operands.first().and_then(|op| match op {
+                        rspirv::dr::Operand::IdRef(id) => Some(*id),
+                        _ => None,
+                    });
+                    let member1_type = result_type_inst.operands.get(1).and_then(|op| match op {
+                        rspirv::dr::Operand::IdRef(id) => Some(*id),
+                        _ => None,
+                    });
+
+                    let (Some(member0), Some(member1)) = (member0_type, member1_type) else {
+                        continue;
+                    };
+
+                    // Members must be identical
+                    if member0 != member1 {
+                        return Err(ValidationError::ExtendedArithmeticStructMembersNotIdentical {
+                            function: func,
+                            block: blk,
+                            opcode: inst.class.opcode,
+                        });
+                    }
+
+                    // Check member type based on operation
+                    // SMulExtended: members can be any integer scalar or vector
+                    // IAddCarry, ISubBorrow, UMulExtended: members must be unsigned integer
+                    let resolver = DefaultTypeResolver;
+
+                    if inst.class.opcode == Op::SMulExtended {
+                        // SMulExtended accepts any integer type
+                        if !resolver.is_int_scalar_or_vector(member0, ctx.definitions) {
+                            return Err(ValidationError::ExtendedArithmeticMemberTypeInvalid {
+                                function: func,
+                                block: blk,
+                                opcode: inst.class.opcode,
+                                expected: "integer scalar or vector",
+                            });
+                        }
+                    } else {
+                        // IAddCarry, ISubBorrow, UMulExtended require unsigned integers
+                        if !resolver.is_unsigned_int_scalar_or_vector(member0, ctx.definitions) {
+                            return Err(ValidationError::ExtendedArithmeticMemberTypeInvalid {
+                                function: func,
+                                block: blk,
+                                opcode: inst.class.opcode,
+                                expected: "unsigned integer scalar or vector",
+                            });
+                        }
+                    }
+
+                    // Both operands must match member type
+                    for (idx, operand) in inst.operands.iter().enumerate() {
+                        let operand_id = match operand {
+                            rspirv::dr::Operand::IdRef(id) => *id,
+                            _ => continue,
+                        };
+
+                        let operand_inst = ResultId::try_from(operand_id)
+                            .ok()
+                            .and_then(|rid| ctx.definitions.get(&rid));
+                        let Some(operand_inst) = operand_inst else {
+                            continue;
+                        };
+
+                        if operand_inst.result_type != Some(member0) {
+                            return Err(ValidationError::ExtendedArithmeticOperandTypeMismatch {
+                                function: func,
+                                block: blk,
+                                opcode: inst.class.opcode,
+                                operand_index: idx,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
 // All arithmetic rules
 // ============================================================================
 
@@ -1001,5 +1502,8 @@ pub fn all_arithmetic_rules() -> Vec<&'static dyn ValidationRule> {
         &VectorTimesScalarRule,
         &MatrixVectorMultiplyRule,
         &MatrixTimesMatrixRule,
+        &MatrixTimesScalarRule,
+        &OuterProductRule,
+        &ExtendedArithmeticRule,
     ]
 }

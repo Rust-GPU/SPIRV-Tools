@@ -309,16 +309,23 @@ pub fn all_barrier_rules() -> Vec<&'static dyn ValidationRule> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::validation::op_ext::OpExt;
 
     #[test]
-    fn test_control_barrier_execution_models() {
-        assert!(CONTROL_BARRIER_MODELS_V12.contains(&ExecutionModel::TessellationControl));
-        assert!(CONTROL_BARRIER_MODELS_V12.contains(&ExecutionModel::GLCompute));
-        assert!(CONTROL_BARRIER_MODELS_V12.contains(&ExecutionModel::Kernel));
-        assert!(CONTROL_BARRIER_MODELS_V12.contains(&ExecutionModel::TaskNV));
-        assert!(CONTROL_BARRIER_MODELS_V12.contains(&ExecutionModel::MeshNV));
+    fn test_is_barrier_op() {
+        // Synchronization barrier instructions
+        assert!(Op::ControlBarrier.is_barrier());
+        assert!(Op::MemoryBarrier.is_barrier());
+        assert!(Op::MemoryNamedBarrier.is_barrier());
 
-        assert!(!CONTROL_BARRIER_MODELS_V12.contains(&ExecutionModel::Vertex));
-        assert!(!CONTROL_BARRIER_MODELS_V12.contains(&ExecutionModel::Fragment));
+        // NamedBarrierInitialize creates a barrier object, not a synchronization point
+        // So it's intentionally not included in is_barrier()
+        assert!(!Op::NamedBarrierInitialize.is_barrier());
+
+        // Non-barrier instructions
+        assert!(!Op::Nop.is_barrier());
+        assert!(!Op::FAdd.is_barrier());
+        assert!(!Op::Store.is_barrier());
+        assert!(!Op::Branch.is_barrier());
     }
 }

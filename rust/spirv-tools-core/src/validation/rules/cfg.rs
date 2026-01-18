@@ -19,7 +19,7 @@
 //! - Continue targets must be dominated by loop headers
 
 use rspirv::dr::Operand;
-use rspirv::spirv::Op;
+use rspirv::spirv::{LoopControl, Op, SelectionControl};
 
 use crate::validation::cfg_analysis::{get_block_label, ControlFlowGraph};
 use crate::validation::context::{ValidationContext, ValidationRule};
@@ -60,8 +60,12 @@ impl ValidationRule for BlockStructureRule {
                 .map(to_id)
                 .unwrap_or_else(|| to_id(0));
 
-            // Skip function declarations (no blocks)
+            // Skip function declarations (no blocks and no parameters).
+            // A function with parameters but no blocks is a definition with missing entry block.
             if func.blocks.is_empty() {
+                if !func.parameters.is_empty() {
+                    return Err(ValidationError::MissingFunctionEntryBlock { function: func_id });
+                }
                 continue;
             }
 
@@ -453,6 +457,105 @@ impl ValidationRule for MergeDominationRule {
 }
 
 // ============================================================================
+// Loop Back-Edge Rule
+// ============================================================================
+
+/// Validates that loops have proper back edges and reachable continue blocks.
+///
+/// SPIR-V structured control flow requires:
+/// - The continue target must be reachable from the loop header
+/// - There must be a back edge from the continue construct to the loop header
+pub struct LoopBackEdgeRule;
+
+impl ValidationRule for LoopBackEdgeRule {
+    fn name(&self) -> &'static str {
+        "loop-back-edge"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        let module = ctx.module();
+
+        for func in &module.functions {
+            let func_id = func
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .map(to_id)
+                .unwrap_or_else(|| to_id(0));
+
+            if func.blocks.is_empty() {
+                continue;
+            }
+
+            let Some(cfg) = ControlFlowGraph::build(func) else {
+                continue;
+            };
+
+            // Find all loop headers and their continue targets
+            for block in &func.blocks {
+                let Some(header_id) = get_block_label(block) else {
+                    continue;
+                };
+
+                for inst in &block.instructions {
+                    if inst.class.opcode == Op::LoopMerge {
+                        // Get continue target (second operand)
+                        if let Some(Operand::IdRef(raw_continue)) = inst.operands.get(1) {
+                            let continue_target = to_id(*raw_continue);
+
+                            // Check that continue target is reachable from header
+                            if !cfg.is_reachable(continue_target) {
+                                return Err(ValidationError::ContinueNotReachable {
+                                    function: func_id,
+                                    header: header_id,
+                                    continue_target,
+                                });
+                            }
+
+                            // Check for back edge: continue block or its successors must branch to header
+                            // The continue block terminates the continue construct, and one of its
+                            // successors must be the header block for a proper loop.
+                            let has_back_edge = if let Some(successors) =
+                                cfg.get_successors(continue_target)
+                            {
+                                successors.contains(&header_id)
+                            } else {
+                                false
+                            };
+
+                            if !has_back_edge {
+                                // Also check if header is a successor of continue target's successors
+                                // (continue block might branch to an intermediate block that goes to header)
+                                let indirect_back_edge = cfg
+                                    .get_successors(continue_target)
+                                    .map(|succs| {
+                                        succs.iter().any(|succ| {
+                                            cfg.get_successors(*succ)
+                                                .map(|s| s.contains(&header_id))
+                                                .unwrap_or(false)
+                                        })
+                                    })
+                                    .unwrap_or(false);
+
+                                if !indirect_back_edge {
+                                    return Err(ValidationError::LoopMissingBackEdge {
+                                        function: func_id,
+                                        header: header_id,
+                                        continue_target,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
 // Branch Target Rule
 // ============================================================================
 
@@ -716,12 +819,370 @@ impl ValidationRule for PhiInstructionRule {
     }
 }
 
+// ============================================================================
+// Dominance Validation Rule
+// ============================================================================
+
+/// Validates that all operand uses are dominated by their definitions.
+///
+/// Checks:
+/// - Values used in non-Phi instructions must be dominated by their definition block
+/// - Phi incoming values must dominate the incoming edge
+/// - Values must be defined in the same function
+pub struct DominanceValidationRule;
+
+impl ValidationRule for DominanceValidationRule {
+    fn name(&self) -> &'static str {
+        "dominance-validation"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        use crate::validation::types::ResultId;
+        use std::collections::{HashMap, HashSet};
+
+        // Build a set of all IDs defined inside any function (not globally)
+        // These are the IDs that cannot be used cross-function
+        let mut function_local_ids: HashSet<ResultId> = HashSet::new();
+        for func in &ctx.module.functions {
+            for param in &func.parameters {
+                if let Some(result_id) = param.result_id {
+                    if let Ok(rid) = ResultId::try_from(result_id) {
+                        function_local_ids.insert(rid);
+                    }
+                }
+            }
+            for block in &func.blocks {
+                // Block labels are function-local
+                if let Some(label) = &block.label {
+                    if let Some(result_id) = label.result_id {
+                        if let Ok(rid) = ResultId::try_from(result_id) {
+                            function_local_ids.insert(rid);
+                        }
+                    }
+                }
+                for inst in &block.instructions {
+                    if let Some(result_id) = inst.result_id {
+                        if let Ok(rid) = ResultId::try_from(result_id) {
+                            function_local_ids.insert(rid);
+                        }
+                    }
+                }
+            }
+        }
+
+        for func in &ctx.module.functions {
+            let func_id = func
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .map(to_id)
+                .unwrap_or_else(|| to_id(0));
+
+            if func.blocks.is_empty() {
+                continue;
+            }
+
+            let Some(cfg) = ControlFlowGraph::build(func) else {
+                continue;
+            };
+
+            // Build definition block map
+            let mut definition_blocks: HashMap<ResultId, Id> = HashMap::new();
+            let entry_label = cfg.entry;
+
+            for param in &func.parameters {
+                if let Some(result_id) = param.result_id {
+                    if let Ok(rid) = ResultId::try_from(result_id) {
+                        definition_blocks.insert(rid, entry_label);
+                    }
+                }
+            }
+
+            // Build set of block labels (these don't need domination checking)
+            let mut block_labels: HashSet<ResultId> = HashSet::new();
+
+            for block in &func.blocks {
+                let block_id = get_block_label(block).unwrap_or(entry_label);
+                // Track block labels separately (they don't need domination checking)
+                if let Some(label) = &block.label {
+                    if let Some(result_id) = label.result_id {
+                        if let Ok(rid) = ResultId::try_from(result_id) {
+                            block_labels.insert(rid);
+                        }
+                    }
+                }
+                for inst in &block.instructions {
+                    if let Some(result_id) = inst.result_id {
+                        if let Ok(rid) = ResultId::try_from(result_id) {
+                            definition_blocks.insert(rid, block_id);
+                        }
+                    }
+                }
+            }
+
+            // Validate dominance
+            for block in &func.blocks {
+                let block_id = get_block_label(block).unwrap_or(entry_label);
+
+                for inst in &block.instructions {
+                    if inst.class.opcode == Op::Phi {
+                        // For Phi, value must dominate the incoming edge
+                        for pair in inst.operands.chunks(2) {
+                            let value_ref = pair.first().and_then(|op| {
+                                if let Operand::IdRef(raw) = op {
+                                    ResultId::try_from(*raw).ok()
+                                } else {
+                                    None
+                                }
+                            });
+                            let incoming_block = pair.get(1).and_then(|op| {
+                                if let Operand::IdRef(raw) = op {
+                                    Some(to_id(*raw))
+                                } else {
+                                    None
+                                }
+                            });
+
+                            if let (Some(value_id), Some(incoming)) = (value_ref, incoming_block) {
+                                if let Some(def_block) = definition_blocks.get(&value_id) {
+                                    if !cfg.blocks.contains(def_block) {
+                                        return Err(ValidationError::ValueDefinedInAnotherFunction {
+                                            function: func_id,
+                                            value: Id::from(value_id),
+                                        });
+                                    }
+                                    if !cfg.dominates(*def_block, incoming) {
+                                        return Err(ValidationError::PhiIncomingNotDominated {
+                                            function: func_id,
+                                            block: block_id,
+                                            incoming,
+                                            value: Id::from(value_id),
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                        continue;
+                    }
+
+                    // For non-Phi, definition must dominate use
+                    for operand in &inst.operands {
+                        if let Operand::IdRef(raw) = operand {
+                            let Some(result_id) = ResultId::try_from(*raw).ok() else {
+                                continue;
+                            };
+
+                            // Block labels are used as branch targets, not values - skip domination check
+                            if block_labels.contains(&result_id) {
+                                continue;
+                            }
+
+                            if let Some(def_block) = definition_blocks.get(&result_id) {
+                                if !cfg.blocks.contains(def_block) {
+                                    return Err(ValidationError::ValueDefinedInAnotherFunction {
+                                        function: func_id,
+                                        value: Id::from(result_id),
+                                    });
+                                }
+                                if !cfg.dominates(*def_block, block_id) {
+                                    return Err(ValidationError::ValueNotDominated {
+                                        function: func_id,
+                                        block: block_id,
+                                        value: Id::from(result_id),
+                                    });
+                                }
+                            } else if function_local_ids.contains(&result_id) {
+                                // ID is defined in some function but not this one
+                                return Err(ValidationError::ValueDefinedInAnotherFunction {
+                                    function: func_id,
+                                    value: Id::from(result_id),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Loop Control Rule
+// ============================================================================
+
+/// Validates loop control flags in OpLoopMerge.
+///
+/// Checks:
+/// - Unroll and DontUnroll cannot both be specified
+/// - PeelCount and DontUnroll cannot both be specified
+/// - PartialCount and DontUnroll cannot both be specified
+/// - IterationMultiple operand must be greater than zero
+pub struct LoopControlRule;
+
+impl ValidationRule for LoopControlRule {
+    fn name(&self) -> &'static str {
+        "loop-control"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        let module = ctx.module();
+
+        for func in &module.functions {
+            let func_id = func
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .map(to_id)
+                .unwrap_or_else(|| to_id(0));
+
+            for block in &func.blocks {
+                let block_id = get_block_label(block).unwrap_or(func_id);
+
+                for inst in &block.instructions {
+                    if inst.class.opcode != Op::LoopMerge {
+                        continue;
+                    }
+
+                    // Operand 2 is the loop control mask
+                    let loop_control = match inst.operands.get(2) {
+                        Some(Operand::LoopControl(ctrl)) => *ctrl,
+                        _ => continue,
+                    };
+
+                    // Check Unroll and DontUnroll cannot both be specified
+                    if loop_control.contains(LoopControl::UNROLL)
+                        && loop_control.contains(LoopControl::DONT_UNROLL)
+                    {
+                        return Err(ValidationError::LoopControlUnrollAndDontUnroll {
+                            function: func_id,
+                            block: block_id,
+                        });
+                    }
+
+                    // Check PeelCount and DontUnroll cannot both be specified
+                    if loop_control.contains(LoopControl::PEEL_COUNT)
+                        && loop_control.contains(LoopControl::DONT_UNROLL)
+                    {
+                        return Err(ValidationError::LoopControlPeelCountAndDontUnroll {
+                            function: func_id,
+                            block: block_id,
+                        });
+                    }
+
+                    // Check PartialCount and DontUnroll cannot both be specified
+                    if loop_control.contains(LoopControl::PARTIAL_COUNT)
+                        && loop_control.contains(LoopControl::DONT_UNROLL)
+                    {
+                        return Err(ValidationError::LoopControlPartialCountAndDontUnroll {
+                            function: func_id,
+                            block: block_id,
+                        });
+                    }
+
+                    // Validate IterationMultiple operand if flag is set
+                    if loop_control.contains(LoopControl::ITERATION_MULTIPLE) {
+                        // Find the IterationMultiple operand
+                        // Operands after the loop control mask are in order based on which flags are set:
+                        // DependencyLength, MinIterations, MaxIterations, IterationMultiple, PeelCount, PartialCount
+                        let mut operand_index = 3; // Start after merge, continue, loop_control
+
+                        if loop_control.contains(LoopControl::DEPENDENCY_LENGTH) {
+                            operand_index += 1;
+                        }
+                        if loop_control.contains(LoopControl::MIN_ITERATIONS) {
+                            operand_index += 1;
+                        }
+                        if loop_control.contains(LoopControl::MAX_ITERATIONS) {
+                            operand_index += 1;
+                        }
+
+                        // Now operand_index should point to IterationMultiple operand
+                        if let Some(Operand::LiteralBit32(value)) = inst.operands.get(operand_index) {
+                            if *value == 0 {
+                                return Err(ValidationError::LoopControlIterationMultipleZero {
+                                    function: func_id,
+                                    block: block_id,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Selection Control Rule
+// ============================================================================
+
+/// Validates selection control flags in OpSelectionMerge.
+///
+/// Checks:
+/// - Flatten and DontFlatten cannot both be specified
+pub struct SelectionControlRule;
+
+impl ValidationRule for SelectionControlRule {
+    fn name(&self) -> &'static str {
+        "selection-control"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        let module = ctx.module();
+
+        for func in &module.functions {
+            let func_id = func
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .map(to_id)
+                .unwrap_or_else(|| to_id(0));
+
+            for block in &func.blocks {
+                let block_id = get_block_label(block).unwrap_or(func_id);
+
+                for inst in &block.instructions {
+                    if inst.class.opcode != Op::SelectionMerge {
+                        continue;
+                    }
+
+                    // Operand 1 is the selection control mask
+                    let selection_control = match inst.operands.get(1) {
+                        Some(Operand::SelectionControl(ctrl)) => *ctrl,
+                        _ => continue,
+                    };
+
+                    // Check Flatten and DontFlatten cannot both be specified
+                    if selection_control.contains(SelectionControl::FLATTEN)
+                        && selection_control.contains(SelectionControl::DONT_FLATTEN)
+                    {
+                        return Err(ValidationError::SelectionControlFlattenAndDontFlatten {
+                            function: func_id,
+                            block: block_id,
+                        });
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
 /// Static rule instances
 static BLOCK_STRUCTURE_RULE: BlockStructureRule = BlockStructureRule;
 static MERGE_INSTRUCTION_RULE: MergeInstructionRule = MergeInstructionRule;
 static MERGE_DOMINATION_RULE: MergeDominationRule = MergeDominationRule;
+static LOOP_BACK_EDGE_RULE: LoopBackEdgeRule = LoopBackEdgeRule;
 static BRANCH_TARGET_RULE: BranchTargetRule = BranchTargetRule;
 static PHI_INSTRUCTION_RULE: PhiInstructionRule = PhiInstructionRule;
+static DOMINANCE_VALIDATION_RULE: DominanceValidationRule = DominanceValidationRule;
+static LOOP_CONTROL_RULE: LoopControlRule = LoopControlRule;
+static SELECTION_CONTROL_RULE: SelectionControlRule = SelectionControlRule;
 
 /// Returns all CFG validation rules.
 pub fn all_cfg_rules() -> Vec<&'static dyn ValidationRule> {
@@ -729,7 +1190,11 @@ pub fn all_cfg_rules() -> Vec<&'static dyn ValidationRule> {
         &BLOCK_STRUCTURE_RULE,
         &MERGE_INSTRUCTION_RULE,
         &MERGE_DOMINATION_RULE,
+        &LOOP_BACK_EDGE_RULE,
         &BRANCH_TARGET_RULE,
         &PHI_INSTRUCTION_RULE,
+        &DOMINANCE_VALIDATION_RULE,
+        &LOOP_CONTROL_RULE,
+        &SELECTION_CONTROL_RULE,
     ]
 }

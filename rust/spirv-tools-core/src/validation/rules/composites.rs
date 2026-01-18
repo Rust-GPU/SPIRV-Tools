@@ -727,6 +727,873 @@ impl ValidationRule for TransposeRule {
 }
 
 // ============================================================================
+// Composite Extract/Insert Rule
+// ============================================================================
+
+/// Validates OpCompositeExtract and OpCompositeInsert.
+///
+/// Ensures that:
+/// - CompositeExtract: Result type matches the component type at the given indices
+/// - CompositeInsert: Object type matches the component type at indices, result type matches composite
+/// - Index values are in bounds for the composite type
+pub struct CompositeExtractInsertRule;
+
+impl ValidationRule for CompositeExtractInsertRule {
+    fn name(&self) -> &'static str {
+        "composite-extract-insert"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        for function in &ctx.module.functions {
+            let function_id = function
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .and_then(|id| Id::try_from(id).ok());
+
+            for block in &function.blocks {
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .and_then(|id| Id::try_from(id).ok());
+
+                for inst in &block.instructions {
+                    let (Some(func), Some(blk)) = (function_id, block_id) else {
+                        continue;
+                    };
+
+                    match inst.class.opcode {
+                        Op::CompositeExtract => {
+                            let Some(result_type_id) =
+                                inst.result_type.and_then(|r| TypeId::try_from(r).ok())
+                            else {
+                                continue;
+                            };
+
+                            // Get composite operand type
+                            let composite_operand =
+                                inst.operands.first().and_then(|op| match op {
+                                    rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                                    _ => None,
+                                });
+                            let Some(composite_operand) = composite_operand else {
+                                continue;
+                            };
+                            let composite_type_id = ctx
+                                .definitions
+                                .get(&composite_operand)
+                                .and_then(|inst| inst.result_type)
+                                .and_then(|t| TypeId::try_from(t).ok());
+                            let Some(composite_type_id) = composite_type_id else {
+                                continue;
+                            };
+
+                            // Collect literal indices
+                            let indices: Vec<u32> = inst
+                                .operands
+                                .iter()
+                                .skip(1)
+                                .filter_map(|op| match op {
+                                    rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+                                    _ => None,
+                                })
+                                .collect();
+
+                            // Walk the composite type to find the component type
+                            match walk_composite_type(
+                                composite_type_id,
+                                &indices,
+                                ctx.definitions,
+                            ) {
+                                Ok(component_type) => {
+                                    if component_type != result_type_id {
+                                        return Err(ValidationError::CompositeOperandTypeMismatch {
+                                            function: func,
+                                            block: blk,
+                                            opcode: inst.class.opcode,
+                                            result_type: result_type_id,
+                                        });
+                                    }
+                                }
+                                Err(CompositeWalkError::OutOfBounds {
+                                    composite_type,
+                                    index_position,
+                                    index,
+                                    bound,
+                                }) => {
+                                    return Err(ValidationError::CompositeIndexOutOfBounds {
+                                        function: func,
+                                        block: blk,
+                                        instruction: inst.class.opcode,
+                                        composite_type,
+                                        index_position,
+                                        index,
+                                        bound,
+                                    });
+                                }
+                                Err(CompositeWalkError::NotComposite) => {
+                                    // Type not found or not a composite - skip
+                                    continue;
+                                }
+                            }
+                        }
+                        Op::CompositeInsert => {
+                            let Some(result_type_id) =
+                                inst.result_type.and_then(|r| TypeId::try_from(r).ok())
+                            else {
+                                continue;
+                            };
+
+                            // Get object operand (what we're inserting)
+                            let object_operand = inst.operands.first().and_then(|op| match op {
+                                rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                                _ => None,
+                            });
+                            let Some(object_operand) = object_operand else {
+                                continue;
+                            };
+                            let object_type_id = ctx
+                                .definitions
+                                .get(&object_operand)
+                                .and_then(|inst| inst.result_type)
+                                .and_then(|t| TypeId::try_from(t).ok());
+                            let Some(object_type_id) = object_type_id else {
+                                continue;
+                            };
+
+                            // Get composite operand (where we're inserting)
+                            let composite_operand = inst.operands.get(1).and_then(|op| match op {
+                                rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                                _ => None,
+                            });
+                            let Some(composite_operand) = composite_operand else {
+                                continue;
+                            };
+                            let composite_type_id = ctx
+                                .definitions
+                                .get(&composite_operand)
+                                .and_then(|inst| inst.result_type)
+                                .and_then(|t| TypeId::try_from(t).ok());
+                            let Some(composite_type_id) = composite_type_id else {
+                                continue;
+                            };
+
+                            // Result type must match composite type
+                            if result_type_id != composite_type_id {
+                                return Err(ValidationError::CompositeResultTypeInvalid {
+                                    function: func,
+                                    block: blk,
+                                    opcode: inst.class.opcode,
+                                    result_type: result_type_id,
+                                    expected: "same type as composite operand",
+                                });
+                            }
+
+                            // Collect literal indices
+                            let indices: Vec<u32> = inst
+                                .operands
+                                .iter()
+                                .skip(2)
+                                .filter_map(|op| match op {
+                                    rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+                                    _ => None,
+                                })
+                                .collect();
+
+                            // Walk the composite type to find the component type
+                            match walk_composite_type(
+                                composite_type_id,
+                                &indices,
+                                ctx.definitions,
+                            ) {
+                                Ok(component_type) => {
+                                    if component_type != object_type_id {
+                                        return Err(ValidationError::CompositeOperandTypeInvalid {
+                                            function: func,
+                                            block: blk,
+                                            opcode: inst.class.opcode,
+                                            operand_index: 0,
+                                            result_type: result_type_id,
+                                            expected: "matching component type",
+                                        });
+                                    }
+                                }
+                                Err(CompositeWalkError::OutOfBounds {
+                                    composite_type,
+                                    index_position,
+                                    index,
+                                    bound,
+                                }) => {
+                                    return Err(ValidationError::CompositeIndexOutOfBounds {
+                                        function: func,
+                                        block: blk,
+                                        instruction: inst.class.opcode,
+                                        composite_type,
+                                        index_position,
+                                        index,
+                                        bound,
+                                    });
+                                }
+                                Err(CompositeWalkError::NotComposite) => {
+                                    // Type not found or not a composite - skip
+                                    continue;
+                                }
+                            }
+                        }
+                        _ => continue,
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Error when walking a composite type hierarchy.
+#[derive(Debug)]
+enum CompositeWalkError {
+    NotComposite,
+    OutOfBounds {
+        composite_type: TypeId,
+        index_position: usize,
+        index: u32,
+        bound: u32,
+    },
+}
+
+/// Walks a composite type hierarchy to find the component type at given indices.
+fn walk_composite_type(
+    composite_type: TypeId,
+    indices: &[u32],
+    definitions: &std::collections::HashMap<ResultId, rspirv::dr::Instruction>,
+) -> Result<TypeId, CompositeWalkError> {
+    if indices.is_empty() {
+        return Ok(composite_type);
+    }
+
+    let mut current_type = composite_type;
+    for (position, &index) in indices.iter().enumerate() {
+        let rid = ResultId::try_from(u32::from(current_type))
+            .map_err(|_| CompositeWalkError::NotComposite)?;
+        let inst = definitions
+            .get(&rid)
+            .ok_or(CompositeWalkError::NotComposite)?;
+
+        match inst.class.opcode {
+            Op::TypeVector | Op::TypeMatrix => {
+                let element_type = inst
+                    .operands
+                    .first()
+                    .and_then(|op| match op {
+                        rspirv::dr::Operand::IdRef(raw) => TypeId::try_from(*raw).ok(),
+                        _ => None,
+                    })
+                    .ok_or(CompositeWalkError::NotComposite)?;
+                let bound = inst
+                    .operands
+                    .get(1)
+                    .and_then(|op| match op {
+                        rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+                        _ => None,
+                    })
+                    .unwrap_or(0);
+                if bound != 0 && index >= bound {
+                    return Err(CompositeWalkError::OutOfBounds {
+                        composite_type: current_type,
+                        index_position: position,
+                        index,
+                        bound,
+                    });
+                }
+                current_type = element_type;
+            }
+            Op::TypeArray | Op::TypeRuntimeArray => {
+                let element_type = inst
+                    .operands
+                    .first()
+                    .and_then(|op| match op {
+                        rspirv::dr::Operand::IdRef(raw) => TypeId::try_from(*raw).ok(),
+                        _ => None,
+                    })
+                    .ok_or(CompositeWalkError::NotComposite)?;
+                if inst.class.opcode == Op::TypeArray {
+                    if let Some(bound) = get_array_length(inst, definitions) {
+                        if index >= bound {
+                            return Err(CompositeWalkError::OutOfBounds {
+                                composite_type: current_type,
+                                index_position: position,
+                                index,
+                                bound,
+                            });
+                        }
+                    }
+                }
+                current_type = element_type;
+            }
+            Op::TypeStruct => {
+                let bound = inst.operands.len() as u32;
+                if index >= bound {
+                    return Err(CompositeWalkError::OutOfBounds {
+                        composite_type: current_type,
+                        index_position: position,
+                        index,
+                        bound,
+                    });
+                }
+                let member_type = inst.operands.get(index as usize).and_then(|op| match op {
+                    rspirv::dr::Operand::IdRef(raw) => TypeId::try_from(*raw).ok(),
+                    _ => None,
+                });
+                current_type = member_type.ok_or(CompositeWalkError::NotComposite)?;
+            }
+            Op::TypeCooperativeMatrixKHR | Op::TypeCooperativeMatrixNV => {
+                // Cooperative matrices: first operand is component type
+                let element_type = inst
+                    .operands
+                    .first()
+                    .and_then(|op| match op {
+                        rspirv::dr::Operand::IdRef(raw) => TypeId::try_from(*raw).ok(),
+                        _ => None,
+                    })
+                    .ok_or(CompositeWalkError::NotComposite)?;
+                // No bounds checking for cooperative matrices - index is dynamic
+                current_type = element_type;
+            }
+            _ => return Err(CompositeWalkError::NotComposite),
+        }
+    }
+    Ok(current_type)
+}
+
+/// Gets the length of an array type by looking up the length constant.
+fn get_array_length(
+    array_type_inst: &rspirv::dr::Instruction,
+    definitions: &std::collections::HashMap<ResultId, rspirv::dr::Instruction>,
+) -> Option<u32> {
+    let length_id = array_type_inst.operands.get(1).and_then(|op| match op {
+        rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+        _ => None,
+    })?;
+    let length_inst = definitions.get(&length_id)?;
+    // Must be a constant or spec constant
+    if !matches!(
+        length_inst.class.opcode,
+        Op::Constant | Op::ConstantComposite | Op::SpecConstant | Op::SpecConstantComposite
+    ) {
+        return None;
+    }
+    // Get the literal value
+    length_inst.operands.first().and_then(|op| match op {
+        rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+        rspirv::dr::Operand::LiteralBit64(v) => u32::try_from(*v).ok(),
+        _ => None,
+    })
+}
+
+// ============================================================================
+// CompositeConstruct Rule
+// ============================================================================
+
+/// Validates OpCompositeConstruct instructions.
+///
+/// Validates that:
+/// - Result type is a valid composite type (vector, matrix, array, struct, cooperative matrix)
+/// - For vectors: at least 2 constituents, component types match, total count matches vector size
+/// - For matrices: constituent count equals column count, types match column type
+/// - For arrays: constituent count equals array size, element types match
+/// - For structs: constituent count equals member count, member types match
+/// - For cooperative matrices: exactly one constituent of component type
+pub struct CompositeConstructRule;
+
+impl ValidationRule for CompositeConstructRule {
+    fn name(&self) -> &'static str {
+        "composite-construct"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        for function in &ctx.module.functions {
+            let function_id = function
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .and_then(|id| Id::try_from(id).ok());
+
+            for block in &function.blocks {
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .and_then(|id| Id::try_from(id).ok());
+
+                for inst in &block.instructions {
+                    if inst.class.opcode != Op::CompositeConstruct {
+                        continue;
+                    }
+
+                    let Some(result_type_raw) = inst.result_type else {
+                        continue;
+                    };
+                    let Ok(result_type_id) = ResultId::try_from(result_type_raw) else {
+                        continue;
+                    };
+                    let Some(result_type_inst) = ctx.definitions.get(&result_type_id) else {
+                        continue;
+                    };
+
+                    let num_constituents = inst.operands.len();
+
+                    match result_type_inst.class.opcode {
+                        Op::TypeVector | Op::TypeCooperativeVectorNV => {
+                            // Get vector component type and size
+                            let component_type_id = result_type_inst
+                                .operands
+                                .first()
+                                .and_then(|op| {
+                                    if let rspirv::dr::Operand::IdRef(id) = op {
+                                        Some(*id)
+                                    } else {
+                                        None
+                                    }
+                                });
+
+                            // For regular vectors, require at least 2 constituents
+                            if result_type_inst.class.opcode == Op::TypeVector
+                                && num_constituents < 2
+                            {
+                                return Err(
+                                    ValidationError::CompositeConstructVectorTooFewConstituents {
+                                        function: function_id,
+                                        block: block_id,
+                                    },
+                                );
+                            }
+
+                            // Get vector dimension if it's a regular vector
+                            let expected_count = if result_type_inst.class.opcode == Op::TypeVector
+                            {
+                                result_type_inst.operands.get(1).and_then(|op| {
+                                    if let rspirv::dr::Operand::LiteralBit32(count) = op {
+                                        Some(*count)
+                                    } else {
+                                        None
+                                    }
+                                })
+                            } else {
+                                None // Cooperative vectors may have dynamic count
+                            };
+
+                            // Validate constituents
+                            let mut given_count: u32 = 0;
+                            for operand in &inst.operands {
+                                if let rspirv::dr::Operand::IdRef(id) = operand {
+                                    if let Ok(rid) = ResultId::try_from(*id) {
+                                        if let Some(value_inst) = ctx.definitions.get(&rid) {
+                                            if let Some(value_type) = value_inst.result_type {
+                                                if let Ok(value_type_id) =
+                                                    ResultId::try_from(value_type)
+                                                {
+                                                    if let Some(value_type_inst) =
+                                                        ctx.definitions.get(&value_type_id)
+                                                    {
+                                                        // Check if scalar (matching component type) or vector of same component type
+                                                        match value_type_inst.class.opcode {
+                                                            Op::TypeInt | Op::TypeFloat => {
+                                                                // Scalar: check it matches component type
+                                                                if component_type_id != Some(value_type) {
+                                                                    return Err(ValidationError::CompositeConstructVectorConstituentTypeMismatch {
+                                                                        function: function_id,
+                                                                        block: block_id,
+                                                                    });
+                                                                }
+                                                                given_count += 1;
+                                                            }
+                                                            Op::TypeVector => {
+                                                                // Vector: check component type matches
+                                                                let vec_component = value_type_inst
+                                                                    .operands
+                                                                    .first()
+                                                                    .and_then(|op| {
+                                                                        if let rspirv::dr::Operand::IdRef(id) = op {
+                                                                            Some(*id)
+                                                                        } else {
+                                                                            None
+                                                                        }
+                                                                    });
+                                                                if component_type_id != vec_component {
+                                                                    return Err(ValidationError::CompositeConstructVectorConstituentTypeMismatch {
+                                                                        function: function_id,
+                                                                        block: block_id,
+                                                                    });
+                                                                }
+                                                                // Add vector size to count
+                                                                if let Some(rspirv::dr::Operand::LiteralBit32(size)) = value_type_inst.operands.get(1) {
+                                                                    given_count += size;
+                                                                }
+                                                            }
+                                                            _ => {
+                                                                return Err(ValidationError::CompositeConstructVectorConstituentTypeMismatch {
+                                                                    function: function_id,
+                                                                    block: block_id,
+                                                                });
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Check total count for regular vectors
+                            if let Some(expected) = expected_count {
+                                if expected != given_count {
+                                    return Err(
+                                        ValidationError::CompositeConstructVectorComponentCountMismatch {
+                                            expected,
+                                            given: given_count,
+                                            function: function_id,
+                                            block: block_id,
+                                        },
+                                    );
+                                }
+                            }
+                        }
+                        Op::TypeMatrix => {
+                            // Get matrix column type and count
+                            let col_type_id = result_type_inst.operands.first().and_then(|op| {
+                                if let rspirv::dr::Operand::IdRef(id) = op {
+                                    Some(*id)
+                                } else {
+                                    None
+                                }
+                            });
+                            let col_count = result_type_inst.operands.get(1).and_then(|op| {
+                                if let rspirv::dr::Operand::LiteralBit32(count) = op {
+                                    Some(*count)
+                                } else {
+                                    None
+                                }
+                            });
+
+                            if let Some(expected) = col_count {
+                                if num_constituents != expected as usize {
+                                    return Err(
+                                        ValidationError::CompositeConstructMatrixColumnCountMismatch {
+                                            expected,
+                                            given: num_constituents as u32,
+                                            function: function_id,
+                                            block: block_id,
+                                        },
+                                    );
+                                }
+                            }
+
+                            // Validate each constituent matches column type
+                            for operand in &inst.operands {
+                                if let rspirv::dr::Operand::IdRef(id) = operand {
+                                    if let Ok(rid) = ResultId::try_from(*id) {
+                                        if let Some(value_inst) = ctx.definitions.get(&rid) {
+                                            if value_inst.result_type != col_type_id {
+                                                return Err(
+                                                    ValidationError::CompositeConstructMatrixConstituentTypeMismatch {
+                                                        function: function_id,
+                                                        block: block_id,
+                                                    },
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Op::TypeArray => {
+                            // Get array element type and size
+                            let elem_type_id = result_type_inst.operands.first().and_then(|op| {
+                                if let rspirv::dr::Operand::IdRef(id) = op {
+                                    Some(*id)
+                                } else {
+                                    None
+                                }
+                            });
+                            // Array size is an id reference to a constant
+                            let size_id = result_type_inst.operands.get(1).and_then(|op| {
+                                if let rspirv::dr::Operand::IdRef(id) = op {
+                                    ResultId::try_from(*id).ok()
+                                } else {
+                                    None
+                                }
+                            });
+                            let array_size = size_id
+                                .and_then(|sid| ctx.definitions.get(&sid))
+                                .filter(|size_inst| {
+                                    // Only use constant (non-spec-constant) sizes for validation
+                                    matches!(size_inst.class.opcode, Op::Constant)
+                                })
+                                .and_then(|size_inst| {
+                                    size_inst.operands.first().and_then(|op| match op {
+                                        rspirv::dr::Operand::LiteralBit32(v) => Some(*v as u64),
+                                        rspirv::dr::Operand::LiteralBit64(v) => Some(*v),
+                                        _ => None,
+                                    })
+                                });
+
+                            if let Some(expected) = array_size {
+                                if num_constituents as u64 != expected {
+                                    return Err(
+                                        ValidationError::CompositeConstructArrayElementCountMismatch {
+                                            expected,
+                                            given: num_constituents as u64,
+                                            function: function_id,
+                                            block: block_id,
+                                        },
+                                    );
+                                }
+                            }
+
+                            // Validate each constituent matches element type
+                            for operand in &inst.operands {
+                                if let rspirv::dr::Operand::IdRef(id) = operand {
+                                    if let Ok(rid) = ResultId::try_from(*id) {
+                                        if let Some(value_inst) = ctx.definitions.get(&rid) {
+                                            if value_inst.result_type != elem_type_id {
+                                                return Err(
+                                                    ValidationError::CompositeConstructArrayConstituentTypeMismatch {
+                                                        function: function_id,
+                                                        block: block_id,
+                                                    },
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Op::TypeStruct => {
+                            // Struct: constituent count must equal member count, types must match
+                            let member_count = result_type_inst.operands.len();
+                            if num_constituents != member_count {
+                                return Err(
+                                    ValidationError::CompositeConstructStructMemberCountMismatch {
+                                        expected: member_count as u32,
+                                        given: num_constituents as u32,
+                                        function: function_id,
+                                        block: block_id,
+                                    },
+                                );
+                            }
+
+                            // Validate each constituent matches member type
+                            for (idx, (member_op, constituent_op)) in result_type_inst
+                                .operands
+                                .iter()
+                                .zip(inst.operands.iter())
+                                .enumerate()
+                            {
+                                let member_type = match member_op {
+                                    rspirv::dr::Operand::IdRef(id) => Some(*id),
+                                    _ => None,
+                                };
+                                let constituent_type = match constituent_op {
+                                    rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id)
+                                        .ok()
+                                        .and_then(|rid| ctx.definitions.get(&rid))
+                                        .and_then(|inst| inst.result_type),
+                                    _ => None,
+                                };
+                                if member_type != constituent_type {
+                                    return Err(
+                                        ValidationError::CompositeConstructStructConstituentTypeMismatch {
+                                            index: idx as u32,
+                                            function: function_id,
+                                            block: block_id,
+                                        },
+                                    );
+                                }
+                            }
+                        }
+                        Op::TypeCooperativeMatrixKHR | Op::TypeCooperativeMatrixNV => {
+                            // Cooperative matrices require exactly one constituent
+                            if num_constituents != 1 {
+                                return Err(
+                                    ValidationError::CompositeConstructCoopMatrixSingleConstituent {
+                                        function: function_id,
+                                        block: block_id,
+                                    },
+                                );
+                            }
+                            // Get component type and validate
+                            let component_type_id =
+                                result_type_inst.operands.first().and_then(|op| {
+                                    if let rspirv::dr::Operand::IdRef(id) = op {
+                                        Some(*id)
+                                    } else {
+                                        None
+                                    }
+                                });
+                            if let Some(rspirv::dr::Operand::IdRef(constituent_id)) =
+                                inst.operands.first()
+                            {
+                                if let Ok(rid) = ResultId::try_from(*constituent_id) {
+                                    if let Some(constituent_inst) = ctx.definitions.get(&rid) {
+                                        if constituent_inst.result_type != component_type_id {
+                                            return Err(
+                                                ValidationError::CompositeConstructCoopMatrixConstituentTypeMismatch {
+                                                    function: function_id,
+                                                    block: block_id,
+                                                },
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        _ => {
+                            return Err(ValidationError::CompositeConstructResultTypeInvalid {
+                                function: function_id,
+                                block: block_id,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+// ============================================================================
+// CopyLogical Rule
+// ============================================================================
+
+/// Validates OpCopyLogical instructions.
+///
+/// Validates that:
+/// - Result type does not equal operand type (they must be different)
+/// - Result type logically matches operand type (same structure)
+/// - With Shader capability, cannot copy composites of 8/16-bit types
+pub struct CopyLogicalRule;
+
+impl ValidationRule for CopyLogicalRule {
+    fn name(&self) -> &'static str {
+        "copy-logical"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        use rspirv::spirv::Capability;
+
+        for function in &ctx.module.functions {
+            let function_id = function
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .and_then(|id| Id::try_from(id).ok());
+
+            for block in &function.blocks {
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .and_then(|id| Id::try_from(id).ok());
+
+                for inst in &block.instructions {
+                    if inst.class.opcode != Op::CopyLogical {
+                        continue;
+                    }
+
+                    let Some(result_type_raw) = inst.result_type else {
+                        continue;
+                    };
+
+                    // Get source operand's type
+                    let source_type_raw = inst.operands.first().and_then(|op| {
+                        if let rspirv::dr::Operand::IdRef(id) = op {
+                            ResultId::try_from(*id)
+                                .ok()
+                                .and_then(|rid| ctx.definitions.get(&rid))
+                                .and_then(|inst| inst.result_type)
+                        } else {
+                            None
+                        }
+                    });
+
+                    let Some(source_type) = source_type_raw else {
+                        continue;
+                    };
+
+                    // Result type must not equal source type
+                    if result_type_raw == source_type {
+                        return Err(ValidationError::CopyLogicalTypesEqual {
+                            function: function_id,
+                            block: block_id,
+                        });
+                    }
+
+                    // Check Shader capability restriction for 8/16-bit types
+                    if ctx.has_capability(Capability::Shader) {
+                        // Check if result type contains limited use int/float types
+                        if let Ok(result_type_id) = ResultId::try_from(result_type_raw) {
+                            if contains_small_type(result_type_id, ctx) {
+                                return Err(ValidationError::CopyLogicalSmallTypeRestriction {
+                                    function: function_id,
+                                    block: block_id,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Check if a type contains 8 or 16-bit int/float types (recursively).
+fn contains_small_type(type_id: ResultId, ctx: &ValidationContext<'_>) -> bool {
+    let Some(type_inst) = ctx.definitions.get(&type_id) else {
+        return false;
+    };
+
+    match type_inst.class.opcode {
+        Op::TypeInt | Op::TypeFloat => {
+            // Check width
+            type_inst.operands.first().map_or(false, |op| {
+                if let rspirv::dr::Operand::LiteralBit32(width) = op {
+                    *width == 8 || *width == 16
+                } else {
+                    false
+                }
+            })
+        }
+        Op::TypeVector | Op::TypeMatrix | Op::TypeArray | Op::TypeRuntimeArray => {
+            // Check element type
+            type_inst.operands.first().and_then(|op| {
+                if let rspirv::dr::Operand::IdRef(id) = op {
+                    ResultId::try_from(*id).ok()
+                } else {
+                    None
+                }
+            }).map_or(false, |elem_type_id| contains_small_type(elem_type_id, ctx))
+        }
+        Op::TypeStruct => {
+            // Check all member types
+            type_inst.operands.iter().any(|op| {
+                if let rspirv::dr::Operand::IdRef(id) = op {
+                    ResultId::try_from(*id).ok().map_or(false, |member_type_id| {
+                        contains_small_type(member_type_id, ctx)
+                    })
+                } else {
+                    false
+                }
+            })
+        }
+        _ => false,
+    }
+}
+
+// ============================================================================
 // All composite rules
 // ============================================================================
 
@@ -737,5 +1604,8 @@ pub fn all_composite_rules() -> Vec<&'static dyn ValidationRule> {
         &VectorShuffleRule,
         &CopyObjectRule,
         &TransposeRule,
+        &CompositeExtractInsertRule,
+        &CompositeConstructRule,
+        &CopyLogicalRule,
     ]
 }

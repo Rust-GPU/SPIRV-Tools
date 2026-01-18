@@ -349,6 +349,12 @@ pub trait TypeResolver {
 
     /// Returns the dimension (1 for scalar, N for vecN).
     fn get_dimension(&self, type_id: u32, definitions: &HashMap<ResultId, Instruction>) -> u32;
+
+    /// Returns true if the type is a BFloat16 scalar type.
+    ///
+    /// BFloat16 is identified by OpTypeFloat with 16-bit width and BFloat16KHR encoding.
+    fn is_bfloat16_scalar(&self, type_id: u32, definitions: &HashMap<ResultId, Instruction>)
+        -> bool;
 }
 
 /// Default type resolver that uses a definitions map.
@@ -493,6 +499,35 @@ impl TypeResolver for DefaultTypeResolver {
         } else {
             1
         }
+    }
+
+    fn is_bfloat16_scalar(
+        &self,
+        type_id: u32,
+        definitions: &HashMap<ResultId, Instruction>,
+    ) -> bool {
+        let Some(inst) = get_type_instruction(type_id, definitions) else {
+            return false;
+        };
+
+        // Must be OpTypeFloat
+        if !inst.is_float_type() {
+            return false;
+        }
+
+        // Must be 16-bit
+        let Some(width) = inst.numeric_bit_width() else {
+            return false;
+        };
+        if width != 16 {
+            return false;
+        }
+
+        // Must have BFloat16KHR encoding (second operand)
+        inst.operands
+            .get(1)
+            .map(|op| matches!(op, Operand::FPEncoding(rspirv::spirv::FPEncoding::BFloat16KHR)))
+            .unwrap_or(false)
     }
 }
 

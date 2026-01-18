@@ -10,7 +10,7 @@
 //! - OpDemoteToHelperInvocationEXT / OpIsHelperInvocationEXT - helper invocations
 
 use rspirv::dr::Operand;
-use rspirv::spirv::{Capability, Op, Scope};
+use rspirv::spirv::{Capability, ExecutionMode, ExecutionModel, Op, Scope};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
 use crate::validation::error::ValidationError;
@@ -384,6 +384,37 @@ impl ValidationRule for IsHelperInvocationRule {
     fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
         let resolver = DefaultTypeResolver;
 
+        // Check if any IsHelperInvocationEXT instructions exist
+        let has_is_helper = ctx.module.functions.iter().any(|f| {
+            f.blocks
+                .iter()
+                .any(|b| b.instructions.iter().any(|i| i.class.opcode == Op::IsHelperInvocationEXT))
+        });
+
+        if !has_is_helper {
+            return Ok(());
+        }
+
+        // Check execution model requirement
+        let has_fragment = ctx.entry_models.contains(&ExecutionModel::Fragment);
+        if !has_fragment && !ctx.entry_models.is_empty() {
+            // Find an instruction to report in the error
+            for func in &ctx.module.functions {
+                let func_id = func.def.as_ref().and_then(|d| d.result_id).map(to_id);
+                for block in &func.blocks {
+                    let block_id = block.label.as_ref().and_then(|l| l.result_id).map(to_id);
+                    for inst in &block.instructions {
+                        if inst.class.opcode == Op::IsHelperInvocationEXT {
+                            return Err(ValidationError::IsHelperInvocationRequiresFragment {
+                                function: func_id,
+                                block: block_id,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
         for func in &ctx.module.functions {
             let func_id = func
                 .def
@@ -420,6 +451,151 @@ impl ValidationRule for IsHelperInvocationRule {
     }
 }
 
+/// Validates OpDemoteToHelperInvocationEXT instructions.
+///
+/// - Must be in Fragment execution model
+pub struct DemoteToHelperInvocationRule;
+
+impl ValidationRule for DemoteToHelperInvocationRule {
+    fn name(&self) -> &'static str {
+        "demote-to-helper-invocation"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        // Check if any DemoteToHelperInvocationEXT instructions exist
+        let has_demote = ctx.module.functions.iter().any(|f| {
+            f.blocks
+                .iter()
+                .any(|b| b.instructions.iter().any(|i| i.class.opcode == Op::DemoteToHelperInvocationEXT))
+        });
+
+        if !has_demote {
+            return Ok(());
+        }
+
+        // Check execution model requirement
+        let has_fragment = ctx.entry_models.contains(&ExecutionModel::Fragment);
+        if !has_fragment && !ctx.entry_models.is_empty() {
+            // Find an instruction to report in the error
+            for func in &ctx.module.functions {
+                let func_id = func.def.as_ref().and_then(|d| d.result_id).map(to_id);
+                for block in &func.blocks {
+                    let block_id = block.label.as_ref().and_then(|l| l.result_id).map(to_id);
+                    for inst in &block.instructions {
+                        if inst.class.opcode == Op::DemoteToHelperInvocationEXT {
+                            return Err(ValidationError::DemoteToHelperRequiresFragment {
+                                function: func_id,
+                                block: block_id,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Valid interlock execution modes.
+const INTERLOCK_EXECUTION_MODES: &[ExecutionMode] = &[
+    ExecutionMode::PixelInterlockOrderedEXT,
+    ExecutionMode::PixelInterlockUnorderedEXT,
+    ExecutionMode::SampleInterlockOrderedEXT,
+    ExecutionMode::SampleInterlockUnorderedEXT,
+    ExecutionMode::ShadingRateInterlockOrderedEXT,
+    ExecutionMode::ShadingRateInterlockUnorderedEXT,
+];
+
+/// Validates OpBeginInvocationInterlockEXT and OpEndInvocationInterlockEXT instructions.
+///
+/// - Must be in Fragment execution model
+/// - Must have an interlock execution mode declared
+pub struct InvocationInterlockRule;
+
+impl ValidationRule for InvocationInterlockRule {
+    fn name(&self) -> &'static str {
+        "invocation-interlock"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        // Check if any interlock instructions exist
+        let has_interlock = ctx.module.functions.iter().any(|f| {
+            f.blocks.iter().any(|b| {
+                b.instructions.iter().any(|i| {
+                    matches!(
+                        i.class.opcode,
+                        Op::BeginInvocationInterlockEXT | Op::EndInvocationInterlockEXT
+                    )
+                })
+            })
+        });
+
+        if !has_interlock {
+            return Ok(());
+        }
+
+        // Check execution model requirement (must be Fragment)
+        let has_fragment = ctx.entry_models.contains(&ExecutionModel::Fragment);
+        if !has_fragment && !ctx.entry_models.is_empty() {
+            // Find an instruction to report in the error
+            for func in &ctx.module.functions {
+                let func_id = func.def.as_ref().and_then(|d| d.result_id).map(to_id);
+                for block in &func.blocks {
+                    let block_id = block.label.as_ref().and_then(|l| l.result_id).map(to_id);
+                    for inst in &block.instructions {
+                        if matches!(
+                            inst.class.opcode,
+                            Op::BeginInvocationInterlockEXT | Op::EndInvocationInterlockEXT
+                        ) {
+                            return Err(ValidationError::InvocationInterlockRequiresFragment {
+                                function: func_id,
+                                block: block_id,
+                                opcode: inst.class.opcode,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // Check for required interlock execution mode
+        let has_interlock_mode = ctx.module.execution_modes.iter().any(|mode_inst| {
+            mode_inst.operands.get(1).is_some_and(|operand| {
+                if let Operand::ExecutionMode(mode) = operand {
+                    INTERLOCK_EXECUTION_MODES.contains(mode)
+                } else {
+                    false
+                }
+            })
+        });
+
+        if !has_interlock_mode {
+            // Find an instruction to report in the error
+            for func in &ctx.module.functions {
+                let func_id = func.def.as_ref().and_then(|d| d.result_id).map(to_id);
+                for block in &func.blocks {
+                    let block_id = block.label.as_ref().and_then(|l| l.result_id).map(to_id);
+                    for inst in &block.instructions {
+                        if matches!(
+                            inst.class.opcode,
+                            Op::BeginInvocationInterlockEXT | Op::EndInvocationInterlockEXT
+                        ) {
+                            return Err(ValidationError::InvocationInterlockRequiresMode {
+                                function: func_id,
+                                block: block_id,
+                                opcode: inst.class.opcode,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
 /// Returns all miscellaneous validation rules.
 pub fn all_misc_rules() -> Vec<Box<dyn ValidationRule>> {
     vec![
@@ -428,5 +604,7 @@ pub fn all_misc_rules() -> Vec<Box<dyn ValidationRule>> {
         Box::new(AssumeTrueRule),
         Box::new(ExpectRule),
         Box::new(IsHelperInvocationRule),
+        Box::new(DemoteToHelperInvocationRule),
+        Box::new(InvocationInterlockRule),
     ]
 }
