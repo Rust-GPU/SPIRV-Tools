@@ -1214,6 +1214,415 @@ impl ValidationRule for VariablePointerRule {
     }
 }
 
+// ============================================================================
+// Logical Pointer Operands Rule (ValidateLogicalPointerOperands equivalent)
+// ============================================================================
+
+/// Returns true if the opcode unconditionally allows logical pointer operands.
+fn opcode_allows_logical_pointer_operands_unconditionally(opcode: Op) -> bool {
+    matches!(
+        opcode,
+        // Core spec without variable pointer capability
+        Op::Load
+            | Op::Store
+            | Op::AccessChain
+            | Op::InBoundsAccessChain
+            | Op::FunctionCall
+            | Op::ImageTexelPointer
+            | Op::CopyMemory
+            | Op::CopyObject
+            | Op::ArrayLength
+            | Op::ExtInst
+            // Core spec bugs (decorations, etc.)
+            | Op::Decorate
+            | Op::DecorateId
+            | Op::GroupDecorate
+            | Op::EntryPoint
+            | Op::Name
+            | Op::DecorateString
+            // SPV_KHR_untyped_pointers
+            | Op::UntypedArrayLengthKHR
+            | Op::UntypedAccessChainKHR
+            | Op::UntypedInBoundsAccessChainKHR
+            | Op::CopyMemorySized
+            // Cooperative matrix KHR/NV
+            | Op::CooperativeMatrixLoadKHR
+            | Op::CooperativeMatrixLoadNV
+            | Op::CooperativeMatrixStoreKHR
+            | Op::CooperativeMatrixStoreNV
+            // SPV_KHR_ray_tracing
+            | Op::TraceRayKHR
+            | Op::ExecuteCallableKHR
+            // SPV_KHR_ray_query
+            | Op::RayQueryConfirmIntersectionKHR
+            | Op::RayQueryInitializeKHR
+            | Op::RayQueryTerminateKHR
+            | Op::RayQueryGenerateIntersectionKHR
+            | Op::RayQueryProceedKHR
+            | Op::RayQueryGetIntersectionTypeKHR
+            | Op::RayQueryGetRayTMinKHR
+            | Op::RayQueryGetRayFlagsKHR
+            | Op::RayQueryGetIntersectionTKHR
+            | Op::RayQueryGetIntersectionInstanceCustomIndexKHR
+            | Op::RayQueryGetIntersectionInstanceIdKHR
+            | Op::RayQueryGetIntersectionInstanceShaderBindingTableRecordOffsetKHR
+            | Op::RayQueryGetIntersectionGeometryIndexKHR
+            | Op::RayQueryGetIntersectionPrimitiveIndexKHR
+            | Op::RayQueryGetIntersectionBarycentricsKHR
+            | Op::RayQueryGetIntersectionFrontFaceKHR
+            | Op::RayQueryGetIntersectionCandidateAABBOpaqueKHR
+            | Op::RayQueryGetIntersectionObjectRayDirectionKHR
+            | Op::RayQueryGetIntersectionObjectRayOriginKHR
+            | Op::RayQueryGetWorldRayDirectionKHR
+            | Op::RayQueryGetWorldRayOriginKHR
+            | Op::RayQueryGetIntersectionObjectToWorldKHR
+            | Op::RayQueryGetIntersectionWorldToObjectKHR
+            // SPV_KHR_ray_tracing_position_fetch
+            | Op::RayQueryGetIntersectionTriangleVertexPositionsKHR
+            // SPV_NV_cluster_acceleration_structure
+            | Op::RayQueryGetClusterIdNV
+            | Op::HitObjectGetClusterIdNV
+            // SPV_NV_ray_tracing_motion_blur
+            | Op::TraceMotionNV
+            | Op::TraceRayMotionNV
+            // SPV_NV_linear_swept_spheres
+            | Op::RayQueryGetIntersectionSpherePositionNV
+            | Op::RayQueryGetIntersectionSphereRadiusNV
+            | Op::RayQueryGetIntersectionLSSPositionsNV
+            | Op::RayQueryGetIntersectionLSSRadiiNV
+            | Op::RayQueryGetIntersectionLSSHitValueNV
+            | Op::RayQueryIsSphereHitNV
+            | Op::RayQueryIsLSSHitNV
+            | Op::HitObjectGetSpherePositionNV
+            | Op::HitObjectGetSphereRadiusNV
+            | Op::HitObjectGetLSSPositionsNV
+            | Op::HitObjectGetLSSRadiiNV
+            | Op::HitObjectIsSphereHitNV
+            | Op::HitObjectIsLSSHitNV
+            // SPV_NV_shader_invocation_reorder
+            | Op::ReorderThreadWithHitObjectNV
+            | Op::HitObjectTraceRayNV
+            | Op::HitObjectTraceRayMotionNV
+            | Op::HitObjectRecordHitNV
+            | Op::HitObjectRecordHitMotionNV
+            | Op::HitObjectRecordHitWithIndexNV
+            | Op::HitObjectRecordHitWithIndexMotionNV
+            | Op::HitObjectRecordMissNV
+            | Op::HitObjectRecordMissMotionNV
+            | Op::HitObjectRecordEmptyNV
+            | Op::HitObjectExecuteShaderNV
+            | Op::HitObjectGetCurrentTimeNV
+            | Op::HitObjectGetAttributesNV
+            | Op::HitObjectGetHitKindNV
+            | Op::HitObjectGetPrimitiveIndexNV
+            | Op::HitObjectGetGeometryIndexNV
+            | Op::HitObjectGetInstanceIdNV
+            | Op::HitObjectGetInstanceCustomIndexNV
+            | Op::HitObjectGetObjectRayOriginNV
+            | Op::HitObjectGetObjectRayDirectionNV
+            | Op::HitObjectGetWorldRayDirectionNV
+            | Op::HitObjectGetWorldRayOriginNV
+            | Op::HitObjectGetObjectToWorldNV
+            | Op::HitObjectGetWorldToObjectNV
+            | Op::HitObjectGetRayTMaxNV
+            | Op::HitObjectGetRayTMinNV
+            | Op::HitObjectGetShaderBindingTableRecordIndexNV
+            | Op::HitObjectGetShaderRecordBufferHandleNV
+            | Op::HitObjectIsEmptyNV
+            | Op::HitObjectIsHitNV
+            | Op::HitObjectIsMissNV
+            // SPV_NV_raw_access_chains
+            | Op::RawAccessChainNV
+            // SPV_NV_cooperative_matrix2
+            | Op::CooperativeMatrixLoadTensorNV
+            | Op::CooperativeMatrixStoreTensorNV
+            // SPV_NV_cooperative_vector
+            | Op::CooperativeVectorLoadNV
+            | Op::CooperativeVectorStoreNV
+            | Op::CooperativeVectorMatrixMulNV
+            | Op::CooperativeVectorMatrixMulAddNV
+            | Op::CooperativeVectorOuterProductAccumulateNV
+            | Op::CooperativeVectorReduceSumAccumulateNV
+            // SPV_EXT_mesh_shader
+            | Op::EmitMeshTasksEXT
+            // SPV_AMD_shader_enqueue
+            | Op::EnqueueNodePayloadsAMDX
+            | Op::NodePayloadArrayLengthAMDX
+            | Op::IsNodePayloadValidAMDX
+            | Op::FinishWritingNodePayloadAMDX
+            // SPV_ARM_graph
+            | Op::GraphEntryPointARM
+    )
+}
+
+/// Returns true if the opcode requires variable pointer capability for logical pointer operands.
+fn opcode_requires_variable_pointer_for_logical_operand(opcode: Op) -> bool {
+    matches!(
+        opcode,
+        Op::ReturnValue
+            | Op::PtrAccessChain
+            | Op::PtrEqual
+            | Op::PtrNotEqual
+            | Op::PtrDiff
+            // Core spec bugs
+            | Op::Select
+            | Op::Phi
+            | Op::Variable
+            // SPV_KHR_untyped_pointers
+            | Op::UntypedPtrAccessChainKHR
+    )
+}
+
+/// Returns true if the opcode is an atomic operation.
+fn is_atomic_op(opcode: Op) -> bool {
+    matches!(
+        opcode,
+        Op::AtomicLoad
+            | Op::AtomicStore
+            | Op::AtomicExchange
+            | Op::AtomicCompareExchange
+            | Op::AtomicCompareExchangeWeak
+            | Op::AtomicIIncrement
+            | Op::AtomicIDecrement
+            | Op::AtomicIAdd
+            | Op::AtomicISub
+            | Op::AtomicSMin
+            | Op::AtomicUMin
+            | Op::AtomicSMax
+            | Op::AtomicUMax
+            | Op::AtomicAnd
+            | Op::AtomicOr
+            | Op::AtomicXor
+            | Op::AtomicFlagTestAndSet
+            | Op::AtomicFlagClear
+            | Op::AtomicFMinEXT
+            | Op::AtomicFMaxEXT
+            | Op::AtomicFAddEXT
+    )
+}
+
+/// Validates which instructions can have logical pointer operands.
+pub struct LogicalPointerOperandsRule;
+
+impl ValidationRule for LogicalPointerOperandsRule {
+    fn name(&self) -> &'static str {
+        "logical-pointer-operands"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        if ctx.options.relax_logical_pointer {
+            return Ok(());
+        }
+
+        let addressing_model = ctx
+            .module
+            .memory_model
+            .as_ref()
+            .and_then(|inst| inst.operands.first())
+            .and_then(|op| match op {
+                Operand::AddressingModel(model) => Some(*model),
+                _ => None,
+            });
+
+        // Only validate in Logical or PhysicalStorageBuffer64 addressing mode
+        if !matches!(
+            addressing_model,
+            Some(AddressingModel::Logical | AddressingModel::PhysicalStorageBuffer64)
+        ) {
+            return Ok(());
+        }
+
+        for inst in ctx.module.all_inst_iter() {
+            // Find if any operand is a logical pointer
+            let mut has_pointer_operand = false;
+            let mut pointer_sc: Option<StorageClass> = None;
+
+            for operand in &inst.operands {
+                if let Operand::IdRef(op_id) = operand {
+                    if let Ok(op_result_id) = ResultId::try_from(*op_id) {
+                        if let Some(op_inst) = ctx.definitions.get(&op_result_id) {
+                            if is_logical_pointer(op_inst, ctx.definitions) {
+                                has_pointer_operand = true;
+                                pointer_sc = get_pointer_storage_class(op_inst, ctx.definitions);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if !has_pointer_operand {
+                continue;
+            }
+
+            let opcode = inst.class.opcode;
+
+            // Check if unconditionally allowed
+            if opcode_allows_logical_pointer_operands_unconditionally(opcode) {
+                continue;
+            }
+
+            // Check if requires variable pointer capability
+            if opcode_requires_variable_pointer_for_logical_operand(opcode) {
+                // Check storage class and capability
+                let has_storage_buffer_cap = ctx
+                    .declared_capabilities
+                    .contains(&Capability::VariablePointersStorageBuffer);
+                let has_variable_pointers_cap = ctx
+                    .declared_capabilities
+                    .contains(&Capability::VariablePointers);
+
+                let is_allowed = match pointer_sc {
+                    Some(StorageClass::StorageBuffer) => has_storage_buffer_cap,
+                    Some(StorageClass::Workgroup) => has_variable_pointers_cap,
+                    _ => false,
+                };
+
+                if is_allowed {
+                    continue;
+                }
+
+                return Err(ValidationError::LogicalPointerOperandRequiresCapability {
+                    opcode,
+                });
+            }
+
+            // Check if atomic operation (always allowed)
+            if is_atomic_op(opcode) {
+                continue;
+            }
+
+            // Otherwise not allowed
+            return Err(ValidationError::LogicalPointerOperandNotAllowed { opcode });
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Logical Pointer Returns Rule (ValidateLogicalPointerReturns equivalent)
+// ============================================================================
+
+/// Returns true if the opcode can unconditionally return a logical pointer.
+fn opcode_can_return_logical_pointer_unconditionally(opcode: Op) -> bool {
+    matches!(
+        opcode,
+        // Core spec without variable pointer capability
+        Op::Variable
+            | Op::AccessChain
+            | Op::InBoundsAccessChain
+            | Op::FunctionParameter
+            | Op::ImageTexelPointer
+            | Op::CopyObject
+            // Core spec bugs
+            | Op::Undef
+            // SPV_KHR_untyped_pointers
+            | Op::UntypedAccessChainKHR
+            | Op::UntypedInBoundsAccessChainKHR
+            | Op::UntypedVariableKHR
+            // SPV_NV_raw_access_chains
+            | Op::RawAccessChainNV
+            // SPV_AMD_shader_enqueue
+            | Op::AllocateNodePayloadsAMDX
+    )
+}
+
+/// Returns true if the opcode requires variable pointer capability to return a logical pointer.
+fn opcode_requires_variable_pointer_for_logical_return(opcode: Op) -> bool {
+    matches!(
+        opcode,
+        Op::Select
+            | Op::Phi
+            | Op::FunctionCall
+            | Op::PtrAccessChain
+            | Op::Load
+            | Op::ConstantNull
+            | Op::Function
+            // SPV_KHR_untyped_pointers
+            | Op::UntypedPtrAccessChainKHR
+    )
+}
+
+/// Validates which instructions can return logical pointers.
+pub struct LogicalPointerReturnsRule;
+
+impl ValidationRule for LogicalPointerReturnsRule {
+    fn name(&self) -> &'static str {
+        "logical-pointer-returns"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+        if ctx.options.relax_logical_pointer {
+            return Ok(());
+        }
+
+        let addressing_model = ctx
+            .module
+            .memory_model
+            .as_ref()
+            .and_then(|inst| inst.operands.first())
+            .and_then(|op| match op {
+                Operand::AddressingModel(model) => Some(*model),
+                _ => None,
+            });
+
+        // Only validate in Logical or PhysicalStorageBuffer64 addressing mode
+        if !matches!(
+            addressing_model,
+            Some(AddressingModel::Logical | AddressingModel::PhysicalStorageBuffer64)
+        ) {
+            return Ok(());
+        }
+
+        for inst in ctx.module.all_inst_iter() {
+            // Check if instruction returns a logical pointer
+            if !is_logical_pointer(inst, ctx.definitions) {
+                continue;
+            }
+
+            let opcode = inst.class.opcode;
+
+            // Get storage class of the pointer result
+            let pointer_sc = get_pointer_storage_class(inst, ctx.definitions);
+
+            // Check if unconditionally allowed
+            if opcode_can_return_logical_pointer_unconditionally(opcode) {
+                continue;
+            }
+
+            // Check if requires variable pointer capability
+            if opcode_requires_variable_pointer_for_logical_return(opcode) {
+                let has_storage_buffer_cap = ctx
+                    .declared_capabilities
+                    .contains(&Capability::VariablePointersStorageBuffer);
+                let has_variable_pointers_cap = ctx
+                    .declared_capabilities
+                    .contains(&Capability::VariablePointers);
+
+                let is_allowed = match pointer_sc {
+                    Some(StorageClass::StorageBuffer) => has_storage_buffer_cap,
+                    Some(StorageClass::Workgroup) => has_variable_pointers_cap,
+                    _ => false,
+                };
+
+                if is_allowed {
+                    continue;
+                }
+
+                return Err(ValidationError::LogicalPointerReturnRequiresCapability {
+                    opcode,
+                });
+            }
+
+            // Otherwise not allowed
+            return Err(ValidationError::LogicalPointerReturnNotAllowed { opcode });
+        }
+
+        Ok(())
+    }
+}
+
 /// Trace a pointer value back to its source variable.
 fn trace_to_variable(
     id: u32,
@@ -1273,5 +1682,7 @@ pub fn all_pointer_rules() -> Vec<&'static dyn ValidationRule> {
         &LoadStoreLogicalPointerRule,
         &StoreTypeCompatibilityRule,
         &VariablePointerRule,
+        &LogicalPointerOperandsRule,
+        &LogicalPointerReturnsRule,
     ]
 }

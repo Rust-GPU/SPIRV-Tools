@@ -694,6 +694,38 @@ pub enum ValidationError {
         /// The select/phi instruction producing the variable pointer.
         pointer: Id,
     },
+    /// Instruction may not have logical pointer operands.
+    #[error(
+        "Instruction {opcode:?} may not have a logical pointer operand"
+    )]
+    LogicalPointerOperandNotAllowed {
+        /// The opcode with invalid logical pointer operand.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Instruction requires variable pointer capability for logical pointer operand.
+    #[error(
+        "Instruction {opcode:?} may only have a logical pointer operand in the StorageBuffer or Workgroup storage classes with appropriate variable pointers capability"
+    )]
+    LogicalPointerOperandRequiresCapability {
+        /// The opcode that requires capability.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Instruction may not return a logical pointer.
+    #[error(
+        "Instruction {opcode:?} may not return a logical pointer"
+    )]
+    LogicalPointerReturnNotAllowed {
+        /// The opcode that cannot return logical pointer.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Instruction requires variable pointer capability to return logical pointer.
+    #[error(
+        "Instruction {opcode:?} may only return a logical pointer in the StorageBuffer or Workgroup storage classes with appropriate variable pointers capability"
+    )]
+    LogicalPointerReturnRequiresCapability {
+        /// The opcode that requires capability.
+        opcode: rspirv::spirv::Op,
+    },
     /// A struct decorated for block layout violates layout rules.
     #[error("Struct {struct_type:?} has an invalid block layout: {reason}")]
     InvalidBlockLayout {
@@ -5582,6 +5614,27 @@ pub enum ValidationError {
         /// The execution mode.
         mode: rspirv::spirv::ExecutionMode,
     },
+    /// Duplicate execution mode per entry point.
+    /// This is for modes that can only appear once per entry point.
+    #[error("Execution mode {execution_mode:?} can only be specified once per entry point (entry point {entry_point})")]
+    DuplicateExecutionModePerEntry {
+        /// The entry point ID.
+        entry_point: u32,
+        /// The execution mode.
+        execution_mode: rspirv::spirv::ExecutionMode,
+    },
+    /// Duplicate execution mode per operand.
+    /// This is for modes like float control modes that can appear multiple times
+    /// but only with different operands.
+    #[error("Execution mode {execution_mode:?} with operand {operand} is specified multiple times for entry point {entry_point}")]
+    DuplicateExecutionModePerOperand {
+        /// The entry point ID.
+        entry_point: u32,
+        /// The execution mode.
+        execution_mode: rspirv::spirv::ExecutionMode,
+        /// The operand value that was duplicated.
+        operand: u32,
+    },
     /// Tessellation has multiple spacing modes.
     #[error("Tessellation execution model entry point {entry_point:?} can specify at most one of SpacingEqual, SpacingFractionalOdd or SpacingFractionalEven")]
     TessellationMultipleSpacingModes {
@@ -5698,6 +5751,18 @@ pub enum ValidationError {
     /// FPFastMathDefault operand must be non-specialization constant.
     #[error("The Fast Math Default operand must be a non-specialization constant")]
     FPFastMathDefaultNotConstant,
+    /// Decoration conflicts with FPFastMathDefault execution mode.
+    /// NoContraction and FPFastMathMode Fast cannot be used by entry points
+    /// that have the FPFastMathDefault execution mode (SPV_KHR_float_controls2).
+    #[error("{decoration} cannot be used by an entry point with the FPFastMathDefault execution mode (result id {result_id}, entry points: {entry_points:?})")]
+    DecorationConflictsWithFPFastMathDefault {
+        /// The result ID with the problematic decoration.
+        result_id: u32,
+        /// The decoration that conflicts (NoContraction or FPFastMathMode Fast).
+        decoration: String,
+        /// The entry points with FPFastMathDefault that reach this instruction.
+        entry_points: Vec<u32>,
+    },
     /// OutputVertices must be greater than 0 for MeshEXT.
     #[error("In mesh shaders using the MeshEXT Execution Model the OutputVertices Execution Mode must be greater than 0")]
     MeshExtOutputVerticesMustBeNonZero,
