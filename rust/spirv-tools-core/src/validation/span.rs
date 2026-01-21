@@ -450,12 +450,30 @@ pub struct SpanMap {
     instruction_spans: std::collections::HashMap<u32, SourceSpan>,
     /// Maps result IDs to their defining instruction's span.
     id_spans: std::collections::HashMap<u32, SourceSpan>,
+    /// The original source text, split into lines for snippet extraction.
+    source_lines: Vec<String>,
 }
 
 impl SpanMap {
     /// Creates a new empty span map.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Creates a span map with the given source text.
+    ///
+    /// The source text is split into lines for later snippet extraction.
+    pub fn with_source(source: &str) -> Self {
+        Self {
+            instruction_spans: std::collections::HashMap::new(),
+            id_spans: std::collections::HashMap::new(),
+            source_lines: source.lines().map(String::from).collect(),
+        }
+    }
+
+    /// Sets the source text for this span map.
+    pub fn set_source(&mut self, source: &str) {
+        self.source_lines = source.lines().map(String::from).collect();
     }
 
     /// Records the span for an instruction at a given word offset.
@@ -491,6 +509,128 @@ impl SpanMap {
     /// Returns true if the span map is empty.
     pub fn is_empty(&self) -> bool {
         self.instruction_spans.is_empty() && self.id_spans.is_empty()
+    }
+
+    /// Returns true if source text is available.
+    pub fn has_source(&self) -> bool {
+        !self.source_lines.is_empty()
+    }
+
+    /// Gets a single source line (zero-indexed).
+    pub fn get_line(&self, line: u32) -> Option<&str> {
+        self.source_lines.get(line as usize).map(String::as_str)
+    }
+
+    /// Gets the source text for a span.
+    ///
+    /// Returns the relevant source lines with the span highlighted.
+    pub fn get_source_snippet<'a>(&'a self, span: &SourceSpan) -> Option<SourceSnippet<'a>> {
+        let (start_line, start_col, end_line, end_col) = match (span.start, span.end) {
+            (SourceLocation::Text(start), SourceLocation::Text(end)) => {
+                (start.line(), start.column(), end.line(), end.column())
+            }
+            _ => return None,
+        };
+
+        if self.source_lines.is_empty() {
+            return None;
+        }
+
+        let start_line = start_line as usize;
+        let end_line = end_line as usize;
+
+        if start_line >= self.source_lines.len() {
+            return None;
+        }
+
+        let lines: Vec<(usize, &str)> = (start_line..=end_line.min(self.source_lines.len() - 1))
+            .map(|i| (i, self.source_lines[i].as_str()))
+            .collect();
+
+        Some(SourceSnippet {
+            lines,
+            start_column: start_col as usize,
+            end_column: end_col as usize,
+            is_multiline: start_line != end_line,
+        })
+    }
+}
+
+/// A source code snippet for display in error messages.
+#[derive(Debug, Clone)]
+pub struct SourceSnippet<'a> {
+    /// The source lines with their line numbers (zero-indexed).
+    pub lines: Vec<(usize, &'a str)>,
+    /// Starting column of the span (zero-indexed).
+    pub start_column: usize,
+    /// Ending column of the span (zero-indexed).
+    pub end_column: usize,
+    /// Whether the span crosses multiple lines.
+    pub is_multiline: bool,
+}
+
+impl<'a> SourceSnippet<'a> {
+    /// Formats this snippet for display, with line numbers and underlines.
+    ///
+    /// Returns a string like:
+    /// ```text
+    ///  10 |     %result = OpFAdd %float %a %b
+    ///     |               ^^^^^^^^^^^^^^^^^^^^
+    /// ```
+    pub fn format(&self, label: Option<&str>) -> String {
+        if self.lines.is_empty() {
+            return String::new();
+        }
+
+        let max_line_num = self.lines.last().map(|(n, _)| n + 1).unwrap_or(1);
+        let line_num_width = max_line_num.to_string().len().max(2);
+
+        let mut result = String::new();
+
+        for (i, (line_num, line_text)) in self.lines.iter().enumerate() {
+            // Format line number (1-indexed for display)
+            result.push_str(&format!(
+                "{:>width$} | {}\n",
+                line_num + 1,
+                line_text,
+                width = line_num_width
+            ));
+
+            // Add underline for the first line (or only line)
+            if i == 0 {
+                let underline_start = self.start_column;
+                let underline_end = if self.is_multiline {
+                    line_text.len()
+                } else {
+                    self.end_column.max(underline_start + 1)
+                };
+                let underline_len = underline_end.saturating_sub(underline_start).max(1);
+
+                result.push_str(&format!(
+                    "{:>width$} | {}{}\n",
+                    "",
+                    " ".repeat(underline_start),
+                    "^".repeat(underline_len),
+                    width = line_num_width
+                ));
+
+                // Add label on the underline line if provided
+                if let Some(label) = label {
+                    if !label.is_empty() {
+                        result.push_str(&format!(
+                            "{:>width$} | {}{} {}\n",
+                            "",
+                            " ".repeat(underline_start),
+                            "|",
+                            label,
+                            width = line_num_width
+                        ));
+                    }
+                }
+            }
+        }
+
+        result
     }
 }
 
