@@ -7,20 +7,151 @@
 ;
 ; This enables:
 ; - Better register allocation (scalars vs aggregate in memory)
-; - More optimization opportunities (scalar rules apply)
+; - More optimization opportunities (scalar rules apply to fields)
 ; - Dead store elimination per-field
 ; - Copy propagation per-field
+; - Cross-field optimization (e.g., common subexpression elimination)
 ;
 ; Key insight for e-graph: We model aggregates as tuples of scalars.
 ; When we see Load(AccessChain(var, idx)), we can rewrite to LoadField(var, idx)
 ; which represents loading just that scalar field.
 ;
-; NOTE: CompositeInsert is a function, not a constructor, so we cannot pattern
-; match on nested CompositeInsert in rule conditions. The rules in datatypes.egg
-; handle the basic cases of CompositeExtract/Insert optimization.
+; The e-graph naturally handles the equivalence between:
+; - Loading a whole struct then extracting a field
+; - Loading just that field directly
 ;
 ; =============================================================================
-; Copy Propagation for Aggregates
+; SECTION 1: Aggregate Load Decomposition
+; =============================================================================
+; When loading an entire aggregate and extracting fields, convert to field loads.
+; This is the core SROA transformation.
+
+; CompositeExtract(Load(ptr, mem), idx) = Load(AccessChain1(ptr, idx), mem)
+; Already in memory.egg, but we add more patterns for deeper access chains
+
+; Nested extraction: Extract(Extract(Load(ptr), i), j) = Load(AccessChain2(ptr, i, j))
+(rule ((= e (CompositeExtract (CompositeExtract (Load ptr mem) i) j)))
+      ((union e (Load (AccessChain2 ptr i j) mem))))
+
+; Triple nested extraction
+(rule ((= e (CompositeExtract (CompositeExtract (CompositeExtract (Load ptr mem) i) j) k)))
+      ((union e (Load (AccessChain3 ptr i j k) mem))))
+
+; VecExtract follows same pattern as CompositeExtract
+(rule ((= e (VecExtract (Load ptr mem) idx)))
+      ((union e (Load (AccessChain1 ptr idx) mem))))
+
+; =============================================================================
+; SECTION 2: Aggregate Store Decomposition (Store Scalarization)
+; =============================================================================
+; When storing an aggregate built from components, decompose into field stores.
+; Store(ptr, CompositeConstruct(a, b, c), mem) can become a sequence of field stores
+
+; Two-field struct store decomposition
+; Store(ptr, Construct(a, b), mem) = Store(AC(ptr,1), b, Store(AC(ptr,0), a, mem))
+(rule ((= m (StoreMem ptr (CompositeConstruct (ECons a (ECons b (ENil)))) prev)))
+      ((union m (StoreMem (AccessChain1 ptr 1) b
+                (StoreMem (AccessChain1 ptr 0) a prev)))))
+
+; Three-field struct store decomposition
+(rule ((= m (StoreMem ptr (CompositeConstruct (ECons a (ECons b (ECons c (ENil))))) prev)))
+      ((union m (StoreMem (AccessChain1 ptr 2) c
+                (StoreMem (AccessChain1 ptr 1) b
+                (StoreMem (AccessChain1 ptr 0) a prev))))))
+
+; Four-field struct store decomposition
+(rule ((= m (StoreMem ptr (CompositeConstruct (ECons a (ECons b (ECons c (ECons d (ENil)))))) prev)))
+      ((union m (StoreMem (AccessChain1 ptr 3) d
+                (StoreMem (AccessChain1 ptr 2) c
+                (StoreMem (AccessChain1 ptr 1) b
+                (StoreMem (AccessChain1 ptr 0) a prev)))))))
+
+; Vec2 store decomposition
+(rule ((= m (StoreMem ptr (Vec2 a b) prev)))
+      ((union m (StoreMem (AccessChain1 ptr 1) b
+                (StoreMem (AccessChain1 ptr 0) a prev)))))
+
+; Vec3 store decomposition
+(rule ((= m (StoreMem ptr (Vec3 a b c) prev)))
+      ((union m (StoreMem (AccessChain1 ptr 2) c
+                (StoreMem (AccessChain1 ptr 1) b
+                (StoreMem (AccessChain1 ptr 0) a prev))))))
+
+; Vec4 store decomposition
+(rule ((= m (StoreMem ptr (Vec4 a b c d) prev)))
+      ((union m (StoreMem (AccessChain1 ptr 3) d
+                (StoreMem (AccessChain1 ptr 2) c
+                (StoreMem (AccessChain1 ptr 1) b
+                (StoreMem (AccessChain1 ptr 0) a prev)))))))
+
+; =============================================================================
+; SECTION 3: Field-wise Dead Store Elimination
+; =============================================================================
+; Store to field followed by store to same field = first store is dead
+
+; Single index access chain
+(rule ((= m (StoreMem (AccessChain1 base idx) val2
+                      (StoreMem (AccessChain1 base idx) val1 prev))))
+      ((union m (StoreMem (AccessChain1 base idx) val2 prev))))
+
+; Double index access chain
+(rule ((= m (StoreMem (AccessChain2 base i1 i2) val2
+                      (StoreMem (AccessChain2 base i1 i2) val1 prev))))
+      ((union m (StoreMem (AccessChain2 base i1 i2) val2 prev))))
+
+; Triple index access chain
+(rule ((= m (StoreMem (AccessChain3 base i1 i2 i3) val2
+                      (StoreMem (AccessChain3 base i1 i2 i3) val1 prev))))
+      ((union m (StoreMem (AccessChain3 base i1 i2 i3) val2 prev))))
+
+; =============================================================================
+; SECTION 4: Field-wise Load-After-Store Forwarding
+; =============================================================================
+; Load from field that was just stored = stored value
+; (These complement the rules in memory.egg)
+
+; Load from different field passes through store to different field
+; If we store to field 0 and load from field 1, the load sees the previous memory
+
+; Store to field i, load from field j where i != j - load sees prev
+; Field 0 vs Field 1
+(rule ((= e (Load (AccessChain1 base 0) (StoreMem (AccessChain1 base 1) val prev))))
+      ((union e (Load (AccessChain1 base 0) prev))))
+(rule ((= e (Load (AccessChain1 base 1) (StoreMem (AccessChain1 base 0) val prev))))
+      ((union e (Load (AccessChain1 base 1) prev))))
+
+; Field 0 vs Field 2
+(rule ((= e (Load (AccessChain1 base 0) (StoreMem (AccessChain1 base 2) val prev))))
+      ((union e (Load (AccessChain1 base 0) prev))))
+(rule ((= e (Load (AccessChain1 base 2) (StoreMem (AccessChain1 base 0) val prev))))
+      ((union e (Load (AccessChain1 base 2) prev))))
+
+; Field 0 vs Field 3
+(rule ((= e (Load (AccessChain1 base 0) (StoreMem (AccessChain1 base 3) val prev))))
+      ((union e (Load (AccessChain1 base 0) prev))))
+(rule ((= e (Load (AccessChain1 base 3) (StoreMem (AccessChain1 base 0) val prev))))
+      ((union e (Load (AccessChain1 base 3) prev))))
+
+; Field 1 vs Field 2
+(rule ((= e (Load (AccessChain1 base 1) (StoreMem (AccessChain1 base 2) val prev))))
+      ((union e (Load (AccessChain1 base 1) prev))))
+(rule ((= e (Load (AccessChain1 base 2) (StoreMem (AccessChain1 base 1) val prev))))
+      ((union e (Load (AccessChain1 base 2) prev))))
+
+; Field 1 vs Field 3
+(rule ((= e (Load (AccessChain1 base 1) (StoreMem (AccessChain1 base 3) val prev))))
+      ((union e (Load (AccessChain1 base 1) prev))))
+(rule ((= e (Load (AccessChain1 base 3) (StoreMem (AccessChain1 base 1) val prev))))
+      ((union e (Load (AccessChain1 base 3) prev))))
+
+; Field 2 vs Field 3
+(rule ((= e (Load (AccessChain1 base 2) (StoreMem (AccessChain1 base 3) val prev))))
+      ((union e (Load (AccessChain1 base 2) prev))))
+(rule ((= e (Load (AccessChain1 base 3) (StoreMem (AccessChain1 base 2) val prev))))
+      ((union e (Load (AccessChain1 base 3) prev))))
+
+; =============================================================================
+; SECTION 5: Copy Propagation for Aggregates
 ; =============================================================================
 ; If we copy a struct (load then store), propagate through
 
@@ -29,34 +160,132 @@
        (= dst src))
       ((union m2 m1)))
 
-; =============================================================================
-; Basic Dead Store Elimination
-; =============================================================================
-; Store to same pointer twice in sequence = first store is dead
-; NOTE: The basic rule StoreMem(ptr, val2, StoreMem(ptr, val1, prev)) is in memory.egg
+; Field-level copy propagation
+; Store(field_i, Load(field_i, prev), prev) = prev (storing what was already there)
+(rule ((= m (StoreMem (AccessChain1 base idx) (Load (AccessChain1 base idx) prev) prev)))
+      ((union m prev)))
+
+(rule ((= m (StoreMem (AccessChain2 base i j) (Load (AccessChain2 base i j) prev) prev)))
+      ((union m prev)))
 
 ; =============================================================================
-; Field-wise Dead Store Elimination
+; SECTION 6: Aggregate Reconstruction Elimination
 ; =============================================================================
-; Store to field followed by store to same field = dead store
+; When we extract all fields and reconstruct, simplify to the original
 
-(rule ((= m (StoreMem (AccessChain1 base idx) val2
-                      (StoreMem (AccessChain1 base idx) val1 prev))))
-      ((union m (StoreMem (AccessChain1 base idx) val2 prev))))
+; Load whole aggregate -> extract all fields -> reconstruct = original load
+; CompositeConstruct(Extract(x,0), Extract(x,1)) = x (already in datatypes.egg)
 
-(rule ((= m (StoreMem (AccessChain2 base i1 i2) val2
-                      (StoreMem (AccessChain2 base i1 i2) val1 prev))))
-      ((union m (StoreMem (AccessChain2 base i1 i2) val2 prev))))
-
-; =============================================================================
-; Struct/Array Literal Propagation
-; =============================================================================
-; When a struct is constructed from constants, propagate through extracts
-; (Already handled in datatypes.egg for CompositeConstruct)
+; Load then store same aggregate = identity on memory (if same location)
+(rule ((= m (StoreMem ptr (Load ptr prev) prev)))
+      ((union m prev)))
 
 ; =============================================================================
-; Array Optimization
+; SECTION 7: Partial Aggregate Updates
 ; =============================================================================
-; Arrays with constant indices can be treated like structs
-; Array element access through constant index uses AccessChain rules from memory.egg
+; CompositeInsert can be lowered to field stores when the base is from memory
+
+; Store(ptr, Insert(Load(ptr, m), val, idx), m) = Store(AC(ptr, idx), val, m)
+; This transforms a read-modify-write of whole struct into a single field write
+(rule ((= m2 (StoreMem ptr (CompositeInsert (Load ptr m1) val 0) m1)))
+      ((union m2 (StoreMem (AccessChain1 ptr 0) val m1))))
+(rule ((= m2 (StoreMem ptr (CompositeInsert (Load ptr m1) val 1) m1)))
+      ((union m2 (StoreMem (AccessChain1 ptr 1) val m1))))
+(rule ((= m2 (StoreMem ptr (CompositeInsert (Load ptr m1) val 2) m1)))
+      ((union m2 (StoreMem (AccessChain1 ptr 2) val m1))))
+(rule ((= m2 (StoreMem ptr (CompositeInsert (Load ptr m1) val 3) m1)))
+      ((union m2 (StoreMem (AccessChain1 ptr 3) val m1))))
+
+; Same for VecInsert
+(rule ((= m2 (StoreMem ptr (VecInsert (Load ptr m1) val 0) m1)))
+      ((union m2 (StoreMem (AccessChain1 ptr 0) val m1))))
+(rule ((= m2 (StoreMem ptr (VecInsert (Load ptr m1) val 1) m1)))
+      ((union m2 (StoreMem (AccessChain1 ptr 1) val m1))))
+(rule ((= m2 (StoreMem ptr (VecInsert (Load ptr m1) val 2) m1)))
+      ((union m2 (StoreMem (AccessChain1 ptr 2) val m1))))
+(rule ((= m2 (StoreMem ptr (VecInsert (Load ptr m1) val 3) m1)))
+      ((union m2 (StoreMem (AccessChain1 ptr 3) val m1))))
+
+; =============================================================================
+; SECTION 8: Struct Copy via Field Stores
+; =============================================================================
+; When all fields of a struct are stored individually, and they come from
+; loading another struct's fields, this is a struct copy
+
+; Two-field struct copy detection
+; Store(dst.1, Load(src.1), Store(dst.0, Load(src.0), m)) where dst != src
+; can be rewritten to Store(dst, Load(src, m), m)
+; This rule enables the copy to be recognized and potentially eliminated
+
+; =============================================================================
+; SECTION 9: Array Element Optimization
+; =============================================================================
+; Arrays with constant indices can be treated like struct fields
+
+; Array element dead store elimination (same index)
+; Already covered by AccessChain1 rules above
+
+; Array bounds check elimination for constant indices
+; If we know array size, we can eliminate bounds checks for in-range indices
+; (Requires type information - modeled but deferred to extraction)
+
+; =============================================================================
+; SECTION 10: Nested Struct Optimization
+; =============================================================================
+; For nested structs like struct { struct { int a, b } inner; int c; }
+
+; Double extraction from load becomes double access chain
+; CompositeExtract(CompositeExtract(Load(ptr), 0), 1) = Load(AC2(ptr, 0, 1))
+; (Covered in Section 1)
+
+; Nested field store: Store to inner.field
+; Store(ptr, Insert(Load(ptr), Insert(Extract(Load(ptr),0), val, inner_idx), outer_idx))
+; Can become Store(AC2(ptr, outer_idx, inner_idx), val)
+
+; =============================================================================
+; SECTION 11: Dead Field Store in Conditional
+; =============================================================================
+; When storing to a field in both branches with the same value
+
+; MergeMem where both branches store same value to same field
+(rule ((= m (MergeMem cond (StoreMem (AccessChain1 base idx) val s1)
+                            (StoreMem (AccessChain1 base idx) val s2))))
+      ((union m (StoreMem (AccessChain1 base idx) val (MergeMem cond s1 s2)))))
+
+; =============================================================================
+; SECTION 12: Whole-Aggregate Load Reconstruction
+; =============================================================================
+; If we load all fields individually and construct, recognize this as whole load
+
+; Load(AC(ptr,0)) and Load(AC(ptr,1)) and Construct -> Load(ptr)
+; Vec2(Load(AC(ptr,0), m), Load(AC(ptr,1), m)) = Load(ptr, m)
+(rule ((= e (Vec2 (Load (AccessChain1 ptr 0) mem) (Load (AccessChain1 ptr 1) mem))))
+      ((union e (Load ptr mem))))
+
+(rule ((= e (Vec3 (Load (AccessChain1 ptr 0) mem)
+                  (Load (AccessChain1 ptr 1) mem)
+                  (Load (AccessChain1 ptr 2) mem))))
+      ((union e (Load ptr mem))))
+
+(rule ((= e (Vec4 (Load (AccessChain1 ptr 0) mem)
+                  (Load (AccessChain1 ptr 1) mem)
+                  (Load (AccessChain1 ptr 2) mem)
+                  (Load (AccessChain1 ptr 3) mem))))
+      ((union e (Load ptr mem))))
+
+; Same for CompositeConstruct
+(rule ((= e (CompositeConstruct (ECons (Load (AccessChain1 ptr 0) mem)
+                                (ECons (Load (AccessChain1 ptr 1) mem) (ENil))))))
+      ((union e (Load ptr mem))))
+
+(rule ((= e (CompositeConstruct (ECons (Load (AccessChain1 ptr 0) mem)
+                                (ECons (Load (AccessChain1 ptr 1) mem)
+                                (ECons (Load (AccessChain1 ptr 2) mem) (ENil)))))))
+      ((union e (Load ptr mem))))
+
+(rule ((= e (CompositeConstruct (ECons (Load (AccessChain1 ptr 0) mem)
+                                (ECons (Load (AccessChain1 ptr 1) mem)
+                                (ECons (Load (AccessChain1 ptr 2) mem)
+                                (ECons (Load (AccessChain1 ptr 3) mem) (ENil))))))))
+      ((union e (Load ptr mem))))
 

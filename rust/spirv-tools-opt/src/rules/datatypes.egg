@@ -430,6 +430,14 @@
     ; Replaces Arg(arg_index) with value in body
     (Subst Expr i64 Expr)
 
+    ; Multi-argument substitution helpers for inlining
+    ; Subst2(body, v0, v1) replaces Arg(0) with v0 and Arg(1) with v1
+    (Subst2 Expr Expr Expr)
+    ; Subst3(body, v0, v1, v2) replaces Arg(0..2) with v0..v2
+    (Subst3 Expr Expr Expr Expr)
+    ; Subst4(body, v0, v1, v2, v3) replaces Arg(0..3) with v0..v3
+    (Subst4 Expr Expr Expr Expr Expr)
+
     ; ==========================================================================
     ; Specialization Constants
     ; ==========================================================================
@@ -580,9 +588,11 @@
 (rule ((= e (CompositeExtract (CompositeInsert composite val 3) 3)))
       ((union e val)))
 
-; Insert then extract at different index returns original composite element
-; These rules require the original CompositeExtract to exist in the e-graph
-; We match both the outer extraction and the original extraction, then union them
+; Insert then extract at different index returns extraction from original composite
+; This enables dead insert elimination - if we insert at index 0 but extract at index 1,
+; the insert can be bypassed for that extraction - ONE-DIRECTIONAL
+; Note: These rules require the original CompositeExtract to exist in the e-graph because
+; CompositeExtract is a function (not a constructor), so we can't create new instances in rules.
 (rule ((= outer (CompositeExtract (CompositeInsert composite val 0) 1))
        (= inner (CompositeExtract composite 1)))
       ((union outer inner)))

@@ -1,0 +1,411 @@
+; =============================================================================
+; Dead Code Elimination (DCE) for E-Graph Optimization
+; =============================================================================
+;
+; This module implements comprehensive dead code elimination in the e-graph.
+; DCE in e-graphs works by establishing equivalences that simplify or remove
+; dead computations during equality saturation.
+;
+; Key principle: We don't "delete" in an e-graph - we add equivalences to
+; simpler forms. Dead code is eliminated by:
+; 1. Unioning dead stores with their predecessor memory state
+; 2. Unioning dead branches with the taken branch
+; 3. Unioning dead loops with their initial values
+; 4. Propagating Undef through dead computations
+;
+; =============================================================================
+; SECTION 1: Dead Store Elimination
+; =============================================================================
+; A store is dead if its value is overwritten before being read.
+; We eliminate by unioning the dead store's memory with the previous state.
+
+; Store-after-store to same location: first store is dead
+; StoreMem(ptr, v2, StoreMem(ptr, v1, prev)) = StoreMem(ptr, v2, prev)
+; Already in memory.egg, this IS the elimination
+
+; Store of Undef is dead - the value is meaningless
+; StoreMem(ptr, Undef, prev) = prev
+; Already in memory.egg
+
+; Triple store chain elimination (propagates through)
+(rule ((= m (StoreMem ptr v3 (StoreMem ptr v2 (StoreMem ptr v1 prev)))))
+      ((union m (StoreMem ptr v3 prev))))
+
+; =============================================================================
+; SECTION 2: Dead Branch Elimination
+; =============================================================================
+; Branches with constant conditions can be eliminated entirely.
+; The dead branch's computation is never executed.
+
+; Gamma with constant true: eliminate false branch entirely
+; Gamma(1, t, f) = t (already in rvsdg.egg)
+
+; Gamma with constant false: eliminate true branch entirely
+; Gamma(0, t, f) = f (already in rvsdg.egg)
+
+; EffGamma with constant condition - already in rvsdg.egg
+; EffGamma(1, t, f) = t
+; EffGamma(0, t, f) = f
+
+; Gamma where both branches are identical: eliminate condition computation
+; Gamma(c, x, x) = x (already in rvsdg.egg)
+; The condition c becomes dead - any expressions used only by c are also dead
+
+; =============================================================================
+; SECTION 3: Dead Loop Elimination
+; =============================================================================
+; Loops that never execute or don't modify their carried value are dead.
+
+; Loop with false condition never executes
+; Theta(0, body, init) = init (already in rvsdg.egg)
+; BoundedTheta(0, body, init) = init (already in loop_unroll.egg)
+
+; Loop where body doesn't change the value (identity loop)
+; Theta(cond, LoopVar, init) = init (already in rvsdg.egg)
+
+; BoundedTheta with 1 iteration simplifies to just the body applied once
+; BoundedTheta(1, body, init) where body uses Arg(0)
+; = body[init/Arg(0)]
+; This is handled by loop unrolling, but we add the identity case
+(rule ((= e (BoundedTheta 1 (Arg 0) init)))
+      ((union e init)))
+
+; =============================================================================
+; SECTION 4: Dead Expression Elimination via Undef Propagation
+; =============================================================================
+; Expressions whose results are never used can be simplified.
+; Operations on Undef that produce Undef are already in datatypes.egg
+
+; Additional Undef propagation for memory operations
+; Load from Undef memory produces Undef value
+(rule ((= e (Load ptr (Undef))))
+      ((union e (Undef))))
+
+; Load from Undef pointer produces Undef (undefined behavior)
+(rule ((= e (Load (Undef) mem)))
+      ((union e (Undef))))
+
+; Store to Undef pointer is equivalent to previous memory (UB, but we pick prev)
+(rule ((= m (StoreMem (Undef) val prev)))
+      ((union m prev)))
+
+; Arithmetic on Undef propagates Undef
+; NOTE: Special cases like 0*Undef=0 and Undef&0=0 are in datatypes.egg
+; These rules are for cases without dominating constants
+(rule ((= e (Add (Undef) (Undef)))) ((union e (Undef))))
+(rule ((= e (Sub (Undef) (Undef)))) ((union e (Undef))))
+(rule ((= e (Neg (Undef)))) ((union e (Undef))))
+
+; Bitwise on Undef propagates Undef (except for special cases)
+(rule ((= e (BitNot (Undef)))) ((union e (Undef))))
+(rule ((= e (BitXor (Undef) (Undef)))) ((union e (Undef))))
+; Note: BitAnd(Undef, 0) = 0 and BitOr(Undef, -1) = -1 are special cases
+; handled in datatypes.egg. Also Undef ^ Undef could be 0 but we say Undef.
+
+; Comparisons with Undef produce Undef only when both are Undef
+; (comparing x with Undef is genuinely undefined behavior)
+(rule ((= e (Eq (Undef) (Undef)))) ((union e (Undef))))
+(rule ((= e (Ne (Undef) (Undef)))) ((union e (Undef))))
+
+; Gamma with Undef condition: we don't know which branch, result is Undef
+; (Conservative: if condition is Undef, behavior is undefined)
+(rule ((= e (Gamma (Undef) t f)))
+      ((union e (Undef))))
+
+; =============================================================================
+; SECTION 5: Aggressive Dead Store Elimination Patterns
+; =============================================================================
+; More complex dead store patterns that can be eliminated.
+
+; Store to a field, then store to whole struct overwrites the field store
+; StoreMem(ptr, whole, StoreMem(AC(ptr, i), field, prev))
+; = StoreMem(ptr, whole, prev)
+; (The field store is dead because the whole-struct store overwrites it)
+(rule ((= m (StoreMem ptr whole_val (StoreMem (AccessChain1 ptr idx) field_val prev))))
+      ((union m (StoreMem ptr whole_val prev))))
+
+; Same for deeper access chains
+(rule ((= m (StoreMem ptr whole_val (StoreMem (AccessChain2 ptr i1 i2) field_val prev))))
+      ((union m (StoreMem ptr whole_val prev))))
+
+(rule ((= m (StoreMem ptr whole_val (StoreMem (AccessChain3 ptr i1 i2 i3) field_val prev))))
+      ((union m (StoreMem ptr whole_val prev))))
+
+; Store to whole, then store to field: the field store is NOT dead
+; (it overwrites part of the whole-struct store)
+
+; =============================================================================
+; SECTION 6: Dead Memory Merge Elimination
+; =============================================================================
+; MergeMem patterns where one or both branches are dead.
+
+; MergeMem where both branches are the same = that state
+; MergeMem(c, s, s) = s (already in memory.egg)
+
+; MergeMem with constant condition
+; MergeMem(0, t, f) = f (already in memory.egg)
+; MergeMem(c, t, f) where c != 0 = t (already in memory.egg)
+
+; MergeMem where both branches store same value to same location
+; MergeMem(c, StoreMem(p, v, s1), StoreMem(p, v, s2))
+; = StoreMem(p, v, MergeMem(c, s1, s2))
+; Already in sroa.egg
+
+; MergeMem with Undef condition: pick either branch (they should be equivalent in well-formed code)
+; or propagate Undef if they differ
+(rule ((= m (MergeMem (Undef) s1 s2)) (= s1 s2))
+      ((union m s1)))
+
+; =============================================================================
+; SECTION 7: Dead Image/Atomic Operation Elimination
+; =============================================================================
+
+; ImageWrite followed by ImageWrite to same location - first is dead
+(rule ((= m2 (ImageWrite img coord data2 (ImageWrite img coord data1 prev))))
+      ((union m2 (ImageWrite img coord data2 prev))))
+
+; AtomicStore followed by AtomicStore to same location - first is dead
+(rule ((= m2 (AtomicStore ptr val2 (AtomicStore ptr val1 prev))))
+      ((union m2 (AtomicStore ptr val2 prev))))
+
+; Triple atomic store elimination
+(rule ((= m (AtomicStore ptr v3 (AtomicStore ptr v2 (AtomicStore ptr v1 prev)))))
+      ((union m (AtomicStore ptr v3 prev))))
+
+; Triple image write elimination
+(rule ((= m (ImageWrite img c d3 (ImageWrite img c d2 (ImageWrite img c d1 prev)))))
+      ((union m (ImageWrite img c d3 prev))))
+
+; =============================================================================
+; SECTION 8: Dead Subgroup Operation Simplification
+; =============================================================================
+; Subgroup operations that can be simplified to constants.
+; Most rules already in subgroup.egg - only add new patterns here.
+
+; GroupAll of constant false = false (not in subgroup.egg)
+(rule ((= e (GroupAll (Const 0))))
+      ((union e (Const 0))))
+
+; GroupAny of constant true = true (not in subgroup.egg)
+(rule ((= e (GroupAny (Const 1))))
+      ((union e (Const 1))))
+
+; Subgroup operations on Undef: result is Undef
+(rule ((= e (GroupAll (Undef)))) ((union e (Undef))))
+(rule ((= e (GroupAny (Undef)))) ((union e (Undef))))
+(rule ((= e (GroupAllEqual (Undef)))) ((union e (Undef))))
+(rule ((= e (GroupBroadcast (Undef) id))) ((union e (Undef))))
+(rule ((= e (GroupBroadcastFirst (Undef)))) ((union e (Undef))))
+
+; =============================================================================
+; SECTION 9: Dead Effect Elimination
+; =============================================================================
+; Effect sequences that can be simplified.
+
+; Seq(Pure, x) = x (already in rvsdg.egg)
+; Seq(x, Pure) = x (already in rvsdg.egg)
+; Seq(Unreachable, x) = Unreachable (already in rvsdg.egg)
+
+; =============================================================================
+; SECTION 10: Unused Variable Detection via Memory Patterns
+; =============================================================================
+; Stores to variables that are never loaded can be eliminated.
+; We detect specific patterns where we can prove a variable is unused.
+
+; Store at end of memory chain with no subsequent loads = dead
+; This is the pattern: final memory state is StoreMem, and that ptr is never loaded
+; We can't directly express "never loaded" but we can catch specific patterns:
+
+; Store to local variable right before function return (if variable doesn't escape)
+; Pattern: the final memory state is a store, and that memory flows directly to Return
+; In e-graph terms, if StoreMem flows to effect without intervening Load, store is dead
+; This requires tracking - we approximate with specific patterns
+
+; If we store and immediately return without using the value:
+; ReturnValue that doesn't use the stored value means the store might be dead
+; (Requires more sophisticated tracking - defer to whole-program analysis)
+
+; =============================================================================
+; SECTION 11: Dead Nested Conditionals
+; =============================================================================
+; Nested conditionals with same condition simplify
+
+; Gamma(c, Gamma(c, a, b), d) = Gamma(c, a, d)
+; Already in rvsdg.egg
+
+; Gamma(c, d, Gamma(c, a, b)) = Gamma(c, d, b)
+; Already in rvsdg.egg
+
+; EffGamma nested with same condition
+(rule ((= e (EffGamma c (EffGamma c a b) d)))
+      ((union e (EffGamma c a d))))
+(rule ((= e (EffGamma c d (EffGamma c a b))))
+      ((union e (EffGamma c d b))))
+
+; =============================================================================
+; SECTION 12: Dead Load-Store Patterns
+; =============================================================================
+; Patterns combining loads and stores that result in dead code.
+
+; Store value loaded from same location is dead (no change)
+; StoreMem(ptr, Load(ptr, prev), prev) = prev (already in sroa.egg)
+
+; Load-store-load pattern: if we load, store same, load again, second load = first
+; Load(ptr, StoreMem(ptr, Load(ptr, m), m)) = Load(ptr, m)
+(rule ((= e (Load ptr (StoreMem ptr (Load ptr m) m))))
+      ((union e (Load ptr m))))
+
+; =============================================================================
+; SECTION 13: Dead Derivative Elimination
+; =============================================================================
+; Derivatives of constants/uniforms are zero.
+
+; Already in memory.egg:
+; DPdx(Const) = 0, DPdy(Const) = 0
+; DPdx(LoopInvariant) = 0, DPdy(LoopInvariant) = 0
+
+; Fwidth of constant is zero (already in memory.egg)
+
+; Derivatives of Undef are zero (constant value, just unknown)
+(rule ((= e (DPdx (Undef)))) ((union e (Const 0))))
+(rule ((= e (DPdy (Undef)))) ((union e (Const 0))))
+(rule ((= e (DPdxFine (Undef)))) ((union e (Const 0))))
+(rule ((= e (DPdyFine (Undef)))) ((union e (Const 0))))
+(rule ((= e (DPdxCoarse (Undef)))) ((union e (Const 0))))
+(rule ((= e (DPdyCoarse (Undef)))) ((union e (Const 0))))
+(rule ((= e (Fwidth (Undef)))) ((union e (Const 0))))
+(rule ((= e (FwidthFine (Undef)))) ((union e (Const 0))))
+(rule ((= e (FwidthCoarse (Undef)))) ((union e (Const 0))))
+
+; =============================================================================
+; SECTION 14: Dead Vector Component Elimination
+; =============================================================================
+; When extracting from a constructed vector, we can get the component directly.
+
+; VecExtract(Vec2(a, b), 0) = a, VecExtract(Vec2(a, b), 1) = b
+; Already in vector.egg
+
+; Vec constructed then immediately extracted: eliminate the construct
+; This is forward substitution, already handled
+
+; VecInsert then extract of same index = inserted value
+; VecExtract(VecInsert(v, s, i), i) = s
+; Already in vector.egg
+
+; VecInsert then extract of different index = original element
+; VecExtract(VecInsert(v, s, i), j) where i != j = VecExtract(v, j)
+; Already in vector.egg
+
+; =============================================================================
+; SECTION 15: Liveness Integration
+; =============================================================================
+; The Live/Root relations propagate liveness from roots through the program.
+; Expressions not marked Live after saturation are dead.
+;
+; To actually eliminate dead code, we need extraction to only extract Live nodes.
+; The e-graph rules establish equivalences; extraction selects the best.
+;
+; Additional liveness-aware rules:
+
+; If a Gamma's condition can only be true, false branch is dead
+; Already handled by CanBeTrue/CanBeFalse in datatypes.egg:
+; - CanBeTrue(Const c) where c != 0
+; - CanBeFalse(Const 0)
+; - Gamma branches only marked Live if condition CanBe that value
+
+; Effect of liveness: when something isn't Live after saturation,
+; extraction should prefer simpler/cheaper alternatives.
+; We ensure alternatives exist via the rules above.
+
+; =============================================================================
+; SECTION 16: Constant Condition Propagation
+; =============================================================================
+; When we know a condition is constant, propagate through control flow.
+
+; Theta with constant true condition loops forever - but we can't simplify
+; (infinite loop is valid behavior)
+
+; Theta with constant false condition never loops - body is dead
+; Theta(Const 0, body, init) = init (already in rvsdg.egg)
+
+; BoundedTheta simplifications
+; BoundedTheta(n, body, init) where body = init means loop does nothing
+; (Need to check if body doesn't use LoopVar - complex)
+
+; =============================================================================
+; SECTION 17: Access Chain Dead Store Propagation
+; =============================================================================
+; Stores through access chains that get overwritten.
+
+; Store to AC1, then store to same AC1 - first is dead (already in memory.egg)
+
+; Store to AC2, then store to parent struct overwrites it
+; StoreMem(ptr, val, StoreMem(AC1(ptr, i), field, prev))
+; = StoreMem(ptr, val, prev)
+; (Field store is killed by whole struct store)
+; Already defined above in Section 5
+
+; Store to different fields are NOT dead (they don't alias)
+; This non-aliasing is used in sroa.egg for load forwarding
+
+; =============================================================================
+; SECTION 18: Dead Phi Elimination Patterns
+; =============================================================================
+; Phi-like patterns (Gamma nodes) that can be simplified.
+
+; Gamma(c, x, x) = x - already in rvsdg.egg
+
+; Gamma(c, Gamma(not c, a, b), Gamma(not c, c, d))
+; This is complex - rely on existing simplifications
+
+; Gamma chain with same value: Gamma(c1, Gamma(c2, x, x), y) = Gamma(c1, x, y)
+(rule ((= e (Gamma c1 (Gamma c2 x x) y)))
+      ((union e (Gamma c1 x y))))
+(rule ((= e (Gamma c1 y (Gamma c2 x x))))
+      ((union e (Gamma c1 y x))))
+
+; =============================================================================
+; SECTION 19: Comprehensive Undef Propagation
+; =============================================================================
+; Ensure Undef propagates through all operation types.
+
+; Float operations with both operands Undef
+; Note: FMul(0, Undef)=0 is in datatypes.egg, so we only handle Undef+Undef cases
+(rule ((= e (FAdd (Undef) (Undef)))) ((union e (Undef))))
+(rule ((= e (FSub (Undef) (Undef)))) ((union e (Undef))))
+(rule ((= e (FMul (Undef) (Undef)))) ((union e (Undef))))
+(rule ((= e (FDiv (Undef) (Undef)))) ((union e (Undef))))
+(rule ((= e (FNeg (Undef)))) ((union e (Undef))))
+(rule ((= e (FAbs (Undef)))) ((union e (Undef))))
+
+; Vector construction with all Undef = Undef
+(rule ((= e (Vec2 (Undef) (Undef)))) ((union e (Undef))))
+(rule ((= e (Vec3 (Undef) (Undef) (Undef)))) ((union e (Undef))))
+(rule ((= e (Vec4 (Undef) (Undef) (Undef) (Undef)))) ((union e (Undef))))
+
+; Type conversions of Undef = Undef
+(rule ((= e (ConvertFToS (Undef)))) ((union e (Undef))))
+(rule ((= e (ConvertFToU (Undef)))) ((union e (Undef))))
+(rule ((= e (ConvertSToF (Undef)))) ((union e (Undef))))
+(rule ((= e (ConvertUToF (Undef)))) ((union e (Undef))))
+(rule ((= e (SConvert (Undef)))) ((union e (Undef))))
+(rule ((= e (UConvert (Undef)))) ((union e (Undef))))
+(rule ((= e (FConvert (Undef)))) ((union e (Undef))))
+(rule ((= e (Bitcast (Undef)))) ((union e (Undef))))
+
+; =============================================================================
+; SECTION 20: Memory Chain Simplification
+; =============================================================================
+; Simplify memory chains by removing dead intermediate states.
+
+; Four stores to same location: eliminate first three
+(rule ((= m (StoreMem p v4 (StoreMem p v3 (StoreMem p v2 (StoreMem p v1 prev))))))
+      ((union m (StoreMem p v4 prev))))
+
+; Store-load-store pattern where load value isn't used
+; StoreMem(p, v2, StoreMem(p, Load(p, m), m)) where the Load isn't used elsewhere
+; = StoreMem(p, v2, m)
+; (The intermediate store-load is dead)
+(rule ((= m (StoreMem p v2 (StoreMem p (Load p prev) prev))))
+      ((union m (StoreMem p v2 prev))))
+

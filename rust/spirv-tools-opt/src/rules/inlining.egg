@@ -2,36 +2,62 @@
 ; Function Inlining Support for E-Graph Optimization
 ; =============================================================================
 ;
-; This module provides argument substitution support for function inlining.
+; This module provides comprehensive function inlining support in the e-graph.
+; Function inlining replaces a call site with the function body, substituting
+; arguments for parameters.
 ;
 ; Key concepts:
-; - Arg: Reference to a function argument by index
-; - Subst: Substitute a value for an argument reference
+; - Call1/2/3/4: Function calls with 1-4 arguments
+; - Subst: Substitute a value for an argument reference (Arg n)
+; - FuncDef: Function definition binding a name to a body
+; - EffSubst: Substitution for effectful function bodies
 ;
-; The Arg and Subst constructors are defined in datatypes.egg.
+; Inlining benefits:
+; - Enables cross-function optimization (constant propagation, CSE)
+; - Eliminates call overhead
+; - Allows specialized code generation per call site
 ;
 ; =============================================================================
-; Core Substitution Rules
+; SECTION 1: Core Substitution Rules
 ; =============================================================================
+; Subst(body, n, val) replaces Arg(n) with val in body.
+; These rules push substitution down through all expression forms.
 
-; Subst on Arg - the core substitution
-; When we substitute for Arg(n) with value val, if the body IS Arg(n), return val
+; Base case: Substituting for Arg(n) with matching index
 (rule ((= e (Subst (Arg n) n val)))
       ((union e val)))
 
-; Subst on Arg with different index - leave unchanged
-; (This needs to handle the case where we're substituting for arg 0 but see arg 1)
-; For now, we leave the Arg unchanged - the substitution doesn't apply
+; Arg with non-matching index is unchanged
+; We handle specific common cases since egglog can't express inequality
+; Subst(Arg(0), 1, val) = Arg(0), Subst(Arg(1), 0, val) = Arg(1), etc.
+(rule ((= e (Subst (Arg 0) 1 _))) ((union e (Arg 0))))
+(rule ((= e (Subst (Arg 0) 2 _))) ((union e (Arg 0))))
+(rule ((= e (Subst (Arg 0) 3 _))) ((union e (Arg 0))))
+(rule ((= e (Subst (Arg 1) 0 _))) ((union e (Arg 1))))
+(rule ((= e (Subst (Arg 1) 2 _))) ((union e (Arg 1))))
+(rule ((= e (Subst (Arg 1) 3 _))) ((union e (Arg 1))))
+(rule ((= e (Subst (Arg 2) 0 _))) ((union e (Arg 2))))
+(rule ((= e (Subst (Arg 2) 1 _))) ((union e (Arg 2))))
+(rule ((= e (Subst (Arg 2) 3 _))) ((union e (Arg 2))))
+(rule ((= e (Subst (Arg 3) 0 _))) ((union e (Arg 3))))
+(rule ((= e (Subst (Arg 3) 1 _))) ((union e (Arg 3))))
+(rule ((= e (Subst (Arg 3) 2 _))) ((union e (Arg 3))))
 
-; Substituting into constants - constants are unchanged
+; Constants are unaffected by substitution
 (rule ((= e (Subst (Const c) _ _)))
       ((union e (Const c))))
 (rule ((= e (Subst (Const64 c) _ _)))
       ((union e (Const64 c))))
 (rule ((= e (Subst (Sym s) _ _)))
       ((union e (Sym s))))
+(rule ((= e (Subst (Undef) _ _)))
+      ((union e (Undef))))
 
-; Substituting into binary operations - recurse
+; =============================================================================
+; SECTION 2: Arithmetic Operation Substitution
+; =============================================================================
+
+; Binary arithmetic
 (rule ((= e (Subst (Add a b) idx val)))
       ((union e (Add (Subst a idx val) (Subst b idx val)))))
 (rule ((= e (Subst (Sub a b) idx val)))
@@ -44,32 +70,44 @@
       ((union e (UDiv (Subst a idx val) (Subst b idx val)))))
 (rule ((= e (Subst (SRem a b) idx val)))
       ((union e (SRem (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (SMod a b) idx val)))
+      ((union e (SMod (Subst a idx val) (Subst b idx val)))))
 (rule ((= e (Subst (UMod a b) idx val)))
       ((union e (UMod (Subst a idx val) (Subst b idx val)))))
 
-; Unary operations
+; Unary arithmetic
 (rule ((= e (Subst (Neg a) idx val)))
       ((union e (Neg (Subst a idx val)))))
-(rule ((= e (Subst (BitNot a) idx val)))
-      ((union e (BitNot (Subst a idx val)))))
-(rule ((= e (Subst (LogNot a) idx val)))
-      ((union e (LogNot (Subst a idx val)))))
 
-; Bitwise operations
+; =============================================================================
+; SECTION 3: Bitwise Operation Substitution
+; =============================================================================
+
 (rule ((= e (Subst (BitAnd a b) idx val)))
       ((union e (BitAnd (Subst a idx val) (Subst b idx val)))))
 (rule ((= e (Subst (BitOr a b) idx val)))
       ((union e (BitOr (Subst a idx val) (Subst b idx val)))))
 (rule ((= e (Subst (BitXor a b) idx val)))
       ((union e (BitXor (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (BitNot a) idx val)))
+      ((union e (BitNot (Subst a idx val)))))
 (rule ((= e (Subst (Shl a b) idx val)))
       ((union e (Shl (Subst a idx val) (Subst b idx val)))))
 (rule ((= e (Subst (ShrS a b) idx val)))
       ((union e (ShrS (Subst a idx val) (Subst b idx val)))))
 (rule ((= e (Subst (ShrU a b) idx val)))
       ((union e (ShrU (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (BitReverse a) idx val)))
+      ((union e (BitReverse (Subst a idx val)))))
+(rule ((= e (Subst (RotL a b) idx val)))
+      ((union e (RotL (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (RotR a b) idx val)))
+      ((union e (RotR (Subst a idx val) (Subst b idx val)))))
 
-; Comparisons
+; =============================================================================
+; SECTION 4: Comparison Operation Substitution
+; =============================================================================
+
 (rule ((= e (Subst (Eq a b) idx val)))
       ((union e (Eq (Subst a idx val) (Subst b idx val)))))
 (rule ((= e (Subst (Ne a b) idx val)))
@@ -91,17 +129,22 @@
 (rule ((= e (Subst (UGe a b) idx val)))
       ((union e (UGe (Subst a idx val) (Subst b idx val)))))
 
-; Gamma (conditional)
-(rule ((= e (Subst (Gamma c t f) idx val)))
-      ((union e (Gamma (Subst c idx val) (Subst t idx val) (Subst f idx val)))))
+; Logical operations
+(rule ((= e (Subst (LogNot a) idx val)))
+      ((union e (LogNot (Subst a idx val)))))
+(rule ((= e (Subst (LogAnd a b) idx val)))
+      ((union e (LogAnd (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (LogOr a b) idx val)))
+      ((union e (LogOr (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (LogEq a b) idx val)))
+      ((union e (LogEq (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (LogNe a b) idx val)))
+      ((union e (LogNe (Subst a idx val) (Subst b idx val)))))
 
-; Select/If (aliases for Gamma)
-(rule ((= e (Subst (Select c t f) idx val)))
-      ((union e (Select (Subst c idx val) (Subst t idx val) (Subst f idx val)))))
-(rule ((= e (Subst (If c t f) idx val)))
-      ((union e (If (Subst c idx val) (Subst t idx val) (Subst f idx val)))))
+; =============================================================================
+; SECTION 5: Floating-Point Operation Substitution
+; =============================================================================
 
-; Floating-point operations
 (rule ((= e (Subst (FAdd a b) idx val)))
       ((union e (FAdd (Subst a idx val) (Subst b idx val)))))
 (rule ((= e (Subst (FSub a b) idx val)))
@@ -114,8 +157,53 @@
       ((union e (FNeg (Subst a idx val)))))
 (rule ((= e (Subst (FRem a b) idx val)))
       ((union e (FRem (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (FAbs a) idx val)))
+      ((union e (FAbs (Subst a idx val)))))
+(rule ((= e (Subst (FFloor a) idx val)))
+      ((union e (FFloor (Subst a idx val)))))
+(rule ((= e (Subst (FCeil a) idx val)))
+      ((union e (FCeil (Subst a idx val)))))
+(rule ((= e (Subst (FRound a) idx val)))
+      ((union e (FRound (Subst a idx val)))))
+(rule ((= e (Subst (FTrunc a) idx val)))
+      ((union e (FTrunc (Subst a idx val)))))
 
-; Min/Max
+; Floating-point comparisons
+(rule ((= e (Subst (FOrdEq a b) idx val)))
+      ((union e (FOrdEq (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (FOrdNe a b) idx val)))
+      ((union e (FOrdNe (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (FOrdLt a b) idx val)))
+      ((union e (FOrdLt (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (FOrdLe a b) idx val)))
+      ((union e (FOrdLe (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (FOrdGt a b) idx val)))
+      ((union e (FOrdGt (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (FOrdGe a b) idx val)))
+      ((union e (FOrdGe (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (FUnordEq a b) idx val)))
+      ((union e (FUnordEq (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (FUnordNe a b) idx val)))
+      ((union e (FUnordNe (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (FUnordLt a b) idx val)))
+      ((union e (FUnordLt (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (FUnordLe a b) idx val)))
+      ((union e (FUnordLe (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (FUnordGt a b) idx val)))
+      ((union e (FUnordGt (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (FUnordGe a b) idx val)))
+      ((union e (FUnordGe (Subst a idx val) (Subst b idx val)))))
+
+; FP predicates
+(rule ((= e (Subst (IsNan a) idx val)))
+      ((union e (IsNan (Subst a idx val)))))
+(rule ((= e (Subst (IsInf a) idx val)))
+      ((union e (IsInf (Subst a idx val)))))
+
+; =============================================================================
+; SECTION 6: Min/Max Substitution
+; =============================================================================
+
 (rule ((= e (Subst (SMin a b) idx val)))
       ((union e (SMin (Subst a idx val) (Subst b idx val)))))
 (rule ((= e (Subst (SMax a b) idx val)))
@@ -128,15 +216,590 @@
       ((union e (FMin (Subst a idx val) (Subst b idx val)))))
 (rule ((= e (Subst (FMax a b) idx val)))
       ((union e (FMax (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (NMin a b) idx val)))
+      ((union e (NMin (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (NMax a b) idx val)))
+      ((union e (NMax (Subst a idx val) (Subst b idx val)))))
 
 ; =============================================================================
-; Liveness Propagation
+; SECTION 7: Control Flow Substitution (Gamma/Theta)
 ; =============================================================================
 
+(rule ((= e (Subst (Gamma c t f) idx val)))
+      ((union e (Gamma (Subst c idx val) (Subst t idx val) (Subst f idx val)))))
+(rule ((= e (Subst (Select c t f) idx val)))
+      ((union e (Select (Subst c idx val) (Subst t idx val) (Subst f idx val)))))
+(rule ((= e (Subst (If c t f) idx val)))
+      ((union e (If (Subst c idx val) (Subst t idx val) (Subst f idx val)))))
+
+; Theta node substitution (careful with LoopVar)
+(rule ((= e (Subst (Theta cond body init) idx val)))
+      ((union e (Theta (Subst cond idx val) (Subst body idx val) (Subst init idx val)))))
+
+; LoopVar is not affected by substitution (different binding scope)
+(rule ((= e (Subst (LoopVar) _ _)))
+      ((union e (LoopVar))))
+
+; LoopInvariant substitution
+(rule ((= e (Subst (LoopInvariant x) idx val)))
+      ((union e (LoopInvariant (Subst x idx val)))))
+
+; BoundedTheta substitution
+(rule ((= e (Subst (BoundedTheta n body init) idx val)))
+      ((union e (BoundedTheta n (Subst body idx val) (Subst init idx val)))))
+
+; =============================================================================
+; SECTION 8: Vector Operation Substitution
+; =============================================================================
+
+(rule ((= e (Subst (Vec2 a b) idx val)))
+      ((union e (Vec2 (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (Vec3 a b c) idx val)))
+      ((union e (Vec3 (Subst a idx val) (Subst b idx val) (Subst c idx val)))))
+(rule ((= e (Subst (Vec4 a b c d) idx val)))
+      ((union e (Vec4 (Subst a idx val) (Subst b idx val) (Subst c idx val) (Subst d idx val)))))
+
+(rule ((= e (Subst (VecExtract v i) idx val)))
+      ((union e (VecExtract (Subst v idx val) i))))
+(rule ((= e (Subst (VecInsert v s i) idx val)))
+      ((union e (VecInsert (Subst v idx val) (Subst s idx val) i))))
+
+(rule ((= e (Subst (VecBroadcast2 a) idx val)))
+      ((union e (VecBroadcast2 (Subst a idx val)))))
+(rule ((= e (Subst (VecBroadcast3 a) idx val)))
+      ((union e (VecBroadcast3 (Subst a idx val)))))
+(rule ((= e (Subst (VecBroadcast4 a) idx val)))
+      ((union e (VecBroadcast4 (Subst a idx val)))))
+
+(rule ((= e (Subst (VecAdd a b) idx val)))
+      ((union e (VecAdd (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (VecSub a b) idx val)))
+      ((union e (VecSub (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (VecMul a b) idx val)))
+      ((union e (VecMul (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (VecDiv a b) idx val)))
+      ((union e (VecDiv (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (VecNeg a) idx val)))
+      ((union e (VecNeg (Subst a idx val)))))
+(rule ((= e (Subst (VecFAdd a b) idx val)))
+      ((union e (VecFAdd (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (VecFSub a b) idx val)))
+      ((union e (VecFSub (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (VecFMul a b) idx val)))
+      ((union e (VecFMul (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (VecFDiv a b) idx val)))
+      ((union e (VecFDiv (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (VecFNeg a) idx val)))
+      ((union e (VecFNeg (Subst a idx val)))))
+
+(rule ((= e (Subst (Dot a b) idx val)))
+      ((union e (Dot (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (VecTimesScalar v s) idx val)))
+      ((union e (VecTimesScalar (Subst v idx val) (Subst s idx val)))))
+
+; Shuffle operations (indices are constants, not affected)
+(rule ((= e (Subst (VecShuffle2 v1 v2 i0 i1) idx val)))
+      ((union e (VecShuffle2 (Subst v1 idx val) (Subst v2 idx val) i0 i1))))
+(rule ((= e (Subst (VecShuffle3 v1 v2 i0 i1 i2) idx val)))
+      ((union e (VecShuffle3 (Subst v1 idx val) (Subst v2 idx val) i0 i1 i2))))
+(rule ((= e (Subst (VecShuffle4 v1 v2 i0 i1 i2 i3) idx val)))
+      ((union e (VecShuffle4 (Subst v1 idx val) (Subst v2 idx val) i0 i1 i2 i3))))
+
+; =============================================================================
+; SECTION 9: Matrix Operation Substitution
+; =============================================================================
+
+(rule ((= e (Subst (MatTimesScalar m s) idx val)))
+      ((union e (MatTimesScalar (Subst m idx val) (Subst s idx val)))))
+(rule ((= e (Subst (MatTimesVec m v) idx val)))
+      ((union e (MatTimesVec (Subst m idx val) (Subst v idx val)))))
+(rule ((= e (Subst (VecTimesMat v m) idx val)))
+      ((union e (VecTimesMat (Subst v idx val) (Subst m idx val)))))
+(rule ((= e (Subst (MatTimesMat a b) idx val)))
+      ((union e (MatTimesMat (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (Transpose m) idx val)))
+      ((union e (Transpose (Subst m idx val)))))
+(rule ((= e (Subst (OuterProduct a b) idx val)))
+      ((union e (OuterProduct (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (Determinant m) idx val)))
+      ((union e (Determinant (Subst m idx val)))))
+(rule ((= e (Subst (MatInverse m) idx val)))
+      ((union e (MatInverse (Subst m idx val)))))
+
+; =============================================================================
+; SECTION 10: GLSL Extended Instruction Substitution
+; =============================================================================
+
+(rule ((= e (Subst (Sqrt a) idx val)))
+      ((union e (Sqrt (Subst a idx val)))))
+(rule ((= e (Subst (InverseSqrt a) idx val)))
+      ((union e (InverseSqrt (Subst a idx val)))))
+(rule ((= e (Subst (Exp a) idx val)))
+      ((union e (Exp (Subst a idx val)))))
+(rule ((= e (Subst (Exp2 a) idx val)))
+      ((union e (Exp2 (Subst a idx val)))))
+(rule ((= e (Subst (Log a) idx val)))
+      ((union e (Log (Subst a idx val)))))
+(rule ((= e (Subst (Log2 a) idx val)))
+      ((union e (Log2 (Subst a idx val)))))
+(rule ((= e (Subst (Pow a b) idx val)))
+      ((union e (Pow (Subst a idx val) (Subst b idx val)))))
+
+; Trigonometric
+(rule ((= e (Subst (Sin a) idx val)))
+      ((union e (Sin (Subst a idx val)))))
+(rule ((= e (Subst (Cos a) idx val)))
+      ((union e (Cos (Subst a idx val)))))
+(rule ((= e (Subst (Tan a) idx val)))
+      ((union e (Tan (Subst a idx val)))))
+(rule ((= e (Subst (Asin a) idx val)))
+      ((union e (Asin (Subst a idx val)))))
+(rule ((= e (Subst (Acos a) idx val)))
+      ((union e (Acos (Subst a idx val)))))
+(rule ((= e (Subst (Atan a) idx val)))
+      ((union e (Atan (Subst a idx val)))))
+(rule ((= e (Subst (Atan2 a b) idx val)))
+      ((union e (Atan2 (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (Sinh a) idx val)))
+      ((union e (Sinh (Subst a idx val)))))
+(rule ((= e (Subst (Cosh a) idx val)))
+      ((union e (Cosh (Subst a idx val)))))
+(rule ((= e (Subst (Tanh a) idx val)))
+      ((union e (Tanh (Subst a idx val)))))
+(rule ((= e (Subst (Asinh a) idx val)))
+      ((union e (Asinh (Subst a idx val)))))
+(rule ((= e (Subst (Acosh a) idx val)))
+      ((union e (Acosh (Subst a idx val)))))
+(rule ((= e (Subst (Atanh a) idx val)))
+      ((union e (Atanh (Subst a idx val)))))
+
+; GLSL misc
+(rule ((= e (Subst (FMix a b t) idx val)))
+      ((union e (FMix (Subst a idx val) (Subst b idx val) (Subst t idx val)))))
+(rule ((= e (Subst (SmoothStep a b t) idx val)))
+      ((union e (SmoothStep (Subst a idx val) (Subst b idx val) (Subst t idx val)))))
+(rule ((= e (Subst (FClamp x lo hi) idx val)))
+      ((union e (FClamp (Subst x idx val) (Subst lo idx val) (Subst hi idx val)))))
+(rule ((= e (Subst (SClamp x lo hi) idx val)))
+      ((union e (SClamp (Subst x idx val) (Subst lo idx val) (Subst hi idx val)))))
+(rule ((= e (Subst (UClamp x lo hi) idx val)))
+      ((union e (UClamp (Subst x idx val) (Subst lo idx val) (Subst hi idx val)))))
+(rule ((= e (Subst (NClamp x lo hi) idx val)))
+      ((union e (NClamp (Subst x idx val) (Subst lo idx val) (Subst hi idx val)))))
+(rule ((= e (Subst (Cross a b) idx val)))
+      ((union e (Cross (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (Normalize a) idx val)))
+      ((union e (Normalize (Subst a idx val)))))
+(rule ((= e (Subst (Length a) idx val)))
+      ((union e (Length (Subst a idx val)))))
+(rule ((= e (Subst (Distance a b) idx val)))
+      ((union e (Distance (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (Reflect i n) idx val)))
+      ((union e (Reflect (Subst i idx val) (Subst n idx val)))))
+(rule ((= e (Subst (Refract i n eta) idx val)))
+      ((union e (Refract (Subst i idx val) (Subst n idx val) (Subst eta idx val)))))
+(rule ((= e (Subst (FaceForward n i nref) idx val)))
+      ((union e (FaceForward (Subst n idx val) (Subst i idx val) (Subst nref idx val)))))
+(rule ((= e (Subst (Fma a b c) idx val)))
+      ((union e (Fma (Subst a idx val) (Subst b idx val) (Subst c idx val)))))
+(rule ((= e (Subst (Fract a) idx val)))
+      ((union e (Fract (Subst a idx val)))))
+(rule ((= e (Subst (Step edge x) idx val)))
+      ((union e (Step (Subst edge idx val) (Subst x idx val)))))
+(rule ((= e (Subst (Sign a) idx val)))
+      ((union e (Sign (Subst a idx val)))))
+(rule ((= e (Subst (FSign a) idx val)))
+      ((union e (FSign (Subst a idx val)))))
+(rule ((= e (Subst (SAbs a) idx val)))
+      ((union e (SAbs (Subst a idx val)))))
+(rule ((= e (Subst (Ldexp a b) idx val)))
+      ((union e (Ldexp (Subst a idx val) (Subst b idx val)))))
+
+; Bit operations
+(rule ((= e (Subst (FindILsb a) idx val)))
+      ((union e (FindILsb (Subst a idx val)))))
+(rule ((= e (Subst (FindSMsb a) idx val)))
+      ((union e (FindSMsb (Subst a idx val)))))
+(rule ((= e (Subst (FindUMsb a) idx val)))
+      ((union e (FindUMsb (Subst a idx val)))))
+(rule ((= e (Subst (BitCount a) idx val)))
+      ((union e (BitCount (Subst a idx val)))))
+
+; Radians/Degrees
+(rule ((= e (Subst (Radians a) idx val)))
+      ((union e (Radians (Subst a idx val)))))
+(rule ((= e (Subst (Degrees a) idx val)))
+      ((union e (Degrees (Subst a idx val)))))
+
+; =============================================================================
+; SECTION 11: Type Conversion Substitution
+; =============================================================================
+
+(rule ((= e (Subst (ConvertFToS a) idx val)))
+      ((union e (ConvertFToS (Subst a idx val)))))
+(rule ((= e (Subst (ConvertFToU a) idx val)))
+      ((union e (ConvertFToU (Subst a idx val)))))
+(rule ((= e (Subst (ConvertSToF a) idx val)))
+      ((union e (ConvertSToF (Subst a idx val)))))
+(rule ((= e (Subst (ConvertUToF a) idx val)))
+      ((union e (ConvertUToF (Subst a idx val)))))
+(rule ((= e (Subst (SConvert a) idx val)))
+      ((union e (SConvert (Subst a idx val)))))
+(rule ((= e (Subst (UConvert a) idx val)))
+      ((union e (UConvert (Subst a idx val)))))
+(rule ((= e (Subst (FConvert a) idx val)))
+      ((union e (FConvert (Subst a idx val)))))
+(rule ((= e (Subst (Bitcast a) idx val)))
+      ((union e (Bitcast (Subst a idx val)))))
+(rule ((= e (Subst (QuantizeToF16 a) idx val)))
+      ((union e (QuantizeToF16 (Subst a idx val)))))
+
+; =============================================================================
+; SECTION 12: Pack/Unpack Substitution
+; =============================================================================
+
+(rule ((= e (Subst (PackHalf2x16 a) idx val)))
+      ((union e (PackHalf2x16 (Subst a idx val)))))
+(rule ((= e (Subst (UnpackHalf2x16 a) idx val)))
+      ((union e (UnpackHalf2x16 (Subst a idx val)))))
+(rule ((= e (Subst (PackSnorm4x8 a) idx val)))
+      ((union e (PackSnorm4x8 (Subst a idx val)))))
+(rule ((= e (Subst (UnpackSnorm4x8 a) idx val)))
+      ((union e (UnpackSnorm4x8 (Subst a idx val)))))
+(rule ((= e (Subst (PackSnorm2x16 a) idx val)))
+      ((union e (PackSnorm2x16 (Subst a idx val)))))
+(rule ((= e (Subst (UnpackSnorm2x16 a) idx val)))
+      ((union e (UnpackSnorm2x16 (Subst a idx val)))))
+(rule ((= e (Subst (PackUnorm4x8 a) idx val)))
+      ((union e (PackUnorm4x8 (Subst a idx val)))))
+(rule ((= e (Subst (UnpackUnorm4x8 a) idx val)))
+      ((union e (UnpackUnorm4x8 (Subst a idx val)))))
+(rule ((= e (Subst (PackUnorm2x16 a) idx val)))
+      ((union e (PackUnorm2x16 (Subst a idx val)))))
+(rule ((= e (Subst (UnpackUnorm2x16 a) idx val)))
+      ((union e (UnpackUnorm2x16 (Subst a idx val)))))
+(rule ((= e (Subst (PackDouble2x32 a) idx val)))
+      ((union e (PackDouble2x32 (Subst a idx val)))))
+(rule ((= e (Subst (UnpackDouble2x32 a) idx val)))
+      ((union e (UnpackDouble2x32 (Subst a idx val)))))
+
+; =============================================================================
+; SECTION 13: Memory Operation Substitution
+; =============================================================================
+
+; Memory state operations
+(rule ((= e (Subst (InitMem) _ _)))
+      ((union e (InitMem))))
+(rule ((= e (Subst (Load ptr mem) idx val)))
+      ((union e (Load (Subst ptr idx val) (Subst mem idx val)))))
+(rule ((= e (Subst (StoreMem ptr v mem) idx val)))
+      ((union e (StoreMem (Subst ptr idx val) (Subst v idx val) (Subst mem idx val)))))
+(rule ((= e (Subst (MergeMem c t f) idx val)))
+      ((union e (MergeMem (Subst c idx val) (Subst t idx val) (Subst f idx val)))))
+(rule ((= e (Subst (LoopMem c b i) idx val)))
+      ((union e (LoopMem (Subst c idx val) (Subst b idx val) (Subst i idx val)))))
+
+; Pointers and access chains
+(rule ((= e (Subst (Var name sc) _ _)))
+      ((union e (Var name sc))))
+(rule ((= e (Subst (AccessChain1 base i) idx val)))
+      ((union e (AccessChain1 (Subst base idx val) i))))
+(rule ((= e (Subst (AccessChain2 base i j) idx val)))
+      ((union e (AccessChain2 (Subst base idx val) i j))))
+(rule ((= e (Subst (AccessChain3 base i j k) idx val)))
+      ((union e (AccessChain3 (Subst base idx val) i j k))))
+(rule ((= e (Subst (AccessChainDyn base i) idx val)))
+      ((union e (AccessChainDyn (Subst base idx val) (Subst i idx val)))))
+
+; Image operations
+(rule ((= e (Subst (ImageSample img coord) idx val)))
+      ((union e (ImageSample (Subst img idx val) (Subst coord idx val)))))
+(rule ((= e (Subst (ImageFetch img coord) idx val)))
+      ((union e (ImageFetch (Subst img idx val) (Subst coord idx val)))))
+(rule ((= e (Subst (ImageRead img coord) idx val)))
+      ((union e (ImageRead (Subst img idx val) (Subst coord idx val)))))
+(rule ((= e (Subst (SampledImage img sampler) idx val)))
+      ((union e (SampledImage (Subst img idx val) (Subst sampler idx val)))))
+(rule ((= e (Subst (Image a) idx val)))
+      ((union e (Image (Subst a idx val)))))
+(rule ((= e (Subst (ImageWrite img coord data mem) idx val)))
+      ((union e (ImageWrite (Subst img idx val) (Subst coord idx val) (Subst data idx val) (Subst mem idx val)))))
+
+; Atomic operations
+(rule ((= e (Subst (AtomicLoad ptr mem) idx val)))
+      ((union e (AtomicLoad (Subst ptr idx val) (Subst mem idx val)))))
+(rule ((= e (Subst (AtomicStore ptr v mem) idx val)))
+      ((union e (AtomicStore (Subst ptr idx val) (Subst v idx val) (Subst mem idx val)))))
+(rule ((= e (Subst (AtomicExchange ptr v mem) idx val)))
+      ((union e (AtomicExchange (Subst ptr idx val) (Subst v idx val) (Subst mem idx val)))))
+(rule ((= e (Subst (AtomicCompareExchange ptr cmp v mem) idx val)))
+      ((union e (AtomicCompareExchange (Subst ptr idx val) (Subst cmp idx val) (Subst v idx val) (Subst mem idx val)))))
+(rule ((= e (Subst (AtomicIAdd ptr v mem) idx val)))
+      ((union e (AtomicIAdd (Subst ptr idx val) (Subst v idx val) (Subst mem idx val)))))
+(rule ((= e (Subst (AtomicISub ptr v mem) idx val)))
+      ((union e (AtomicISub (Subst ptr idx val) (Subst v idx val) (Subst mem idx val)))))
+(rule ((= e (Subst (AtomicSMin ptr v mem) idx val)))
+      ((union e (AtomicSMin (Subst ptr idx val) (Subst v idx val) (Subst mem idx val)))))
+(rule ((= e (Subst (AtomicUMin ptr v mem) idx val)))
+      ((union e (AtomicUMin (Subst ptr idx val) (Subst v idx val) (Subst mem idx val)))))
+(rule ((= e (Subst (AtomicSMax ptr v mem) idx val)))
+      ((union e (AtomicSMax (Subst ptr idx val) (Subst v idx val) (Subst mem idx val)))))
+(rule ((= e (Subst (AtomicUMax ptr v mem) idx val)))
+      ((union e (AtomicUMax (Subst ptr idx val) (Subst v idx val) (Subst mem idx val)))))
+(rule ((= e (Subst (AtomicAnd ptr v mem) idx val)))
+      ((union e (AtomicAnd (Subst ptr idx val) (Subst v idx val) (Subst mem idx val)))))
+(rule ((= e (Subst (AtomicOr ptr v mem) idx val)))
+      ((union e (AtomicOr (Subst ptr idx val) (Subst v idx val) (Subst mem idx val)))))
+(rule ((= e (Subst (AtomicXor ptr v mem) idx val)))
+      ((union e (AtomicXor (Subst ptr idx val) (Subst v idx val) (Subst mem idx val)))))
+
+; =============================================================================
+; SECTION 14: Subgroup Operation Substitution
+; =============================================================================
+
+(rule ((= e (Subst (GroupElect) _ _)))
+      ((union e (GroupElect))))
+(rule ((= e (Subst (GroupAll a) idx val)))
+      ((union e (GroupAll (Subst a idx val)))))
+(rule ((= e (Subst (GroupAny a) idx val)))
+      ((union e (GroupAny (Subst a idx val)))))
+(rule ((= e (Subst (GroupAllEqual a) idx val)))
+      ((union e (GroupAllEqual (Subst a idx val)))))
+(rule ((= e (Subst (GroupBroadcast a lane) idx val)))
+      ((union e (GroupBroadcast (Subst a idx val) (Subst lane idx val)))))
+(rule ((= e (Subst (GroupBroadcastFirst a) idx val)))
+      ((union e (GroupBroadcastFirst (Subst a idx val)))))
+(rule ((= e (Subst (GroupShuffle a lane) idx val)))
+      ((union e (GroupShuffle (Subst a idx val) (Subst lane idx val)))))
+(rule ((= e (Subst (GroupShuffleXor a mask) idx val)))
+      ((union e (GroupShuffleXor (Subst a idx val) (Subst mask idx val)))))
+
+; Subgroup reductions
+(rule ((= e (Subst (GroupIAdd a) idx val)))
+      ((union e (GroupIAdd (Subst a idx val)))))
+(rule ((= e (Subst (GroupFAdd a) idx val)))
+      ((union e (GroupFAdd (Subst a idx val)))))
+(rule ((= e (Subst (GroupIMul a) idx val)))
+      ((union e (GroupIMul (Subst a idx val)))))
+(rule ((= e (Subst (GroupFMul a) idx val)))
+      ((union e (GroupFMul (Subst a idx val)))))
+(rule ((= e (Subst (GroupSMin a) idx val)))
+      ((union e (GroupSMin (Subst a idx val)))))
+(rule ((= e (Subst (GroupUMin a) idx val)))
+      ((union e (GroupUMin (Subst a idx val)))))
+(rule ((= e (Subst (GroupFMin a) idx val)))
+      ((union e (GroupFMin (Subst a idx val)))))
+(rule ((= e (Subst (GroupSMax a) idx val)))
+      ((union e (GroupSMax (Subst a idx val)))))
+(rule ((= e (Subst (GroupUMax a) idx val)))
+      ((union e (GroupUMax (Subst a idx val)))))
+(rule ((= e (Subst (GroupFMax a) idx val)))
+      ((union e (GroupFMax (Subst a idx val)))))
+(rule ((= e (Subst (GroupBitAnd a) idx val)))
+      ((union e (GroupBitAnd (Subst a idx val)))))
+(rule ((= e (Subst (GroupBitOr a) idx val)))
+      ((union e (GroupBitOr (Subst a idx val)))))
+(rule ((= e (Subst (GroupBitXor a) idx val)))
+      ((union e (GroupBitXor (Subst a idx val)))))
+(rule ((= e (Subst (GroupLogAnd a) idx val)))
+      ((union e (GroupLogAnd (Subst a idx val)))))
+(rule ((= e (Subst (GroupLogOr a) idx val)))
+      ((union e (GroupLogOr (Subst a idx val)))))
+(rule ((= e (Subst (GroupLogXor a) idx val)))
+      ((union e (GroupLogXor (Subst a idx val)))))
+
+; =============================================================================
+; SECTION 15: Derivative Operation Substitution
+; =============================================================================
+
+(rule ((= e (Subst (DPdx a) idx val)))
+      ((union e (DPdx (Subst a idx val)))))
+(rule ((= e (Subst (DPdy a) idx val)))
+      ((union e (DPdy (Subst a idx val)))))
+(rule ((= e (Subst (DPdxFine a) idx val)))
+      ((union e (DPdxFine (Subst a idx val)))))
+(rule ((= e (Subst (DPdyFine a) idx val)))
+      ((union e (DPdyFine (Subst a idx val)))))
+(rule ((= e (Subst (DPdxCoarse a) idx val)))
+      ((union e (DPdxCoarse (Subst a idx val)))))
+(rule ((= e (Subst (DPdyCoarse a) idx val)))
+      ((union e (DPdyCoarse (Subst a idx val)))))
+(rule ((= e (Subst (Fwidth a) idx val)))
+      ((union e (Fwidth (Subst a idx val)))))
+(rule ((= e (Subst (FwidthFine a) idx val)))
+      ((union e (FwidthFine (Subst a idx val)))))
+(rule ((= e (Subst (FwidthCoarse a) idx val)))
+      ((union e (FwidthCoarse (Subst a idx val)))))
+
+; =============================================================================
+; SECTION 16: Bitfield Operation Substitution
+; =============================================================================
+
+(rule ((= e (Subst (BitFieldInsert base insert off cnt) idx val)))
+      ((union e (BitFieldInsert (Subst base idx val) (Subst insert idx val) (Subst off idx val) (Subst cnt idx val)))))
+(rule ((= e (Subst (BitFieldSExtract base off cnt) idx val)))
+      ((union e (BitFieldSExtract (Subst base idx val) (Subst off idx val) (Subst cnt idx val)))))
+(rule ((= e (Subst (BitFieldUExtract base off cnt) idx val)))
+      ((union e (BitFieldUExtract (Subst base idx val) (Subst off idx val) (Subst cnt idx val)))))
+
+; =============================================================================
+; SECTION 17: Image Query Substitution
+; =============================================================================
+
+(rule ((= e (Subst (ImageQuerySize img) idx val)))
+      ((union e (ImageQuerySize (Subst img idx val)))))
+(rule ((= e (Subst (ImageQuerySizeLod img lod) idx val)))
+      ((union e (ImageQuerySizeLod (Subst img idx val) (Subst lod idx val)))))
+(rule ((= e (Subst (ImageQueryLevels img) idx val)))
+      ((union e (ImageQueryLevels (Subst img idx val)))))
+(rule ((= e (Subst (ImageQuerySamples img) idx val)))
+      ((union e (ImageQuerySamples (Subst img idx val)))))
+(rule ((= e (Subst (ImageQueryLod img coord) idx val)))
+      ((union e (ImageQueryLod (Subst img idx val) (Subst coord idx val)))))
+
+; =============================================================================
+; SECTION 18: CopyObject Substitution
+; =============================================================================
+
+(rule ((= e (Subst (CopyObject a) idx val)))
+      ((union e (CopyObject (Subst a idx val)))))
+
+; =============================================================================
+; SECTION 19: Multi-Argument Substitution Helpers
+; =============================================================================
+; For functions with multiple arguments, we chain substitutions.
+; Subst2(body, val0, val1) = Subst(Subst(body, 0, val0), 1, val1)
+; This enables: Call2(f, a, b) = Subst2(body_of_f, a, b)
+; Note: Subst2/3/4 are defined as datatype constructors in datatypes.egg
+
+; Subst2(body, v0, v1) = Subst(Subst(body, 0, v0), 1, v1)
+(rule ((= e (Subst2 body v0 v1)))
+      ((union e (Subst (Subst body 0 v0) 1 v1))))
+
+; Subst3(body, v0, v1, v2) = Subst(Subst(Subst(body, 0, v0), 1, v1), 2, v2)
+(rule ((= e (Subst3 body v0 v1 v2)))
+      ((union e (Subst (Subst (Subst body 0 v0) 1 v1) 2 v2))))
+
+; Subst4(body, v0, v1, v2, v3) = ...
+(rule ((= e (Subst4 body v0 v1 v2 v3)))
+      ((union e (Subst (Subst (Subst (Subst body 0 v0) 1 v1) 2 v2) 3 v3))))
+
+; =============================================================================
+; SECTION 20: Substitution Optimizations
+; =============================================================================
+; When substitution doesn't change anything, simplify.
+
+; Subst into expression that doesn't contain Arg(idx) = original expression
+; This is hard to express without liveness analysis, but some cases are obvious:
+
+; Nested Subst with same index - inner one takes precedence
+; Subst(Subst(body, n, v1), n, v2) = Subst(body, n, v2)
+; (The outer substitution shadows the inner one for Arg(n))
+(rule ((= e (Subst (Subst body n v1) n v2)))
+      ((union e (Subst body n v2))))
+
+; Substituting same value has no effect - identity
+; This enables better CSE when the same value is passed through
+; (Note: this rule is the same as the base case in Section 1)
+
+; =============================================================================
+; SECTION 21: Liveness Propagation
+; =============================================================================
 ; Subst propagates liveness to both body and value
+
 (rule ((Live e) (= e (Subst body idx val)))
       ((Live body) (Live val)))
+(rule ((Live e) (= e (Subst2 body v0 v1)))
+      ((Live body) (Live v0) (Live v1)))
+(rule ((Live e) (= e (Subst3 body v0 v1 v2)))
+      ((Live body) (Live v0) (Live v1) (Live v2)))
+(rule ((Live e) (= e (Subst4 body v0 v1 v2 v3)))
+      ((Live body) (Live v0) (Live v1) (Live v2) (Live v3)))
 
 ; Arg is a leaf - no sub-expressions to propagate
 (rule ((Live e) (= e (Arg _))) ())
+
+; Call liveness propagates to arguments
+(rule ((Live e) (= e (Call1 _ a)))
+      ((Live a)))
+(rule ((Live e) (= e (Call2 _ a b)))
+      ((Live a) (Live b)))
+(rule ((Live e) (= e (Call3 _ a b c)))
+      ((Live a) (Live b) (Live c)))
+(rule ((Live e) (= e (Call4 _ a b c d)))
+      ((Live a) (Live b) (Live c) (Live d)))
+
+; =============================================================================
+; SECTION 22: Constant Folding After Substitution
+; =============================================================================
+; After substituting a constant for an argument, further simplifications apply.
+; These are handled by the existing arithmetic/logical rules, but we note that
+; Subst(Add(Arg(0), Arg(0)), 0, (Const 5)) = Add(Const 5, Const 5) = Const 10
+; The Subst rules above expand this, then constant folding kicks in.
+
+; =============================================================================
+; SECTION 23: Nested Call Inlining
+; =============================================================================
+; When a function body contains a call, and both get inlined, the inner call
+; also gets expanded. This happens naturally through the e-graph saturation.
+;
+; f(x) = g(x + 1)
+; g(y) = y * 2
+;
+; Call1("f", 5)
+;   = Subst(g(Arg(0) + 1), 0, 5)    ; inline f
+;   = Call1("g", 5 + 1)              ; after Subst expansion
+;   = Call1("g", 6)                  ; constant fold
+;   = Subst(Arg(0) * 2, 0, 6)        ; inline g
+;   = 6 * 2 = 12                     ; constant fold
+
+; =============================================================================
+; SECTION 24: Spec Constant Operation Substitution
+; =============================================================================
+
+(rule ((= e (Subst (SpecConst id def) _ _)))
+      ((union e (SpecConst id def))))
+(rule ((= e (Subst (SpecAdd a b) idx val)))
+      ((union e (SpecAdd (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (SpecSub a b) idx val)))
+      ((union e (SpecSub (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (SpecMul a b) idx val)))
+      ((union e (SpecMul (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (SpecSDiv a b) idx val)))
+      ((union e (SpecSDiv (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (SpecUDiv a b) idx val)))
+      ((union e (SpecUDiv (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (SpecSMod a b) idx val)))
+      ((union e (SpecSMod (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (SpecUMod a b) idx val)))
+      ((union e (SpecUMod (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (SpecShl a b) idx val)))
+      ((union e (SpecShl (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (SpecShrS a b) idx val)))
+      ((union e (SpecShrS (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (SpecShrU a b) idx val)))
+      ((union e (SpecShrU (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (SpecBitAnd a b) idx val)))
+      ((union e (SpecBitAnd (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (SpecBitOr a b) idx val)))
+      ((union e (SpecBitOr (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (SpecBitXor a b) idx val)))
+      ((union e (SpecBitXor (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (SpecEq a b) idx val)))
+      ((union e (SpecEq (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (SpecNe a b) idx val)))
+      ((union e (SpecNe (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (SpecSLt a b) idx val)))
+      ((union e (SpecSLt (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (SpecULt a b) idx val)))
+      ((union e (SpecULt (Subst a idx val) (Subst b idx val)))))
+(rule ((= e (Subst (SpecSelect c t f) idx val)))
+      ((union e (SpecSelect (Subst c idx val) (Subst t idx val) (Subst f idx val)))))
+
+; =============================================================================
+; SECTION 25: Loop Iteration Substitution
+; =============================================================================
+
+(rule ((= e (Subst (LoopIter n x) idx val)))
+      ((union e (LoopIter n (Subst x idx val)))))
 

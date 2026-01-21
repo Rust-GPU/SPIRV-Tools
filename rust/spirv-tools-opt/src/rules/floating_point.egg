@@ -473,6 +473,16 @@
 (rule ((= e (Pow x (Const c))) (is-float-two32 c))
       ((union e (FMul x x))))
 
+; Pow(x, 3) = x * x * x - ONE-DIRECTIONAL (for powi(3) optimization - rust-gpu#516)
+; We express this as FMul(FMul(x, x), x) to enable further CSE
+(rule ((= e (Pow x (Const c))) (is-float-three32 c))
+      ((union e (FMul (FMul x x) x))))
+
+; Pow(x, 4) = (x * x) * (x * x) - ONE-DIRECTIONAL (for powi(4) optimization)
+; This uses only 2 multiplications instead of 3, and enables CSE of x*x
+(rule ((= e (Pow x (Const c))) (is-float-four32 c))
+      ((union e (FMul (FMul x x) (FMul x x)))))
+
 ; Pow(x, 0) = 1 (assuming x != 0) - ONE-DIRECTIONAL
 ; Note: Returns f32 1.0 (bit pattern 1065353216)
 (rule ((= e (Pow x (Const c))) (is-float-zero32 c))
