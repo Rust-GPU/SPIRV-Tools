@@ -44,8 +44,8 @@ use rspirv::spirv::{Capability, ExecutionModel, Op};
 use crate::target_env::TargetEnv;
 use crate::version::SpirvVersion;
 
-use super::error::ValidationError;
 use super::rules::extensions::ExtensionSet;
+use super::span::{SourceSpan, SpanMap};
 use super::types::{Id, ResultId, TypeId};
 use super::ValidationOptions;
 
@@ -95,6 +95,10 @@ pub struct ValidationContext<'a> {
 
     /// Member counts for struct types (for decoration validation).
     pub struct_member_counts: &'a HashMap<ResultId, usize>,
+
+    /// Optional span map for looking up source locations of IDs.
+    /// This enables rich error messages pointing to definition sites.
+    pub span_map: Option<&'a SpanMap>,
 }
 
 impl<'a> ValidationContext<'a> {
@@ -132,6 +136,36 @@ impl<'a> ValidationContext<'a> {
         self.is_vulkan()
     }
 
+    /// Checks if this is specifically Vulkan 1.0.
+    ///
+    /// This is useful for validations that differ between Vulkan 1.0 and later versions,
+    /// such as Subgroup scope restrictions which only apply in Vulkan 1.0.
+    #[inline]
+    pub fn is_vulkan_1_0(&self) -> bool {
+        matches!(self.env, crate::target_env::TargetEnv::Vulkan1_0)
+    }
+
+    /// Checks if the module uses logical addressing mode.
+    ///
+    /// Logical addressing or PhysicalStorageBuffer64 addressing restrict
+    /// certain operations like negative access chain indices.
+    #[inline]
+    pub fn is_logical_addressing(&self) -> bool {
+        use rspirv::spirv::AddressingModel;
+        if let Some(ref memory_model) = self.module.memory_model {
+            matches!(
+                memory_model.operands.first(),
+                Some(rspirv::dr::Operand::AddressingModel(AddressingModel::Logical))
+                    | Some(rspirv::dr::Operand::AddressingModel(
+                        AddressingModel::PhysicalStorageBuffer64
+                    ))
+            )
+        } else {
+            // Default to true for safety if memory model is missing
+            true
+        }
+    }
+
     /// Checks if a result ID is defined.
     #[inline]
     pub fn is_defined(&self, id: ResultId) -> bool {
@@ -142,6 +176,87 @@ impl<'a> ValidationContext<'a> {
     #[inline]
     pub fn module(&self) -> &'a Module {
         self.module
+    }
+
+    // ========================================================================
+    // Span lookup methods
+    // ========================================================================
+
+    /// Looks up the source span where an ID was defined.
+    ///
+    /// Returns `None` if no span map is available or the ID is not found.
+    #[inline]
+    pub fn get_id_span(&self, id: u32) -> Option<SourceSpan> {
+        self.span_map.and_then(|map| map.get_id_span(id))
+    }
+
+    /// Looks up the source span for an instruction at a given word offset.
+    ///
+    /// Returns `None` if no span map is available or the offset is not found.
+    #[inline]
+    pub fn get_instruction_span(&self, word_offset: u32) -> Option<SourceSpan> {
+        self.span_map.and_then(|map| map.get_instruction_span(word_offset))
+    }
+
+    /// Returns true if span information is available.
+    #[inline]
+    pub fn has_span_info(&self) -> bool {
+        self.span_map.is_some()
+    }
+
+    // ========================================================================
+    // Error enrichment methods
+    // ========================================================================
+
+    /// Creates a spanned error with the primary span pointing to an ID's definition.
+    ///
+    /// If span info is not available for the ID, returns the error without spans.
+    pub fn error_at_id<E>(
+        &self,
+        error: E,
+        id: u32,
+        message: impl Into<String>,
+    ) -> super::span::SpannedError<E> {
+        let mut spanned = super::span::SpannedError::new(error);
+        if let Some(span) = self.get_id_span(id) {
+            spanned = spanned.with_primary_span(span, message);
+        }
+        spanned
+    }
+
+    /// Creates a spanned error with primary and secondary spans.
+    ///
+    /// The primary span points to `primary_id` and secondary to `secondary_id`.
+    pub fn error_at_ids<E>(
+        &self,
+        error: E,
+        primary_id: u32,
+        primary_msg: impl Into<String>,
+        secondary_id: u32,
+        secondary_msg: impl Into<String>,
+    ) -> super::span::SpannedError<E> {
+        let mut spanned = super::span::SpannedError::new(error);
+        if let Some(span) = self.get_id_span(primary_id) {
+            spanned = spanned.with_primary_span(span, primary_msg);
+        }
+        if let Some(span) = self.get_id_span(secondary_id) {
+            spanned = spanned.with_secondary_span(span, secondary_msg);
+        }
+        spanned
+    }
+
+    /// Creates a spanned error pointing to an instruction's location.
+    pub fn error_at_instruction<E>(
+        &self,
+        error: E,
+        word_offset: u32,
+        message: impl Into<String>,
+    ) -> super::span::SpannedError<E> {
+        let mut spanned = super::span::SpannedError::new(error);
+        if let Some(span) = self.get_instruction_span(word_offset) {
+            spanned = spanned.with_primary_span(span, message);
+        }
+        spanned
     }
 }
 
@@ -156,9 +271,9 @@ pub trait ValidationRule: Sync {
 
     /// Validates the module according to this rule.
     ///
-    /// Returns `Ok(())` if validation passes, or a [`ValidationError`]
-    /// describing the first validation failure.
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError>;
+    /// Returns `Ok(())` if validation passes, or a [`SpannedValidationError`]
+    /// describing the first validation failure with optional span information.
+    fn validate(&self, ctx: &ValidationContext<'_>) -> super::span::ValidationResult;
 
     /// Returns true if this rule should be skipped based on the context.
     ///
@@ -174,7 +289,7 @@ pub trait ValidationRule: Sync {
 pub fn run_rules(
     ctx: &ValidationContext<'_>,
     rules: &[&dyn ValidationRule],
-) -> Result<(), ValidationError> {
+) -> super::span::ValidationResult {
     for rule in rules {
         if !rule.should_skip(ctx) {
             rule.validate(ctx)?;
@@ -189,7 +304,7 @@ pub fn run_rules(
 pub fn run_boxed_rules(
     ctx: &ValidationContext<'_>,
     rules: &[Box<dyn ValidationRule>],
-) -> Result<(), ValidationError> {
+) -> super::span::ValidationResult {
     for rule in rules {
         if !rule.should_skip(ctx) {
             rule.validate(ctx)?;
@@ -241,6 +356,8 @@ pub struct TestContextData {
     pub entry_models: HashSet<ExecutionModel>,
     /// Member counts for struct types.
     pub struct_member_counts: HashMap<ResultId, usize>,
+    /// Span map for looking up source locations.
+    pub span_map: SpanMap,
 }
 
 impl Default for TestContextData {
@@ -259,6 +376,7 @@ impl Default for TestContextData {
             extensions: ExtensionSet::default(),
             entry_models: HashSet::new(),
             struct_member_counts: HashMap::new(),
+            span_map: SpanMap::new(),
         }
     }
 }
@@ -285,6 +403,7 @@ impl TestContextData {
             extensions: &self.extensions,
             entry_models: &self.entry_models,
             struct_member_counts: &self.struct_member_counts,
+            span_map: Some(&self.span_map),
         }
     }
 }

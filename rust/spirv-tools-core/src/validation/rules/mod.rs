@@ -17,7 +17,7 @@
 //!            "my-new-rule"
 //!        }
 //!
-//!        fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+//!        fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
 //!            // validation logic
 //!            Ok(())
 //!        }
@@ -40,6 +40,7 @@
 //! - [`pointers`]: Pointer and store validation rules
 //! - [`vulkan`]: Vulkan-specific validation rules
 //! - [`entry_points`]: Entry point interface validation rules
+//! - [`execution_limitations`]: Execution model limitations validation (callgraph-based)
 //! - [`execution_modes`]: Execution mode validation rules
 //! - [`types`]: Type and ID validation rules
 //! - [`block_layout`]: Block layout validation rules
@@ -85,6 +86,7 @@ pub mod decorations;
 pub mod ext_inst;
 pub mod derivatives;
 pub mod entry_points;
+pub mod execution_limitations;
 pub mod execution_modes;
 pub mod extensions;
 pub mod functions;

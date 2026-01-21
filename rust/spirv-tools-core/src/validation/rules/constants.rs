@@ -18,7 +18,9 @@ use rspirv::spirv::{Capability, Op, StorageClass};
 use crate::validation::context::{ValidationContext, ValidationRule};
 use crate::validation::error::ValidationError;
 use crate::validation::helpers::{get_type_structure, is_constant_opcode};
+use crate::validation::span::ValidationErrorExt;
 use crate::validation::types::{Id, ResultId, ScalarKind, TypeId, TypeStructure};
+use crate::validation::ValidationResult;
 use crate::version::SpirvVersion;
 
 // ============================================================================
@@ -241,7 +243,7 @@ impl ValidationRule for ConstantBoolTypeRule {
         "constant-bool-type"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for inst in &ctx.module.types_global_values {
             let opcode = inst.class.opcode;
             if !matches!(
@@ -265,11 +267,18 @@ impl ValidationRule for ConstantBoolTypeRule {
 
             if type_opcode != Some(Op::TypeBool) {
                 if let Ok(result_type) = TypeId::try_from(result_type_id) {
+                    let const_id = inst.result_id.unwrap_or(0);
                     return Err(ValidationError::ConstantResultTypeInvalid {
                         opcode,
                         result_type,
                         expected: "OpTypeBool",
-                    });
+                    }.at_ids(
+                        const_id,
+                        format!("{:?} requires OpTypeBool as result type", opcode),
+                        result_type,
+                        format!("result type is {:?}, not OpTypeBool", type_opcode.unwrap_or(Op::Nop)),
+                        ctx,
+                    ));
                 }
             }
         }
@@ -292,7 +301,7 @@ impl ValidationRule for ConstantSamplerTypeRule {
         "constant-sampler-type"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for inst in &ctx.module.types_global_values {
             if inst.class.opcode != Op::ConstantSampler {
                 continue;
@@ -313,7 +322,7 @@ impl ValidationRule for ConstantSamplerTypeRule {
                         opcode: Op::ConstantSampler,
                         result_type,
                         expected: "OpTypeSampler",
-                    });
+                    }.into());
                 }
             }
         }
@@ -336,7 +345,7 @@ impl ValidationRule for ConstantNullTypeRule {
         "constant-null-type"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for inst in &ctx.module.types_global_values {
             if inst.class.opcode != Op::ConstantNull {
                 continue;
@@ -348,7 +357,7 @@ impl ValidationRule for ConstantNullTypeRule {
 
             if !is_type_nullable(result_type_id, ctx) {
                 if let Ok(result_type) = TypeId::try_from(result_type_id) {
-                    return Err(ValidationError::ConstantNullTypeNotNullable { result_type });
+                    return Err(ValidationError::ConstantNullTypeNotNullable { result_type }.into());
                 }
             }
         }
@@ -371,7 +380,7 @@ impl ValidationRule for SpecConstantTypeRule {
         "spec-constant-type"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for inst in &ctx.module.types_global_values {
             if inst.class.opcode != Op::SpecConstant {
                 continue;
@@ -392,7 +401,7 @@ impl ValidationRule for SpecConstantTypeRule {
                         opcode: Op::SpecConstant,
                         result_type,
                         expected: "OpTypeInt or OpTypeFloat",
-                    });
+                    }.into());
                 }
             }
         }
@@ -419,7 +428,7 @@ impl ValidationRule for ConstantCompositeRule {
         "constant-composite"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for inst in &ctx.module.types_global_values {
             let opcode = inst.class.opcode;
             if !matches!(opcode, Op::ConstantComposite | Op::SpecConstantComposite) {
@@ -445,7 +454,7 @@ impl ValidationRule for ConstantCompositeRule {
                         opcode,
                         result_type,
                         expected: "a composite type",
-                    });
+                    }.into());
                 }
             }
 
@@ -467,7 +476,7 @@ impl ValidationRule for ConstantCompositeRule {
                             return Err(ValidationError::ConstantCompositeConstituentNotConstant {
                                 opcode,
                                 constituent,
-                            });
+                            }.into());
                         }
                     }
                 }
@@ -495,7 +504,7 @@ impl ValidationRule for ConstantCompositeRule {
                                 result_type,
                                 expected: component_count,
                                 found: constituent_count,
-                            });
+                            }.into());
                         }
                     }
                 }
@@ -519,7 +528,7 @@ impl ValidationRule for ConstantCompositeRule {
                                 result_type,
                                 expected: column_count,
                                 found: constituent_count,
-                            });
+                            }.into());
                         }
                     }
                 }
@@ -541,7 +550,7 @@ impl ValidationRule for ConstantCompositeRule {
                                         result_type,
                                         expected: array_length as usize,
                                         found: constituent_count,
-                                    });
+                                    }.into());
                                 }
                             }
                         }
@@ -559,7 +568,7 @@ impl ValidationRule for ConstantCompositeRule {
                                 result_type,
                                 expected: member_count,
                                 found: constituent_count,
-                            });
+                            }.into());
                         }
                     }
                 }
@@ -574,7 +583,7 @@ impl ValidationRule for ConstantCompositeRule {
                                 result_type,
                                 expected: 1,
                                 found: constituent_count,
-                            });
+                            }.into());
                         }
                     }
                 }
@@ -600,7 +609,7 @@ impl ValidationRule for SpecConstantOpCapabilityRule {
         "spec-constant-op-capability"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let has_shader = ctx.declared_capabilities.contains(&Capability::Shader);
         let has_kernel = ctx.declared_capabilities.contains(&Capability::Kernel);
 
@@ -626,7 +635,7 @@ impl ValidationRule for SpecConstantOpCapabilityRule {
                 return Err(ValidationError::SpecConstantOpMissingCapability {
                     inner_opcode: Op::QuantizeToF16,
                     required_capability: Capability::Shader,
-                });
+                }.into());
             }
 
             // Kernel-only operations:
@@ -669,7 +678,7 @@ impl ValidationRule for SpecConstantOpCapabilityRule {
                 return Err(ValidationError::SpecConstantOpMissingCapability {
                     inner_opcode: inner_op,
                     required_capability: Capability::Kernel,
-                });
+                }.into());
             }
         }
 
@@ -692,7 +701,7 @@ impl ValidationRule for SmallTypeConstantRule {
         "small-type-constant"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         // Only applies when Shader capability is present
         if !ctx.has_capability(Capability::Shader) {
             return Ok(());
@@ -719,7 +728,7 @@ impl ValidationRule for SmallTypeConstantRule {
 
             // Check for limited-use small types
             if contains_limited_use_type(type_id, ctx) {
-                return Err(ValidationError::ConstantSmallTypeNotAllowed);
+                return Err(ValidationError::ConstantSmallTypeNotAllowed.into());
             }
         }
 
@@ -743,7 +752,7 @@ impl ValidationRule for SpecConstantOpUConvertRule {
         "spec-constant-op-uconvert"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         // Only check before SPIR-V 1.4
         let v1_4 = SpirvVersion::new(1, 4);
         if ctx.target_version >= v1_4 {
@@ -781,7 +790,7 @@ impl ValidationRule for SpecConstantOpUConvertRule {
             });
 
             if inner_op_num == Some(UCONVERT_OPCODE) {
-                return Err(ValidationError::SpecConstantOpUConvertRequiresKernel);
+                return Err(ValidationError::SpecConstantOpUConvertRequiresKernel.into());
             }
         }
 

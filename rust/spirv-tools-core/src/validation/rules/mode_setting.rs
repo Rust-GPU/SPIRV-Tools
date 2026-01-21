@@ -19,6 +19,7 @@ use rspirv::spirv::{
 };
 
 use crate::validation::context::{ValidationContext, ValidationRule};
+use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::Id;
 
@@ -39,7 +40,7 @@ impl ValidationRule for EntryPointValidationRule {
         "entry-point-validation"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let module = ctx.module();
 
         // Build map of function ID -> function type ID
@@ -96,7 +97,7 @@ impl ValidationRule for EntryPointValidationRule {
             let Some(func_type_id) = function_types.get(func_id) else {
                 return Err(ValidationError::EntryPointNotFunction {
                     entry_point: to_id(*func_id),
-                });
+                }.into());
             };
 
             // Get function type info
@@ -109,7 +110,7 @@ impl ValidationRule for EntryPointValidationRule {
                 if !void_types.contains(ret_type) {
                     return Err(ValidationError::EntryPointReturnTypeNotVoid {
                         entry_point: to_id(*func_id),
-                    });
+                    }.into());
                 }
             }
 
@@ -118,7 +119,7 @@ impl ValidationRule for EntryPointValidationRule {
                 return Err(ValidationError::EntryPointNonZeroParameters {
                     entry_point: to_id(*func_id),
                     param_count: *param_count as u32,
-                });
+                }.into());
             }
         }
 
@@ -138,7 +139,7 @@ impl ValidationRule for FragmentExecutionModeRule {
         "fragment-execution-mode"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         if !ctx.declared_capabilities.contains(&Capability::Shader) {
             return Ok(());
         }
@@ -188,13 +189,13 @@ impl ValidationRule for FragmentExecutionModeRule {
             if has_upper && has_lower {
                 return Err(ValidationError::FragmentMultipleOriginModes {
                     entry_point: to_id(*func_id),
-                });
+                }.into());
             }
 
             if !has_upper && !has_lower {
                 return Err(ValidationError::FragmentMissingOriginMode {
                     entry_point: to_id(*func_id),
-                });
+                }.into());
             }
 
             // Check depth modes
@@ -211,7 +212,7 @@ impl ValidationRule for FragmentExecutionModeRule {
                 if depth_count > 1 {
                     return Err(ValidationError::FragmentMultipleDepthModes {
                         entry_point: to_id(*func_id),
-                    });
+                    }.into());
                 }
 
                 // Check interlock modes
@@ -230,7 +231,7 @@ impl ValidationRule for FragmentExecutionModeRule {
                 if interlock_count > 1 {
                     return Err(ValidationError::FragmentMultipleInterlockModes {
                         entry_point: to_id(*func_id),
-                    });
+                    }.into());
                 }
 
                 // Check AMD stencil ref front modes
@@ -246,7 +247,7 @@ impl ValidationRule for FragmentExecutionModeRule {
                 if stencil_front_count > 1 {
                     return Err(ValidationError::FragmentMultipleStencilRefFrontModes {
                         entry_point: to_id(*func_id),
-                    });
+                    }.into());
                 }
 
                 // Check AMD stencil ref back modes
@@ -262,7 +263,7 @@ impl ValidationRule for FragmentExecutionModeRule {
                 if stencil_back_count > 1 {
                     return Err(ValidationError::FragmentMultipleStencilRefBackModes {
                         entry_point: to_id(*func_id),
-                    });
+                    }.into());
                 }
             }
         }
@@ -283,7 +284,7 @@ impl ValidationRule for TessellationExecutionModeRule {
         "tessellation-execution-mode"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         if !ctx.declared_capabilities.contains(&Capability::Shader) {
             return Ok(());
         }
@@ -343,7 +344,7 @@ impl ValidationRule for TessellationExecutionModeRule {
             if spacing_count > 1 {
                 return Err(ValidationError::TessellationMultipleSpacingModes {
                     entry_point: to_id(*func_id),
-                });
+                }.into());
             }
 
             // Check primitive types
@@ -359,7 +360,7 @@ impl ValidationRule for TessellationExecutionModeRule {
             if primitive_count > 1 {
                 return Err(ValidationError::TessellationMultiplePrimitiveTypes {
                     entry_point: to_id(*func_id),
-                });
+                }.into());
             }
 
             // Check vertex order modes
@@ -371,7 +372,7 @@ impl ValidationRule for TessellationExecutionModeRule {
             if vertex_order_count > 1 {
                 return Err(ValidationError::TessellationMultipleVertexOrderModes {
                     entry_point: to_id(*func_id),
-                });
+                }.into());
             }
         }
 
@@ -390,7 +391,7 @@ impl ValidationRule for GeometryExecutionModeRule {
         "geometry-execution-mode"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         if !ctx.declared_capabilities.contains(&Capability::Shader) {
             return Ok(());
         }
@@ -448,7 +449,7 @@ impl ValidationRule for GeometryExecutionModeRule {
             if input_count != 1 {
                 return Err(ValidationError::GeometryMissingInputPrimitiveType {
                     entry_point: to_id(*func_id),
-                });
+                }.into());
             }
 
             // Check output primitive types - exactly one required
@@ -464,7 +465,7 @@ impl ValidationRule for GeometryExecutionModeRule {
             if output_count != 1 {
                 return Err(ValidationError::GeometryMissingOutputPrimitiveType {
                     entry_point: to_id(*func_id),
-                });
+                }.into());
             }
         }
 
@@ -483,7 +484,7 @@ impl ValidationRule for MeshExtExecutionModeRule {
         "mesh-ext-execution-mode"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         if !ctx.declared_capabilities.contains(&Capability::Shader) {
             return Ok(());
         }
@@ -539,7 +540,7 @@ impl ValidationRule for MeshExtExecutionModeRule {
             if output_prim_count != 1 {
                 return Err(ValidationError::MeshExtMissingOutputPrimitiveType {
                     entry_point: to_id(*func_id),
-                });
+                }.into());
             }
 
             // Check that both OutputPrimitivesEXT and OutputVertices are specified
@@ -551,7 +552,7 @@ impl ValidationRule for MeshExtExecutionModeRule {
             if !has_output_prims || !has_output_verts {
                 return Err(ValidationError::MeshExtMissingOutputModes {
                     entry_point: to_id(*func_id),
-                });
+                }.into());
             }
         }
 
@@ -569,7 +570,7 @@ impl ValidationRule for VulkanGLComputeLocalSizeRule {
         "vulkan-glcompute-localsize"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         if !ctx.env.is_vulkan() {
             return Ok(());
         }
@@ -638,7 +639,7 @@ impl ValidationRule for VulkanGLComputeLocalSizeRule {
             if !has_local_size && !has_workgroup_size && !has_local_size_id && !has_tile_shading {
                 return Err(ValidationError::VulkanGLComputeMissingLocalSize {
                     entry_point: to_id(*func_id),
-                });
+                }.into());
             }
         }
 
@@ -658,7 +659,7 @@ impl ValidationRule for LocalSizeValidationRule {
         "localsize-validation"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let module = ctx.module();
 
         // Build map of entry point -> execution modes
@@ -704,7 +705,7 @@ impl ValidationRule for LocalSizeValidationRule {
                     x: *x,
                     y: *y,
                     z: *z,
-                });
+                }.into());
             }
 
             let modes = entry_point_modes.get(func_id);
@@ -715,7 +716,7 @@ impl ValidationRule for LocalSizeValidationRule {
                     return Err(ValidationError::DerivativeGroupQuadsRequiresMultipleOf2 {
                         x: *x as u64,
                         y: *y as u64,
-                    });
+                    }.into());
                 }
             }
 
@@ -724,7 +725,7 @@ impl ValidationRule for LocalSizeValidationRule {
                 if product % 4 != 0 {
                     return Err(ValidationError::DerivativeGroupLinearRequiresMultipleOf4 {
                         product,
-                    });
+                    }.into());
                 }
             }
         }
@@ -744,7 +745,7 @@ impl ValidationRule for FPFastMathDefaultConflictsRule {
         "fp-fast-math-default-conflicts"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let module = ctx.module();
 
         // Build map of entry point -> execution modes
@@ -768,11 +769,11 @@ impl ValidationRule for FPFastMathDefaultConflictsRule {
         for (_func_id, modes) in &entry_point_modes {
             if modes.contains(&ExecutionMode::FPFastMathDefault) {
                 if modes.contains(&ExecutionMode::ContractionOff) {
-                    return Err(ValidationError::FPFastMathDefaultConflictsWithContractionOff);
+                    return Err(ValidationError::FPFastMathDefaultConflictsWithContractionOff.into());
                 }
                 if modes.contains(&ExecutionMode::SignedZeroInfNanPreserve) {
                     return Err(
-                        ValidationError::FPFastMathDefaultConflictsWithSignedZeroInfNanPreserve,
+                        ValidationError::FPFastMathDefaultConflictsWithSignedZeroInfNanPreserve.into(),
                     );
                 }
             }
@@ -792,7 +793,7 @@ impl ValidationRule for TileShadingRateQCOMRule {
         "tile-shading-rate-qcom"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         if !ctx.env.is_vulkan() {
             return Ok(());
         }
@@ -829,7 +830,7 @@ impl ValidationRule for TileShadingRateQCOMRule {
             let is_power_of_2 = |n: u32| n > 0 && (n & (n - 1)) == 0;
 
             if !is_power_of_2(x) || !is_power_of_2(y) {
-                return Err(ValidationError::TileShadingRateQCOMNotPowerOf2);
+                return Err(ValidationError::TileShadingRateQCOMNotPowerOf2.into());
             }
         }
 
@@ -848,7 +849,7 @@ impl ValidationRule for VulkanExecutionModeRule {
         "vulkan-execution-mode"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         if !ctx.env.is_vulkan() {
             return Ok(());
         }
@@ -862,10 +863,10 @@ impl ValidationRule for VulkanExecutionModeRule {
 
             match exec_mode {
                 ExecutionMode::OriginLowerLeft => {
-                    return Err(ValidationError::VulkanOriginLowerLeftNotAllowed);
+                    return Err(ValidationError::VulkanOriginLowerLeftNotAllowed.into());
                 }
                 ExecutionMode::PixelCenterInteger => {
-                    return Err(ValidationError::VulkanPixelCenterIntegerNotAllowed);
+                    return Err(ValidationError::VulkanPixelCenterIntegerNotAllowed.into());
                 }
                 _ => {}
             }
@@ -887,7 +888,7 @@ impl ValidationRule for MemoryModelValidationRule {
         "memory-model-validation"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let module = ctx.module();
 
         // Find memory model instruction
@@ -911,7 +912,7 @@ impl ValidationRule for MemoryModelValidationRule {
             .contains(&Capability::VulkanMemoryModelKHR)
         {
             if memory_model != Some(MemoryModel::VulkanKHR) {
-                return Err(ValidationError::VulkanMemoryModelCapabilityRequiresVulkanKHR);
+                return Err(ValidationError::VulkanMemoryModelCapabilityRequiresVulkanKHR.into());
             }
         }
 
@@ -923,7 +924,7 @@ impl ValidationRule for MemoryModelValidationRule {
                 {
                     return Err(ValidationError::VulkanInvalidAddressingModel {
                         addressing_model: addr,
-                    });
+                    }.into());
                 }
             }
         }
@@ -934,14 +935,14 @@ impl ValidationRule for MemoryModelValidationRule {
                 if addr != AddressingModel::Physical32 && addr != AddressingModel::Physical64 {
                     return Err(ValidationError::OpenCLInvalidAddressingModel {
                         addressing_model: addr,
-                    });
+                    }.into());
                 }
             }
             if let Some(mem) = memory_model {
                 if mem != MemoryModel::OpenCL {
                     return Err(ValidationError::OpenCLInvalidMemoryModel {
                         memory_model: mem,
-                    });
+                    }.into());
                 }
             }
         }
@@ -960,7 +961,7 @@ impl ValidationRule for CapabilityDependenciesRule {
         "capability-dependencies"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         // CooperativeMatrixKHR + Shader requires VulkanMemoryModel
         if ctx
             .declared_capabilities
@@ -970,7 +971,7 @@ impl ValidationRule for CapabilityDependenciesRule {
                 .declared_capabilities
                 .contains(&Capability::VulkanMemoryModel)
         {
-            return Err(ValidationError::CooperativeMatrixRequiresVulkanMemoryModel);
+            return Err(ValidationError::CooperativeMatrixRequiresVulkanMemoryModel.into());
         }
 
         Ok(())
@@ -987,7 +988,7 @@ impl ValidationRule for DuplicateExecutionModeRule {
         "duplicate-execution-mode"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let module = ctx.module();
 
         // Modes that can be specified multiple times per entry point
@@ -1033,7 +1034,7 @@ impl ValidationRule for DuplicateExecutionModeRule {
                     return Err(ValidationError::DuplicateExecutionMode {
                         entry_point: to_id(*entry_point),
                         mode: *exec_mode,
-                    });
+                    }.into());
                 }
             } else {
                 // Per-entry modes
@@ -1041,8 +1042,63 @@ impl ValidationRule for DuplicateExecutionModeRule {
                     return Err(ValidationError::DuplicateExecutionMode {
                         entry_point: to_id(*entry_point),
                         mode: *exec_mode,
-                    });
+                    }.into());
                 }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Validates `OpSamplerImageAddressingModeNV` instruction requirements.
+///
+/// From validate_instruction.cpp:
+/// - Requires `BindlessTextureNV` capability
+/// - Must only be provided once
+/// - Bit width must be 32 or 64
+pub struct SamplerImageAddressingModeNVRule;
+
+impl ValidationRule for SamplerImageAddressingModeNVRule {
+    fn name(&self) -> &'static str {
+        "sampler-image-addressing-mode-nv"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
+        let module = ctx.module();
+
+        let mut seen = false;
+
+        for inst in module.all_inst_iter() {
+            if inst.class.opcode != Op::SamplerImageAddressingModeNV {
+                continue;
+            }
+
+            // Requires BindlessTextureNV capability
+            if !ctx.has_capability(Capability::BindlessTextureNV) {
+                return Err(ValidationError::SamplerImageAddressingModeNVRequiresBindlessTextureNV.into());
+            }
+
+            // Must only be provided once
+            if seen {
+                return Err(ValidationError::DuplicateSamplerImageAddressingMode.into());
+            }
+            seen = true;
+
+            // Bit width must be 32 or 64
+            let bit_width = inst
+                .operands
+                .first()
+                .and_then(|op| match op {
+                    Operand::LiteralBit32(v) => Some(*v),
+                    _ => None,
+                })
+                .unwrap_or(0);
+
+            if bit_width != 32 && bit_width != 64 {
+                return Err(ValidationError::InvalidSamplerImageAddressingModeBitWidth {
+                    bit_width,
+                }.into());
             }
         }
 
@@ -1066,5 +1122,6 @@ pub fn all_mode_setting_rules() -> Vec<Box<dyn ValidationRule>> {
         Box::new(FPFastMathDefaultConflictsRule),
         Box::new(TileShadingRateQCOMRule),
         Box::new(DuplicateExecutionModeRule),
+        Box::new(SamplerImageAddressingModeNVRule),
     ]
 }

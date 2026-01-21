@@ -13,6 +13,7 @@ use rspirv::dr::Operand;
 use rspirv::spirv::{Decoration, ExecutionModel, Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
+use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::{Id, ResultId};
 use crate::version::SpirvVersion;
@@ -98,7 +99,7 @@ impl ValidationRule for InterfaceVariableListingRule {
         "interface-variable-listing"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let module = ctx.module();
         let is_spv_1_4 = ctx.target_version.meets_or_exceeds(SpirvVersion::new(1, 4));
 
@@ -199,7 +200,7 @@ impl ValidationRule for PhysicalStorageBufferInterfaceRule {
         "physical-storage-buffer-interface"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         if !ctx.env.is_vulkan() {
             return Ok(());
         }
@@ -241,8 +242,8 @@ impl ValidationRule for PhysicalStorageBufferInterfaceRule {
                                 return Err(
                                     ValidationError::InterfaceContainsPhysicalStorageBuffer {
                                         variable_id: to_id(var_id),
-                                    },
-                                );
+                                    }.into(),
+                        );
                             }
                         }
                     }
@@ -271,7 +272,7 @@ impl ValidationRule for LocationConflictRule {
         "location-conflict"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         if !ctx.env.is_vulkan() {
             return Ok(());
         }
@@ -435,7 +436,7 @@ impl ValidationRule for LocationConflictRule {
                             storage_class: *sc,
                             location: loc_component.0,
                             component: loc_component.1,
-                        });
+                        }.into());
                     }
                 }
             }
@@ -453,7 +454,7 @@ impl ValidationRule for IndexDecorationRule {
         "index-decoration"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let module = ctx.module();
 
         // Build set of variables with Index decoration
@@ -521,7 +522,7 @@ impl ValidationRule for IndexDecorationRule {
             if sc != Some(&StorageClass::Output) {
                 return Err(ValidationError::IndexDecorationNotOutput {
                     variable_id: to_id(var_id),
-                });
+                }.into());
             }
 
             // Check that it's used in a Fragment entry point
@@ -538,7 +539,145 @@ impl ValidationRule for IndexDecorationRule {
             if !is_fragment {
                 return Err(ValidationError::IndexDecorationNotFragment {
                     variable_id: to_id(var_id),
-                });
+                }.into());
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Validates PerVertexKHR decoration requirements.
+///
+/// This rule validates:
+/// - PerVertexKHR can only be applied in Fragment execution model (VUID-6777)
+/// - PerVertexKHR decorated variables must be declared as arrays (VUID-6778)
+///
+/// Note: Storage class validation (must be Input) is handled by VulkanDecorationStorageClassRule
+/// in annotation.rs.
+pub struct PerVertexKHRRule;
+
+impl ValidationRule for PerVertexKHRRule {
+    fn name(&self) -> &'static str {
+        "per-vertex-khr"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
+        if !ctx.env.is_vulkan() {
+            return Ok(());
+        }
+
+        let module = ctx.module();
+
+        // Build set of variables with PerVertexKHR decoration
+        let mut per_vertex_vars: HashSet<u32> = HashSet::new();
+        for inst in &module.annotations {
+            if inst.class.opcode == Op::Decorate {
+                if let (Some(Operand::IdRef(target_id)), Some(Operand::Decoration(dec))) =
+                    (inst.operands.first(), inst.operands.get(1))
+                {
+                    if *dec == Decoration::PerVertexKHR {
+                        per_vertex_vars.insert(*target_id);
+                    }
+                }
+            }
+        }
+
+        if per_vertex_vars.is_empty() {
+            return Ok(());
+        }
+
+        // Build map of variable ID -> (result_type, storage class)
+        let mut var_info: HashMap<u32, (Option<u32>, StorageClass)> = HashMap::new();
+        for inst in &module.types_global_values {
+            if inst.class.opcode == Op::Variable || inst.class.opcode == Op::UntypedVariableKHR {
+                if let (Some(var_id), Some(Operand::StorageClass(sc))) =
+                    (inst.result_id, inst.operands.first())
+                {
+                    var_info.insert(var_id, (inst.result_type, *sc));
+                }
+            }
+        }
+
+        // Build map of entry point -> execution model and interface
+        let mut entry_point_models: HashMap<u32, ExecutionModel> = HashMap::new();
+        let mut entry_point_interfaces: HashMap<u32, HashSet<u32>> = HashMap::new();
+
+        for ep in &module.entry_points {
+            if ep.class.opcode != Op::EntryPoint {
+                continue;
+            }
+            if let (Some(Operand::ExecutionModel(model)), Some(Operand::IdRef(func_id))) =
+                (ep.operands.first(), ep.operands.get(1))
+            {
+                entry_point_models.insert(*func_id, *model);
+
+                let interfaces: HashSet<u32> = ep
+                    .operands
+                    .iter()
+                    .skip(3)
+                    .filter_map(|op| match op {
+                        Operand::IdRef(id) => Some(*id),
+                        _ => None,
+                    })
+                    .collect();
+
+                entry_point_interfaces.insert(*func_id, interfaces);
+            }
+        }
+
+        // Check each PerVertexKHR decorated variable
+        for var_id in per_vertex_vars {
+            // Check that it's used in a Fragment entry point
+            let mut found_in_fragment = false;
+            let mut found_in_non_fragment = false;
+
+            for (ep_id, interfaces) in &entry_point_interfaces {
+                if interfaces.contains(&var_id) {
+                    if entry_point_models.get(ep_id) == Some(&ExecutionModel::Fragment) {
+                        found_in_fragment = true;
+                    } else {
+                        found_in_non_fragment = true;
+                    }
+                }
+            }
+
+            // PerVertexKHR can only be used in Fragment entry points
+            if found_in_non_fragment && !found_in_fragment {
+                return Err(ValidationError::VulkanPerVertexDecorationNotFragment {
+                    variable_id: to_id(var_id),
+                }.into());
+            }
+
+            // Check that the type is an array
+            if let Some((result_type, _sc)) = var_info.get(&var_id) {
+                if let Some(ptr_type_id) = result_type {
+                    if let Ok(ptr_rid) = ResultId::try_from(*ptr_type_id) {
+                        if let Some(ptr_inst) = ctx.definitions.get(&ptr_rid) {
+                            if ptr_inst.class.opcode == Op::TypePointer {
+                                if let Some(Operand::IdRef(pointee_id)) = ptr_inst.operands.get(1) {
+                                    if let Ok(pointee_rid) = ResultId::try_from(*pointee_id) {
+                                        if let Some(pointee_inst) =
+                                            ctx.definitions.get(&pointee_rid)
+                                        {
+                                            let is_array = matches!(
+                                                pointee_inst.class.opcode,
+                                                Op::TypeArray | Op::TypeRuntimeArray
+                                            );
+                                            if !is_array {
+                                                return Err(
+                                                    ValidationError::VulkanPerVertexDecorationNotArray {
+                                                        variable_id: to_id(var_id),
+                                                    }.into(),
+                        );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -554,6 +693,7 @@ pub fn all_interface_rules() -> Vec<Box<dyn ValidationRule>> {
         // Note: Storage class singleton validation is in entry_points.rs
         Box::new(LocationConflictRule),
         Box::new(IndexDecorationRule),
+        Box::new(PerVertexKHRRule),
     ]
 }
 

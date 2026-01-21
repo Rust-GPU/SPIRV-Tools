@@ -326,6 +326,13 @@ pub trait TypeResolver {
         definitions: &HashMap<ResultId, Instruction>,
     ) -> bool;
 
+    /// Returns true if the type is an unsigned int scalar type.
+    fn is_unsigned_int_scalar(
+        &self,
+        type_id: u32,
+        definitions: &HashMap<ResultId, Instruction>,
+    ) -> bool;
+
     /// Returns true if the type is an unsigned int scalar or vector type.
     fn is_unsigned_int_scalar_or_vector(
         &self,
@@ -355,6 +362,69 @@ pub trait TypeResolver {
     /// BFloat16 is identified by OpTypeFloat with 16-bit width and BFloat16KHR encoding.
     fn is_bfloat16_scalar(&self, type_id: u32, definitions: &HashMap<ResultId, Instruction>)
         -> bool;
+
+    /// Returns true if the type is a cooperative matrix type.
+    fn is_cooperative_matrix(
+        &self,
+        type_id: u32,
+        definitions: &HashMap<ResultId, Instruction>,
+    ) -> bool;
+
+    /// Returns true if the type is a cooperative matrix type with float element type.
+    fn is_float_cooperative_matrix(
+        &self,
+        type_id: u32,
+        definitions: &HashMap<ResultId, Instruction>,
+    ) -> bool;
+
+    /// Returns true if the type is a cooperative matrix type with int element type.
+    fn is_int_cooperative_matrix(
+        &self,
+        type_id: u32,
+        definitions: &HashMap<ResultId, Instruction>,
+    ) -> bool;
+
+    /// Returns true if the type is a cooperative matrix type with unsigned int element type.
+    fn is_unsigned_int_cooperative_matrix(
+        &self,
+        type_id: u32,
+        definitions: &HashMap<ResultId, Instruction>,
+    ) -> bool;
+
+    /// Returns true if the type is a cooperative vector NV type.
+    fn is_cooperative_vector_nv(
+        &self,
+        type_id: u32,
+        definitions: &HashMap<ResultId, Instruction>,
+    ) -> bool;
+
+    /// Returns true if the type is a cooperative vector NV type with float element type.
+    fn is_float_cooperative_vector_nv(
+        &self,
+        type_id: u32,
+        definitions: &HashMap<ResultId, Instruction>,
+    ) -> bool;
+
+    /// Returns true if the type is a cooperative vector NV type with int element type.
+    fn is_int_cooperative_vector_nv(
+        &self,
+        type_id: u32,
+        definitions: &HashMap<ResultId, Instruction>,
+    ) -> bool;
+
+    /// Returns true if the type is a cooperative vector NV type with unsigned int element type.
+    fn is_unsigned_int_cooperative_vector_nv(
+        &self,
+        type_id: u32,
+        definitions: &HashMap<ResultId, Instruction>,
+    ) -> bool;
+
+    /// Get the component type ID of a cooperative matrix type.
+    fn get_cooperative_matrix_component_type(
+        &self,
+        type_id: u32,
+        definitions: &HashMap<ResultId, Instruction>,
+    ) -> Option<u32>;
 }
 
 /// Default type resolver that uses a definitions map.
@@ -415,6 +485,16 @@ impl TypeResolver for DefaultTypeResolver {
         }
 
         false
+    }
+
+    fn is_unsigned_int_scalar(
+        &self,
+        type_id: u32,
+        definitions: &HashMap<ResultId, Instruction>,
+    ) -> bool {
+        get_type_instruction(type_id, definitions)
+            .map(|inst| inst.is_unsigned_int_type())
+            .unwrap_or(false)
     }
 
     fn is_unsigned_int_scalar_or_vector(
@@ -528,6 +608,170 @@ impl TypeResolver for DefaultTypeResolver {
             .get(1)
             .map(|op| matches!(op, Operand::FPEncoding(rspirv::spirv::FPEncoding::BFloat16KHR)))
             .unwrap_or(false)
+    }
+
+    fn is_cooperative_matrix(
+        &self,
+        type_id: u32,
+        definitions: &HashMap<ResultId, Instruction>,
+    ) -> bool {
+        get_type_instruction(type_id, definitions)
+            .map(|inst| inst.is_cooperative_matrix_type())
+            .unwrap_or(false)
+    }
+
+    fn is_float_cooperative_matrix(
+        &self,
+        type_id: u32,
+        definitions: &HashMap<ResultId, Instruction>,
+    ) -> bool {
+        let Some(inst) = get_type_instruction(type_id, definitions) else {
+            return false;
+        };
+
+        if !inst.is_cooperative_matrix_type() {
+            return false;
+        }
+
+        // For cooperative matrix types, the element type is the first operand
+        // OpTypeCooperativeMatrixKHR/NV: ComponentType, Scope, Rows, Columns, ...
+        if let Some(element_type_id) = inst.operands.first().and_then(id_ref) {
+            return self.is_float_scalar(element_type_id, definitions);
+        }
+
+        false
+    }
+
+    fn is_int_cooperative_matrix(
+        &self,
+        type_id: u32,
+        definitions: &HashMap<ResultId, Instruction>,
+    ) -> bool {
+        let Some(inst) = get_type_instruction(type_id, definitions) else {
+            return false;
+        };
+
+        if !inst.is_cooperative_matrix_type() {
+            return false;
+        }
+
+        // For cooperative matrix types, the element type is the first operand
+        // OpTypeCooperativeMatrixKHR/NV: ComponentType, Scope, Rows, Columns, ...
+        if let Some(element_type_id) = inst.operands.first().and_then(id_ref) {
+            return self.is_int_scalar(element_type_id, definitions);
+        }
+
+        false
+    }
+
+    fn is_unsigned_int_cooperative_matrix(
+        &self,
+        type_id: u32,
+        definitions: &HashMap<ResultId, Instruction>,
+    ) -> bool {
+        let Some(inst) = get_type_instruction(type_id, definitions) else {
+            return false;
+        };
+
+        if !inst.is_cooperative_matrix_type() {
+            return false;
+        }
+
+        // For cooperative matrix types, the element type is the first operand
+        // OpTypeCooperativeMatrixKHR/NV: ComponentType, Scope, Rows, Columns, ...
+        if let Some(element_type_id) = inst.operands.first().and_then(id_ref) {
+            return self.is_unsigned_int_scalar(element_type_id, definitions);
+        }
+
+        false
+    }
+
+    fn is_cooperative_vector_nv(
+        &self,
+        type_id: u32,
+        definitions: &HashMap<ResultId, Instruction>,
+    ) -> bool {
+        get_type_instruction(type_id, definitions)
+            .map(|inst| inst.class.opcode == Op::TypeCooperativeVectorNV)
+            .unwrap_or(false)
+    }
+
+    fn is_float_cooperative_vector_nv(
+        &self,
+        type_id: u32,
+        definitions: &HashMap<ResultId, Instruction>,
+    ) -> bool {
+        let Some(inst) = get_type_instruction(type_id, definitions) else {
+            return false;
+        };
+
+        if inst.class.opcode != Op::TypeCooperativeVectorNV {
+            return false;
+        }
+
+        // OpTypeCooperativeVectorNV: ComponentType, Components
+        if let Some(element_type_id) = inst.operands.first().and_then(id_ref) {
+            return self.is_float_scalar(element_type_id, definitions);
+        }
+
+        false
+    }
+
+    fn is_int_cooperative_vector_nv(
+        &self,
+        type_id: u32,
+        definitions: &HashMap<ResultId, Instruction>,
+    ) -> bool {
+        let Some(inst) = get_type_instruction(type_id, definitions) else {
+            return false;
+        };
+
+        if inst.class.opcode != Op::TypeCooperativeVectorNV {
+            return false;
+        }
+
+        // OpTypeCooperativeVectorNV: ComponentType, Components
+        if let Some(element_type_id) = inst.operands.first().and_then(id_ref) {
+            return self.is_int_scalar(element_type_id, definitions);
+        }
+
+        false
+    }
+
+    fn is_unsigned_int_cooperative_vector_nv(
+        &self,
+        type_id: u32,
+        definitions: &HashMap<ResultId, Instruction>,
+    ) -> bool {
+        let Some(inst) = get_type_instruction(type_id, definitions) else {
+            return false;
+        };
+
+        if inst.class.opcode != Op::TypeCooperativeVectorNV {
+            return false;
+        }
+
+        // OpTypeCooperativeVectorNV: ComponentType, Components
+        if let Some(element_type_id) = inst.operands.first().and_then(id_ref) {
+            return self.is_unsigned_int_scalar(element_type_id, definitions);
+        }
+
+        false
+    }
+
+    fn get_cooperative_matrix_component_type(
+        &self,
+        type_id: u32,
+        definitions: &HashMap<ResultId, Instruction>,
+    ) -> Option<u32> {
+        let inst = get_type_instruction(type_id, definitions)?;
+
+        if !inst.is_cooperative_matrix_type() {
+            return None;
+        }
+
+        // OpTypeCooperativeMatrixKHR/NV: ComponentType, Scope, Rows, Columns, ...
+        inst.operands.first().and_then(id_ref)
     }
 }
 

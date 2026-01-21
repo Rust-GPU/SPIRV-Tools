@@ -11,6 +11,7 @@ use rspirv::spirv::Op;
 use std::collections::HashMap;
 
 use crate::validation::context::{ValidationContext, ValidationRule};
+use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::{Id, ResultId};
 
@@ -49,14 +50,28 @@ fn is_bfloat16_type(
     false
 }
 
-/// Check if a type has BFloat16 encoding (FPEncoding = 1).
+/// Check if a type has BFloat16 encoding (FPEncoding = BFloat16KHR).
+///
+/// BFloat16 is indicated by the FPEncoding operand on OpTypeFloat, not by a decoration.
+/// The encoding is stored as the second operand of OpTypeFloat (after the width).
 fn has_bfloat16_encoding(
-    _type_id: ResultId,
-    _definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    type_id: ResultId,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
 ) -> bool {
-    // TODO: Check decorations for FPEncoding = 1 (BFloat16)
-    // This requires access to decoration information
-    // For now, return false as we need decoration support
+    if let Some(inst) = definitions.get(&type_id) {
+        // BFloat16 encoding is specified as the second operand of OpTypeFloat
+        // (first operand is the width)
+        return inst
+            .operands
+            .get(1)
+            .map(|op| {
+                matches!(
+                    op,
+                    Operand::FPEncoding(rspirv::spirv::FPEncoding::BFloat16KHR)
+                )
+            })
+            .unwrap_or(false);
+    }
     false
 }
 
@@ -207,7 +222,7 @@ impl ValidationRule for InvalidTypeRule {
         "invalid-type"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
             let func_id = func
                 .def
@@ -231,14 +246,14 @@ impl ValidationRule for InvalidTypeRule {
                                     function: func_id,
                                     block: block_id,
                                     opcode: inst.class.opcode,
-                                });
+                                }.into());
                             }
                             if contains_fp8(result_type_id, ctx.definitions) {
                                 return Err(ValidationError::InvalidTypeFP8 {
                                     function: func_id,
                                     block: block_id,
                                     opcode: inst.class.opcode,
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -254,14 +269,14 @@ impl ValidationRule for InvalidTypeRule {
                                     function: func_id,
                                     block: block_id,
                                     opcode: inst.class.opcode,
-                                });
+                                }.into());
                             }
                             if contains_fp8(operand_type, ctx.definitions) {
                                 return Err(ValidationError::InvalidTypeFP8 {
                                     function: func_id,
                                     block: block_id,
                                     opcode: inst.class.opcode,
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -275,14 +290,14 @@ impl ValidationRule for InvalidTypeRule {
                                     function: func_id,
                                     block: block_id,
                                     opcode: inst.class.opcode,
-                                });
+                                }.into());
                             }
                             if contains_fp8(data_type, ctx.definitions) {
                                 return Err(ValidationError::InvalidTypeFP8 {
                                     function: func_id,
                                     block: block_id,
                                     opcode: inst.class.opcode,
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -296,14 +311,14 @@ impl ValidationRule for InvalidTypeRule {
                                     function: func_id,
                                     block: block_id,
                                     opcode: inst.class.opcode,
-                                });
+                                }.into());
                             }
                             if contains_fp8(value_type, ctx.definitions) {
                                 return Err(ValidationError::InvalidTypeFP8 {
                                     function: func_id,
                                     block: block_id,
                                     opcode: inst.class.opcode,
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -316,14 +331,14 @@ impl ValidationRule for InvalidTypeRule {
                                     function: func_id,
                                     block: block_id,
                                     opcode: inst.class.opcode,
-                                });
+                                }.into());
                             }
                             if contains_fp8(result_type_id, ctx.definitions) {
                                 return Err(ValidationError::InvalidTypeFP8 {
                                     function: func_id,
                                     block: block_id,
                                     opcode: inst.class.opcode,
-                                });
+                                }.into());
                             }
                         }
                     }

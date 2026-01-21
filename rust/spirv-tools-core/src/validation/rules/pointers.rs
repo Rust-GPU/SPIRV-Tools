@@ -12,6 +12,7 @@ use rspirv::dr::{Module, Operand};
 use rspirv::spirv::{AddressingModel, Capability, Decoration, Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
+use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::{Id, ResultId, TypeId};
 
@@ -27,7 +28,7 @@ impl ValidationRule for LogicalPointerRule {
         "logical-pointers"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         if ctx.options.relax_logical_pointer {
             return Ok(());
         }
@@ -111,7 +112,7 @@ impl ValidationRule for LogicalPointerRule {
                             variable,
                             pointee_storage_class,
                             required_capability: Capability::VariablePointersStorageBuffer,
-                        });
+                        }.into());
                     }
                 }
                 StorageClass::Workgroup => {
@@ -123,14 +124,14 @@ impl ValidationRule for LogicalPointerRule {
                             variable,
                             pointee_storage_class,
                             required_capability: Capability::VariablePointers,
-                        });
+                        }.into());
                     }
                 }
                 _ => {
                     return Err(ValidationError::LogicalPointerPointeeStorageClassInvalid {
                         variable,
                         pointee_storage_class,
-                    });
+                    }.into());
                 }
             }
 
@@ -148,7 +149,7 @@ impl ValidationRule for LogicalPointerRule {
                 return Err(ValidationError::LogicalPointerInvalidStorageClass {
                     variable,
                     storage_class: var_storage_class,
-                });
+                }.into());
             }
         }
 
@@ -210,7 +211,7 @@ impl ValidationRule for LoadStoreLogicalPointerRule {
         "load-store-logical-pointers"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         if ctx.options.relax_logical_pointer {
             return Ok(());
         }
@@ -290,7 +291,7 @@ impl ValidationRule for LoadStoreLogicalPointerRule {
                     instruction: opcode,
                     pointer,
                     source_opcode,
-                });
+                }.into());
             }
 
             // For CopyMemory/CopyMemorySized, also check the source pointer
@@ -336,7 +337,7 @@ impl ValidationRule for LoadStoreLogicalPointerRule {
                         instruction: opcode,
                         pointer,
                         source_opcode: src_source_opcode,
-                    });
+                    }.into());
                 }
             }
         }
@@ -357,7 +358,7 @@ impl ValidationRule for StoreTypeCompatibilityRule {
         "store-type-compatibility"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for inst in ctx.module.all_inst_iter() {
             if inst.class.opcode != Op::Store {
                 continue;
@@ -437,7 +438,7 @@ impl ValidationRule for StoreTypeCompatibilityRule {
                 pointer: ptr_id,
                 pointer_type: pointee_id,
                 object_type: obj_type_id,
-            });
+            }.into());
         }
 
         Ok(())
@@ -1047,7 +1048,7 @@ impl ValidationRule for VariablePointerRule {
         "variable-pointers"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         if ctx.options.relax_logical_pointer {
             return Ok(());
         }
@@ -1132,8 +1133,8 @@ impl ValidationRule for VariablePointerRule {
                                                 return Err(
                                                     ValidationError::VariablePointerToBlockArray {
                                                         pointer: inst_id,
-                                                    },
-                                                );
+                                                    }.into(),
+                        );
                                             }
                                         }
                                     }
@@ -1148,8 +1149,8 @@ impl ValidationRule for VariablePointerRule {
                                         return Err(
                                             ValidationError::VariablePointerToMatrixType {
                                                 pointer: inst_id,
-                                            },
-                                        );
+                                            }.into(),
+                        );
                                     }
                                 }
                             }
@@ -1163,7 +1164,7 @@ impl ValidationRule for VariablePointerRule {
             if traces_through_matrix(inst, ctx.definitions, &mut trace_visited) {
                 return Err(ValidationError::VariablePointerToMatrixElement {
                     pointer: inst_id,
-                });
+                }.into());
             }
 
             // Check same-buffer constraint for OpSelect/OpPhi without VariablePointers capability
@@ -1204,7 +1205,7 @@ impl ValidationRule for VariablePointerRule {
                     if source_vars.len() > 1 {
                         return Err(ValidationError::VariablePointerDifferentBuffers {
                             pointer: inst_id,
-                        });
+                        }.into());
                     }
                 }
             }
@@ -1233,6 +1234,13 @@ fn opcode_allows_logical_pointer_operands_unconditionally(opcode: Op) -> bool {
             | Op::CopyObject
             | Op::ArrayLength
             | Op::ExtInst
+            // Image operations with pointer operands
+            | Op::ImageRead
+            | Op::ImageWrite
+            // Pointer comparison ops - validated separately by PointerComparisonRule
+            | Op::PtrEqual
+            | Op::PtrNotEqual
+            | Op::PtrDiff
             // Core spec bugs (decorations, etc.)
             | Op::Decorate
             | Op::DecorateId
@@ -1356,14 +1364,15 @@ fn opcode_allows_logical_pointer_operands_unconditionally(opcode: Op) -> bool {
 }
 
 /// Returns true if the opcode requires variable pointer capability for logical pointer operands.
+///
+/// Note: PtrEqual, PtrNotEqual, and PtrDiff are NOT included here because they have
+/// dedicated validation in `PointerComparisonRule` which handles storage class checks
+/// more specifically and must run first.
 fn opcode_requires_variable_pointer_for_logical_operand(opcode: Op) -> bool {
     matches!(
         opcode,
         Op::ReturnValue
             | Op::PtrAccessChain
-            | Op::PtrEqual
-            | Op::PtrNotEqual
-            | Op::PtrDiff
             // Core spec bugs
             | Op::Select
             | Op::Phi
@@ -1409,7 +1418,7 @@ impl ValidationRule for LogicalPointerOperandsRule {
         "logical-pointer-operands"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         if ctx.options.relax_logical_pointer {
             return Ok(());
         }
@@ -1484,7 +1493,7 @@ impl ValidationRule for LogicalPointerOperandsRule {
 
                 return Err(ValidationError::LogicalPointerOperandRequiresCapability {
                     opcode,
-                });
+                }.into());
             }
 
             // Check if atomic operation (always allowed)
@@ -1493,7 +1502,7 @@ impl ValidationRule for LogicalPointerOperandsRule {
             }
 
             // Otherwise not allowed
-            return Err(ValidationError::LogicalPointerOperandNotAllowed { opcode });
+            return Err(ValidationError::LogicalPointerOperandNotAllowed { opcode }.into());
         }
 
         Ok(())
@@ -1552,7 +1561,7 @@ impl ValidationRule for LogicalPointerReturnsRule {
         "logical-pointer-returns"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         if ctx.options.relax_logical_pointer {
             return Ok(());
         }
@@ -1612,11 +1621,11 @@ impl ValidationRule for LogicalPointerReturnsRule {
 
                 return Err(ValidationError::LogicalPointerReturnRequiresCapability {
                     opcode,
-                });
+                }.into());
             }
 
             // Otherwise not allowed
-            return Err(ValidationError::LogicalPointerReturnNotAllowed { opcode });
+            return Err(ValidationError::LogicalPointerReturnNotAllowed { opcode }.into());
         }
 
         Ok(())

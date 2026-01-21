@@ -82,7 +82,7 @@ pub fn validate_capabilities(
             let allowed_by_env = env.is_capability_allowed(capability);
 
             if !allowed_by_env && capability == Capability::VulkanMemoryModel {
-                return Err(ValidationError::DisallowedCapability { capability, env });
+                return Err(ValidationError::DisallowedCapability { capability, env }.into());
             }
 
             if env.is_opencl()
@@ -100,7 +100,7 @@ pub fn validate_capabilities(
                 return Err(ValidationError::MissingRequiredCapability {
                     required_capability: Capability::ImageBasic,
                     capability,
-                });
+                }.into());
             }
 
             let grammar_version = grammar_requirements.required_version;
@@ -129,7 +129,7 @@ pub fn validate_capabilities(
                         return Err(ValidationError::DisallowedExtension {
                             extension: ExtensionName::from(required_ext),
                             env,
-                        });
+                        }.into());
                     }
                 }
             }
@@ -139,7 +139,7 @@ pub fn validate_capabilities(
                         return Err(ValidationError::DisallowedExtension {
                             extension: ExtensionName::from(required_ext),
                             env,
-                        });
+                        }.into());
                     }
                 }
             }
@@ -163,13 +163,13 @@ pub fn validate_capabilities(
                             !grammar_requirements.required_extensions.is_empty()
                                 || manual_required_extension.is_some();
                         if !allowed_by_env && !has_required_extension {
-                            return Err(ValidationError::DisallowedCapability { capability, env });
+                            return Err(ValidationError::DisallowedCapability { capability, env }.into());
                         }
                         return Err(ValidationError::CapabilityRequiresSpirvVersion {
                             capability,
                             required_version,
                             target_version,
-                        });
+                        }.into());
                     }
                 }
             }
@@ -180,13 +180,13 @@ pub fn validate_capabilities(
                         return Err(ValidationError::DisallowedExtension {
                             extension: ExtensionName::from(required_ext),
                             env,
-                        });
+                        }.into());
                     }
                     if !has_extension(extensions, required_ext) {
                         return Err(ValidationError::DisallowedCapabilityMissingExtension {
                             capability,
                             required_extension: required_ext.to_string(),
-                        });
+                        }.into());
                     }
                 }
             }
@@ -197,13 +197,13 @@ pub fn validate_capabilities(
                         return Err(ValidationError::DisallowedExtension {
                             extension: ExtensionName::from(required_ext),
                             env,
-                        });
+                        }.into());
                     }
                     if !has_extension(extensions, required_ext) {
                         return Err(ValidationError::DisallowedCapabilityMissingExtension {
                             capability,
                             required_extension: required_ext.to_string(),
-                        });
+                        }.into());
                     }
                 }
             }
@@ -212,7 +212,7 @@ pub fn validate_capabilities(
             let allowed_by_capability =
                 capability_enabled_by_capability(env, capability, &declared);
             if !(allowed_by_env || allowed_by_extension || allowed_by_capability) {
-                return Err(ValidationError::DisallowedCapability { capability, env });
+                return Err(ValidationError::DisallowedCapability { capability, env }.into());
             }
 
             for required_cap in grammar_requirements
@@ -227,7 +227,7 @@ pub fn validate_capabilities(
                     return Err(ValidationError::MissingRequiredCapability {
                         required_capability: *required_cap,
                         capability,
-                    });
+                    }.into());
                 }
             }
         }

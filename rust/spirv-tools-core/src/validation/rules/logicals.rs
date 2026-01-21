@@ -12,6 +12,7 @@
 use rspirv::spirv::Op;
 
 use crate::validation::context::{ValidationContext, ValidationRule};
+use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::type_ext::{DefaultTypeResolver, TypeResolver};
 use crate::validation::types::Id;
@@ -32,7 +33,7 @@ impl ValidationRule for BooleanReductionRule {
         "boolean-reduction"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let resolver = DefaultTypeResolver;
 
         for function in &ctx.module.functions {
@@ -71,7 +72,7 @@ impl ValidationRule for BooleanReductionRule {
                                 opcode: inst.class.opcode,
                                 result_type,
                                 expected: "bool scalar",
-                            });
+                            }.into());
                         }
                     }
 
@@ -101,7 +102,7 @@ impl ValidationRule for BooleanReductionRule {
                                             opcode: inst.class.opcode,
                                             result_type,
                                             expected: "bool vector",
-                                        });
+                                        }.into());
                                     }
                                 }
                             }
@@ -132,7 +133,7 @@ impl ValidationRule for FloatClassificationRule {
         "float-classification"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let float_class_ops = [
             Op::IsNan,
             Op::IsInf,
@@ -179,7 +180,7 @@ impl ValidationRule for FloatClassificationRule {
                                 opcode: inst.class.opcode,
                                 result_type,
                                 expected: "bool scalar or vector",
-                            });
+                            }.into());
                         }
                     }
 
@@ -207,7 +208,7 @@ impl ValidationRule for FloatClassificationRule {
                                             opcode: inst.class.opcode,
                                             result_type,
                                             expected: "float scalar or vector",
-                                        });
+                                        }.into());
                                     }
                                 }
 
@@ -228,7 +229,7 @@ impl ValidationRule for FloatClassificationRule {
                                             block,
                                             opcode: inst.class.opcode,
                                             result_type,
-                                        });
+                                        }.into());
                                     }
                                 }
                             }
@@ -260,7 +261,7 @@ impl ValidationRule for FloatComparisonRule {
         "float-comparison"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let float_cmp_ops = [
             Op::FOrdEqual,
             Op::FUnordEqual,
@@ -317,7 +318,7 @@ impl ValidationRule for FloatComparisonRule {
                                 opcode: inst.class.opcode,
                                 result_type,
                                 expected: "bool scalar or vector",
-                            });
+                            }.into());
                         }
                     }
 
@@ -354,7 +355,7 @@ impl ValidationRule for FloatComparisonRule {
                                     opcode: inst.class.opcode,
                                     result_type,
                                     expected: "float scalar or vector",
-                                });
+                                }.into());
                             }
                         }
 
@@ -374,7 +375,7 @@ impl ValidationRule for FloatComparisonRule {
                                     opcode: inst.class.opcode,
                                     result_type,
                                     expected: "bool scalar or vector",
-                                });
+                                }.into());
                             }
                         }
 
@@ -390,7 +391,7 @@ impl ValidationRule for FloatComparisonRule {
                                     block,
                                     opcode: inst.class.opcode,
                                     result_type,
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -418,7 +419,7 @@ impl ValidationRule for LogicalOperationsRule {
         "logical-operations"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let logical_ops = [
             Op::LogicalEqual,
             Op::LogicalNotEqual,
@@ -465,7 +466,7 @@ impl ValidationRule for LogicalOperationsRule {
                                 opcode: inst.class.opcode,
                                 result_type,
                                 expected: "bool scalar or vector",
-                            });
+                            }.into());
                         }
                     }
 
@@ -495,7 +496,7 @@ impl ValidationRule for LogicalOperationsRule {
                                             block,
                                             opcode: inst.class.opcode,
                                             result_type,
-                                        });
+                                        }.into());
                                     }
                                 }
                             }
@@ -527,7 +528,7 @@ impl ValidationRule for IntComparisonRule {
         "int-comparison"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let int_cmp_ops = [
             Op::IEqual,
             Op::INotEqual,
@@ -579,7 +580,7 @@ impl ValidationRule for IntComparisonRule {
                                 opcode: inst.class.opcode,
                                 result_type,
                                 expected: "bool scalar or vector",
-                            });
+                            }.into());
                         }
                     }
 
@@ -617,7 +618,7 @@ impl ValidationRule for IntComparisonRule {
                                     opcode: inst.class.opcode,
                                     result_type,
                                     expected: "int scalar or vector",
-                                });
+                                }.into());
                             }
                         }
 
@@ -634,7 +635,7 @@ impl ValidationRule for IntComparisonRule {
                                     opcode: inst.class.opcode,
                                     result_type,
                                     expected: "int scalar or vector",
-                                });
+                                }.into());
                             }
                         }
 
@@ -653,7 +654,7 @@ impl ValidationRule for IntComparisonRule {
                                     block,
                                     opcode: inst.class.opcode,
                                     result_type,
-                                });
+                                }.into());
                             }
                         }
 
@@ -672,7 +673,7 @@ impl ValidationRule for IntComparisonRule {
                                     block,
                                     opcode: inst.class.opcode,
                                     result_type,
-                                });
+                                }.into());
                             }
                         }
 
@@ -688,7 +689,7 @@ impl ValidationRule for IntComparisonRule {
                                     block,
                                     opcode: inst.class.opcode,
                                     result_type,
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -720,7 +721,7 @@ impl ValidationRule for SelectRule {
         "select"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         use rspirv::spirv::{AddressingModel, Capability};
 
         let resolver = DefaultTypeResolver;
@@ -791,7 +792,7 @@ impl ValidationRule for SelectRule {
                                         function: func,
                                         block,
                                         result_type,
-                                    });
+                                    }.into());
                                 }
                             }
                             true
@@ -807,7 +808,7 @@ impl ValidationRule for SelectRule {
                                         function: func,
                                         block,
                                         result_type,
-                                    });
+                                    }.into());
                                 }
                             }
                             true
@@ -831,7 +832,7 @@ impl ValidationRule for SelectRule {
                                 block,
                                 result_type,
                                 supports_composites: supports_composite_select,
-                            });
+                            }.into());
                         }
                     }
 
@@ -861,7 +862,7 @@ impl ValidationRule for SelectRule {
                                     function: func,
                                     block,
                                     result_type,
-                                });
+                                }.into());
                             }
                         }
 
@@ -880,7 +881,7 @@ impl ValidationRule for SelectRule {
                                         function: func,
                                         block,
                                         result_type,
-                                    });
+                                    }.into());
                                 }
                             }
                         }
@@ -913,7 +914,7 @@ impl ValidationRule for SelectRule {
                                         function: func,
                                         block,
                                         result_type,
-                                    });
+                                    }.into());
                                 }
                             }
                         }

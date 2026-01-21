@@ -10,11 +10,15 @@
 //! - Image query operations
 //! - Image operand masks (Bias, Lod, Grad, Offset, etc.)
 //! - Sparse image operations
+//! - OpSampledImage same-block consumer validation
+
+use std::collections::HashMap;
 
 use rspirv::dr::{Instruction, Operand};
-use rspirv::spirv::{Capability, Dim, ExecutionModel, ImageFormat, ImageOperands, Op};
+use rspirv::spirv::{Capability, Decoration, Dim, ExecutionModel, ImageFormat, ImageOperands, Op};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
+use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::op_ext::OpExt;
 use crate::validation::type_ext::{DefaultTypeResolver, TypeInstructionExt, TypeResolver};
@@ -147,7 +151,7 @@ impl ValidationRule for ImageTypeRule {
         "image-type"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for inst in &ctx.module.types_global_values {
             if inst.class.opcode != Op::TypeImage {
                 continue;
@@ -159,7 +163,7 @@ impl ValidationRule for ImageTypeRule {
                     type_id: inst.result_id.map(|id| TypeId::try_from(id).ok()).flatten(),
                     expected: 7,
                     actual: inst.operands.len(),
-                });
+                }.into());
             }
 
             // Extract Dim
@@ -189,12 +193,12 @@ impl ValidationRule for ImageTypeRule {
                 if arrayed != 0 {
                     return Err(ValidationError::ImageTypeSubpassDataMustNotBeArrayed {
                         type_id: inst.result_id.map(|id| TypeId::try_from(id).ok()).flatten(),
-                    });
+                    }.into());
                 }
                 if sampled != 2 {
                     return Err(ValidationError::ImageTypeSubpassDataSampledMustBeTwo {
                         type_id: inst.result_id.map(|id| TypeId::try_from(id).ok()).flatten(),
-                    });
+                    }.into());
                 }
             }
 
@@ -203,7 +207,7 @@ impl ValidationRule for ImageTypeRule {
                 if ctx.is_vulkan_env() {
                     return Err(ValidationError::ImageTypeBufferFormatRequired {
                         type_id: inst.result_id.map(|id| TypeId::try_from(id).ok()).flatten(),
-                    });
+                    }.into());
                 }
             }
         }
@@ -224,7 +228,7 @@ impl ValidationRule for ImageOperandRule {
         "image-operand"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
 
         for function in &ctx.module.functions {
             let function_id = function
@@ -267,7 +271,7 @@ impl ValidationRule for ImageOperandRule {
                                 function: function_id,
                                 block: block_id,
                                 opcode: inst.class.opcode,
-                            });
+                            }.into());
                         }
                     }
 
@@ -283,7 +287,7 @@ impl ValidationRule for ImageOperandRule {
                             function: function_id,
                             block: block_id,
                             opcode: inst.class.opcode,
-                        });
+                        }.into());
                     }
 
                     // Validate Bias operand
@@ -293,7 +297,7 @@ impl ValidationRule for ImageOperandRule {
                                 function: function_id,
                                 block: block_id,
                                 opcode: inst.class.opcode,
-                            });
+                            }.into());
                         }
                     }
 
@@ -309,7 +313,7 @@ impl ValidationRule for ImageOperandRule {
                                 function: function_id,
                                 block: block_id,
                                 opcode: inst.class.opcode,
-                            });
+                            }.into());
                         }
 
                         // Lod and Grad are mutually exclusive
@@ -318,7 +322,7 @@ impl ValidationRule for ImageOperandRule {
                                 function: function_id,
                                 block: block_id,
                                 opcode: inst.class.opcode,
-                            });
+                            }.into());
                         }
                     }
 
@@ -329,7 +333,7 @@ impl ValidationRule for ImageOperandRule {
                                 function: function_id,
                                 block: block_id,
                                 opcode: inst.class.opcode,
-                            });
+                            }.into());
                         }
                     }
 
@@ -340,7 +344,7 @@ impl ValidationRule for ImageOperandRule {
                                 function: function_id,
                                 block: block_id,
                                 opcode: inst.class.opcode,
-                            });
+                            }.into());
                         }
                     }
 
@@ -355,7 +359,7 @@ impl ValidationRule for ImageOperandRule {
                                     function: function_id,
                                     block: block_id,
                                     opcode: inst.class.opcode,
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -379,7 +383,7 @@ impl ValidationRule for ImageSampleExecutionModelRule {
         "image-sample-execution-model"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         // Check if we have implicit LOD operations
         let has_implicit_lod = ctx.module.functions.iter().any(|f| {
             f.blocks.iter().any(|b| {
@@ -419,7 +423,7 @@ impl ValidationRule for ImageSampleExecutionModelRule {
                                 function: function_id,
                                 block: block_id,
                                 opcode: inst.class.opcode,
-                            });
+                            }.into());
                         }
                     }
                 }
@@ -442,7 +446,7 @@ impl ValidationRule for ImageReadWriteRule {
         "image-read-write"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for function in &ctx.module.functions {
             let function_id = function
                 .def
@@ -469,7 +473,7 @@ impl ValidationRule for ImageReadWriteRule {
                                     function: function_id,
                                     block: block_id,
                                     opcode,
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -482,7 +486,7 @@ impl ValidationRule for ImageReadWriteRule {
                                 return Err(ValidationError::ImageWriteRequiresStorageImage {
                                     function: function_id,
                                     block: block_id,
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -506,7 +510,7 @@ impl ValidationRule for ImageQueryRule {
         "image-query"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let resolver = DefaultTypeResolver;
 
         for function in &ctx.module.functions {
@@ -536,7 +540,7 @@ impl ValidationRule for ImageQueryRule {
                                         block: block_id,
                                         opcode,
                                         expected: "integer scalar or vector",
-                                    });
+                                    }.into());
                                 }
                             }
 
@@ -551,7 +555,7 @@ impl ValidationRule for ImageQueryRule {
                                         function: function_id,
                                         block: block_id,
                                         dim: info.dim,
-                                    });
+                                    }.into());
                                 }
                             }
                         }
@@ -565,7 +569,7 @@ impl ValidationRule for ImageQueryRule {
                                         block: block_id,
                                         opcode,
                                         expected: "integer scalar or vector",
-                                    });
+                                    }.into());
                                 }
                             }
 
@@ -581,7 +585,7 @@ impl ValidationRule for ImageQueryRule {
                                         function: function_id,
                                         block: block_id,
                                         dim: info.dim,
-                                    });
+                                    }.into());
                                 }
                             }
                         }
@@ -595,7 +599,7 @@ impl ValidationRule for ImageQueryRule {
                                         block: block_id,
                                         opcode,
                                         expected: "float vector",
-                                    });
+                                    }.into());
                                 }
                                 // Validate vector component count is 2
                                 // Look up the type instruction to get vector component count
@@ -608,15 +612,25 @@ impl ValidationRule for ImageQueryRule {
                                                     block: block_id,
                                                     expected: 2,
                                                     actual: size,
-                                                });
+                                                }.into());
                                             }
                                         }
                                     }
                                 }
                             }
+
+                            // OpImageQueryLod cannot be used with multisampled images
+                            if let Some(info) = get_image_type_from_instruction(inst, ctx) {
+                                if info.multisampled != 0 {
+                                    return Err(ValidationError::ImageQueryLodCannotUseMultisampled {
+                                        function: function_id,
+                                        block: block_id,
+                                    }.into());
+                                }
+                            }
                         }
 
-                        Op::ImageQueryLevels | Op::ImageQuerySamples => {
+                        Op::ImageQueryLevels => {
                             // Result must be int scalar
                             if let Some(result_type) = inst.result_type {
                                 if !resolver.is_int_scalar(result_type, ctx.definitions) {
@@ -625,7 +639,45 @@ impl ValidationRule for ImageQueryRule {
                                         block: block_id,
                                         opcode,
                                         expected: "integer scalar",
-                                    });
+                                    }.into());
+                                }
+                            }
+
+                            // OpImageQueryLevels cannot be used with Buffer, Rect, or SubpassData
+                            if let Some(info) = get_image_type_from_instruction(inst, ctx) {
+                                if info.dim == Dim::DimBuffer
+                                    || info.dim == Dim::DimRect
+                                    || info.dim == Dim::DimSubpassData
+                                {
+                                    return Err(ValidationError::ImageQueryLevelsInvalidDim {
+                                        function: function_id,
+                                        block: block_id,
+                                        dim: info.dim,
+                                    }.into());
+                                }
+                            }
+                        }
+
+                        Op::ImageQuerySamples => {
+                            // Result must be int scalar
+                            if let Some(result_type) = inst.result_type {
+                                if !resolver.is_int_scalar(result_type, ctx.definitions) {
+                                    return Err(ValidationError::ImageQueryResultTypeInvalid {
+                                        function: function_id,
+                                        block: block_id,
+                                        opcode,
+                                        expected: "integer scalar",
+                                    }.into());
+                                }
+                            }
+
+                            // OpImageQuerySamples requires multisampled image
+                            if let Some(info) = get_image_type_from_instruction(inst, ctx) {
+                                if info.multisampled == 0 {
+                                    return Err(ValidationError::ImageQuerySamplesRequiresMultisampled {
+                                        function: function_id,
+                                        block: block_id,
+                                    }.into());
                                 }
                             }
                         }
@@ -652,7 +704,7 @@ impl ValidationRule for SampledImageRule {
         "sampled-image"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for function in &ctx.module.functions {
             let function_id = function
                 .def
@@ -680,7 +732,7 @@ impl ValidationRule for SampledImageRule {
                                     return Err(ValidationError::SampledImageResultTypeMustBeSampledImage {
                                         function: function_id,
                                         block: block_id,
-                                    });
+                                    }.into());
                                 }
                             }
                         }
@@ -693,7 +745,7 @@ impl ValidationRule for SampledImageRule {
                             return Err(ValidationError::SampledImageRequiresSampledOne {
                                 function: function_id,
                                 block: block_id,
-                            });
+                            }.into());
                         }
 
                         // SubpassData dimension cannot be used with OpSampledImage
@@ -701,7 +753,7 @@ impl ValidationRule for SampledImageRule {
                             return Err(ValidationError::SampledImageCannotUseSubpassData {
                                 function: function_id,
                                 block: block_id,
-                            });
+                            }.into());
                         }
 
                         // In SPIR-V 1.6+, Buffer dimension is not allowed
@@ -713,7 +765,7 @@ impl ValidationRule for SampledImageRule {
                                 return Err(ValidationError::SampledImageBufferDimInvalid {
                                     function: function_id,
                                     block: block_id,
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -764,8 +816,8 @@ impl ValidationRule for SampledImageRule {
                                                                 ValidationError::SampledImageOperandTypeMismatch {
                                                                     function: function_id,
                                                                     block: block_id,
-                                                                },
-                                                            );
+                                                                }.into(),
+                        );
                                                         }
                                                     }
                                                 }
@@ -790,7 +842,7 @@ impl ValidationRule for SampledImageRule {
                                                 return Err(ValidationError::SampledImageSamplerMustBeSamplerType {
                                                     function: function_id,
                                                     block: block_id,
-                                                });
+                                                }.into());
                                             }
                                         }
                                     }
@@ -818,7 +870,7 @@ impl ValidationRule for ImageTexelPointerRule {
         "image-texel-pointer"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let resolver = DefaultTypeResolver;
 
         for function in &ctx.module.functions {
@@ -850,7 +902,7 @@ impl ValidationRule for ImageTexelPointerRule {
                                     return Err(ValidationError::ImageTexelPointerResultMustBePointer {
                                         function: function_id,
                                         block: block_id,
-                                    });
+                                    }.into());
                                 }
 
                                 // Validate storage class is Image
@@ -859,7 +911,7 @@ impl ValidationRule for ImageTexelPointerRule {
                                         return Err(ValidationError::ImageTexelPointerStorageClassMustBeImage {
                                             function: function_id,
                                             block: block_id,
-                                        });
+                                        }.into());
                                     }
                                 }
                             }
@@ -875,7 +927,7 @@ impl ValidationRule for ImageTexelPointerRule {
                                         return Err(ValidationError::ImageTexelPointerCoordMustBeIntScalarOrVector {
                                             function: function_id,
                                             block: block_id,
-                                        });
+                                        }.into());
                                     }
                                 }
                             }
@@ -891,7 +943,7 @@ impl ValidationRule for ImageTexelPointerRule {
                                         return Err(ValidationError::ImageTexelPointerSampleMustBeIntScalar {
                                             function: function_id,
                                             block: block_id,
-                                        });
+                                        }.into());
                                     }
                                 }
                             }
@@ -905,7 +957,7 @@ impl ValidationRule for ImageTexelPointerRule {
                             return Err(ValidationError::ImageTexelPointerCannotUseSubpassData {
                                 function: function_id,
                                 block: block_id,
-                            });
+                            }.into());
                         }
 
                         // TileImageDataEXT cannot be used with ImageTexelPointer
@@ -913,7 +965,42 @@ impl ValidationRule for ImageTexelPointerRule {
                             return Err(ValidationError::ImageTexelPointerCannotUseTileImageData {
                                 function: function_id,
                                 block: block_id,
-                            });
+                            }.into());
+                        }
+
+                        // For non-multisampled images (MS=0), Sample must be constant 0
+                        if info.multisampled == 0 {
+                            // Get the Sample operand (operand index 2)
+                            if let Some(Operand::IdRef(sample_id)) = inst.operands.get(2) {
+                                // Check if it's a constant with value 0
+                                if let Ok(sample_result_id) = ResultId::try_from(*sample_id) {
+                                    if let Some(sample_inst) =
+                                        ctx.definitions.get(&sample_result_id)
+                                    {
+                                        let is_constant_zero = matches!(
+                                            sample_inst.class.opcode,
+                                            Op::Constant | Op::ConstantNull
+                                        ) && sample_inst
+                                            .operands
+                                            .first()
+                                            .map(|op| match op {
+                                                Operand::LiteralBit32(v) => *v == 0,
+                                                Operand::LiteralBit64(v) => *v == 0,
+                                                _ => false,
+                                            })
+                                            .unwrap_or(
+                                                sample_inst.class.opcode == Op::ConstantNull,
+                                            );
+
+                                        if !is_constant_zero {
+                                            return Err(ValidationError::ImageTexelPointerSampleMustBeZeroForNonMultisampled {
+                                                function: function_id,
+                                                block: block_id,
+                                            }.into());
+                                        }
+                                    }
+                                }
+                            }
                         }
 
                         // Validate format for Vulkan
@@ -931,7 +1018,7 @@ impl ValidationRule for ImageTexelPointerRule {
                                     function: function_id,
                                     block: block_id,
                                     format: info.format,
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -955,7 +1042,7 @@ impl ValidationRule for TypeSampledImageRule {
         "type-sampled-image"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for inst in &ctx.module.types_global_values {
             if inst.class.opcode != Op::TypeSampledImage {
                 continue;
@@ -980,14 +1067,14 @@ impl ValidationRule for TypeSampledImageRule {
             };
 
             if image_type_inst.class.opcode != Op::TypeImage {
-                return Err(ValidationError::TypeSampledImageOperandMustBeImage { type_id });
+                return Err(ValidationError::TypeSampledImageOperandMustBeImage { type_id }.into());
             }
 
             // Get image type info
             if let Some(info) = ImageTypeInfo::from_type_id(image_type_id, ctx) {
                 // Sampled must be 0 or 1
                 if info.sampled != 0 && info.sampled != 1 {
-                    return Err(ValidationError::TypeSampledImageSampledMustBeZeroOrOne { type_id });
+                    return Err(ValidationError::TypeSampledImageSampledMustBeZeroOrOne { type_id }.into());
                 }
 
                 // In SPIR-V 1.6+, Buffer dimension is not allowed
@@ -995,7 +1082,7 @@ impl ValidationRule for TypeSampledImageRule {
                     || (ctx.target_version.major() == 1 && ctx.target_version.minor() >= 6)
                 {
                     if info.dim == Dim::DimBuffer {
-                        return Err(ValidationError::TypeSampledImageBufferDimInvalid { type_id });
+                        return Err(ValidationError::TypeSampledImageBufferDimInvalid { type_id }.into());
                     }
                 }
             }
@@ -1017,7 +1104,7 @@ impl ValidationRule for ImageRule {
         "image"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for function in &ctx.module.functions {
             let function_id = function
                 .def
@@ -1045,7 +1132,7 @@ impl ValidationRule for ImageRule {
                                     return Err(ValidationError::ImageResultTypeMustBeImage {
                                         function: function_id,
                                         block: block_id,
-                                    });
+                                    }.into());
                                 }
                             }
                         }
@@ -1069,8 +1156,8 @@ impl ValidationRule for ImageRule {
                                                     ValidationError::ImageOperandMustBeSampledImage {
                                                         function: function_id,
                                                         block: block_id,
-                                                    },
-                                                );
+                                                    }.into(),
+                        );
                                             }
 
                                             // Validate inner image type matches result type
@@ -1083,8 +1170,8 @@ impl ValidationRule for ImageRule {
                                                             ValidationError::ImageSampledImageTypeMismatch {
                                                                 function: function_id,
                                                                 block: block_id,
-                                                            },
-                                                        );
+                                                            }.into(),
+                        );
                                                     }
                                                 }
                                             }
@@ -1114,7 +1201,7 @@ impl ValidationRule for ImageSparseTexelsResidentRule {
         "image-sparse-texels-resident"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let resolver = DefaultTypeResolver;
 
         for function in &ctx.module.functions {
@@ -1143,8 +1230,8 @@ impl ValidationRule for ImageSparseTexelsResidentRule {
                                 ValidationError::ImageSparseTexelsResidentResultMustBeBool {
                                     function: function_id,
                                     block: block_id,
-                                },
-                            );
+                                }.into(),
+                        );
                         }
                     }
 
@@ -1158,11 +1245,113 @@ impl ValidationRule for ImageSparseTexelsResidentRule {
                                             ValidationError::ImageSparseTexelsResidentCodeMustBeInt {
                                                 function: function_id,
                                                 block: block_id,
-                                            },
-                                        );
+                                            }.into(),
+                        );
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Sparse Image Sample Result Type Rule
+// ============================================================================
+
+/// Sparse image sample opcodes that require struct result type.
+const SPARSE_IMAGE_SAMPLE_OPCODES: &[Op] = &[
+    Op::ImageSparseSampleImplicitLod,
+    Op::ImageSparseSampleExplicitLod,
+    Op::ImageSparseSampleDrefImplicitLod,
+    Op::ImageSparseSampleDrefExplicitLod,
+    Op::ImageSparseFetch,
+    Op::ImageSparseGather,
+    Op::ImageSparseDrefGather,
+    Op::ImageSparseRead,
+];
+
+/// Validates that sparse image sample operations have valid result types.
+///
+/// Sparse image operations must have a result type that is a struct with exactly
+/// two members:
+/// - Member 0: Residency code (must be int scalar)
+/// - Member 1: Texel value (type depends on the image format)
+pub struct SparseSampleResultTypeRule;
+
+impl ValidationRule for SparseSampleResultTypeRule {
+    fn name(&self) -> &'static str {
+        "sparse-sample-result-type"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
+        let resolver = DefaultTypeResolver;
+
+        for function in &ctx.module.functions {
+            let function_id = function
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .and_then(|id| Id::try_from(id).ok());
+
+            for block in &function.blocks {
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .and_then(|id| Id::try_from(id).ok());
+
+                for inst in &block.instructions {
+                    if !SPARSE_IMAGE_SAMPLE_OPCODES.contains(&inst.class.opcode) {
+                        continue;
+                    }
+
+                    let opcode = inst.class.opcode;
+
+                    // Get the result type
+                    let Some(result_type_id) = inst.result_type else {
+                        continue;
+                    };
+
+                    // Result type must be a struct
+                    let Ok(result_type_result_id) = ResultId::try_from(result_type_id) else {
+                        continue;
+                    };
+                    let Some(type_inst) = ctx.definitions.get(&result_type_result_id) else {
+                        continue;
+                    };
+
+                    if type_inst.class.opcode != Op::TypeStruct {
+                        return Err(ValidationError::ImageSparseSampleResultMustBeStruct {
+                            function: function_id,
+                            block: block_id,
+                            opcode,
+                        }.into());
+                    }
+
+                    // Struct must have exactly 2 members
+                    let member_count = type_inst.operands.len();
+                    if member_count != 2 {
+                        return Err(ValidationError::ImageSparseSampleResultMustBeStruct {
+                            function: function_id,
+                            block: block_id,
+                            opcode,
+                        }.into());
+                    }
+
+                    // First member (residency code) must be int scalar
+                    if let Some(Operand::IdRef(member_type_id)) = type_inst.operands.first() {
+                        if !resolver.is_int_scalar(*member_type_id, ctx.definitions) {
+                            return Err(ValidationError::ImageSparseSampleResidencyMustBeInt {
+                                function: function_id,
+                                block: block_id,
+                                opcode,
+                            }.into());
                         }
                     }
                 }
@@ -1262,7 +1451,7 @@ impl ValidationRule for ReservedImageOpcodeRule {
         "reserved-image-opcode"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for function in &ctx.module.functions {
             let function_id = function
                 .def
@@ -1283,11 +1472,782 @@ impl ValidationRule for ReservedImageOpcodeRule {
                             function: function_id,
                             block: block_id,
                             opcode: inst.class.opcode,
-                        });
+                        }.into());
                     }
                 }
             }
         }
+        Ok(())
+    }
+}
+
+// ============================================================================
+// QCOM Image Processing Rule
+// ============================================================================
+
+/// Validates QCOM image processing instructions (SPV_QCOM_image_processing).
+///
+/// These instructions require specific decorations on their texture/sampler operands:
+/// - OpImageSampleWeightedQCOM: weight operand needs WeightTextureQCOM
+/// - OpImageBlockMatchSSDQCOM/SADQCOM: target and reference need BlockMatchTextureQCOM
+/// - OpImageBlockMatchWindowSSDQCOM/SADQCOM: similar requirements
+/// - OpImageBlockMatchGatherSSDQCOM/SADQCOM: similar requirements
+pub struct QCOMImageProcessingRule;
+
+impl QCOMImageProcessingRule {
+    /// Checks if the given ID has the required decoration on its underlying variable.
+    fn check_decoration(
+        &self,
+        ctx: &ValidationContext<'_>,
+        operand_id: u32,
+        required_decoration: Decoration,
+        function_id: Option<Id>,
+        block_id: Option<Id>,
+        opcode: Op,
+    ) -> ValidationResult {
+        let operand_result_id = match ResultId::try_from(operand_id) {
+            Ok(id) => id,
+            Err(_) => return Ok(()), // Skip if invalid ID
+        };
+
+        let operand_inst = match ctx.definitions.get(&operand_result_id) {
+            Some(inst) => inst,
+            None => return Ok(()), // Skip if instruction not found
+        };
+
+        // Check if this is OpSampledImage - if so, we need to check both texture and sampler
+        if operand_inst.class.opcode == Op::SampledImage {
+            // Check the image operand (texture)
+            if let Some(Operand::IdRef(texture_id)) = operand_inst.operands.first() {
+                self.check_load_decoration(
+                    ctx,
+                    *texture_id,
+                    Decoration::BlockMatchTextureQCOM,
+                    function_id,
+                    block_id,
+                    opcode,
+                )?;
+            }
+            // Check the sampler operand
+            if let Some(Operand::IdRef(sampler_id)) = operand_inst.operands.get(1) {
+                self.check_load_decoration(
+                    ctx,
+                    *sampler_id,
+                    Decoration::BlockMatchSamplerQCOM,
+                    function_id,
+                    block_id,
+                    opcode,
+                )?;
+            }
+        } else {
+            // Not a SampledImage, check the operand directly
+            self.check_load_decoration(
+                ctx,
+                operand_id,
+                required_decoration,
+                function_id,
+                block_id,
+                opcode,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    /// Checks if the operand is an OpLoad and the underlying variable has the decoration.
+    fn check_load_decoration(
+        &self,
+        ctx: &ValidationContext<'_>,
+        operand_id: u32,
+        required_decoration: Decoration,
+        function_id: Option<Id>,
+        block_id: Option<Id>,
+        opcode: Op,
+    ) -> ValidationResult {
+        let operand_result_id = match ResultId::try_from(operand_id) {
+            Ok(id) => id,
+            Err(_) => return Ok(()),
+        };
+
+        let operand_inst = match ctx.definitions.get(&operand_result_id) {
+            Some(inst) => inst,
+            None => return Ok(()),
+        };
+
+        // Expect OpLoad
+        if operand_inst.class.opcode != Op::Load {
+            return Err(ValidationError::QCOMImageExpectsOpLoad {
+                function: function_id,
+                block: block_id,
+                opcode,
+            }.into());
+        }
+
+        // Get the variable being loaded
+        let variable_id = match operand_inst.operands.first() {
+            Some(Operand::IdRef(id)) => *id,
+            _ => return Ok(()),
+        };
+
+        // Check if the variable has the required decoration
+        if !self.has_decoration(ctx, variable_id, required_decoration) {
+            return Err(ValidationError::QCOMImageMissingDecoration {
+                function: function_id,
+                block: block_id,
+                opcode,
+                decoration: required_decoration,
+            }.into());
+        }
+
+        Ok(())
+    }
+
+    /// Checks if an ID has a specific decoration in the module's annotations.
+    fn has_decoration(&self, ctx: &ValidationContext<'_>, id: u32, decoration: Decoration) -> bool {
+        for inst in &ctx.module.annotations {
+            if inst.class.opcode != Op::Decorate {
+                continue;
+            }
+            let target = match inst.operands.first() {
+                Some(Operand::IdRef(target_id)) => *target_id,
+                _ => continue,
+            };
+            if target != id {
+                continue;
+            }
+            let decor = match inst.operands.get(1) {
+                Some(Operand::Decoration(d)) => *d,
+                _ => continue,
+            };
+            if decor == decoration {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+impl ValidationRule for QCOMImageProcessingRule {
+    fn name(&self) -> &'static str {
+        "qcom-image-processing"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
+        for function in &ctx.module.functions {
+            let function_id = function
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .and_then(|id| Id::try_from(id).ok());
+
+            for block in &function.blocks {
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .and_then(|id| Id::try_from(id).ok());
+
+                for inst in &block.instructions {
+                    let opcode = inst.class.opcode;
+
+                    match opcode {
+                        Op::ImageSampleWeightedQCOM => {
+                            // Weight operand (operand 4) needs WeightTextureQCOM
+                            if let Some(Operand::IdRef(weight_id)) = inst.operands.get(4) {
+                                self.check_decoration(
+                                    ctx,
+                                    *weight_id,
+                                    Decoration::WeightTextureQCOM,
+                                    function_id,
+                                    block_id,
+                                    opcode,
+                                )?;
+                            }
+                        }
+                        Op::ImageBlockMatchSSDQCOM | Op::ImageBlockMatchSADQCOM => {
+                            // Target (operand 2) and Reference (operand 4) need BlockMatchTextureQCOM
+                            if let Some(Operand::IdRef(target_id)) = inst.operands.get(2) {
+                                self.check_decoration(
+                                    ctx,
+                                    *target_id,
+                                    Decoration::BlockMatchTextureQCOM,
+                                    function_id,
+                                    block_id,
+                                    opcode,
+                                )?;
+                            }
+                            if let Some(Operand::IdRef(ref_id)) = inst.operands.get(4) {
+                                self.check_decoration(
+                                    ctx,
+                                    *ref_id,
+                                    Decoration::BlockMatchTextureQCOM,
+                                    function_id,
+                                    block_id,
+                                    opcode,
+                                )?;
+                            }
+                        }
+                        Op::ImageBlockMatchWindowSSDQCOM | Op::ImageBlockMatchWindowSADQCOM => {
+                            // These also need validation but with potentially different decorations
+                            if let Some(Operand::IdRef(target_id)) = inst.operands.get(2) {
+                                self.check_decoration(
+                                    ctx,
+                                    *target_id,
+                                    Decoration::BlockMatchTextureQCOM,
+                                    function_id,
+                                    block_id,
+                                    opcode,
+                                )?;
+                            }
+                            if let Some(Operand::IdRef(ref_id)) = inst.operands.get(4) {
+                                self.check_decoration(
+                                    ctx,
+                                    *ref_id,
+                                    Decoration::BlockMatchTextureQCOM,
+                                    function_id,
+                                    block_id,
+                                    opcode,
+                                )?;
+                            }
+                        }
+                        Op::ImageBlockMatchGatherSSDQCOM | Op::ImageBlockMatchGatherSADQCOM => {
+                            // Gather variants also need BlockMatchTextureQCOM
+                            if let Some(Operand::IdRef(target_id)) = inst.operands.get(2) {
+                                self.check_decoration(
+                                    ctx,
+                                    *target_id,
+                                    Decoration::BlockMatchTextureQCOM,
+                                    function_id,
+                                    block_id,
+                                    opcode,
+                                )?;
+                            }
+                            if let Some(Operand::IdRef(ref_id)) = inst.operands.get(4) {
+                                self.check_decoration(
+                                    ctx,
+                                    *ref_id,
+                                    Decoration::BlockMatchTextureQCOM,
+                                    function_id,
+                                    block_id,
+                                    opcode,
+                                )?;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Sampled Image Consumer Rule
+// ============================================================================
+
+/// Validates that OpSampledImage results are consumed in the same block.
+///
+/// SPIR-V requires:
+/// 1. All OpSampledImage instructions must be in the same block in which their
+///    Result <id> are consumed.
+/// 2. Result <id> from OpSampledImage instructions must not appear as operands
+///    to OpPhi instructions or OpSelect instructions.
+pub struct SampledImageConsumerRule;
+
+impl ValidationRule for SampledImageConsumerRule {
+    fn name(&self) -> &'static str {
+        "sampled-image-consumer"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
+        for function in &ctx.module.functions {
+            let function_id = function
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .and_then(|id| Id::try_from(id).ok());
+
+            // Build a map of OpSampledImage result IDs to their block IDs
+            let mut sampled_image_blocks: HashMap<u32, Option<Id>> = HashMap::new();
+
+            for block in &function.blocks {
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .and_then(|id| Id::try_from(id).ok());
+
+                for inst in &block.instructions {
+                    if inst.class.opcode == Op::SampledImage {
+                        if let Some(result_id) = inst.result_id {
+                            sampled_image_blocks.insert(result_id, block_id);
+                        }
+                    }
+                }
+            }
+
+            // Now check all consumers of OpSampledImage results
+            for block in &function.blocks {
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .and_then(|id| Id::try_from(id).ok());
+
+                for inst in &block.instructions {
+                    let opcode = inst.class.opcode;
+
+                    // Check all IdRef operands
+                    for operand in &inst.operands {
+                        if let Operand::IdRef(id) = operand {
+                            // Check if this is a reference to an OpSampledImage result
+                            if let Some(def_block) = sampled_image_blocks.get(id) {
+                                let sampled_image_id = Id::try_from(*id)
+                                    .unwrap_or_else(|_| Id::try_from(0u32).unwrap());
+
+                                // Check 1: OpPhi and OpSelect cannot use OpSampledImage results
+                                if opcode == Op::Phi || opcode == Op::Select {
+                                    return Err(ValidationError::SampledImageUsedInPhiOrSelect {
+                                        function: function_id,
+                                        block: block_id,
+                                        sampled_image_id,
+                                        consumer_opcode: opcode,
+                                    }.into());
+                                }
+
+                                // Check 2: Consumer must be in the same block as the definition
+                                if *def_block != block_id {
+                                    return Err(
+                                        ValidationError::SampledImageConsumedInDifferentBlock {
+                                            function: function_id,
+                                            def_block: *def_block,
+                                            consumer_block: block_id,
+                                            sampled_image_id,
+                                        }.into(),
+                        );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Image Dref Rule
+// ============================================================================
+
+/// Validates image Dref (depth reference) operations.
+///
+/// SPIR-V and Vulkan requirements for Dref operations:
+/// 1. The Dref operand must be a 32-bit float scalar
+/// 2. In Vulkan, Dref operations cannot use images with 3D dimension
+/// 3. Dref operations cannot use multisampled images
+pub struct ImageDrefRule;
+
+impl ValidationRule for ImageDrefRule {
+    fn name(&self) -> &'static str {
+        "image-dref"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
+        let resolver = DefaultTypeResolver;
+
+        for function in &ctx.module.functions {
+            let function_id = function
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .and_then(|id| Id::try_from(id).ok());
+
+            for block in &function.blocks {
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .and_then(|id| Id::try_from(id).ok());
+
+                for inst in &block.instructions {
+                    let opcode = inst.class.opcode;
+
+                    // Check if this is a Dref operation
+                    if !opcode.is_dref() {
+                        continue;
+                    }
+
+                    // Get image type info to check dimension and multisampling
+                    if let Some(info) = get_image_type_from_instruction(inst, ctx) {
+                        // Check: Vulkan forbids 3D dimension for Dref operations
+                        if ctx.is_vulkan_env() && info.dim == Dim::Dim3D {
+                            return Err(ValidationError::ImageDrefCannotUse3DInVulkan {
+                                function: function_id,
+                                block: block_id,
+                                opcode,
+                            }.into());
+                        }
+
+                        // Check: Dref operations cannot use multisampled images
+                        if info.multisampled != 0 {
+                            return Err(ValidationError::ImageDrefCannotUseMultisample {
+                                function: function_id,
+                                block: block_id,
+                                opcode,
+                            }.into());
+                        }
+                    }
+
+                    // Get the Dref operand type and validate it's a 32-bit float scalar
+                    // For Dref operations, the Dref operand is at index 2 (after Sampled Image and Coordinate)
+                    if let Some(Operand::IdRef(dref_id)) = inst.operands.get(2) {
+                        if let Ok(dref_result_id) = ResultId::try_from(*dref_id) {
+                            if let Some(dref_inst) = ctx.definitions.get(&dref_result_id) {
+                                if let Some(dref_type_id) = dref_inst.result_type {
+                                    // Check if it's a 32-bit float scalar
+                                    let is_float_scalar =
+                                        resolver.is_float_scalar(dref_type_id, ctx.definitions);
+                                    let bit_width =
+                                        resolver.get_bit_width(dref_type_id, ctx.definitions);
+
+                                    if !is_float_scalar || bit_width != Some(32) {
+                                        return Err(ValidationError::ImageDrefMustBe32BitFloat {
+                                            function: function_id,
+                                            block: block_id,
+                                            opcode,
+                                        }.into());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Image Proj Rule
+// ============================================================================
+
+/// Validates image Proj (projection) operations.
+///
+/// SPIR-V requirements for Proj operations:
+/// 1. Image dimension must be 1D, 2D, 3D, or Rect (not Cube, Buffer, SubpassData)
+/// 2. Cannot use multisampled images (MS must be 0)
+/// 3. Cannot use arrayed images (Arrayed must be 0)
+pub struct ImageProjRule;
+
+impl ValidationRule for ImageProjRule {
+    fn name(&self) -> &'static str {
+        "image-proj"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
+        for function in &ctx.module.functions {
+            let function_id = function
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .and_then(|id| Id::try_from(id).ok());
+
+            for block in &function.blocks {
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .and_then(|id| Id::try_from(id).ok());
+
+                for inst in &block.instructions {
+                    let opcode = inst.class.opcode;
+
+                    // Check if this is a Proj operation
+                    if !opcode.is_proj() {
+                        continue;
+                    }
+
+                    // Get image type info
+                    if let Some(info) = get_image_type_from_instruction(inst, ctx) {
+                        // Check: Proj requires Dim 1D, 2D, 3D, or Rect
+                        let valid_dim = matches!(
+                            info.dim,
+                            Dim::Dim1D | Dim::Dim2D | Dim::Dim3D | Dim::DimRect
+                        );
+                        if !valid_dim {
+                            return Err(ValidationError::ImageProjInvalidDim {
+                                function: function_id,
+                                block: block_id,
+                                opcode,
+                                dim: info.dim,
+                            }.into());
+                        }
+
+                        // Check: Proj cannot use multisampled images
+                        if info.multisampled != 0 {
+                            return Err(ValidationError::ImageProjCannotUseMultisample {
+                                function: function_id,
+                                block: block_id,
+                                opcode,
+                            }.into());
+                        }
+
+                        // Check: Proj cannot use arrayed images
+                        if info.arrayed != 0 {
+                            return Err(ValidationError::ImageProjCannotUseArrayed {
+                                function: function_id,
+                                block: block_id,
+                                opcode,
+                            }.into());
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Image Read Vulkan 4-Component Rule
+// ============================================================================
+
+/// Validates that OpImageRead result is 4-component vector in Vulkan.
+///
+/// Vulkan requirement (VUID-StandaloneSpirv-OpImageRead-04780):
+/// In Vulkan, OpImageRead and OpImageSparseRead result type must be a
+/// 4-component int or float vector.
+pub struct ImageReadVulkan4ComponentRule;
+
+/// Helper to get vector component count from a type ID.
+fn get_vector_component_count_local(type_id: u32, ctx: &ValidationContext<'_>) -> Option<u32> {
+    let result_id = ResultId::try_from(type_id).ok()?;
+    let type_inst = ctx.definitions.get(&result_id)?;
+    if type_inst.class.opcode == Op::TypeVector {
+        if let Some(Operand::LiteralBit32(count)) = type_inst.operands.get(1) {
+            return Some(*count);
+        }
+    }
+    // Scalar types have 1 component
+    if matches!(type_inst.class.opcode, Op::TypeFloat | Op::TypeInt) {
+        return Some(1);
+    }
+    None
+}
+
+impl ValidationRule for ImageReadVulkan4ComponentRule {
+    fn name(&self) -> &'static str {
+        "image-read-vulkan-4-component"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
+        // Only applies to Vulkan environment
+        if !ctx.is_vulkan_env() {
+            return Ok(());
+        }
+
+        for function in &ctx.module.functions {
+            let function_id = function
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .and_then(|id| Id::try_from(id).ok());
+
+            for block in &function.blocks {
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .and_then(|id| Id::try_from(id).ok());
+
+                for inst in &block.instructions {
+                    let opcode = inst.class.opcode;
+
+                    // Check OpImageRead and OpImageSparseRead
+                    if opcode != Op::ImageRead && opcode != Op::ImageSparseRead {
+                        continue;
+                    }
+
+                    // Get result type
+                    if let Some(result_type) = inst.result_type {
+                        // For sparse operations, get the actual result type from struct
+                        let actual_result_type = if opcode == Op::ImageSparseRead {
+                            // Sparse result is a struct, second member is the actual result
+                            if let Ok(result_id) = ResultId::try_from(result_type) {
+                                if let Some(type_inst) = ctx.definitions.get(&result_id) {
+                                    if type_inst.class.opcode == Op::TypeStruct {
+                                        // Get the second member type (index 1)
+                                        type_inst
+                                            .operands
+                                            .get(1)
+                                            .and_then(|op| op.id_ref_any())
+                                            .unwrap_or(result_type)
+                                    } else {
+                                        result_type
+                                    }
+                                } else {
+                                    result_type
+                                }
+                            } else {
+                                result_type
+                            }
+                        } else {
+                            result_type
+                        };
+
+                        // Check component count
+                        if let Some(component_count) =
+                            get_vector_component_count_local(actual_result_type, ctx)
+                        {
+                            if component_count != 4 {
+                                return Err(
+                                    ValidationError::ImageReadResultMustBe4ComponentInVulkan {
+                                        function: function_id,
+                                        block: block_id,
+                                        opcode,
+                                        actual_components: component_count,
+                                    }.into(),
+                        );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Image Gather Validation Rule
+// ============================================================================
+
+/// Validates image gather operations.
+///
+/// SPIR-V and Vulkan requirements for gather operations:
+/// 1. Image Dim must be 2D, Cube, or Rect (not 1D, 3D, Buffer, SubpassData)
+/// 2. Component operand (for non-Dref gather) must be 32-bit int scalar
+/// 3. In Vulkan, Component operand must be a constant (not a runtime value)
+pub struct ImageGatherRule;
+
+/// Check if an instruction is a constant opcode.
+fn is_constant_opcode(opcode: Op) -> bool {
+    matches!(
+        opcode,
+        Op::Constant
+            | Op::ConstantNull
+            | Op::ConstantTrue
+            | Op::ConstantFalse
+            | Op::ConstantComposite
+            | Op::ConstantSampler
+            | Op::SpecConstant
+            | Op::SpecConstantTrue
+            | Op::SpecConstantFalse
+            | Op::SpecConstantComposite
+            | Op::SpecConstantOp
+    )
+}
+
+impl ValidationRule for ImageGatherRule {
+    fn name(&self) -> &'static str {
+        "image-gather"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
+        let resolver = DefaultTypeResolver;
+
+        for function in &ctx.module.functions {
+            let function_id = function
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .and_then(|id| Id::try_from(id).ok());
+
+            for block in &function.blocks {
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .and_then(|id| Id::try_from(id).ok());
+
+                for inst in &block.instructions {
+                    let opcode = inst.class.opcode;
+
+                    // Check if this is a gather operation
+                    if !opcode.is_gather() {
+                        continue;
+                    }
+
+                    // Validate dimension (applies to all gather operations)
+                    if let Some(info) = get_image_type_from_instruction(inst, ctx) {
+                        let valid_dim =
+                            matches!(info.dim, Dim::Dim2D | Dim::DimCube | Dim::DimRect);
+                        if !valid_dim {
+                            return Err(ValidationError::ImageGatherInvalidDim {
+                                function: function_id,
+                                block: block_id,
+                                opcode,
+                                dim: info.dim,
+                            }.into());
+                        }
+                    }
+
+                    // For non-Dref gather (OpImageGather, OpImageSparseGather),
+                    // validate Component operand (operand index 3)
+                    if opcode == Op::ImageGather || opcode == Op::ImageSparseGather {
+                        // Component is at operand index 3 (after Sampled Image, Coordinate, Component)
+                        // Actually for OpImageGather: Sampled Image (0), Coordinate (1), Component (2)
+                        if let Some(Operand::IdRef(component_id)) = inst.operands.get(2) {
+                            if let Ok(component_result_id) = ResultId::try_from(*component_id) {
+                                if let Some(component_inst) =
+                                    ctx.definitions.get(&component_result_id)
+                                {
+                                    // Check Component is 32-bit int scalar
+                                    if let Some(component_type_id) = component_inst.result_type {
+                                        let is_int_scalar = resolver
+                                            .is_int_scalar(component_type_id, ctx.definitions);
+                                        let bit_width = resolver
+                                            .get_bit_width(component_type_id, ctx.definitions);
+
+                                        if !is_int_scalar || bit_width != Some(32) {
+                                            return Err(
+                                                ValidationError::ImageGatherComponentMustBe32BitInt {
+                                                    function: function_id,
+                                                    block: block_id,
+                                                    opcode,
+                                                }.into(),
+                        );
+                                        }
+                                    }
+
+                                    // Vulkan: Component must be constant
+                                    if ctx.is_vulkan_env() {
+                                        if !is_constant_opcode(component_inst.class.opcode) {
+                                            return Err(
+                                                ValidationError::ImageGatherComponentMustBeConstantInVulkan {
+                                                    function: function_id,
+                                                    block: block_id,
+                                                    opcode,
+                                                }.into(),
+                        );
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 }
@@ -1306,10 +2266,17 @@ pub fn all_image_rules() -> Vec<&'static dyn ValidationRule> {
         &ImageReadWriteRule,
         &ImageQueryRule,
         &SampledImageRule,
+        &SampledImageConsumerRule,
         &ImageTexelPointerRule,
         &ImageRule,
         &ImageSparseTexelsResidentRule,
+        &SparseSampleResultTypeRule,
         &ReservedImageOpcodeRule,
+        &QCOMImageProcessingRule,
+        &ImageDrefRule,
+        &ImageProjRule,
+        &ImageReadVulkan4ComponentRule,
+        &ImageGatherRule,
     ]
 }
 

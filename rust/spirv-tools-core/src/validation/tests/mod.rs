@@ -14150,9 +14150,10 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
             ModuleWords::from(Arc::from(binary.as_slice())),
             TargetEnv::Universal1_6,
             options.clone(),
+            None,
         );
         match validation_result {
-            Err(ValidationError::StoreTypeMismatch { .. }) => {}
+            Err(spanned) if matches!(spanned.error, ValidationError::StoreTypeMismatch { .. }) => {}
             Err(other) => panic!("full validation path failed with unexpected error: {other:?}"),
             Ok(_) => panic!("full validation path should reject incompatible strides"),
         }
@@ -15013,7 +15014,7 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
             .validate(&ctx)
             .expect_err("switch branch limit should be enforced");
         assert_eq!(
-            err,
+            err.error,
             ValidationError::LimitExceeded {
                 limit_kind: LIMIT_MAX_SWITCH_BRANCHES,
                 limit: 2,
@@ -24784,8 +24785,8 @@ OpExecutionMode %main OutputPrimitivesEXT 1
 OpDecorate %var BuiltIn CullPrimitiveEXT
 %void = OpTypeVoid
 %fn = OpTypeFunction %void
-%u32 = OpTypeInt 32 0
-%ptr = OpTypePointer Output %u32
+%bool = OpTypeBool
+%ptr = OpTypePointer Output %bool
 %var = OpVariable %ptr Output
 %main = OpFunction %void None %fn
 %entry = OpLabel
@@ -29069,4 +29070,77 @@ fn type_cooperative_matrix_with_int_component() {
         .as_slice()
         .validate(TargetEnv::Vulkan1_3)
         .expect("Valid OpTypeCooperativeMatrixKHR with int component should pass");
+}
+
+// ============================================================================
+// Span Tracking Tests
+// ============================================================================
+
+#[test]
+fn validation_error_with_spans_contains_source_location() {
+    use crate::assembly::assemble_text_with_spans;
+    use crate::validation::{validate_module_with_spans, span::LabelKind};
+
+    // Create an invalid SPIR-V module: struct with too many members for a limit
+    let text = r#"OpCapability Shader
+OpMemoryModel Logical GLSL450
+%void = OpTypeVoid
+%int = OpTypeInt 32 0
+%struct = OpTypeStruct %int %int %int %int %int"#;
+
+    // Assemble with span tracking
+    let result = assemble_text_with_spans(text).expect("assembly should succeed");
+
+    // Create options with a limit of 3 members per struct
+    let mut options = ValidationOptions::default();
+    options.limits.insert(crate::validation::LIMIT_MAX_STRUCT_MEMBERS, 3);
+
+    // Validate with span map
+    let err = validate_module_with_spans(
+        &result.words,
+        TargetEnv::Universal1_6,
+        options,
+        &result.span_map,
+    ).expect_err("validation should fail due to struct member limit");
+
+    // The error should have a primary span pointing to the struct definition
+    let primary = err.spans.iter().find(|s| s.label.kind == LabelKind::Primary);
+    assert!(primary.is_some(), "error should have a primary span");
+
+    // The span should be on line 4 (0-indexed), where %struct is defined
+    if let Some(span) = primary {
+        let pos = span.span.text_position();
+        assert!(pos.is_some(), "span should be a text position");
+        if let Some(pos) = pos {
+            assert_eq!(pos.line(), 4, "struct should be on line 4");
+        }
+    }
+}
+
+#[test]
+fn validation_without_spans_still_works() {
+    use crate::validation::validate_module;
+
+    // Same invalid module but without span tracking
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "%void = OpTypeVoid",
+        "%int = OpTypeInt 32 0",
+        "%struct = OpTypeStruct %int %int %int %int %int",
+    ].join("\n");
+
+    let words = assemble_text(&text).expect("assembly should succeed");
+
+    // Create options with a limit of 3 members per struct
+    let mut options = ValidationOptions::default();
+    options.limits.insert(crate::validation::LIMIT_MAX_STRUCT_MEMBERS, 3);
+
+    // Validate without spans - should still work and fail appropriately
+    let result = crate::validation::validate_module_with_options(
+        &words,
+        TargetEnv::Universal1_6,
+        options,
+    );
+    assert!(result.is_err(), "validation should fail due to struct member limit");
 }

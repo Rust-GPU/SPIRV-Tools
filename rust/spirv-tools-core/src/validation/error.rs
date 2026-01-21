@@ -414,6 +414,14 @@ pub enum ValidationError {
         /// The allowed execution models for this BuiltIn.
         allowed: Vec<rspirv::spirv::ExecutionModel>,
     },
+    /// A BuiltIn decoration requires a specific execution mode to be declared.
+    #[error("BuiltIn {builtin:?} requires execution mode {required_mode:?}")]
+    BuiltInRequiresExecutionModeDeclaration {
+        /// The BuiltIn applied.
+        builtin: rspirv::spirv::BuiltIn,
+        /// The required execution mode.
+        required_mode: rspirv::spirv::ExecutionMode,
+    },
     /// A BuiltIn decoration targets a variable with an incompatible type.
     #[error("BuiltIn {builtin:?} requires type {expected}")]
     InvalidBuiltInType {
@@ -468,6 +476,28 @@ pub enum ValidationError {
     /// Location/Component decorations conflict with a BuiltIn decoration on the same id.
     #[error("Location/Component decorations cannot be applied to BuiltIn variables")]
     LocationConflictsWithBuiltIn,
+    /// An entry point function has a LinkageAttributes decoration.
+    #[error("Entry point {entry_point:?} cannot have LinkageAttributes decoration")]
+    EntryPointHasLinkageAttributes {
+        /// The entry point that was decorated.
+        entry_point: Id,
+    },
+    /// An interpolation decoration is used on an Input variable in a vertex shader.
+    #[error("Interpolation decoration on Input variable {variable:?} is not allowed in vertex shader (entry point {entry_point:?})")]
+    InterpolationDecorationInvalidForVertexInput {
+        /// The variable with the decoration.
+        variable: Id,
+        /// The entry point.
+        entry_point: Id,
+    },
+    /// An interpolation decoration is used on an Output variable in a fragment shader.
+    #[error("Interpolation decoration on Output variable {variable:?} is not allowed in fragment shader (entry point {entry_point:?})")]
+    InterpolationDecorationInvalidForFragmentOutput {
+        /// The variable with the decoration.
+        variable: Id,
+        /// The entry point.
+        entry_point: Id,
+    },
     /// A BuiltIn decoration is applied to a variable in a disallowed storage class.
     #[error("BuiltIn {builtin:?} cannot be applied to storage class {storage_class:?}")]
     InvalidBuiltInStorageClass {
@@ -475,6 +505,16 @@ pub enum ValidationError {
         builtin: rspirv::spirv::BuiltIn,
         /// The storage class of the decorated variable.
         storage_class: rspirv::spirv::StorageClass,
+    },
+    /// A BuiltIn decoration has the wrong storage class direction for the execution model.
+    #[error("BuiltIn {builtin:?} cannot use {storage_class:?} in execution model {execution_model:?}")]
+    BuiltInWrongStorageClassForExecutionModel {
+        /// The built-in kind.
+        builtin: rspirv::spirv::BuiltIn,
+        /// The storage class of the decorated variable.
+        storage_class: rspirv::spirv::StorageClass,
+        /// The execution model that disallows this combination.
+        execution_model: rspirv::spirv::ExecutionModel,
     },
     /// `OpSamplerImageAddressingModeNV` was declared more than once.
     #[error("OpSamplerImageAddressingModeNV should only be provided once")]
@@ -488,6 +528,9 @@ pub enum ValidationError {
         /// The declared bit width.
         bit_width: u32,
     },
+    /// `OpSamplerImageAddressingModeNV` requires `BindlessTextureNV` capability.
+    #[error("OpSamplerImageAddressingModeNV supported only with extension SPV_NV_bindless_texture")]
+    SamplerImageAddressingModeNVRequiresBindlessTextureNV,
     /// Duplicate extension declarations were found.
     #[error("extension {extension} is declared more than once")]
     DuplicateExtension {
@@ -556,6 +599,12 @@ pub enum ValidationError {
     /// FPRoundingMode decoration requires writing to certain storage classes.
     #[error("FPRoundingMode decoration requires writes to StorageBuffer, Uniform, or PhysicalStorageBuffer storage classes")]
     FPRoundingModeInvalidStorageClass,
+    /// FPRoundingMode decoration in Vulkan only allows RTE or RTZ.
+    #[error("In Vulkan, FPRoundingMode decoration only allows RTE or RTZ rounding modes, got {mode:?}")]
+    FPRoundingModeVulkanInvalidMode {
+        /// The invalid rounding mode.
+        mode: rspirv::spirv::FPRoundingMode,
+    },
     /// Uniform decoration requires uniform control flow.
     #[error("Uniform decoration on {opcode:?} requires uniform control flow")]
     UniformDecorationRequiresUniformControlFlow {
@@ -1457,6 +1506,22 @@ pub enum ValidationError {
         /// The non-composite type.
         composite_type: TypeId,
     },
+    /// An access chain index has a negative value (not allowed in logical addressing).
+    #[error(
+        "instruction {instruction:?} in block {block:?} of function {function:?} has negative index value {value} at operand {operand_index}"
+    )]
+    AccessChainNegativeIndex {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode.
+        instruction: rspirv::spirv::Op,
+        /// The operand index.
+        operand_index: usize,
+        /// The negative value.
+        value: i64,
+    },
     /// An access chain result type does not match the computed target type.
     #[error(
         "instruction {instruction:?} in block {block:?} of function {function:?} expects result pointer to {expected:?} but found {found:?}"
@@ -1796,6 +1861,112 @@ pub enum ValidationError {
         function: Option<Id>,
         /// The block containing the instruction.
         block: Option<Id>,
+    },
+    /// OpCooperativeMatrixPerElementOpNV Function operand is not a function.
+    #[error("OpCooperativeMatrixPerElementOpNV Function <id> {function_id:?} is not a function")]
+    CooperativeMatrixPerElementOpFunctionNotFunction {
+        /// The function operand ID.
+        function_id: Id,
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+    /// OpCooperativeMatrixPerElementOpNV Matrix operand is not a cooperative matrix.
+    #[error("OpCooperativeMatrixPerElementOpNV Matrix <id> {matrix_id:?} is not a cooperative matrix")]
+    CooperativeMatrixPerElementOpMatrixNotCooperative {
+        /// The matrix operand ID.
+        matrix_id: Id,
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+    /// OpCooperativeMatrixPerElementOpNV Result Type must match matrix type.
+    #[error("OpCooperativeMatrixPerElementOpNV Result Type <id> {result_type_id:?} must match matrix type <id> {matrix_type_id:?}")]
+    CooperativeMatrixPerElementOpResultTypeMismatch {
+        /// The result type ID.
+        result_type_id: Id,
+        /// The matrix type ID.
+        matrix_type_id: Id,
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+    /// OpCooperativeMatrixPerElementOpNV function return type must match matrix component type.
+    #[error("OpCooperativeMatrixPerElementOpNV function return type <id> {return_type_id:?} must match matrix component type <id> {component_type_id:?}")]
+    CooperativeMatrixPerElementOpReturnTypeMismatch {
+        /// The function return type ID.
+        return_type_id: Id,
+        /// The matrix component type ID.
+        component_type_id: Id,
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+    /// OpCooperativeMatrixPerElementOpNV function type must have at least three parameters.
+    #[error("OpCooperativeMatrixPerElementOpNV function type <id> {function_type_id:?} must have at least three parameters")]
+    CooperativeMatrixPerElementOpTooFewParameters {
+        /// The function type ID.
+        function_type_id: Id,
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+    /// OpCooperativeMatrixPerElementOpNV function type first parameter must be a 32-bit integer.
+    #[error("OpCooperativeMatrixPerElementOpNV function type first parameter type <id> {param_type_id:?} must be a 32-bit integer")]
+    CooperativeMatrixPerElementOpParam0Not32BitInt {
+        /// The parameter type ID.
+        param_type_id: Id,
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+    /// OpCooperativeMatrixPerElementOpNV function type second parameter must be a 32-bit integer.
+    #[error("OpCooperativeMatrixPerElementOpNV function type second parameter type <id> {param_type_id:?} must be a 32-bit integer")]
+    CooperativeMatrixPerElementOpParam1Not32BitInt {
+        /// The parameter type ID.
+        param_type_id: Id,
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+    /// OpCooperativeMatrixPerElementOpNV function type third parameter must match matrix component type.
+    #[error("OpCooperativeMatrixPerElementOpNV function type third parameter type <id> {param_type_id:?} must match matrix component type")]
+    CooperativeMatrixPerElementOpParam2TypeMismatch {
+        /// The parameter type ID.
+        param_type_id: Id,
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+    /// Cooperative matrix conversion type mismatch - both operands must be cooperative matrix types.
+    #[error("{opcode:?} in function {function:?} block {block:?}: both operands must be cooperative matrix types (or both must be non-cooperative matrix types)")]
+    CooperativeMatrixConversionTypeMismatch {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The conversion opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Cooperative matrix conversion shape mismatch.
+    #[error("{opcode:?} in function {function:?} block {block:?}: cooperative matrix {dimension} does not match between result and input types")]
+    CooperativeMatrixShapeMismatch {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The conversion opcode.
+        opcode: rspirv::spirv::Op,
+        /// The dimension that doesn't match (scope, rows, columns, or use).
+        dimension: &'static str,
     },
 
     // ============================================================================
@@ -2155,6 +2326,32 @@ pub enum ValidationError {
         /// The bound for that position.
         bound: u32,
     },
+    /// OpCompositeExtract or OpCompositeInsert requires at least one index.
+    #[error(
+        "instruction {instruction:?} in block {block:?} of function {function:?} requires at least one index"
+    )]
+    CompositeExtractInsertNoIndices {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode.
+        instruction: rspirv::spirv::Op,
+    },
+    /// OpCompositeExtract or OpCompositeInsert has too many indices (max 255).
+    #[error(
+        "instruction {instruction:?} in block {block:?} of function {function:?} has {count} indices, exceeding the maximum of 255"
+    )]
+    CompositeExtractInsertTooManyIndices {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode.
+        instruction: rspirv::spirv::Op,
+        /// The number of indices found.
+        count: usize,
+    },
     /// A phi incoming value's type does not match the phi's result type.
     #[error("phi in block {block:?} of function {function:?} expects type {expected:?} but incoming value {incoming:?} has type {found:?}")]
     PhiIncomingTypeMismatch {
@@ -2262,6 +2459,14 @@ pub enum ValidationError {
     /// OpTypeVector component is not a scalar type.
     #[error("OpTypeVector Component Type is not a scalar type")]
     TypeVectorComponentNotScalar {
+        /// The type ID.
+        type_id: TypeId,
+        /// The component type ID.
+        component_type: TypeId,
+    },
+    /// OpTypeVector component is not a scalar or pointer type (with MaskedGatherScatterINTEL).
+    #[error("OpTypeVector Component Type is not a scalar or pointer type (MaskedGatherScatterINTEL)")]
+    TypeVectorComponentNotScalarOrPointer {
         /// The type ID.
         type_id: TypeId,
         /// The component type ID.
@@ -2593,6 +2798,56 @@ pub enum ValidationError {
         /// The block containing the misordered phi.
         block: Id,
     },
+    /// OpPhi must not have void result type.
+    #[error("OpPhi must not have void result type")]
+    PhiVoidResultType {
+        /// The function containing the phi.
+        function: Id,
+        /// The block containing the phi.
+        block: Id,
+    },
+    /// OpPhi with pointer type requires VariablePointers capability in logical addressing.
+    #[error("Using pointers with OpPhi requires capability VariablePointers or VariablePointersStorageBuffer")]
+    PhiPointerRequiresVariablePointers {
+        /// The function containing the phi.
+        function: Id,
+        /// The block containing the phi.
+        block: Id,
+    },
+    /// OpPhi cannot have sampled image, image, or sampler result type.
+    #[error("OpPhi result type cannot be {type_opcode:?}")]
+    PhiInvalidResultType {
+        /// The function containing the phi.
+        function: Id,
+        /// The block containing the phi.
+        block: Id,
+        /// The invalid result type opcode.
+        type_opcode: rspirv::spirv::Op,
+    },
+    /// In SPIR-V 1.6 or later, BranchConditional True Label and False Label must be different.
+    #[error("In SPIR-V 1.6 or later, True Label and False Label must be different labels")]
+    BranchConditionalSameLabels {
+        /// The function containing the branch.
+        function: Id,
+        /// The block containing the branch.
+        block: Id,
+    },
+    /// In MaximallyReconvergesKHR execution mode, BranchConditional True Label and False Label must be different.
+    #[error("In entry points using the MaximallyReconvergesKHR execution mode, True Label and False Label must be different labels")]
+    BranchConditionalSameLabelsMaximalReconvergence {
+        /// The function containing the branch.
+        function: Id,
+        /// The block containing the branch.
+        block: Id,
+    },
+    /// In MaximallyReconvergesKHR execution mode, blocks cannot have multiple unique predecessors (except loop headers, merge targets, and switch targets).
+    #[error("In entry points using the MaximallyReconvergesKHR execution mode, block {block:?} in function {function:?} must not have multiple unique predecessors")]
+    MaximalReconvergenceMultiplePredecessors {
+        /// The function containing the block.
+        function: Option<Id>,
+        /// The block with invalid multiple predecessors.
+        block: Option<Id>,
+    },
     /// A phi instruction has an unexpected number of incoming predecessors.
     #[error(
         "phi in block {block:?} of function {function:?} has {found} incoming values, expected {expected}"
@@ -2756,6 +3011,20 @@ pub enum ValidationError {
         operand_index: usize,
         /// The offending type.
         found: TypeId,
+    },
+    /// A vector dynamic operation cannot use 8- or 16-bit types in Shader capability.
+    #[error(
+        "instruction {instruction:?} in block {block:?} of function {function:?}: cannot {operation} a vector of 8- or 16-bit types"
+    )]
+    VectorDynamicLimitedType {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode.
+        instruction: rspirv::spirv::Op,
+        /// "extract from" or "insert into".
+        operation: &'static str,
     },
     /// A vector-times-scalar operand violates type rules.
     #[error(
@@ -2970,6 +3239,14 @@ pub enum ValidationError {
         expected: TypeId,
         /// The found type id.
         found: TypeId,
+    },
+    /// Invalid use of function result id.
+    #[error("Invalid use of function result id {function:?} in {use_opcode:?}")]
+    FunctionInvalidUse {
+        /// The function id.
+        function: Id,
+        /// The opcode that uses the function in an invalid way.
+        use_opcode: rspirv::spirv::Op,
     },
     /// A non-void function returned without a value.
     #[error("function {function:?} must return a value of type {expected:?}")]
@@ -3289,6 +3566,56 @@ pub enum ValidationError {
         /// The result type.
         result_type: TypeId,
     },
+    /// A pointer conversion operation is not supported in Logical addressing mode.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} is not supported in Logical addressing mode"
+    )]
+    ConversionLogicalAddressingNotSupported {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode of the conversion operation.
+        opcode: rspirv::spirv::Op,
+    },
+    /// A pointer conversion operation has an invalid storage class.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} requires pointer storage class {expected}"
+    )]
+    ConversionInvalidStorageClass {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode of the conversion operation.
+        opcode: rspirv::spirv::Op,
+        /// Expected storage class.
+        expected: &'static str,
+    },
+    /// A pointer conversion requires 64-bit integer in Vulkan with PhysicalStorageBuffer64.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} requires 64-bit integer in Vulkan with PhysicalStorageBuffer64 addressing mode"
+    )]
+    ConversionRequires64BitInteger {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode of the conversion operation.
+        opcode: rspirv::spirv::Op,
+    },
+    /// A conversion with 8/16-bit types is not allowed in Shader capability.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?}: 8- or 16-bit types can only be used with width-only conversions"
+    )]
+    ConversionLimitedTypeNotAllowed {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode of the conversion operation.
+        opcode: rspirv::spirv::Op,
+    },
 
     // ========== LOGICALS ==========
     /// A logical operation has an invalid result type.
@@ -3588,6 +3915,18 @@ pub enum ValidationError {
         "instruction {opcode:?} in block {block:?} of function {function:?} requires Pointer to point to a 32-bit integer type"
     )]
     AtomicFlagPointerTypeMismatch {
+        /// The function containing the instruction.
+        function: Id,
+        /// The block containing the instruction.
+        block: Id,
+        /// The opcode of the atomic operation.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Atomic flag instruction does not support untyped pointers.
+    #[error(
+        "Untyped pointers are not supported by atomic flag instructions ({opcode:?} in block {block:?} of function {function:?})"
+    )]
+    AtomicFlagUntypedPointerNotSupported {
         /// The function containing the instruction.
         function: Id,
         /// The block containing the instruction.
@@ -3930,6 +4269,48 @@ pub enum ValidationError {
         /// Actual size.
         actual: u32,
     },
+    /// OpImageQueryLod requires Fragment execution model or derivative capability.
+    #[error(
+        "OpImageQueryLod in block {block:?} of function {function:?} requires Fragment execution model (derivatives are only available in fragment shaders)"
+    )]
+    ImageQueryLodRequiresFragment {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+    /// OpImageQueryLod cannot be used with multisampled images.
+    #[error(
+        "OpImageQueryLod in block {block:?} of function {function:?} cannot be used with multisampled images"
+    )]
+    ImageQueryLodCannotUseMultisampled {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+    /// OpImageQueryLevels cannot be used with Buffer, Rect, or SubpassData dimensions.
+    #[error(
+        "OpImageQueryLevels in block {block:?} of function {function:?} cannot be used with dimension {dim:?}"
+    )]
+    ImageQueryLevelsInvalidDim {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The invalid dimension.
+        dim: rspirv::spirv::Dim,
+    },
+    /// OpImageQuerySamples requires a multisampled image.
+    #[error(
+        "OpImageQuerySamples in block {block:?} of function {function:?} requires a multisampled image (MS=1)"
+    )]
+    ImageQuerySamplesRequiresMultisampled {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
 
     // ========== SAMPLED IMAGE ==========
     /// OpSampledImage result type must be OpTypeSampledImage.
@@ -3993,6 +4374,14 @@ pub enum ValidationError {
     /// OpImageTexelPointer Sample must be integer scalar.
     #[error("OpImageTexelPointer in block {block:?} of function {function:?} requires Sample to be integer scalar")]
     ImageTexelPointerSampleMustBeIntScalar {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+    /// OpImageTexelPointer for non-multisampled images (MS=0) must have Sample as constant 0.
+    #[error("OpImageTexelPointer in block {block:?} of function {function:?} for non-multisampled image (MS=0) requires Sample to be a constant with value 0")]
+    ImageTexelPointerSampleMustBeZeroForNonMultisampled {
         /// The function containing the instruction.
         function: Option<Id>,
         /// The block containing the instruction.
@@ -4084,6 +4473,26 @@ pub enum ValidationError {
         function: Option<Id>,
         /// The block containing the instruction.
         block: Option<Id>,
+    },
+    /// Sparse image sample result type must be a struct with 2 members.
+    #[error("{opcode:?} in block {block:?} of function {function:?} requires result type to be a struct with 2 members")]
+    ImageSparseSampleResultMustBeStruct {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Sparse image sample result type's first member (residency code) must be int scalar.
+    #[error("{opcode:?} in block {block:?} of function {function:?} requires result struct's first member (residency code) to be int scalar")]
+    ImageSparseSampleResidencyMustBeInt {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
     },
 
     /// OpSampledImage operand types must match except for depth.
@@ -4189,6 +4598,140 @@ pub enum ValidationError {
         function: Option<Id>,
         /// The block containing the instruction.
         block: Option<Id>,
+    },
+    /// OpSampledImage result consumed in a different block.
+    #[error("OpSampledImage result %{sampled_image_id} defined in block {def_block:?} of function {function:?} is consumed in different block {consumer_block:?}")]
+    SampledImageConsumedInDifferentBlock {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block where OpSampledImage is defined.
+        def_block: Option<Id>,
+        /// The block where the result is consumed.
+        consumer_block: Option<Id>,
+        /// The OpSampledImage result ID.
+        sampled_image_id: Id,
+    },
+    /// OpSampledImage result used in OpPhi or OpSelect.
+    #[error("OpSampledImage result %{sampled_image_id} cannot be used as operand to {consumer_opcode:?} in block {block:?} of function {function:?}")]
+    SampledImageUsedInPhiOrSelect {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the consumer instruction.
+        block: Option<Id>,
+        /// The OpSampledImage result ID.
+        sampled_image_id: Id,
+        /// The opcode that incorrectly uses the sampled image (OpPhi or OpSelect).
+        consumer_opcode: rspirv::spirv::Op,
+    },
+    /// Image Proj operation cannot use multisampled images.
+    #[error("instruction {opcode:?} in block {block:?} of function {function:?} is a Proj operation which cannot use multisampled images")]
+    ImageProjCannotUseMultisample {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Image Proj operation cannot use arrayed images.
+    #[error("instruction {opcode:?} in block {block:?} of function {function:?} is a Proj operation which cannot use arrayed images")]
+    ImageProjCannotUseArrayed {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Image Proj operation requires Dim 1D, 2D, 3D, or Rect.
+    #[error("instruction {opcode:?} in block {block:?} of function {function:?} is a Proj operation which requires Dim 1D, 2D, 3D, or Rect (found {dim:?})")]
+    ImageProjInvalidDim {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+        /// The invalid dimension.
+        dim: rspirv::spirv::Dim,
+    },
+    /// Image Dref operation cannot use multisampled images.
+    #[error("instruction {opcode:?} in block {block:?} of function {function:?} is a Dref operation which cannot use multisampled images")]
+    ImageDrefCannotUseMultisample {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Image Read result must be 4-component vector in Vulkan.
+    #[error("instruction {opcode:?} in block {block:?} of function {function:?} result type must be 4-component vector in Vulkan (found {actual_components} components)")]
+    ImageReadResultMustBe4ComponentInVulkan {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+        /// Actual number of components found.
+        actual_components: u32,
+    },
+    /// Image Gather requires Dim 2D, Cube, or Rect.
+    #[error("instruction {opcode:?} in block {block:?} of function {function:?} requires Image Dim to be 2D, Cube, or Rect (found {dim:?})")]
+    ImageGatherInvalidDim {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+        /// The invalid dimension.
+        dim: rspirv::spirv::Dim,
+    },
+    /// Image Gather Component operand must be 32-bit int scalar.
+    #[error("instruction {opcode:?} in block {block:?} of function {function:?} Component operand must be 32-bit int scalar")]
+    ImageGatherComponentMustBe32BitInt {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Image Gather Component operand must be constant in Vulkan.
+    #[error("instruction {opcode:?} in block {block:?} of function {function:?} Component operand must be a constant in Vulkan")]
+    ImageGatherComponentMustBeConstantInVulkan {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
+
+    // ========== QCOM IMAGE PROCESSING ==========
+    /// QCOM image instruction missing required decoration.
+    #[error("instruction {opcode:?} in block {block:?} of function {function:?} operand is missing required decoration {decoration:?}")]
+    QCOMImageMissingDecoration {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+        /// The required decoration.
+        decoration: rspirv::spirv::Decoration,
+    },
+    /// QCOM image instruction expects OpLoad.
+    #[error("instruction {opcode:?} in block {block:?} of function {function:?} expects operand to be OpLoad")]
+    QCOMImageExpectsOpLoad {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
     },
 
     // ========== EXTENDED INSTRUCTIONS ==========
@@ -4870,6 +5413,18 @@ pub enum ValidationError {
         "instruction {opcode:?} in block {block:?} of function {function:?} Hit Kind must be a 32-bit unsigned int scalar"
     )]
     RayTracingInvalidHitKind {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Motion/Current time parameter must be a 32-bit float scalar.
+    #[error(
+        "instruction {opcode:?} in block {block:?} of function {function:?} Current time must be a 32-bit float scalar"
+    )]
+    RayTracingInvalidCurrentTime {
         /// The function containing the instruction.
         function: Option<Id>,
         /// The block containing the instruction.
@@ -5950,6 +6505,18 @@ pub enum ValidationError {
         /// The actual storage class.
         storage_class: rspirv::spirv::StorageClass,
     },
+    /// Vulkan: PerVertexKHR can only be applied in Fragment execution model.
+    #[error("PerVertexKHR can only be applied to Fragment Execution Models (VUID-6777)")]
+    VulkanPerVertexDecorationNotFragment {
+        /// The variable ID.
+        variable_id: Id,
+    },
+    /// Vulkan: PerVertexKHR decorated variables must be declared as arrays.
+    #[error("PerVertexKHR must be declared as arrays (VUID-6778)")]
+    VulkanPerVertexDecorationNotArray {
+        /// The variable ID.
+        variable_id: Id,
+    },
 
     // ========== TENSORS ==========
     /// OpTensorReadARM result type must be a scalar or array of scalar.
@@ -5967,6 +6534,22 @@ pub enum ValidationError {
     /// OpTensorQuerySizeARM result type must be an integer scalar.
     #[error("OpTensorQuerySizeARM {instruction_id:?} Result Type must be an integer type scalar")]
     TensorQuerySizeResultNotInt {
+        /// The instruction ID.
+        instruction_id: Option<Id>,
+    },
+    /// OpTensorQuerySizeARM Dimension must be less than tensor rank.
+    #[error("OpTensorQuerySizeARM {instruction_id:?} Dimension ({dimension}) must be less than the Rank of Tensor ({tensor_rank})")]
+    TensorQuerySizeDimensionOutOfRange {
+        /// The instruction ID.
+        instruction_id: Option<Id>,
+        /// The dimension value.
+        dimension: u64,
+        /// The tensor rank.
+        tensor_rank: u64,
+    },
+    /// OpTensorQuerySizeARM Dimension must be a constant.
+    #[error("OpTensorQuerySizeARM {instruction_id:?} Dimension must come from a constant instruction of scalar integer type")]
+    TensorQuerySizeDimensionNotConstant {
         /// The instruction ID.
         instruction_id: Option<Id>,
     },
@@ -5990,6 +6573,16 @@ pub enum ValidationError {
         /// The instruction ID of the invalid use.
         instruction_id: Option<Id>,
         /// The opcode of the instruction using the small type.
+        opcode: rspirv::spirv::Op,
+    },
+    /// OpLoad/OpStore with 8/16-bit type requires scalar, vector, or matrix - not array/struct.
+    #[error("In function {function:?} block {block:?}: {opcode:?} of 8- or 16-bit type without Int8/Int16/Float16 capability must have scalar, vector, or matrix type, not composite")]
+    LoadStoreSmallTypeComposite {
+        /// The function ID.
+        function: Id,
+        /// The block ID.
+        block: Id,
+        /// The opcode (Load or Store).
         opcode: rspirv::spirv::Op,
     },
     /// OpSelect with pointer type requires VariablePointers capability.
@@ -6658,5 +7251,302 @@ pub enum ValidationError {
     ForwardRefInTypeRequiresPreviousDef {
         /// The forward-referenced operand.
         operand: Id,
+    },
+
+    // ========== CLSPV REFLECTION ==========
+    /// CLSpv reflection instruction result type must be void.
+    #[error("NonSemantic.ClspvReflection.{instruction} result type must be void")]
+    ClspvResultTypeMustBeVoid {
+        /// The instruction name.
+        instruction: &'static str,
+    },
+    /// CLSpv reflection instruction requires a minimum version.
+    #[error("NonSemantic.ClspvReflection.{instruction} requires version {required} or later, but version {found} is being used")]
+    ClspvVersionRequired {
+        /// The instruction name.
+        instruction: &'static str,
+        /// Required version.
+        required: u32,
+        /// Found version.
+        found: u32,
+    },
+    /// CLSpv reflection operand must be an OpString.
+    #[error("NonSemantic.ClspvReflection.{instruction}: operand {operand_name} must be an OpString")]
+    ClspvOperandMustBeString {
+        /// The instruction name.
+        instruction: &'static str,
+        /// The operand name.
+        operand_name: &'static str,
+    },
+    /// CLSpv reflection operand must be a 32-bit unsigned integer constant.
+    #[error("NonSemantic.ClspvReflection.{instruction}: operand {operand_name} must be an OpConstant with 32-bit unsigned integer type")]
+    ClspvOperandMustBeUint32Constant {
+        /// The instruction name.
+        instruction: &'static str,
+        /// The operand name.
+        operand_name: &'static str,
+    },
+    /// CLSpv reflection operand must be a Kernel instruction.
+    #[error("NonSemantic.ClspvReflection.{instruction}: operand {operand_name} must be a Kernel reflection instruction")]
+    ClspvOperandMustBeKernel {
+        /// The instruction name.
+        instruction: &'static str,
+        /// The operand name.
+        operand_name: &'static str,
+    },
+    /// CLSpv reflection operand must be an ArgumentInfo instruction.
+    #[error("NonSemantic.ClspvReflection.{instruction}: operand {operand_name} must be an ArgumentInfo reflection instruction")]
+    ClspvOperandMustBeArgumentInfo {
+        /// The instruction name.
+        instruction: &'static str,
+        /// The operand name.
+        operand_name: &'static str,
+    },
+    /// CLSpv reflection instruction must be imported.
+    #[error("NonSemantic.ClspvReflection must be imported via OpExtInstImport")]
+    ClspvNotImported,
+
+    // ========== TYPE VALIDATION EXTENSIONS ==========
+    /// OpTypeCooperativeVectorNV Component Type must be scalar numerical.
+    #[error("OpTypeCooperativeVectorNV Component Type {component_type:?} is not a scalar numerical type")]
+    TypeCooperativeVectorComponentNotScalar {
+        /// The type ID.
+        type_id: TypeId,
+        /// The component type ID.
+        component_type: TypeId,
+    },
+    /// OpTypeCooperativeVectorNV component count must be a constant.
+    #[error("OpTypeCooperativeVectorNV component count {count_id:?} is not a constant instruction")]
+    TypeCooperativeVectorCountNotConstant {
+        /// The type ID.
+        type_id: TypeId,
+        /// The count ID.
+        count_id: Id,
+    },
+    /// OpTypeCooperativeVectorNV component count must be an integer type.
+    #[error("OpTypeCooperativeVectorNV component count {count_id:?} is not a constant integer type")]
+    TypeCooperativeVectorCountNotInteger {
+        /// The type ID.
+        type_id: TypeId,
+        /// The count ID.
+        count_id: Id,
+    },
+    /// OpTypeCooperativeVectorNV component count must be at least 1.
+    #[error("OpTypeCooperativeVectorNV component count must be at least 1, found {value}")]
+    TypeCooperativeVectorCountInvalid {
+        /// The type ID.
+        type_id: TypeId,
+        /// The invalid count value.
+        value: i64,
+    },
+    /// OpTypeUntypedPointerKHR requires WorkgroupMemoryExplicitLayoutKHR for Workgroup storage class.
+    #[error("Workgroup storage class untyped pointers in Vulkan require WorkgroupMemoryExplicitLayoutKHR capability")]
+    TypeUntypedPointerWorkgroupRequiresCapability {
+        /// The type ID.
+        type_id: TypeId,
+    },
+    /// OpTypeUntypedPointerKHR has invalid storage class in Vulkan.
+    #[error("In Vulkan, untyped pointers can only be used in explicitly laid out storage classes (StorageBuffer, PhysicalStorageBuffer, Uniform, PushConstant, Workgroup)")]
+    TypeUntypedPointerInvalidStorageClass {
+        /// The type ID.
+        type_id: TypeId,
+        /// The storage class.
+        storage_class: rspirv::spirv::StorageClass,
+    },
+    /// OpTypeTensorLayoutNV or OpTypeTensorViewNV Dim must be 32-bit integer.
+    #[error("{opcode:?} Dim {dim_id:?} is not a 32-bit integer")]
+    TypeTensorDimNot32BitInteger {
+        /// The type ID.
+        type_id: TypeId,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+        /// The dim ID.
+        dim_id: Id,
+    },
+    /// OpTypeTensorLayoutNV or OpTypeTensorViewNV Dim must be between 1 and 5.
+    #[error("{opcode:?} Dim must be between 1 and 5, found {value}")]
+    TypeTensorDimOutOfRange {
+        /// The type ID.
+        type_id: TypeId,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+        /// The invalid dim value.
+        value: u64,
+    },
+    /// OpTypeTensorLayoutNV ClampMode must be 32-bit integer.
+    #[error("OpTypeTensorLayoutNV ClampMode {clamp_id:?} is not a 32-bit integer")]
+    TypeTensorLayoutClampNot32BitInteger {
+        /// The type ID.
+        type_id: TypeId,
+        /// The clamp mode ID.
+        clamp_id: Id,
+    },
+    /// OpTypeTensorLayoutNV ClampMode must be a valid TensorClampMode.
+    #[error("OpTypeTensorLayoutNV ClampMode must be a valid TensorClampMode")]
+    TypeTensorLayoutClampInvalid {
+        /// The type ID.
+        type_id: TypeId,
+    },
+    /// OpTypeTensorViewNV HasDimensions must be a boolean.
+    #[error("OpTypeTensorViewNV HasDimensions {has_dim_id:?} is not a boolean value")]
+    TypeTensorViewHasDimNotBool {
+        /// The type ID.
+        type_id: TypeId,
+        /// The HasDimensions ID.
+        has_dim_id: Id,
+    },
+    /// OpTypeTensorViewNV Permutation must be 32-bit integer.
+    #[error("OpTypeTensorViewNV Permutation {permutation_id:?} is not a 32-bit integer")]
+    TypeTensorViewPermutationNot32BitInteger {
+        /// The type ID.
+        type_id: TypeId,
+        /// The permutation ID.
+        permutation_id: Id,
+    },
+    /// OpTypeTensorViewNV Permutation value out of range.
+    #[error("OpTypeTensorViewNV Permutation {permutation_id:?} must be a valid dimension")]
+    TypeTensorViewPermutationOutOfRange {
+        /// The type ID.
+        type_id: TypeId,
+        /// The permutation ID.
+        permutation_id: Id,
+    },
+    /// OpTypeTensorViewNV Permutation values don't form a valid permutation.
+    #[error("OpTypeTensorViewNV Permutation values don't form a valid permutation")]
+    TypeTensorViewPermutationInvalid {
+        /// The type ID.
+        type_id: TypeId,
+    },
+    /// OpTypeTensorViewNV incorrect number of permutation values.
+    #[error("OpTypeTensorViewNV incorrect number of permutation values")]
+    TypeTensorViewPermutationCountMismatch {
+        /// The type ID.
+        type_id: TypeId,
+    },
+    /// OpTypeTensorARM Element Type must be a scalar type.
+    #[error("OpTypeTensorARM Element Type {element_type:?} is not a scalar type")]
+    TypeTensorARMElementNotScalar {
+        /// The type ID.
+        type_id: TypeId,
+        /// The element type ID.
+        element_type: TypeId,
+    },
+    /// OpTypeTensorARM Rank must be a constant instruction.
+    #[error("OpTypeTensorARM Rank {rank_id:?} is not a constant instruction")]
+    TypeTensorARMRankNotConstant {
+        /// The type ID.
+        type_id: TypeId,
+        /// The rank ID.
+        rank_id: Id,
+    },
+    /// OpTypeTensorARM Rank must have scalar integer type.
+    #[error("OpTypeTensorARM Rank {rank_id:?} does not have a scalar integer type")]
+    TypeTensorARMRankNotInteger {
+        /// The type ID.
+        type_id: TypeId,
+        /// The rank ID.
+        rank_id: Id,
+    },
+    /// OpTypeTensorARM Rank must be greater than 0.
+    #[error("OpTypeTensorARM Rank must define a value greater than 0")]
+    TypeTensorARMRankZero {
+        /// The type ID.
+        type_id: TypeId,
+    },
+    /// OpTypeTensorARM Shape must be a constant instruction.
+    #[error("OpTypeTensorARM Shape {shape_id:?} is not a constant instruction")]
+    TypeTensorARMShapeNotConstant {
+        /// The type ID.
+        type_id: TypeId,
+        /// The shape ID.
+        shape_id: Id,
+    },
+    /// OpTypeTensorARM Shape must be an array of integers.
+    #[error("OpTypeTensorARM Shape {shape_id:?} is not an array of integer type whose Length equals Rank")]
+    TypeTensorARMShapeNotIntegerArray {
+        /// The type ID.
+        type_id: TypeId,
+        /// The shape ID.
+        shape_id: Id,
+    },
+    /// OpTypeTensorARM Shape constituent must be greater than 0.
+    #[error("OpTypeTensorARM Shape constituent {index} is not greater than 0")]
+    TypeTensorARMShapeConstituentZero {
+        /// The type ID.
+        type_id: TypeId,
+        /// The constituent index.
+        index: usize,
+    },
+    /// OpTypeArray/OpTypeRuntimeArray containing Block/BufferBlock must not have ArrayStride.
+    #[error("Array containing a Block or BufferBlock must not be decorated with ArrayStride")]
+    TypeArrayBlockCannotHaveArrayStride {
+        /// The type ID.
+        type_id: TypeId,
+    },
+    /// OpTypeArray/OpTypeRuntimeArray element cannot be RuntimeArray in Vulkan.
+    #[error("OpTypeArray/OpTypeRuntimeArray Element Type cannot be OpTypeRuntimeArray in Vulkan")]
+    TypeArrayElementCannotBeRuntimeArray {
+        /// The type ID.
+        type_id: TypeId,
+    },
+    /// OpTypeFunction exceeds maximum function arguments.
+    #[error("OpTypeFunction may not take more than {limit} arguments, has {count}")]
+    TypeFunctionTooManyArguments {
+        /// The type ID.
+        type_id: TypeId,
+        /// Maximum allowed arguments.
+        limit: u32,
+        /// Actual argument count.
+        count: usize,
+    },
+    /// OpTypeFunction has invalid use.
+    #[error("Invalid use of function type result id {type_id:?}")]
+    TypeFunctionInvalidUse {
+        /// The type ID.
+        type_id: TypeId,
+    },
+    /// OpTypeCooperativeMatrixKHR requires BFloat16CooperativeMatrixKHR for BFloat16 component.
+    #[error("OpTypeCooperativeMatrix with BFloat16 component type requires BFloat16CooperativeMatrixKHR capability")]
+    TypeCooperativeMatrixBFloat16RequiresCapability {
+        /// The type ID.
+        type_id: TypeId,
+    },
+    /// OpTypeCooperativeMatrixKHR requires Float8CooperativeMatrixEXT for FP8 component.
+    #[error("OpTypeCooperativeMatrix with FP8 component type requires Float8CooperativeMatrixEXT capability")]
+    TypeCooperativeMatrixFP8RequiresCapability {
+        /// The type ID.
+        type_id: TypeId,
+    },
+    /// OpTypeCooperativeMatrixKHR with ScopeWorkgroup requires LocalSize/LocalSizeId.
+    #[error("OpTypeCooperativeMatrixKHR with ScopeWorkgroup used without specifying LocalSize or LocalSizeId for entry point {entry_point:?}")]
+    TypeCooperativeMatrixWorkgroupNoLocalSize {
+        /// The type ID.
+        type_id: TypeId,
+        /// The entry point ID.
+        entry_point: Id,
+    },
+    /// OpTypeCooperativeMatrixKHR with ScopeWorkgroup used before LocalSizeId constant is defined.
+    #[error("OpTypeCooperativeMatrixKHR with ScopeWorkgroup used before LocalSizeId constant value {constant_id:?} is defined")]
+    TypeCooperativeMatrixLocalSizeNotDefined {
+        /// The type ID.
+        type_id: TypeId,
+        /// The constant ID.
+        constant_id: Id,
+    },
+
+    // ========== EXECUTION LIMITATIONS ==========
+    /// A function in the entry point callgraph is incompatible with the execution model.
+    #[error(
+        "Entry point {entry_point:?}'s callgraph contains function {function:?} which is incompatible with execution model {execution_model:?}: {reason}"
+    )]
+    ExecutionModelIncompatible {
+        /// The entry point ID.
+        entry_point: Id,
+        /// The incompatible function ID.
+        function: Id,
+        /// The execution model.
+        execution_model: rspirv::spirv::ExecutionModel,
+        /// The reason for incompatibility.
+        reason: String,
     },
 }

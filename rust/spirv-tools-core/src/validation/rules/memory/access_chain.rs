@@ -10,6 +10,7 @@ use rspirv::dr::Operand;
 use rspirv::spirv::{Decoration, Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
+use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::{Id, ResultId};
 
@@ -29,7 +30,7 @@ impl ValidationRule for AccessChainRule {
         "access-chain"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let module = ctx.module();
 
         for func in &module.functions {
@@ -84,7 +85,7 @@ impl ValidationRule for AccessChainRule {
                             block: block_id,
                             instruction: opcode,
                             result_type: type_id_from_u32(result_type_id),
-                        });
+                        }.into());
                     }
 
                     // Get base operand
@@ -119,7 +120,7 @@ impl ValidationRule for AccessChainRule {
                             block: block_id,
                             instruction: opcode,
                             base_type: type_id_from_u32(base_type_id),
-                        });
+                        }.into());
                     }
 
                     // Storage classes must match
@@ -133,7 +134,7 @@ impl ValidationRule for AccessChainRule {
                                 instruction: opcode,
                                 base_storage_class: b_sc,
                                 result_storage_class: r_sc,
-                            });
+                            }.into());
                         }
                     }
 
@@ -177,7 +178,7 @@ impl ValidationRule for AccessChainRule {
                                         instruction: opcode,
                                         operand_index: 1,
                                         found: type_id_from_u32(element_type_id),
-                                    });
+                                    }.into());
                                 }
                             }
                             2 // Start composite indices at operand 2
@@ -218,7 +219,44 @@ impl ValidationRule for AccessChainRule {
                                     instruction: opcode,
                                     operand_index: actual_operand_index,
                                     found: type_id_from_u32(index_type_id),
-                                });
+                                }.into());
+                            }
+
+                            // Check for negative signed integer constants in logical addressing
+                            // (SPIR-V spec restriction for logical addressing mode)
+                            if ctx.is_logical_addressing() {
+                                // Check if index is a signed integer type (signedness operand == 1)
+                                let is_signed = index_type
+                                    .operands
+                                    .get(1)
+                                    .map(|op| matches!(op, Operand::LiteralBit32(1)))
+                                    .unwrap_or(false);
+
+                                if is_signed
+                                    && matches!(
+                                        index_inst.class.opcode,
+                                        Op::Constant | Op::SpecConstant
+                                    )
+                                {
+                                    // Get the constant value and check if negative
+                                    if let Some(Operand::LiteralBit32(val)) =
+                                        index_inst.operands.first()
+                                    {
+                                        // Interpret as signed 32-bit
+                                        let signed_val = *val as i32;
+                                        if signed_val < 0 {
+                                            return Err(
+                                                ValidationError::AccessChainNegativeIndex {
+                                                    function: func_id,
+                                                    block: block_id,
+                                                    instruction: opcode,
+                                                    operand_index: actual_operand_index,
+                                                    value: signed_val as i64,
+                                                }.into(),
+                        );
+                                        }
+                                    }
+                                }
                             }
 
                             // Get current type instruction
@@ -260,8 +298,8 @@ impl ValidationRule for AccessChainRule {
                                                 block: block_id,
                                                 instruction: opcode,
                                                 composite_type: type_id_from_u32(current_type_id),
-                                            },
-                                        );
+                                            }.into(),
+                        );
                                     }
 
                                     // Get member type by index
@@ -283,8 +321,8 @@ impl ValidationRule for AccessChainRule {
                                                     ),
                                                     index: *member_idx,
                                                     bound: current_type.operands.len() as u32,
-                                                },
-                                            );
+                                                }.into(),
+                        );
                                         }
                                     } else {
                                         break;
@@ -296,7 +334,7 @@ impl ValidationRule for AccessChainRule {
                                         block: block_id,
                                         instruction: opcode,
                                         composite_type: type_id_from_u32(current_type_id),
-                                    });
+                                    }.into());
                                 }
                             }
                         }
@@ -315,7 +353,7 @@ impl ValidationRule for AccessChainRule {
                                         instruction: opcode,
                                         expected: type_id_from_u32(current_type_id),
                                         found: type_id_from_u32(result_pointee_id),
-                                    });
+                                    }.into());
                                 }
                             } else if is_ptr_access_chain {
                                 // PtrAccessChain with just element operand: result must match base pointee
@@ -326,7 +364,7 @@ impl ValidationRule for AccessChainRule {
                                         instruction: opcode,
                                         expected: type_id_from_u32(current_type_id),
                                         found: type_id_from_u32(result_pointee_id),
-                                    });
+                                    }.into());
                                 }
                             }
                         }
@@ -351,7 +389,7 @@ impl ValidationRule for RawAccessChainRule {
         "raw-access-chain"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for function in &ctx.module.functions {
             let function_id = function
                 .def
@@ -389,7 +427,7 @@ impl ValidationRule for RawAccessChainRule {
                         return Err(ValidationError::RawAccessChainResultNotPointer {
                             function: function_id,
                             block: block_id,
-                        });
+                        }.into());
                     }
 
                     // Validate storage class
@@ -405,7 +443,7 @@ impl ValidationRule for RawAccessChainRule {
                         return Err(ValidationError::RawAccessChainInvalidStorageClass {
                             function: function_id,
                             block: block_id,
-                        });
+                        }.into());
                     }
 
                     // Validate pointed type is not Array, Matrix, or Struct
@@ -420,7 +458,7 @@ impl ValidationRule for RawAccessChainRule {
                                     return Err(ValidationError::RawAccessChainInvalidPointedType {
                                         function: function_id,
                                         block: block_id,
-                                    });
+                                    }.into());
                                 }
                             }
                         }
@@ -434,7 +472,7 @@ impl ValidationRule for RawAccessChainRule {
                                     return Err(ValidationError::RawAccessChainStrideNotConstant {
                                         function: function_id,
                                         block: block_id,
-                                    });
+                                    }.into());
                                 }
 
                                 // Check stride type is OpTypeInt
@@ -448,8 +486,8 @@ impl ValidationRule for RawAccessChainRule {
                                                     ValidationError::RawAccessChainStrideNotInt {
                                                         function: function_id,
                                                         block: block_id,
-                                                    },
-                                                );
+                                                    }.into(),
+                        );
                                             }
                                         }
                                     }
@@ -497,7 +535,7 @@ fn validate_32bit_int_operand(
     ctx: &ValidationContext<'_>,
     function_id: Option<Id>,
     block_id: Option<Id>,
-) -> Result<(), ValidationError> {
+) -> ValidationResult {
     if let Some(Operand::IdRef(operand_id)) = inst.operands.get(operand_idx) {
         if let Ok(operand_result_id) = ResultId::try_from(*operand_id) {
             if let Some(operand_inst) = ctx.definitions.get(&operand_result_id) {
@@ -509,7 +547,7 @@ fn validate_32bit_int_operand(
                                     function: function_id,
                                     block: block_id,
                                     operand_name,
-                                });
+                                }.into());
                             }
                             // Check width is 32
                             if let Some(Operand::LiteralBit32(width)) =
@@ -520,7 +558,7 @@ fn validate_32bit_int_operand(
                                         function: function_id,
                                         block: block_id,
                                         operand_name,
-                                    });
+                                    }.into());
                                 }
                             }
                         }
@@ -544,7 +582,7 @@ impl ValidationRule for PtrAccessChainRule {
         "ptr-access-chain"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         use rspirv::spirv::Capability;
 
         for function in &ctx.module.functions {
@@ -615,8 +653,8 @@ impl ValidationRule for PtrAccessChainRule {
                                                     ValidationError::PtrAccessChainElementNotInt {
                                                         function: function_id,
                                                         block: block_id,
-                                                    },
-                                                );
+                                                    }.into(),
+                        );
                                             }
                                         }
                                     }
@@ -639,8 +677,8 @@ impl ValidationRule for PtrAccessChainRule {
                                         ValidationError::PtrAccessChainWorkgroupRequiresVariablePointers {
                                             function: function_id,
                                             block: block_id,
-                                        },
-                                    );
+                                        }.into(),
+                        );
                                 }
                             }
                             StorageClass::StorageBuffer => {
@@ -649,8 +687,8 @@ impl ValidationRule for PtrAccessChainRule {
                                         ValidationError::PtrAccessChainStorageBufferRequiresVariablePointers {
                                             function: function_id,
                                             block: block_id,
-                                        },
-                                    );
+                                        }.into(),
+                        );
                                 }
                             }
                             StorageClass::PhysicalStorageBuffer => {
@@ -661,8 +699,8 @@ impl ValidationRule for PtrAccessChainRule {
                                     ValidationError::PtrAccessChainInvalidVulkanStorageClass {
                                         function: function_id,
                                         block: block_id,
-                                    },
-                                );
+                                    }.into(),
+                        );
                             }
                         }
                     }
@@ -689,7 +727,7 @@ impl ValidationRule for PtrAccessChainRule {
                                 return Err(ValidationError::PtrAccessChainMissingArrayStride {
                                     function: function_id,
                                     block: block_id,
-                                });
+                                }.into());
                             }
                         }
                     }

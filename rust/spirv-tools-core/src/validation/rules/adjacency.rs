@@ -11,6 +11,7 @@
 use rspirv::spirv::Op;
 
 use crate::validation::context::{ValidationContext, ValidationRule};
+use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::Id;
 
@@ -84,7 +85,7 @@ impl ValidationRule for PhiPlacementRule {
         "phi-placement"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for function in &ctx.module.functions {
             let function_id = function
                 .def
@@ -112,7 +113,7 @@ impl ValidationRule for PhiPlacementRule {
                                     return Err(ValidationError::PhiAfterNonPhi {
                                         function: func,
                                         block,
-                                    });
+                                    }.into());
                                 }
                             }
                         }
@@ -150,7 +151,7 @@ impl ValidationRule for VariablePlacementRule {
         "variable-placement"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for function in &ctx.module.functions {
             let function_id = function
                 .def
@@ -184,7 +185,7 @@ impl ValidationRule for VariablePlacementRule {
                                 return Err(ValidationError::FunctionVariableNotInEntryBlock {
                                     function: func,
                                     variable: var,
-                                });
+                                }.into());
                             }
                         }
 
@@ -228,7 +229,7 @@ impl ValidationRule for MergeAdjacencyRule {
         "merge-adjacency"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for function in &ctx.module.functions {
             let function_id = function
                 .def
@@ -293,7 +294,7 @@ impl ValidationRule for MergeAdjacencyRule {
                                     function: func,
                                     block,
                                     terminator: found_terminator,
-                                });
+                                }.into());
                             }
                         }
                     }

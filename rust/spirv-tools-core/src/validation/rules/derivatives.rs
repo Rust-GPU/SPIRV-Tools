@@ -18,6 +18,7 @@ use rspirv::dr::Operand;
 use rspirv::spirv::{ExecutionMode, ExecutionModel};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
+use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::op_ext::OpExt;
 use crate::validation::type_ext::{DefaultTypeResolver, TypeResolver};
@@ -54,7 +55,7 @@ impl ValidationRule for DerivativeTypeRule {
         "derivative-type"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let resolver = DefaultTypeResolver;
 
         for function in &ctx.module.functions {
@@ -93,7 +94,7 @@ impl ValidationRule for DerivativeTypeRule {
                                 opcode: inst.class.opcode,
                                 result_type,
                                 expected: "float scalar or vector",
-                            });
+                            }.into());
                         }
                     }
 
@@ -111,7 +112,7 @@ impl ValidationRule for DerivativeTypeRule {
                                 opcode: inst.class.opcode,
                                 result_type,
                                 expected: "32-bit float",
-                            });
+                            }.into());
                         }
                     }
 
@@ -143,7 +144,7 @@ impl ValidationRule for DerivativeTypeRule {
                                     block,
                                     opcode: inst.class.opcode,
                                     result_type,
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -173,7 +174,7 @@ impl ValidationRule for DerivativeExecutionModelRule {
         "derivative-execution-model"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         // Check if any derivative instructions exist
         let has_derivatives = ctx.module.functions.iter().any(|f| {
             f.blocks
@@ -214,7 +215,7 @@ impl ValidationRule for DerivativeExecutionModelRule {
                                     block,
                                     opcode: inst.class.opcode,
                                     allowed: VALID_DERIVATIVE_EXECUTION_MODELS.to_vec(),
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -243,7 +244,7 @@ impl ValidationRule for DerivativeExecutionModeRule {
         "derivative-execution-mode"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         // Check if we have any execution models that require derivative mode
         let requires_mode_models: Vec<ExecutionModel> = ctx
             .entry_models
@@ -304,7 +305,7 @@ impl ValidationRule for DerivativeExecutionModeRule {
                                     block,
                                     opcode: inst.class.opcode,
                                     execution_model: requires_mode_models[0],
-                                });
+                                }.into());
                             }
                         }
                     }

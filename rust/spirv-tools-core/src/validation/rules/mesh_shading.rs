@@ -10,6 +10,7 @@ use rspirv::dr::Operand;
 use rspirv::spirv::{Capability, Decoration, ExecutionModel, Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
+use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::helpers::get_type_structure;
 use crate::validation::types::{Id, ResultId, ScalarKind, TypeId, TypeStructure};
@@ -51,7 +52,7 @@ impl ValidationRule for EmitMeshTasksRule {
         "emit-mesh-tasks"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let module = ctx.module();
 
         for func in &module.functions {
@@ -72,8 +73,8 @@ impl ValidationRule for EmitMeshTasksRule {
                                                 function: func_id,
                                                 block: block_id,
                                                 component: name,
-                                            },
-                                        );
+                                            }.into(),
+                        );
                                     }
                                 }
                             }
@@ -89,8 +90,8 @@ impl ValidationRule for EmitMeshTasksRule {
                                             ValidationError::MeshShadingPayloadMustBeVariable {
                                                 function: func_id,
                                                 block: block_id,
-                                            },
-                                        );
+                                            }.into(),
+                        );
                                     }
 
                                     // Check storage class is TaskPayloadWorkgroupEXT
@@ -102,8 +103,8 @@ impl ValidationRule for EmitMeshTasksRule {
                                                 ValidationError::MeshShadingPayloadWrongStorageClass {
                                                     function: func_id,
                                                     block: block_id,
-                                                },
-                                            );
+                                                }.into(),
+                        );
                                         }
                                     }
                                 }
@@ -130,7 +131,7 @@ impl ValidationRule for SetMeshOutputsRule {
         "set-mesh-outputs"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let module = ctx.module();
 
         for func in &module.functions {
@@ -150,8 +151,8 @@ impl ValidationRule for SetMeshOutputsRule {
                                             function: func_id,
                                             block: block_id,
                                             count_name: "Vertex Count",
-                                        },
-                                    );
+                                        }.into(),
+                        );
                                 }
                             }
                         }
@@ -165,8 +166,8 @@ impl ValidationRule for SetMeshOutputsRule {
                                             function: func_id,
                                             block: block_id,
                                             count_name: "Primitive Count",
-                                        },
-                                    );
+                                        }.into(),
+                        );
                                 }
                             }
                         }
@@ -190,7 +191,7 @@ impl ValidationRule for PerPrimitiveDecorationRule {
         "per-primitive-decoration"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         // Only applies when MeshShadingEXT capability is present
         if !ctx
             .module()
@@ -269,8 +270,8 @@ impl ValidationRule for PerPrimitiveDecorationRule {
                     return Err(
                         ValidationError::MeshShadingPerPrimitiveFragmentWrongStorageClass {
                             variable_id: to_id(*var_id),
-                        },
-                    );
+                        }.into(),
+                        );
                 }
 
                 // MeshEXT: PerPrimitiveEXT requires Output storage class
@@ -278,8 +279,8 @@ impl ValidationRule for PerPrimitiveDecorationRule {
                     return Err(
                         ValidationError::MeshShadingPerPrimitiveMeshWrongStorageClass {
                             variable_id: to_id(*var_id),
-                        },
-                    );
+                        }.into(),
+                        );
                 }
             }
         }

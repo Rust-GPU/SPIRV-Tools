@@ -13,6 +13,7 @@ use rspirv::dr::Instruction;
 use rspirv::spirv::{Capability, Decoration, ExecutionModel, Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
+use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::helpers::{build_decoration_lookup, is_vulkan_env};
 use crate::validation::types::ResultId;
@@ -29,7 +30,7 @@ impl ValidationRule for InterpolationStorageClassRule {
         "interpolation-storage-classes"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let module = ctx.module;
 
         for inst in &module.annotations {
@@ -79,8 +80,8 @@ impl ValidationRule for InterpolationStorageClassRule {
                     ValidationError::InterpolationDecorationInvalidStorageClass {
                         decoration,
                         storage_class,
-                    },
-                );
+                    }.into(),
+                        );
             }
 
             if decoration == Decoration::Sample
@@ -91,13 +92,13 @@ impl ValidationRule for InterpolationStorageClassRule {
                 return Err(ValidationError::DecorationRequiresCapability {
                     decoration,
                     capability: Capability::SampleRateShading,
-                });
+                }.into());
             }
 
             if decoration != Decoration::Patch
                 && !ctx.entry_models.contains(&ExecutionModel::Fragment)
             {
-                return Err(ValidationError::InterpolationDecorationRequiresFragment { decoration });
+                return Err(ValidationError::InterpolationDecorationRequiresFragment { decoration }.into());
             }
         }
 
@@ -117,7 +118,7 @@ impl ValidationRule for InterpolationExclusivityRule {
         "interpolation-exclusivity"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let module = ctx.module;
 
         #[derive(Default)]
@@ -169,7 +170,7 @@ impl ValidationRule for InterpolationExclusivityRule {
                         return Err(ValidationError::InterpolationDecorationConflict {
                             decoration,
                             existing,
-                        });
+                        }.into());
                     }
                 } else {
                     entry.base = Some(decoration);
@@ -185,7 +186,7 @@ impl ValidationRule for InterpolationExclusivityRule {
                         return Err(ValidationError::InterpolationDecorationConflict {
                             decoration,
                             existing,
-                        });
+                        }.into());
                     }
                 }
                 if let Some(existing) = entry.centroid_sample_patch {
@@ -193,7 +194,7 @@ impl ValidationRule for InterpolationExclusivityRule {
                         return Err(ValidationError::InterpolationDecorationConflict {
                             decoration,
                             existing,
-                        });
+                        }.into());
                     }
                 } else {
                     entry.centroid_sample_patch = Some(decoration);
@@ -205,7 +206,7 @@ impl ValidationRule for InterpolationExclusivityRule {
                     return Err(ValidationError::InterpolationDecorationConflict {
                         decoration,
                         existing,
-                    });
+                    }.into());
                 }
             }
         }
@@ -230,7 +231,7 @@ impl ValidationRule for InterpolationEntryPointRule {
         !is_vulkan_env(ctx.env)
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let module = ctx.module;
         let decoration_lookup = build_decoration_lookup(module);
 
@@ -280,7 +281,7 @@ impl ValidationRule for InterpolationEntryPointRule {
                                         .unwrap(),
                                     storage_class,
                                     execution_model: model,
-                                },
+                                }.into(),
                             );
                         }
                         StorageClass::Output if model == ExecutionModel::Fragment => {
@@ -300,7 +301,7 @@ impl ValidationRule for InterpolationEntryPointRule {
                                         .unwrap(),
                                     storage_class,
                                     execution_model: model,
-                                },
+                                }.into(),
                             );
                         }
                         _ => {}
@@ -310,7 +311,7 @@ impl ValidationRule for InterpolationEntryPointRule {
                 if model == ExecutionModel::Fragment && storage_class == StorageClass::Input {
                     let has_flat = decos.contains(&Decoration::Flat);
                     if !has_flat && fragment_requires_flat(var_inst, ctx.definitions) {
-                        return Err(ValidationError::FragmentInputRequiresFlat);
+                        return Err(ValidationError::FragmentInputRequiresFlat.into());
                     }
                 }
             }

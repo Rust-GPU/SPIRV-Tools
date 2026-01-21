@@ -12,6 +12,7 @@ use rspirv::spirv::{Capability, Decoration, ExecutionMode, ExecutionModel, FPFas
 
 use crate::target_env::TargetEnv;
 use crate::validation::context::{ValidationContext, ValidationRule};
+use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::{IdKind, ResultId};
 
@@ -27,7 +28,7 @@ impl ValidationRule for ExecutionModesRule {
         "execution-modes"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         // Build entry points set
         let entry_points: HashSet<ResultId> = ctx
             .module
@@ -78,7 +79,7 @@ impl ValidationRule for ExecutionModesRule {
             if !entry_points.contains(&function) {
                 return Err(ValidationError::ExecutionModeWithoutEntryPoint {
                     function: function.into_inner(),
-                });
+                }.into());
             }
 
             let execution_mode = execution_mode_from_operand(mode.operands.get(1));
@@ -86,7 +87,7 @@ impl ValidationRule for ExecutionModesRule {
                 if execution_mode == ExecutionMode::LocalSizeId
                     && !local_size_id_allowed(ctx.env, ctx.options)
                 {
-                    return Err(ValidationError::LocalSizeIdNotAllowed { env: ctx.env });
+                    return Err(ValidationError::LocalSizeIdNotAllowed { env: ctx.env }.into());
                 }
                 if let Some(model) = entry_point_models.get(&function) {
                     match execution_mode {
@@ -103,7 +104,7 @@ impl ValidationRule for ExecutionModesRule {
                                     mode: execution_mode,
                                     execution_model: *model,
                                     allowed_models: allowed.to_vec(),
-                                });
+                                }.into());
                             }
                             if ctx.env.is_vulkan()
                                 && ctx
@@ -117,7 +118,7 @@ impl ValidationRule for ExecutionModesRule {
                                     entry_point: function.into_inner(),
                                     mode: execution_mode,
                                     value: 0,
-                                });
+                                }.into());
                             }
                         }
                         ExecutionMode::OutputLinesEXT
@@ -130,7 +131,7 @@ impl ValidationRule for ExecutionModesRule {
                                     mode: execution_mode,
                                     execution_model: *model,
                                     allowed_models: allowed.to_vec(),
-                                });
+                                }.into());
                             }
                             if ctx.env.is_vulkan()
                                 && ctx
@@ -143,7 +144,7 @@ impl ValidationRule for ExecutionModesRule {
                                     entry_point: function.into_inner(),
                                     mode: execution_mode,
                                     value: 0,
-                                });
+                                }.into());
                             }
                         }
                         _ => {}
@@ -190,7 +191,7 @@ impl ValidationRule for DuplicateExecutionModesRule {
         "duplicate-execution-modes"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         // Track seen (mode, entry_point) pairs for per-entry modes
         let mut seen_per_entry: HashSet<(ExecutionMode, u32)> = HashSet::new();
         // Track seen (mode, entry_point, operand) tuples for modes that can repeat with different operands
@@ -216,7 +217,7 @@ impl ValidationRule for DuplicateExecutionModesRule {
                     return Err(ValidationError::DuplicateExecutionModePerEntry {
                         entry_point: *entry_point,
                         execution_mode: mode,
-                    });
+                    }.into());
                 }
             } else {
                 // This mode can appear multiple times but only with different operands
@@ -232,7 +233,7 @@ impl ValidationRule for DuplicateExecutionModesRule {
                         entry_point: *entry_point,
                         execution_mode: mode,
                         operand,
-                    });
+                    }.into());
                 }
             }
         }
@@ -260,7 +261,7 @@ impl ValidationRule for FloatControls2Rule {
         "float-controls2"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let module = ctx.module;
 
         // Step 1: Find entry points that have FPFastMathDefault execution mode
@@ -411,8 +412,8 @@ impl ValidationRule for FloatControls2Rule {
                                     result_id,
                                     decoration: decoration_name.to_string(),
                                     entry_points: reachable_entry_points.iter().copied().collect(),
-                                },
-                            );
+                                }.into(),
+                        );
                         }
                     }
                 }

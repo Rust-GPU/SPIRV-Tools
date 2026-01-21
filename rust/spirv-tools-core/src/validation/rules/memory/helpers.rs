@@ -198,3 +198,81 @@ pub fn has_decoration(module: &Module, id: u32, dec: Decoration) -> bool {
     }
     false
 }
+
+/// Returns the size in bytes of the largest scalar type within a type.
+///
+/// For scalar types (int, float, bool), returns the size in bytes.
+/// For composite types (struct, array, vector), returns the largest scalar size found recursively.
+///
+/// This is used to validate that PhysicalStorageBuffer Aligned values are
+/// at least as large as the largest scalar type being accessed.
+pub fn get_largest_scalar_type(
+    type_id: u32,
+    definitions: &HashMap<ResultId, Instruction>,
+    visited: &mut std::collections::HashSet<u32>,
+) -> u32 {
+    // Avoid infinite recursion with cyclic types
+    if !visited.insert(type_id) {
+        return 0;
+    }
+
+    let Some(result_id) = ResultId::try_from(type_id).ok() else {
+        return 0;
+    };
+    let Some(inst) = definitions.get(&result_id) else {
+        return 0;
+    };
+
+    match inst.class.opcode {
+        Op::TypeStruct => {
+            // Find the largest scalar among all struct members
+            let mut max_size = 0u32;
+            for op in &inst.operands {
+                if let Operand::IdRef(member_id) = op {
+                    let member_size = get_largest_scalar_type(*member_id, definitions, visited);
+                    max_size = max_size.max(member_size);
+                }
+            }
+            max_size
+        }
+        Op::TypeArray | Op::TypeRuntimeArray => {
+            // Get the element type's largest scalar
+            if let Some(Operand::IdRef(elem_id)) = inst.operands.first() {
+                get_largest_scalar_type(*elem_id, definitions, visited)
+            } else {
+                0
+            }
+        }
+        Op::TypeVector | Op::TypeMatrix => {
+            // Get the component type's largest scalar
+            if let Some(Operand::IdRef(comp_id)) = inst.operands.first() {
+                get_largest_scalar_type(*comp_id, definitions, visited)
+            } else {
+                0
+            }
+        }
+        Op::TypeInt | Op::TypeFloat => {
+            // Return bit width / 8 (size in bytes)
+            if let Some(Operand::LiteralBit32(width)) = inst.operands.first() {
+                *width / 8
+            } else {
+                0
+            }
+        }
+        Op::TypeBool => {
+            // Bool is typically 1 byte, but SPIR-V doesn't define its size explicitly
+            // The C++ code uses GetBitWidth which returns the abstract width, not physical
+            // For bool, we return 0 to match the C++ behavior (GetBitWidth returns 0 for bool)
+            0
+        }
+        Op::TypePointer => {
+            // For pointers, we look at the pointee type
+            if let Some(Operand::IdRef(pointee_id)) = inst.operands.get(1) {
+                get_largest_scalar_type(*pointee_id, definitions, visited)
+            } else {
+                0
+            }
+        }
+        _ => 0,
+    }
+}

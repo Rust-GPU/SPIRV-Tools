@@ -11,6 +11,7 @@ use rspirv::dr::Operand;
 use rspirv::spirv::Op;
 
 use crate::validation::context::{ValidationContext, ValidationRule};
+use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::{Id, ResultId};
 
@@ -86,7 +87,7 @@ impl ValidationRule for CreateTensorLayoutRule {
         "create-tensor-layout"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
             let func_id = func
                 .def
@@ -116,7 +117,7 @@ impl ValidationRule for CreateTensorLayoutRule {
                                         block: block_id,
                                         opcode: inst.class.opcode,
                                         expected: "OpTypeTensorLayoutNV",
-                                    });
+                                    }.into());
                                 }
                             }
                         }
@@ -137,7 +138,7 @@ impl ValidationRule for CreateTensorViewRule {
         "create-tensor-view"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
             let func_id = func
                 .def
@@ -167,7 +168,7 @@ impl ValidationRule for CreateTensorViewRule {
                                         block: block_id,
                                         opcode: inst.class.opcode,
                                         expected: "OpTypeTensorViewNV",
-                                    });
+                                    }.into());
                                 }
                             }
                         }
@@ -216,7 +217,7 @@ impl ValidationRule for TensorLayoutOperandsRule {
         "tensor-layout-operands"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
             let func_id = func
                 .def
@@ -255,14 +256,14 @@ impl ValidationRule for TensorLayoutOperandsRule {
                                             block: block_id,
                                             opcode: inst.class.opcode,
                                             expected: "OpTypeTensorViewNV",
-                                        });
+                                        }.into());
                                     } else {
                                         return Err(ValidationError::TensorLayoutInvalidResultType {
                                             function: func_id,
                                             block: block_id,
                                             opcode: inst.class.opcode,
                                             expected: "OpTypeTensorLayoutNV",
-                                        });
+                                        }.into());
                                     }
                                 }
                             }
@@ -279,7 +280,7 @@ impl ValidationRule for TensorLayoutOperandsRule {
                                         function: func_id,
                                         block: block_id,
                                         opcode: inst.class.opcode,
-                                    });
+                                    }.into());
                                 }
                             }
                         }
@@ -305,7 +306,7 @@ impl ValidationRule for TensorLayoutOperandsRule {
                                     opcode: inst.class.opcode,
                                     expected: expected_count,
                                     actual: num_values,
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -322,7 +323,7 @@ impl ValidationRule for TensorLayoutOperandsRule {
                                                 block: block_id,
                                                 opcode: inst.class.opcode,
                                                 operand_id: to_id(*val_id),
-                                            });
+                                            }.into());
                                         }
                                     }
                                 }

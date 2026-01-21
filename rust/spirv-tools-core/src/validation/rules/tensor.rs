@@ -12,9 +12,10 @@ use rspirv::dr::Operand;
 use rspirv::spirv::Op;
 
 use crate::validation::context::{ValidationContext, ValidationRule};
+use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
-use crate::validation::helpers::get_type_structure;
-use crate::validation::types::{Id, ResultId, TypeId, TypeStructure};
+use crate::validation::helpers::{get_type_structure, is_constant_opcode};
+use crate::validation::types::{Id, ResultId, ScalarKind, TypeId, TypeStructure};
 
 /// Helper to convert a u32 to Id (with fallback to id 1).
 fn to_id(id: u32) -> Id {
@@ -32,6 +33,66 @@ fn is_ranked_tensor_arm(type_id: u32, ctx: &ValidationContext<'_>) -> bool {
 
     // OpTypeTensorARM has at least 4 words: opcode, result_id, element_type, rank
     inst.class.opcode == Op::TypeTensorARM && inst.operands.len() >= 2
+}
+
+/// Get the rank operand ID from OpTypeTensorARM.
+/// Returns the ID of the rank operand (operand index 1).
+fn get_tensor_arm_rank_id(type_id: u32, ctx: &ValidationContext<'_>) -> Option<u32> {
+    let result_id = ResultId::try_from(type_id).ok()?;
+    let inst = ctx.definitions.get(&result_id)?;
+    if inst.class.opcode != Op::TypeTensorARM {
+        return None;
+    }
+    // OpTypeTensorARM: result_type (none), result_id, element_type (operand 0), rank (operand 1)
+    match inst.operands.get(1) {
+        Some(Operand::IdRef(id)) => Some(*id),
+        _ => None,
+    }
+}
+
+/// Evaluate a constant instruction to get its u64 value.
+/// Works for OpConstant with 32-bit or 64-bit integer types.
+fn eval_constant_u64(id: u32, ctx: &ValidationContext<'_>) -> Option<u64> {
+    let result_id = ResultId::try_from(id).ok()?;
+    let inst = ctx.definitions.get(&result_id)?;
+
+    // Must be a constant instruction
+    if !is_constant_opcode(inst.class.opcode) {
+        return None;
+    }
+
+    // For OpConstant, get the literal value
+    if inst.class.opcode == Op::Constant {
+        match inst.operands.first() {
+            Some(Operand::LiteralBit32(v)) => return Some(*v as u64),
+            Some(Operand::LiteralBit64(v)) => return Some(*v),
+            _ => return None,
+        }
+    }
+
+    // For spec constants, we can't evaluate at validation time
+    None
+}
+
+/// Check if an ID refers to an instruction with integer scalar type.
+fn is_int_scalar_type_id(id: u32, ctx: &ValidationContext<'_>) -> bool {
+    let Some(result_id) = ResultId::try_from(id).ok() else {
+        return false;
+    };
+    let Some(inst) = ctx.definitions.get(&result_id) else {
+        return false;
+    };
+    let Some(type_id) = inst.result_type else {
+        return false;
+    };
+    let Ok(tid) = TypeId::try_from(type_id) else {
+        return false;
+    };
+    let ty = get_type_structure(tid, ctx.definitions);
+    matches!(
+        ty,
+        TypeStructure::Scalar(ScalarKind::SignedInt(_) | ScalarKind::UnsignedInt(_))
+    )
 }
 
 /// Check if a type is OpTypeTensorLayoutNV.
@@ -79,7 +140,7 @@ impl ValidationRule for TensorReadARMRule {
         "tensor-read-arm"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let module = ctx.module();
 
         for func in &module.functions {
@@ -95,7 +156,7 @@ impl ValidationRule for TensorReadARMRule {
                             if !is_scalar_or_array_of_scalar(type_id, ctx) {
                                 return Err(ValidationError::TensorReadResultNotScalar {
                                     instruction_id: inst.result_id.map(to_id),
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -108,7 +169,7 @@ impl ValidationRule for TensorReadARMRule {
                                     if !is_ranked_tensor_arm(tensor_type, ctx) {
                                         return Err(ValidationError::TensorNotRankedTensor {
                                             instruction_id: inst.result_id.map(to_id),
-                                        });
+                                        }.into());
                                     }
                                 }
                             }
@@ -130,7 +191,7 @@ impl ValidationRule for TensorWriteARMRule {
         "tensor-write-arm"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let module = ctx.module();
 
         for func in &module.functions {
@@ -148,7 +209,7 @@ impl ValidationRule for TensorWriteARMRule {
                                     if !is_ranked_tensor_arm(tensor_type, ctx) {
                                         return Err(ValidationError::TensorNotRankedTensor {
                                             instruction_id: None,
-                                        });
+                                        }.into());
                                     }
                                 }
                             }
@@ -170,7 +231,7 @@ impl ValidationRule for TensorQuerySizeARMRule {
         "tensor-query-size-arm"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let module = ctx.module();
 
         for func in &module.functions {
@@ -194,20 +255,64 @@ impl ValidationRule for TensorQuerySizeARMRule {
                             if !is_int_scalar {
                                 return Err(ValidationError::TensorQuerySizeResultNotInt {
                                     instruction_id: inst.result_id.map(to_id),
-                                });
+                                }.into());
                             }
                         }
                     }
 
+                    // Get tensor type for validation
+                    let tensor_type = inst
+                        .operands
+                        .first()
+                        .and_then(|op| match op {
+                            Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                            _ => None,
+                        })
+                        .and_then(|rid| ctx.definitions.get(&rid))
+                        .and_then(|tensor_inst| tensor_inst.result_type);
+
                     // Tensor must be a ranked tensor
-                    if let Some(Operand::IdRef(tensor_id)) = inst.operands.first() {
-                        if let Ok(result_id) = ResultId::try_from(*tensor_id) {
-                            if let Some(tensor_inst) = ctx.definitions.get(&result_id) {
-                                if let Some(tensor_type) = tensor_inst.result_type {
-                                    if !is_ranked_tensor_arm(tensor_type, ctx) {
-                                        return Err(ValidationError::TensorNotRankedTensor {
-                                            instruction_id: inst.result_id.map(to_id),
-                                        });
+                    if let Some(tensor_type) = tensor_type {
+                        if !is_ranked_tensor_arm(tensor_type, ctx) {
+                            return Err(ValidationError::TensorNotRankedTensor {
+                                instruction_id: inst.result_id.map(to_id),
+                            }.into());
+                        }
+                    }
+
+                    // Validate Dimension operand (operand index 1)
+                    // OpTensorQuerySizeARM: Tensor (operand 0), Dimension (operand 1)
+                    if let Some(Operand::IdRef(dim_id)) = inst.operands.get(1) {
+                        // Dimension must come from a constant instruction of scalar integer type
+                        let dim_result_id = ResultId::try_from(*dim_id).ok();
+                        let dim_inst = dim_result_id.and_then(|rid| ctx.definitions.get(&rid));
+
+                        let is_constant = dim_inst
+                            .map(|di| is_constant_opcode(di.class.opcode))
+                            .unwrap_or(false);
+                        let is_int_scalar = is_int_scalar_type_id(*dim_id, ctx);
+
+                        if !is_constant || !is_int_scalar {
+                            return Err(ValidationError::TensorQuerySizeDimensionNotConstant {
+                                instruction_id: inst.result_id.map(to_id),
+                            }.into());
+                        }
+
+                        // If we can evaluate both dimension and tensor rank, check dimension < rank
+                        if let Some(tensor_type) = tensor_type {
+                            if let Some(rank_id) = get_tensor_arm_rank_id(tensor_type, ctx) {
+                                if let (Some(dim_val), Some(rank_val)) = (
+                                    eval_constant_u64(*dim_id, ctx),
+                                    eval_constant_u64(rank_id, ctx),
+                                ) {
+                                    if dim_val >= rank_val {
+                                        return Err(
+                                            ValidationError::TensorQuerySizeDimensionOutOfRange {
+                                                instruction_id: inst.result_id.map(to_id),
+                                                dimension: dim_val,
+                                                tensor_rank: rank_val,
+                                            }.into(),
+                        );
                                     }
                                 }
                             }
@@ -229,7 +334,7 @@ impl ValidationRule for CreateTensorLayoutNVRule {
         "create-tensor-layout-nv"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let module = ctx.module();
 
         for func in &module.functions {
@@ -244,7 +349,7 @@ impl ValidationRule for CreateTensorLayoutNVRule {
                         if !is_tensor_layout_nv(result_type, ctx) {
                             return Err(ValidationError::TensorLayoutResultNotTensorLayout {
                                 instruction_id: inst.result_id.map(to_id),
-                            });
+                            }.into());
                         }
                     }
                 }
@@ -263,7 +368,7 @@ impl ValidationRule for CreateTensorViewNVRule {
         "create-tensor-view-nv"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let module = ctx.module();
 
         for func in &module.functions {
@@ -278,7 +383,7 @@ impl ValidationRule for CreateTensorViewNVRule {
                         if !is_tensor_view_nv(result_type, ctx) {
                             return Err(ValidationError::TensorViewResultNotTensorView {
                                 instruction_id: inst.result_id.map(to_id),
-                            });
+                            }.into());
                         }
                     }
                 }

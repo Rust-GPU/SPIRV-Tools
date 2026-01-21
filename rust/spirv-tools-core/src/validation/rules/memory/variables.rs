@@ -6,6 +6,7 @@ use rspirv::dr::Operand;
 use rspirv::spirv::{Decoration, Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
+use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::ResultId;
 
@@ -21,7 +22,7 @@ impl ValidationRule for VariableRule {
         "variable"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for inst in ctx.module.all_inst_iter() {
             if inst.class.opcode != Op::Variable {
                 continue;
@@ -41,7 +42,7 @@ impl ValidationRule for VariableRule {
             if result_type.class.opcode != Op::TypePointer {
                 return Err(ValidationError::VariableResultTypeNotPointer {
                     variable: id_from_u32(inst.result_id.unwrap_or(0)),
-                });
+                }.into());
             }
 
             // Get storage class from operand
@@ -57,7 +58,7 @@ impl ValidationRule for VariableRule {
                         variable: id_from_u32(inst.result_id.unwrap_or(0)),
                         operand_class: *storage_class,
                         type_class: rsc,
-                    });
+                    }.into());
                 }
             }
 
@@ -65,14 +66,14 @@ impl ValidationRule for VariableRule {
             if *storage_class == StorageClass::Generic {
                 return Err(ValidationError::VariableGenericStorageClass {
                     variable: id_from_u32(inst.result_id.unwrap_or(0)),
-                });
+                }.into());
             }
 
             // PhysicalStorageBuffer is not allowed for OpVariable
             if *storage_class == StorageClass::PhysicalStorageBuffer {
                 return Err(ValidationError::VariablePhysicalStorageBuffer {
                     variable: id_from_u32(inst.result_id.unwrap_or(0)),
-                });
+                }.into());
             }
 
             // Get pointee type
@@ -107,7 +108,7 @@ impl ValidationRule for VariableRule {
                         return Err(ValidationError::VariableContainsBool {
                             variable: id_from_u32(inst.result_id.unwrap_or(0)),
                             storage_class: *storage_class,
-                        });
+                        }.into());
                     }
                 }
             }
@@ -125,7 +126,7 @@ impl ValidationRule for VariableRule {
                     return Err(ValidationError::VariableInitializerNotFound {
                         variable: id_from_u32(inst.result_id.unwrap_or(0)),
                         initializer: id_from_u32(*init_id),
-                    });
+                    }.into());
                 };
 
                 // Initializer must be a constant or module-scope variable
@@ -154,14 +155,14 @@ impl ValidationRule for VariableRule {
                     return Err(ValidationError::VariableInitializerNotConstant {
                         variable: id_from_u32(inst.result_id.unwrap_or(0)),
                         initializer: id_from_u32(*init_id),
-                    });
+                    }.into());
                 }
 
                 // Input storage class cannot have initializer
                 if *storage_class == StorageClass::Input {
                     return Err(ValidationError::VariableInputHasInitializer {
                         variable: id_from_u32(inst.result_id.unwrap_or(0)),
-                    });
+                    }.into());
                 }
             }
         }

@@ -10,6 +10,7 @@
 use rspirv::spirv::Op;
 
 use crate::validation::context::{ValidationContext, ValidationRule};
+use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::type_ext::{DefaultTypeResolver, TypeResolver};
 use crate::validation::types::Id;
@@ -31,7 +32,7 @@ impl ValidationRule for ShiftOperationsRule {
         "shift-operations"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let shift_ops = [
             Op::ShiftRightLogical,
             Op::ShiftRightArithmetic,
@@ -76,7 +77,7 @@ impl ValidationRule for ShiftOperationsRule {
                                 opcode: inst.class.opcode,
                                 result_type,
                                 expected: "int scalar or vector",
-                            });
+                            }.into());
                         }
                     }
 
@@ -105,7 +106,7 @@ impl ValidationRule for ShiftOperationsRule {
                                             operand_index: 0,
                                             result_type,
                                             expected: "int scalar or vector",
-                                        });
+                                        }.into());
                                     }
                                 }
 
@@ -127,7 +128,7 @@ impl ValidationRule for ShiftOperationsRule {
                                             opcode: inst.class.opcode,
                                             operand_name: "Base",
                                             result_type,
-                                        });
+                                        }.into());
                                     }
                                 }
 
@@ -144,7 +145,7 @@ impl ValidationRule for ShiftOperationsRule {
                                             opcode: inst.class.opcode,
                                             operand_name: "Base",
                                             result_type,
-                                        });
+                                        }.into());
                                     }
                                 }
                             }
@@ -174,7 +175,7 @@ impl ValidationRule for ShiftOperationsRule {
                                             operand_index: 1,
                                             result_type,
                                             expected: "int scalar or vector",
-                                        });
+                                        }.into());
                                     }
                                 }
 
@@ -194,7 +195,7 @@ impl ValidationRule for ShiftOperationsRule {
                                             opcode: inst.class.opcode,
                                             operand_name: "Shift",
                                             result_type,
-                                        });
+                                        }.into());
                                     }
                                 }
                             }
@@ -224,7 +225,7 @@ impl ValidationRule for BitwiseLogicRule {
         "bitwise-logic"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let logic_ops = [Op::BitwiseOr, Op::BitwiseXor, Op::BitwiseAnd, Op::Not];
 
         let resolver = DefaultTypeResolver;
@@ -265,7 +266,7 @@ impl ValidationRule for BitwiseLogicRule {
                                 opcode: inst.class.opcode,
                                 result_type,
                                 expected: "int scalar or vector",
-                            });
+                            }.into());
                         }
                     }
 
@@ -304,7 +305,7 @@ impl ValidationRule for BitwiseLogicRule {
                                     operand_index: idx,
                                     result_type,
                                     expected: "int scalar or vector",
-                                });
+                                }.into());
                             }
                         }
 
@@ -325,7 +326,7 @@ impl ValidationRule for BitwiseLogicRule {
                                     opcode: inst.class.opcode,
                                     operand_name: "operand",
                                     result_type,
-                                });
+                                }.into());
                             }
                         }
 
@@ -341,7 +342,7 @@ impl ValidationRule for BitwiseLogicRule {
                                     opcode: inst.class.opcode,
                                     operand_name: "operand",
                                     result_type,
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -370,7 +371,7 @@ impl ValidationRule for BitFieldRule {
         "bit-field"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let resolver = DefaultTypeResolver;
 
         for function in &ctx.module.functions {
@@ -408,7 +409,7 @@ impl ValidationRule for BitFieldRule {
                                         opcode: inst.class.opcode,
                                         result_type,
                                         expected: "int scalar or vector",
-                                    });
+                                    }.into());
                                 }
                             }
 
@@ -477,7 +478,7 @@ impl ValidationRule for BitFieldRule {
                                         opcode: inst.class.opcode,
                                         result_type,
                                         expected: "int scalar or vector",
-                                    });
+                                    }.into());
                                 }
                             }
 
@@ -535,7 +536,7 @@ impl ValidationRule for BitFieldRule {
                                         opcode: inst.class.opcode,
                                         result_type,
                                         expected: "int scalar or vector",
-                                    });
+                                    }.into());
                                 }
                             }
 
@@ -570,7 +571,7 @@ impl BitFieldRule {
         ctx: &ValidationContext<'_>,
         function_id: Option<Id>,
         block_id: Option<Id>,
-    ) -> Result<(), ValidationError> {
+    ) -> ValidationResult {
         if let Some(rspirv::dr::Operand::IdRef(operand_id)) = inst.operands.get(operand_idx) {
             let operand_inst = crate::validation::types::ResultId::try_from(*operand_id)
                 .ok()
@@ -601,7 +602,7 @@ impl BitFieldRule {
                                     operand_index: operand_idx,
                                     result_type,
                                     expected: "same type as result",
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -621,7 +622,7 @@ impl BitFieldRule {
         ctx: &ValidationContext<'_>,
         function_id: Option<Id>,
         block_id: Option<Id>,
-    ) -> Result<(), ValidationError> {
+    ) -> ValidationResult {
         if let Some(rspirv::dr::Operand::IdRef(operand_id)) = inst.operands.get(operand_idx) {
             let operand_inst = crate::validation::types::ResultId::try_from(*operand_id)
                 .ok()
@@ -642,7 +643,7 @@ impl BitFieldRule {
                                 operand_index: operand_idx,
                                 result_type,
                                 expected: operand_name,
-                            });
+                            }.into());
                         }
                     }
                 }
@@ -669,7 +670,7 @@ impl ValidationRule for BitCountRule {
         "bit-count"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let resolver = DefaultTypeResolver;
 
         for function in &ctx.module.functions {
@@ -708,7 +709,7 @@ impl ValidationRule for BitCountRule {
                                 opcode: inst.class.opcode,
                                 result_type,
                                 expected: "int scalar or vector",
-                            });
+                            }.into());
                         }
                     }
 
@@ -737,7 +738,7 @@ impl ValidationRule for BitCountRule {
                                             operand_index: 0,
                                             result_type,
                                             expected: "int scalar or vector",
-                                        });
+                                        }.into());
                                     }
                                 }
 
@@ -758,7 +759,7 @@ impl ValidationRule for BitCountRule {
                                             opcode: inst.class.opcode,
                                             operand_name: "Base",
                                             result_type,
-                                        });
+                                        }.into());
                                     }
                                 }
                             }

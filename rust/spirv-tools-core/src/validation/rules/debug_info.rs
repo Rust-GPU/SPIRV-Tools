@@ -14,6 +14,7 @@ use rspirv::dr::{Instruction, Operand};
 use rspirv::spirv::Op;
 
 use crate::validation::context::{ValidationContext, ValidationRule};
+use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::ResultId;
 
@@ -291,7 +292,7 @@ impl ValidationRule for DebugSourceRule {
         "debug-source"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let (import_id, is_vulkan) = match get_debug_info_import(ctx) {
             Some((id, vulkan)) => (id, vulkan),
             None => return Ok(()), // No debug info import
@@ -317,7 +318,7 @@ impl ValidationRule for DebugSourceRule {
                     return Err(ValidationError::DebugInfoOperandNotString {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "File",
-                    });
+                    }.into());
                 }
             }
 
@@ -329,13 +330,13 @@ impl ValidationRule for DebugSourceRule {
                         return Err(ValidationError::DebugInfoOperandNotString {
                             instruction: get_debug_info_name(opcode),
                             operand_name: "Text",
-                        });
+                        }.into());
                     }
                 } else if !is_op_string(text_id, ctx.definitions) {
                     return Err(ValidationError::DebugInfoOperandNotString {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "Text",
-                    });
+                    }.into());
                 }
             }
         }
@@ -362,7 +363,7 @@ impl ValidationRule for DebugCompilationUnitRule {
         "debug-compilation-unit"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let (import_id, is_vulkan) = match get_debug_info_import(ctx) {
             Some((id, vulkan)) => (id, vulkan),
             None => return Ok(()), // No debug info import
@@ -391,7 +392,7 @@ impl ValidationRule for DebugCompilationUnitRule {
                         return Err(ValidationError::DebugInfoOperandNotConstant {
                             instruction: get_debug_info_name(opcode),
                             operand_name: "Version",
-                        });
+                        }.into());
                     }
                 }
 
@@ -401,7 +402,7 @@ impl ValidationRule for DebugCompilationUnitRule {
                         return Err(ValidationError::DebugInfoOperandNotConstant {
                             instruction: get_debug_info_name(opcode),
                             operand_name: "DWARF Version",
-                        });
+                        }.into());
                     }
                 }
 
@@ -417,7 +418,7 @@ impl ValidationRule for DebugCompilationUnitRule {
                             instruction: get_debug_info_name(opcode),
                             operand_name: "Source",
                             expected: "DebugSource",
-                        });
+                        }.into());
                     }
                 }
 
@@ -427,7 +428,7 @@ impl ValidationRule for DebugCompilationUnitRule {
                         return Err(ValidationError::DebugInfoOperandNotConstant {
                             instruction: get_debug_info_name(opcode),
                             operand_name: "Language",
-                        });
+                        }.into());
                     }
                 }
             } else {
@@ -446,7 +447,7 @@ impl ValidationRule for DebugCompilationUnitRule {
                             instruction: get_debug_info_name(opcode),
                             operand_name: "Source",
                             expected: "DebugSource",
-                        });
+                        }.into());
                     }
                 }
             }
@@ -473,7 +474,7 @@ impl ValidationRule for DebugTypeBasicRule {
         "debug-type-basic"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let (import_id, is_vulkan) = match get_debug_info_import(ctx) {
             Some((id, vulkan)) => (id, vulkan),
             None => return Ok(()), // No debug info import
@@ -499,7 +500,7 @@ impl ValidationRule for DebugTypeBasicRule {
                     return Err(ValidationError::DebugInfoOperandNotString {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "Name",
-                    });
+                    }.into());
                 }
             }
 
@@ -509,7 +510,7 @@ impl ValidationRule for DebugTypeBasicRule {
                     return Err(ValidationError::DebugInfoOperandNotConstant {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "Size",
-                    });
+                    }.into());
                 }
             }
 
@@ -520,7 +521,7 @@ impl ValidationRule for DebugTypeBasicRule {
                         return Err(ValidationError::DebugInfoOperandNotConstant {
                             instruction: get_debug_info_name(opcode),
                             operand_name: "Encoding",
-                        });
+                        }.into());
                     }
                 }
             }
@@ -547,7 +548,7 @@ impl ValidationRule for DebugTypeVectorRule {
         "debug-type-vector"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let (import_id, is_vulkan) = match get_debug_info_import(ctx) {
             Some((id, vulkan)) => (id, vulkan),
             None => return Ok(()), // No debug info import
@@ -579,7 +580,7 @@ impl ValidationRule for DebugTypeVectorRule {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "Base Type",
                         expected: "DebugTypeBasic",
-                    });
+                    }.into());
                 }
             }
 
@@ -591,7 +592,7 @@ impl ValidationRule for DebugTypeVectorRule {
                         return Err(ValidationError::DebugInfoOperandNotConstant {
                             instruction: get_debug_info_name(opcode),
                             operand_name: "Component Count",
-                        });
+                        }.into());
                     }
                     // Check the constant value is 1-4
                     if let Ok(result_id) = ResultId::try_from(count_id) {
@@ -600,7 +601,7 @@ impl ValidationRule for DebugTypeVectorRule {
                                 if *val == 0 || *val > 4 {
                                     return Err(ValidationError::DebugTypeVectorInvalidComponentCount {
                                         count: *val,
-                                    });
+                                    }.into());
                                 }
                             }
                         }
@@ -612,7 +613,7 @@ impl ValidationRule for DebugTypeVectorRule {
                     if count == 0 || count > 4 {
                         return Err(ValidationError::DebugTypeVectorInvalidComponentCount {
                             count,
-                        });
+                        }.into());
                     }
                 }
             }
@@ -639,7 +640,7 @@ impl ValidationRule for DebugTypePointerRule {
         "debug-type-pointer"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let (import_id, is_vulkan) = match get_debug_info_import(ctx) {
             Some((id, vulkan)) => (id, vulkan),
             None => return Ok(()), // No debug info import
@@ -665,7 +666,7 @@ impl ValidationRule for DebugTypePointerRule {
                     return Err(ValidationError::DebugInfoOperandNotDebugType {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "Base Type",
-                    });
+                    }.into());
                 }
             }
 
@@ -676,7 +677,7 @@ impl ValidationRule for DebugTypePointerRule {
                         return Err(ValidationError::DebugInfoOperandNotConstant {
                             instruction: get_debug_info_name(opcode),
                             operand_name: "Storage Class",
-                        });
+                        }.into());
                     }
                 }
             }
@@ -688,7 +689,7 @@ impl ValidationRule for DebugTypePointerRule {
                         return Err(ValidationError::DebugInfoOperandNotConstant {
                             instruction: get_debug_info_name(opcode),
                             operand_name: "Flags",
-                        });
+                        }.into());
                     }
                 }
             }
@@ -720,7 +721,7 @@ impl ValidationRule for DebugLocalVariableRule {
         "debug-local-variable"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let (import_id, is_vulkan) = match get_debug_info_import(ctx) {
             Some((id, vulkan)) => (id, vulkan),
             None => return Ok(()), // No debug info import
@@ -746,7 +747,7 @@ impl ValidationRule for DebugLocalVariableRule {
                     return Err(ValidationError::DebugInfoOperandNotString {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "Name",
-                    });
+                    }.into());
                 }
             }
 
@@ -756,7 +757,7 @@ impl ValidationRule for DebugLocalVariableRule {
                     return Err(ValidationError::DebugInfoOperandNotDebugType {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "Type",
-                    });
+                    }.into());
                 }
             }
 
@@ -772,7 +773,7 @@ impl ValidationRule for DebugLocalVariableRule {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "Source",
                         expected: "DebugSource",
-                    });
+                    }.into());
                 }
             }
 
@@ -783,7 +784,7 @@ impl ValidationRule for DebugLocalVariableRule {
                         return Err(ValidationError::DebugInfoOperandNotConstant {
                             instruction: get_debug_info_name(opcode),
                             operand_name: "Line",
-                        });
+                        }.into());
                     }
                 }
 
@@ -793,7 +794,7 @@ impl ValidationRule for DebugLocalVariableRule {
                         return Err(ValidationError::DebugInfoOperandNotConstant {
                             instruction: get_debug_info_name(opcode),
                             operand_name: "Column",
-                        });
+                        }.into());
                     }
                 }
             }
@@ -805,7 +806,7 @@ impl ValidationRule for DebugLocalVariableRule {
                     return Err(ValidationError::DebugInfoOperandNotLexicalScope {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "Scope",
-                    });
+                    }.into());
                 }
             }
         }
@@ -830,7 +831,7 @@ impl ValidationRule for DebugScopeRule {
         "debug-scope"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let (import_id, _is_vulkan) = match get_debug_info_import(ctx) {
             Some((id, vulkan)) => (id, vulkan),
             None => return Ok(()), // No debug info import
@@ -856,7 +857,7 @@ impl ValidationRule for DebugScopeRule {
                     return Err(ValidationError::DebugInfoOperandNotLexicalScope {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "Scope",
-                    });
+                    }.into());
                 }
             }
 
@@ -872,7 +873,7 @@ impl ValidationRule for DebugScopeRule {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "InlinedAt",
                         expected: "DebugInlinedAt",
-                    });
+                    }.into());
                 }
             }
         }
@@ -898,7 +899,7 @@ impl ValidationRule for DebugDeclareRule {
         "debug-declare"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let (import_id, _is_vulkan) = match get_debug_info_import(ctx) {
             Some((id, vulkan)) => (id, vulkan),
             None => return Ok(()), // No debug info import
@@ -930,7 +931,7 @@ impl ValidationRule for DebugDeclareRule {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "Local Variable",
                         expected: "DebugLocalVariable",
-                    });
+                    }.into());
                 }
             }
 
@@ -946,7 +947,7 @@ impl ValidationRule for DebugDeclareRule {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "Expression",
                         expected: "DebugExpression",
-                    });
+                    }.into());
                 }
             }
         }
@@ -973,7 +974,7 @@ impl ValidationRule for DebugValueRule {
         "debug-value"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let (import_id, is_vulkan) = match get_debug_info_import(ctx) {
             Some((id, vulkan)) => (id, vulkan),
             None => return Ok(()), // No debug info import
@@ -1005,7 +1006,7 @@ impl ValidationRule for DebugValueRule {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "Local Variable",
                         expected: "DebugLocalVariable",
-                    });
+                    }.into());
                 }
             }
 
@@ -1021,7 +1022,7 @@ impl ValidationRule for DebugValueRule {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "Expression",
                         expected: "DebugExpression",
-                    });
+                    }.into());
                 }
             }
 
@@ -1033,7 +1034,7 @@ impl ValidationRule for DebugValueRule {
                             return Err(ValidationError::DebugInfoOperandNotConstant {
                                 instruction: get_debug_info_name(opcode),
                                 operand_name: "Index",
-                            });
+                            }.into());
                         }
                     }
                 }
@@ -1058,7 +1059,7 @@ impl ValidationRule for DebugOperationRule {
         "debug-operation"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let (import_id, is_vulkan) = match get_debug_info_import(ctx) {
             Some((id, vulkan)) => (id, vulkan),
             None => return Ok(()), // No debug info import
@@ -1089,7 +1090,7 @@ impl ValidationRule for DebugOperationRule {
                     return Err(ValidationError::DebugInfoOperandNotConstant {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "Operation",
-                    });
+                    }.into());
                 }
             }
 
@@ -1100,7 +1101,7 @@ impl ValidationRule for DebugOperationRule {
                         return Err(ValidationError::DebugInfoOperandNotConstant {
                             instruction: get_debug_info_name(opcode),
                             operand_name: "Operand",
-                        });
+                        }.into());
                     }
                 }
             }
@@ -1291,11 +1292,13 @@ mod tests {
         let ctx = data.as_context();
         let result = DebugSourceRule.validate(&ctx);
         assert!(result.is_err());
-        if let Err(ValidationError::DebugInfoOperandNotString { instruction, operand_name }) = result {
-            assert_eq!(instruction, "DebugSource");
-            assert_eq!(operand_name, "File");
-        } else {
-            panic!("Expected DebugInfoOperandNotString error");
+        if let Err(spanned) = result {
+            if let ValidationError::DebugInfoOperandNotString { instruction, operand_name } = spanned.error {
+                assert_eq!(instruction, "DebugSource");
+                assert_eq!(operand_name, "File");
+            } else {
+                panic!("Expected DebugInfoOperandNotString error");
+            }
         }
     }
 
@@ -1397,12 +1400,14 @@ mod tests {
         let ctx = data.as_context();
         let result = DebugCompilationUnitRule.validate(&ctx);
         assert!(result.is_err());
-        if let Err(ValidationError::DebugInfoOperandNotDebugInstruction { instruction, operand_name, expected }) = result {
-            assert_eq!(instruction, "DebugCompilationUnit");
-            assert_eq!(operand_name, "Source");
-            assert_eq!(expected, "DebugSource");
-        } else {
-            panic!("Expected DebugInfoOperandNotDebugInstruction error");
+        if let Err(spanned) = result {
+            if let ValidationError::DebugInfoOperandNotDebugInstruction { instruction, operand_name, expected } = spanned.error {
+                assert_eq!(instruction, "DebugCompilationUnit");
+                assert_eq!(operand_name, "Source");
+                assert_eq!(expected, "DebugSource");
+            } else {
+                panic!("Expected DebugInfoOperandNotDebugInstruction error");
+            }
         }
     }
 
@@ -1520,10 +1525,12 @@ mod tests {
         let ctx = data.as_context();
         let result = DebugTypeVectorRule.validate(&ctx);
         assert!(result.is_err());
-        if let Err(ValidationError::DebugTypeVectorInvalidComponentCount { count }) = result {
-            assert_eq!(count, 0);
-        } else {
-            panic!("Expected DebugTypeVectorInvalidComponentCount error");
+        if let Err(spanned) = result {
+            if let ValidationError::DebugTypeVectorInvalidComponentCount { count } = spanned.error {
+                assert_eq!(count, 0);
+            } else {
+                panic!("Expected DebugTypeVectorInvalidComponentCount error");
+            }
         }
     }
 
@@ -1581,10 +1588,12 @@ mod tests {
         let ctx = data.as_context();
         let result = DebugTypeVectorRule.validate(&ctx);
         assert!(result.is_err());
-        if let Err(ValidationError::DebugTypeVectorInvalidComponentCount { count }) = result {
-            assert_eq!(count, 5);
-        } else {
-            panic!("Expected DebugTypeVectorInvalidComponentCount error");
+        if let Err(spanned) = result {
+            if let ValidationError::DebugTypeVectorInvalidComponentCount { count } = spanned.error {
+                assert_eq!(count, 5);
+            } else {
+                panic!("Expected DebugTypeVectorInvalidComponentCount error");
+            }
         }
     }
 
@@ -1623,12 +1632,14 @@ mod tests {
         let ctx = data.as_context();
         let result = DebugTypeVectorRule.validate(&ctx);
         assert!(result.is_err());
-        if let Err(ValidationError::DebugInfoOperandNotDebugInstruction { instruction, operand_name, expected }) = result {
-            assert_eq!(instruction, "DebugTypeVector");
-            assert_eq!(operand_name, "Base Type");
-            assert_eq!(expected, "DebugTypeBasic");
-        } else {
-            panic!("Expected DebugInfoOperandNotDebugInstruction error");
+        if let Err(spanned) = result {
+            if let ValidationError::DebugInfoOperandNotDebugInstruction { instruction, operand_name, expected } = spanned.error {
+                assert_eq!(instruction, "DebugTypeVector");
+                assert_eq!(operand_name, "Base Type");
+                assert_eq!(expected, "DebugTypeBasic");
+            } else {
+                panic!("Expected DebugInfoOperandNotDebugInstruction error");
+            }
         }
     }
 
@@ -1717,11 +1728,13 @@ mod tests {
         let ctx = data.as_context();
         let result = DebugTypeBasicRule.validate(&ctx);
         assert!(result.is_err());
-        if let Err(ValidationError::DebugInfoOperandNotString { instruction, operand_name }) = result {
-            assert_eq!(instruction, "DebugTypeBasic");
-            assert_eq!(operand_name, "Name");
-        } else {
-            panic!("Expected DebugInfoOperandNotString error");
+        if let Err(spanned) = result {
+            if let ValidationError::DebugInfoOperandNotString { instruction, operand_name } = spanned.error {
+                assert_eq!(instruction, "DebugTypeBasic");
+                assert_eq!(operand_name, "Name");
+            } else {
+                panic!("Expected DebugInfoOperandNotString error");
+            }
         }
     }
 

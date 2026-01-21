@@ -13,6 +13,7 @@ use rspirv::spirv::{
 };
 
 use crate::validation::context::{ValidationContext, ValidationRule};
+use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::helpers::{build_decoration_lookup, is_vulkan_env};
 use crate::validation::types::{Id, ResultId};
@@ -33,7 +34,7 @@ impl ValidationRule for EntryPointInterfaceStorageClassesRule {
         !is_vulkan_env(ctx.env)
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let decoration_lookup = build_decoration_lookup(ctx.module);
 
         for ep in &ctx.module.entry_points {
@@ -79,7 +80,7 @@ impl ValidationRule for EntryPointInterfaceStorageClassesRule {
                                 return Err(ValidationError::DuplicateEntryPointInterface {
                                     entry_point: entry_point_id,
                                     interface: id.into(),
-                                });
+                                }.into());
                             }
                             let has_patch = decoration_lookup
                                 .get(&id)
@@ -109,8 +110,8 @@ impl ValidationRule for EntryPointInterfaceStorageClassesRule {
                                         entry_point: entry_point_id,
                                         interface: id.into_inner(),
                                         storage_class: *storage,
-                                    },
-                                );
+                                    }.into(),
+                        );
                             }
                             if has_patch
                                 && !ctx.declared_capabilities.contains(&Capability::Tessellation)
@@ -118,7 +119,7 @@ impl ValidationRule for EntryPointInterfaceStorageClassesRule {
                                 return Err(ValidationError::DecorationRequiresCapability {
                                     decoration: Decoration::Patch,
                                     capability: Capability::Tessellation,
-                                });
+                                }.into());
                             }
                             if has_patch
                                 && !matches!(
@@ -130,8 +131,8 @@ impl ValidationRule for EntryPointInterfaceStorageClassesRule {
                                 return Err(
                                     ValidationError::PatchDecorationRequiresTessellation {
                                         execution_model: exec_model,
-                                    },
-                                );
+                                    }.into(),
+                        );
                             }
                             if matches!(
                                 exec_model,
@@ -161,8 +162,8 @@ impl ValidationRule for EntryPointInterfaceStorageClassesRule {
                                             entry_point: entry_point_id,
                                             interface: id.into_inner(),
                                             storage_class: *storage,
-                                        },
-                                    );
+                                        }.into(),
+                        );
                                 }
                             } else {
                                 // Non-ray entry points cannot list ray-specific storage classes.
@@ -180,8 +181,8 @@ impl ValidationRule for EntryPointInterfaceStorageClassesRule {
                                             entry_point: entry_point_id,
                                             interface: id.into_inner(),
                                             storage_class: *storage,
-                                        },
-                                    );
+                                        }.into(),
+                        );
                                 }
                             }
                             match storage {
@@ -191,8 +192,8 @@ impl ValidationRule for EntryPointInterfaceStorageClassesRule {
                                             ValidationError::EntryPointInterfaceStorageClassDuplicate {
                                                 entry_point: entry_point_id,
                                                 storage_class: *storage,
-                                            },
-                                        );
+                                            }.into(),
+                        );
                                     }
                                     seen_push_constant = true;
                                 }
@@ -202,8 +203,8 @@ impl ValidationRule for EntryPointInterfaceStorageClassesRule {
                                             ValidationError::EntryPointInterfaceStorageClassDuplicate {
                                                 entry_point: entry_point_id,
                                                 storage_class: *storage,
-                                            },
-                                        );
+                                            }.into(),
+                        );
                                     }
                                     seen_ray_payload = true;
                                 }
@@ -213,8 +214,8 @@ impl ValidationRule for EntryPointInterfaceStorageClassesRule {
                                             ValidationError::EntryPointInterfaceStorageClassDuplicate {
                                                 entry_point: entry_point_id,
                                                 storage_class: *storage,
-                                            },
-                                        );
+                                            }.into(),
+                        );
                                     }
                                     seen_hit_attribute = true;
                                 }
@@ -224,8 +225,8 @@ impl ValidationRule for EntryPointInterfaceStorageClassesRule {
                                             ValidationError::EntryPointInterfaceStorageClassDuplicate {
                                                 entry_point: entry_point_id,
                                                 storage_class: *storage,
-                                            },
-                                        );
+                                            }.into(),
+                        );
                                     }
                                     seen_callable_data = true;
                                 }
@@ -253,8 +254,8 @@ impl ValidationRule for EntryPointInterfaceStorageClassesRule {
                                                 entry_point: entry_point_id,
                                                 interface: id.into_inner(),
                                                 storage_class: *storage,
-                                            },
-                                        );
+                                            }.into(),
+                        );
                                     }
                                     if let Some(pointer_type) =
                                         inst.result_type.and_then(|ty| ResultId::try_from(ty).ok())
@@ -281,8 +282,8 @@ impl ValidationRule for EntryPointInterfaceStorageClassesRule {
                                                                 interface: id.into(),
                                                                 storage_class: *storage,
                                                                 encoding,
-                                                            },
-                                                        );
+                                                            }.into(),
+                        );
                                                     }
                                                 }
                                             }
@@ -306,8 +307,8 @@ impl ValidationRule for EntryPointInterfaceStorageClassesRule {
                                                 entry_point: entry_point_id,
                                                 interface: id.into_inner(),
                                                 storage_class: *storage,
-                                            },
-                                        );
+                                            }.into(),
+                        );
                                     }
                                     if let Some(pointer_type) =
                                         inst.result_type.and_then(|ty| ResultId::try_from(ty).ok())
@@ -334,8 +335,8 @@ impl ValidationRule for EntryPointInterfaceStorageClassesRule {
                                                                 interface: id.into(),
                                                                 storage_class: *storage,
                                                                 encoding,
-                                                            },
-                                                        );
+                                                            }.into(),
+                        );
                                                     }
                                                 }
                                             }
@@ -348,8 +349,8 @@ impl ValidationRule for EntryPointInterfaceStorageClassesRule {
                                             entry_point: entry_point_id,
                                             interface: id.into_inner(),
                                             storage_class: *storage,
-                                        },
-                                    );
+                                        }.into(),
+                        );
                                 }
                                 _ => {}
                             }

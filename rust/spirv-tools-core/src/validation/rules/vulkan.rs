@@ -11,6 +11,7 @@ use std::collections::HashSet;
 use rspirv::spirv::{Capability, Decoration, ImageOperands, Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
+use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::helpers::is_vulkan_env;
 use crate::validation::types::{ResultId, TypeId};
@@ -33,7 +34,7 @@ impl ValidationRule for OffsetTextureOperandRule {
             || !is_vulkan_env(ctx.env)
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let gather_opcodes = [
             Op::ImageGather,
             Op::ImageDrefGather,
@@ -52,7 +53,7 @@ impl ValidationRule for OffsetTextureOperandRule {
             if has_offset && !gather_opcodes.contains(&inst.class.opcode) {
                 return Err(ValidationError::OffsetTextureOperandDisallowed {
                     opcode: inst.class.opcode,
-                });
+                }.into());
             }
         }
 
@@ -84,7 +85,7 @@ impl ValidationRule for VulkanBitwiseWidthsRule {
         ctx.options.allow_vulkan_32_bit_bitwise || !is_vulkan_env(ctx.env)
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         // Only bit field and bit count operations have the 32-bit restriction in Vulkan
         let restricted_opcodes = [
             Op::BitFieldInsert,
@@ -109,7 +110,7 @@ impl ValidationRule for VulkanBitwiseWidthsRule {
                     return Err(ValidationError::VulkanBitwiseRequires32Bit {
                         opcode: inst.class.opcode,
                         bit_width,
-                    });
+                    }.into());
                 }
             }
         }
@@ -134,7 +135,7 @@ impl ValidationRule for SmallTypeStorageCapabilitiesRule {
         !ctx.declared_capabilities.contains(&Capability::Shader)
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for inst in &ctx.module.types_global_values {
             if inst.class.opcode != Op::Variable && inst.class.opcode != Op::UntypedVariableKHR {
                 continue;
@@ -205,16 +206,16 @@ impl ValidationRule for SmallTypeStorageCapabilitiesRule {
                     return Err(ValidationError::SmallTypeDisallowedInStorageClass {
                         bit_width,
                         storage_class,
-                    });
+                    }.into());
                 }
                 if bit_width == 16 && storage_class == StorageClass::UniformConstant {
                     return Err(ValidationError::SmallTypeDisallowedInStorageClass {
                         bit_width,
                         storage_class,
-                    });
+                    }.into());
                 }
 
-                let require_capability = |cap: Capability| -> Result<(), ValidationError> {
+                let require_capability = |cap: Capability| -> ValidationResult {
                     if ctx.declared_capabilities.contains(&cap) {
                         Ok(())
                     } else {
@@ -222,7 +223,7 @@ impl ValidationRule for SmallTypeStorageCapabilitiesRule {
                             bit_width,
                             storage_class,
                             required_capability: cap,
-                        })
+                        }.into())
                     }
                 };
 
@@ -259,7 +260,7 @@ impl ValidationRule for SmallTypeStorageCapabilitiesRule {
                             bit_width,
                             storage_class,
                             required_capability: primary,
-                        });
+                        }.into());
                     }
                     StorageClass::PushConstant => {
                         let required = if bit_width == 8 {
@@ -407,7 +408,7 @@ impl ValidationRule for VulkanDescriptorBindingRule {
         !is_vulkan_env(ctx.env) || ctx.options.before_hlsl_legalization
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         use crate::validation::types::Id;
 
         for inst in &ctx.module.types_global_values {
@@ -451,7 +452,7 @@ impl ValidationRule for VulkanDescriptorBindingRule {
             if !has_descriptor_set {
                 return Err(ValidationError::MissingDescriptorSetDecoration {
                     variable: Id::try_from(var_id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()),
-                });
+                }.into());
             }
 
             // Check for Binding decoration
@@ -459,7 +460,7 @@ impl ValidationRule for VulkanDescriptorBindingRule {
             if !has_binding {
                 return Err(ValidationError::MissingBindingDecoration {
                     variable: Id::try_from(var_id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()),
-                });
+                }.into());
             }
         }
 
@@ -486,7 +487,7 @@ impl ValidationRule for VulkanPushConstantBlockRule {
         !is_vulkan_env(ctx.env)
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         use crate::validation::types::Id;
 
         // Collect all PushConstant variables
@@ -538,7 +539,7 @@ impl ValidationRule for VulkanPushConstantBlockRule {
                         .and_then(|id| Id::try_from(id).ok())
                         .unwrap_or_else(|| Id::try_from(1u32).unwrap()),
                     storage_class: StorageClass::PushConstant,
-                });
+                }.into());
             }
         }
 
@@ -567,7 +568,7 @@ impl ValidationRule for VulkanBufferBlockDecorationsRule {
         !is_vulkan_env(ctx.env)
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for inst in &ctx.module.types_global_values {
             if inst.class.opcode != Op::Variable && inst.class.opcode != Op::UntypedVariableKHR {
                 continue;
@@ -612,27 +613,27 @@ impl ValidationRule for VulkanBufferBlockDecorationsRule {
                         return Err(ValidationError::VulkanBufferMissingBlockDecoration {
                             storage_class,
                             struct_id,
-                        });
+                        }.into());
                     }
                 }
                 StorageClass::StorageBuffer => {
                     if has_buffer_block {
                         return Err(ValidationError::VulkanStorageBufferHasBufferBlock {
                             struct_id,
-                        });
+                        }.into());
                     }
                     if !has_block {
                         return Err(ValidationError::VulkanBufferMissingBlockDecoration {
                             storage_class,
                             struct_id,
-                        });
+                        }.into());
                     }
                 }
                 StorageClass::Uniform => {
                     if !has_block && !has_buffer_block {
                         return Err(ValidationError::VulkanUniformMissingBlockDecoration {
                             struct_id,
-                        });
+                        }.into());
                     }
                 }
                 _ => {}
@@ -718,7 +719,7 @@ impl ValidationRule for BlockLayoutDecorationsRule {
         "block-layout-decorations"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         // Find all Block and BufferBlock decorated structs
         for inst in &ctx.module.annotations {
             if inst.class.opcode != Op::Decorate {
@@ -764,7 +765,7 @@ fn check_struct_layout_decorations(
     struct_id: u32,
     decoration_type: &'static str,
     ctx: &ValidationContext<'_>,
-) -> Result<(), ValidationError> {
+) -> ValidationResult {
     let struct_inst = ResultId::try_from(struct_id)
         .ok()
         .and_then(|rid| ctx.definitions.get(&rid));
@@ -797,7 +798,7 @@ fn check_struct_layout_decorations(
                     return Err(ValidationError::BlockMissingArrayStride {
                         struct_id,
                         decoration_type,
-                    });
+                    }.into());
                 }
 
                 // For matrix members inside arrays, check the element type
@@ -859,7 +860,7 @@ fn check_matrix_decorations(
     type_id: u32,
     decoration_type: &'static str,
     ctx: &ValidationContext<'_>,
-) -> Result<(), ValidationError> {
+) -> ValidationResult {
     let type_opcode = ResultId::try_from(type_id)
         .ok()
         .and_then(|rid| ctx.opcodes.get(&rid))
@@ -877,7 +878,7 @@ fn check_matrix_decorations(
         return Err(ValidationError::BlockMissingMatrixStride {
             struct_id,
             decoration_type,
-        });
+        }.into());
     }
 
     // Check RowMajor or ColMajor on the type itself or as a member decoration
@@ -890,7 +891,7 @@ fn check_matrix_decorations(
         return Err(ValidationError::BlockMissingMatrixOrder {
             struct_id,
             decoration_type,
-        });
+        }.into());
     }
 
     Ok(())

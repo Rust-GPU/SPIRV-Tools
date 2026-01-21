@@ -14,6 +14,7 @@ use rspirv::dr::Operand;
 use rspirv::spirv::{Capability, MemoryModel, MemorySemantics as MemorySemanticsMask, Op, Scope};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
+use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::helpers::is_constant_opcode;
 use crate::validation::types::ResultId;
@@ -110,7 +111,7 @@ impl ValidationRule for MemorySemanticsRule {
         "memory-semantics"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let module = ctx.module();
         let is_vulkan = ctx.is_vulkan_env()
             || module
@@ -176,14 +177,14 @@ impl MemorySemanticsRule {
         has_cooperative_matrix_nv: bool,
         memory_scope: Option<u32>,
         inst: &rspirv::dr::Instruction,
-    ) -> Result<(), ValidationError> {
+    ) -> ValidationResult {
         // Check if it's a constant
         let is_const = is_constant_id(semantics_id, ctx);
 
         if !is_const {
             // Must be constant with Shader capability (unless CooperativeMatrixNV)
             if has_shader_cap && !has_cooperative_matrix_nv {
-                return Err(ValidationError::MemorySemanticsNotConstantWithShader);
+                return Err(ValidationError::MemorySemanticsNotConstantWithShader.into());
             }
             // Can't validate further without constant value
             return Ok(());
@@ -197,7 +198,7 @@ impl MemorySemanticsRule {
         // Check capability requirements for various flags
         if value & MemorySemanticsMask::UNIFORM_MEMORY.bits() != 0 {
             if !has_shader_cap {
-                return Err(ValidationError::MemorySemanticsUniformMemoryRequiresShader { opcode });
+                return Err(ValidationError::MemorySemanticsUniformMemoryRequiresShader { opcode }.into());
             }
         }
 
@@ -206,8 +207,8 @@ impl MemorySemanticsRule {
                 return Err(
                     ValidationError::MemorySemanticsOutputMemoryRequiresVulkanMemoryModel {
                         opcode,
-                    },
-                );
+                    }.into(),
+                        );
             }
         }
 
@@ -216,12 +217,12 @@ impl MemorySemanticsRule {
         let num_order_bits = count_bits(order_bits);
 
         if num_order_bits > 1 {
-            return Err(ValidationError::MemorySemanticsMultipleOrderBits { opcode });
+            return Err(ValidationError::MemorySemanticsMultipleOrderBits { opcode }.into());
         }
 
         // Vulkan forbids SequentiallyConsistent
         if is_vulkan && (value & MemorySemanticsMask::SEQUENTIALLY_CONSISTENT.bits() != 0) {
-            return Err(ValidationError::MemorySemanticsSequentiallyConsistentInVulkan { opcode });
+            return Err(ValidationError::MemorySemanticsSequentiallyConsistentInVulkan { opcode }.into());
         }
 
         // AtomicStore/AtomicFlagClear cannot use Acquire or AcquireRelease
@@ -231,7 +232,7 @@ impl MemorySemanticsRule {
                     | MemorySemanticsMask::ACQUIRE_RELEASE.bits())
                 != 0)
         {
-            return Err(ValidationError::MemorySemanticsInvalidOrderForStore { opcode });
+            return Err(ValidationError::MemorySemanticsInvalidOrderForStore { opcode }.into());
         }
 
         // AtomicLoad cannot use Release or AcquireRelease
@@ -241,12 +242,12 @@ impl MemorySemanticsRule {
                     | MemorySemanticsMask::ACQUIRE_RELEASE.bits())
                 != 0)
         {
-            return Err(ValidationError::MemorySemanticsInvalidOrderForLoad { opcode });
+            return Err(ValidationError::MemorySemanticsInvalidOrderForLoad { opcode }.into());
         }
 
         // In Vulkan, OpMemoryBarrier must not use relaxed ordering
         if is_vulkan && opcode == Op::MemoryBarrier && num_order_bits == 0 {
-            return Err(ValidationError::MemorySemanticsRelaxedBarrierInVulkan { opcode });
+            return Err(ValidationError::MemorySemanticsRelaxedBarrierInVulkan { opcode }.into());
         }
 
         // Vulkan storage class and ordering requirements
@@ -255,12 +256,12 @@ impl MemorySemanticsRule {
 
             // Non-relaxed order requires storage class
             if num_order_bits > 0 && !includes_storage_class {
-                return Err(ValidationError::MemorySemanticsOrderWithoutStorageClass { opcode });
+                return Err(ValidationError::MemorySemanticsOrderWithoutStorageClass { opcode }.into());
             }
 
             // Storage class requires non-relaxed order
             if num_order_bits == 0 && includes_storage_class {
-                return Err(ValidationError::MemorySemanticsStorageClassWithoutOrder { opcode });
+                return Err(ValidationError::MemorySemanticsStorageClassWithoutOrder { opcode }.into());
             }
         }
 
@@ -270,15 +271,15 @@ impl MemorySemanticsRule {
                 return Err(
                     ValidationError::MemorySemanticsMakeAvailableRequiresVulkanMemoryModel {
                         opcode,
-                    },
-                );
+                    }.into(),
+                        );
             }
             if (value
                 & (MemorySemanticsMask::RELEASE.bits()
                     | MemorySemanticsMask::ACQUIRE_RELEASE.bits()))
                 == 0
             {
-                return Err(ValidationError::MemorySemanticsMakeAvailableRequiresRelease { opcode });
+                return Err(ValidationError::MemorySemanticsMakeAvailableRequiresRelease { opcode }.into());
             }
         }
 
@@ -286,15 +287,15 @@ impl MemorySemanticsRule {
         if value & MemorySemanticsMask::MAKE_VISIBLE.bits() != 0 {
             if !has_vulkan_memory_model {
                 return Err(
-                    ValidationError::MemorySemanticsMakeVisibleRequiresVulkanMemoryModel { opcode },
-                );
+                    ValidationError::MemorySemanticsMakeVisibleRequiresVulkanMemoryModel { opcode }.into(),
+                        );
             }
             if (value
                 & (MemorySemanticsMask::ACQUIRE.bits()
                     | MemorySemanticsMask::ACQUIRE_RELEASE.bits()))
                 == 0
             {
-                return Err(ValidationError::MemorySemanticsMakeVisibleRequiresAcquire { opcode });
+                return Err(ValidationError::MemorySemanticsMakeVisibleRequiresAcquire { opcode }.into());
             }
         }
 
@@ -303,10 +304,10 @@ impl MemorySemanticsRule {
             if !has_vulkan_memory_model {
                 return Err(ValidationError::MemorySemanticsVolatileRequiresVulkanMemoryModel {
                     opcode,
-                });
+                }.into());
             }
             if !is_atomic_op(opcode) {
-                return Err(ValidationError::MemorySemanticsVolatileWithBarrier { opcode });
+                return Err(ValidationError::MemorySemanticsVolatileWithBarrier { opcode }.into());
             }
         }
 
@@ -318,7 +319,7 @@ impl MemorySemanticsRule {
                     | MemorySemanticsMask::ACQUIRE_RELEASE.bits())
                 != 0
             {
-                return Err(ValidationError::MemorySemanticsUnequalInvalidOrder { opcode });
+                return Err(ValidationError::MemorySemanticsUnequalInvalidOrder { opcode }.into());
             }
 
             // Get equal semantics to compare
@@ -342,7 +343,7 @@ impl MemorySemanticsRule {
                 {
                     return Err(ValidationError::MemorySemanticsUnequalStrongerThanEqual {
                         opcode,
-                    });
+                    }.into());
                 }
             }
         }
@@ -354,7 +355,7 @@ impl MemorySemanticsRule {
                     if scope_value == Scope::Invocation as u32 {
                         return Err(ValidationError::MemorySemanticsRequiresRelaxedWithInvocation {
                             opcode,
-                        });
+                        }.into());
                     }
                 }
             }

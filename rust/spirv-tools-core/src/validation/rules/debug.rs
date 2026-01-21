@@ -8,6 +8,7 @@ use rspirv::dr::Operand;
 use rspirv::spirv::Op;
 
 use crate::validation::context::{ValidationContext, ValidationRule};
+use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::{Id, ResultId};
 
@@ -28,7 +29,7 @@ impl ValidationRule for MemberNameRule {
         "member-name"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let module = ctx.module();
 
         // OpMemberName is in debug names section
@@ -47,7 +48,7 @@ impl ValidationRule for MemberNameRule {
                             if type_inst.class.opcode != Op::TypeStruct {
                                 return Err(ValidationError::DebugMemberNameNotStruct {
                                     type_id: to_id(*type_id),
-                                });
+                                }.into());
                             }
 
                             // Get the member count from the struct type
@@ -62,8 +63,8 @@ impl ValidationRule for MemberNameRule {
                                             type_id: to_id(*type_id),
                                             member_index: *member_index,
                                             member_count,
-                                        },
-                                    );
+                                        }.into(),
+                        );
                                 }
                             }
                         }
@@ -86,11 +87,11 @@ impl ValidationRule for LineRule {
         "line"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let module = ctx.module();
 
         // Helper to validate a single OpLine
-        let validate_line = |inst: &rspirv::dr::Instruction| -> Result<(), ValidationError> {
+        let validate_line = |inst: &rspirv::dr::Instruction| -> ValidationResult {
             if inst.class.opcode == Op::Line {
                 // Operand 0: File (must be OpString)
                 if let Some(Operand::IdRef(file_id)) = inst.operands.first() {
@@ -99,7 +100,7 @@ impl ValidationRule for LineRule {
                             if file_inst.class.opcode != Op::String {
                                 return Err(ValidationError::DebugLineTargetNotString {
                                     file_id: to_id(*file_id),
-                                });
+                                }.into());
                             }
                         }
                     }

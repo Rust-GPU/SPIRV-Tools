@@ -13,6 +13,7 @@ use rspirv::dr::Module;
 use rspirv::spirv::{Decoration, Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
+use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::helpers::{build_decoration_lookup, is_vulkan_env};
 use crate::validation::types::{Id, ResultId};
@@ -30,7 +31,7 @@ impl ValidationRule for BlockStorageClassRule {
         "block-storage-classes"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let module = ctx.module;
         let target_version = ctx.target_version;
 
@@ -97,7 +98,7 @@ impl ValidationRule for BlockStorageClassRule {
                         decoration: *decoration,
                         required_version: SpirvVersion::new(1, 3),
                         target_version,
-                    });
+                    }.into());
                 }
             }
         }
@@ -127,7 +128,7 @@ impl ValidationRule for BlockStorageClassRule {
                     return Err(ValidationError::InvalidBlockDecorationStorageClass {
                         decoration,
                         storage_class,
-                    });
+                    }.into());
                 }
 
                 // PushConstant requires Block, never BufferBlock.
@@ -137,7 +138,7 @@ impl ValidationRule for BlockStorageClassRule {
                     return Err(ValidationError::InvalidBlockDecorationStorageClass {
                         decoration,
                         storage_class,
-                    });
+                    }.into());
                 }
             }
         }
@@ -158,7 +159,7 @@ impl ValidationRule for DescriptorStorageClassRule {
         "descriptor-storage-classes"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let module = ctx.module;
 
         let mut decorated_vars: HashMap<ResultId, StorageClass> = HashMap::new();
@@ -207,7 +208,7 @@ impl ValidationRule for DescriptorStorageClassRule {
             if !allowed {
                 return Err(ValidationError::InvalidDescriptorStorageClass {
                     storage_class: *storage_class,
-                });
+                }.into());
             }
         }
 
@@ -231,7 +232,7 @@ impl ValidationRule for DescriptorRequirementsRule {
         !is_vulkan_env(ctx.env)
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let module = ctx.module;
 
         let interface_vars: HashSet<ResultId> = module
@@ -283,12 +284,12 @@ impl ValidationRule for DescriptorRequirementsRule {
             if !has_descriptor_set {
                 return Err(ValidationError::MissingDescriptorSetDecoration {
                     variable: Id::from(rid),
-                });
+                }.into());
             }
             if !has_binding {
                 return Err(ValidationError::MissingBindingDecoration {
                     variable: Id::from(rid),
-                });
+                }.into());
             }
         }
 
@@ -308,7 +309,7 @@ impl ValidationRule for StructBlockRequirementsRule {
         "struct-block-requirements"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let module = ctx.module;
         let target_version = ctx.target_version;
 
@@ -373,7 +374,7 @@ impl ValidationRule for StructBlockRequirementsRule {
                         return Err(ValidationError::InvalidBlockDecorationStorageClass {
                             decoration: Decoration::BufferBlock,
                             storage_class,
-                        });
+                        }.into());
                     }
                 }
             } else {
@@ -381,13 +382,13 @@ impl ValidationRule for StructBlockRequirementsRule {
                 if storage_class == StorageClass::Uniform
                     || storage_class == StorageClass::PushConstant
                 {
-                    return Err(ValidationError::MissingBlockDecoration { storage_class });
+                    return Err(ValidationError::MissingBlockDecoration { storage_class }.into());
                 }
                 // StorageBuffer requires Block decoration after SPIR-V 1.3
                 if storage_class == StorageClass::StorageBuffer
                     && target_version > SpirvVersion::new(1, 3)
                 {
-                    return Err(ValidationError::MissingBlockDecoration { storage_class });
+                    return Err(ValidationError::MissingBlockDecoration { storage_class }.into());
                 }
             }
         }
@@ -408,7 +409,7 @@ impl ValidationRule for LocationStorageClassRule {
         "location-storage-classes"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let module = ctx.module;
 
         let mut var_storage_classes: HashMap<ResultId, StorageClass> = HashMap::new();
@@ -466,7 +467,7 @@ impl ValidationRule for LocationStorageClassRule {
                     if !allowed {
                         return Err(ValidationError::InvalidLocationStorageClass {
                             storage_class: *storage_class,
-                        });
+                        }.into());
                     }
                 }
                 Decoration::Component => {
@@ -476,13 +477,13 @@ impl ValidationRule for LocationStorageClassRule {
                         if *component > 3 {
                             return Err(ValidationError::ComponentOutOfRange {
                                 component: *component,
-                            });
+                            }.into());
                         }
                     }
 
                     // Component decoration requires Location decoration
                     if !has_location.contains(&var_id) {
-                        return Err(ValidationError::ComponentMissingLocation);
+                        return Err(ValidationError::ComponentMissingLocation.into());
                     }
 
                     // Component decoration also requires Input/Output storage class
@@ -494,7 +495,7 @@ impl ValidationRule for LocationStorageClassRule {
                     if !allowed {
                         return Err(ValidationError::InvalidLocationStorageClass {
                             storage_class: *storage_class,
-                        });
+                        }.into());
                     }
                 }
                 _ => {}

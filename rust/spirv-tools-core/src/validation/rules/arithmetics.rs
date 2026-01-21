@@ -10,6 +10,7 @@
 use rspirv::spirv::{Capability, Op};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
+use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::helpers::{matrix_details_by_id, vector_info};
 use crate::validation::type_ext::{DefaultTypeResolver, TypeInstructionExt, TypeResolver};
@@ -31,7 +32,7 @@ impl ValidationRule for FloatArithmeticRule {
         "float-arithmetic"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let float_ops = [
             Op::FAdd,
             Op::FSub,
@@ -67,9 +68,10 @@ impl ValidationRule for FloatArithmeticRule {
                         continue;
                     };
 
-                    // Result type must be float scalar or vector
-                    // (or cooperative matrix, but we'll skip that for now)
-                    if !resolver.is_float_scalar_or_vector(result_type_id, ctx.definitions) {
+                    // Result type must be float scalar, vector, or cooperative matrix
+                    if !resolver.is_float_scalar_or_vector(result_type_id, ctx.definitions)
+                        && !resolver.is_float_cooperative_matrix(result_type_id, ctx.definitions)
+                    {
                         if let (Some(func), Some(block), Some(result_type)) = (
                             function_id,
                             block_id,
@@ -80,8 +82,8 @@ impl ValidationRule for FloatArithmeticRule {
                                 block,
                                 opcode: inst.class.opcode,
                                 result_type,
-                                expected: "float scalar or vector",
-                            });
+                                expected: "float scalar, vector, or cooperative matrix",
+                            }.into());
                         }
                     }
 
@@ -124,7 +126,7 @@ impl ValidationRule for FloatArithmeticRule {
                                     opcode: inst.class.opcode,
                                     operand_index: idx,
                                     result_type,
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -152,7 +154,7 @@ impl ValidationRule for IntArithmeticRule {
         "int-arithmetic"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         // Operations that work on any integer type
         let any_int_ops = [
             Op::IAdd,
@@ -215,7 +217,7 @@ impl ValidationRule for IntArithmeticRule {
                                     opcode: inst.class.opcode,
                                     result_type,
                                     expected: "unsigned int scalar or vector",
-                                });
+                                }.into());
                             }
                         }
                     } else if !resolver.is_int_scalar_or_vector(result_type_id, ctx.definitions) {
@@ -230,7 +232,7 @@ impl ValidationRule for IntArithmeticRule {
                                 opcode: inst.class.opcode,
                                 result_type,
                                 expected: "int scalar or vector",
-                            });
+                            }.into());
                         }
                     }
 
@@ -269,7 +271,7 @@ impl ValidationRule for IntArithmeticRule {
                                     opcode: inst.class.opcode,
                                     result_type,
                                     expected: "int scalar or vector",
-                                });
+                                }.into());
                             }
                             continue;
                         }
@@ -290,7 +292,7 @@ impl ValidationRule for IntArithmeticRule {
                                     opcode: inst.class.opcode,
                                     operand_index: idx,
                                     result_type,
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -319,7 +321,7 @@ impl ValidationRule for DotProductRule {
         "dot-product"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let resolver = DefaultTypeResolver;
 
         for function in &ctx.module.functions {
@@ -358,7 +360,7 @@ impl ValidationRule for DotProductRule {
                                 opcode: inst.class.opcode,
                                 result_type,
                                 expected: "float scalar",
-                            });
+                            }.into());
                         }
                     }
 
@@ -377,7 +379,7 @@ impl ValidationRule for DotProductRule {
                                     function: func,
                                     block,
                                     result_type,
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -421,7 +423,7 @@ impl ValidationRule for DotProductRule {
                                     opcode: inst.class.opcode,
                                     operand_index: 0,
                                     result_type,
-                                });
+                                }.into());
                             }
                         }
 
@@ -437,7 +439,7 @@ impl ValidationRule for DotProductRule {
                                     opcode: inst.class.opcode,
                                     operand_index: 1,
                                     result_type,
-                                });
+                                }.into());
                             }
                         }
 
@@ -457,7 +459,7 @@ impl ValidationRule for DotProductRule {
                                     opcode: inst.class.opcode,
                                     operand_index: 1,
                                     result_type,
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -486,7 +488,7 @@ impl ValidationRule for VectorTimesScalarRule {
         "vector-times-scalar"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let resolver = DefaultTypeResolver;
 
         for function in &ctx.module.functions {
@@ -529,7 +531,7 @@ impl ValidationRule for VectorTimesScalarRule {
                             instruction: inst.class.opcode,
                             operand: 0,
                             found: result_type,
-                        });
+                        }.into());
                     }
 
                     let (component_type, _) = vector_info(result_type_inst);
@@ -543,7 +545,7 @@ impl ValidationRule for VectorTimesScalarRule {
                             opcode: inst.class.opcode,
                             result_type,
                             expected: "float vector",
-                        });
+                        }.into());
                     }
 
                     // Get vector operand type and check it's a float vector
@@ -572,7 +574,7 @@ impl ValidationRule for VectorTimesScalarRule {
                                                     opcode: inst.class.opcode,
                                                     result_type,
                                                     expected: "float vector",
-                                                });
+                                                }.into());
                                             }
                                         }
                                     }
@@ -587,7 +589,7 @@ impl ValidationRule for VectorTimesScalarRule {
                                             instruction: inst.class.opcode,
                                             expected: result_type,
                                             found,
-                                        });
+                                        }.into());
                                     }
                                 }
                             }
@@ -613,7 +615,7 @@ impl ValidationRule for VectorTimesScalarRule {
                                             instruction: inst.class.opcode,
                                             vector_type: result_type,
                                             scalar_type,
-                                        });
+                                        }.into());
                                     }
                                 }
                             }
@@ -647,7 +649,7 @@ impl ValidationRule for MatrixVectorMultiplyRule {
         "matrix-vector-multiply"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for function in &ctx.module.functions {
             let function_id = function
                 .def
@@ -711,7 +713,7 @@ impl ValidationRule for MatrixVectorMultiplyRule {
                             instruction: inst.class.opcode,
                             operand: matrix_idx_u32,
                             found: matrix_type_id,
-                        });
+                        }.into());
                     };
 
                     // Get vector operand
@@ -740,7 +742,7 @@ impl ValidationRule for MatrixVectorMultiplyRule {
                             instruction: inst.class.opcode,
                             operand: vector_idx_u32,
                             found: vector_type_id,
-                        });
+                        }.into());
                     };
 
                     if !vector_type_inst.is_vector_type() {
@@ -750,7 +752,7 @@ impl ValidationRule for MatrixVectorMultiplyRule {
                             instruction: inst.class.opcode,
                             operand: vector_idx_u32,
                             found: vector_type_id,
-                        });
+                        }.into());
                     }
 
                     let (vector_component, vector_len) = vector_info(vector_type_inst);
@@ -761,7 +763,7 @@ impl ValidationRule for MatrixVectorMultiplyRule {
                             instruction: inst.class.opcode,
                             operand: vector_idx_u32,
                             found: vector_type_id,
-                        });
+                        }.into());
                     };
                     let Some(vector_len) = vector_len else {
                         return Err(ValidationError::VectorOperandNotVector {
@@ -770,7 +772,7 @@ impl ValidationRule for MatrixVectorMultiplyRule {
                             instruction: inst.class.opcode,
                             operand: vector_idx_u32,
                             found: vector_type_id,
-                        });
+                        }.into());
                     };
 
                     // Check component types match
@@ -781,14 +783,14 @@ impl ValidationRule for MatrixVectorMultiplyRule {
                                 block,
                                 matrix_component,
                                 vector_component,
-                            });
+                            }.into());
                         } else {
                             return Err(ValidationError::VectorTimesMatrixComponentTypeMismatch {
                                 function: func,
                                 block,
                                 vector_component,
                                 matrix_component,
-                            });
+                            }.into());
                         }
                     }
 
@@ -801,7 +803,7 @@ impl ValidationRule for MatrixVectorMultiplyRule {
                                 block,
                                 matrix_columns,
                                 vector_components: vector_len,
-                            });
+                            }.into());
                         }
                     } else {
                         // Vector components must equal matrix rows
@@ -811,7 +813,7 @@ impl ValidationRule for MatrixVectorMultiplyRule {
                                 block,
                                 vector_components: vector_len,
                                 matrix_rows,
-                            });
+                            }.into());
                         }
                     }
 
@@ -829,7 +831,7 @@ impl ValidationRule for MatrixVectorMultiplyRule {
                             opcode: inst.class.opcode,
                             result_type,
                             expected: "vector",
-                        });
+                        }.into());
                     }
 
                     let (result_component, result_len) = vector_info(result_type_inst);
@@ -844,7 +846,7 @@ impl ValidationRule for MatrixVectorMultiplyRule {
                                     instruction: inst.class.opcode,
                                     expected: matrix_component,
                                     found: result_component,
-                                });
+                                }.into());
                             } else {
                                 return Err(
                                     ValidationError::VectorTimesMatrixResultComponentTypeMismatch {
@@ -852,8 +854,8 @@ impl ValidationRule for MatrixVectorMultiplyRule {
                                         block,
                                         expected: matrix_component,
                                         found: result_component,
-                                    },
-                                );
+                                    }.into(),
+                        );
                             }
                         }
                     }
@@ -874,7 +876,7 @@ impl ValidationRule for MatrixVectorMultiplyRule {
                                     opcode: inst.class.opcode,
                                     result_type,
                                     expected: "matching column vector",
-                                });
+                                }.into());
                             } else {
                                 return Err(
                                     ValidationError::VectorTimesMatrixResultDimensionMismatch {
@@ -882,8 +884,8 @@ impl ValidationRule for MatrixVectorMultiplyRule {
                                         block,
                                         expected_components: expected_len,
                                         found_components: result_len,
-                                    },
-                                );
+                                    }.into(),
+                        );
                             }
                         }
                     }
@@ -913,7 +915,7 @@ impl ValidationRule for MatrixTimesMatrixRule {
         "matrix-times-matrix"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for function in &ctx.module.functions {
             let function_id = function
                 .def
@@ -963,7 +965,7 @@ impl ValidationRule for MatrixTimesMatrixRule {
                             instruction: inst.class.opcode,
                             operand: 0,
                             found: left_type_id,
-                        });
+                        }.into());
                     };
 
                     // Get right operand
@@ -989,7 +991,7 @@ impl ValidationRule for MatrixTimesMatrixRule {
                             instruction: inst.class.opcode,
                             operand: 1,
                             found: right_type_id,
-                        });
+                        }.into());
                     };
 
                     // Check component types match
@@ -999,7 +1001,7 @@ impl ValidationRule for MatrixTimesMatrixRule {
                             block,
                             left_component,
                             right_component,
-                        });
+                        }.into());
                     }
 
                     // Check dimension compatibility: left columns = right rows
@@ -1009,7 +1011,7 @@ impl ValidationRule for MatrixTimesMatrixRule {
                             block,
                             left_columns,
                             right_rows,
-                        });
+                        }.into());
                     }
 
                     // Verify result type is matrix with correct dimensions
@@ -1021,7 +1023,7 @@ impl ValidationRule for MatrixTimesMatrixRule {
                             block,
                             expected_columns: right_columns,
                             expected_rows: left_rows,
-                        });
+                        }.into());
                     };
 
                     // Check result component type
@@ -1031,7 +1033,7 @@ impl ValidationRule for MatrixTimesMatrixRule {
                             block,
                             expected: left_component,
                             found: result_component,
-                        });
+                        }.into());
                     }
 
                     // Check result dimensions
@@ -1041,7 +1043,7 @@ impl ValidationRule for MatrixTimesMatrixRule {
                             block,
                             expected_columns: right_columns,
                             expected_rows: left_rows,
-                        });
+                        }.into());
                     }
                 }
             }
@@ -1068,7 +1070,7 @@ impl ValidationRule for MatrixTimesScalarRule {
         "matrix-times-scalar"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for function in &ctx.module.functions {
             let function_id = function
                 .def
@@ -1110,7 +1112,7 @@ impl ValidationRule for MatrixTimesScalarRule {
                             opcode: inst.class.opcode,
                             result_type,
                             expected: "float matrix",
-                        });
+                        }.into());
                     };
 
                     // Matrix operand must match result type
@@ -1133,7 +1135,7 @@ impl ValidationRule for MatrixTimesScalarRule {
                             opcode: inst.class.opcode,
                             operand_index: 0,
                             result_type,
-                        });
+                        }.into());
                     }
 
                     // Scalar operand must match matrix component type
@@ -1156,7 +1158,7 @@ impl ValidationRule for MatrixTimesScalarRule {
                             opcode: inst.class.opcode,
                             operand_index: 1,
                             result_type,
-                        });
+                        }.into());
                     }
                 }
             }
@@ -1184,7 +1186,7 @@ impl ValidationRule for OuterProductRule {
         "outer-product"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let resolver = DefaultTypeResolver;
 
         for function in &ctx.module.functions {
@@ -1228,7 +1230,7 @@ impl ValidationRule for OuterProductRule {
                             opcode: inst.class.opcode,
                             result_type,
                             expected: "float matrix",
-                        });
+                        }.into());
                     };
 
                     // Left operand must be a float vector
@@ -1254,7 +1256,7 @@ impl ValidationRule for OuterProductRule {
                             opcode: inst.class.opcode,
                             operand_index: 0,
                             result_type,
-                        });
+                        }.into());
                     }
 
                     let left_dim = resolver.get_dimension(left_type_id, ctx.definitions) as u32;
@@ -1265,7 +1267,7 @@ impl ValidationRule for OuterProductRule {
                             operand_index: 0,
                             expected: result_rows,
                             found: left_dim,
-                        });
+                        }.into());
                     }
 
                     // Right operand must be a float vector
@@ -1291,7 +1293,7 @@ impl ValidationRule for OuterProductRule {
                             opcode: inst.class.opcode,
                             operand_index: 1,
                             result_type,
-                        });
+                        }.into());
                     }
 
                     let right_dim = resolver.get_dimension(right_type_id, ctx.definitions) as u32;
@@ -1302,7 +1304,7 @@ impl ValidationRule for OuterProductRule {
                             operand_index: 1,
                             expected: result_cols,
                             found: right_dim,
-                        });
+                        }.into());
                     }
 
                     // Component types must match - get component types via vector_info
@@ -1318,7 +1320,7 @@ impl ValidationRule for OuterProductRule {
                         return Err(ValidationError::OuterProductComponentTypeMismatch {
                             function: func,
                             block: blk,
-                        });
+                        }.into());
                     }
                 }
             }
@@ -1347,7 +1349,7 @@ impl ValidationRule for ExtendedArithmeticRule {
         "extended-arithmetic"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let extended_ops = [
             Op::IAddCarry,
             Op::ISubBorrow,
@@ -1395,7 +1397,7 @@ impl ValidationRule for ExtendedArithmeticRule {
                             function: func,
                             block: blk,
                             opcode: inst.class.opcode,
-                        });
+                        }.into());
                     }
 
                     // Struct must have exactly 2 members
@@ -1405,7 +1407,7 @@ impl ValidationRule for ExtendedArithmeticRule {
                             block: blk,
                             opcode: inst.class.opcode,
                             found: result_type_inst.operands.len(),
-                        });
+                        }.into());
                     }
 
                     // Get struct member types
@@ -1428,7 +1430,7 @@ impl ValidationRule for ExtendedArithmeticRule {
                             function: func,
                             block: blk,
                             opcode: inst.class.opcode,
-                        });
+                        }.into());
                     }
 
                     // Check member type based on operation
@@ -1444,7 +1446,7 @@ impl ValidationRule for ExtendedArithmeticRule {
                                 block: blk,
                                 opcode: inst.class.opcode,
                                 expected: "integer scalar or vector",
-                            });
+                            }.into());
                         }
                     } else {
                         // IAddCarry, ISubBorrow, UMulExtended require unsigned integers
@@ -1454,7 +1456,7 @@ impl ValidationRule for ExtendedArithmeticRule {
                                 block: blk,
                                 opcode: inst.class.opcode,
                                 expected: "unsigned integer scalar or vector",
-                            });
+                            }.into());
                         }
                     }
 
@@ -1478,7 +1480,7 @@ impl ValidationRule for ExtendedArithmeticRule {
                                 block: blk,
                                 opcode: inst.class.opcode,
                                 operand_index: idx,
-                            });
+                            }.into());
                         }
                     }
                 }

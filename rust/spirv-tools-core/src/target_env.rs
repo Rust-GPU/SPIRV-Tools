@@ -288,6 +288,14 @@ impl TargetEnv {
         )
     }
 
+    /// Returns true if the environment is specifically OpenCL 1.2 (full or embedded).
+    ///
+    /// This is used for validation rules that differ between OpenCL 1.2 and later versions,
+    /// such as the prohibition of Generic storage class for atomics in OpenCL 1.2.
+    pub const fn is_opencl_1_2(self) -> bool {
+        matches!(self, Self::OpenCl1_2 | Self::OpenClEmbedded1_2)
+    }
+
     /// Returns true if the environment belongs to the OpenGL profile family.
     pub const fn is_opengl(self) -> bool {
         matches!(

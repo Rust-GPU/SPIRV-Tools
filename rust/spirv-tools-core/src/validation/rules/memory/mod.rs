@@ -22,7 +22,8 @@ pub use access_chain::{AccessChainRule, PtrAccessChainRule, RawAccessChainRule};
 pub use cooperative::{
     CooperativeMatrixLengthRule, CooperativeMatrixLoadStoreKHRRule,
     CooperativeMatrixLoadStoreNVRule, CooperativeMatrixMulAddKHRRule,
-    CooperativeMatrixMulAddNVRule, CooperativeVectorLoadStoreNVRule,
+    CooperativeMatrixMulAddNVRule, CooperativeMatrixPerElementOpNVRule,
+    CooperativeVectorLoadStoreNVRule,
 };
 pub use load_store::{LoadRule, StoreRule};
 pub use misc::{ArrayLengthRule, CopyMemoryRule, MemoryModelRule, PointerComparisonRule};
@@ -49,6 +50,7 @@ pub fn all_memory_rules() -> Vec<&'static dyn ValidationRule> {
         &CooperativeMatrixLoadStoreKHRRule,
         &CooperativeMatrixMulAddNVRule,
         &CooperativeMatrixMulAddKHRRule,
+        &CooperativeMatrixPerElementOpNVRule,
         // Cooperative vector rules
         &CooperativeVectorLoadStoreNVRule,
     ]
@@ -89,10 +91,11 @@ mod tests {
     fn test_memory_model_missing() {
         let data = TestContextData::default();
         let ctx = data.as_context();
-        assert!(matches!(
-            MemoryModelRule.validate(&ctx),
-            Err(ValidationError::MissingMemoryModel)
-        ));
+        let result = MemoryModelRule.validate(&ctx);
+        assert!(result.is_err());
+        if let Err(spanned) = result {
+            assert!(matches!(spanned.error, ValidationError::MissingMemoryModel));
+        }
     }
 
     #[test]

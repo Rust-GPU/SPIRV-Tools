@@ -16,6 +16,7 @@ use rspirv::dr::Operand;
 use rspirv::spirv::{Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
+use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::{Id, ResultId};
 
@@ -135,7 +136,7 @@ impl ValidationRule for GraphTypeRule {
         "graph-type"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for inst in ctx.module.all_inst_iter() {
             if inst.class.opcode != Op::TypeGraphARM {
                 continue;
@@ -150,14 +151,14 @@ impl ValidationRule for GraphTypeRule {
                     instruction_id: inst.result_id.map(to_id),
                     num_io_types: num_io,
                     num_inputs,
-                });
+                }.into());
             }
 
             // Check there is at least one output
             if num_io == num_inputs as usize {
                 return Err(ValidationError::GraphTypeNoOutputs {
                     instruction_id: inst.result_id.map(to_id),
-                });
+                }.into());
             }
 
             // Check all I/O types are graph interface types
@@ -167,7 +168,7 @@ impl ValidationRule for GraphTypeRule {
                         return Err(ValidationError::GraphTypeInvalidIOType {
                             instruction_id: inst.result_id.map(to_id),
                             io_type: to_id(*type_id),
-                        });
+                        }.into());
                     }
                 }
             }
@@ -188,7 +189,7 @@ impl ValidationRule for GraphConstantRule {
         "graph-constant"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let mut seen_constant_ids: HashSet<u32> = HashSet::new();
 
         for inst in ctx.module.all_inst_iter() {
@@ -201,7 +202,7 @@ impl ValidationRule for GraphConstantRule {
                 if !is_tensor_type(result_type_id, ctx.definitions) {
                     return Err(ValidationError::GraphConstantNotTensorType {
                         instruction_id: inst.result_id.map(to_id),
-                    });
+                    }.into());
                 }
             }
 
@@ -211,7 +212,7 @@ impl ValidationRule for GraphConstantRule {
                     return Err(ValidationError::GraphConstantDuplicateId {
                         instruction_id: inst.result_id.map(to_id),
                         constant_id: *constant_id,
-                    });
+                    }.into());
                 }
             }
         }
@@ -230,7 +231,7 @@ impl ValidationRule for GraphRule {
         "graph"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for inst in ctx.module.all_inst_iter() {
             if inst.class.opcode != Op::GraphARM {
                 continue;
@@ -243,7 +244,7 @@ impl ValidationRule for GraphRule {
                         if !is_graph_type(type_inst) {
                             return Err(ValidationError::GraphInvalidResultType {
                                 instruction_id: inst.result_id.map(to_id),
-                            });
+                            }.into());
                         }
                     }
                 }
@@ -267,7 +268,7 @@ impl ValidationRule for GraphEntryPointRule {
         "graph-entry-point"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for inst in ctx.module.all_inst_iter() {
             if inst.class.opcode != Op::GraphEntryPointARM {
                 continue;
@@ -289,7 +290,7 @@ impl ValidationRule for GraphEntryPointRule {
                 return Err(ValidationError::GraphEntryPointInvalidGraph {
                     instruction_id: inst.result_id.map(to_id),
                     graph_id: to_id(*graph_id),
-                });
+                }.into());
             }
 
             // Get graph type
@@ -317,7 +318,7 @@ impl ValidationRule for GraphEntryPointRule {
                     instruction_id: inst.result_id.map(to_id),
                     expected: num_io,
                     actual: num_interface,
-                });
+                }.into());
             }
 
             // Check each interface variable
@@ -338,7 +339,7 @@ impl ValidationRule for GraphEntryPointRule {
                     return Err(ValidationError::GraphEntryPointInterfaceNotVariable {
                         instruction_id: inst.result_id.map(to_id),
                         interface_id: to_id(*interface_id),
-                    });
+                    }.into());
                 }
 
                 // Check storage class (operand 0 of OpVariable)
@@ -347,7 +348,7 @@ impl ValidationRule for GraphEntryPointRule {
                         return Err(ValidationError::GraphEntryPointInterfaceNotUniformConstant {
                             instruction_id: inst.result_id.map(to_id),
                             interface_id: to_id(*interface_id),
-                        });
+                        }.into());
                     }
                 }
 
@@ -377,7 +378,7 @@ impl ValidationRule for GraphEntryPointRule {
                                     interface_id: to_id(*interface_id),
                                     expected_type: to_id(expected_type),
                                     actual_type: to_id(*pointee_type),
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -403,7 +404,7 @@ impl ValidationRule for GraphInputRule {
         "graph-input"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         // Iterate through functions to find graph inputs within graph definitions
         for func in &ctx.module.functions {
             for block in &func.blocks {
@@ -443,7 +444,7 @@ impl ValidationRule for GraphInputRule {
                                         return Err(ValidationError::GraphInputIndexNotInt32 {
                                             instruction_id: inst.result_id.map(to_id),
                                             operand: "InputIndex",
-                                        });
+                                        }.into());
                                     }
                                     // Check width is 32
                                     if let Some(Operand::LiteralBit32(width)) =
@@ -453,7 +454,7 @@ impl ValidationRule for GraphInputRule {
                                             return Err(ValidationError::GraphInputIndexNotInt32 {
                                                 instruction_id: inst.result_id.map(to_id),
                                                 operand: "InputIndex",
-                                            });
+                                            }.into());
                                         }
                                     }
                                 }
@@ -476,7 +477,7 @@ impl ValidationRule for GraphInputRule {
                                         return Err(ValidationError::GraphInputIndexNotInt32 {
                                             instruction_id: inst.result_id.map(to_id),
                                             operand: "ElementIndex",
-                                        });
+                                        }.into());
                                     }
                                     if let Some(Operand::LiteralBit32(width)) =
                                         type_inst.operands.first()
@@ -485,7 +486,7 @@ impl ValidationRule for GraphInputRule {
                                             return Err(ValidationError::GraphInputIndexNotInt32 {
                                                 instruction_id: inst.result_id.map(to_id),
                                                 operand: "ElementIndex",
-                                            });
+                                            }.into());
                                         }
                                     }
                                 }
@@ -508,7 +509,7 @@ impl ValidationRule for GraphInputRule {
                                         instruction_id: inst.result_id.map(to_id),
                                         input_index,
                                         num_inputs,
-                                    });
+                                    }.into());
                                 }
 
                                 let has_element_index = inst.operands.len() > 1;
@@ -522,8 +523,8 @@ impl ValidationRule for GraphInputRule {
                                             return Err(
                                                 ValidationError::GraphInputElementIndexNotAllowed {
                                                     instruction_id: inst.result_id.map(to_id),
-                                                },
-                                            );
+                                                }.into(),
+                        );
                                         }
                                     }
                                 }
@@ -557,7 +558,7 @@ impl ValidationRule for GraphInputRule {
                                             instruction_id: inst.result_id.map(to_id),
                                             expected_type: to_id(expected),
                                             actual_type: to_id(result_type),
-                                        });
+                                        }.into());
                                     }
                                 }
                             }
@@ -585,7 +586,7 @@ impl ValidationRule for GraphSetOutputRule {
         "graph-set-output"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
             for block in &func.blocks {
                 let mut current_graph_type: Option<&rspirv::dr::Instruction> = None;
@@ -623,7 +624,7 @@ impl ValidationRule for GraphSetOutputRule {
                                         return Err(ValidationError::GraphOutputIndexNotInt32 {
                                             instruction_id: inst.result_id.map(to_id),
                                             operand: "OutputIndex",
-                                        });
+                                        }.into());
                                     }
                                     if let Some(Operand::LiteralBit32(width)) =
                                         type_inst.operands.first()
@@ -632,7 +633,7 @@ impl ValidationRule for GraphSetOutputRule {
                                             return Err(ValidationError::GraphOutputIndexNotInt32 {
                                                 instruction_id: inst.result_id.map(to_id),
                                                 operand: "OutputIndex",
-                                            });
+                                            }.into());
                                         }
                                     }
                                 }
@@ -655,7 +656,7 @@ impl ValidationRule for GraphSetOutputRule {
                                         return Err(ValidationError::GraphOutputIndexNotInt32 {
                                             instruction_id: inst.result_id.map(to_id),
                                             operand: "ElementIndex",
-                                        });
+                                        }.into());
                                     }
                                     if let Some(Operand::LiteralBit32(width)) =
                                         type_inst.operands.first()
@@ -664,7 +665,7 @@ impl ValidationRule for GraphSetOutputRule {
                                             return Err(ValidationError::GraphOutputIndexNotInt32 {
                                                 instruction_id: inst.result_id.map(to_id),
                                                 operand: "ElementIndex",
-                                            });
+                                            }.into());
                                         }
                                     }
                                 }
@@ -685,7 +686,7 @@ impl ValidationRule for GraphSetOutputRule {
                                         instruction_id: inst.result_id.map(to_id),
                                         output_index,
                                         num_outputs,
-                                    });
+                                    }.into());
                                 }
 
                                 let has_element_index = inst.operands.len() > 2;
@@ -698,8 +699,8 @@ impl ValidationRule for GraphSetOutputRule {
                                             return Err(
                                                 ValidationError::GraphOutputElementIndexNotAllowed {
                                                     instruction_id: inst.result_id.map(to_id),
-                                                },
-                                            );
+                                                }.into(),
+                        );
                                         }
                                     }
                                 }
@@ -739,8 +740,8 @@ impl ValidationRule for GraphSetOutputRule {
                                                         instruction_id: inst.result_id.map(to_id),
                                                         expected_type: to_id(expected),
                                                         actual_type: to_id(value_type),
-                                                    },
-                                                );
+                                                    }.into(),
+                        );
                                             }
                                         }
                                     }
@@ -767,7 +768,7 @@ impl ValidationRule for GraphEndRule {
         "graph-end"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
             for block in &func.blocks {
                 let mut in_graph = false;
@@ -813,7 +814,7 @@ impl ValidationRule for GraphEndRule {
                                     return Err(ValidationError::GraphDuplicateInputIndex {
                                         instruction_id: inst.result_id.map(to_id),
                                         input_index,
-                                    });
+                                    }.into());
                                 }
                                 input_indices.insert(key);
                             }
@@ -847,7 +848,7 @@ impl ValidationRule for GraphEndRule {
                                     return Err(ValidationError::GraphDuplicateOutputIndex {
                                         instruction_id: inst.result_id.map(to_id),
                                         output_index,
-                                    });
+                                    }.into());
                                 }
                                 output_indices.insert(key);
                             }

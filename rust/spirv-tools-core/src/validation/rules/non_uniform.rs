@@ -16,6 +16,7 @@ use crate::validation::context::ValidationContext;
 use crate::validation::error::ValidationError;
 use crate::validation::helpers::{get_type_structure, id_ref, is_constant_opcode};
 use crate::validation::types::{Id, ResultId, TypeId, TypeStructure, VectorSize};
+use crate::validation::ValidationResult;
 use crate::version::SpirvVersion;
 
 use super::super::context::ValidationRule;
@@ -107,7 +108,7 @@ impl ValidationRule for NonUniformElectRule {
         "non-uniform-elect"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
             let func_id = func.def.as_ref().and_then(|d| d.result_id).map(|id| {
                 Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
@@ -132,7 +133,7 @@ impl ValidationRule for NonUniformElectRule {
                                     function: func_id,
                                     block: block_id,
                                     opcode: Op::GroupNonUniformElect,
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -151,7 +152,7 @@ impl ValidationRule for NonUniformAnyAllRule {
         "non-uniform-any-all"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
             let func_id = func.def.as_ref().and_then(|d| d.result_id).map(|id| {
                 Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
@@ -181,7 +182,7 @@ impl ValidationRule for NonUniformAnyAllRule {
                                     function: func_id,
                                     block: block_id,
                                     opcode,
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -207,8 +208,8 @@ impl ValidationRule for NonUniformAnyAllRule {
                                                     function: func_id,
                                                     block: block_id,
                                                     opcode,
-                                                },
-                                            );
+                                                }.into(),
+                        );
                                         }
                                     }
                                 }
@@ -230,7 +231,7 @@ impl ValidationRule for NonUniformAllEqualRule {
         "non-uniform-all-equal"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
             let func_id = func.def.as_ref().and_then(|d| d.result_id).map(|id| {
                 Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
@@ -255,7 +256,7 @@ impl ValidationRule for NonUniformAllEqualRule {
                                     function: func_id,
                                     block: block_id,
                                     opcode: Op::GroupNonUniformAllEqual,
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -273,8 +274,8 @@ impl ValidationRule for NonUniformAllEqualRule {
                                                     function: func_id,
                                                     block: block_id,
                                                     opcode: Op::GroupNonUniformAllEqual,
-                                                },
-                                            );
+                                                }.into(),
+                        );
                                         }
                                     }
                                 }
@@ -296,7 +297,7 @@ impl ValidationRule for NonUniformBroadcastShuffleRule {
         "non-uniform-broadcast-shuffle"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
             let func_id = func.def.as_ref().and_then(|d| d.result_id).map(|id| {
                 Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
@@ -332,7 +333,7 @@ impl ValidationRule for NonUniformBroadcastShuffleRule {
                                 block: block_id,
                                 opcode,
                                 expected: "scalar or vector of integer, floating-point, or boolean type",
-                            });
+                            }.into());
                         }
                     }
 
@@ -348,7 +349,7 @@ impl ValidationRule for NonUniformBroadcastShuffleRule {
                                             function: func_id,
                                             block: block_id,
                                             opcode,
-                                        });
+                                        }.into());
                                     }
                                 }
                             }
@@ -371,8 +372,8 @@ impl ValidationRule for NonUniformBroadcastShuffleRule {
                                                     operand_name: get_broadcast_shuffle_operand_name(
                                                         opcode,
                                                     ),
-                                                },
-                                            );
+                                                }.into(),
+                        );
                                         }
 
                                         // Check if constant is required
@@ -393,8 +394,8 @@ impl ValidationRule for NonUniformBroadcastShuffleRule {
                                                     operand_name: get_broadcast_shuffle_operand_name(
                                                         opcode,
                                                     ),
-                                                },
-                                            );
+                                                }.into(),
+                        );
                                         }
                                     }
                                 }
@@ -416,7 +417,7 @@ impl ValidationRule for NonUniformBroadcastFirstRule {
         "non-uniform-broadcast-first"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
             let func_id = func.def.as_ref().and_then(|d| d.result_id).map(|id| {
                 Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
@@ -442,7 +443,7 @@ impl ValidationRule for NonUniformBroadcastFirstRule {
                                 block: block_id,
                                 opcode: Op::GroupNonUniformBroadcastFirst,
                                 expected: "scalar or vector of integer, floating-point, or boolean type",
-                            });
+                            }.into());
                         }
                     }
 
@@ -458,7 +459,7 @@ impl ValidationRule for NonUniformBroadcastFirstRule {
                                             function: func_id,
                                             block: block_id,
                                             opcode: Op::GroupNonUniformBroadcastFirst,
-                                        });
+                                        }.into());
                                     }
                                 }
                             }
@@ -479,7 +480,7 @@ impl ValidationRule for NonUniformBallotRule {
         "non-uniform-ballot"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
             let func_id = func.def.as_ref().and_then(|d| d.result_id).map(|id| {
                 Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
@@ -504,7 +505,7 @@ impl ValidationRule for NonUniformBallotRule {
                                     function: func_id,
                                     block: block_id,
                                     opcode: Op::GroupNonUniformBallot,
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -522,8 +523,8 @@ impl ValidationRule for NonUniformBallotRule {
                                                     function: func_id,
                                                     block: block_id,
                                                     opcode: Op::GroupNonUniformBallot,
-                                                },
-                                            );
+                                                }.into(),
+                        );
                                         }
                                     }
                                 }
@@ -545,7 +546,7 @@ impl ValidationRule for NonUniformInverseBallotRule {
         "non-uniform-inverse-ballot"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
             let func_id = func.def.as_ref().and_then(|d| d.result_id).map(|id| {
                 Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
@@ -570,7 +571,7 @@ impl ValidationRule for NonUniformInverseBallotRule {
                                     function: func_id,
                                     block: block_id,
                                     opcode: Op::GroupNonUniformInverseBallot,
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -588,8 +589,8 @@ impl ValidationRule for NonUniformInverseBallotRule {
                                                     function: func_id,
                                                     block: block_id,
                                                     opcode: Op::GroupNonUniformInverseBallot,
-                                                },
-                                            );
+                                                }.into(),
+                        );
                                         }
                                     }
                                 }
@@ -611,7 +612,7 @@ impl ValidationRule for NonUniformBallotBitExtractRule {
         "non-uniform-ballot-bit-extract"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
             let func_id = func.def.as_ref().and_then(|d| d.result_id).map(|id| {
                 Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
@@ -636,7 +637,7 @@ impl ValidationRule for NonUniformBallotBitExtractRule {
                                     function: func_id,
                                     block: block_id,
                                     opcode: Op::GroupNonUniformBallotBitExtract,
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -654,8 +655,8 @@ impl ValidationRule for NonUniformBallotBitExtractRule {
                                                     function: func_id,
                                                     block: block_id,
                                                     opcode: Op::GroupNonUniformBallotBitExtract,
-                                                },
-                                            );
+                                                }.into(),
+                        );
                                         }
                                     }
                                 }
@@ -677,8 +678,8 @@ impl ValidationRule for NonUniformBallotBitExtractRule {
                                                     block: block_id,
                                                     opcode: Op::GroupNonUniformBallotBitExtract,
                                                     operand_name: "Id",
-                                                },
-                                            );
+                                                }.into(),
+                        );
                                         }
                                     }
                                 }
@@ -700,7 +701,7 @@ impl ValidationRule for NonUniformBallotBitCountRule {
         "non-uniform-ballot-bit-count"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
             let func_id = func.def.as_ref().and_then(|d| d.result_id).map(|id| {
                 Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
@@ -726,7 +727,7 @@ impl ValidationRule for NonUniformBallotBitCountRule {
                                     block: block_id,
                                     opcode: Op::GroupNonUniformBallotBitCount,
                                     expected: "unsigned integer scalar",
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -744,8 +745,8 @@ impl ValidationRule for NonUniformBallotBitCountRule {
                                                     function: func_id,
                                                     block: block_id,
                                                     opcode: Op::GroupNonUniformBallotBitCount,
-                                                },
-                                            );
+                                                }.into(),
+                        );
                                         }
                                     }
                                 }
@@ -766,8 +767,8 @@ impl ValidationRule for NonUniformBallotBitCountRule {
                                     ValidationError::NonUniformBallotBitCountInvalidGroupOp {
                                         function: func_id,
                                         block: block_id,
-                                    },
-                                );
+                                    }.into(),
+                        );
                             }
                         }
                     }
@@ -786,7 +787,7 @@ impl ValidationRule for NonUniformBallotFindRule {
         "non-uniform-ballot-find"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
             let func_id = func.def.as_ref().and_then(|d| d.result_id).map(|id| {
                 Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
@@ -815,7 +816,7 @@ impl ValidationRule for NonUniformBallotFindRule {
                                     block: block_id,
                                     opcode,
                                     expected: "unsigned integer scalar",
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -833,8 +834,8 @@ impl ValidationRule for NonUniformBallotFindRule {
                                                     function: func_id,
                                                     block: block_id,
                                                     opcode,
-                                                },
-                                            );
+                                                }.into(),
+                        );
                                         }
                                     }
                                 }
@@ -856,7 +857,7 @@ impl ValidationRule for NonUniformArithmeticRule {
         "non-uniform-arithmetic"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
             let func_id = func.def.as_ref().and_then(|d| d.result_id).map(|id| {
                 Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
@@ -914,28 +915,28 @@ impl ValidationRule for NonUniformArithmeticRule {
                                     block: block_id,
                                     opcode,
                                     expected: "floating-point scalar or vector",
-                                });
+                                }.into());
                             } else if is_bool && !ty.is_bool_scalar_or_vector() {
                                 return Err(ValidationError::NonUniformResultTypeInvalid {
                                     function: func_id,
                                     block: block_id,
                                     opcode,
                                     expected: "boolean scalar or vector",
-                                });
+                                }.into());
                             } else if is_unsigned && !ty.is_unsigned_int_scalar_or_vector() {
                                 return Err(ValidationError::NonUniformResultTypeInvalid {
                                     function: func_id,
                                     block: block_id,
                                     opcode,
                                     expected: "unsigned integer scalar or vector",
-                                });
+                                }.into());
                             } else if is_signed_or_bitwise && !ty.is_int_scalar_or_vector() {
                                 return Err(ValidationError::NonUniformResultTypeInvalid {
                                     function: func_id,
                                     block: block_id,
                                     opcode,
                                     expected: "integer scalar or vector",
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -952,7 +953,7 @@ impl ValidationRule for NonUniformArithmeticRule {
                                             function: func_id,
                                             block: block_id,
                                             opcode,
-                                        });
+                                        }.into());
                                     }
                                 }
                             }
@@ -976,13 +977,13 @@ impl ValidationRule for NonUniformArithmeticRule {
                                     function: func_id,
                                     block: block_id,
                                     opcode,
-                                });
+                                }.into());
                             } else if is_partitioned {
                                 return Err(ValidationError::NonUniformBallotRequired {
                                     function: func_id,
                                     block: block_id,
                                     opcode,
-                                });
+                                }.into());
                             }
                         } else if let Some(operand_id) = inst.operands.get(5).and_then(id_ref) {
                             if let Ok(operand_result) = ResultId::try_from(operand_id) {
@@ -1003,8 +1004,8 @@ impl ValidationRule for NonUniformArithmeticRule {
                                                             function: func_id,
                                                             block: block_id,
                                                             opcode,
-                                                        },
-                                                    );
+                                                        }.into(),
+                        );
                                                 }
                                             }
                                         }
@@ -1024,8 +1025,8 @@ impl ValidationRule for NonUniformArithmeticRule {
                                                             function: func_id,
                                                             block: block_id,
                                                             opcode,
-                                                        },
-                                                    );
+                                                        }.into(),
+                        );
                                                 }
                                             }
                                         }
@@ -1036,8 +1037,8 @@ impl ValidationRule for NonUniformArithmeticRule {
                                                     function: func_id,
                                                     block: block_id,
                                                     opcode,
-                                                },
-                                            );
+                                                }.into(),
+                        );
                                         }
                                     }
                                 }
@@ -1059,7 +1060,7 @@ impl ValidationRule for NonUniformRotateRule {
         "non-uniform-rotate"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
             let func_id = func.def.as_ref().and_then(|d| d.result_id).map(|id| {
                 Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
@@ -1085,7 +1086,7 @@ impl ValidationRule for NonUniformRotateRule {
                                 block: block_id,
                                 opcode: Op::GroupNonUniformRotateKHR,
                                 expected: "scalar or vector of floating-point, integer or boolean type",
-                            });
+                            }.into());
                         }
                     }
 
@@ -1101,7 +1102,7 @@ impl ValidationRule for NonUniformRotateRule {
                                             function: func_id,
                                             block: block_id,
                                             opcode: Op::GroupNonUniformRotateKHR,
-                                        });
+                                        }.into());
                                     }
                                 }
                             }
@@ -1123,8 +1124,8 @@ impl ValidationRule for NonUniformRotateRule {
                                                     block: block_id,
                                                     opcode: Op::GroupNonUniformRotateKHR,
                                                     operand_name: "Delta",
-                                                },
-                                            );
+                                                }.into(),
+                        );
                                         }
                                     }
                                 }
@@ -1149,8 +1150,8 @@ impl ValidationRule for NonUniformRotateRule {
                                                         function: func_id,
                                                         block: block_id,
                                                         opcode: Op::GroupNonUniformRotateKHR,
-                                                    },
-                                                );
+                                                    }.into(),
+                        );
                                             }
                                         }
                                     }
@@ -1161,8 +1162,8 @@ impl ValidationRule for NonUniformRotateRule {
                                                 function: func_id,
                                                 block: block_id,
                                                 opcode: Op::GroupNonUniformRotateKHR,
-                                            },
-                                        );
+                                            }.into(),
+                        );
                                     }
                                 }
                             }

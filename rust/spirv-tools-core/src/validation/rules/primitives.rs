@@ -10,6 +10,7 @@ use rspirv::dr::Operand;
 use rspirv::spirv::{ExecutionModel, Op};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
+use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::{Id, ResultId};
 
@@ -47,7 +48,7 @@ impl ValidationRule for PrimitiveExecutionModelRule {
         "primitive-execution-model"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         // Check if we have Geometry execution model
         let has_geometry = ctx.module.entry_points.iter().any(|ep| {
             ep.operands.first().map_or(false, |op| {
@@ -83,7 +84,7 @@ impl ValidationRule for PrimitiveExecutionModelRule {
                             function: func_id,
                             block: block_id,
                             opcode: inst.class.opcode,
-                        });
+                        }.into());
                     }
                 }
             }
@@ -105,7 +106,7 @@ impl ValidationRule for StreamPrimitiveRule {
         "stream-primitive"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
             let func_id = func
                 .def
@@ -151,7 +152,7 @@ impl ValidationRule for StreamPrimitiveRule {
                                     function: func_id,
                                     block: block_id,
                                     opcode: inst.class.opcode,
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -162,7 +163,7 @@ impl ValidationRule for StreamPrimitiveRule {
                             function: func_id,
                             block: block_id,
                             opcode: inst.class.opcode,
-                        });
+                        }.into());
                     }
                 }
             }

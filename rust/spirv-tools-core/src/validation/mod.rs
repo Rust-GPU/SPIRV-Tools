@@ -52,6 +52,14 @@ pub use context::{ValidationContext, ValidationRule, run_rules, run_boxed_rules,
 pub mod cfg_analysis;
 pub use cfg_analysis::{ControlFlowGraph, MergeInfo, get_block_label, get_merge_info, get_terminator};
 
+// Source span information for rich error reporting
+pub mod span;
+pub use span::{
+    spanned_err, LabeledSpan, LabelKind, SourceLocation, SourceSpan, SpanLabel, SpanMap,
+    SpannedError, SpannedResult, SpannedValidationError, ValidationErrorExt, ValidationResult,
+    WithSpan,
+};
+
 // Validation rules organized by category
 pub mod rules;
 use rules::limits::all_limit_rules;
@@ -779,7 +787,25 @@ pub fn validate_module_with_options(
     env: TargetEnv,
     options: ValidationOptions,
 ) -> Result<(), ValidationError> {
-    validate_words(ModuleWords::from(Arc::from(words)), env, options).map(|_| ())
+    validate_words(ModuleWords::from(Arc::from(words)), env, options, None)
+        .map(|_| ())
+        .map_err(|e| e.into())
+}
+
+/// Validates a SPIR-V module with a span map for rich error reporting.
+///
+/// When validation fails, the returned error will contain source spans
+/// pointing to the definition sites of the offending IDs.
+///
+/// Use `assemble_text_with_spans` to get both the SPIR-V binary and span map.
+pub fn validate_module_with_spans(
+    words: &[u32],
+    env: TargetEnv,
+    options: ValidationOptions,
+    span_map: &span::SpanMap,
+) -> Result<(), SpannedValidationError> {
+    validate_words(ModuleWords::from(Arc::from(words)), env, options, Some(span_map))
+        .map(|_| ())
 }
 
 /// A cache of validated modules keyed by target environment and module contents.
@@ -811,7 +837,8 @@ impl ValidModuleCache {
                 return Ok(Arc::clone(cached));
             }
         }
-        let validated = validate_words(ModuleWords::from(Arc::from(words)), env, options.clone())?;
+        let validated = validate_words(ModuleWords::from(Arc::from(words)), env, options.clone(), None)
+            .map_err(|e: SpannedValidationError| e.error)?;
         let validated = Arc::new(validated);
         self.entries
             .insert((env, hash, options), Arc::clone(&validated));
@@ -823,7 +850,8 @@ fn validate_words(
     words: ModuleWords,
     env: TargetEnv,
     options: ValidationOptions,
-) -> Result<ValidModule, ValidationError> {
+    span_map: Option<&span::SpanMap>,
+) -> Result<ValidModule, SpannedValidationError> {
     if let Some(&schema) = words.as_slice().get(4) {
         Schema::validate(schema)?;
     }
@@ -836,7 +864,7 @@ fn validate_words(
             return Err(ValidationError::IdBoundExceedsLimit {
                 declared: header.bound.declared(),
                 limit,
-            });
+            }.into());
         }
     }
     let module_version = header.version();
@@ -886,6 +914,7 @@ fn validate_words(
         extensions: &extensions,
         entry_models: &entry_models,
         struct_member_counts: &struct_member_counts,
+        span_map,
     };
     run_rules(&validation_ctx, &all_limit_rules())?;
     run_rules(&validation_ctx, &rules::block_layout::all_block_layout_rules())?;
@@ -1028,7 +1057,8 @@ impl<'a> MaybeValidModule<'a> {
     ) -> Result<ValidModule, ValidationError> {
         match self {
             MaybeValidModule::Binary(words) => {
-                validate_words(ModuleWords::from(Arc::from(words)), env, options)
+                validate_words(ModuleWords::from(Arc::from(words)), env, options, None)
+                    .map_err(|e: SpannedValidationError| e.error)
             }
             MaybeValidModule::Text(text) => {
                 let binary = ModuleWords::from(Arc::<[u32]>::from(
@@ -1036,7 +1066,8 @@ impl<'a> MaybeValidModule<'a> {
                         .map_err(|err| ValidationError::Parse(err.to_string()))?
                         .into_boxed_slice(),
                 ));
-                validate_words(binary, env, options)
+                validate_words(binary, env, options, None)
+                    .map_err(|e: SpannedValidationError| e.error)
             }
         }
     }
@@ -1515,7 +1546,21 @@ fn validate_instruction_requirements(
             let ptrdiff_alternative = inst.class.opcode == rspirv::spirv::Op::PtrDiff
                 && (capabilities.contains(&rspirv::spirv::Capability::UntypedPointersKHR)
                     || capabilities.contains(&rspirv::spirv::Capability::PhysicalStorageBufferAddresses));
-            if !has_any_capability && !ptrdiff_alternative {
+            // Special case for AMD Shader Ballot: OpGroup*NonUniformAMD opcodes normally require
+            // Group capability, but when SPV_AMD_shader_ballot extension is present, the capability
+            // requirement is waived.
+            let amd_shader_ballot_alternative = matches!(
+                inst.class.opcode,
+                rspirv::spirv::Op::GroupIAddNonUniformAMD
+                    | rspirv::spirv::Op::GroupFAddNonUniformAMD
+                    | rspirv::spirv::Op::GroupFMinNonUniformAMD
+                    | rspirv::spirv::Op::GroupUMinNonUniformAMD
+                    | rspirv::spirv::Op::GroupSMinNonUniformAMD
+                    | rspirv::spirv::Op::GroupFMaxNonUniformAMD
+                    | rspirv::spirv::Op::GroupUMaxNonUniformAMD
+                    | rspirv::spirv::Op::GroupSMaxNonUniformAMD
+            ) && extensions.values.iter().any(|ext| ext.as_str() == "SPV_AMD_shader_ballot");
+            if !has_any_capability && !ptrdiff_alternative && !amd_shader_ballot_alternative {
                 // Report the first required capability for the error message
                 return Err(ValidationError::MissingInstructionCapability {
                     opcode: inst.class.opcode,

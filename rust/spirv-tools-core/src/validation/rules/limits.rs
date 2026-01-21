@@ -22,7 +22,9 @@ use rspirv::spirv::{Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
 use crate::validation::error::ValidationError;
+use crate::validation::span::ValidationErrorExt;
 use crate::validation::types::ResultId;
+use crate::validation::ValidationResult;
 use crate::validation::{
     LIMIT_MAX_ACCESS_CHAIN_INDEXES, LIMIT_MAX_CONTROL_FLOW_NESTING_DEPTH,
     LIMIT_MAX_FUNCTION_ARGS, LIMIT_MAX_GLOBAL_VARIABLES, LIMIT_MAX_LOCAL_VARIABLES,
@@ -41,18 +43,22 @@ impl ValidationRule for StructMemberLimitRule {
         "struct-member-limit"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let Some(&limit) = ctx.options.limits.get(&LIMIT_MAX_STRUCT_MEMBERS) else {
             return Ok(());
         };
 
-        for &member_count in ctx.struct_member_counts.values() {
+        for (&struct_id, &member_count) in ctx.struct_member_counts.iter() {
             if member_count as u32 > limit {
                 return Err(ValidationError::LimitExceeded {
                     limit_kind: LIMIT_MAX_STRUCT_MEMBERS,
                     limit,
                     found: member_count as u32,
-                });
+                }.at_id_ctx(
+                    struct_id,
+                    format!("struct has {} members, limit is {}", member_count, limit),
+                    ctx,
+                ));
             }
         }
         Ok(())
@@ -71,7 +77,7 @@ impl ValidationRule for FunctionArgLimitRule {
         "function-arg-limit"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let Some(&limit) = ctx.options.limits.get(&LIMIT_MAX_FUNCTION_ARGS) else {
             return Ok(());
         };
@@ -79,11 +85,16 @@ impl ValidationRule for FunctionArgLimitRule {
         for function in &ctx.module.functions {
             let arg_count = function.parameters.len() as u32;
             if arg_count > limit {
+                let func_id = function.def.as_ref().and_then(|d| d.result_id).unwrap_or(0);
                 return Err(ValidationError::LimitExceeded {
                     limit_kind: LIMIT_MAX_FUNCTION_ARGS,
                     limit,
                     found: arg_count,
-                });
+                }.at_id_ctx(
+                    func_id,
+                    format!("function has {} arguments, limit is {}", arg_count, limit),
+                    ctx,
+                ));
             }
         }
         Ok(())
@@ -102,7 +113,7 @@ impl ValidationRule for StructDepthLimitRule {
         "struct-depth-limit"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let Some(&limit) = ctx.options.limits.get(&LIMIT_MAX_STRUCT_DEPTH) else {
             return Ok(());
         };
@@ -157,7 +168,7 @@ impl ValidationRule for StructDepthLimitRule {
                                 limit_kind: LIMIT_MAX_STRUCT_DEPTH,
                                 limit,
                                 found: depth,
-                            });
+                            }.into());
                         }
                     }
                 }
@@ -180,7 +191,7 @@ impl ValidationRule for GlobalVariableLimitRule {
         "global-variable-limit"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let Some(&limit) = ctx.options.limits.get(&LIMIT_MAX_GLOBAL_VARIABLES) else {
             return Ok(());
         };
@@ -197,7 +208,7 @@ impl ValidationRule for GlobalVariableLimitRule {
                 limit_kind: LIMIT_MAX_GLOBAL_VARIABLES,
                 limit,
                 found: globals,
-            });
+            }.into());
         }
         Ok(())
     }
@@ -211,7 +222,7 @@ impl ValidationRule for LocalVariableLimitRule {
         "local-variable-limit"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let Some(&limit) = ctx.options.limits.get(&LIMIT_MAX_LOCAL_VARIABLES) else {
             return Ok(());
         };
@@ -236,7 +247,7 @@ impl ValidationRule for LocalVariableLimitRule {
                 limit_kind: LIMIT_MAX_LOCAL_VARIABLES,
                 limit,
                 found: locals,
-            });
+            }.into());
         }
         Ok(())
     }
@@ -250,7 +261,7 @@ impl ValidationRule for ControlFlowNestingLimitRule {
         "control-flow-nesting-limit"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let Some(&limit) = ctx.options.limits.get(&LIMIT_MAX_CONTROL_FLOW_NESTING_DEPTH) else {
             return Ok(());
         };
@@ -279,7 +290,7 @@ impl ValidationRule for ControlFlowNestingLimitRule {
                 limit_kind: LIMIT_MAX_CONTROL_FLOW_NESTING_DEPTH,
                 limit,
                 found: max_depth,
-            });
+            }.into());
         }
         Ok(())
     }
@@ -297,7 +308,7 @@ impl ValidationRule for SwitchBranchLimitRule {
         "switch-branch-limit"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let Some(&limit) = ctx.options.limits.get(&LIMIT_MAX_SWITCH_BRANCHES) else {
             return Ok(());
         };
@@ -317,7 +328,7 @@ impl ValidationRule for SwitchBranchLimitRule {
                                 limit_kind: LIMIT_MAX_SWITCH_BRANCHES,
                                 limit,
                                 found: branches,
-                            });
+                            }.into());
                         }
                     }
                 }
@@ -339,7 +350,7 @@ impl ValidationRule for AccessChainLimitRule {
         "access-chain-limit"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let Some(&limit) = ctx.options.limits.get(&LIMIT_MAX_ACCESS_CHAIN_INDEXES) else {
             return Ok(());
         };
@@ -353,7 +364,7 @@ impl ValidationRule for AccessChainLimitRule {
             Op::UntypedInBoundsPtrAccessChainKHR,
         ];
 
-        let check_inst = |inst: &Instruction| -> Result<(), ValidationError> {
+        let check_inst = |inst: &Instruction| -> ValidationResult {
             if !ACCESS_CHAIN_OPCODES.contains(&inst.class.opcode) {
                 return Ok(());
             }
@@ -372,7 +383,7 @@ impl ValidationRule for AccessChainLimitRule {
                     limit_kind: LIMIT_MAX_ACCESS_CHAIN_INDEXES,
                     limit,
                     found: indexes,
-                });
+                }.into());
             }
             Ok(())
         };

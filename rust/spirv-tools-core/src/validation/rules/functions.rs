@@ -13,6 +13,7 @@ use rspirv::dr::Operand;
 use rspirv::spirv::{FunctionControl, Op};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
+use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::{Id, ResultId, TypeId};
 
@@ -32,7 +33,7 @@ impl ValidationRule for FunctionDefinitionRule {
         "function-definition"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for function in &ctx.module.functions {
             let Some(def) = &function.def else {
                 continue;
@@ -68,7 +69,7 @@ impl ValidationRule for FunctionDefinitionRule {
                         function: func_id,
                         function_type: type_id,
                         expected: "OpTypeFunction",
-                    });
+                    }.into());
                 }
             }
 
@@ -90,7 +91,7 @@ impl ValidationRule for FunctionDefinitionRule {
                             function: func_id,
                             result_type,
                             function_type: func_type,
-                        });
+                        }.into());
                     }
                 }
             }
@@ -116,7 +117,7 @@ impl ValidationRule for FunctionParameterRule {
         "function-parameter"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for function in &ctx.module.functions {
             let Some(def) = &function.def else {
                 continue;
@@ -153,7 +154,7 @@ impl ValidationRule for FunctionParameterRule {
                         function: func_id,
                         expected: expected_param_count,
                         found: function.parameters.len(),
-                    });
+                    }.into());
                 }
             }
 
@@ -185,7 +186,7 @@ impl ValidationRule for FunctionParameterRule {
                                 parameter: param,
                                 expected: expected_type,
                                 found: actual_type,
-                            });
+                            }.into());
                         }
                     }
                 }
@@ -214,7 +215,7 @@ impl ValidationRule for FunctionCallRule {
         "function-call"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for function in &ctx.module.functions {
             let function_id = function
                 .def
@@ -255,7 +256,7 @@ impl ValidationRule for FunctionCallRule {
                                     function: func_id,
                                     target,
                                     found: opcode,
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -282,7 +283,7 @@ impl ValidationRule for FunctionCallRule {
                                     function: func_id,
                                     expected,
                                     found,
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -312,7 +313,7 @@ impl ValidationRule for FunctionCallRule {
                             function: func_id,
                             expected: parameter_count,
                             found: argument_count,
-                        });
+                        }.into());
                     }
 
                     // Check argument types match parameter types
@@ -348,7 +349,7 @@ impl ValidationRule for FunctionCallRule {
                                         argument,
                                         expected,
                                         found,
-                                    });
+                                    }.into());
                                 }
                             }
                         }
@@ -378,7 +379,7 @@ impl ValidationRule for ReturnValueRule {
         "return-value"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for function in &ctx.module.functions {
             let Some(def) = &function.def else {
                 continue;
@@ -415,7 +416,7 @@ impl ValidationRule for ReturnValueRule {
                                     return Err(ValidationError::MissingReturnValue {
                                         function: function_id,
                                         expected,
-                                    });
+                                    }.into());
                                 }
                             }
                         }
@@ -423,7 +424,7 @@ impl ValidationRule for ReturnValueRule {
                             if is_void {
                                 return Err(ValidationError::ReturnValueInVoidFunction {
                                     function: function_id,
-                                });
+                                }.into());
                             }
 
                             // Check that the returned value has the correct type
@@ -437,8 +438,8 @@ impl ValidationRule for ReturnValueRule {
                                                         function: function_id,
                                                         expected,
                                                         found: *value_type,
-                                                    },
-                                                );
+                                                    }.into(),
+                        );
                                             }
                                         }
                                     }
@@ -471,7 +472,7 @@ impl ValidationRule for FunctionVariableRule {
         "function-variable"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for function in &ctx.module.functions {
             let function_id = function
                 .def
@@ -504,7 +505,7 @@ impl ValidationRule for FunctionVariableRule {
                                     function: function_id,
                                     variable: variable_id,
                                     storage_class: sc,
-                                });
+                                }.into());
                             }
                         }
 
@@ -513,7 +514,110 @@ impl ValidationRule for FunctionVariableRule {
                             return Err(ValidationError::FunctionVariableNotInEntryBlock {
                                 function: function_id,
                                 variable: variable_id,
-                            });
+                            }.into());
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Function Use Rule
+// ============================================================================
+
+/// Validates that function result IDs are only used in acceptable contexts.
+///
+/// From the SPIR-V spec, function IDs can only be used in specific operations:
+/// - OpGroupDecorate, OpDecorate (decorating the function)
+/// - OpEnqueueKernel
+/// - OpEntryPoint
+/// - OpExecutionMode, OpExecutionModeId
+/// - OpFunctionCall
+/// - OpGetKernelNDrangeSubGroupCount, OpGetKernelNDrangeMaxSubGroupSize
+/// - OpGetKernelWorkGroupSize, OpGetKernelPreferredWorkGroupSizeMultiple
+/// - OpGetKernelLocalSizeForSubgroupCount, OpGetKernelMaxNumSubgroups
+/// - OpName
+/// - OpCooperativeMatrixPerElementOpNV, OpCooperativeMatrixReduceNV
+/// - OpCooperativeMatrixLoadTensorNV
+/// - OpConditionalEntryPointINTEL
+/// - NonSemantic/Debug instructions
+pub struct FunctionUseRule;
+
+impl FunctionUseRule {
+    /// Returns true if the opcode is an acceptable use of a function result ID.
+    fn is_acceptable_function_use(opcode: Op) -> bool {
+        matches!(
+            opcode,
+            Op::GroupDecorate
+                | Op::Decorate
+                | Op::EnqueueKernel
+                | Op::EntryPoint
+                | Op::ExecutionMode
+                | Op::ExecutionModeId
+                | Op::FunctionCall
+                | Op::GetKernelNDrangeSubGroupCount
+                | Op::GetKernelNDrangeMaxSubGroupSize
+                | Op::GetKernelWorkGroupSize
+                | Op::GetKernelPreferredWorkGroupSizeMultiple
+                | Op::GetKernelLocalSizeForSubgroupCount
+                | Op::GetKernelMaxNumSubgroups
+                | Op::Name
+                | Op::CooperativeMatrixPerElementOpNV
+                | Op::CooperativeMatrixReduceNV
+                | Op::CooperativeMatrixLoadTensorNV
+                | Op::ConditionalEntryPointINTEL
+        )
+    }
+
+    /// Returns true if the instruction is a NonSemantic or Debug instruction.
+    fn is_non_semantic_or_debug(opcode: Op) -> bool {
+        // NonSemantic instructions start at 5000+ range
+        // Debug instructions include various debug ops
+        matches!(
+            opcode,
+            Op::ExtInst | Op::Line | Op::NoLine | Op::ModuleProcessed
+        )
+    }
+}
+
+impl ValidationRule for FunctionUseRule {
+    fn name(&self) -> &'static str {
+        "function-use"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
+        // Collect all function IDs
+        let mut function_ids: std::collections::HashSet<u32> = std::collections::HashSet::new();
+        for function in &ctx.module.functions {
+            if let Some(def) = &function.def {
+                if let Some(id) = def.result_id {
+                    function_ids.insert(id);
+                }
+            }
+        }
+
+        // Check all instructions for uses of function IDs
+        for inst in ctx.module.all_inst_iter() {
+            let opcode = inst.class.opcode;
+
+            // Skip if this is an acceptable use of functions
+            if Self::is_acceptable_function_use(opcode) || Self::is_non_semantic_or_debug(opcode) {
+                continue;
+            }
+
+            // Check each operand to see if it references a function
+            for operand in &inst.operands {
+                if let Operand::IdRef(id) = operand {
+                    if function_ids.contains(id) {
+                        if let Ok(func_id) = Id::try_from(*id) {
+                            return Err(ValidationError::FunctionInvalidUse {
+                                function: func_id,
+                                use_opcode: opcode,
+                            }.into());
                         }
                     }
                 }
@@ -539,7 +643,7 @@ impl ValidationRule for FunctionDeclarationOrderRule {
         "function-declaration-order"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let mut seen_definition = false;
 
         for function in &ctx.module.functions {
@@ -556,7 +660,7 @@ impl ValidationRule for FunctionDeclarationOrderRule {
 
                     return Err(ValidationError::FunctionDeclarationAfterDefinition {
                         function: function_id,
-                    });
+                    }.into());
                 }
             } else {
                 seen_definition = true;
@@ -582,7 +686,7 @@ impl ValidationRule for FunctionControlRule {
         "function-control"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for function in &ctx.module.functions {
             let Some(def) = &function.def else {
                 continue;
@@ -609,7 +713,7 @@ impl ValidationRule for FunctionControlRule {
             {
                 return Err(ValidationError::FunctionControlInlineAndDontInline {
                     function: function_id,
-                });
+                }.into());
             }
         }
 
@@ -629,6 +733,7 @@ pub fn all_function_rules() -> Vec<&'static dyn ValidationRule> {
         &FunctionCallRule,
         &ReturnValueRule,
         &FunctionVariableRule,
+        &FunctionUseRule,
         &FunctionDeclarationOrderRule,
         &FunctionControlRule,
     ]

@@ -14,6 +14,7 @@ use rspirv::dr::Operand;
 use rspirv::spirv::{Capability, MemoryModel, Op, Scope};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
+use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::helpers::is_constant_opcode;
 use crate::validation::types::ResultId;
@@ -114,7 +115,7 @@ impl ValidationRule for ExecutionScopeRule {
         "execution-scope"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let module = ctx.module();
         let is_vulkan = ctx.is_vulkan_env();
         let has_shader_cap = ctx.has_capability(Capability::Shader);
@@ -157,13 +158,13 @@ impl ExecutionScopeRule {
         is_vulkan: bool,
         has_shader_cap: bool,
         has_cooperative_matrix_nv: bool,
-    ) -> Result<(), ValidationError> {
+    ) -> ValidationResult {
         let is_const = is_constant_id(scope_id, ctx);
 
         if !is_const {
             // Must be constant with Shader capability (unless CooperativeMatrixNV)
             if has_shader_cap && !has_cooperative_matrix_nv {
-                return Err(ValidationError::ScopeNotConstantWithShader);
+                return Err(ValidationError::ScopeNotConstantWithShader.into());
             }
             return Ok(());
         }
@@ -175,7 +176,7 @@ impl ExecutionScopeRule {
 
         // Validate scope value is valid
         if !is_valid_scope(value) {
-            return Err(ValidationError::ScopeInvalidValue { value });
+            return Err(ValidationError::ScopeInvalidValue { value }.into());
         }
 
         // Vulkan-specific validation
@@ -187,12 +188,12 @@ impl ExecutionScopeRule {
                 && opcode != Op::GroupNonUniformQuadAnyKHR
                 && value != Scope::Subgroup as u32
             {
-                return Err(ValidationError::ScopeNonUniformRequiresSubgroup { opcode });
+                return Err(ValidationError::ScopeNonUniformRequiresSubgroup { opcode }.into());
             }
 
             // Execution scope is limited to Workgroup or Subgroup in Vulkan
             if value != Scope::Workgroup as u32 && value != Scope::Subgroup as u32 {
-                return Err(ValidationError::ScopeExecutionLimitedInVulkan { opcode });
+                return Err(ValidationError::ScopeExecutionLimitedInVulkan { opcode }.into());
             }
         }
 
@@ -203,7 +204,7 @@ impl ExecutionScopeRule {
             && value != Scope::Subgroup as u32
             && value != Scope::Workgroup as u32
         {
-            return Err(ValidationError::ScopeNonUniformLimited { opcode });
+            return Err(ValidationError::ScopeNonUniformLimited { opcode }.into());
         }
 
         Ok(())
@@ -220,7 +221,7 @@ impl ValidationRule for MemoryScopeRule {
         "memory-scope"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let module = ctx.module();
         let is_vulkan = ctx.is_vulkan_env();
         let has_shader_cap = ctx.has_capability(Capability::Shader);
@@ -291,13 +292,13 @@ impl MemoryScopeRule {
         _has_subgroup_ballot: bool,
         _has_subgroup_vote: bool,
         has_cooperative_matrix_nv: bool,
-    ) -> Result<(), ValidationError> {
+    ) -> ValidationResult {
         let is_const = is_constant_id(scope_id, ctx);
 
         if !is_const {
             // Must be constant with Shader capability (unless CooperativeMatrixNV)
             if has_shader_cap && !has_cooperative_matrix_nv {
-                return Err(ValidationError::ScopeNotConstantWithShader);
+                return Err(ValidationError::ScopeNotConstantWithShader.into());
             }
             return Ok(());
         }
@@ -309,12 +310,12 @@ impl MemoryScopeRule {
 
         // Validate scope value is valid
         if !is_valid_scope(value) {
-            return Err(ValidationError::ScopeInvalidValue { value });
+            return Err(ValidationError::ScopeInvalidValue { value }.into());
         }
 
         // QueueFamilyKHR requires VulkanMemoryModelKHR capability
         if value == Scope::QueueFamily as u32 && !has_vulkan_memory_model {
-            return Err(ValidationError::ScopeQueueFamilyRequiresVulkanMemoryModel { opcode });
+            return Err(ValidationError::ScopeQueueFamilyRequiresVulkanMemoryModel { opcode }.into());
         }
 
         // Device scope with VulkanMemoryModel requires VulkanMemoryModelDeviceScopeKHR
@@ -322,7 +323,7 @@ impl MemoryScopeRule {
             && uses_vulkan_memory_model
             && !has_vulkan_memory_model_device_scope
         {
-            return Err(ValidationError::ScopeDeviceRequiresDeviceScopeCapability);
+            return Err(ValidationError::ScopeDeviceRequiresDeviceScopeCapability.into());
         }
 
         // Vulkan-specific validation
@@ -335,11 +336,18 @@ impl MemoryScopeRule {
                 && value != Scope::ShaderCallKHR as u32
                 && value != Scope::QueueFamily as u32
             {
-                return Err(ValidationError::ScopeMemoryLimitedInVulkan { opcode });
+                return Err(ValidationError::ScopeMemoryLimitedInVulkan { opcode }.into());
             }
 
-            // Note: Vulkan 1.0 specific Subgroup scope validation would require
-            // target environment version detection which is not yet implemented
+            // Vulkan 1.0 specific: Subgroup scope requires SubgroupBallotKHR or SubgroupVoteKHR
+            if ctx.is_vulkan_1_0() && value == Scope::Subgroup as u32 {
+                let has_subgroup_ballot =
+                    ctx.has_capability(Capability::SubgroupBallotKHR);
+                let has_subgroup_vote = ctx.has_capability(Capability::SubgroupVoteKHR);
+                if !has_subgroup_ballot && !has_subgroup_vote {
+                    return Err(ValidationError::ScopeSubgroupNotAllowedVulkan10 { opcode }.into());
+                }
+            }
         }
 
         Ok(())

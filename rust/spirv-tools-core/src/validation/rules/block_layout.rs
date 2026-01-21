@@ -13,7 +13,9 @@ use rspirv::dr::Module;
 use rspirv::spirv::{Decoration, Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
+use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
+use crate::validation::span::SpannedValidationError;
 use crate::validation::types::{MemberIndex, ResultId, TypeId};
 
 // ============================================================================
@@ -32,7 +34,7 @@ impl ValidationRule for BlockLayoutRule {
         ctx.options.skip_block_layout
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let scalar_layout =
             ctx.options.scalar_block_layout || ctx.options.workgroup_scalar_block_layout;
         let relax_layout = ctx.options.relax_block_layout
@@ -62,7 +64,7 @@ impl ValidationRule for BlockLayoutRule {
                     return Err(ValidationError::InvalidBlockLayout {
                         struct_type: struct_id,
                         reason: "missing OpMemberDecorate Offset".to_string(),
-                    });
+                    }.into());
                 };
                 let rspirv::dr::Operand::IdRef(member_type_id_raw) = operand else {
                     continue;
@@ -90,7 +92,7 @@ impl ValidationRule for BlockLayoutRule {
                             struct_type: struct_id,
                             reason: "runtime array member must be the final struct member"
                                 .to_string(),
-                        });
+                        }.into());
                     }
                     if let Some(stride) = array_stride(ctx.module, member_result_id) {
                         if stride % alignment != 0 {
@@ -99,7 +101,7 @@ impl ValidationRule for BlockLayoutRule {
                                 reason: format!(
                                     "runtime array stride {stride} is not aligned to {alignment}"
                                 ),
-                            });
+                            }.into());
                         }
                     }
                     // Runtime array must be last; remaining checks do not apply.
@@ -113,7 +115,7 @@ impl ValidationRule for BlockLayoutRule {
                                 reason: format!(
                                     "array stride {stride} is not aligned to {alignment}"
                                 ),
-                            });
+                            }.into());
                         }
                         if let Some(rspirv::dr::Operand::IdRef(elem_raw)) =
                             member_inst.operands.first()
@@ -128,7 +130,7 @@ impl ValidationRule for BlockLayoutRule {
                                             reason: format!(
                                                 "array stride {stride} is smaller than element size {elem_size}"
                                             ),
-                                        });
+                                        }.into());
                                     }
                                 }
                             }
@@ -137,17 +139,17 @@ impl ValidationRule for BlockLayoutRule {
                 }
                 if member_inst.class.opcode == Op::TypeMatrix {
                     let stride = member_matrix_stride(ctx.module, struct_id, MemberIndex(index as u32))
-                        .ok_or_else(|| ValidationError::InvalidBlockLayout {
+                        .ok_or_else(|| -> SpannedValidationError { ValidationError::InvalidBlockLayout {
                             struct_type: struct_id,
                             reason: "matrix member is missing MatrixStride".to_string(),
-                        })?;
+                        }.into() })?;
                     if stride % alignment != 0 {
                         return Err(ValidationError::InvalidBlockLayout {
                             struct_type: struct_id,
                             reason: format!(
                                 "matrix stride {stride} is not aligned to {alignment}"
                             ),
-                        });
+                        }.into());
                     }
                     let (column_type, _) = matrix_info(member_inst);
                     if let Some(col_ty) = column_type {
@@ -160,7 +162,7 @@ impl ValidationRule for BlockLayoutRule {
                                     reason: format!(
                                         "matrix stride {stride} is smaller than column size {col_size}"
                                     ),
-                                });
+                                }.into());
                             }
                             if relax_layout
                                 && !scalar_layout
@@ -171,7 +173,7 @@ impl ValidationRule for BlockLayoutRule {
                                 return Err(ValidationError::InvalidBlockLayout {
                                     struct_type: struct_id,
                                     reason: "row-major matrix straddles 16-byte boundary under relaxed layout".to_string(),
-                                });
+                                }.into());
                             }
                         }
                     }
@@ -194,7 +196,7 @@ impl ValidationRule for BlockLayoutRule {
                                 "member offset {offset} is not aligned to vector scalar element size {}",
                                 scalar_align
                             ),
-                        });
+                        }.into());
                     }
                     let Some(vector_size) =
                         type_layout_size(member_type_id, ctx.definitions, &mut HashSet::new())
@@ -206,7 +208,7 @@ impl ValidationRule for BlockLayoutRule {
                             struct_type: struct_id,
                             reason: "vector member straddles 16-byte boundary under relaxed layout"
                                 .to_string(),
-                        });
+                        }.into());
                     }
                 } else if member_inst.class.opcode == Op::TypeMatrix {
                     if let Some(stride) =
@@ -218,7 +220,7 @@ impl ValidationRule for BlockLayoutRule {
                                 reason: format!(
                                     "matrix stride {stride} is not aligned to {alignment}"
                                 ),
-                            });
+                            }.into());
                         }
                         let (column_type, _) = matrix_info(member_inst);
                         if let Some(col_ty) = column_type {
@@ -231,7 +233,7 @@ impl ValidationRule for BlockLayoutRule {
                                         reason: format!(
                                             "matrix stride {stride} is smaller than column size {col_size}"
                                         ),
-                                    });
+                                    }.into());
                                 }
                             }
                         }
@@ -242,7 +244,7 @@ impl ValidationRule for BlockLayoutRule {
                         reason: format!(
                             "member offset {offset} is not aligned to required alignment {alignment}"
                         ),
-                    });
+                    }.into());
                 }
 
                 let next_offset = offset.saturating_add(size);
@@ -255,7 +257,7 @@ impl ValidationRule for BlockLayoutRule {
                         return Err(ValidationError::InvalidBlockLayout {
                             struct_type: struct_id,
                             reason: "member offsets overlap".to_string(),
-                        });
+                        }.into());
                     }
                 }
             }

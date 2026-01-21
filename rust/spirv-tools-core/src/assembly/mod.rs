@@ -16,8 +16,9 @@ pub mod options;
 pub mod parser;
 
 pub use assembler::{
-    assemble_text, assemble_text_with_env, assemble_text_with_options, AssemblyError,
-    AssemblyTranslator, ModuleBuilder,
+    assemble_text, assemble_text_with_env, assemble_text_with_options,
+    assemble_text_with_spans, assemble_text_with_spans_and_env, assemble_text_with_spans_full,
+    AssemblyError, AssemblyTranslator, AssemblyWithSpans, ModuleBuilder,
 };
 pub use ext_inst::{
     lookup_custom_ext_inst_name, lookup_custom_ext_inst_opcode, ExtInstImportInfo, ExtInstSetKind,

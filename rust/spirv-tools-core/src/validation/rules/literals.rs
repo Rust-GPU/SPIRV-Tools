@@ -15,6 +15,7 @@ use rspirv::dr::Operand;
 use rspirv::spirv::Op;
 
 use crate::validation::context::{ValidationContext, ValidationRule};
+use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::{Id, ResultId, TypeId};
 
@@ -113,7 +114,7 @@ impl ValidationRule for ConstantLiteralEncodingRule {
         "constant-literal-encoding"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         // Process all OpConstant and OpSpecConstant instructions
         for inst in ctx.module.types_global_values.iter() {
             let op = inst.class.opcode;
@@ -179,7 +180,7 @@ impl ValidationRule for ConstantLiteralEncodingRule {
                         type_id,
                         bit_width,
                         is_signed,
-                    });
+                    }.into());
                 }
             }
         }

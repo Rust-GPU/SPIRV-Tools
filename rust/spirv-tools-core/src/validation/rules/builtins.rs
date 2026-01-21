@@ -13,6 +13,7 @@ use rspirv::dr::{Instruction, Module};
 use rspirv::spirv::{BuiltIn, Capability, Decoration, ExecutionModel, Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
+use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::op_ext::BuiltInExt;
 use crate::validation::types::ResultId;
@@ -29,7 +30,7 @@ impl ValidationRule for BuiltinLocationExclusivityRule {
         "builtin-location-exclusivity"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let module = ctx.module;
 
         let mut built_ins: HashSet<ResultId> = HashSet::new();
@@ -70,7 +71,7 @@ impl ValidationRule for BuiltinLocationExclusivityRule {
                 continue;
             };
             if built_ins.contains(&id) {
-                return Err(ValidationError::LocationConflictsWithBuiltIn);
+                return Err(ValidationError::LocationConflictsWithBuiltIn.into());
             }
         }
 
@@ -90,9 +91,8 @@ impl ValidationRule for BuiltinStorageClassRule {
         "builtin-storage-classes"
     }
 
-    fn validate(&self, ctx: &ValidationContext<'_>) -> Result<(), ValidationError> {
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let module = ctx.module;
-        let definitions = ctx.definitions;
         let entry_models = ctx.entry_models;
         let capabilities = ctx.declared_capabilities;
         let env = ctx.env;
@@ -147,7 +147,7 @@ impl ValidationRule for BuiltinStorageClassRule {
 
             // Environment-specific built-in restrictions
             if env.is_vulkan() && (builtin == BuiltIn::VertexId || builtin == BuiltIn::InstanceId) {
-                return Err(ValidationError::BuiltInDisallowedForEnv { builtin, env });
+                return Err(ValidationError::BuiltInDisallowedForEnv { builtin, env }.into());
             }
             if !env.is_vulkan()
                 && matches!(
@@ -155,7 +155,7 @@ impl ValidationRule for BuiltinStorageClassRule {
                     BuiltIn::ShadingRateKHR | BuiltIn::PrimitiveShadingRateKHR
                 )
             {
-                return Err(ValidationError::BuiltInDisallowedForEnv { builtin, env });
+                return Err(ValidationError::BuiltInDisallowedForEnv { builtin, env }.into());
             }
             if !env.is_vulkan()
                 && matches!(
@@ -166,7 +166,7 @@ impl ValidationRule for BuiltinStorageClassRule {
                         | BuiltIn::CullPrimitiveEXT
                 )
             {
-                return Err(ValidationError::BuiltInDisallowedForEnv { builtin, env });
+                return Err(ValidationError::BuiltInDisallowedForEnv { builtin, env }.into());
             }
 
             // Basic storage class check
@@ -175,7 +175,7 @@ impl ValidationRule for BuiltinStorageClassRule {
                 return Err(ValidationError::InvalidBuiltInStorageClass {
                     builtin,
                     storage_class,
-                });
+                }.into());
             }
 
             // ViewIndex special case
@@ -192,7 +192,7 @@ impl ValidationRule for BuiltinStorageClassRule {
                         ExecutionModel::MeshEXT,
                         ExecutionModel::MeshNV,
                     ],
-                });
+                }.into());
             }
 
             // Capability requirements
@@ -204,7 +204,7 @@ impl ValidationRule for BuiltinStorageClassRule {
             if builtin.is_fragment_only()
                 && !entry_models.contains(&ExecutionModel::Fragment)
             {
-                return Err(ValidationError::BuiltInRequiresFragment { builtin });
+                return Err(ValidationError::BuiltInRequiresFragment { builtin }.into());
             }
 
             // Barycentric built-ins must be Input
@@ -212,14 +212,14 @@ impl ValidationRule for BuiltinStorageClassRule {
                 return Err(ValidationError::InvalidBuiltInStorageClass {
                     builtin,
                     storage_class,
-                });
+                }.into());
             }
 
             if builtin == BuiltIn::ShadingRateKHR && storage_class != StorageClass::Input {
                 return Err(ValidationError::InvalidBuiltInStorageClass {
                     builtin,
                     storage_class,
-                });
+                }.into());
             }
 
             // Mesh output-only built-ins
@@ -227,7 +227,7 @@ impl ValidationRule for BuiltinStorageClassRule {
                 return Err(ValidationError::InvalidBuiltInStorageClass {
                     builtin,
                     storage_class,
-                });
+                }.into());
             }
 
             if builtin == BuiltIn::PrimitiveShadingRateKHR && storage_class != StorageClass::Output
@@ -235,7 +235,7 @@ impl ValidationRule for BuiltinStorageClassRule {
                 return Err(ValidationError::InvalidBuiltInStorageClass {
                     builtin,
                     storage_class,
-                });
+                }.into());
             }
 
             // Compute-only built-ins
@@ -246,7 +246,7 @@ impl ValidationRule for BuiltinStorageClassRule {
                 return Err(ValidationError::BuiltInRequiresExecutionModel {
                     builtin,
                     allowed: vec![ExecutionModel::GLCompute, ExecutionModel::Kernel],
-                });
+                }.into());
             }
 
             // Kernel-only built-ins
@@ -254,22 +254,7 @@ impl ValidationRule for BuiltinStorageClassRule {
                 return Err(ValidationError::BuiltInRequiresExecutionModel {
                     builtin,
                     allowed: vec![ExecutionModel::Kernel],
-                });
-            }
-
-            // Type checks for selected built-ins
-            if let Ok(var_id) = ResultId::try_from(*target) {
-                if let Some(pointee) = resolve_builtin_pointee_type(definitions, var_id) {
-                    if let Some(error) = validate_builtin_type(builtin, pointee, definitions) {
-                        return Err(error);
-                    }
-                }
-
-                if matches!(builtin, BuiltIn::TessLevelOuter | BuiltIn::TessLevelInner)
-                    && !has_patch_decoration(module, var_id)
-                {
-                    return Err(ValidationError::BuiltInRequiresPatchDecoration { builtin });
-                }
+                }.into());
             }
 
             // Execution model allowlists
@@ -278,7 +263,7 @@ impl ValidationRule for BuiltinStorageClassRule {
                     return Err(ValidationError::BuiltInRequiresExecutionModel {
                         builtin,
                         allowed: models.to_vec(),
-                    });
+                    }.into());
                 }
             }
         }
@@ -293,7 +278,7 @@ impl ValidationRule for BuiltinStorageClassRule {
 fn check_builtin_capability(
     builtin: BuiltIn,
     capabilities: &HashSet<Capability>,
-) -> Result<(), ValidationError> {
+) -> ValidationResult {
     let required: Option<&[Capability]> = match builtin {
         BuiltIn::ShadingRateKHR | BuiltIn::PrimitiveShadingRateKHR => {
             Some(&[Capability::FragmentShadingRateKHR])
@@ -366,7 +351,7 @@ fn check_builtin_capability(
             return Err(ValidationError::BuiltInRequiresCapability {
                 builtin,
                 capability: required_caps[0],
-            });
+            }.into());
         }
     }
     Ok(())
@@ -692,18 +677,46 @@ fn validate_builtin_type(
             }
         }
 
-        // Mesh shader built-ins (CullPrimitiveEXT, PrimitivePointIndicesEXT, etc.)
-        // have complex type validation depending on PerPrimitiveEXT decoration.
-        // The C++ validator uses ValidateMeshBuiltinInterfaceRules which checks
-        // for bool/array-of-bool types. For now we skip type validation for these
-        // as the existing tests don't have complete mesh shader interface decoration.
-        // TODO: Add full mesh shader type validation with PerPrimitiveEXT checks.
-        BuiltIn::CullPrimitiveEXT
-        | BuiltIn::PrimitivePointIndicesEXT
-        | BuiltIn::PrimitiveLineIndicesEXT
-        | BuiltIn::PrimitiveTriangleIndicesEXT => {
-            // Type validation for mesh shader builtins requires checking
-            // PerPrimitiveEXT decoration which we don't fully support yet.
+        // === Mesh shader built-ins ===
+
+        // CullPrimitiveEXT: must be bool or array<bool>
+        BuiltIn::CullPrimitiveEXT => {
+            if pointee.class.opcode != Op::TypeBool && !is_bool_array(pointee, definitions) {
+                return Some(ValidationError::InvalidBuiltInType {
+                    builtin,
+                    expected: "bool or array<bool>",
+                });
+            }
+        }
+
+        // PrimitivePointIndicesEXT: must be array<u32>
+        BuiltIn::PrimitivePointIndicesEXT => {
+            if !is_u32_array(pointee, definitions) {
+                return Some(ValidationError::InvalidBuiltInType {
+                    builtin,
+                    expected: "array<u32>",
+                });
+            }
+        }
+
+        // PrimitiveLineIndicesEXT: must be array<uvec2>
+        BuiltIn::PrimitiveLineIndicesEXT => {
+            if !is_vec2_u32_array(pointee, definitions) {
+                return Some(ValidationError::InvalidBuiltInType {
+                    builtin,
+                    expected: "array<uvec2>",
+                });
+            }
+        }
+
+        // PrimitiveTriangleIndicesEXT: must be array<uvec3>
+        BuiltIn::PrimitiveTriangleIndicesEXT => {
+            if !is_vec3_u32_array(pointee, definitions) {
+                return Some(ValidationError::InvalidBuiltInType {
+                    builtin,
+                    expected: "array<uvec3>",
+                });
+            }
         }
 
         _ => {}
@@ -787,7 +800,7 @@ fn is_vec4_i32(ty: &Instruction, definitions: &HashMap<ResultId, Instruction>) -
     is_vec_of(ty, definitions, 4, Op::TypeInt, 32)
 }
 
-// These functions are prepared for mesh shader type validation (TODO)
+// Helper functions for mesh shader type validation
 #[allow(dead_code)]
 fn is_vec2_i32(ty: &Instruction, definitions: &HashMap<ResultId, Instruction>) -> bool {
     is_vec_of(ty, definitions, 2, Op::TypeInt, 32)
@@ -881,8 +894,8 @@ fn is_mat4x3_f32(ty: &Instruction, definitions: &HashMap<ResultId, Instruction>)
     is_vec3_f32(column_type, definitions)
 }
 
-#[allow(dead_code)]
-fn is_vec2_i32_array(ty: &Instruction, definitions: &HashMap<ResultId, Instruction>) -> bool {
+/// Check if type is array of u32 (for PrimitivePointIndicesEXT).
+fn is_u32_array(ty: &Instruction, definitions: &HashMap<ResultId, Instruction>) -> bool {
     if ty.class.opcode != Op::TypeArray {
         return false;
     }
@@ -896,11 +909,23 @@ fn is_vec2_i32_array(ty: &Instruction, definitions: &HashMap<ResultId, Instructi
     let Some(element_type) = definitions.get(&element_type_id) else {
         return false;
     };
-    is_vec2_i32(element_type, definitions)
+    // Must be u32 (unsigned 32-bit integer)
+    if element_type.class.opcode != Op::TypeInt {
+        return false;
+    }
+    let width = element_type.operands.first().and_then(|op| match op {
+        rspirv::dr::Operand::LiteralBit32(w) => Some(*w),
+        _ => None,
+    });
+    let signedness = element_type.operands.get(1).and_then(|op| match op {
+        rspirv::dr::Operand::LiteralBit32(s) => Some(*s),
+        _ => None,
+    });
+    width == Some(32) && signedness == Some(0)
 }
 
-#[allow(dead_code)]
-fn is_vec3_i32_array(ty: &Instruction, definitions: &HashMap<ResultId, Instruction>) -> bool {
+/// Check if type is array of bool (for CullPrimitiveEXT).
+fn is_bool_array(ty: &Instruction, definitions: &HashMap<ResultId, Instruction>) -> bool {
     if ty.class.opcode != Op::TypeArray {
         return false;
     }
@@ -914,7 +939,624 @@ fn is_vec3_i32_array(ty: &Instruction, definitions: &HashMap<ResultId, Instructi
     let Some(element_type) = definitions.get(&element_type_id) else {
         return false;
     };
-    is_vec3_i32(element_type, definitions)
+    element_type.class.opcode == Op::TypeBool
+}
+
+/// Check if type is uvec2 (2-component unsigned 32-bit integer vector).
+fn is_vec2_u32(ty: &Instruction, definitions: &HashMap<ResultId, Instruction>) -> bool {
+    is_vec_of_unsigned(ty, definitions, 2, 32)
+}
+
+/// Check if type is uvec3 (3-component unsigned 32-bit integer vector).
+fn is_vec3_u32(ty: &Instruction, definitions: &HashMap<ResultId, Instruction>) -> bool {
+    is_vec_of_unsigned(ty, definitions, 3, 32)
+}
+
+/// Check if type is an unsigned integer vector with given component count and width.
+fn is_vec_of_unsigned(
+    ty: &Instruction,
+    definitions: &HashMap<ResultId, Instruction>,
+    expected_count: u32,
+    expected_width: u32,
+) -> bool {
+    if ty.class.opcode != Op::TypeVector {
+        return false;
+    }
+    let component_count = ty.operands.get(1).and_then(|op| match op {
+        rspirv::dr::Operand::LiteralBit32(n) => Some(*n),
+        _ => None,
+    });
+    if component_count != Some(expected_count) {
+        return false;
+    }
+    let component_type_id = ty.operands.first().and_then(|op| match op {
+        rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+        _ => None,
+    });
+    let Some(component_type_id) = component_type_id else {
+        return false;
+    };
+    let Some(component_type) = definitions.get(&component_type_id) else {
+        return false;
+    };
+    if component_type.class.opcode != Op::TypeInt {
+        return false;
+    }
+    let width = component_type.operands.first().and_then(|op| match op {
+        rspirv::dr::Operand::LiteralBit32(w) => Some(*w),
+        _ => None,
+    });
+    let signedness = component_type.operands.get(1).and_then(|op| match op {
+        rspirv::dr::Operand::LiteralBit32(s) => Some(*s),
+        _ => None,
+    });
+    width == Some(expected_width) && signedness == Some(0)
+}
+
+/// Check if type is array of uvec2 (for PrimitiveLineIndicesEXT).
+fn is_vec2_u32_array(ty: &Instruction, definitions: &HashMap<ResultId, Instruction>) -> bool {
+    if ty.class.opcode != Op::TypeArray {
+        return false;
+    }
+    let element_type_id = ty.operands.first().and_then(|op| match op {
+        rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+        _ => None,
+    });
+    let Some(element_type_id) = element_type_id else {
+        return false;
+    };
+    let Some(element_type) = definitions.get(&element_type_id) else {
+        return false;
+    };
+    is_vec2_u32(element_type, definitions)
+}
+
+/// Check if type is array of uvec3 (for PrimitiveTriangleIndicesEXT).
+fn is_vec3_u32_array(ty: &Instruction, definitions: &HashMap<ResultId, Instruction>) -> bool {
+    if ty.class.opcode != Op::TypeArray {
+        return false;
+    }
+    let element_type_id = ty.operands.first().and_then(|op| match op {
+        rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+        _ => None,
+    });
+    let Some(element_type_id) = element_type_id else {
+        return false;
+    };
+    let Some(element_type) = definitions.get(&element_type_id) else {
+        return false;
+    };
+    is_vec3_u32(element_type, definitions)
+}
+
+// ============================================================================
+// Built-in Storage Class Direction Rule
+// ============================================================================
+
+/// Validates that built-in variables use the correct Input/Output direction
+/// for each execution model.
+///
+/// For example:
+/// - Position must be Output in Vertex, but can be Input in other stages
+/// - FragCoord must be Input in Fragment
+/// - ClipDistance/CullDistance can't be Input in Vertex/Mesh, can't be Output in Fragment
+pub struct BuiltinStorageClassDirectionRule;
+
+impl ValidationRule for BuiltinStorageClassDirectionRule {
+    fn name(&self) -> &'static str {
+        "builtin-storage-class-direction"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
+        if !ctx.env.is_vulkan() {
+            return Ok(());
+        }
+
+        let module = ctx.module;
+        let entry_models = ctx.entry_models;
+
+        // Collect built-in decorations with their storage classes
+        for inst in &module.annotations {
+            if inst.class.opcode != Op::Decorate {
+                continue;
+            }
+            let Some(rspirv::dr::Operand::IdRef(target)) = inst.operands.first() else {
+                continue;
+            };
+            let Some(rspirv::dr::Operand::Decoration(decoration)) = inst.operands.get(1) else {
+                continue;
+            };
+            if *decoration != Decoration::BuiltIn {
+                continue;
+            }
+            let builtin = inst
+                .operands
+                .get(2)
+                .and_then(|op| match op {
+                    rspirv::dr::Operand::BuiltIn(b) => Some(*b),
+                    rspirv::dr::Operand::LiteralBit32(raw) => BuiltIn::from_u32(*raw),
+                    _ => None,
+                })
+                .unwrap_or(BuiltIn::Position);
+
+            let Ok(id) = ResultId::try_from(*target) else {
+                continue;
+            };
+
+            // Look up storage class of the variable
+            let storage_class = module.types_global_values.iter().find_map(|var| {
+                if var.class.opcode != Op::Variable {
+                    return None;
+                }
+                if var.result_id != Some(u32::from(id)) {
+                    return None;
+                }
+                match var.operands.first() {
+                    Some(rspirv::dr::Operand::StorageClass(sc)) => Some(*sc),
+                    _ => None,
+                }
+            });
+            let Some(storage_class) = storage_class else {
+                continue;
+            };
+
+            // Validate direction per built-in per execution model
+            for model in entry_models {
+                if let Some(error) =
+                    validate_builtin_direction(builtin, storage_class, *model)
+                {
+                    return Err(error.into());
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Validates that the storage class direction is correct for the given built-in
+/// and execution model combination.
+fn validate_builtin_direction(
+    builtin: BuiltIn,
+    storage_class: StorageClass,
+    model: ExecutionModel,
+) -> Option<ValidationError> {
+    match builtin {
+        // Position: Output in Vertex/Mesh, Input not allowed in Vertex/Mesh
+        BuiltIn::Position => {
+            if storage_class == StorageClass::Input {
+                if matches!(
+                    model,
+                    ExecutionModel::Vertex | ExecutionModel::MeshNV | ExecutionModel::MeshEXT
+                ) {
+                    return Some(ValidationError::BuiltInWrongStorageClassForExecutionModel {
+                        builtin,
+                        storage_class,
+                        execution_model: model,
+                    });
+                }
+            }
+        }
+
+        // PointSize: Same rules as Position
+        BuiltIn::PointSize => {
+            if storage_class == StorageClass::Input {
+                if matches!(
+                    model,
+                    ExecutionModel::Vertex | ExecutionModel::MeshNV | ExecutionModel::MeshEXT
+                ) {
+                    return Some(ValidationError::BuiltInWrongStorageClassForExecutionModel {
+                        builtin,
+                        storage_class,
+                        execution_model: model,
+                    });
+                }
+            }
+        }
+
+        // ClipDistance/CullDistance: Input not allowed in Vertex/Mesh, Output not allowed in Fragment
+        BuiltIn::ClipDistance | BuiltIn::CullDistance => {
+            if storage_class == StorageClass::Input {
+                if matches!(
+                    model,
+                    ExecutionModel::Vertex | ExecutionModel::MeshNV | ExecutionModel::MeshEXT
+                ) {
+                    return Some(ValidationError::BuiltInWrongStorageClassForExecutionModel {
+                        builtin,
+                        storage_class,
+                        execution_model: model,
+                    });
+                }
+            }
+            if storage_class == StorageClass::Output && model == ExecutionModel::Fragment {
+                return Some(ValidationError::BuiltInWrongStorageClassForExecutionModel {
+                    builtin,
+                    storage_class,
+                    execution_model: model,
+                });
+            }
+        }
+
+        // FragCoord: Must be Input in Fragment
+        BuiltIn::FragCoord => {
+            if model == ExecutionModel::Fragment && storage_class != StorageClass::Input {
+                return Some(ValidationError::BuiltInWrongStorageClassForExecutionModel {
+                    builtin,
+                    storage_class,
+                    execution_model: model,
+                });
+            }
+        }
+
+        // FragDepth: Must be Output in Fragment
+        BuiltIn::FragDepth => {
+            if model == ExecutionModel::Fragment && storage_class != StorageClass::Output {
+                return Some(ValidationError::BuiltInWrongStorageClassForExecutionModel {
+                    builtin,
+                    storage_class,
+                    execution_model: model,
+                });
+            }
+        }
+
+        // FrontFacing, HelperInvocation, SampleId, SamplePosition, SampleMask (input):
+        // Must be Input in Fragment
+        BuiltIn::FrontFacing | BuiltIn::HelperInvocation | BuiltIn::SampleId | BuiltIn::SamplePosition => {
+            if model == ExecutionModel::Fragment && storage_class != StorageClass::Input {
+                return Some(ValidationError::BuiltInWrongStorageClassForExecutionModel {
+                    builtin,
+                    storage_class,
+                    execution_model: model,
+                });
+            }
+        }
+
+        // VertexIndex, InstanceIndex: Must be Input in Vertex
+        BuiltIn::VertexIndex | BuiltIn::InstanceIndex | BuiltIn::BaseVertex | BuiltIn::BaseInstance | BuiltIn::DrawIndex => {
+            if model == ExecutionModel::Vertex && storage_class != StorageClass::Input {
+                return Some(ValidationError::BuiltInWrongStorageClassForExecutionModel {
+                    builtin,
+                    storage_class,
+                    execution_model: model,
+                });
+            }
+        }
+
+        // PrimitiveId: Input in Fragment, Output in Geometry/Mesh
+        BuiltIn::PrimitiveId => {
+            if model == ExecutionModel::Fragment && storage_class != StorageClass::Input {
+                return Some(ValidationError::BuiltInWrongStorageClassForExecutionModel {
+                    builtin,
+                    storage_class,
+                    execution_model: model,
+                });
+            }
+            if matches!(model, ExecutionModel::Geometry | ExecutionModel::MeshNV | ExecutionModel::MeshEXT)
+                && storage_class != StorageClass::Output
+            {
+                // In Geometry, PrimitiveId can be both Input and Output
+                // Only check for mesh shaders where it must be Output
+                if matches!(model, ExecutionModel::MeshNV | ExecutionModel::MeshEXT) {
+                    return Some(ValidationError::BuiltInWrongStorageClassForExecutionModel {
+                        builtin,
+                        storage_class,
+                        execution_model: model,
+                    });
+                }
+            }
+        }
+
+        // Layer, ViewportIndex: Output in Vertex/Geometry/TessEval/Mesh, Input in Fragment
+        BuiltIn::Layer | BuiltIn::ViewportIndex => {
+            if model == ExecutionModel::Fragment && storage_class != StorageClass::Input {
+                return Some(ValidationError::BuiltInWrongStorageClassForExecutionModel {
+                    builtin,
+                    storage_class,
+                    execution_model: model,
+                });
+            }
+            if matches!(
+                model,
+                ExecutionModel::Vertex
+                    | ExecutionModel::Geometry
+                    | ExecutionModel::TessellationEvaluation
+                    | ExecutionModel::MeshNV
+                    | ExecutionModel::MeshEXT
+            ) && storage_class != StorageClass::Output
+            {
+                return Some(ValidationError::BuiltInWrongStorageClassForExecutionModel {
+                    builtin,
+                    storage_class,
+                    execution_model: model,
+                });
+            }
+        }
+
+        // InvocationId: Input in Geometry and TessellationControl
+        BuiltIn::InvocationId => {
+            if matches!(model, ExecutionModel::Geometry | ExecutionModel::TessellationControl)
+                && storage_class != StorageClass::Input
+            {
+                return Some(ValidationError::BuiltInWrongStorageClassForExecutionModel {
+                    builtin,
+                    storage_class,
+                    execution_model: model,
+                });
+            }
+        }
+
+        // TessCoord: Must be Input in TessellationEvaluation
+        BuiltIn::TessCoord => {
+            if model == ExecutionModel::TessellationEvaluation && storage_class != StorageClass::Input {
+                return Some(ValidationError::BuiltInWrongStorageClassForExecutionModel {
+                    builtin,
+                    storage_class,
+                    execution_model: model,
+                });
+            }
+        }
+
+        // TessLevelOuter, TessLevelInner: Output in TessControl, Input in TessEval
+        BuiltIn::TessLevelOuter | BuiltIn::TessLevelInner => {
+            if model == ExecutionModel::TessellationControl && storage_class != StorageClass::Output {
+                return Some(ValidationError::BuiltInWrongStorageClassForExecutionModel {
+                    builtin,
+                    storage_class,
+                    execution_model: model,
+                });
+            }
+            if model == ExecutionModel::TessellationEvaluation && storage_class != StorageClass::Input {
+                return Some(ValidationError::BuiltInWrongStorageClassForExecutionModel {
+                    builtin,
+                    storage_class,
+                    execution_model: model,
+                });
+            }
+        }
+
+        // Compute shader built-ins: Must be Input
+        BuiltIn::NumWorkgroups
+        | BuiltIn::WorkgroupId
+        | BuiltIn::LocalInvocationId
+        | BuiltIn::GlobalInvocationId
+        | BuiltIn::LocalInvocationIndex => {
+            if matches!(model, ExecutionModel::GLCompute | ExecutionModel::Kernel)
+                && storage_class != StorageClass::Input
+            {
+                return Some(ValidationError::BuiltInWrongStorageClassForExecutionModel {
+                    builtin,
+                    storage_class,
+                    execution_model: model,
+                });
+            }
+        }
+
+        // Ray tracing built-ins: All are Input
+        BuiltIn::LaunchIdKHR
+        | BuiltIn::LaunchSizeKHR
+        | BuiltIn::WorldRayOriginKHR
+        | BuiltIn::WorldRayDirectionKHR
+        | BuiltIn::ObjectRayOriginKHR
+        | BuiltIn::ObjectRayDirectionKHR
+        | BuiltIn::RayTminKHR
+        | BuiltIn::RayTmaxKHR
+        | BuiltIn::InstanceCustomIndexKHR
+        | BuiltIn::ObjectToWorldKHR
+        | BuiltIn::WorldToObjectKHR
+        | BuiltIn::HitKindKHR
+        | BuiltIn::HitTNV
+        | BuiltIn::IncomingRayFlagsKHR
+        | BuiltIn::RayGeometryIndexKHR
+        | BuiltIn::CullMaskKHR => {
+            if storage_class != StorageClass::Input {
+                return Some(ValidationError::BuiltInWrongStorageClassForExecutionModel {
+                    builtin,
+                    storage_class,
+                    execution_model: model,
+                });
+            }
+        }
+
+        // PrimitiveShadingRateKHR: Must be Output
+        BuiltIn::PrimitiveShadingRateKHR => {
+            if storage_class != StorageClass::Output {
+                return Some(ValidationError::BuiltInWrongStorageClassForExecutionModel {
+                    builtin,
+                    storage_class,
+                    execution_model: model,
+                });
+            }
+        }
+
+        // ShadingRateKHR: Must be Input in Fragment
+        BuiltIn::ShadingRateKHR => {
+            if model == ExecutionModel::Fragment && storage_class != StorageClass::Input {
+                return Some(ValidationError::BuiltInWrongStorageClassForExecutionModel {
+                    builtin,
+                    storage_class,
+                    execution_model: model,
+                });
+            }
+        }
+
+        _ => {}
+    }
+    None
+}
+
+// ============================================================================
+// Built-in Type Rule
+// ============================================================================
+
+/// Validates that built-in variables have the correct types.
+///
+/// In Vulkan environments, built-ins have specific type requirements:
+/// - VertexIndex, InstanceIndex, PrimitiveId, etc. must be 32-bit int scalar
+/// - Position, FragCoord must be vec4 of 32-bit float
+/// - PointSize, FragDepth must be 32-bit float scalar
+/// - FrontFacing, HelperInvocation must be bool
+/// - GlobalInvocationId, LocalInvocationId, etc. must be vec3 of 32-bit int
+/// - etc.
+pub struct BuiltinTypeRule;
+
+impl ValidationRule for BuiltinTypeRule {
+    fn name(&self) -> &'static str {
+        "builtin-types"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
+        let module = ctx.module;
+        let definitions = ctx.definitions;
+
+        for inst in &module.annotations {
+            if inst.class.opcode != Op::Decorate {
+                continue;
+            }
+            let Some(rspirv::dr::Operand::IdRef(target)) = inst.operands.first() else {
+                continue;
+            };
+            let Some(rspirv::dr::Operand::Decoration(decoration)) = inst.operands.get(1) else {
+                continue;
+            };
+            if *decoration != Decoration::BuiltIn {
+                continue;
+            }
+            let builtin = inst
+                .operands
+                .get(2)
+                .and_then(|op| match op {
+                    rspirv::dr::Operand::BuiltIn(b) => Some(*b),
+                    rspirv::dr::Operand::LiteralBit32(raw) => BuiltIn::from_u32(*raw),
+                    _ => None,
+                })
+                .unwrap_or(BuiltIn::Position);
+
+            let Ok(var_id) = ResultId::try_from(*target) else {
+                continue;
+            };
+
+            // Get the pointee type for the variable
+            if let Some(pointee) = resolve_builtin_pointee_type(definitions, var_id) {
+                if let Some(error) = validate_builtin_type(builtin, pointee, definitions) {
+                    return Err(error.into());
+                }
+            }
+
+            // TessLevel built-ins require Patch decoration
+            if matches!(builtin, BuiltIn::TessLevelOuter | BuiltIn::TessLevelInner)
+                && !has_patch_decoration(module, var_id)
+            {
+                return Err(ValidationError::BuiltInRequiresPatchDecoration { builtin }.into());
+            }
+        }
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Built-in Execution Mode Rule
+// ============================================================================
+
+/// Validates that built-in variables requiring specific execution modes have
+/// those modes declared.
+///
+/// Examples:
+/// - FragDepth requires DepthReplacing execution mode
+/// - PrimitivePointIndicesEXT requires OutputPoints execution mode
+/// - PrimitiveLineIndicesEXT requires OutputLinesEXT execution mode
+/// - PrimitiveTriangleIndicesEXT requires OutputTrianglesEXT execution mode
+pub struct BuiltinExecutionModeRule;
+
+impl ValidationRule for BuiltinExecutionModeRule {
+    fn name(&self) -> &'static str {
+        "builtin-execution-modes"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
+        if !ctx.env.is_vulkan() {
+            return Ok(());
+        }
+
+        let module = ctx.module;
+
+        // Collect execution modes for each entry point
+        let mut entry_point_modes: HashMap<u32, HashSet<rspirv::spirv::ExecutionMode>> =
+            HashMap::new();
+        for mode_inst in &module.execution_modes {
+            if mode_inst.class.opcode != Op::ExecutionMode
+                && mode_inst.class.opcode != Op::ExecutionModeId
+            {
+                continue;
+            }
+            let Some(rspirv::dr::Operand::IdRef(entry_point_id)) = mode_inst.operands.first()
+            else {
+                continue;
+            };
+            let Some(rspirv::dr::Operand::ExecutionMode(mode)) = mode_inst.operands.get(1) else {
+                continue;
+            };
+            entry_point_modes
+                .entry(*entry_point_id)
+                .or_default()
+                .insert(*mode);
+        }
+
+        // Check built-in decorations
+        for inst in &module.annotations {
+            if inst.class.opcode != Op::Decorate {
+                continue;
+            }
+            let Some(rspirv::dr::Operand::Decoration(decoration)) = inst.operands.get(1) else {
+                continue;
+            };
+            if *decoration != Decoration::BuiltIn {
+                continue;
+            }
+            let builtin = inst
+                .operands
+                .get(2)
+                .and_then(|op| match op {
+                    rspirv::dr::Operand::BuiltIn(b) => Some(*b),
+                    rspirv::dr::Operand::LiteralBit32(raw) => BuiltIn::from_u32(*raw),
+                    _ => None,
+                })
+                .unwrap_or(BuiltIn::Position);
+
+            // Check if this built-in requires a specific execution mode
+            if let Some(required_mode) = required_execution_mode_for_builtin(builtin) {
+                // Check all entry points to see if the required mode is declared
+                let has_required_mode = entry_point_modes
+                    .values()
+                    .any(|modes| modes.contains(&required_mode));
+
+                // If no entry points declare this mode, error
+                if !has_required_mode && !entry_point_modes.is_empty() {
+                    return Err(ValidationError::BuiltInRequiresExecutionModeDeclaration {
+                        builtin,
+                        required_mode,
+                    }.into());
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Returns the execution mode required by a built-in, if any.
+fn required_execution_mode_for_builtin(
+    builtin: BuiltIn,
+) -> Option<rspirv::spirv::ExecutionMode> {
+    match builtin {
+        // FragDepth requires DepthReplacing
+        BuiltIn::FragDepth => Some(rspirv::spirv::ExecutionMode::DepthReplacing),
+        // Mesh shader primitive indices require their corresponding output modes
+        BuiltIn::PrimitivePointIndicesEXT => Some(rspirv::spirv::ExecutionMode::OutputPoints),
+        BuiltIn::PrimitiveLineIndicesEXT => Some(rspirv::spirv::ExecutionMode::OutputLinesEXT),
+        BuiltIn::PrimitiveTriangleIndicesEXT => {
+            Some(rspirv::spirv::ExecutionMode::OutputTrianglesEXT)
+        }
+        _ => None,
+    }
 }
 
 // ============================================================================
@@ -923,7 +1565,13 @@ fn is_vec3_i32_array(ty: &Instruction, definitions: &HashMap<ResultId, Instructi
 
 /// Returns all built-in validation rules.
 pub fn all_builtin_rules() -> Vec<&'static dyn ValidationRule> {
-    vec![&BuiltinLocationExclusivityRule, &BuiltinStorageClassRule]
+    vec![
+        &BuiltinLocationExclusivityRule,
+        &BuiltinStorageClassRule,
+        &BuiltinStorageClassDirectionRule,
+        &BuiltinTypeRule,
+        &BuiltinExecutionModeRule,
+    ]
 }
 
 #[cfg(test)]

@@ -21,6 +21,8 @@ use crate::message::MessageLevel;
 use crate::string_literal::parse_string_literal;
 use crate::target_env::TargetEnv;
 
+use crate::validation::span::{SourceSpan, SpanMap};
+
 /// Tracks textual identifiers and diagnostics while constructing a module.
 #[derive(Debug)]
 pub struct ModuleBuilder<'a> {
@@ -33,6 +35,8 @@ pub struct ModuleBuilder<'a> {
     integer_constants: BTreeMap<u32, u64>,
     ext_inst_imports: BTreeMap<u32, ExtInstImportInfo>,
     preserve_numeric_ids: bool,
+    /// Optional span map for tracking source locations of IDs.
+    span_map: Option<SpanMap>,
 }
 
 #[derive(Debug, Error)]
@@ -235,6 +239,14 @@ impl<'a> ModuleBuilder<'a> {
 
     /// Creates a new builder and optionally preserves explicit numeric IDs.
     pub fn with_numeric_preservation(preserve_numeric_ids: bool) -> Self {
+        Self::with_options(preserve_numeric_ids, false)
+    }
+
+    /// Creates a module builder with the given options.
+    ///
+    /// If `track_spans` is true, the builder will record source locations for all
+    /// result IDs, which can be retrieved via `finish_with_spans`.
+    pub fn with_options(preserve_numeric_ids: bool, track_spans: bool) -> Self {
         Self {
             named_ids: BTreeMap::new(),
             numeric_ids: BTreeMap::new(),
@@ -245,6 +257,7 @@ impl<'a> ModuleBuilder<'a> {
             integer_constants: BTreeMap::new(),
             ext_inst_imports: BTreeMap::new(),
             preserve_numeric_ids,
+            span_map: if track_spans { Some(SpanMap::new()) } else { None },
         }
     }
 
@@ -259,13 +272,25 @@ impl<'a> ModuleBuilder<'a> {
     }
 
     /// Resolves a result identifier to a numeric ID.
+    ///
+    /// If span tracking is enabled, this also records the source location
+    /// where this result ID was defined.
     pub fn resolve_result_id(&mut self, id: ResultId<'a>) -> u32 {
-        self.resolve_spirv_id(id.as_spirv_id())
+        let numeric = self.resolve_spirv_id(id.as_spirv_id());
+        // Record the span for this result ID
+        self.record_id_span(numeric, SourceSpan::from_assembly_span(id.span()));
+        numeric
     }
 
     /// Resolves a type identifier to a numeric ID.
+    ///
+    /// If span tracking is enabled, this also records the source location
+    /// where this type ID was defined.
     pub fn resolve_type_id(&mut self, id: TypeId<'a>) -> u32 {
-        self.resolve_spirv_id(id.as_spirv_id())
+        let numeric = self.resolve_spirv_id(id.as_spirv_id());
+        // Record the span for type definitions too
+        self.record_id_span(numeric, SourceSpan::from_assembly_span(id.span()));
+        numeric
     }
 
     /// Resolves an ID reference to a numeric ID.
@@ -299,6 +324,19 @@ impl<'a> ModuleBuilder<'a> {
     pub fn finish(mut self) -> (Vec<DiagnosticMessage<'static>>, u32) {
         self.validate_member_layouts();
         (self.diagnostics, self.next_numeric_id)
+    }
+
+    /// Consumes the builder and returns diagnostics, next ID bound, and optional span map.
+    pub fn finish_with_spans(mut self) -> (Vec<DiagnosticMessage<'static>>, u32, Option<SpanMap>) {
+        self.validate_member_layouts();
+        (self.diagnostics, self.next_numeric_id, self.span_map)
+    }
+
+    /// Records the source span for a result ID if span tracking is enabled.
+    pub fn record_id_span(&mut self, id: u32, span: SourceSpan) {
+        if let Some(ref mut map) = self.span_map {
+            map.record_id(id, span);
+        }
     }
 
     fn resolve_spirv_id(&mut self, id: SpirvId<'a>) -> u32 {
@@ -651,11 +689,16 @@ impl<'a> AssemblyTranslator<'a> {
 
     /// Creates a translator configured for the provided environment and options.
     pub fn with_target_env_and_options(env: TargetEnv, options: TextToBinaryOptions) -> Self {
+        Self::with_full_options(env, options, false)
+    }
+
+    /// Creates a translator with full control over all options including span tracking.
+    pub fn with_full_options(env: TargetEnv, options: TextToBinaryOptions, track_spans: bool) -> Self {
         let mut builder = dr::Builder::new();
         configure_builder_for_env(&mut builder, env);
         let preserve_numeric_ids = options.contains(TextToBinaryOptions::PRESERVE_NUMERIC_IDS);
         Self {
-            module_builder: ModuleBuilder::with_numeric_preservation(preserve_numeric_ids),
+            module_builder: ModuleBuilder::with_options(preserve_numeric_ids, track_spans),
             builder,
         }
     }
@@ -3743,8 +3786,16 @@ impl<'a> AssemblyTranslator<'a> {
         (output.module, output.diagnostics)
     }
 
+    /// Finalizes the translation and returns the module, diagnostics, and span map.
+    ///
+    /// The span map is only populated if the translator was created with `track_spans: true`.
+    pub fn finish_with_spans(self) -> (dr::Module, Vec<DiagnosticMessage<'static>>, Option<SpanMap>) {
+        let output = self.into_parts();
+        (output.module, output.diagnostics, output.span_map)
+    }
+
     fn into_parts(self) -> AssemblyOutput {
-        let (diagnostics, next_id) = self.module_builder.finish();
+        let (diagnostics, next_id, span_map) = self.module_builder.finish_with_spans();
         let mut module = self.builder.module();
         match module.header.as_mut() {
             Some(header) => header.bound = next_id,
@@ -3753,6 +3804,7 @@ impl<'a> AssemblyTranslator<'a> {
         AssemblyOutput {
             module,
             diagnostics,
+            span_map,
         }
     }
 }
@@ -3760,6 +3812,7 @@ impl<'a> AssemblyTranslator<'a> {
 struct AssemblyOutput {
     module: dr::Module,
     diagnostics: Vec<DiagnosticMessage<'static>>,
+    span_map: Option<SpanMap>,
 }
 
 fn configure_builder_for_env(builder: &mut dr::Builder, env: TargetEnv) {
@@ -3908,6 +3961,7 @@ fn assemble_text_with_translator<'a>(
     let AssemblyOutput {
         module,
         diagnostics: mut translator_diagnostics,
+        ..
     } = translator.into_parts();
     diagnostics.append(&mut translator_diagnostics);
     let words = match finalize_result((), diagnostics) {
@@ -3915,6 +3969,132 @@ fn assemble_text_with_translator<'a>(
         Err(error) => return Err(error),
     };
     Ok(words)
+}
+
+/// Result of assembling SPIR-V text with span tracking enabled.
+#[derive(Debug)]
+pub struct AssemblyWithSpans {
+    /// The assembled SPIR-V binary words.
+    pub words: Vec<u32>,
+    /// Map from result IDs to their source locations.
+    pub span_map: SpanMap,
+}
+
+/// Assembles SPIR-V text and tracks source locations for all result IDs.
+///
+/// This is useful for validation error reporting, as the span map can be
+/// passed to the validator to provide precise source locations in errors.
+///
+/// # Example
+///
+/// ```ignore
+/// use spirv_tools_core::assembly::assemble_text_with_spans;
+///
+/// let text = r#"
+///     OpCapability Shader
+///     OpMemoryModel Logical GLSL450
+///     %void = OpTypeVoid
+/// "#;
+///
+/// let result = assemble_text_with_spans(text)?;
+/// // result.span_map now contains the source location for %void
+/// ```
+pub fn assemble_text_with_spans(text: &str) -> Result<AssemblyWithSpans, AssemblyError> {
+    assemble_text_with_spans_and_env(text, TargetEnv::Universal1_6)
+}
+
+/// Assembles SPIR-V text with span tracking and a specific target environment.
+pub fn assemble_text_with_spans_and_env(
+    text: &str,
+    env: TargetEnv,
+) -> Result<AssemblyWithSpans, AssemblyError> {
+    assemble_text_with_spans_full(text, env, TextToBinaryOptions::NONE)
+}
+
+/// Assembles SPIR-V text with span tracking, environment, and options.
+pub fn assemble_text_with_spans_full(
+    text: &str,
+    env: TargetEnv,
+    options: TextToBinaryOptions,
+) -> Result<AssemblyWithSpans, AssemblyError> {
+    let translator = AssemblyTranslator::with_full_options(env, options, true);
+    assemble_text_with_translator_for_spans(text, translator)
+}
+
+fn assemble_text_with_translator_for_spans<'a>(
+    text: &'a str,
+    mut translator: AssemblyTranslator<'a>,
+) -> Result<AssemblyWithSpans, AssemblyError> {
+    let mut diagnostics = Vec::new();
+    let mut instructions = Vec::new();
+
+    let mut line_bounds = Vec::new();
+    let mut line_start = 0usize;
+    for (idx, byte) in text.as_bytes().iter().enumerate() {
+        if *byte == b'\n' {
+            let mut line_end = idx;
+            if line_end > line_start && text.as_bytes()[line_end - 1] == b'\r' {
+                line_end -= 1;
+            }
+            line_bounds.push((line_start, line_end));
+            line_start = idx + 1;
+        }
+    }
+    if line_start < text.len() {
+        line_bounds.push((line_start, text.len()));
+    }
+
+    let mut line_index = 0usize;
+    while line_index < line_bounds.len() {
+        let (start, _) = line_bounds[line_index];
+        let mut last_line = line_index;
+        let mut span_end = line_bounds[last_line].1;
+        loop {
+            match process_line(text, start, span_end, line_index) {
+                Ok(Some(parsed)) => {
+                    instructions.push(parsed);
+                    line_index = last_line + 1;
+                    break;
+                }
+                Ok(None) => {
+                    line_index = last_line + 1;
+                    break;
+                }
+                Err(error) => {
+                    let is_unterminated =
+                        error.diagnostic().message() == "unterminated string literal";
+                    if is_unterminated && last_line + 1 < line_bounds.len() {
+                        last_line += 1;
+                        span_end = line_bounds[last_line].1;
+                        continue;
+                    }
+                    diagnostics.push(error.into_diagnostic());
+                    line_index = last_line + 1;
+                    break;
+                }
+            }
+        }
+    }
+
+    translator.reserve_numeric_result_ids(&instructions);
+    for instruction in &instructions {
+        translator.translate(instruction);
+    }
+
+    let AssemblyOutput {
+        module,
+        diagnostics: mut translator_diagnostics,
+        span_map,
+    } = translator.into_parts();
+    diagnostics.append(&mut translator_diagnostics);
+
+    match finalize_result((), diagnostics) {
+        Ok(_) => Ok(AssemblyWithSpans {
+            words: module.assemble(),
+            span_map: span_map.unwrap_or_default(),
+        }),
+        Err(error) => Err(error),
+    }
 }
 
 fn process_line<'a>(
@@ -5548,5 +5728,55 @@ OpFunctionEnd";
             assemble_text_with_env("", TargetEnv::Universal1_0).expect("assemble text with env");
         assert!(binary.len() > 1);
         assert_eq!(binary[1], SpirvVersion::new(1, 0).to_word());
+    }
+
+    #[test]
+    fn assemble_with_spans_tracks_result_ids() {
+        use super::assemble_text_with_spans;
+
+        let text = r#"OpCapability Shader
+OpMemoryModel Logical GLSL450
+%void = OpTypeVoid
+%fn_type = OpTypeFunction %void
+%main = OpFunction %void None %fn_type
+%entry = OpLabel
+OpReturn
+OpFunctionEnd"#;
+
+        let result = assemble_text_with_spans(text).expect("assembly should succeed");
+
+        // Verify the span map has entries for the result IDs
+        assert!(!result.span_map.is_empty(), "span map should not be empty");
+
+        // Check that we can look up spans for specific IDs
+        // %void should be ID 1, %fn_type should be ID 2, etc.
+        // The exact IDs depend on resolution order but we should have multiple entries
+        assert!(
+            result.span_map.id_count() >= 4,
+            "should have at least 4 ID spans (void, fn_type, main, entry)"
+        );
+    }
+
+    #[test]
+    fn assemble_with_spans_records_correct_line_info() {
+        use super::assemble_text_with_spans;
+        use crate::validation::span::SourceLocation;
+
+        let text = "%uint = OpTypeInt 32 0";
+
+        let result = assemble_text_with_spans(text).expect("assembly should succeed");
+
+        // The ID %uint should be resolved to 1
+        let span = result.span_map.get_id_span(1).expect("should have span for ID 1");
+
+        // The span should point to line 0 (zero-based), where %uint is defined
+        match span.start {
+            SourceLocation::Text(pos) => {
+                assert_eq!(pos.line(), 0, "should be on line 0");
+                // Column should point to the start of %uint
+                assert_eq!(pos.column(), 0, "should start at column 0");
+            }
+            _ => panic!("expected text source location"),
+        }
     }
 }
