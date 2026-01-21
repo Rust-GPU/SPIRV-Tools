@@ -358,11 +358,11 @@ impl ValidationRule for LocationConflictRule {
             }).unwrap_or_else(|| Id::try_from(1u32).unwrap());
 
             // Collect input and output locations - patch and non-patch have separate domains
-            // Use (location, component) tuples to properly track occupancy
-            let mut input_locations: HashSet<(u32, u32)> = HashSet::new();
-            let mut output_locations: HashSet<(u32, u32)> = HashSet::new();
-            let mut input_patch_locations: HashSet<(u32, u32)> = HashSet::new();
-            let mut output_patch_locations: HashSet<(u32, u32)> = HashSet::new();
+            // Use (location, component) -> var_id to track which variable owns each slot
+            let mut input_locations: std::collections::HashMap<(u32, u32), u32> = std::collections::HashMap::new();
+            let mut output_locations: std::collections::HashMap<(u32, u32), u32> = std::collections::HashMap::new();
+            let mut input_patch_locations: std::collections::HashMap<(u32, u32), u32> = std::collections::HashMap::new();
+            let mut output_patch_locations: std::collections::HashMap<(u32, u32), u32> = std::collections::HashMap::new();
             let mut seen_vars: HashSet<u32> = HashSet::new();
 
             for operand in ep.operands.iter().skip(3) {
@@ -430,14 +430,17 @@ impl ValidationRule for LocationConflictRule {
                         continue;
                     }
                     let loc_component = (linear / 4, linear % 4);
-                    if !locations.insert(loc_component) {
+                    if let Some(&first_var_id) = locations.get(&loc_component) {
                         return Err(ValidationError::EntryPointInterfaceLocationConflict {
                             entry_point: entry_point_id,
                             storage_class: *sc,
                             location: loc_component.0,
                             component: loc_component.1,
+                            first_var: Id::try_from(first_var_id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()),
+                            second_var: Id::try_from(*var_id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()),
                         }.into());
                     }
+                    locations.insert(loc_component, *var_id);
                 }
             }
         }

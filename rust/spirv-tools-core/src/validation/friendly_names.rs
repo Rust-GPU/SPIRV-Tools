@@ -108,11 +108,15 @@ pub fn format_validation_error(error: &ValidationError, names: Option<&FriendlyN
                 storage_class,
                 location,
                 component,
+                first_var,
+                second_var,
             },
             Some(names),
         ) => format!(
-            "{} {storage_class:?} location {location} component {component}",
-            names.format_id((*entry_point).into())
+            "{} has overlapping {storage_class:?} variables at location {location} component {component}: {} and {} both use this slot",
+            names.format_id((*entry_point).into()),
+            names.format_id((*first_var).into()),
+            names.format_id((*second_var).into())
         ),
         (
             ValidationError::ExecutionModeRequiresExecutionModel {

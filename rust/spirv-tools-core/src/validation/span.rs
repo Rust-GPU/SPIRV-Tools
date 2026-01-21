@@ -444,36 +444,22 @@ impl<E: fmt::Display> fmt::Display for SpannedError<E> {
 ///
 /// This is populated during parsing/assembly and used during validation
 /// to look up the definition site of IDs for error reporting.
+///
+/// The SpanMap stores only position information (line/column indices).
+/// The caller retains ownership of the source text and uses span positions
+/// to extract source snippets for error display.
 #[derive(Debug, Clone, Default)]
 pub struct SpanMap {
     /// Maps instruction word offsets to their source spans.
     instruction_spans: std::collections::HashMap<u32, SourceSpan>,
     /// Maps result IDs to their defining instruction's span.
     id_spans: std::collections::HashMap<u32, SourceSpan>,
-    /// The original source text, split into lines for snippet extraction.
-    source_lines: Vec<String>,
 }
 
 impl SpanMap {
     /// Creates a new empty span map.
     pub fn new() -> Self {
         Self::default()
-    }
-
-    /// Creates a span map with the given source text.
-    ///
-    /// The source text is split into lines for later snippet extraction.
-    pub fn with_source(source: &str) -> Self {
-        Self {
-            instruction_spans: std::collections::HashMap::new(),
-            id_spans: std::collections::HashMap::new(),
-            source_lines: source.lines().map(String::from).collect(),
-        }
-    }
-
-    /// Sets the source text for this span map.
-    pub fn set_source(&mut self, source: &str) {
-        self.source_lines = source.lines().map(String::from).collect();
     }
 
     /// Records the span for an instruction at a given word offset.
@@ -510,50 +496,43 @@ impl SpanMap {
     pub fn is_empty(&self) -> bool {
         self.instruction_spans.is_empty() && self.id_spans.is_empty()
     }
+}
 
-    /// Returns true if source text is available.
-    pub fn has_source(&self) -> bool {
-        !self.source_lines.is_empty()
-    }
-
-    /// Gets a single source line (zero-indexed).
-    pub fn get_line(&self, line: u32) -> Option<&str> {
-        self.source_lines.get(line as usize).map(String::as_str)
-    }
-
-    /// Gets the source text for a span.
-    ///
-    /// Returns the relevant source lines with the span highlighted.
-    pub fn get_source_snippet<'a>(&'a self, span: &SourceSpan) -> Option<SourceSnippet<'a>> {
-        let (start_line, start_col, end_line, end_col) = match (span.start, span.end) {
-            (SourceLocation::Text(start), SourceLocation::Text(end)) => {
-                (start.line(), start.column(), end.line(), end.column())
-            }
-            _ => return None,
-        };
-
-        if self.source_lines.is_empty() {
-            return None;
+/// Extracts a source snippet from source text using a span.
+///
+/// This is a helper function for callers to extract source lines for error display.
+/// The caller provides the source text they own, and this function extracts the
+/// relevant lines based on the span positions.
+pub fn extract_source_snippet<'a>(source: &'a str, span: &SourceSpan) -> Option<SourceSnippet<'a>> {
+    let (start_line, start_col, end_line, end_col) = match (span.start, span.end) {
+        (SourceLocation::Text(start), SourceLocation::Text(end)) => {
+            (start.line(), start.column(), end.line(), end.column())
         }
+        _ => return None,
+    };
 
-        let start_line = start_line as usize;
-        let end_line = end_line as usize;
-
-        if start_line >= self.source_lines.len() {
-            return None;
-        }
-
-        let lines: Vec<(usize, &str)> = (start_line..=end_line.min(self.source_lines.len() - 1))
-            .map(|i| (i, self.source_lines[i].as_str()))
-            .collect();
-
-        Some(SourceSnippet {
-            lines,
-            start_column: start_col as usize,
-            end_column: end_col as usize,
-            is_multiline: start_line != end_line,
-        })
+    let source_lines: Vec<&str> = source.lines().collect();
+    if source_lines.is_empty() {
+        return None;
     }
+
+    let start_line = start_line as usize;
+    let end_line = end_line as usize;
+
+    if start_line >= source_lines.len() {
+        return None;
+    }
+
+    let lines: Vec<(usize, &str)> = (start_line..=end_line.min(source_lines.len() - 1))
+        .map(|i| (i, source_lines[i]))
+        .collect();
+
+    Some(SourceSnippet {
+        lines,
+        start_column: start_col as usize,
+        end_column: end_col as usize,
+        is_multiline: start_line != end_line,
+    })
 }
 
 /// A source code snippet for display in error messages.

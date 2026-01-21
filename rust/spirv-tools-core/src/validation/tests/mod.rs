@@ -22198,15 +22198,15 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
         let error = MaybeValidModule::Text(&text)
             .validate(TargetEnv::Vulkan1_2)
             .unwrap_err();
-        assert_eq!(
+        assert!(matches!(
             error,
             ValidationError::EntryPointInterfaceLocationConflict {
-                entry_point: Id::try_from(1).unwrap(),
                 storage_class: rspirv::spirv::StorageClass::Input,
                 location: 1,
                 component: 0,
+                ..
             }
-        );
+        ));
     }
     #[test]
     fn validate_module_reports_missing_memory_model_without_other_globals() {

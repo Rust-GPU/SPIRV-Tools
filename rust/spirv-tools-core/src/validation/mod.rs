@@ -75,9 +75,9 @@ pub use cfg_analysis::{ControlFlowGraph, MergeInfo, get_block_label, get_merge_i
 // Source span information for rich error reporting
 pub mod span;
 pub use span::{
-    spanned_err, LabeledSpan, LabelKind, SourceLocation, SourceSnippet, SourceSpan, SpanLabel,
-    SpanMap, SpannedError, SpannedResult, SpannedValidationError, ValidationErrorExt,
-    ValidationResult, WithSpan,
+    extract_source_snippet, spanned_err, LabeledSpan, LabelKind, SourceLocation, SourceSnippet,
+    SourceSpan, SpanLabel, SpanMap, SpannedError, SpannedResult, SpannedValidationError,
+    ValidationErrorExt, ValidationResult, WithSpan,
 };
 
 // Validation rules organized by category

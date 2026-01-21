@@ -1061,7 +1061,7 @@ pub enum ValidationError {
     },
     /// Entry-point interface variables consumed overlapping locations/components.
     #[error(
-        "entry point {entry_point:?} has overlapping {storage_class:?} locations at location {location} component {component}"
+        "entry point {entry_point:?} has overlapping {storage_class:?} variables at location {location} component {component}: variable {first_var:?} and variable {second_var:?} both use this slot"
     )]
     EntryPointInterfaceLocationConflict {
         /// The entry-point function id.
@@ -1072,6 +1072,10 @@ pub enum ValidationError {
         location: u32,
         /// The conflicting component.
         component: u32,
+        /// The first variable that claimed this location.
+        first_var: Id,
+        /// The second variable that conflicts with the first.
+        second_var: Id,
     },
     /// Execution mode requires a specific execution model and is invalid for this entry point.
     #[error(
