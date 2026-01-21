@@ -188,104 +188,130 @@ impl ValidationRule for SmallTypeStorageCapabilitiesRule {
                 )
             };
 
-            for bit_width in [8u32, 16u32] {
-                let has_width =
-                    contains_int(bit_width) || (bit_width == 16 && contains_float(bit_width));
-                if !has_width {
-                    continue;
-                }
-
-                // Some storage classes never allow 8-bit or 16-bit types, regardless of Int8/Int16/Float16 capability.
-                // These are always rejected first.
-                let never_allows_small = matches!(
-                    storage_class,
-                    StorageClass::Input | StorageClass::Output | StorageClass::UniformConstant
-                );
-
-                if bit_width == 8 && never_allows_small {
-                    return Err(ValidationError::SmallTypeDisallowedInStorageClass {
-                        bit_width,
-                        storage_class,
-                    }.into());
-                }
-                if bit_width == 16 && storage_class == StorageClass::UniformConstant {
-                    return Err(ValidationError::SmallTypeDisallowedInStorageClass {
-                        bit_width,
-                        storage_class,
-                    }.into());
-                }
-
-                let require_capability = |cap: Capability| -> ValidationResult {
-                    if ctx.declared_capabilities.contains(&cap) {
-                        Ok(())
-                    } else {
-                        Err(ValidationError::SmallTypeMissingCapability {
-                            bit_width,
-                            storage_class,
-                            required_capability: cap,
-                        }.into())
-                    }
-                };
-
+            // 8-bit type validation only applies when Int8 capability is NOT present.
+            // When Int8 is present, 8-bit types can be used in any storage class.
+            // When Int8 is NOT present, storage-specific capabilities are required.
+            if !ctx.has_capability(Capability::Int8) && contains_int(8) {
                 match storage_class {
                     StorageClass::StorageBuffer | StorageClass::PhysicalStorageBuffer => {
-                        let required = if bit_width == 8 {
-                            Capability::StorageBuffer8BitAccess
-                        } else {
-                            Capability::StorageBuffer16BitAccess
-                        };
-                        require_capability(required)?
+                        if !ctx.has_capability(Capability::StorageBuffer8BitAccess) {
+                            return Err(ValidationError::SmallTypeMissingCapability {
+                                bit_width: 8,
+                                storage_class,
+                                required_capability: Capability::StorageBuffer8BitAccess,
+                            }.into());
+                        }
                     }
                     StorageClass::Uniform => {
-                        let (primary, fallback) = if bit_width == 8 {
-                            (
-                                Capability::UniformAndStorageBuffer8BitAccess,
-                                Capability::StorageBuffer8BitAccess,
-                            )
-                        } else {
-                            (
-                                Capability::UniformAndStorageBuffer16BitAccess,
-                                Capability::StorageBuffer16BitAccess,
-                            )
-                        };
-                        if ctx.declared_capabilities.contains(&primary) {
-                            continue;
+                        if !ctx.has_capability(Capability::UniformAndStorageBuffer8BitAccess) {
+                            if !ctx.has_capability(Capability::StorageBuffer8BitAccess)
+                                || !has_decoration(ctx, u32::from(pointee), Decoration::BufferBlock)
+                            {
+                                return Err(ValidationError::SmallTypeMissingCapability {
+                                    bit_width: 8,
+                                    storage_class,
+                                    required_capability: Capability::UniformAndStorageBuffer8BitAccess,
+                                }.into());
+                            }
                         }
-                        if ctx.declared_capabilities.contains(&fallback)
-                            && has_decoration(ctx, u32::from(pointee), Decoration::BufferBlock)
-                        {
-                            continue;
-                        }
-                        return Err(ValidationError::SmallTypeMissingCapability {
-                            bit_width,
-                            storage_class,
-                            required_capability: primary,
-                        }.into());
                     }
                     StorageClass::PushConstant => {
-                        let required = if bit_width == 8 {
-                            Capability::StoragePushConstant8
-                        } else {
-                            Capability::StoragePushConstant16
-                        };
-                        require_capability(required)?
-                    }
-                    StorageClass::Input | StorageClass::Output => {
-                        // 8-bit already rejected above; only 16-bit can reach here
-                        require_capability(Capability::StorageInputOutput16)?
+                        if !ctx.has_capability(Capability::StoragePushConstant8) {
+                            return Err(ValidationError::SmallTypeMissingCapability {
+                                bit_width: 8,
+                                storage_class,
+                                required_capability: Capability::StoragePushConstant8,
+                            }.into());
+                        }
                     }
                     StorageClass::Workgroup => {
-                        let required = if bit_width == 8 {
-                            Capability::WorkgroupMemoryExplicitLayout8BitAccessKHR
-                        } else {
-                            Capability::WorkgroupMemoryExplicitLayout16BitAccessKHR
-                        };
-                        require_capability(required)?
+                        if !ctx.has_capability(Capability::WorkgroupMemoryExplicitLayout8BitAccessKHR) {
+                            return Err(ValidationError::SmallTypeMissingCapability {
+                                bit_width: 8,
+                                storage_class,
+                                required_capability: Capability::WorkgroupMemoryExplicitLayout8BitAccessKHR,
+                            }.into());
+                        }
                     }
-                    // For other storage classes (Function, Private, etc.), having the base
-                    // capability (Int8/Int16/Float16) is sufficient - no additional storage
-                    // capability is required.
-                    _ => {}
+                    _ => {
+                        return Err(ValidationError::SmallTypeDisallowedInStorageClass {
+                            bit_width: 8,
+                            storage_class,
+                        }.into());
+                    }
+                }
+            }
+
+            // 16-bit type validation only applies when Int16/Float16 capability is NOT present.
+            // When Int16/Float16 is present, 16-bit types can be used in any storage class.
+            // When Int16/Float16 is NOT present, storage-specific capabilities are required.
+            let has_16bit = contains_int(16) || contains_float(16);
+            let has_16bit_cap = ctx.has_capability(Capability::Int16)
+                || ctx.has_capability(Capability::Float16);
+
+            if has_16bit && !has_16bit_cap {
+                match storage_class {
+                    StorageClass::StorageBuffer | StorageClass::PhysicalStorageBuffer => {
+                        if !ctx.has_capability(Capability::StorageBuffer16BitAccess) {
+                            return Err(ValidationError::SmallTypeMissingCapability {
+                                bit_width: 16,
+                                storage_class,
+                                required_capability: Capability::StorageBuffer16BitAccess,
+                            }.into());
+                        }
+                    }
+                    StorageClass::Uniform => {
+                        if !ctx.has_capability(Capability::UniformAndStorageBuffer16BitAccess) {
+                            if !ctx.has_capability(Capability::StorageBuffer16BitAccess)
+                                || !has_decoration(ctx, u32::from(pointee), Decoration::BufferBlock)
+                            {
+                                return Err(ValidationError::SmallTypeMissingCapability {
+                                    bit_width: 16,
+                                    storage_class,
+                                    required_capability: Capability::UniformAndStorageBuffer16BitAccess,
+                                }.into());
+                            }
+                        }
+                    }
+                    StorageClass::PushConstant => {
+                        if !ctx.has_capability(Capability::StoragePushConstant16) {
+                            return Err(ValidationError::SmallTypeMissingCapability {
+                                bit_width: 16,
+                                storage_class,
+                                required_capability: Capability::StoragePushConstant16,
+                            }.into());
+                        }
+                    }
+                    StorageClass::Input | StorageClass::Output => {
+                        if !ctx.has_capability(Capability::StorageInputOutput16) {
+                            return Err(ValidationError::SmallTypeMissingCapability {
+                                bit_width: 16,
+                                storage_class,
+                                required_capability: Capability::StorageInputOutput16,
+                            }.into());
+                        }
+                    }
+                    StorageClass::Workgroup => {
+                        if !ctx.has_capability(Capability::WorkgroupMemoryExplicitLayout16BitAccessKHR) {
+                            return Err(ValidationError::SmallTypeMissingCapability {
+                                bit_width: 16,
+                                storage_class,
+                                required_capability: Capability::WorkgroupMemoryExplicitLayout16BitAccessKHR,
+                            }.into());
+                        }
+                    }
+                    StorageClass::UniformConstant => {
+                        return Err(ValidationError::SmallTypeDisallowedInStorageClass {
+                            bit_width: 16,
+                            storage_class,
+                        }.into());
+                    }
+                    _ => {
+                        return Err(ValidationError::SmallTypeDisallowedInStorageClass {
+                            bit_width: 16,
+                            storage_class,
+                        }.into());
+                    }
                 }
             }
         }

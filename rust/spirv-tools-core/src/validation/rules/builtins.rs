@@ -486,8 +486,16 @@ fn validate_builtin_type(
     // Type validation for specific built-ins
     // Based on C++ validate_builtins.cpp ValidateSingleBuiltInAtDefinition
     match builtin {
-        // === vec4<f32> builtins ===
-        BuiltIn::Position | BuiltIn::FragCoord => {
+        // === vec4<f32> builtins (Position can be arrayed for mesh/geometry/tessellation shaders) ===
+        BuiltIn::Position => {
+            if !is_vec4_f32_or_array(pointee, definitions) {
+                return Some(ValidationError::InvalidBuiltInType {
+                    builtin,
+                    expected: "vec4<f32> or array<vec4<f32>>",
+                });
+            }
+        }
+        BuiltIn::FragCoord => {
             if !is_vec4_f32(pointee, definitions) {
                 return Some(ValidationError::InvalidBuiltInType {
                     builtin,
@@ -726,6 +734,27 @@ fn validate_builtin_type(
 
 fn is_vec4_f32(ty: &Instruction, definitions: &HashMap<ResultId, Instruction>) -> bool {
     is_vec_of(ty, definitions, 4, Op::TypeFloat, 32)
+}
+
+/// Checks if type is `vec4<f32>` or `array<vec4<f32>>`.
+/// Position can be arrayed in mesh/geometry/tessellation shaders.
+fn is_vec4_f32_or_array(ty: &Instruction, definitions: &HashMap<ResultId, Instruction>) -> bool {
+    if is_vec4_f32(ty, definitions) {
+        return true;
+    }
+    // Check for array<vec4<f32>>
+    if ty.class.opcode == Op::TypeArray {
+        let elem_type_id = ty.operands.first().and_then(|op| match op {
+            rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+            _ => None,
+        });
+        if let Some(elem_id) = elem_type_id {
+            if let Some(elem_inst) = definitions.get(&elem_id) {
+                return is_vec4_f32(elem_inst, definitions);
+            }
+        }
+    }
+    false
 }
 
 fn is_vec3_f32(ty: &Instruction, definitions: &HashMap<ResultId, Instruction>) -> bool {

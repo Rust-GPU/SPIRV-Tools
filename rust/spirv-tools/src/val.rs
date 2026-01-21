@@ -90,14 +90,27 @@ impl Validator for RustValidator {
 
         // Build core validation options
         let mut core_opts = CoreOptions::default();
+
+        // Vulkan 1.1+ enables relaxed block layout by default
+        let default_relax_block_layout = matches!(
+            self.target_env,
+            TargetEnv::Vulkan_1_1
+                | TargetEnv::Vulkan_1_1_Spirv_1_4
+                | TargetEnv::Vulkan_1_2
+                | TargetEnv::Vulkan_1_3
+                | TargetEnv::Vulkan_1_4
+        );
+
         if let Some(opts) = options {
             core_opts.relax_struct_store = opts.relax_struct_store;
             core_opts.relax_logical_pointer = opts.relax_logical_pointer;
             core_opts.before_hlsl_legalization = opts.before_legalization;
-            core_opts.relax_block_layout = opts.relax_block_layout.unwrap_or(false);
+            core_opts.relax_block_layout = opts.relax_block_layout.unwrap_or(default_relax_block_layout);
             core_opts.uniform_buffer_standard_layout = opts.uniform_buffer_standard_layout;
             core_opts.scalar_block_layout = opts.scalar_block_layout;
             core_opts.skip_block_layout = opts.skip_block_layout;
+        } else {
+            core_opts.relax_block_layout = default_relax_block_layout;
         }
 
         // Run validation

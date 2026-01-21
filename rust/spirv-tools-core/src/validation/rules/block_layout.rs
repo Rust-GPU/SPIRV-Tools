@@ -78,11 +78,13 @@ impl ValidationRule for BlockLayoutRule {
                 let Some(member_inst) = ctx.definitions.get(&member_result_id) else {
                     continue;
                 };
+                // Pass relax_layout to skip std140's 16-byte extended alignment rule
+                // With relaxed or scalar layout, arrays/structs align to their natural alignment
                 let Some(alignment) = type_alignment(
                     member_type_id,
                     ctx.definitions,
                     &mut HashSet::new(),
-                    scalar_layout,
+                    relax_layout,
                 ) else {
                     continue;
                 };

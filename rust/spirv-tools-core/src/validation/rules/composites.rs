@@ -1270,7 +1270,7 @@ impl ValidationRule for CompositeConstructRule {
                                                     {
                                                         // Check if scalar (matching component type) or vector of same component type
                                                         match value_type_inst.class.opcode {
-                                                            Op::TypeInt | Op::TypeFloat => {
+                                                            Op::TypeInt | Op::TypeFloat | Op::TypeBool => {
                                                                 // Scalar: check it matches component type
                                                                 if component_type_id != Some(value_type) {
                                                                     return Err(ValidationError::CompositeConstructVectorConstituentTypeMismatch {

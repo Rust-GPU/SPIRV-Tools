@@ -1350,7 +1350,22 @@ impl ValidationRule for LimitedTypeConversionRule {
 
         let resolver = DefaultTypeResolver;
 
-        // These ops cannot use 8/16-bit types in Shader capability
+        // Helper to check if a type contains "limited-use" 8/16-bit types
+        // (types without their corresponding capability)
+        let contains_limited_use_type = |type_id: u32| -> bool {
+            let width = resolver.get_bit_width(type_id, ctx.definitions);
+            match width {
+                Some(8) => !ctx.has_capability(Capability::Int8),
+                Some(16) => {
+                    // 16-bit is limited if neither Int16 nor Float16 is present
+                    !ctx.has_capability(Capability::Int16)
+                        && !ctx.has_capability(Capability::Float16)
+                }
+                _ => false,
+            }
+        };
+
+        // These ops cannot use limited-use 8/16-bit types in Shader capability
         let restricted_ops = [
             Op::ConvertFToU,
             Op::ConvertFToS,
@@ -1382,9 +1397,8 @@ impl ValidationRule for LimitedTypeConversionRule {
                         continue;
                     };
 
-                    // Check result type for 8/16-bit
-                    let result_width = resolver.get_bit_width(result_type_id, ctx.definitions);
-                    if matches!(result_width, Some(8) | Some(16)) {
+                    // Check result type for limited-use 8/16-bit
+                    if contains_limited_use_type(result_type_id) {
                         if let (Some(func), Some(block)) = (function_id, block_id) {
                             return Err(ValidationError::ConversionLimitedTypeNotAllowed {
                                 function: func,
@@ -1394,7 +1408,7 @@ impl ValidationRule for LimitedTypeConversionRule {
                         }
                     }
 
-                    // Check input type for 8/16-bit
+                    // Check input type for limited-use 8/16-bit
                     if let Some(rspirv::dr::Operand::IdRef(input_id)) = inst.operands.first() {
                         let input_inst = crate::validation::types::ResultId::try_from(*input_id)
                             .ok()
@@ -1402,9 +1416,7 @@ impl ValidationRule for LimitedTypeConversionRule {
 
                         if let Some(input_inst) = input_inst {
                             if let Some(input_type_id) = input_inst.result_type {
-                                let input_width =
-                                    resolver.get_bit_width(input_type_id, ctx.definitions);
-                                if matches!(input_width, Some(8) | Some(16)) {
+                                if contains_limited_use_type(input_type_id) {
                                     if let (Some(func), Some(block)) = (function_id, block_id) {
                                         return Err(
                                             ValidationError::ConversionLimitedTypeNotAllowed {

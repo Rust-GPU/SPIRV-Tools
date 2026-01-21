@@ -202,14 +202,6 @@ impl ValidationRule for ImageTypeRule {
                 }
             }
 
-            // Validate: Buffer images must have format != Unknown in Vulkan
-            if dim == Dim::DimBuffer && format == ImageFormat::Unknown {
-                if ctx.is_vulkan_env() {
-                    return Err(ValidationError::ImageTypeBufferFormatRequired {
-                        type_id: inst.result_id.map(|id| TypeId::try_from(id).ok()).flatten(),
-                    }.into());
-                }
-            }
         }
 
         Ok(())
@@ -264,9 +256,15 @@ impl ValidationRule for ImageOperandRule {
                         None => continue,
                     };
 
-                    // Validate multisampled images require Sample operand
+                    // Validate multisampled images require Sample operand for fetch, read, and write operations
+                    // Query operations (OpImageQuerySize, etc.) don't require the Sample operand
                     if let Some(ref info) = image_type_info {
-                        if info.multisampled != 0 && !mask.contains(ImageOperands::SAMPLE) {
+                        let requires_sample = inst.class.opcode.is_fetch()
+                            || inst.class.opcode.is_image_read_write();
+                        if info.multisampled != 0
+                            && requires_sample
+                            && !mask.contains(ImageOperands::SAMPLE)
+                        {
                             return Err(ValidationError::ImageOperandSampleRequiredForMultisampled {
                                 function: function_id,
                                 block: block_id,

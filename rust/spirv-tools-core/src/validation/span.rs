@@ -226,12 +226,18 @@ pub struct LabeledSpan {
     pub span: SourceSpan,
     /// The label for this span.
     pub label: SpanLabel,
+    /// Optional disassembled instruction text (for binary validation).
+    pub instruction_text: Option<String>,
 }
 
 impl LabeledSpan {
     /// Creates a new labeled span.
     pub fn new(span: SourceSpan, label: SpanLabel) -> Self {
-        Self { span, label }
+        Self {
+            span,
+            label,
+            instruction_text: None,
+        }
     }
 
     /// Creates a labeled span with a primary label.
@@ -242,6 +248,12 @@ impl LabeledSpan {
     /// Creates a labeled span with a secondary label.
     pub fn secondary(span: SourceSpan, message: impl Into<String>) -> Self {
         Self::new(span, SpanLabel::secondary(message))
+    }
+
+    /// Adds instruction text to this labeled span.
+    pub fn with_instruction_text(mut self, text: impl Into<String>) -> Self {
+        self.instruction_text = Some(text.into());
+        self
     }
 }
 
@@ -406,6 +418,11 @@ impl<E: fmt::Display> fmt::Display for SpannedError<E> {
                         )?;
                     }
                 }
+            }
+
+            // Display the instruction text if available
+            if let Some(ref text) = labeled_span.instruction_text {
+                write!(f, "\n  {}", text)?;
             }
         }
 

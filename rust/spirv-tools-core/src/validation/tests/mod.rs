@@ -9,7 +9,7 @@ use prelude::*;
 
 // Import private validation functions used in tests
 use super::{
-    collect_result_instructions, parse_module, validate_words,
+    collect_result_instructions, parse_module, validate_words_internal,
 };
 use super::rules::block_layout::array_stride;
 
@@ -14146,7 +14146,7 @@ fn opcode_helpers_classify_capabilities_and_extensions() {
             array_stride(&parsed, ResultId::try_from(5).unwrap()),
             Some(8)
         );
-        let validation_result = validate_words(
+        let validation_result = validate_words_internal(
             ModuleWords::from(Arc::from(binary.as_slice())),
             TargetEnv::Universal1_6,
             options.clone(),
@@ -25050,9 +25050,13 @@ OpFunctionEnd
 
     #[test]
     fn uniform_constant_8bit_is_disallowed() {
+        // When Int8 capability is NOT present, 8-bit types in UniformConstant
+        // storage class should be rejected because there's no enabling capability.
+        // Note: Without Int8, the 8-bit type definition itself requires a storage
+        // capability like StorageBuffer8BitAccess, StoragePushConstant8, etc.
         let text = [
             "OpCapability Shader",
-            "OpCapability Int8",
+            // No Int8 capability - so storage class restrictions apply
             "OpMemoryModel Logical GLSL450",
             "OpEntryPoint Vertex %main \"main\" %var",
             "OpName %main \"main\"",
@@ -25081,9 +25085,11 @@ OpFunctionEnd
 
     #[test]
     fn input_8bit_is_disallowed() {
+        // When Int8 capability is NOT present, 8-bit types in Input storage class
+        // should be rejected because there's no enabling capability for Input/Output.
         let text = [
             "OpCapability Shader",
-            "OpCapability Int8",
+            // No Int8 capability - so storage class restrictions apply
             "OpMemoryModel Logical GLSL450",
             "OpEntryPoint Vertex %main \"main\" %var",
             "OpName %main \"main\"",
@@ -25219,9 +25225,11 @@ OpFunctionEnd
 
     #[test]
     fn workgroup_16bit_requires_capability() {
+        // When Int16 capability is NOT present, 16-bit types in Workgroup storage class
+        // require WorkgroupMemoryExplicitLayout16BitAccessKHR capability.
         let text = [
             "OpCapability Shader",
-            "OpCapability Int16",
+            // No Int16 capability - so storage class restrictions apply
             "OpMemoryModel Logical GLSL450",
             "OpEntryPoint Vertex %main \"main\" %var",
             "OpName %main \"main\"",
@@ -25308,9 +25316,11 @@ OpFunctionEnd
 
     #[test]
     fn push_constant_8bit_requires_capability() {
+        // When Int8 capability is NOT present, 8-bit types in PushConstant storage class
+        // require StoragePushConstant8 capability.
         let text = [
             "OpCapability Shader",
-            "OpCapability Int8",
+            // No Int8 capability - so storage class restrictions apply
             "OpMemoryModel Logical GLSL450",
             "OpEntryPoint Vertex %main \"main\" %var",
             "OpName %main \"main\"",
@@ -29143,4 +29153,83 @@ fn validation_without_spans_still_works() {
         options,
     );
     assert!(result.is_err(), "validation should fail due to struct member limit");
+}
+
+// ============================================================================
+// Limited-Use Type Conversion Tests
+// ============================================================================
+
+#[test]
+fn u_convert_16bit_with_int16_passes() {
+    let text = [
+        "OpCapability Shader",
+        "OpCapability Int16",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint Fragment %main \"main\"",
+        "OpExecutionMode %main OriginUpperLeft",
+        "%void = OpTypeVoid",
+        "%fn = OpTypeFunction %void",
+        "%u16 = OpTypeInt 16 0",
+        "%u32 = OpTypeInt 32 0",
+        "%c32 = OpConstant %u32 255",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "%result = OpUConvert %u16 %c32",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    let binary = assemble_text(&text).expect("assemble");
+    validate_module(&binary, TargetEnv::Universal1_6)
+        .expect("UConvert to 16-bit with Int16 capability should pass");
+}
+
+#[test]
+fn convert_s_to_f_16bit_with_int16_passes() {
+    let text = [
+        "OpCapability Shader",
+        "OpCapability Int16",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint Fragment %main \"main\"",
+        "OpExecutionMode %main OriginUpperLeft",
+        "%void = OpTypeVoid",
+        "%fn = OpTypeFunction %void",
+        "%i16 = OpTypeInt 16 1",
+        "%f32 = OpTypeFloat 32",
+        "%c16 = OpConstant %i16 1",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "%result = OpConvertSToF %f32 %c16",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    let binary = assemble_text(&text).expect("assemble");
+    validate_module(&binary, TargetEnv::Universal1_6)
+        .expect("ConvertSToF with 16-bit input with Int16 capability should pass");
+}
+
+#[test]
+fn convert_s_to_f_8bit_input_with_int8_passes() {
+    let text = [
+        "OpCapability Shader",
+        "OpCapability Int8",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint Fragment %main \"main\"",
+        "OpExecutionMode %main OriginUpperLeft",
+        "%void = OpTypeVoid",
+        "%fn = OpTypeFunction %void",
+        "%i8 = OpTypeInt 8 1",
+        "%f32 = OpTypeFloat 32",
+        "%c8 = OpConstant %i8 1",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "%result = OpConvertSToF %f32 %c8",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    let binary = assemble_text(&text).expect("assemble");
+    validate_module(&binary, TargetEnv::Universal1_6)
+        .expect("ConvertSToF with 8-bit input with Int8 capability should pass");
 }

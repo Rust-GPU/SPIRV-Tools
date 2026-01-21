@@ -1,6 +1,5 @@
 use std::{
-    collections::{hash_map::DefaultHasher, BTreeMap, HashMap, HashSet},
-    hash::{Hash, Hasher},
+    collections::{HashMap, HashSet},
     sync::Arc,
 };
 
@@ -32,6 +31,27 @@ pub use types::{
     IdBound, IdKind, MemberDecorationTargetId, MemberIndex, MergeTargetKind, ModuleWords,
     OperandId, ResultId, Schema, TypeId, ZeroIdError,
 };
+
+// Validator options and limits
+pub mod options;
+pub use options::{
+    ValidationOptions, ValidationLimits,
+    LIMIT_MAX_STRUCT_MEMBERS, LIMIT_MAX_STRUCT_DEPTH, LIMIT_MAX_LOCAL_VARIABLES,
+    LIMIT_MAX_GLOBAL_VARIABLES, LIMIT_MAX_SWITCH_BRANCHES, LIMIT_MAX_FUNCTION_ARGS,
+    LIMIT_MAX_CONTROL_FLOW_NESTING_DEPTH, LIMIT_MAX_ACCESS_CHAIN_INDEXES, LIMIT_MAX_ID_BOUND,
+};
+
+// Validated header
+pub mod header;
+pub use header::ValidatedHeader;
+
+// Friendly names for error messages
+pub mod friendly_names;
+pub use friendly_names::{FriendlyNames, build_friendly_name_table, format_validation_error, format_validation_error_from_words};
+
+// ValidModule and related types
+pub mod valid_module;
+pub use valid_module::{ValidModule, ValidModuleCache, MaybeValidModule, ValidatableModule};
 
 // Shared helper utilities
 pub mod helpers;
@@ -76,490 +96,6 @@ use helpers::{
     collect_result_opcodes, collect_result_types, is_memory_object_declaration,
 };
 
-/// A validated module header with a checked bound and schema.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct ValidatedHeader {
-    version: SpirvVersion,
-    bound: CheckedBound,
-    schema: Schema,
-}
-
-/// Validator options mirrored from the C++ validator settings.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ValidationOptions {
-    /// Permit relaxed struct store handling.
-    pub relax_struct_store: bool,
-    /// Permit logical pointer relaxations.
-    pub relax_logical_pointer: bool,
-    /// Permit relaxed block layout.
-    pub relax_block_layout: bool,
-    /// Enable uniform buffer standard layout.
-    pub uniform_buffer_standard_layout: bool,
-    /// Enable scalar block layout.
-    pub scalar_block_layout: bool,
-    /// Enable workgroup scalar block layout.
-    pub workgroup_scalar_block_layout: bool,
-    /// Skip block layout validation entirely.
-    pub skip_block_layout: bool,
-    /// Allow LocalSizeId decoration.
-    pub allow_localsizeid: bool,
-    /// Allow offset texture operand usage.
-    pub allow_offset_texture_operand: bool,
-    /// Allow Vulkan 32-bit bitwise operations.
-    pub allow_vulkan_32_bit_bitwise: bool,
-    /// Enable pre-HLSL legalization relaxations.
-    pub before_hlsl_legalization: bool,
-    /// Use friendly names for diagnostics.
-    pub use_friendly_names: bool,
-    /// Validator limit overrides keyed by the limit enum value.
-    pub limits: BTreeMap<u32, u32>,
-}
-
-/// User-facing names collected from debug instructions.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct FriendlyNames {
-    id_names: HashMap<u32, String>,
-    member_names: HashMap<(u32, MemberIndex), String>,
-}
-
-impl FriendlyNames {
-    /// Constructs a friendly-name table from raw id/member maps.
-    pub fn from_parts(
-        id_names: HashMap<u32, String>,
-        member_names: HashMap<(u32, MemberIndex), String>,
-    ) -> Self {
-        FriendlyNames {
-            id_names,
-            member_names,
-        }
-    }
-
-    /// Returns any `OpName`-provided name for the given result id.
-    pub fn id(&self, id: u32) -> Option<&str> {
-        self.id_names.get(&id).map(String::as_str)
-    }
-
-    /// Returns any `OpMemberName`-provided name for the given struct/member pair.
-    pub fn member(&self, struct_id: u32, member: MemberIndex) -> Option<&str> {
-        self.member_names
-            .get(&(struct_id, member))
-            .map(String::as_str)
-    }
-
-    /// Formats an id with a friendly suffix when available (e.g., `%5 (foo)`).
-    pub fn format_id(&self, id: u32) -> String {
-        if let Some(name) = self.id(id) {
-            format!("%{id} ({name})")
-        } else {
-            format!("%{id}")
-        }
-    }
-
-    /// Formats a struct member with a friendly suffix when available.
-    pub fn format_member(&self, struct_id: u32, member: MemberIndex) -> String {
-        if let Some(name) = self.member(struct_id, member) {
-            format!("%{struct_id}.{member} ({name})")
-        } else {
-            format!("%{struct_id}.{member}")
-        }
-    }
-
-    /// Accesses the raw id→name table.
-    pub fn id_names(&self) -> &HashMap<u32, String> {
-        &self.id_names
-    }
-
-    /// Accesses the raw (struct id, member)→name table.
-    pub fn member_names(&self) -> &HashMap<(u32, MemberIndex), String> {
-        &self.member_names
-    }
-}
-
-/// Formats a validation error, appending friendly names when provided.
-pub fn format_validation_error(error: &ValidationError, names: Option<&FriendlyNames>) -> String {
-    match (error, names) {
-        (ValidationError::ExecutionModeWithoutEntryPoint { function }, Some(names)) => {
-            names.format_id((*function).into())
-        }
-        (ValidationError::InvalidEntryPointTarget { target, .. }, Some(names)) => {
-            names.format_id((*target).into())
-        }
-        (
-            ValidationError::EntryPointInterfaceStorageClassInvalid {
-                entry_point,
-                interface,
-                ..
-            },
-            Some(names),
-        ) => format!(
-            "{} interface {}",
-            names.format_id((*entry_point).into()),
-            names.format_id((*interface).into())
-        ),
-        (
-            ValidationError::EntryPointInterfaceStorageClassDuplicate {
-                entry_point,
-                storage_class,
-            },
-            Some(names),
-        ) => format!(
-            "{} has duplicate {storage_class:?} interfaces",
-            names.format_id((*entry_point).into())
-        ),
-        (
-            ValidationError::EntryPointInterfaceLocationConflict {
-                entry_point,
-                storage_class,
-                location,
-                component,
-            },
-            Some(names),
-        ) => format!(
-            "{} {storage_class:?} location {location} component {component}",
-            names.format_id((*entry_point).into())
-        ),
-        (
-            ValidationError::ExecutionModeRequiresExecutionModel {
-                entry_point,
-                mode,
-                execution_model,
-                allowed_models,
-            },
-            Some(names),
-        ) => format!(
-            "{} uses {execution_model:?} with mode {mode:?} (allowed: {:?})",
-            names.format_id((*entry_point).into()),
-            allowed_models
-        ),
-        (
-            ValidationError::InvalidExecutionModeValue {
-                entry_point,
-                mode,
-                value,
-            },
-            Some(names),
-        ) => format!(
-            "{} has {mode:?} value {value}",
-            names.format_id((*entry_point).into())
-        ),
-        (
-            ValidationError::EntryPointInterfaceFloatEncodingInvalid {
-                interface,
-                storage_class,
-                encoding,
-            },
-            Some(names),
-        ) => format!(
-            "{} in {storage_class:?} uses {encoding:?}",
-            names.format_id((*interface).into())
-        ),
-        (
-            ValidationError::DuplicateEntryPoint {
-                function,
-                execution_model,
-            },
-            Some(names),
-        ) => format!(
-            "{} ({execution_model:?})",
-            names.format_id((*function).into())
-        ),
-        (
-            ValidationError::DuplicateEntryPointInterface {
-                entry_point,
-                interface,
-            },
-            Some(names),
-        ) => format!(
-            "{} duplicate interface {}",
-            names.format_id((*entry_point).into()),
-            names.format_id((*interface).into())
-        ),
-        (ValidationError::FunctionDeclarationAfterDefinition { function }, Some(names)) => {
-            names.format_id((*function).into())
-        }
-        (ValidationError::MissingFunctionEntryBlock { function }, Some(names)) => {
-            names.format_id((*function).into())
-        }
-        (ValidationError::MissingBlockTerminator { function, block }, Some(names)) => format!(
-            "{} in block {}",
-            names.format_id((*function).into()),
-            names.format_id((*block).into())
-        ),
-        (ValidationError::InstructionsAfterTerminator { function, block }, Some(names)) => format!(
-            "{} in block {}",
-            names.format_id((*function).into()),
-            names.format_id((*block).into())
-        ),
-        (ValidationError::MissingBlockTarget { function, target }, Some(names)) => format!(
-            "{} missing block {}",
-            names.format_id((*function).into()),
-            names.format_id((*target).into())
-        ),
-        (
-            ValidationError::FunctionCallTargetNotFunction {
-                function,
-                target,
-                ..
-            },
-            Some(names),
-        ) => format!(
-            "{} calls non-function {}",
-            names.format_id((*function).into()),
-            names.format_id((*target).into())
-        ),
-        (
-            ValidationError::MergeTargetMissing {
-                function, target, ..
-            },
-            Some(names),
-        ) => format!(
-            "{} missing block {}",
-            names.format_id((*function).into()),
-            names.format_id((*target).into())
-        ),
-        (
-            ValidationError::MergeInstructionNotBeforeTerminator {
-                function, block, ..
-            },
-            Some(names),
-        )
-        | (
-            ValidationError::InvalidMergeTerminator {
-                function, block, ..
-            },
-            Some(names),
-        )
-        | (ValidationError::DuplicateMergeInstruction { function, block }, Some(names))
-        | (
-            ValidationError::ContinueTargetMatchesMerge {
-                function, block, ..
-            },
-            Some(names),
-        )
-        | (
-            ValidationError::MissingSelectionMerge {
-                function, block, ..
-            },
-            Some(names),
-        )
-        | (
-            ValidationError::PhiIncomingTypeMismatch {
-                function, block, ..
-            },
-            Some(names),
-        )
-        | (
-            ValidationError::ValueDefinedInAnotherFunction {
-                function,
-                value: block,
-            },
-            Some(names),
-        )
-        | (
-            ValidationError::FunctionVariableStorageClassMismatch {
-                function,
-                variable: block,
-                ..
-            },
-            Some(names),
-        )
-        | (
-            ValidationError::FunctionVariableNotInEntryBlock {
-                function,
-                variable: block,
-            },
-            Some(names),
-        ) => format!(
-            "{} in block {}",
-            names.format_id((*function).into()),
-            names.format_id((*block).into())
-        ),
-        (
-            ValidationError::MissingBlockLabel {
-                function,
-                block_index,
-            },
-            Some(names),
-        ) => format!(
-            "{} missing OpLabel in block {}",
-            names.format_id((*function).into()),
-            block_index
-        ),
-        (
-            ValidationError::MergeTargetIsBlock {
-                function,
-                block,
-                kind,
-                target,
-            },
-            Some(names),
-        ) => format!(
-            "{} uses {:?} target {} equal to its block {}",
-            names.format_id((*function).into()),
-            kind,
-            names.format_id((*target).into()),
-            names.format_id((*block).into()),
-        ),
-        (
-            ValidationError::ValueNotDominated {
-                function,
-                block,
-                value,
-            },
-            Some(names),
-        ) => format!(
-            "{} uses value {} in block {} before its definition dominates",
-            names.format_id((*function).into()),
-            names.format_id((*value).into()),
-            names.format_id((*block).into()),
-        ),
-        (
-            ValidationError::PhiIncomingNotDominated {
-                function,
-                block,
-                incoming,
-                value,
-            },
-            Some(names),
-        ) => format!(
-            "{} uses incoming value {} for predecessor {} in block {} before its definition dominates",
-            names.format_id((*function).into()),
-            names.format_id((*value).into()),
-            names.format_id((*incoming).into()),
-            names.format_id((*block).into()),
-        ),
-        (
-            ValidationError::UndefinedId { function, id },
-            Some(names),
-        ) => {
-            let func = function
-                .map(|f| format!(" in function {}", names.format_id(f.into())))
-                .unwrap_or_default();
-            format!("use of undefined id {}{}", names.format_id((*id).into()), func)
-        }
-        (
-            ValidationError::ResultTypeNotType {
-                instruction,
-                result_type,
-                found,
-            },
-            Some(names),
-        ) => format!(
-            "{:?} uses result type {} defined by non-type opcode {:?}",
-            instruction,
-            names.format_id((*result_type).into()),
-            found
-        ),
-        (ValidationError::PhiAfterNonPhi { function, block }, Some(names)) => format!(
-            "{} in block {}",
-            names.format_id((*function).into()),
-            names.format_id((*block).into())
-        ),
-        (ValidationError::MissingReturnValue { function, .. }, Some(names)) => {
-            names.format_id((*function).into())
-        }
-        (ValidationError::ReturnValueInVoidFunction { function }, Some(names)) => {
-            names.format_id((*function).into())
-        }
-        (ValidationError::FunctionTypeParameterVoid { type_id, parameter }, Some(names)) => {
-            format!(
-                "{} parameter {}",
-                names.format_id((*type_id).into()),
-                names.format_id((*parameter).into())
-            )
-        }
-        (ValidationError::FunctionReturnTypeMismatch { function, .. }, Some(names))
-        | (ValidationError::FunctionParameterCountMismatch { function, .. }, Some(names))
-        | (ValidationError::FunctionParameterTypeMismatch { function, .. }, Some(names)) => {
-            names.format_id((*function).into())
-        }
-        _ => error.to_string(),
-    }
-}
-
-/// Attempts to render a validation error with friendly names derived from the provided module words.
-pub fn format_validation_error_from_words(
-    words: &[u32],
-    options: &ValidationOptions,
-    error: &ValidationError,
-) -> String {
-    if !options.use_friendly_names {
-        return error.to_string();
-    }
-    let names = collect_friendly_names(words);
-    format_validation_error(error, names.as_ref())
-}
-
-impl Default for ValidationOptions {
-    fn default() -> Self {
-        Self {
-            relax_struct_store: false,
-            relax_logical_pointer: false,
-            relax_block_layout: false,
-            uniform_buffer_standard_layout: false,
-            scalar_block_layout: false,
-            workgroup_scalar_block_layout: false,
-            skip_block_layout: false,
-            allow_localsizeid: false,
-            allow_offset_texture_operand: false,
-            allow_vulkan_32_bit_bitwise: false,
-            before_hlsl_legalization: false,
-            use_friendly_names: true,
-            limits: BTreeMap::new(),
-        }
-    }
-}
-
-impl Hash for ValidationOptions {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.relax_struct_store.hash(state);
-        self.relax_logical_pointer.hash(state);
-        self.relax_block_layout.hash(state);
-        self.uniform_buffer_standard_layout.hash(state);
-        self.scalar_block_layout.hash(state);
-        self.workgroup_scalar_block_layout.hash(state);
-        self.skip_block_layout.hash(state);
-        self.allow_localsizeid.hash(state);
-        self.allow_offset_texture_operand.hash(state);
-        self.allow_vulkan_32_bit_bitwise.hash(state);
-        self.before_hlsl_legalization.hash(state);
-        self.use_friendly_names.hash(state);
-        for (k, v) in &self.limits {
-            k.hash(state);
-            v.hash(state);
-        }
-    }
-}
-
-impl ValidationOptions {
-    /// Returns a copy of the options with the given limit override applied.
-    pub fn with_limit(mut self, kind: u32, value: u32) -> Self {
-        self.limits.insert(kind, value);
-        self
-    }
-}
-
-/// Limit kind for the maximum number of struct members.
-pub const LIMIT_MAX_STRUCT_MEMBERS: u32 = 0;
-/// Limit kind for maximum struct nesting depth.
-pub const LIMIT_MAX_STRUCT_DEPTH: u32 = 1;
-/// Limit kind for maximum local variables.
-pub const LIMIT_MAX_LOCAL_VARIABLES: u32 = 2;
-/// Limit kind for maximum global variables.
-pub const LIMIT_MAX_GLOBAL_VARIABLES: u32 = 3;
-/// Limit kind for maximum switch branches.
-pub const LIMIT_MAX_SWITCH_BRANCHES: u32 = 4;
-/// Limit kind for maximum function arguments.
-pub const LIMIT_MAX_FUNCTION_ARGS: u32 = 5;
-/// Limit kind for maximum control-flow nesting depth.
-pub const LIMIT_MAX_CONTROL_FLOW_NESTING_DEPTH: u32 = 6;
-/// Limit kind for maximum access-chain indexes.
-pub const LIMIT_MAX_ACCESS_CHAIN_INDEXES: u32 = 7;
-const LIMIT_MAX_ID_BOUND: u32 = 8;
-
-/// A simple snapshot of validator limits keyed by the limit enum value.
-pub type ValidationLimits = BTreeMap<u32, u32>;
-
 /// A set of declared capabilities for a module.
 #[derive(Debug, Default)]
 struct CapabilitySet {
@@ -594,52 +130,6 @@ fn merge_versions(
         (None, None) => None,
     }
 }
-
-impl ValidatedHeader {
-    /// Creates a validated header from its components.
-    pub fn new(version: SpirvVersion, bound: CheckedBound, schema: Schema) -> Self {
-        Self {
-            version,
-            bound,
-            schema,
-        }
-    }
-
-    /// Parses and validates a module header, ensuring the bound and schema are valid.
-    pub fn from_module(module: &Module) -> Result<Self, ValidationError> {
-        let header = module
-            .header
-            .as_ref()
-            .ok_or(ValidationError::MissingHeader)?;
-        let schema = Schema::validate(header.reserved_word)?;
-        let version = SpirvVersion::from_word(header.version);
-        let declared_bound = DeclaredBound(header.bound);
-        let bound = CheckedBound::new(declared_bound).ok_or(ValidationError::InvalidIdBound {
-            bound: declared_bound,
-        })?;
-        Ok(Self {
-            version,
-            bound,
-            schema,
-        })
-    }
-
-    /// Returns the validated id bound associated with this header.
-    pub fn bound(self) -> CheckedBound {
-        self.bound
-    }
-
-    /// Returns the module's declared SPIR-V version.
-    pub fn version(self) -> SpirvVersion {
-        self.version
-    }
-
-    /// Returns the validated schema value (always zero for valid modules).
-    pub fn schema(self) -> Schema {
-        self.schema
-    }
-}
-
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum Section {
@@ -716,65 +206,6 @@ impl MemoryModelState {
     }
 }
 
-/// A validated module containing the original binary plus the parsed representation.
-#[derive(Debug)]
-pub struct ValidModule {
-    words: ModuleWords,
-    module: Module,
-    env: TargetEnv,
-    header: ValidatedHeader,
-    effective_version: SpirvVersion,
-    options: ValidationOptions,
-    friendly_names: Option<FriendlyNames>,
-}
-
-impl ValidModule {
-    /// Returns the validated words that were successfully checked.
-    pub fn words(&self) -> &[u32] {
-        self.words.as_slice()
-    }
-
-    /// Returns the parsed module corresponding to the validated words.
-    pub fn module(&self) -> &Module {
-        &self.module
-    }
-
-    /// Returns the target environment this module was validated against.
-    pub fn env(&self) -> TargetEnv {
-        self.env
-    }
-
-    /// Returns the SPIR-V version actually used during validation (module version clamped to env).
-    pub fn effective_version(&self) -> SpirvVersion {
-        self.effective_version
-    }
-
-    /// Returns the declared SPIR-V version from the module header.
-    pub fn module_version(&self) -> SpirvVersion {
-        self.header.version()
-    }
-
-    /// Returns the validated module header.
-    pub fn header(&self) -> ValidatedHeader {
-        self.header
-    }
-
-    /// Returns a shared handle to the validated words.
-    pub fn words_handle(&self) -> ModuleWords {
-        self.words.clone()
-    }
-
-    /// Returns the validator options applied during validation.
-    pub fn options(&self) -> &ValidationOptions {
-        &self.options
-    }
-
-    /// Returns friendly names applied during validation (if enabled).
-    pub fn friendly_names(&self) -> Option<&FriendlyNames> {
-        self.friendly_names.as_ref()
-    }
-}
-
 /// Validates a SPIR-V module against invariants that can be checked without target-specific
 /// knowledge.
 pub fn validate_module(words: &[u32], env: TargetEnv) -> Result<(), ValidationError> {
@@ -787,7 +218,7 @@ pub fn validate_module_with_options(
     env: TargetEnv,
     options: ValidationOptions,
 ) -> Result<(), ValidationError> {
-    validate_words(ModuleWords::from(Arc::from(words)), env, options, None)
+    validate_words_internal(ModuleWords::from(Arc::from(words)), env, options, None)
         .map(|_| ())
         .map_err(|e| e.into())
 }
@@ -804,49 +235,11 @@ pub fn validate_module_with_spans(
     options: ValidationOptions,
     span_map: &span::SpanMap,
 ) -> Result<(), SpannedValidationError> {
-    validate_words(ModuleWords::from(Arc::from(words)), env, options, Some(span_map))
+    validate_words_internal(ModuleWords::from(Arc::from(words)), env, options, Some(span_map))
         .map(|_| ())
 }
 
-/// A cache of validated modules keyed by target environment and module contents.
-#[derive(Default)]
-pub struct ValidModuleCache {
-    entries: std::collections::HashMap<(TargetEnv, u64, ValidationOptions), Arc<ValidModule>>,
-}
-
-impl ValidModuleCache {
-    /// Validate the provided binary words, returning a shared validated module and caching the result.
-    pub fn validate_words(
-        &mut self,
-        words: &[u32],
-        env: TargetEnv,
-    ) -> Result<Arc<ValidModule>, ValidationError> {
-        self.validate_words_with_options(words, env, ValidationOptions::default())
-    }
-
-    /// Validate with explicit options.
-    pub fn validate_words_with_options(
-        &mut self,
-        words: &[u32],
-        env: TargetEnv,
-        options: ValidationOptions,
-    ) -> Result<Arc<ValidModule>, ValidationError> {
-        let hash = hash_words(words, env);
-        if let Some(cached) = self.entries.get(&(env, hash, options.clone())) {
-            if cached.words_handle().as_slice() == words {
-                return Ok(Arc::clone(cached));
-            }
-        }
-        let validated = validate_words(ModuleWords::from(Arc::from(words)), env, options.clone(), None)
-            .map_err(|e: SpannedValidationError| e.error)?;
-        let validated = Arc::new(validated);
-        self.entries
-            .insert((env, hash, options), Arc::clone(&validated));
-        Ok(validated)
-    }
-}
-
-fn validate_words(
+pub(crate) fn validate_words_internal(
     words: ModuleWords,
     env: TargetEnv,
     options: ValidationOptions,
@@ -860,9 +253,9 @@ fn validate_words(
     validate_extension_allowlist(&module, env)?;
     let header = ValidatedHeader::from_module(&module)?;
     if let Some(&limit) = options.limits.get(&LIMIT_MAX_ID_BOUND) {
-        if header.bound.declared().0 > limit {
+        if header.bound().declared().0 > limit {
             return Err(ValidationError::IdBoundExceedsLimit {
-                declared: header.bound.declared(),
+                declared: header.bound().declared(),
                 limit,
             }.into());
         }
@@ -975,142 +368,6 @@ fn validate_words(
         options,
         friendly_names,
     })
-}
-
-fn build_friendly_name_table(module: &Module) -> FriendlyNames {
-    let mut id_names = HashMap::new();
-    let mut member_names = HashMap::new();
-    for inst in &module.debug_names {
-        match inst.class.opcode {
-            rspirv::spirv::Op::Name => {
-                if let (
-                    Some(rspirv::dr::Operand::IdRef(id)),
-                    Some(rspirv::dr::Operand::LiteralString(name)),
-                ) = (inst.operands.first(), inst.operands.get(1))
-                {
-                    id_names.insert(*id, name.clone());
-                }
-            }
-            rspirv::spirv::Op::MemberName => {
-                if let (
-                    Some(rspirv::dr::Operand::IdRef(struct_id)),
-                    Some(rspirv::dr::Operand::LiteralBit32(member)),
-                    Some(rspirv::dr::Operand::LiteralString(name)),
-                ) = (
-                    inst.operands.first(),
-                    inst.operands.get(1),
-                    inst.operands.get(2),
-                ) {
-                    member_names.insert((*struct_id, MemberIndex(*member)), name.clone());
-                }
-            }
-            _ => {}
-        }
-    }
-    FriendlyNames {
-        id_names,
-        member_names,
-    }
-}
-
-fn collect_friendly_names(words: &[u32]) -> Option<FriendlyNames> {
-    let mut loader = rspirv::dr::Loader::new();
-    if rspirv::binary::parse_words(words, &mut loader).is_err() {
-        return None;
-    }
-    let module = loader.module();
-    Some(build_friendly_name_table(&module))
-}
-// Entry point location validation has been moved to LocationConflictRule in interfaces.rs
-// Helper functions consumed_components_for_type, has_patch_decoration, location_and_component
-// have been moved to helpers.rs
-
-fn hash_words(words: &[u32], env: TargetEnv) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    env.hash(&mut hasher);
-    words.len().hash(&mut hasher);
-    for word in words {
-        word.hash(&mut hasher);
-    }
-    hasher.finish()
-}
-
-/// Input sources that can be validated before becoming a `ValidModule`.
-pub enum MaybeValidModule<'a> {
-    /// Pre-assembled SPIR-V words.
-    Binary(&'a [u32]),
-    /// SPIR-V assembly text to be assembled and validated.
-    Text(&'a str),
-}
-
-impl<'a> MaybeValidModule<'a> {
-    /// Validate the provided input, assembling text when necessary.
-    pub fn validate(self, env: TargetEnv) -> Result<ValidModule, ValidationError> {
-        self.validate_with_options(env, ValidationOptions::default())
-    }
-
-    /// Validate the provided input with explicit options, assembling text when necessary.
-    pub fn validate_with_options(
-        self,
-        env: TargetEnv,
-        options: ValidationOptions,
-    ) -> Result<ValidModule, ValidationError> {
-        match self {
-            MaybeValidModule::Binary(words) => {
-                validate_words(ModuleWords::from(Arc::from(words)), env, options, None)
-                    .map_err(|e: SpannedValidationError| e.error)
-            }
-            MaybeValidModule::Text(text) => {
-                let binary = ModuleWords::from(Arc::<[u32]>::from(
-                    crate::assembly::assemble_text(text)
-                        .map_err(|err| ValidationError::Parse(err.to_string()))?
-                        .into_boxed_slice(),
-                ));
-                validate_words(binary, env, options, None)
-                    .map_err(|e: SpannedValidationError| e.error)
-            }
-        }
-    }
-}
-
-/// Convenience trait for validating either binary words or assembly text.
-pub trait ValidatableModule<'a> {
-    /// Validates the module input for the requested target environment.
-    fn validate(self, env: TargetEnv) -> Result<ValidModule, ValidationError>
-    where
-        Self: Sized,
-    {
-        self.validate_with_options(env, ValidationOptions::default())
-    }
-
-    /// Validates the module input for the requested target environment with explicit options.
-    fn validate_with_options(
-        self,
-        env: TargetEnv,
-        options: ValidationOptions,
-    ) -> Result<ValidModule, ValidationError>
-    where
-        Self: Sized;
-}
-
-impl<'a> ValidatableModule<'a> for &'a [u32] {
-    fn validate_with_options(
-        self,
-        env: TargetEnv,
-        options: ValidationOptions,
-    ) -> Result<ValidModule, ValidationError> {
-        MaybeValidModule::Binary(self).validate_with_options(env, options)
-    }
-}
-
-impl<'a> ValidatableModule<'a> for &'a str {
-    fn validate_with_options(
-        self,
-        env: TargetEnv,
-        options: ValidationOptions,
-    ) -> Result<ValidModule, ValidationError> {
-        MaybeValidModule::Text(self).validate_with_options(env, options)
-    }
 }
 
 fn parse_module(words: &[u32]) -> Result<rspirv::dr::Module, ValidationError> {

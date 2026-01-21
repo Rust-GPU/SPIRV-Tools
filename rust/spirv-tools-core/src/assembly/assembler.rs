@@ -779,6 +779,14 @@ impl<'a> AssemblyTranslator<'a> {
             | spirv::Op::FAdd
             | spirv::Op::FSub
             | spirv::Op::FMul => self.translate_binary_arithmetic(instruction),
+            spirv::Op::Bitcast
+            | spirv::Op::ConvertFToU
+            | spirv::Op::ConvertFToS
+            | spirv::Op::ConvertSToF
+            | spirv::Op::ConvertUToF
+            | spirv::Op::UConvert
+            | spirv::Op::SConvert
+            | spirv::Op::FConvert => self.translate_unary_op(instruction),
             _ => self
                 .module_builder
                 .emit_error(instruction.opcode_position(), "unsupported opcode"),
@@ -2972,6 +2980,46 @@ impl<'a> AssemblyTranslator<'a> {
             Some(type_id),
             Some(result_id),
             vec![dr::Operand::IdRef(lhs_id), dr::Operand::IdRef(rhs_id)],
+        );
+        self.push_block_instruction(inst, opcode_pos);
+    }
+
+    fn translate_unary_op(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
+        let Some(result_type) = instruction.result_type() else {
+            self.module_builder
+                .emit_error(opcode_pos, "Unary operation missing result type");
+            return;
+        };
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder
+                .emit_error(opcode_pos, "Unary operation missing result id");
+            return;
+        };
+        let mut operands = instruction.operands().iter();
+        let Some(operand) = operands.next() else {
+            self.module_builder
+                .emit_error(opcode_pos, "Unary operation missing operand");
+            return;
+        };
+        if let Some(extra) = operands.next() {
+            self.module_builder.emit_error(
+                extra.span().start(),
+                "Unary operation received unexpected operands",
+            );
+            return;
+        }
+        let Some(operand_id) = self.operand_as_id(operand, "operand") else {
+            return;
+        };
+        let (type_id, result_id) = self
+            .module_builder
+            .bind_typed_result(result_type, result_id);
+        let inst = dr::Instruction::new(
+            instruction.opcode(),
+            Some(type_id),
+            Some(result_id),
+            vec![dr::Operand::IdRef(operand_id)],
         );
         self.push_block_instruction(inst, opcode_pos);
     }
@@ -5778,5 +5826,78 @@ OpFunctionEnd"#;
             }
             _ => panic!("expected text source location"),
         }
+    }
+
+    #[test]
+    fn translator_emits_bitcast() {
+        let source = [
+            "OpCapability Shader",
+            "OpCapability Int8",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Fragment %main \"main\"",
+            "OpExecutionMode %main OriginUpperLeft",
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+            "%u8 = OpTypeInt 8 0",
+            "%u32 = OpTypeInt 32 0",
+            "%c32 = OpConstant %u32 255",
+            "%main = OpFunction %void None %void_fn",
+            "%entry = OpLabel",
+            "%result = OpBitcast %u8 %c32",
+            "OpReturn",
+            "OpFunctionEnd",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let module = assemble_instructions(&refs).expect("assemble instructions");
+        let function = module.functions.first().expect("function");
+        let block = function.blocks.first().expect("entry block");
+        let bitcast = block
+            .instructions
+            .iter()
+            .find(|inst| inst.class.opcode == spirv::Op::Bitcast)
+            .expect("bitcast instruction");
+        assert!(bitcast.result_type.is_some());
+        assert!(bitcast.result_id.is_some());
+        assert_eq!(bitcast.operands.len(), 1);
+    }
+
+    #[test]
+    fn translator_emits_convert_s_to_f() {
+        let source = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "OpEntryPoint Fragment %main \"main\"",
+            "OpExecutionMode %main OriginUpperLeft",
+            "%void = OpTypeVoid",
+            "%void_fn = OpTypeFunction %void",
+            "%int = OpTypeInt 32 1",
+            "%float = OpTypeFloat 32",
+            "%ci = OpConstant %int 42",
+            "%main = OpFunction %void None %void_fn",
+            "%entry = OpLabel",
+            "%result = OpConvertSToF %float %ci",
+            "OpReturn",
+            "OpFunctionEnd",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let module = assemble_instructions(&refs).expect("assemble instructions");
+        let function = module.functions.first().expect("function");
+        let block = function.blocks.first().expect("entry block");
+        let convert = block
+            .instructions
+            .iter()
+            .find(|inst| inst.class.opcode == spirv::Op::ConvertSToF)
+            .expect("convert instruction");
+        assert!(convert.result_type.is_some());
+        assert!(convert.result_id.is_some());
+        assert_eq!(convert.operands.len(), 1);
     }
 }

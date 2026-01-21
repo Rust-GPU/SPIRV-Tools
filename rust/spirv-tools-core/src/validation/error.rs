@@ -689,7 +689,7 @@ pub enum ValidationError {
     },
     /// In logical addressing, a load/store pointer must come from a logical pointer-producing opcode.
     #[error(
-        "{instruction:?} Pointer <id> {pointer:?} is not a logical pointer."
+        "Op{instruction:?} Pointer <id> '{pointer}' is not a logical pointer."
     )]
     NotALogicalPointer {
         /// The load/store instruction.
