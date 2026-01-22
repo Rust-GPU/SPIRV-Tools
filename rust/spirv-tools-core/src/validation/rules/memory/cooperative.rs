@@ -15,9 +15,9 @@ use rspirv::dr::Operand;
 use rspirv::spirv::{Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::ResultId;
+use crate::validation::ValidationResult;
 
 use super::helpers::id_from_u32;
 
@@ -61,10 +61,18 @@ impl ValidationRule for CooperativeMatrixLengthRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for function in &ctx.module.functions {
-            let function_id = function.def.as_ref().and_then(|d| d.result_id).map(id_from_u32);
+            let function_id = function
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .map(id_from_u32);
 
             for block in &function.blocks {
-                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(id_from_u32);
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .map(id_from_u32);
 
                 for inst in &block.instructions {
                     let (is_khr, op_name) = match inst.class.opcode {
@@ -136,8 +144,9 @@ impl ValidationRule for CooperativeMatrixLengthRule {
                                         ValidationError::CooperativeMatrixLengthNvTypeMismatch {
                                             function: function_id,
                                             block: block_id,
-                                        }.into(),
-                        );
+                                        }
+                                        .into(),
+                                    );
                                 }
                             }
                         }
@@ -164,10 +173,18 @@ impl ValidationRule for CooperativeMatrixLoadStoreNVRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for function in &ctx.module.functions {
-            let function_id = function.def.as_ref().and_then(|d| d.result_id).map(id_from_u32);
+            let function_id = function
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .map(id_from_u32);
 
             for block in &function.blocks {
-                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(id_from_u32);
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .map(id_from_u32);
 
                 for inst in &block.instructions {
                     let (is_load, op_name) = match inst.class.opcode {
@@ -210,8 +227,9 @@ impl ValidationRule for CooperativeMatrixLoadStoreNVRule {
                                             operand_name,
                                             function: function_id,
                                             block: block_id,
-                                        }.into(),
-                        );
+                                        }
+                                        .into(),
+                                    );
                                 }
                             }
                         }
@@ -400,10 +418,18 @@ impl ValidationRule for CooperativeMatrixLoadStoreKHRRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for function in &ctx.module.functions {
-            let function_id = function.def.as_ref().and_then(|d| d.result_id).map(id_from_u32);
+            let function_id = function
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .map(id_from_u32);
 
             for block in &function.blocks {
-                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(id_from_u32);
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .map(id_from_u32);
 
                 for inst in &block.instructions {
                     let (is_load, op_name) = match inst.class.opcode {
@@ -446,8 +472,9 @@ impl ValidationRule for CooperativeMatrixLoadStoreKHRRule {
                                             operand_name,
                                             function: function_id,
                                             block: block_id,
-                                        }.into(),
-                        );
+                                        }
+                                        .into(),
+                                    );
                                 }
                             }
                         }
@@ -565,8 +592,9 @@ impl ValidationRule for CooperativeMatrixLoadStoreKHRRule {
                                             op_name,
                                             function: function_id,
                                             block: block_id,
-                                        }.into(),
-                        );
+                                        }
+                                        .into(),
+                                    );
                                 }
                                 // Check type is int
                                 if let Some(layout_type) = layout_inst.result_type {
@@ -587,7 +615,8 @@ impl ValidationRule for CooperativeMatrixLoadStoreKHRRule {
                                     }
                                 }
                                 // Get the actual value for stride checking
-                                if let Some(Operand::LiteralBit32(val)) = layout_inst.operands.first()
+                                if let Some(Operand::LiteralBit32(val)) =
+                                    layout_inst.operands.first()
                                 {
                                     layout_value = Some(*val as u64);
                                 }
@@ -637,8 +666,9 @@ impl ValidationRule for CooperativeMatrixLoadStoreKHRRule {
                                     layout,
                                     function: function_id,
                                     block: block_id,
-                                }.into(),
-                        );
+                                }
+                                .into(),
+                            );
                         }
                     }
                 }
@@ -663,10 +693,18 @@ impl ValidationRule for CooperativeVectorLoadStoreNVRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for function in &ctx.module.functions {
-            let function_id = function.def.as_ref().and_then(|d| d.result_id).map(id_from_u32);
+            let function_id = function
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .map(id_from_u32);
 
             for block in &function.blocks {
-                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(id_from_u32);
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .map(id_from_u32);
 
                 for inst in &block.instructions {
                     let (is_load, op_name) = match inst.class.opcode {
@@ -709,8 +747,9 @@ impl ValidationRule for CooperativeVectorLoadStoreNVRule {
                                             operand_name,
                                             function: function_id,
                                             block: block_id,
-                                        }.into(),
-                        );
+                                        }
+                                        .into(),
+                                    );
                                 }
                             }
                         }
@@ -728,8 +767,9 @@ impl ValidationRule for CooperativeVectorLoadStoreNVRule {
                                             op_name,
                                             function: function_id,
                                             block: block_id,
-                                        }.into(),
-                        );
+                                        }
+                                        .into(),
+                                    );
                                 }
 
                                 // Validate pointer type
@@ -793,9 +833,8 @@ impl ValidationRule for CooperativeVectorLoadStoreNVRule {
                                                         }
 
                                                         // Check array element type is scalar or vector
-                                                        if let Some(Operand::IdRef(
-                                                            array_elem_id,
-                                                        )) = pointee_type_inst.operands.first()
+                                                        if let Some(Operand::IdRef(array_elem_id)) =
+                                                            pointee_type_inst.operands.first()
                                                         {
                                                             if let Ok(array_elem_result_id) =
                                                                 ResultId::try_from(*array_elem_id)
@@ -804,15 +843,14 @@ impl ValidationRule for CooperativeVectorLoadStoreNVRule {
                                                                     ctx.definitions
                                                                         .get(&array_elem_result_id)
                                                                 {
-                                                                    let is_scalar_or_vector =
-                                                                        matches!(
-                                                                            array_elem_type_inst
-                                                                                .class
-                                                                                .opcode,
-                                                                            Op::TypeInt
-                                                                                | Op::TypeFloat
-                                                                                | Op::TypeVector
-                                                                        );
+                                                                    let is_scalar_or_vector = matches!(
+                                                                        array_elem_type_inst
+                                                                            .class
+                                                                            .opcode,
+                                                                        Op::TypeInt
+                                                                            | Op::TypeFloat
+                                                                            | Op::TypeVector
+                                                                    );
                                                                     if !is_scalar_or_vector {
                                                                         return Err(
                                                                             ValidationError::CooperativeVectorArrayElementTypeMismatch {
@@ -890,10 +928,7 @@ impl ValidationRule for CooperativeVectorLoadStoreNVRule {
 fn get_constant_u32(id: u32, ctx: &ValidationContext<'_>) -> Option<u32> {
     let result_id = ResultId::try_from(id).ok()?;
     let inst = ctx.definitions.get(&result_id)?;
-    if !matches!(
-        inst.class.opcode,
-        Op::Constant | Op::SpecConstant
-    ) {
+    if !matches!(inst.class.opcode, Op::Constant | Op::SpecConstant) {
         return None;
     }
     match inst.operands.first() {
@@ -979,10 +1014,18 @@ impl ValidationRule for CooperativeMatrixMulAddNVRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for function in &ctx.module.functions {
-            let function_id = function.def.as_ref().and_then(|d| d.result_id).map(id_from_u32);
+            let function_id = function
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .map(id_from_u32);
 
             for block in &function.blocks {
-                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(id_from_u32);
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .map(id_from_u32);
 
                 for inst in &block.instructions {
                     if inst.class.opcode != Op::CooperativeMatrixMulAddNV {
@@ -996,13 +1039,25 @@ impl ValidationRule for CooperativeMatrixMulAddNVRule {
 
                     // Operands: A, B, C
                     let a_id = inst.operands.first().and_then(|op| {
-                        if let Operand::IdRef(id) = op { Some(*id) } else { None }
+                        if let Operand::IdRef(id) = op {
+                            Some(*id)
+                        } else {
+                            None
+                        }
                     });
                     let b_id = inst.operands.get(1).and_then(|op| {
-                        if let Operand::IdRef(id) = op { Some(*id) } else { None }
+                        if let Operand::IdRef(id) = op {
+                            Some(*id)
+                        } else {
+                            None
+                        }
                     });
                     let c_id = inst.operands.get(2).and_then(|op| {
-                        if let Operand::IdRef(id) = op { Some(*id) } else { None }
+                        if let Operand::IdRef(id) = op {
+                            Some(*id)
+                        } else {
+                            None
+                        }
                     });
 
                     // Get operand types
@@ -1029,7 +1084,8 @@ impl ValidationRule for CooperativeMatrixMulAddNVRule {
                             operand_name: "A",
                             function: function_id,
                             block: block_id,
-                        }.into());
+                        }
+                        .into());
                     }
                     if !is_cooperative_matrix_nv_type(b_type_id, ctx) {
                         return Err(ValidationError::CooperativeMatrixMulAddTypeMismatch {
@@ -1037,7 +1093,8 @@ impl ValidationRule for CooperativeMatrixMulAddNVRule {
                             operand_name: "B",
                             function: function_id,
                             block: block_id,
-                        }.into());
+                        }
+                        .into());
                     }
                     if !is_cooperative_matrix_nv_type(c_type_id, ctx) {
                         return Err(ValidationError::CooperativeMatrixMulAddTypeMismatch {
@@ -1045,7 +1102,8 @@ impl ValidationRule for CooperativeMatrixMulAddNVRule {
                             operand_name: "C",
                             function: function_id,
                             block: block_id,
-                        }.into());
+                        }
+                        .into());
                     }
                     if !is_cooperative_matrix_nv_type(d_type_id, ctx) {
                         return Err(ValidationError::CooperativeMatrixMulAddTypeMismatch {
@@ -1053,7 +1111,8 @@ impl ValidationRule for CooperativeMatrixMulAddNVRule {
                             operand_name: "Result Type",
                             function: function_id,
                             block: block_id,
-                        }.into());
+                        }
+                        .into());
                     }
 
                     // Get matrix parameters
@@ -1062,18 +1121,23 @@ impl ValidationRule for CooperativeMatrixMulAddNVRule {
                     let c_params = get_matrix_params(c_type_id, ctx);
                     let d_params = get_matrix_params(d_type_id, ctx);
 
-                    if let (Some(a), Some(b), Some(c), Some(d)) = (a_params, b_params, c_params, d_params) {
+                    if let (Some(a), Some(b), Some(c), Some(d)) =
+                        (a_params, b_params, c_params, d_params)
+                    {
                         // Check scopes match
                         let scopes = [a.0, b.0, c.0, d.0];
                         for i in 0..scopes.len() {
                             for j in (i + 1)..scopes.len() {
                                 if let (Some(s1), Some(s2)) = (scopes[i], scopes[j]) {
                                     if s1 != s2 {
-                                        return Err(ValidationError::CooperativeMatrixMulAddScopeMismatch {
-                                            op_name,
-                                            function: function_id,
-                                            block: block_id,
-                                        }.into());
+                                        return Err(
+                                            ValidationError::CooperativeMatrixMulAddScopeMismatch {
+                                                op_name,
+                                                function: function_id,
+                                                block: block_id,
+                                            }
+                                            .into(),
+                                        );
                                     }
                                 }
                             }
@@ -1082,51 +1146,66 @@ impl ValidationRule for CooperativeMatrixMulAddNVRule {
                         // Check M dimension: A_rows == C_rows == D_rows
                         if let (Some(a_rows), Some(c_rows)) = (a.1, c.1) {
                             if a_rows != c_rows {
-                                return Err(ValidationError::CooperativeMatrixMulAddMDimensionMismatch {
-                                    op_name,
-                                    function: function_id,
-                                    block: block_id,
-                                }.into());
+                                return Err(
+                                    ValidationError::CooperativeMatrixMulAddMDimensionMismatch {
+                                        op_name,
+                                        function: function_id,
+                                        block: block_id,
+                                    }
+                                    .into(),
+                                );
                             }
                         }
                         if let (Some(a_rows), Some(d_rows)) = (a.1, d.1) {
                             if a_rows != d_rows {
-                                return Err(ValidationError::CooperativeMatrixMulAddMDimensionMismatch {
-                                    op_name,
-                                    function: function_id,
-                                    block: block_id,
-                                }.into());
+                                return Err(
+                                    ValidationError::CooperativeMatrixMulAddMDimensionMismatch {
+                                        op_name,
+                                        function: function_id,
+                                        block: block_id,
+                                    }
+                                    .into(),
+                                );
                             }
                         }
 
                         // Check N dimension: B_cols == C_cols == D_cols
                         if let (Some(b_cols), Some(c_cols)) = (b.2, c.2) {
                             if b_cols != c_cols {
-                                return Err(ValidationError::CooperativeMatrixMulAddNDimensionMismatch {
-                                    op_name,
-                                    function: function_id,
-                                    block: block_id,
-                                }.into());
+                                return Err(
+                                    ValidationError::CooperativeMatrixMulAddNDimensionMismatch {
+                                        op_name,
+                                        function: function_id,
+                                        block: block_id,
+                                    }
+                                    .into(),
+                                );
                             }
                         }
                         if let (Some(b_cols), Some(d_cols)) = (b.2, d.2) {
                             if b_cols != d_cols {
-                                return Err(ValidationError::CooperativeMatrixMulAddNDimensionMismatch {
-                                    op_name,
-                                    function: function_id,
-                                    block: block_id,
-                                }.into());
+                                return Err(
+                                    ValidationError::CooperativeMatrixMulAddNDimensionMismatch {
+                                        op_name,
+                                        function: function_id,
+                                        block: block_id,
+                                    }
+                                    .into(),
+                                );
                             }
                         }
 
                         // Check K dimension: A_cols == B_rows
                         if let (Some(a_cols), Some(b_rows)) = (a.2, b.1) {
                             if a_cols != b_rows {
-                                return Err(ValidationError::CooperativeMatrixMulAddKDimensionMismatch {
-                                    op_name,
-                                    function: function_id,
-                                    block: block_id,
-                                }.into());
+                                return Err(
+                                    ValidationError::CooperativeMatrixMulAddKDimensionMismatch {
+                                        op_name,
+                                        function: function_id,
+                                        block: block_id,
+                                    }
+                                    .into(),
+                                );
                             }
                         }
                     }
@@ -1148,10 +1227,18 @@ impl ValidationRule for CooperativeMatrixMulAddKHRRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for function in &ctx.module.functions {
-            let function_id = function.def.as_ref().and_then(|d| d.result_id).map(id_from_u32);
+            let function_id = function
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .map(id_from_u32);
 
             for block in &function.blocks {
-                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(id_from_u32);
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .map(id_from_u32);
 
                 for inst in &block.instructions {
                     if inst.class.opcode != Op::CooperativeMatrixMulAddKHR {
@@ -1165,13 +1252,25 @@ impl ValidationRule for CooperativeMatrixMulAddKHRRule {
 
                     // Operands: A, B, C, (optional operands)
                     let a_id = inst.operands.first().and_then(|op| {
-                        if let Operand::IdRef(id) = op { Some(*id) } else { None }
+                        if let Operand::IdRef(id) = op {
+                            Some(*id)
+                        } else {
+                            None
+                        }
                     });
                     let b_id = inst.operands.get(1).and_then(|op| {
-                        if let Operand::IdRef(id) = op { Some(*id) } else { None }
+                        if let Operand::IdRef(id) = op {
+                            Some(*id)
+                        } else {
+                            None
+                        }
                     });
                     let c_id = inst.operands.get(2).and_then(|op| {
-                        if let Operand::IdRef(id) = op { Some(*id) } else { None }
+                        if let Operand::IdRef(id) = op {
+                            Some(*id)
+                        } else {
+                            None
+                        }
                     });
 
                     // Get operand types
@@ -1198,7 +1297,8 @@ impl ValidationRule for CooperativeMatrixMulAddKHRRule {
                             operand_name: "A",
                             function: function_id,
                             block: block_id,
-                        }.into());
+                        }
+                        .into());
                     }
                     if !is_cooperative_matrix_khr_type(b_type_id, ctx) {
                         return Err(ValidationError::CooperativeMatrixMulAddTypeMismatch {
@@ -1206,7 +1306,8 @@ impl ValidationRule for CooperativeMatrixMulAddKHRRule {
                             operand_name: "B",
                             function: function_id,
                             block: block_id,
-                        }.into());
+                        }
+                        .into());
                     }
                     if !is_cooperative_matrix_khr_type(c_type_id, ctx) {
                         return Err(ValidationError::CooperativeMatrixMulAddTypeMismatch {
@@ -1214,7 +1315,8 @@ impl ValidationRule for CooperativeMatrixMulAddKHRRule {
                             operand_name: "C",
                             function: function_id,
                             block: block_id,
-                        }.into());
+                        }
+                        .into());
                     }
                     if !is_cooperative_matrix_khr_type(d_type_id, ctx) {
                         return Err(ValidationError::CooperativeMatrixMulAddTypeMismatch {
@@ -1222,7 +1324,8 @@ impl ValidationRule for CooperativeMatrixMulAddKHRRule {
                             operand_name: "Result Type",
                             function: function_id,
                             block: block_id,
-                        }.into());
+                        }
+                        .into());
                     }
 
                     // Get matrix parameters and check dimensions
@@ -1231,18 +1334,23 @@ impl ValidationRule for CooperativeMatrixMulAddKHRRule {
                     let c_params = get_matrix_params(c_type_id, ctx);
                     let d_params = get_matrix_params(d_type_id, ctx);
 
-                    if let (Some(a), Some(b), Some(c), Some(d)) = (a_params, b_params, c_params, d_params) {
+                    if let (Some(a), Some(b), Some(c), Some(d)) =
+                        (a_params, b_params, c_params, d_params)
+                    {
                         // Check scopes match
                         let scopes = [a.0, b.0, c.0, d.0];
                         for i in 0..scopes.len() {
                             for j in (i + 1)..scopes.len() {
                                 if let (Some(s1), Some(s2)) = (scopes[i], scopes[j]) {
                                     if s1 != s2 {
-                                        return Err(ValidationError::CooperativeMatrixMulAddScopeMismatch {
-                                            op_name,
-                                            function: function_id,
-                                            block: block_id,
-                                        }.into());
+                                        return Err(
+                                            ValidationError::CooperativeMatrixMulAddScopeMismatch {
+                                                op_name,
+                                                function: function_id,
+                                                block: block_id,
+                                            }
+                                            .into(),
+                                        );
                                     }
                                 }
                             }
@@ -1251,51 +1359,66 @@ impl ValidationRule for CooperativeMatrixMulAddKHRRule {
                         // Check M dimension: A_rows == C_rows == D_rows
                         if let (Some(a_rows), Some(c_rows)) = (a.1, c.1) {
                             if a_rows != c_rows {
-                                return Err(ValidationError::CooperativeMatrixMulAddMDimensionMismatch {
-                                    op_name,
-                                    function: function_id,
-                                    block: block_id,
-                                }.into());
+                                return Err(
+                                    ValidationError::CooperativeMatrixMulAddMDimensionMismatch {
+                                        op_name,
+                                        function: function_id,
+                                        block: block_id,
+                                    }
+                                    .into(),
+                                );
                             }
                         }
                         if let (Some(a_rows), Some(d_rows)) = (a.1, d.1) {
                             if a_rows != d_rows {
-                                return Err(ValidationError::CooperativeMatrixMulAddMDimensionMismatch {
-                                    op_name,
-                                    function: function_id,
-                                    block: block_id,
-                                }.into());
+                                return Err(
+                                    ValidationError::CooperativeMatrixMulAddMDimensionMismatch {
+                                        op_name,
+                                        function: function_id,
+                                        block: block_id,
+                                    }
+                                    .into(),
+                                );
                             }
                         }
 
                         // Check N dimension: B_cols == C_cols == D_cols
                         if let (Some(b_cols), Some(c_cols)) = (b.2, c.2) {
                             if b_cols != c_cols {
-                                return Err(ValidationError::CooperativeMatrixMulAddNDimensionMismatch {
-                                    op_name,
-                                    function: function_id,
-                                    block: block_id,
-                                }.into());
+                                return Err(
+                                    ValidationError::CooperativeMatrixMulAddNDimensionMismatch {
+                                        op_name,
+                                        function: function_id,
+                                        block: block_id,
+                                    }
+                                    .into(),
+                                );
                             }
                         }
                         if let (Some(b_cols), Some(d_cols)) = (b.2, d.2) {
                             if b_cols != d_cols {
-                                return Err(ValidationError::CooperativeMatrixMulAddNDimensionMismatch {
-                                    op_name,
-                                    function: function_id,
-                                    block: block_id,
-                                }.into());
+                                return Err(
+                                    ValidationError::CooperativeMatrixMulAddNDimensionMismatch {
+                                        op_name,
+                                        function: function_id,
+                                        block: block_id,
+                                    }
+                                    .into(),
+                                );
                             }
                         }
 
                         // Check K dimension: A_cols == B_rows
                         if let (Some(a_cols), Some(b_rows)) = (a.2, b.1) {
                             if a_cols != b_rows {
-                                return Err(ValidationError::CooperativeMatrixMulAddKDimensionMismatch {
-                                    op_name,
-                                    function: function_id,
-                                    block: block_id,
-                                }.into());
+                                return Err(
+                                    ValidationError::CooperativeMatrixMulAddKDimensionMismatch {
+                                        op_name,
+                                        function: function_id,
+                                        block: block_id,
+                                    }
+                                    .into(),
+                                );
                             }
                         }
                     }
@@ -1330,10 +1453,18 @@ impl ValidationRule for CooperativeMatrixPerElementOpNVRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for function in &ctx.module.functions {
-            let function_id = function.def.as_ref().and_then(|d| d.result_id).map(id_from_u32);
+            let function_id = function
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .map(id_from_u32);
 
             for block in &function.blocks {
-                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(id_from_u32);
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .map(id_from_u32);
 
                 for inst in &block.instructions {
                     if inst.class.opcode != Op::CooperativeMatrixPerElementOpNV {
@@ -1387,16 +1518,19 @@ impl ValidationRule for CooperativeMatrixPerElementOpNVRule {
                             if let Some(mat_raw) = matrix_raw {
                                 // Get the matrix definition to find its type
                                 let mat_result_id = ResultId::try_from(mat_raw).ok();
-                                let mat_def = mat_result_id.and_then(|rid| ctx.definitions.get(&rid));
+                                let mat_def =
+                                    mat_result_id.and_then(|rid| ctx.definitions.get(&rid));
                                 let matrix_type_raw = mat_def.and_then(|d| d.result_type);
 
                                 if let Some(mat_type_raw) = matrix_type_raw {
                                     // Check matrix is a cooperative matrix KHR type
                                     let mat_type_result_id = ResultId::try_from(mat_type_raw).ok();
-                                    let mat_type_def = mat_type_result_id.and_then(|rid| ctx.definitions.get(&rid));
+                                    let mat_type_def = mat_type_result_id
+                                        .and_then(|rid| ctx.definitions.get(&rid));
 
                                     if let Some(mat_type_def) = mat_type_def {
-                                        if mat_type_def.class.opcode != Op::TypeCooperativeMatrixKHR {
+                                        if mat_type_def.class.opcode != Op::TypeCooperativeMatrixKHR
+                                        {
                                             return Err(
                                                 ValidationError::CooperativeMatrixPerElementOpMatrixNotCooperative {
                                                     matrix_id: id_from_u32(mat_raw),
@@ -1421,15 +1555,18 @@ impl ValidationRule for CooperativeMatrixPerElementOpNVRule {
                                         }
 
                                         // Get matrix component type (operand 0 of OpTypeCooperativeMatrixKHR)
-                                        let component_type_raw = match mat_type_def.operands.first() {
+                                        let component_type_raw = match mat_type_def.operands.first()
+                                        {
                                             Some(Operand::IdRef(id)) => Some(*id),
                                             _ => None,
                                         };
 
                                         // Validate function type
                                         if let Some(func_type_raw) = function_type_raw {
-                                            let func_type_result_id = ResultId::try_from(func_type_raw).ok();
-                                            let func_type_def = func_type_result_id.and_then(|rid| ctx.definitions.get(&rid));
+                                            let func_type_result_id =
+                                                ResultId::try_from(func_type_raw).ok();
+                                            let func_type_def = func_type_result_id
+                                                .and_then(|rid| ctx.definitions.get(&rid));
 
                                             if let Some(func_type_def) = func_type_def {
                                                 // OpTypeFunction format:
@@ -1439,10 +1576,11 @@ impl ValidationRule for CooperativeMatrixPerElementOpNVRule {
                                                 // operands[1..]: parameter types
 
                                                 // Get return type
-                                                let return_type_raw = match func_type_def.operands.first() {
-                                                    Some(Operand::IdRef(id)) => Some(*id),
-                                                    _ => None,
-                                                };
+                                                let return_type_raw =
+                                                    match func_type_def.operands.first() {
+                                                        Some(Operand::IdRef(id)) => Some(*id),
+                                                        _ => None,
+                                                    };
 
                                                 // Check return type matches component type
                                                 if let (Some(ret_raw), Some(comp_raw)) =
@@ -1531,8 +1669,9 @@ impl ValidationRule for CooperativeMatrixPerElementOpNVRule {
                                     function_id: id_from_u32(func_raw),
                                     function: function_id,
                                     block: block_id,
-                                }.into(),
-                        );
+                                }
+                                .into(),
+                            );
                         }
                     }
                 }

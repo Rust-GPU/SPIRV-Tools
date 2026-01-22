@@ -10,9 +10,9 @@ use rspirv::spirv::{Capability, Op, StorageClass};
 
 use crate::target_env::TargetEnv;
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::{ResultId, TypeId};
+use crate::validation::ValidationResult;
 
 use super::helpers::is_type_opcode;
 
@@ -64,7 +64,8 @@ impl ValidationRule for TypePointerRule {
                         return Err(ValidationError::TypePointerTypeNotType {
                             type_id,
                             pointee_type,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -74,7 +75,8 @@ impl ValidationRule for TypePointerRule {
                 return Err(ValidationError::TypePointerInvalidStorageClass {
                     type_id,
                     storage_class,
-                }.into());
+                }
+                .into());
             }
         }
 
@@ -88,17 +90,15 @@ fn is_valid_storage_class_for_env(storage_class: StorageClass, env: TargetEnv) -
     // Only certain storage classes are restricted to specific environments
     match storage_class {
         // These are not allowed in Vulkan (Shader environments)
-        StorageClass::Generic | StorageClass::AtomicCounter => {
-            !matches!(
-                env,
-                TargetEnv::Vulkan1_0
-                    | TargetEnv::Vulkan1_1
-                    | TargetEnv::Vulkan1_1Spirv1_4
-                    | TargetEnv::Vulkan1_2
-                    | TargetEnv::Vulkan1_3
-                    | TargetEnv::Vulkan1_4
-            )
-        }
+        StorageClass::Generic | StorageClass::AtomicCounter => !matches!(
+            env,
+            TargetEnv::Vulkan1_0
+                | TargetEnv::Vulkan1_1
+                | TargetEnv::Vulkan1_1Spirv1_4
+                | TargetEnv::Vulkan1_2
+                | TargetEnv::Vulkan1_3
+                | TargetEnv::Vulkan1_4
+        ),
         // All other storage classes are generally valid
         _ => true,
     }
@@ -181,7 +181,8 @@ impl ValidationRule for TypeForwardPointerRule {
                     target_type,
                     forward_storage_class,
                     pointer_storage_class,
-                }.into());
+                }
+                .into());
             }
 
             // Get pointee type from pointer definition (operand 1 of OpTypePointer)
@@ -196,17 +197,21 @@ impl ValidationRule for TypeForwardPointerRule {
                     if *pointee_opcode != Op::TypeStruct {
                         return Err(ValidationError::ForwardPointerNotPointingToStruct {
                             target_type,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
 
             // Vulkan: Storage class must be PhysicalStorageBuffer
             if is_vulkan && forward_storage_class != StorageClass::PhysicalStorageBuffer {
-                return Err(ValidationError::ForwardPointerRequiresPhysicalStorageBuffer {
-                    target_type,
-                    storage_class: forward_storage_class,
-                }.into());
+                return Err(
+                    ValidationError::ForwardPointerRequiresPhysicalStorageBuffer {
+                        target_type,
+                        storage_class: forward_storage_class,
+                    }
+                    .into(),
+                );
             }
         }
 
@@ -268,7 +273,8 @@ impl ValidationRule for TypeUntypedPointerKHRRule {
                         return Err(
                             ValidationError::TypeUntypedPointerWorkgroupRequiresCapability {
                                 type_id,
-                            }.into(),
+                            }
+                            .into(),
                         );
                     }
                 }
@@ -282,7 +288,8 @@ impl ValidationRule for TypeUntypedPointerKHRRule {
                     return Err(ValidationError::TypeUntypedPointerInvalidStorageClass {
                         type_id,
                         storage_class,
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }

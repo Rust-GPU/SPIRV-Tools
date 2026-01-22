@@ -54,10 +54,7 @@ pub fn is_type_opcode(opcode: Op) -> bool {
 }
 
 /// Returns true if the instruction is a void type.
-pub fn is_void_type(
-    type_id: TypeId,
-    definitions: &HashMap<ResultId, Instruction>,
-) -> bool {
+pub fn is_void_type(type_id: TypeId, definitions: &HashMap<ResultId, Instruction>) -> bool {
     let result_id = ResultId::try_from(u32::from(type_id)).ok();
     result_id
         .and_then(|id| definitions.get(&id))
@@ -71,14 +68,12 @@ pub fn is_bool(inst: &Instruction) -> bool {
 
 /// Returns true if the instruction is a 32-bit float.
 pub fn is_float32(inst: &Instruction) -> bool {
-    inst.class.opcode == Op::TypeFloat
-        && inst.operands.first() == Some(&Operand::LiteralBit32(32))
+    inst.class.opcode == Op::TypeFloat && inst.operands.first() == Some(&Operand::LiteralBit32(32))
 }
 
 /// Returns true if the instruction is a 32-bit integer.
 pub fn is_int32(inst: &Instruction) -> bool {
-    inst.class.opcode == Op::TypeInt
-        && inst.operands.first() == Some(&Operand::LiteralBit32(32))
+    inst.class.opcode == Op::TypeInt && inst.operands.first() == Some(&Operand::LiteralBit32(32))
 }
 
 /// Returns the bit width of a numeric type.
@@ -200,13 +195,10 @@ pub fn is_array_of(
 ///
 /// Note: This does not check the opcode - caller should verify this is a TypeVector.
 pub fn vector_info(inst: &Instruction) -> (Option<TypeId>, Option<u32>) {
-    let component_type = inst
-        .operands
-        .first()
-        .and_then(|op| match op {
-            Operand::IdRef(id) => TypeId::try_from(*id).ok(),
-            _ => None,
-        });
+    let component_type = inst.operands.first().and_then(|op| match op {
+        Operand::IdRef(id) => TypeId::try_from(*id).ok(),
+        _ => None,
+    });
     let count = inst.operands.get(1).and_then(|op| match op {
         Operand::LiteralBit32(v) => Some(*v),
         Operand::LiteralBit64(v) => u32::try_from(*v).ok(),
@@ -219,13 +211,10 @@ pub fn vector_info(inst: &Instruction) -> (Option<TypeId>, Option<u32>) {
 ///
 /// Note: This does not check the opcode - caller should verify this is a TypeMatrix.
 pub fn matrix_info(inst: &Instruction) -> (Option<TypeId>, Option<u32>) {
-    let column_type = inst
-        .operands
-        .first()
-        .and_then(|op| match op {
-            Operand::IdRef(id) => TypeId::try_from(*id).ok(),
-            _ => None,
-        });
+    let column_type = inst.operands.first().and_then(|op| match op {
+        Operand::IdRef(id) => TypeId::try_from(*id).ok(),
+        _ => None,
+    });
     let count = inst.operands.get(1).and_then(|op| match op {
         Operand::LiteralBit32(v) => Some(*v),
         Operand::LiteralBit64(v) => u32::try_from(*v).ok(),
@@ -390,10 +379,7 @@ pub fn build_decoration_lookup(module: &Module) -> HashMap<ResultId, Vec<Decorat
 // ============================================================================
 
 /// Returns true if the instruction defines a pointer type.
-pub fn is_pointer_type(
-    inst: &Instruction,
-    definitions: &HashMap<ResultId, Instruction>,
-) -> bool {
+pub fn is_pointer_type(inst: &Instruction, definitions: &HashMap<ResultId, Instruction>) -> bool {
     match inst.class.opcode {
         Op::TypePointer | Op::TypeUntypedPointerKHR => true,
         Op::Variable | Op::UntypedVariableKHR => {
@@ -482,10 +468,7 @@ pub fn is_constant_opcode(opcode: Op) -> bool {
 pub fn is_memory_object_declaration(opcode: Op) -> bool {
     matches!(
         opcode,
-        Op::Variable
-            | Op::UntypedVariableKHR
-            | Op::FunctionParameter
-            | Op::RawAccessChainNV
+        Op::Variable | Op::UntypedVariableKHR | Op::FunctionParameter | Op::RawAccessChainNV
     )
 }
 
@@ -534,9 +517,7 @@ pub fn collect_result_instructions(module: &Module) -> HashMap<ResultId, Instruc
 }
 
 /// Collects result IDs mapped to their result type IDs.
-pub fn collect_result_types(
-    module: &Module,
-) -> Result<HashMap<ResultId, TypeId>, ValidationError> {
+pub fn collect_result_types(module: &Module) -> Result<HashMap<ResultId, TypeId>, ValidationError> {
     let mut result = HashMap::new();
     for inst in module.all_inst_iter() {
         if let (Some(result_id), Some(type_id)) = (inst.result_id, inst.result_type) {
@@ -679,7 +660,11 @@ fn parse_vector_type(
     definitions: &HashMap<ResultId, Instruction>,
 ) -> TypeStructure {
     let component_id = inst.operands.first().and_then(id_ref);
-    let size = inst.operands.get(1).and_then(literal_u32).and_then(VectorSize::new);
+    let size = inst
+        .operands
+        .get(1)
+        .and_then(literal_u32)
+        .and_then(VectorSize::new);
 
     let component = component_id
         .and_then(|id| ResultId::try_from(id).ok())
@@ -691,7 +676,10 @@ fn parse_vector_type(
         });
 
     match (component, size) {
-        (Some(c), Some(s)) => TypeStructure::Vector { component: c, size: s },
+        (Some(c), Some(s)) => TypeStructure::Vector {
+            component: c,
+            size: s,
+        },
         _ => TypeStructure::Unknown,
     }
 }
@@ -701,7 +689,11 @@ fn parse_matrix_type(
     definitions: &HashMap<ResultId, Instruction>,
 ) -> TypeStructure {
     let column_id = inst.operands.first().and_then(id_ref);
-    let cols = inst.operands.get(1).and_then(literal_u32).and_then(MatrixColumns::new);
+    let cols = inst
+        .operands
+        .get(1)
+        .and_then(literal_u32)
+        .and_then(MatrixColumns::new);
 
     let (component, rows) = column_id
         .and_then(|id| ResultId::try_from(id).ok())

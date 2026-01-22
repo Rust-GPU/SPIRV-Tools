@@ -57,9 +57,10 @@ fn is_float32_scalar(ty: &TypeStructure) -> bool {
 /// Helper to check if a type is a 32-bit float 3-component vector.
 fn is_float32_vec3(ty: &TypeStructure) -> bool {
     match ty {
-        TypeStructure::Vector { component: ScalarKind::Float(w), size } => {
-            w.get() == 32 && *size == VectorSize::VEC3
-        }
+        TypeStructure::Vector {
+            component: ScalarKind::Float(w),
+            size,
+        } => w.get() == 32 && *size == VectorSize::VEC3,
         _ => false,
     }
 }
@@ -67,9 +68,10 @@ fn is_float32_vec3(ty: &TypeStructure) -> bool {
 /// Helper to check if a type is a 32-bit float 2-component vector.
 fn is_float32_vec2(ty: &TypeStructure) -> bool {
     match ty {
-        TypeStructure::Vector { component: ScalarKind::Float(w), size } => {
-            w.get() == 32 && *size == VectorSize::VEC2
-        }
+        TypeStructure::Vector {
+            component: ScalarKind::Float(w),
+            size,
+        } => w.get() == 32 && *size == VectorSize::VEC2,
         _ => false,
     }
 }
@@ -112,14 +114,18 @@ impl ValidationRule for TraceRayRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(|id| {
-                Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
-            });
+            let func_id = func
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .map(|id| Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()));
 
             for block in &func.blocks {
-                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(|id| {
-                    Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
-                });
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .map(|id| Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()));
 
                 for inst in &block.instructions {
                     if inst.class.opcode != Op::TraceRayKHR {
@@ -133,7 +139,8 @@ impl ValidationRule for TraceRayRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: Op::TraceRayKHR,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -144,7 +151,8 @@ impl ValidationRule for TraceRayRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: Op::TraceRayKHR,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -155,7 +163,8 @@ impl ValidationRule for TraceRayRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: Op::TraceRayKHR,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -167,7 +176,8 @@ impl ValidationRule for TraceRayRule {
                                 block: block_id,
                                 opcode: Op::TraceRayKHR,
                                 param_name: "SBT Offset",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -179,7 +189,8 @@ impl ValidationRule for TraceRayRule {
                                 block: block_id,
                                 opcode: Op::TraceRayKHR,
                                 param_name: "SBT Stride",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -191,7 +202,8 @@ impl ValidationRule for TraceRayRule {
                                 block: block_id,
                                 opcode: Op::TraceRayKHR,
                                 param_name: "Miss Index",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -202,7 +214,8 @@ impl ValidationRule for TraceRayRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: Op::TraceRayKHR,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -214,7 +227,8 @@ impl ValidationRule for TraceRayRule {
                                 block: block_id,
                                 opcode: Op::TraceRayKHR,
                                 param_name: "TMin",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -225,7 +239,8 @@ impl ValidationRule for TraceRayRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: Op::TraceRayKHR,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -237,7 +252,8 @@ impl ValidationRule for TraceRayRule {
                                 block: block_id,
                                 opcode: Op::TraceRayKHR,
                                 param_name: "TMax",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -250,7 +266,8 @@ impl ValidationRule for TraceRayRule {
                                         function: func_id,
                                         block: block_id,
                                         opcode: Op::TraceRayKHR,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
 
                                 // Check storage class
@@ -264,7 +281,8 @@ impl ValidationRule for TraceRayRule {
                                             function: func_id,
                                             block: block_id,
                                             opcode: Op::TraceRayKHR,
-                                        }.into());
+                                        }
+                                        .into());
                                     }
                                 }
                             }
@@ -290,14 +308,18 @@ impl ValidationRule for TraceRayMotionRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(|id| {
-                Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
-            });
+            let func_id = func
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .map(|id| Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()));
 
             for block in &func.blocks {
-                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(|id| {
-                    Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
-                });
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .map(|id| Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()));
 
                 for inst in &block.instructions {
                     if inst.class.opcode != Op::TraceRayMotionNV {
@@ -311,7 +333,8 @@ impl ValidationRule for TraceRayMotionRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: Op::TraceRayMotionNV,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -322,7 +345,8 @@ impl ValidationRule for TraceRayMotionRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: Op::TraceRayMotionNV,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -333,7 +357,8 @@ impl ValidationRule for TraceRayMotionRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: Op::TraceRayMotionNV,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -345,7 +370,8 @@ impl ValidationRule for TraceRayMotionRule {
                                 block: block_id,
                                 opcode: Op::TraceRayMotionNV,
                                 param_name: "SBT Offset",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -357,7 +383,8 @@ impl ValidationRule for TraceRayMotionRule {
                                 block: block_id,
                                 opcode: Op::TraceRayMotionNV,
                                 param_name: "SBT Stride",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -369,7 +396,8 @@ impl ValidationRule for TraceRayMotionRule {
                                 block: block_id,
                                 opcode: Op::TraceRayMotionNV,
                                 param_name: "Miss Index",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -380,7 +408,8 @@ impl ValidationRule for TraceRayMotionRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: Op::TraceRayMotionNV,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -392,7 +421,8 @@ impl ValidationRule for TraceRayMotionRule {
                                 block: block_id,
                                 opcode: Op::TraceRayMotionNV,
                                 param_name: "TMin",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -403,7 +433,8 @@ impl ValidationRule for TraceRayMotionRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: Op::TraceRayMotionNV,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -415,7 +446,8 @@ impl ValidationRule for TraceRayMotionRule {
                                 block: block_id,
                                 opcode: Op::TraceRayMotionNV,
                                 param_name: "TMax",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -426,7 +458,8 @@ impl ValidationRule for TraceRayMotionRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: Op::TraceRayMotionNV,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -439,7 +472,8 @@ impl ValidationRule for TraceRayMotionRule {
                                         function: func_id,
                                         block: block_id,
                                         opcode: Op::TraceRayMotionNV,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
 
                                 // Check storage class
@@ -453,7 +487,8 @@ impl ValidationRule for TraceRayMotionRule {
                                             function: func_id,
                                             block: block_id,
                                             opcode: Op::TraceRayMotionNV,
-                                        }.into());
+                                        }
+                                        .into());
                                     }
                                 }
                             }
@@ -476,14 +511,18 @@ impl ValidationRule for ReportIntersectionRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(|id| {
-                Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
-            });
+            let func_id = func
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .map(|id| Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()));
 
             for block in &func.blocks {
-                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(|id| {
-                    Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
-                });
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .map(|id| Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()));
 
                 for inst in &block.instructions {
                     if inst.class.opcode != Op::ReportIntersectionKHR {
@@ -500,7 +539,8 @@ impl ValidationRule for ReportIntersectionRule {
                                     block: block_id,
                                     opcode: Op::ReportIntersectionKHR,
                                     expected: "bool scalar type",
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -512,7 +552,8 @@ impl ValidationRule for ReportIntersectionRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: Op::ReportIntersectionKHR,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -523,7 +564,8 @@ impl ValidationRule for ReportIntersectionRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: Op::ReportIntersectionKHR,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -543,14 +585,18 @@ impl ValidationRule for ExecuteCallableRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(|id| {
-                Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
-            });
+            let func_id = func
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .map(|id| Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()));
 
             for block in &func.blocks {
-                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(|id| {
-                    Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
-                });
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .map(|id| Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()));
 
                 for inst in &block.instructions {
                     if inst.class.opcode != Op::ExecuteCallableKHR {
@@ -565,7 +611,8 @@ impl ValidationRule for ExecuteCallableRule {
                                 block: block_id,
                                 opcode: Op::ExecuteCallableKHR,
                                 param_name: "SBT Index",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -578,7 +625,8 @@ impl ValidationRule for ExecuteCallableRule {
                                         function: func_id,
                                         block: block_id,
                                         opcode: Op::ExecuteCallableKHR,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
 
                                 // Check storage class
@@ -587,11 +635,14 @@ impl ValidationRule for ExecuteCallableRule {
                                     if *sc != StorageClass::CallableDataKHR
                                         && *sc != StorageClass::IncomingCallableDataKHR
                                     {
-                                        return Err(ValidationError::RayTracingInvalidCallableData {
-                                            function: func_id,
-                                            block: block_id,
-                                            opcode: Op::ExecuteCallableKHR,
-                                        }.into());
+                                        return Err(
+                                            ValidationError::RayTracingInvalidCallableData {
+                                                function: func_id,
+                                                block: block_id,
+                                                opcode: Op::ExecuteCallableKHR,
+                                            }
+                                            .into(),
+                                        );
                                     }
                                 }
                             }
@@ -631,7 +682,8 @@ fn validate_ray_query_pointer(
                 function: func_id,
                 block: block_id,
                 opcode: inst.class.opcode,
-            }.into());
+            }
+            .into());
         }
 
         // Get pointer type
@@ -643,7 +695,8 @@ fn validate_ray_query_pointer(
                             function: func_id,
                             block: block_id,
                             opcode: inst.class.opcode,
-                        }.into());
+                        }
+                        .into());
                     }
 
                     // Get pointee type
@@ -655,7 +708,8 @@ fn validate_ray_query_pointer(
                                         function: func_id,
                                         block: block_id,
                                         opcode: inst.class.opcode,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -691,7 +745,8 @@ fn validate_intersection_id(
                 function: func_id,
                 block: block_id,
                 opcode: inst.class.opcode,
-            }.into());
+            }
+            .into());
         }
 
         // Must be 32-bit int
@@ -703,7 +758,8 @@ fn validate_intersection_id(
                         function: func_id,
                         block: block_id,
                         opcode: inst.class.opcode,
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -722,14 +778,18 @@ impl ValidationRule for RayQueryInitializeRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(|id| {
-                Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
-            });
+            let func_id = func
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .map(|id| Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()));
 
             for block in &func.blocks {
-                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(|id| {
-                    Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
-                });
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .map(|id| Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()));
 
                 for inst in &block.instructions {
                     if inst.class.opcode != Op::RayQueryInitializeKHR {
@@ -746,7 +806,8 @@ impl ValidationRule for RayQueryInitializeRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: Op::RayQueryInitializeKHR,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -757,7 +818,8 @@ impl ValidationRule for RayQueryInitializeRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: Op::RayQueryInitializeKHR,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -768,7 +830,8 @@ impl ValidationRule for RayQueryInitializeRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: Op::RayQueryInitializeKHR,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -779,7 +842,8 @@ impl ValidationRule for RayQueryInitializeRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: Op::RayQueryInitializeKHR,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -791,7 +855,8 @@ impl ValidationRule for RayQueryInitializeRule {
                                 block: block_id,
                                 opcode: Op::RayQueryInitializeKHR,
                                 param_name: "TMin",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -802,7 +867,8 @@ impl ValidationRule for RayQueryInitializeRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: Op::RayQueryInitializeKHR,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -814,7 +880,8 @@ impl ValidationRule for RayQueryInitializeRule {
                                 block: block_id,
                                 opcode: Op::RayQueryInitializeKHR,
                                 param_name: "TMax",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -834,14 +901,18 @@ impl ValidationRule for RayQueryPointerOnlyRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(|id| {
-                Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
-            });
+            let func_id = func
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .map(|id| Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()));
 
             for block in &func.blocks {
-                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(|id| {
-                    Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
-                });
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .map(|id| Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()));
 
                 for inst in &block.instructions {
                     let opcode = inst.class.opcode;
@@ -872,14 +943,18 @@ impl ValidationRule for RayQueryBoolResultRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(|id| {
-                Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
-            });
+            let func_id = func
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .map(|id| Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()));
 
             for block in &func.blocks {
-                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(|id| {
-                    Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
-                });
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .map(|id| Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()));
 
                 for inst in &block.instructions {
                     let opcode = inst.class.opcode;
@@ -906,7 +981,8 @@ impl ValidationRule for RayQueryBoolResultRule {
                                     block: block_id,
                                     opcode,
                                     expected: "bool scalar type",
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -932,14 +1008,18 @@ impl ValidationRule for RayQueryFloatResultRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(|id| {
-                Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
-            });
+            let func_id = func
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .map(|id| Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()));
 
             for block in &func.blocks {
-                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(|id| {
-                    Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
-                });
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .map(|id| Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()));
 
                 for inst in &block.instructions {
                     let opcode = inst.class.opcode;
@@ -963,7 +1043,8 @@ impl ValidationRule for RayQueryFloatResultRule {
                                     block: block_id,
                                     opcode,
                                     expected: "32-bit float scalar type",
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -989,14 +1070,18 @@ impl ValidationRule for RayQueryIntResultRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(|id| {
-                Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
-            });
+            let func_id = func
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .map(|id| Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()));
 
             for block in &func.blocks {
-                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(|id| {
-                    Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
-                });
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .map(|id| Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()));
 
                 for inst in &block.instructions {
                     let opcode = inst.class.opcode;
@@ -1026,7 +1111,8 @@ impl ValidationRule for RayQueryIntResultRule {
                                     block: block_id,
                                     opcode,
                                     expected: "32-bit int scalar type",
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -1052,14 +1138,18 @@ impl ValidationRule for RayQueryVec3ResultRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(|id| {
-                Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
-            });
+            let func_id = func
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .map(|id| Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()));
 
             for block in &func.blocks {
-                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(|id| {
-                    Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
-                });
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .map(|id| Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()));
 
                 for inst in &block.instructions {
                     let opcode = inst.class.opcode;
@@ -1086,7 +1176,8 @@ impl ValidationRule for RayQueryVec3ResultRule {
                                     block: block_id,
                                     opcode,
                                     expected: "32-bit float 3-component vector type",
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -1114,14 +1205,18 @@ impl ValidationRule for RayQueryBarycentricsRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(|id| {
-                Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
-            });
+            let func_id = func
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .map(|id| Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()));
 
             for block in &func.blocks {
-                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(|id| {
-                    Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
-                });
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .map(|id| Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()));
 
                 for inst in &block.instructions {
                     if inst.class.opcode != Op::RayQueryGetIntersectionBarycentricsKHR {
@@ -1141,7 +1236,8 @@ impl ValidationRule for RayQueryBarycentricsRule {
                                     block: block_id,
                                     opcode: Op::RayQueryGetIntersectionBarycentricsKHR,
                                     expected: "32-bit float 2-component vector type",
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -1162,14 +1258,18 @@ impl ValidationRule for RayQueryGenerateIntersectionRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(|id| {
-                Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
-            });
+            let func_id = func
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .map(|id| Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()));
 
             for block in &func.blocks {
-                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(|id| {
-                    Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
-                });
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .map(|id| Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()));
 
                 for inst in &block.instructions {
                     if inst.class.opcode != Op::RayQueryGenerateIntersectionKHR {
@@ -1185,7 +1285,8 @@ impl ValidationRule for RayQueryGenerateIntersectionRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: Op::RayQueryGenerateIntersectionKHR,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -1205,14 +1306,18 @@ impl ValidationRule for RayQueryMatrixResultRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(|id| {
-                Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
-            });
+            let func_id = func
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .map(|id| Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()));
 
             for block in &func.blocks {
-                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(|id| {
-                    Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
-                });
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .map(|id| Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()));
 
                 for inst in &block.instructions {
                     let opcode = inst.class.opcode;
@@ -1245,8 +1350,10 @@ impl ValidationRule for RayQueryMatrixResultRule {
                                     function: func_id,
                                     block: block_id,
                                     opcode,
-                                    expected: "matrix of 4 columns of 32-bit float 3-component vectors",
-                                }.into());
+                                    expected:
+                                        "matrix of 4 columns of 32-bit float 3-component vectors",
+                                }
+                                .into());
                             }
                         }
                     }
@@ -1267,14 +1374,18 @@ impl ValidationRule for RayQueryClusterIdNVRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(|id| {
-                Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
-            });
+            let func_id = func
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .map(|id| Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()));
 
             for block in &func.blocks {
-                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(|id| {
-                    Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
-                });
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .map(|id| Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()));
 
                 for inst in &block.instructions {
                     if inst.class.opcode != Op::RayQueryGetClusterIdNV {
@@ -1294,7 +1405,8 @@ impl ValidationRule for RayQueryClusterIdNVRule {
                                     block: block_id,
                                     opcode: Op::RayQueryGetClusterIdNV,
                                     expected: "32-bit int scalar type",
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -1315,14 +1427,18 @@ impl ValidationRule for RayQuerySphereAndLSSNVRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(|id| {
-                Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
-            });
+            let func_id = func
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .map(|id| Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()));
 
             for block in &func.blocks {
-                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(|id| {
-                    Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
-                });
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .map(|id| Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()));
 
                 for inst in &block.instructions {
                     let opcode = inst.class.opcode;
@@ -1341,7 +1457,8 @@ impl ValidationRule for RayQuerySphereAndLSSNVRule {
                                         block: block_id,
                                         opcode,
                                         expected: "32-bit float 3-component vector type",
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -1365,7 +1482,8 @@ impl ValidationRule for RayQuerySphereAndLSSNVRule {
                                         block: block_id,
                                         opcode,
                                         expected: "32-bit float scalar type",
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -1385,7 +1503,8 @@ impl ValidationRule for RayQuerySphereAndLSSNVRule {
                                         block: block_id,
                                         opcode,
                                         expected: "bool scalar type",
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -1456,14 +1575,18 @@ impl ValidationRule for RayQueryLSSArrayNVRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(|id| {
-                Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
-            });
+            let func_id = func
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .map(|id| Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()));
 
             for block in &func.blocks {
-                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(|id| {
-                    Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
-                });
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .map(|id| Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()));
 
                 for inst in &block.instructions {
                     let opcode = inst.class.opcode;
@@ -1482,7 +1605,8 @@ impl ValidationRule for RayQueryLSSArrayNVRule {
                                     block: block_id,
                                     opcode,
                                     expected: "2-element array of 32-bit float 3-component vectors",
-                                }.into());
+                                }
+                                .into());
                             }
 
                             // Check element type is vec3 of float32
@@ -1498,7 +1622,8 @@ impl ValidationRule for RayQueryLSSArrayNVRule {
                                         opcode,
                                         expected:
                                             "2-element array of 32-bit float 3-component vectors",
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -1518,7 +1643,8 @@ impl ValidationRule for RayQueryLSSArrayNVRule {
                                     block: block_id,
                                     opcode,
                                     expected: "2-element array of 32-bit float scalars",
-                                }.into());
+                                }
+                                .into());
                             }
 
                             // Check element type is float32 scalar
@@ -1533,7 +1659,8 @@ impl ValidationRule for RayQueryLSSArrayNVRule {
                                         block: block_id,
                                         opcode,
                                         expected: "2-element array of 32-bit float scalars",
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }

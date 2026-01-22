@@ -18,11 +18,11 @@ use rspirv::dr::Operand;
 use rspirv::spirv::{ExecutionMode, ExecutionModel};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::op_ext::OpExt;
 use crate::validation::type_ext::{DefaultTypeResolver, TypeResolver};
 use crate::validation::types::{Id, ResultId, TypeId};
+use crate::validation::ValidationResult;
 
 /// Valid execution models for derivative instructions.
 const VALID_DERIVATIVE_EXECUTION_MODELS: &[ExecutionModel] = &[
@@ -83,36 +83,34 @@ impl ValidationRule for DerivativeTypeRule {
 
                     // Result type must be float scalar or vector
                     if !resolver.is_float_scalar_or_vector(result_type_id, ctx.definitions) {
-                        if let (Some(func), Some(block), Ok(result_type)) = (
-                            function_id,
-                            block_id,
-                            TypeId::try_from(result_type_id),
-                        ) {
+                        if let (Some(func), Some(block), Ok(result_type)) =
+                            (function_id, block_id, TypeId::try_from(result_type_id))
+                        {
                             return Err(ValidationError::DerivativeResultTypeInvalid {
                                 function: func,
                                 block,
                                 opcode: inst.class.opcode,
                                 result_type,
                                 expected: "float scalar or vector",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
                     // Result type component width must be 32 bits
                     let width = resolver.get_bit_width(result_type_id, ctx.definitions);
                     if width != Some(32) {
-                        if let (Some(func), Some(block), Ok(result_type)) = (
-                            function_id,
-                            block_id,
-                            TypeId::try_from(result_type_id),
-                        ) {
+                        if let (Some(func), Some(block), Ok(result_type)) =
+                            (function_id, block_id, TypeId::try_from(result_type_id))
+                        {
                             return Err(ValidationError::DerivativeResultTypeInvalid {
                                 function: func,
                                 block,
                                 opcode: inst.class.opcode,
                                 result_type,
                                 expected: "32-bit float",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -134,17 +132,16 @@ impl ValidationRule for DerivativeTypeRule {
                     // P type must match result type
                     if let Some(p_type_id) = p_type {
                         if p_type_id != result_type_id {
-                            if let (Some(func), Some(block), Ok(result_type)) = (
-                                function_id,
-                                block_id,
-                                TypeId::try_from(result_type_id),
-                            ) {
+                            if let (Some(func), Some(block), Ok(result_type)) =
+                                (function_id, block_id, TypeId::try_from(result_type_id))
+                            {
                                 return Err(ValidationError::DerivativeOperandTypeMismatch {
                                     function: func,
                                     block,
                                     opcode: inst.class.opcode,
                                     result_type,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -177,9 +174,11 @@ impl ValidationRule for DerivativeExecutionModelRule {
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         // Check if any derivative instructions exist
         let has_derivatives = ctx.module.functions.iter().any(|f| {
-            f.blocks
-                .iter()
-                .any(|b| b.instructions.iter().any(|i| i.class.opcode.is_derivative()))
+            f.blocks.iter().any(|b| {
+                b.instructions
+                    .iter()
+                    .any(|i| i.class.opcode.is_derivative())
+            })
         });
 
         if !has_derivatives {
@@ -187,9 +186,10 @@ impl ValidationRule for DerivativeExecutionModelRule {
         }
 
         // Check if we have at least one valid execution model
-        let has_valid_model = ctx.entry_models.iter().any(|model| {
-            VALID_DERIVATIVE_EXECUTION_MODELS.contains(model)
-        });
+        let has_valid_model = ctx
+            .entry_models
+            .iter()
+            .any(|model| VALID_DERIVATIVE_EXECUTION_MODELS.contains(model));
 
         if !has_valid_model && !ctx.entry_models.is_empty() {
             // Find a derivative instruction to report in the error
@@ -215,7 +215,8 @@ impl ValidationRule for DerivativeExecutionModelRule {
                                     block,
                                     opcode: inst.class.opcode,
                                     allowed: VALID_DERIVATIVE_EXECUTION_MODELS.to_vec(),
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -260,9 +261,11 @@ impl ValidationRule for DerivativeExecutionModeRule {
 
         // Check if any derivative instructions exist
         let has_derivatives = ctx.module.functions.iter().any(|f| {
-            f.blocks
-                .iter()
-                .any(|b| b.instructions.iter().any(|i| i.class.opcode.is_derivative()))
+            f.blocks.iter().any(|b| {
+                b.instructions
+                    .iter()
+                    .any(|i| i.class.opcode.is_derivative())
+            })
         });
 
         if !has_derivatives {
@@ -271,7 +274,7 @@ impl ValidationRule for DerivativeExecutionModeRule {
 
         // Check if the required execution mode is present
         let has_derivative_mode = ctx.module.execution_modes.iter().any(|mode_inst| {
-            mode_inst.operands.get(1).map_or(false, |operand| {
+            mode_inst.operands.get(1).is_some_and(|operand| {
                 matches!(
                     operand,
                     Operand::ExecutionMode(ExecutionMode::DerivativeGroupQuadsKHR)
@@ -305,7 +308,8 @@ impl ValidationRule for DerivativeExecutionModeRule {
                                     block,
                                     opcode: inst.class.opcode,
                                     execution_model: requires_mode_models[0],
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -351,5 +355,4 @@ mod tests {
         assert!(!Op::FMul.is_derivative());
         assert!(!Op::Nop.is_derivative());
     }
-
 }

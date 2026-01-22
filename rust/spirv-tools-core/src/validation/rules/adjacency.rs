@@ -11,9 +11,9 @@
 use rspirv::spirv::Op;
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::Id;
+use crate::validation::ValidationResult;
 
 // ============================================================================
 // Instruction Placement Categories
@@ -113,7 +113,8 @@ impl ValidationRule for PhiPlacementRule {
                                     return Err(ValidationError::PhiAfterNonPhi {
                                         function: func,
                                         block,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -185,7 +186,8 @@ impl ValidationRule for VariablePlacementRule {
                                 return Err(ValidationError::FunctionVariableNotInEntryBlock {
                                     function: func,
                                     variable: var,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
 
@@ -294,7 +296,8 @@ impl ValidationRule for MergeAdjacencyRule {
                                     function: func,
                                     block,
                                     terminator: found_terminator,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -327,43 +330,94 @@ mod tests {
 
     #[test]
     fn test_instruction_category_phi() {
-        assert_eq!(InstructionCategory::from_opcode(Op::Phi), InstructionCategory::Phi);
+        assert_eq!(
+            InstructionCategory::from_opcode(Op::Phi),
+            InstructionCategory::Phi
+        );
     }
 
     #[test]
     fn test_instruction_category_variable() {
-        assert_eq!(InstructionCategory::from_opcode(Op::Variable), InstructionCategory::Variable);
+        assert_eq!(
+            InstructionCategory::from_opcode(Op::Variable),
+            InstructionCategory::Variable
+        );
     }
 
     #[test]
     fn test_instruction_category_line_debug() {
-        assert_eq!(InstructionCategory::from_opcode(Op::Line), InstructionCategory::LineDebug);
-        assert_eq!(InstructionCategory::from_opcode(Op::NoLine), InstructionCategory::LineDebug);
+        assert_eq!(
+            InstructionCategory::from_opcode(Op::Line),
+            InstructionCategory::LineDebug
+        );
+        assert_eq!(
+            InstructionCategory::from_opcode(Op::NoLine),
+            InstructionCategory::LineDebug
+        );
     }
 
     #[test]
     fn test_instruction_category_merge() {
-        assert_eq!(InstructionCategory::from_opcode(Op::LoopMerge), InstructionCategory::Merge);
-        assert_eq!(InstructionCategory::from_opcode(Op::SelectionMerge), InstructionCategory::Merge);
+        assert_eq!(
+            InstructionCategory::from_opcode(Op::LoopMerge),
+            InstructionCategory::Merge
+        );
+        assert_eq!(
+            InstructionCategory::from_opcode(Op::SelectionMerge),
+            InstructionCategory::Merge
+        );
     }
 
     #[test]
     fn test_instruction_category_terminator() {
-        assert_eq!(InstructionCategory::from_opcode(Op::Branch), InstructionCategory::Terminator);
-        assert_eq!(InstructionCategory::from_opcode(Op::BranchConditional), InstructionCategory::Terminator);
-        assert_eq!(InstructionCategory::from_opcode(Op::Switch), InstructionCategory::Terminator);
-        assert_eq!(InstructionCategory::from_opcode(Op::Return), InstructionCategory::Terminator);
-        assert_eq!(InstructionCategory::from_opcode(Op::ReturnValue), InstructionCategory::Terminator);
-        assert_eq!(InstructionCategory::from_opcode(Op::Kill), InstructionCategory::Terminator);
-        assert_eq!(InstructionCategory::from_opcode(Op::Unreachable), InstructionCategory::Terminator);
+        assert_eq!(
+            InstructionCategory::from_opcode(Op::Branch),
+            InstructionCategory::Terminator
+        );
+        assert_eq!(
+            InstructionCategory::from_opcode(Op::BranchConditional),
+            InstructionCategory::Terminator
+        );
+        assert_eq!(
+            InstructionCategory::from_opcode(Op::Switch),
+            InstructionCategory::Terminator
+        );
+        assert_eq!(
+            InstructionCategory::from_opcode(Op::Return),
+            InstructionCategory::Terminator
+        );
+        assert_eq!(
+            InstructionCategory::from_opcode(Op::ReturnValue),
+            InstructionCategory::Terminator
+        );
+        assert_eq!(
+            InstructionCategory::from_opcode(Op::Kill),
+            InstructionCategory::Terminator
+        );
+        assert_eq!(
+            InstructionCategory::from_opcode(Op::Unreachable),
+            InstructionCategory::Terminator
+        );
     }
 
     #[test]
     fn test_instruction_category_regular() {
-        assert_eq!(InstructionCategory::from_opcode(Op::IAdd), InstructionCategory::Regular);
-        assert_eq!(InstructionCategory::from_opcode(Op::FMul), InstructionCategory::Regular);
-        assert_eq!(InstructionCategory::from_opcode(Op::Load), InstructionCategory::Regular);
-        assert_eq!(InstructionCategory::from_opcode(Op::Store), InstructionCategory::Regular);
+        assert_eq!(
+            InstructionCategory::from_opcode(Op::IAdd),
+            InstructionCategory::Regular
+        );
+        assert_eq!(
+            InstructionCategory::from_opcode(Op::FMul),
+            InstructionCategory::Regular
+        );
+        assert_eq!(
+            InstructionCategory::from_opcode(Op::Load),
+            InstructionCategory::Regular
+        );
+        assert_eq!(
+            InstructionCategory::from_opcode(Op::Store),
+            InstructionCategory::Regular
+        );
     }
 
     #[test]

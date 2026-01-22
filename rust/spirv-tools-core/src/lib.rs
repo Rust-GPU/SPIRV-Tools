@@ -1,4 +1,13 @@
 #![warn(missing_docs)]
+// Allow some clippy lints that would require significant refactoring
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::type_complexity)]
+#![allow(clippy::wrong_self_convention)]
+#![allow(clippy::module_inception)]
+#![allow(clippy::collapsible_if)]
+#![allow(clippy::collapsible_match)]
+#![allow(clippy::if_same_then_else)]
+#![allow(clippy::doc_overindented_list_items)]
 
 //! Core, type-safe building blocks for the SPIRV-Tools Rust port.
 

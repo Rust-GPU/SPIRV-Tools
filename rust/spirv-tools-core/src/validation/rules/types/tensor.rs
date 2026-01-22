@@ -9,9 +9,9 @@ use rspirv::dr::Operand;
 use rspirv::spirv::Op;
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::{Id, ResultId, TypeId};
+use crate::validation::ValidationResult;
 
 use super::helpers::{get_constant_int_value, is_constant_opcode};
 
@@ -52,7 +52,8 @@ impl ValidationRule for TypeTensorLayoutNVRule {
                     // Check type is 32-bit integer
                     if let Some(clamp_type_raw) = clamp_inst.result_type {
                         if let Ok(clamp_type_result_id) = ResultId::try_from(clamp_type_raw) {
-                            if let Some(clamp_type_inst) = ctx.definitions.get(&clamp_type_result_id)
+                            if let Some(clamp_type_inst) =
+                                ctx.definitions.get(&clamp_type_result_id)
                             {
                                 if clamp_type_inst.class.opcode != Op::TypeInt {
                                     let clamp_id = Id::try_from(clamp_id_raw)
@@ -61,8 +62,9 @@ impl ValidationRule for TypeTensorLayoutNVRule {
                                         ValidationError::TypeTensorLayoutClampNot32BitInteger {
                                             type_id,
                                             clamp_id,
-                                        }.into(),
-                        );
+                                        }
+                                        .into(),
+                                    );
                                 }
                                 // Check width is 32
                                 if let Some(Operand::LiteralBit32(width)) =
@@ -75,8 +77,9 @@ impl ValidationRule for TypeTensorLayoutNVRule {
                                             ValidationError::TypeTensorLayoutClampNot32BitInteger {
                                                 type_id,
                                                 clamp_id,
-                                            }.into(),
-                        );
+                                            }
+                                            .into(),
+                                        );
                                     }
                                 }
                             }
@@ -86,8 +89,10 @@ impl ValidationRule for TypeTensorLayoutNVRule {
                     // Check value is a valid TensorClampMode (0-3 based on C++ code)
                     if let Some(clamp_value) = get_constant_int_value(clamp_inst, ctx) {
                         // TensorClampMode::RepeatMirrored is the max value (3)
-                        if clamp_value < 0 || clamp_value > 3 {
-                            return Err(ValidationError::TypeTensorLayoutClampInvalid { type_id }.into());
+                        if !(0..=3).contains(&clamp_value) {
+                            return Err(
+                                ValidationError::TypeTensorLayoutClampInvalid { type_id }.into()
+                            );
                         }
                     }
                 }
@@ -143,7 +148,8 @@ impl ValidationRule for TypeTensorViewNVRule {
                                     return Err(ValidationError::TypeTensorViewHasDimNotBool {
                                         type_id,
                                         has_dim_id,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -202,12 +208,11 @@ impl ValidationRule for TypeTensorViewNVRule {
                             if p_value < 0 || p_value as usize >= num_dim {
                                 let permutation_id = Id::try_from(p_id_raw)
                                     .unwrap_or_else(|_| Id::try_from(1u32).unwrap());
-                                return Err(
-                                    ValidationError::TypeTensorViewPermutationOutOfRange {
-                                        type_id,
-                                        permutation_id,
-                                    }.into(),
-                        );
+                                return Err(ValidationError::TypeTensorViewPermutationOutOfRange {
+                                    type_id,
+                                    permutation_id,
+                                }
+                                .into());
                             }
                             permutation_mask |= 1 << p_value;
                         } else {
@@ -227,7 +232,8 @@ impl ValidationRule for TypeTensorViewNVRule {
                 if dim as usize != num_dim {
                     return Err(ValidationError::TypeTensorViewPermutationCountMismatch {
                         type_id,
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -261,7 +267,7 @@ fn validate_tensor_dim(
                                 type_id,
                                 opcode,
                                 dim_id,
-                            }.into());
+                            });
                         }
                         // Check width is 32
                         if let Some(Operand::LiteralBit32(width)) = dim_type_inst.operands.first() {
@@ -272,7 +278,7 @@ fn validate_tensor_dim(
                                     type_id,
                                     opcode,
                                     dim_id,
-                                }.into());
+                                });
                             }
                         }
                     }
@@ -287,7 +293,7 @@ fn validate_tensor_dim(
                         type_id,
                         opcode,
                         value: dim_u64,
-                    }.into());
+                    });
                 }
                 return Ok(Some(dim_u64));
             }
@@ -328,16 +334,14 @@ impl ValidationRule for TypeTensorARMRule {
 
             if let Ok(element_result_id) = ResultId::try_from(element_type_raw) {
                 if let Some(element_opcode) = ctx.opcodes.get(&element_result_id) {
-                    if !matches!(
-                        element_opcode,
-                        Op::TypeInt | Op::TypeFloat | Op::TypeBool
-                    ) {
+                    if !matches!(element_opcode, Op::TypeInt | Op::TypeFloat | Op::TypeBool) {
                         let element_type = TypeId::try_from(element_type_raw)
                             .unwrap_or_else(|_| TypeId::try_from(0u32).unwrap());
                         return Err(ValidationError::TypeTensorARMElementNotScalar {
                             type_id,
                             element_type,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -363,7 +367,8 @@ impl ValidationRule for TypeTensorARMRule {
                         return Err(ValidationError::TypeTensorARMRankNotConstant {
                             type_id,
                             rank_id,
-                        }.into());
+                        }
+                        .into());
                     }
 
                     // Must have integer type
@@ -376,7 +381,8 @@ impl ValidationRule for TypeTensorARMRule {
                                     return Err(ValidationError::TypeTensorARMRankNotInteger {
                                         type_id,
                                         rank_id,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -411,7 +417,8 @@ impl ValidationRule for TypeTensorARMRule {
                         return Err(ValidationError::TypeTensorARMShapeNotConstant {
                             type_id,
                             shape_id,
-                        }.into());
+                        }
+                        .into());
                     }
 
                     // Shape must be array of integers with length equal to Rank
@@ -419,15 +426,19 @@ impl ValidationRule for TypeTensorARMRule {
                     // the array type and constituents
                     if let Some(shape_type_raw) = shape_inst.result_type {
                         if let Ok(shape_type_result_id) = ResultId::try_from(shape_type_raw) {
-                            if let Some(shape_type_opcode) = ctx.opcodes.get(&shape_type_result_id) {
+                            if let Some(shape_type_opcode) = ctx.opcodes.get(&shape_type_result_id)
+                            {
                                 // Should be OpTypeArray
                                 if *shape_type_opcode != Op::TypeArray {
                                     let shape_id = Id::try_from(shape_id_raw)
                                         .unwrap_or_else(|_| Id::try_from(1u32).unwrap());
-                                    return Err(ValidationError::TypeTensorARMShapeNotIntegerArray {
-                                        type_id,
-                                        shape_id,
-                                    }.into());
+                                    return Err(
+                                        ValidationError::TypeTensorARMShapeNotIntegerArray {
+                                            type_id,
+                                            shape_id,
+                                        }
+                                        .into(),
+                                    );
                                 }
                             }
                         }
@@ -471,7 +482,8 @@ impl ValidationRule for TypeTensorARMRule {
                             return Err(ValidationError::TypeTensorARMShapeNotIntegerArray {
                                 type_id,
                                 shape_id,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }

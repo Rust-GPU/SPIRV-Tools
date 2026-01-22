@@ -11,9 +11,9 @@ use rspirv::dr::Operand;
 use rspirv::spirv::Op;
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::{Id, ResultId};
+use crate::validation::ValidationResult;
 
 fn to_id(id: u32) -> Id {
     Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
@@ -50,10 +50,7 @@ fn is_int32_scalar(
 }
 
 /// Get the dimension value from a tensor layout/view type.
-fn get_tensor_dimension(
-    type_id: u32,
-    ctx: &ValidationContext<'_>,
-) -> Option<u32> {
+fn get_tensor_dimension(type_id: u32, ctx: &ValidationContext<'_>) -> Option<u32> {
     let result_id = ResultId::try_from(type_id).ok()?;
     let type_inst = ctx.definitions.get(&result_id)?;
 
@@ -89,18 +86,10 @@ impl ValidationRule for CreateTensorLayoutRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func
-                .def
-                .as_ref()
-                .and_then(|d| d.result_id)
-                .map(to_id);
+            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(to_id);
 
             for block in &func.blocks {
-                let block_id = block
-                    .label
-                    .as_ref()
-                    .and_then(|l| l.result_id)
-                    .map(to_id);
+                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(to_id);
 
                 for inst in &block.instructions {
                     if inst.class.opcode != Op::CreateTensorLayoutNV {
@@ -117,7 +106,8 @@ impl ValidationRule for CreateTensorLayoutRule {
                                         block: block_id,
                                         opcode: inst.class.opcode,
                                         expected: "OpTypeTensorLayoutNV",
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -140,18 +130,10 @@ impl ValidationRule for CreateTensorViewRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func
-                .def
-                .as_ref()
-                .and_then(|d| d.result_id)
-                .map(to_id);
+            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(to_id);
 
             for block in &func.blocks {
-                let block_id = block
-                    .label
-                    .as_ref()
-                    .and_then(|l| l.result_id)
-                    .map(to_id);
+                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(to_id);
 
                 for inst in &block.instructions {
                     if inst.class.opcode != Op::CreateTensorViewNV {
@@ -168,7 +150,8 @@ impl ValidationRule for CreateTensorViewRule {
                                         block: block_id,
                                         opcode: inst.class.opcode,
                                         expected: "OpTypeTensorViewNV",
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -219,18 +202,10 @@ impl ValidationRule for TensorLayoutOperandsRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func
-                .def
-                .as_ref()
-                .and_then(|d| d.result_id)
-                .map(to_id);
+            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(to_id);
 
             for block in &func.blocks {
-                let block_id = block
-                    .label
-                    .as_ref()
-                    .and_then(|l| l.result_id)
-                    .map(to_id);
+                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(to_id);
 
                 for inst in &block.instructions {
                     let Some((expected, is_view)) =
@@ -256,14 +231,18 @@ impl ValidationRule for TensorLayoutOperandsRule {
                                             block: block_id,
                                             opcode: inst.class.opcode,
                                             expected: "OpTypeTensorViewNV",
-                                        }.into());
+                                        }
+                                        .into());
                                     } else {
-                                        return Err(ValidationError::TensorLayoutInvalidResultType {
-                                            function: func_id,
-                                            block: block_id,
-                                            opcode: inst.class.opcode,
-                                            expected: "OpTypeTensorLayoutNV",
-                                        }.into());
+                                        return Err(
+                                            ValidationError::TensorLayoutInvalidResultType {
+                                                function: func_id,
+                                                block: block_id,
+                                                opcode: inst.class.opcode,
+                                                expected: "OpTypeTensorLayoutNV",
+                                            }
+                                            .into(),
+                                        );
                                     }
                                 }
                             }
@@ -280,7 +259,8 @@ impl ValidationRule for TensorLayoutOperandsRule {
                                         function: func_id,
                                         block: block_id,
                                         opcode: inst.class.opcode,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -306,7 +286,8 @@ impl ValidationRule for TensorLayoutOperandsRule {
                                     opcode: inst.class.opcode,
                                     expected: expected_count,
                                     actual: num_values,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -323,7 +304,8 @@ impl ValidationRule for TensorLayoutOperandsRule {
                                                 block: block_id,
                                                 opcode: inst.class.opcode,
                                                 operand_id: to_id(*val_id),
-                                            }.into());
+                                            }
+                                            .into());
                                         }
                                     }
                                 }

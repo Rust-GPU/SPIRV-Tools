@@ -35,13 +35,13 @@ use std::collections::HashSet;
 use rspirv::spirv::{BuiltIn, Capability, Decoration, Op};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::helpers::is_memory_object_declaration;
 use crate::validation::types::{
     DecorationTargetId, DecorationTargetKind, Id, IdKind, MemberDecorationTargetId, MemberIndex,
     OperandId, ResultId,
 };
+use crate::validation::ValidationResult;
 use crate::version::SpirvVersion;
 
 // ============================================================================
@@ -75,7 +75,8 @@ impl ValidationRule for DecorationVersionRule {
                         decoration: *decoration,
                         required_version: SpirvVersion::new(1, 3),
                         target_version,
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -125,7 +126,8 @@ impl ValidationRule for DecorationGroupsRule {
                         if !groups.contains(&group) {
                             return Err(ValidationError::UnknownDecorationGroup {
                                 group: group.into_inner(),
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                     let mut operands = inst.operands.iter().skip(1);
@@ -139,7 +141,8 @@ impl ValidationRule for DecorationGroupsRule {
                             if !ctx.defined_result_ids.contains(&target) {
                                 return Err(ValidationError::MissingDecorationTarget {
                                     target: target.into_inner(),
-                                }.into());
+                                }
+                                .into());
                             }
                             if inst.class.opcode == Op::GroupMemberDecorate {
                                 let member_index = operands
@@ -154,17 +157,17 @@ impl ValidationRule for DecorationGroupsRule {
                                     .unwrap_or(0);
                                 if let Some(opcode) = ctx.opcodes.get(&target) {
                                     if *opcode != Op::TypeStruct {
-                                        let target_operand =
-                                            OperandId::try_from(u32::from(target))
-                                                .expect("validated non-zero id");
+                                        let target_operand = OperandId::try_from(u32::from(target))
+                                            .expect("validated non-zero id");
                                         return Err(
                                             ValidationError::MemberDecorationTargetNotStruct {
                                                 target: MemberDecorationTargetId::new(
                                                     DecorationTargetId::new(target_operand),
                                                     MemberIndex::new(member_index),
                                                 ),
-                                            }.into(),
-                        );
+                                            }
+                                            .into(),
+                                        );
                                     }
                                 }
                                 if let Some(member_count) = ctx.struct_member_counts.get(&target) {
@@ -176,8 +179,9 @@ impl ValidationRule for DecorationGroupsRule {
                                                 ),
                                                 member: MemberIndex::new(member_index),
                                                 member_count: *member_count,
-                                            }.into(),
-                        );
+                                            }
+                                            .into(),
+                                        );
                                     }
                                 }
                             }
@@ -221,7 +225,8 @@ impl ValidationRule for BasicDecorationRule {
                         ) {
                             return Err(ValidationError::MemberOnlyDecorationUsedWithDecorate {
                                 decoration: *decoration,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                     let mut operands = inst.operands.iter();
@@ -236,7 +241,8 @@ impl ValidationRule for BasicDecorationRule {
                         if !ctx.defined_result_ids.contains(&target) {
                             return Err(ValidationError::MissingDecorationTarget {
                                 target: target.into_inner(),
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -401,7 +407,8 @@ impl ValidationRule for DecorationTargetCategoriesRule {
                     target: target_id,
                     found: opcode,
                     expected,
-                }.into());
+                }
+                .into());
             }
         }
         Ok(())
@@ -431,9 +438,8 @@ impl ValidationRule for DecorationCompatibilityRule {
         ];
 
         // Mutually exclusive decorations per member
-        const MUTUALLY_EXCLUSIVE_PER_MEMBER: &[(Decoration, Decoration)] = &[
-            (Decoration::RowMajor, Decoration::ColMajor),
-        ];
+        const MUTUALLY_EXCLUSIVE_PER_MEMBER: &[(Decoration, Decoration)] =
+            &[(Decoration::RowMajor, Decoration::ColMajor)];
 
         // Track seen decorations per ID
         let mut seen_per_id: HashSet<(Decoration, u32)> = HashSet::new();
@@ -446,7 +452,8 @@ impl ValidationRule for DecorationCompatibilityRule {
                     let Some(rspirv::dr::Operand::IdRef(target)) = inst.operands.first() else {
                         continue;
                     };
-                    let Some(rspirv::dr::Operand::Decoration(decoration)) = inst.operands.get(1) else {
+                    let Some(rspirv::dr::Operand::Decoration(decoration)) = inst.operands.get(1)
+                    else {
                         continue;
                     };
                     let key = (*decoration, *target);
@@ -456,7 +463,8 @@ impl ValidationRule for DecorationCompatibilityRule {
                         return Err(ValidationError::DuplicateDecorationOnId {
                             decoration: *decoration,
                             target: *target,
-                        }.into());
+                        }
+                        .into());
                     }
                     seen_per_id.insert(key);
 
@@ -476,7 +484,8 @@ impl ValidationRule for DecorationCompatibilityRule {
                                     decoration1: *decoration,
                                     decoration2: excl_dec,
                                     target: *target,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -485,10 +494,12 @@ impl ValidationRule for DecorationCompatibilityRule {
                     let Some(rspirv::dr::Operand::IdRef(target)) = inst.operands.first() else {
                         continue;
                     };
-                    let Some(rspirv::dr::Operand::LiteralBit32(member)) = inst.operands.get(1) else {
+                    let Some(rspirv::dr::Operand::LiteralBit32(member)) = inst.operands.get(1)
+                    else {
                         continue;
                     };
-                    let Some(rspirv::dr::Operand::Decoration(decoration)) = inst.operands.get(2) else {
+                    let Some(rspirv::dr::Operand::Decoration(decoration)) = inst.operands.get(2)
+                    else {
                         continue;
                     };
                     let key = (*decoration, *target, *member);
@@ -499,7 +510,8 @@ impl ValidationRule for DecorationCompatibilityRule {
                             decoration: *decoration,
                             target: *target,
                             member: *member,
-                        }.into());
+                        }
+                        .into());
                     }
                     seen_per_member.insert(key);
 
@@ -520,7 +532,8 @@ impl ValidationRule for DecorationCompatibilityRule {
                                     decoration2: excl_dec,
                                     target: *target,
                                     member: *member,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -614,7 +627,12 @@ fn is_pointer_type(
     type_id
         .and_then(|id| ResultId::try_from(id).ok())
         .and_then(|id| definitions.get(&id))
-        .map(|inst| matches!(inst.class.opcode, Op::TypePointer | Op::TypeUntypedPointerKHR))
+        .map(|inst| {
+            matches!(
+                inst.class.opcode,
+                Op::TypePointer | Op::TypeUntypedPointerKHR
+            )
+        })
         .unwrap_or(false)
 }
 
@@ -694,19 +712,24 @@ impl ValidationRule for LinkageAttributeRule {
                 // Function declarations must have Import linkage
                 // However, entry points are exempt from this rule
                 let is_entry_point = module.entry_points.iter().any(|ep| {
-                    ep.operands.get(1).map(|op| {
-                        if let rspirv::dr::Operand::IdRef(id) = op {
-                            *id == func_id
-                        } else {
-                            false
-                        }
-                    }).unwrap_or(false)
+                    ep.operands
+                        .get(1)
+                        .map(|op| {
+                            if let rspirv::dr::Operand::IdRef(id) = op {
+                                *id == func_id
+                            } else {
+                                false
+                            }
+                        })
+                        .unwrap_or(false)
                 });
 
                 if !is_entry_point {
                     return Err(ValidationError::FunctionDeclarationMissingImportLinkage {
-                        function: Id::try_from(func_id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()),
-                    }.into());
+                        function: Id::try_from(func_id)
+                            .unwrap_or_else(|_| Id::try_from(1u32).unwrap()),
+                    }
+                    .into());
                 }
             }
 
@@ -714,7 +737,8 @@ impl ValidationRule for LinkageAttributeRule {
             if !func.blocks.is_empty() && has_import_linkage {
                 return Err(ValidationError::FunctionDefinitionHasImportLinkage {
                     function: Id::try_from(func_id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()),
-                }.into());
+                }
+                .into());
             }
         }
 
@@ -733,7 +757,8 @@ impl ValidationRule for LinkageAttributeRule {
             if has_initializer && import_linkage_ids.contains(&var_id) {
                 return Err(ValidationError::ImportedVariableHasInitializer {
                     variable: Id::try_from(var_id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()),
-                }.into());
+                }
+                .into());
             }
         }
 
@@ -757,11 +782,17 @@ impl ValidationRule for VulkanMemoryModelDecorationRule {
         use rspirv::spirv::MemoryModel;
 
         // Only check if using Vulkan memory model
-        let uses_vulkan_memory_model = ctx.module.memory_model.as_ref().map(|mm| {
-            mm.operands.get(1).map(|op| {
-                matches!(op, rspirv::dr::Operand::MemoryModel(MemoryModel::Vulkan))
-            }).unwrap_or(false)
-        }).unwrap_or(false);
+        let uses_vulkan_memory_model = ctx
+            .module
+            .memory_model
+            .as_ref()
+            .map(|mm| {
+                mm.operands
+                    .get(1)
+                    .map(|op| matches!(op, rspirv::dr::Operand::MemoryModel(MemoryModel::Vulkan)))
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false);
 
         if !uses_vulkan_memory_model {
             return Ok(());
@@ -772,8 +803,14 @@ impl ValidationRule for VulkanMemoryModelDecorationRule {
             if inst.class.opcode != Op::Decorate && inst.class.opcode != Op::MemberDecorate {
                 continue;
             }
-            let decoration_idx = if inst.class.opcode == Op::Decorate { 1 } else { 2 };
-            let Some(rspirv::dr::Operand::Decoration(decoration)) = inst.operands.get(decoration_idx) else {
+            let decoration_idx = if inst.class.opcode == Op::Decorate {
+                1
+            } else {
+                2
+            };
+            let Some(rspirv::dr::Operand::Decoration(decoration)) =
+                inst.operands.get(decoration_idx)
+            else {
                 continue;
             };
 
@@ -781,7 +818,8 @@ impl ValidationRule for VulkanMemoryModelDecorationRule {
             if matches!(decoration, Decoration::Coherent | Decoration::Volatile) {
                 return Err(ValidationError::VulkanMemoryModelDeprecatesDecoration {
                     decoration: *decoration,
-                }.into());
+                }
+                .into());
             }
         }
 
@@ -813,7 +851,10 @@ impl ValidationRule for IntegerWrapDecorationRule {
                 continue;
             };
 
-            if !matches!(decoration, Decoration::NoSignedWrap | Decoration::NoUnsignedWrap) {
+            if !matches!(
+                decoration,
+                Decoration::NoSignedWrap | Decoration::NoUnsignedWrap
+            ) {
                 continue;
             }
 
@@ -840,7 +881,9 @@ impl ValidationRule for IntegerWrapDecorationRule {
             );
 
             if !is_valid_op {
-                return Err(ValidationError::IntegerWrapDecorationInvalidOp { opcode: *opcode }.into());
+                return Err(
+                    ValidationError::IntegerWrapDecorationInvalidOp { opcode: *opcode }.into(),
+                );
             }
         }
 
@@ -868,12 +911,22 @@ impl ValidationRule for RelaxedPrecisionDecorationRule {
                 Op::Decorate => inst
                     .operands
                     .get(1)
-                    .map(|op| matches!(op, rspirv::dr::Operand::Decoration(Decoration::RelaxedPrecision)))
+                    .map(|op| {
+                        matches!(
+                            op,
+                            rspirv::dr::Operand::Decoration(Decoration::RelaxedPrecision)
+                        )
+                    })
                     .unwrap_or(false),
                 Op::MemberDecorate => inst
                     .operands
                     .get(2)
-                    .map(|op| matches!(op, rspirv::dr::Operand::Decoration(Decoration::RelaxedPrecision)))
+                    .map(|op| {
+                        matches!(
+                            op,
+                            rspirv::dr::Operand::Decoration(Decoration::RelaxedPrecision)
+                        )
+                    })
                     .unwrap_or(false),
                 _ => false,
             };
@@ -1026,14 +1079,16 @@ impl ValidationRule for VulkanDescriptorBindingRule {
                 return Err(ValidationError::MissingDescriptorSetDecoration {
                     variable: crate::validation::types::Id::try_from(var_id)
                         .unwrap_or_else(|_| crate::validation::types::Id::try_from(1u32).unwrap()),
-                }.into());
+                }
+                .into());
             }
 
             if !has_binding.contains(&var_id) {
                 return Err(ValidationError::MissingBindingDecoration {
                     variable: crate::validation::types::Id::try_from(var_id)
                         .unwrap_or_else(|_| crate::validation::types::Id::try_from(1u32).unwrap()),
-                }.into());
+                }
+                .into());
             }
         }
 
@@ -1085,7 +1140,8 @@ impl ValidationRule for EntryPointLinkageRule {
                                     .unwrap_or_else(|_| {
                                         crate::validation::types::Id::try_from(1u32).unwrap()
                                     }),
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -1168,10 +1224,10 @@ impl ValidationRule for VulkanPushConstantRule {
                         push_constant_count += 1;
                         if push_constant_count > 1 {
                             return Err(ValidationError::InterfaceMultiplePushConstant {
-                                entry_point: ep_id.and_then(|id| {
-                                    crate::validation::types::Id::try_from(id).ok()
-                                }),
-                            }.into());
+                                entry_point: ep_id
+                                    .and_then(|id| crate::validation::types::Id::try_from(id).ok()),
+                            }
+                            .into());
                         }
                     }
                 }
@@ -1301,7 +1357,8 @@ impl ValidationRule for VulkanInterpolationDecorationRule {
                                 .unwrap_or_else(|_| {
                                     crate::validation::types::Id::try_from(1u32).unwrap()
                                 }),
-                            }.into(),
+                            }
+                            .into(),
                         );
                     }
 
@@ -1321,7 +1378,8 @@ impl ValidationRule for VulkanInterpolationDecorationRule {
                                 .unwrap_or_else(|_| {
                                     crate::validation::types::Id::try_from(1u32).unwrap()
                                 }),
-                            }.into(),
+                            }
+                            .into(),
                         );
                     }
                 }
@@ -1375,7 +1433,8 @@ impl ValidationRule for FPRoundingModeDecorationRule {
             if target_inst.class.opcode != Op::FConvert {
                 return Err(ValidationError::FPRoundingModeInvalidContext {
                     opcode: target_inst.class.opcode,
-                }.into());
+                }
+                .into());
             }
 
             // In Vulkan, only RTE or RTZ modes are allowed
@@ -1385,7 +1444,8 @@ impl ValidationRule for FPRoundingModeDecorationRule {
                     if !matches!(mode, FPRoundingMode::RTE | FPRoundingMode::RTZ) {
                         return Err(ValidationError::FPRoundingModeVulkanInvalidMode {
                             mode: *mode,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -1432,7 +1492,10 @@ impl ValidationRule for NonReadableWritableDecorationRule {
                 _ => continue,
             };
 
-            if !matches!(decoration, Decoration::NonReadable | Decoration::NonWritable) {
+            if !matches!(
+                decoration,
+                Decoration::NonReadable | Decoration::NonWritable
+            ) {
                 continue;
             }
 
@@ -1449,12 +1512,16 @@ impl ValidationRule for NonReadableWritableDecorationRule {
             let opcode = target_inst.class.opcode;
             if !matches!(
                 opcode,
-                Op::Variable | Op::UntypedVariableKHR | Op::FunctionParameter | Op::RawAccessChainNV
+                Op::Variable
+                    | Op::UntypedVariableKHR
+                    | Op::FunctionParameter
+                    | Op::RawAccessChainNV
             ) {
                 return Err(ValidationError::NonReadableWithoutNonWritable {
                     target: crate::validation::types::Id::try_from(target)
                         .unwrap_or_else(|_| crate::validation::types::Id::try_from(1u32).unwrap()),
-                }.into());
+                }
+                .into());
             }
 
             // For variables, check storage class restrictions
@@ -1548,7 +1615,10 @@ impl ValidationRule for ComponentDecorationRule {
                 }
             });
 
-            if !matches!(storage_class, Some(StorageClass::Input | StorageClass::Output)) {
+            if !matches!(
+                storage_class,
+                Some(StorageClass::Input | StorageClass::Output)
+            ) {
                 continue;
             }
 
@@ -1556,7 +1626,8 @@ impl ValidationRule for ComponentDecorationRule {
             if *component >= 4 {
                 return Err(ValidationError::ComponentOutOfRange {
                     component: *component,
-                }.into());
+                }
+                .into());
             }
         }
 

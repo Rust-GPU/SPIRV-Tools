@@ -68,7 +68,9 @@ mod tests {
     use crate::validation::context::{TestContextData, ValidationRule};
     use crate::validation::error::ValidationError;
 
-    use super::helpers::{allows_non_private_pointer, is_logical_pointer_producer, is_readonly_storage_class};
+    use super::helpers::{
+        allows_non_private_pointer, is_logical_pointer_producer, is_readonly_storage_class,
+    };
     use super::MemoryModelRule;
 
     #[test]

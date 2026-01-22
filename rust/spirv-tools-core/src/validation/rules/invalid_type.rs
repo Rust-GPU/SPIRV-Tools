@@ -11,9 +11,9 @@ use rspirv::spirv::Op;
 use std::collections::HashMap;
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::{Id, ResultId};
+use crate::validation::ValidationResult;
 
 fn to_id(id: u32) -> Id {
     Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
@@ -76,10 +76,7 @@ fn has_bfloat16_encoding(
 }
 
 /// Check if a type is FP8 E4M3 or E5M2.
-fn is_fp8_type(
-    type_id: u32,
-    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
-) -> bool {
+fn is_fp8_type(type_id: u32, definitions: &HashMap<ResultId, rspirv::dr::Instruction>) -> bool {
     if let Ok(result_id) = ResultId::try_from(type_id) {
         if let Some(inst) = definitions.get(&result_id) {
             if inst.class.opcode == Op::TypeFloat {
@@ -124,10 +121,7 @@ fn contains_bfloat16(
 }
 
 /// Check if a type contains FP8 (including matrix component types).
-fn contains_fp8(
-    type_id: u32,
-    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
-) -> bool {
+fn contains_fp8(type_id: u32, definitions: &HashMap<ResultId, rspirv::dr::Instruction>) -> bool {
     if is_fp8_type(type_id, definitions) {
         return true;
     }
@@ -224,18 +218,10 @@ impl ValidationRule for InvalidTypeRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func
-                .def
-                .as_ref()
-                .and_then(|d| d.result_id)
-                .map(to_id);
+            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(to_id);
 
             for block in &func.blocks {
-                let block_id = block
-                    .label
-                    .as_ref()
-                    .and_then(|l| l.result_id)
-                    .map(to_id);
+                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(to_id);
 
                 for inst in &block.instructions {
                     // Check result type for most operations
@@ -246,14 +232,16 @@ impl ValidationRule for InvalidTypeRule {
                                     function: func_id,
                                     block: block_id,
                                     opcode: inst.class.opcode,
-                                }.into());
+                                }
+                                .into());
                             }
                             if contains_fp8(result_type_id, ctx.definitions) {
                                 return Err(ValidationError::InvalidTypeFP8 {
                                     function: func_id,
                                     block: block_id,
                                     opcode: inst.class.opcode,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -261,22 +249,22 @@ impl ValidationRule for InvalidTypeRule {
                     // Check operand types for specific operations
                     if UNSUPPORTED_OPERAND_TYPE_OPS.contains(&inst.class.opcode) {
                         // These ops have the operand at index 0 (after result type/id)
-                        if let Some(operand_type) =
-                            get_operand_type_id(inst, 0, ctx.definitions)
-                        {
+                        if let Some(operand_type) = get_operand_type_id(inst, 0, ctx.definitions) {
                             if contains_bfloat16(operand_type, ctx.definitions) {
                                 return Err(ValidationError::InvalidTypeBFloat16 {
                                     function: func_id,
                                     block: block_id,
                                     opcode: inst.class.opcode,
-                                }.into());
+                                }
+                                .into());
                             }
                             if contains_fp8(operand_type, ctx.definitions) {
                                 return Err(ValidationError::InvalidTypeFP8 {
                                     function: func_id,
                                     block: block_id,
                                     opcode: inst.class.opcode,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -290,14 +278,16 @@ impl ValidationRule for InvalidTypeRule {
                                     function: func_id,
                                     block: block_id,
                                     opcode: inst.class.opcode,
-                                }.into());
+                                }
+                                .into());
                             }
                             if contains_fp8(data_type, ctx.definitions) {
                                 return Err(ValidationError::InvalidTypeFP8 {
                                     function: func_id,
                                     block: block_id,
                                     opcode: inst.class.opcode,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -311,14 +301,16 @@ impl ValidationRule for InvalidTypeRule {
                                     function: func_id,
                                     block: block_id,
                                     opcode: inst.class.opcode,
-                                }.into());
+                                }
+                                .into());
                             }
                             if contains_fp8(value_type, ctx.definitions) {
                                 return Err(ValidationError::InvalidTypeFP8 {
                                     function: func_id,
                                     block: block_id,
                                     opcode: inst.class.opcode,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -331,14 +323,16 @@ impl ValidationRule for InvalidTypeRule {
                                     function: func_id,
                                     block: block_id,
                                     opcode: inst.class.opcode,
-                                }.into());
+                                }
+                                .into());
                             }
                             if contains_fp8(result_type_id, ctx.definitions) {
                                 return Err(ValidationError::InvalidTypeFP8 {
                                     function: func_id,
                                     block: block_id,
                                     opcode: inst.class.opcode,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }

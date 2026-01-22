@@ -11,13 +11,12 @@ use rspirv::dr::Operand;
 use rspirv::spirv::{AddressingModel, Capability, Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::{Id, ResultId};
+use crate::validation::ValidationResult;
 
 use super::helpers::{
-    get_pointer_storage_class, get_pointee_type, id_from_u32, result_id_from_u32,
-    type_id_from_u32,
+    get_pointee_type, get_pointer_storage_class, id_from_u32, result_id_from_u32, type_id_from_u32,
 };
 
 // ============================================================================
@@ -52,7 +51,8 @@ impl ValidationRule for ArrayLengthRule {
             if result_type.class.opcode != Op::TypeInt {
                 return Err(ValidationError::ArrayLengthResultTypeNotInt {
                     instruction: id_from_u32(inst.result_id.unwrap_or(0)),
-                }.into());
+                }
+                .into());
             }
 
             // Check width is 32 or 64 and signedness is 0
@@ -69,13 +69,15 @@ impl ValidationRule for ArrayLengthRule {
                 return Err(ValidationError::ArrayLengthResultTypeInvalidWidth {
                     instruction: id_from_u32(inst.result_id.unwrap_or(0)),
                     width: width.unwrap_or(0),
-                }.into());
+                }
+                .into());
             }
 
             if signedness != Some(0) {
                 return Err(ValidationError::ArrayLengthResultTypeSigned {
                     instruction: id_from_u32(inst.result_id.unwrap_or(0)),
-                }.into());
+                }
+                .into());
             }
 
             // Structure operand must be a pointer to a struct
@@ -102,7 +104,8 @@ impl ValidationRule for ArrayLengthRule {
             if structure_type.class.opcode != Op::TypePointer {
                 return Err(ValidationError::ArrayLengthStructureNotPointer {
                     instruction: id_from_u32(inst.result_id.unwrap_or(0)),
-                }.into());
+                }
+                .into());
             }
 
             // Pointee must be a struct
@@ -119,7 +122,8 @@ impl ValidationRule for ArrayLengthRule {
             if pointee_type.class.opcode != Op::TypeStruct {
                 return Err(ValidationError::ArrayLengthPointeeNotStruct {
                     instruction: id_from_u32(inst.result_id.unwrap_or(0)),
-                }.into());
+                }
+                .into());
             }
 
             // Array member index must be last member
@@ -133,7 +137,8 @@ impl ValidationRule for ArrayLengthRule {
                     instruction: id_from_u32(inst.result_id.unwrap_or(0)),
                     member_index: *member_index as usize,
                     last_member: num_members - 1,
-                }.into());
+                }
+                .into());
             }
 
             // Last member must be a runtime array
@@ -150,7 +155,8 @@ impl ValidationRule for ArrayLengthRule {
                 if last_member_type.class.opcode != Op::TypeRuntimeArray {
                     return Err(ValidationError::ArrayLengthMemberNotRuntimeArray {
                         instruction: id_from_u32(inst.result_id.unwrap_or(0)),
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -209,7 +215,8 @@ impl ValidationRule for CopyMemoryRule {
                     return Err(ValidationError::CopyMemoryOperandNotPointer {
                         operand: id_from_u32(ptr_id),
                         operand_name: name,
-                    }.into());
+                    }
+                    .into());
                 }
             }
 
@@ -223,7 +230,8 @@ impl ValidationRule for CopyMemoryRule {
                         return Err(ValidationError::CopyMemoryTypeMismatch {
                             target_type: type_id_from_u32(t),
                             source_type: type_id_from_u32(s),
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -253,14 +261,16 @@ impl ValidationRule for CopyMemoryRule {
                 if size_type.class.opcode != Op::TypeInt {
                     return Err(ValidationError::CopyMemorySizeNotInteger {
                         size: id_from_u32(*size_id),
-                    }.into());
+                    }
+                    .into());
                 }
 
                 // Check for constant zero
                 if size_inst.class.opcode == Op::ConstantNull {
                     return Err(ValidationError::CopyMemorySizeZero {
                         size: id_from_u32(*size_id),
-                    }.into());
+                    }
+                    .into());
                 }
 
                 if size_inst.class.opcode == Op::Constant {
@@ -270,7 +280,8 @@ impl ValidationRule for CopyMemoryRule {
                     if is_zero {
                         return Err(ValidationError::CopyMemorySizeZero {
                             size: id_from_u32(*size_id),
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -379,8 +390,9 @@ impl ValidationRule for PointerComparisonRule {
                                                 instruction: opcode,
                                                 expected: expected_bool,
                                                 found: result_type_id,
-                                            }.into(),
-                        );
+                                            }
+                                            .into(),
+                                        );
                                     }
                                 }
                             }
@@ -405,8 +417,9 @@ impl ValidationRule for PointerComparisonRule {
                                                 instruction: opcode,
                                                 expected: expected_int,
                                                 found: result_type_id,
-                                            }.into(),
-                        );
+                                            }
+                                            .into(),
+                                        );
                                     }
                                 }
                             }
@@ -466,7 +479,8 @@ impl ValidationRule for PointerComparisonRule {
                                 instruction: opcode,
                                 operand_index: 0,
                                 found: op1_type_id,
-                            }.into());
+                            }
+                            .into());
                         }
 
                         // Check if second operand is a pointer
@@ -486,7 +500,8 @@ impl ValidationRule for PointerComparisonRule {
                                 instruction: opcode,
                                 operand_index: 1,
                                 found: op2_type_id,
-                            }.into());
+                            }
+                            .into());
                         }
 
                         // Check that operand types match
@@ -512,7 +527,8 @@ impl ValidationRule for PointerComparisonRule {
                                         operand_index: 1,
                                         expected: op1_type_id,
                                         found: op2_type_id,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             } else {
                                 // For typed pointers, types must match exactly
@@ -523,7 +539,8 @@ impl ValidationRule for PointerComparisonRule {
                                     operand_index: 1,
                                     expected: op1_type_id,
                                     found: op2_type_id,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
 
@@ -596,7 +613,8 @@ impl PointerComparisonRule {
                         instruction: opcode,
                         storage_class,
                         required_capability: Capability::VariablePointersStorageBuffer,
-                    }.into());
+                    }
+                    .into());
                 }
             }
             StorageClass::Workgroup => {
@@ -608,7 +626,8 @@ impl PointerComparisonRule {
                         instruction: opcode,
                         storage_class,
                         required_capability: Capability::VariablePointers,
-                    }.into());
+                    }
+                    .into());
                 }
             }
             StorageClass::PhysicalStorageBuffer => {
@@ -620,7 +639,8 @@ impl PointerComparisonRule {
                         instruction: opcode,
                         storage_class,
                         required_capability: Capability::PhysicalStorageBufferAddresses,
-                    }.into());
+                    }
+                    .into());
                 }
             }
             StorageClass::Function | StorageClass::Private => {
@@ -631,7 +651,8 @@ impl PointerComparisonRule {
                     block: block_id,
                     instruction: opcode,
                     storage_class,
-                }.into());
+                }
+                .into());
             }
             _ => {
                 // Other storage classes are not allowed for pointer comparisons
@@ -640,7 +661,8 @@ impl PointerComparisonRule {
                     block: block_id,
                     instruction: opcode,
                     storage_class,
-                }.into());
+                }
+                .into());
             }
         }
 

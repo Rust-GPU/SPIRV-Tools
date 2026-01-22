@@ -4,7 +4,9 @@ use rspirv::dr::Instruction;
 use rspirv::spirv::{Op, Word};
 use std::collections::HashMap;
 
-use super::util::{parse_binary_args, parse_expr_list, parse_ternary_args, resolve_term_to_id, split_terms};
+use super::util::{
+    parse_binary_args, parse_expr_list, parse_ternary_args, resolve_term_to_id, split_terms,
+};
 
 /// Matrix binary operations.
 const MATRIX_BINARY_OPS: &[(&str, Op)] = &[
@@ -199,10 +201,7 @@ pub fn try_parse_vector(
                 Op::CompositeConstruct,
                 Some(result_type),
                 Some(result_id),
-                vec![
-                    rspirv::dr::Operand::IdRef(a),
-                    rspirv::dr::Operand::IdRef(b),
-                ],
+                vec![rspirv::dr::Operand::IdRef(a), rspirv::dr::Operand::IdRef(b)],
             ));
         }
     }

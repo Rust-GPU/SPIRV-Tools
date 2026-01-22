@@ -305,9 +305,7 @@ impl OpExt for Op {
     fn is_barrier(&self) -> bool {
         matches!(
             self,
-            Op::ControlBarrier
-                | Op::MemoryBarrier
-                | Op::MemoryNamedBarrier
+            Op::ControlBarrier | Op::MemoryBarrier | Op::MemoryNamedBarrier
         )
     }
 

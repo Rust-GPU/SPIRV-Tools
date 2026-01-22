@@ -10,9 +10,9 @@ use rspirv::dr::Operand;
 use rspirv::spirv::{ExecutionModel, Op};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::{Id, ResultId};
+use crate::validation::ValidationResult;
 
 fn to_id(id: u32) -> Id {
     Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
@@ -51,24 +51,16 @@ impl ValidationRule for PrimitiveExecutionModelRule {
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         // Check if we have Geometry execution model
         let has_geometry = ctx.module.entry_points.iter().any(|ep| {
-            ep.operands.first().map_or(false, |op| {
-                matches!(op, Operand::ExecutionModel(ExecutionModel::Geometry))
-            })
+            ep.operands
+                .first()
+                .is_some_and(|op| matches!(op, Operand::ExecutionModel(ExecutionModel::Geometry)))
         });
 
         for func in &ctx.module.functions {
-            let func_id = func
-                .def
-                .as_ref()
-                .and_then(|d| d.result_id)
-                .map(to_id);
+            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(to_id);
 
             for block in &func.blocks {
-                let block_id = block
-                    .label
-                    .as_ref()
-                    .and_then(|l| l.result_id)
-                    .map(to_id);
+                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(to_id);
 
                 for inst in &block.instructions {
                     let requires_geometry = matches!(
@@ -84,7 +76,8 @@ impl ValidationRule for PrimitiveExecutionModelRule {
                             function: func_id,
                             block: block_id,
                             opcode: inst.class.opcode,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -108,18 +101,10 @@ impl ValidationRule for StreamPrimitiveRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func
-                .def
-                .as_ref()
-                .and_then(|d| d.result_id)
-                .map(to_id);
+            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(to_id);
 
             for block in &func.blocks {
-                let block_id = block
-                    .label
-                    .as_ref()
-                    .and_then(|l| l.result_id)
-                    .map(to_id);
+                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(to_id);
 
                 for inst in &block.instructions {
                     if !matches!(
@@ -152,7 +137,8 @@ impl ValidationRule for StreamPrimitiveRule {
                                     function: func_id,
                                     block: block_id,
                                     opcode: inst.class.opcode,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -163,7 +149,8 @@ impl ValidationRule for StreamPrimitiveRule {
                             function: func_id,
                             block: block_id,
                             opcode: inst.class.opcode,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }

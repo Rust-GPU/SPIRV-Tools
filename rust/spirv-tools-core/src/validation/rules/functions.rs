@@ -13,9 +13,9 @@ use rspirv::dr::Operand;
 use rspirv::spirv::{FunctionControl, Op};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::{Id, ResultId, TypeId};
+use crate::validation::ValidationResult;
 
 // ============================================================================
 // Function Definition Rule
@@ -69,16 +69,18 @@ impl ValidationRule for FunctionDefinitionRule {
                         function: func_id,
                         function_type: type_id,
                         expected: "OpTypeFunction",
-                    }.into());
+                    }
+                    .into());
                 }
             }
 
             // Check that the return type matches
             let declared_return_type = def.result_type;
-            let function_return_type = function_type_inst.operands.first().and_then(|op| match op {
-                Operand::IdRef(id) => Some(*id),
-                _ => None,
-            });
+            let function_return_type =
+                function_type_inst.operands.first().and_then(|op| match op {
+                    Operand::IdRef(id) => Some(*id),
+                    _ => None,
+                });
 
             if let (Some(declared), Some(expected)) = (declared_return_type, function_return_type) {
                 if declared != expected {
@@ -91,7 +93,8 @@ impl ValidationRule for FunctionDefinitionRule {
                             function: func_id,
                             result_type,
                             function_type: func_type,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -154,7 +157,8 @@ impl ValidationRule for FunctionParameterRule {
                         function: func_id,
                         expected: expected_param_count,
                         found: function.parameters.len(),
-                    }.into());
+                    }
+                    .into());
                 }
             }
 
@@ -186,7 +190,8 @@ impl ValidationRule for FunctionParameterRule {
                                 parameter: param,
                                 expected: expected_type,
                                 found: actual_type,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -256,7 +261,8 @@ impl ValidationRule for FunctionCallRule {
                                     function: func_id,
                                     target,
                                     found: opcode,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -283,17 +289,17 @@ impl ValidationRule for FunctionCallRule {
                                     function: func_id,
                                     expected,
                                     found,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
 
                     // Get the function type from callee
-                    let callee_func_type_id =
-                        callee_def.operands.get(1).and_then(|op| match op {
-                            Operand::IdRef(id) => Some(*id),
-                            _ => None,
-                        });
+                    let callee_func_type_id = callee_def.operands.get(1).and_then(|op| match op {
+                        Operand::IdRef(id) => Some(*id),
+                        _ => None,
+                    });
 
                     let callee_func_type = callee_func_type_id
                         .and_then(|id| ResultId::try_from(id).ok())
@@ -313,7 +319,8 @@ impl ValidationRule for FunctionCallRule {
                             function: func_id,
                             expected: parameter_count,
                             found: argument_count,
-                        }.into());
+                        }
+                        .into());
                     }
 
                     // Check argument types match parameter types
@@ -344,12 +351,15 @@ impl ValidationRule for FunctionCallRule {
                                     TypeId::try_from(arg_type),
                                     TypeId::try_from(param_type),
                                 ) {
-                                    return Err(ValidationError::FunctionCallArgumentTypeMismatch {
-                                        function: func_id,
-                                        argument,
-                                        expected,
-                                        found,
-                                    }.into());
+                                    return Err(
+                                        ValidationError::FunctionCallArgumentTypeMismatch {
+                                            function: func_id,
+                                            argument,
+                                            expected,
+                                            found,
+                                        }
+                                        .into(),
+                                    );
                                 }
                             }
                         }
@@ -416,7 +426,8 @@ impl ValidationRule for ReturnValueRule {
                                     return Err(ValidationError::MissingReturnValue {
                                         function: function_id,
                                         expected,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -424,7 +435,8 @@ impl ValidationRule for ReturnValueRule {
                             if is_void {
                                 return Err(ValidationError::ReturnValueInVoidFunction {
                                     function: function_id,
-                                }.into());
+                                }
+                                .into());
                             }
 
                             // Check that the returned value has the correct type
@@ -438,8 +450,9 @@ impl ValidationRule for ReturnValueRule {
                                                         function: function_id,
                                                         expected,
                                                         found: *value_type,
-                                                    }.into(),
-                        );
+                                                    }
+                                                    .into(),
+                                                );
                                             }
                                         }
                                     }
@@ -501,11 +514,14 @@ impl ValidationRule for FunctionVariableRule {
                         // Check storage class is Function
                         if let Some(sc) = storage_class {
                             if sc != rspirv::spirv::StorageClass::Function {
-                                return Err(ValidationError::FunctionVariableStorageClassMismatch {
-                                    function: function_id,
-                                    variable: variable_id,
-                                    storage_class: sc,
-                                }.into());
+                                return Err(
+                                    ValidationError::FunctionVariableStorageClassMismatch {
+                                        function: function_id,
+                                        variable: variable_id,
+                                        storage_class: sc,
+                                    }
+                                    .into(),
+                                );
                             }
                         }
 
@@ -514,7 +530,8 @@ impl ValidationRule for FunctionVariableRule {
                             return Err(ValidationError::FunctionVariableNotInEntryBlock {
                                 function: function_id,
                                 variable: variable_id,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -617,7 +634,8 @@ impl ValidationRule for FunctionUseRule {
                             return Err(ValidationError::FunctionInvalidUse {
                                 function: func_id,
                                 use_opcode: opcode,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -660,7 +678,8 @@ impl ValidationRule for FunctionDeclarationOrderRule {
 
                     return Err(ValidationError::FunctionDeclarationAfterDefinition {
                         function: function_id,
-                    }.into());
+                    }
+                    .into());
                 }
             } else {
                 seen_definition = true;
@@ -713,7 +732,8 @@ impl ValidationRule for FunctionControlRule {
             {
                 return Err(ValidationError::FunctionControlInlineAndDontInline {
                     function: function_id,
-                }.into());
+                }
+                .into());
             }
         }
 

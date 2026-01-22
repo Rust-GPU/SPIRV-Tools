@@ -59,7 +59,10 @@ fn fp_mul_one_identity() {
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
-    assert!(!result.has_opcode(Op::FMul), "x * 1.0 should be folded to x");
+    assert!(
+        !result.has_opcode(Op::FMul),
+        "x * 1.0 should be folded to x"
+    );
 }
 
 #[test]
@@ -75,7 +78,10 @@ fn fp_div_one_identity() {
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
-    assert!(!result.has_opcode(Op::FDiv), "x / 1.0 should be folded to x");
+    assert!(
+        !result.has_opcode(Op::FDiv),
+        "x / 1.0 should be folded to x"
+    );
 }
 
 // =============================================================================
@@ -572,8 +578,14 @@ fn fp_div_by_reciprocal() {
     let params = b.begin_function_with_params(vec![b.float_ty, b.float_ty]);
     let (a, bval) = (params[0], params[1]);
     let c1 = b.const_f32(1.0);
-    let recip = b.builder.f_div(b.float_ty, None, c1, bval).expect("fdiv_recip");
-    let _ = b.builder.f_div(b.float_ty, None, a, recip).expect("fdiv_main");
+    let recip = b
+        .builder
+        .f_div(b.float_ty, None, c1, bval)
+        .expect("fdiv_recip");
+    let _ = b
+        .builder
+        .f_div(b.float_ty, None, a, recip)
+        .expect("fdiv_main");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -597,7 +609,10 @@ fn fp_mul_by_reciprocal_to_div() {
     let params = b.begin_function_with_params(vec![b.float_ty, b.float_ty]);
     let (x, y) = (params[0], params[1]);
     let c1 = b.const_f32(1.0);
-    let recip = b.builder.f_div(b.float_ty, None, c1, y).expect("fdiv_recip");
+    let recip = b
+        .builder
+        .f_div(b.float_ty, None, c1, y)
+        .expect("fdiv_recip");
     let _ = b.builder.f_mul(b.float_ty, None, x, recip).expect("fmul");
     let words = b.finish();
 
@@ -649,10 +664,7 @@ fn fp_x_plus_x_to_mul_2() {
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
     // FAdd should become FMul
-    assert!(
-        !result.has_opcode(Op::FAdd),
-        "x + x should become x * 2"
-    );
+    assert!(!result.has_opcode(Op::FAdd), "x + x should become x * 2");
 }
 
 // =============================================================================

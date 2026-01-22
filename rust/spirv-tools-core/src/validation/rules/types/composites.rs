@@ -13,10 +13,10 @@ use rspirv::spirv::{Capability, Decoration, Op};
 
 use crate::target_env::TargetEnv;
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::helpers::has_decoration;
 use crate::validation::types::{ResultId, TypeId};
+use crate::validation::ValidationResult;
 
 use super::helpers::{get_constant_int_value, is_constant_opcode, is_scalar_type, is_type_opcode};
 
@@ -70,7 +70,8 @@ impl ValidationRule for TypeVectorRule {
                             return Err(ValidationError::TypeVectorComponentNotScalarOrPointer {
                                 type_id,
                                 component_type,
-                            }.into());
+                            }
+                            .into());
                         }
                     } else if !is_scalar {
                         let component_type = TypeId::try_from(component_type_raw)
@@ -78,7 +79,8 @@ impl ValidationRule for TypeVectorRule {
                         return Err(ValidationError::TypeVectorComponentNotScalar {
                             type_id,
                             component_type,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -91,7 +93,7 @@ impl ValidationRule for TypeVectorRule {
 
             // Validate component count
             match component_count {
-                2 | 3 | 4 => {
+                2..=4 => {
                     // Always valid
                 }
                 8 | 16 => {
@@ -99,14 +101,16 @@ impl ValidationRule for TypeVectorRule {
                         return Err(ValidationError::TypeVectorRequiresVector16Capability {
                             type_id,
                             component_count,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
                 _ => {
                     return Err(ValidationError::TypeVectorInvalidComponentCount {
                         type_id,
                         component_count,
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -163,7 +167,8 @@ impl ValidationRule for TypeMatrixRule {
                                 if *component_opcode != Op::TypeFloat {
                                     return Err(ValidationError::TypeMatrixComponentNotFloat {
                                         type_id,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -178,11 +183,12 @@ impl ValidationRule for TypeMatrixRule {
             };
 
             // Validate column count
-            if column_count < 2 || column_count > 4 {
+            if !(2..=4).contains(&column_count) {
                 return Err(ValidationError::TypeMatrixInvalidColumnCount {
                     type_id,
                     column_count,
-                }.into());
+                }
+                .into());
             }
         }
 
@@ -234,7 +240,8 @@ impl ValidationRule for TypeArrayRule {
                     if ctx.is_vulkan_env() && *element_opcode == Op::TypeRuntimeArray {
                         return Err(ValidationError::TypeArrayElementCannotBeRuntimeArray {
                             type_id,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -255,11 +262,13 @@ impl ValidationRule for TypeArrayRule {
                     // Check that the constant type is integer
                     if let Some(const_type_raw) = length_inst.result_type {
                         if let Ok(const_type_result_id) = ResultId::try_from(const_type_raw) {
-                            if let Some(const_type_opcode) = ctx.opcodes.get(&const_type_result_id) {
+                            if let Some(const_type_opcode) = ctx.opcodes.get(&const_type_result_id)
+                            {
                                 if *const_type_opcode != Op::TypeInt {
                                     return Err(ValidationError::TypeArrayLengthNotInteger {
                                         type_id,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -271,7 +280,8 @@ impl ValidationRule for TypeArrayRule {
                             return Err(ValidationError::TypeArrayLengthInvalid {
                                 type_id,
                                 length: length_value,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -325,7 +335,8 @@ impl ValidationRule for TypeRuntimeArrayRule {
                     if ctx.is_vulkan_env() && *element_opcode == Op::TypeRuntimeArray {
                         return Err(ValidationError::TypeArrayElementCannotBeRuntimeArray {
                             type_id,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -377,8 +388,8 @@ impl ValidationRule for TypeStructRule {
             }
 
             let struct_id = inst.result_id.unwrap_or(0);
-            let type_id = TypeId::try_from(struct_id)
-                .unwrap_or_else(|_| TypeId::try_from(0u32).unwrap());
+            let type_id =
+                TypeId::try_from(struct_id).unwrap_or_else(|_| TypeId::try_from(0u32).unwrap());
 
             let member_count = inst.operands.len();
 
@@ -412,7 +423,8 @@ impl ValidationRule for TypeStructRule {
                     return Err(ValidationError::TypeStructMemberNotType {
                         type_id,
                         member_type,
-                    }.into());
+                    }
+                    .into());
                 }
 
                 // Check for void type
@@ -421,41 +433,45 @@ impl ValidationRule for TypeStructRule {
                 }
 
                 // Check for nested struct with BuiltIn members
-                if member_inst.class.opcode == Op::TypeStruct {
-                    if structs_with_builtin_members.contains(&member_result_id) {
-                        let member_type = TypeId::try_from(member_type_raw)
-                            .unwrap_or_else(|_| TypeId::try_from(0u32).unwrap());
-                        return Err(ValidationError::TypeStructContainsBuiltInStruct {
-                            type_id,
-                            member_type,
-                        }.into());
+                if member_inst.class.opcode == Op::TypeStruct
+                    && structs_with_builtin_members.contains(&member_result_id)
+                {
+                    let member_type = TypeId::try_from(member_type_raw)
+                        .unwrap_or_else(|_| TypeId::try_from(0u32).unwrap());
+                    return Err(ValidationError::TypeStructContainsBuiltInStruct {
+                        type_id,
+                        member_type,
                     }
+                    .into());
                 }
 
                 // Vulkan: RuntimeArray validation
                 if is_vulkan && member_inst.class.opcode == Op::TypeRuntimeArray {
                     let is_last_member = member_idx == member_count - 1;
                     if !is_last_member {
-                        return Err(ValidationError::TypeStructRuntimeArrayNotLast { type_id }.into());
+                        return Err(
+                            ValidationError::TypeStructRuntimeArrayNotLast { type_id }.into()
+                        );
                     }
 
                     // Struct must have Block or BufferBlock decoration
-                    let has_block =
-                        has_decoration(ctx.module, struct_id, Decoration::Block);
+                    let has_block = has_decoration(ctx.module, struct_id, Decoration::Block);
                     let has_buffer_block =
                         has_decoration(ctx.module, struct_id, Decoration::BufferBlock);
                     if !has_block && !has_buffer_block {
                         return Err(ValidationError::TypeStructRuntimeArrayNoBlockDecoration {
                             type_id,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
 
                 // Vulkan: Check for opaque types
-                if is_vulkan && !ctx.options.before_hlsl_legalization {
-                    if contains_opaque_type(member_type_raw, ctx) {
-                        return Err(ValidationError::TypeStructContainsOpaqueType { type_id }.into());
-                    }
+                if is_vulkan
+                    && !ctx.options.before_hlsl_legalization
+                    && contains_opaque_type(member_type_raw, ctx)
+                {
+                    return Err(ValidationError::TypeStructContainsOpaqueType { type_id }.into());
                 }
             }
 
@@ -464,21 +480,21 @@ impl ValidationRule for TypeStructRule {
             let this_has_buffer_block =
                 has_decoration(ctx.module, struct_id, Decoration::BufferBlock);
 
-            if this_has_block || this_has_buffer_block {
-                if has_nested_block_or_buffer_block(inst, ctx) {
-                    return Err(ValidationError::TypeStructNestedBlockOrBufferBlock { type_id }.into());
-                }
+            if (this_has_block || this_has_buffer_block)
+                && has_nested_block_or_buffer_block(inst, ctx)
+            {
+                return Err(ValidationError::TypeStructNestedBlockOrBufferBlock { type_id }.into());
             }
 
             // Check BuiltIn all-or-nothing rule
-            let builtin_member_count =
-                count_builtin_decorated_members(struct_id, ctx);
+            let builtin_member_count = count_builtin_decorated_members(struct_id, ctx);
             if builtin_member_count > 0 && builtin_member_count != member_count {
                 return Err(ValidationError::TypeStructBuiltInNotAllMembers {
                     type_id,
                     builtin_count: builtin_member_count,
                     total_count: member_count,
-                }.into());
+                }
+                .into());
             }
         }
 
@@ -631,13 +647,13 @@ fn contains_opaque_type_impl(
     // Check if this is an opaque type
     if is_base_opaque_type(type_inst.class.opcode) {
         // Exception: BindlessTextureNV capability allows Image/Sampler/SampledImage
-        if ctx.has_capability(Capability::BindlessTextureNV) {
-            if matches!(
+        if ctx.has_capability(Capability::BindlessTextureNV)
+            && matches!(
                 type_inst.class.opcode,
                 Op::TypeImage | Op::TypeSampler | Op::TypeSampledImage
-            ) {
-                return false;
-            }
+            )
+        {
+            return false;
         }
         return true;
     }

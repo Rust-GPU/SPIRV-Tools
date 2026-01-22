@@ -10,10 +10,10 @@
 use rspirv::spirv::Op;
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::type_ext::{DefaultTypeResolver, TypeResolver};
 use crate::validation::types::Id;
+use crate::validation::ValidationResult;
 
 // ============================================================================
 // Shift Operations Rule
@@ -77,7 +77,8 @@ impl ValidationRule for ShiftOperationsRule {
                                 opcode: inst.class.opcode,
                                 result_type,
                                 expected: "int scalar or vector",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -92,7 +93,8 @@ impl ValidationRule for ShiftOperationsRule {
 
                         if let Some(base_inst) = base_inst {
                             if let Some(base_type_id) = base_inst.result_type {
-                                if !resolver.is_int_scalar_or_vector(base_type_id, ctx.definitions) {
+                                if !resolver.is_int_scalar_or_vector(base_type_id, ctx.definitions)
+                                {
                                     if let (Some(func), Some(block), Some(result_type)) = (
                                         function_id,
                                         block_id,
@@ -106,7 +108,8 @@ impl ValidationRule for ShiftOperationsRule {
                                             operand_index: 0,
                                             result_type,
                                             expected: "int scalar or vector",
-                                        }.into());
+                                        }
+                                        .into());
                                     }
                                 }
 
@@ -128,7 +131,8 @@ impl ValidationRule for ShiftOperationsRule {
                                             opcode: inst.class.opcode,
                                             operand_name: "Base",
                                             result_type,
-                                        }.into());
+                                        }
+                                        .into());
                                     }
                                 }
 
@@ -145,7 +149,8 @@ impl ValidationRule for ShiftOperationsRule {
                                             opcode: inst.class.opcode,
                                             operand_name: "Base",
                                             result_type,
-                                        }.into());
+                                        }
+                                        .into());
                                     }
                                 }
                             }
@@ -175,7 +180,8 @@ impl ValidationRule for ShiftOperationsRule {
                                             operand_index: 1,
                                             result_type,
                                             expected: "int scalar or vector",
-                                        }.into());
+                                        }
+                                        .into());
                                     }
                                 }
 
@@ -195,7 +201,8 @@ impl ValidationRule for ShiftOperationsRule {
                                             opcode: inst.class.opcode,
                                             operand_name: "Shift",
                                             result_type,
-                                        }.into());
+                                        }
+                                        .into());
                                     }
                                 }
                             }
@@ -266,7 +273,8 @@ impl ValidationRule for BitwiseLogicRule {
                                 opcode: inst.class.opcode,
                                 result_type,
                                 expected: "int scalar or vector",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -305,12 +313,12 @@ impl ValidationRule for BitwiseLogicRule {
                                     operand_index: idx,
                                     result_type,
                                     expected: "int scalar or vector",
-                                }.into());
+                                }
+                                .into());
                             }
                         }
 
-                        let operand_dim =
-                            resolver.get_dimension(operand_type_id, ctx.definitions);
+                        let operand_dim = resolver.get_dimension(operand_type_id, ctx.definitions);
                         let operand_width =
                             resolver.get_bit_width(operand_type_id, ctx.definitions);
 
@@ -326,7 +334,8 @@ impl ValidationRule for BitwiseLogicRule {
                                     opcode: inst.class.opcode,
                                     operand_name: "operand",
                                     result_type,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
 
@@ -342,7 +351,8 @@ impl ValidationRule for BitwiseLogicRule {
                                     opcode: inst.class.opcode,
                                     operand_name: "operand",
                                     result_type,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -400,8 +410,7 @@ impl ValidationRule for BitFieldRule {
                                 if let (Some(func), Some(block), Some(result_type)) = (
                                     function_id,
                                     block_id,
-                                    crate::validation::types::TypeId::try_from(result_type_id)
-                                        .ok(),
+                                    crate::validation::types::TypeId::try_from(result_type_id).ok(),
                                 ) {
                                     return Err(ValidationError::BitwiseResultTypeInvalid {
                                         function: func,
@@ -409,7 +418,8 @@ impl ValidationRule for BitFieldRule {
                                         opcode: inst.class.opcode,
                                         result_type,
                                         expected: "int scalar or vector",
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
 
@@ -469,8 +479,7 @@ impl ValidationRule for BitFieldRule {
                                 if let (Some(func), Some(block), Some(result_type)) = (
                                     function_id,
                                     block_id,
-                                    crate::validation::types::TypeId::try_from(result_type_id)
-                                        .ok(),
+                                    crate::validation::types::TypeId::try_from(result_type_id).ok(),
                                 ) {
                                     return Err(ValidationError::BitwiseResultTypeInvalid {
                                         function: func,
@@ -478,7 +487,8 @@ impl ValidationRule for BitFieldRule {
                                         opcode: inst.class.opcode,
                                         result_type,
                                         expected: "int scalar or vector",
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
 
@@ -527,8 +537,7 @@ impl ValidationRule for BitFieldRule {
                                 if let (Some(func), Some(block), Some(result_type)) = (
                                     function_id,
                                     block_id,
-                                    crate::validation::types::TypeId::try_from(result_type_id)
-                                        .ok(),
+                                    crate::validation::types::TypeId::try_from(result_type_id).ok(),
                                 ) {
                                     return Err(ValidationError::BitwiseResultTypeInvalid {
                                         function: func,
@@ -536,7 +545,8 @@ impl ValidationRule for BitFieldRule {
                                         opcode: inst.class.opcode,
                                         result_type,
                                         expected: "int scalar or vector",
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
 
@@ -582,10 +592,8 @@ impl BitFieldRule {
                     if operand_type_id != result_type_id {
                         // Check dimensions and bit widths match
                         let result_dim = resolver.get_dimension(result_type_id, ctx.definitions);
-                        let result_width =
-                            resolver.get_bit_width(result_type_id, ctx.definitions);
-                        let operand_dim =
-                            resolver.get_dimension(operand_type_id, ctx.definitions);
+                        let result_width = resolver.get_bit_width(result_type_id, ctx.definitions);
+                        let operand_dim = resolver.get_dimension(operand_type_id, ctx.definitions);
                         let operand_width =
                             resolver.get_bit_width(operand_type_id, ctx.definitions);
 
@@ -602,7 +610,8 @@ impl BitFieldRule {
                                     operand_index: operand_idx,
                                     result_type,
                                     expected: "same type as result",
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -643,7 +652,8 @@ impl BitFieldRule {
                                 operand_index: operand_idx,
                                 result_type,
                                 expected: operand_name,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -709,7 +719,8 @@ impl ValidationRule for BitCountRule {
                                 opcode: inst.class.opcode,
                                 result_type,
                                 expected: "int scalar or vector",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -738,7 +749,8 @@ impl ValidationRule for BitCountRule {
                                             operand_index: 0,
                                             result_type,
                                             expected: "int scalar or vector",
-                                        }.into());
+                                        }
+                                        .into());
                                     }
                                 }
 
@@ -759,7 +771,8 @@ impl ValidationRule for BitCountRule {
                                             opcode: inst.class.opcode,
                                             operand_name: "Base",
                                             result_type,
-                                        }.into());
+                                        }
+                                        .into());
                                     }
                                 }
                             }

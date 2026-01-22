@@ -114,7 +114,11 @@ fn bitreverse64(x: i64) -> i64 {
 
 /// Check if two bitmasks are disjoint (no overlapping bits).
 fn bits_disjoint(a: i64, b: i64) -> Option<()> {
-    if (a & b) == 0 { Some(()) } else { None }
+    if (a & b) == 0 {
+        Some(())
+    } else {
+        None
+    }
 }
 
 /// Check if left shift would clear all bits in a mask.
@@ -124,7 +128,11 @@ fn shl_clears_mask(mask: i64, shift: i64) -> Option<()> {
         return Some(());
     }
     let surviving_mask = !((1i64 << shift) - 1);
-    if (mask & surviving_mask) == 0 { Some(()) } else { None }
+    if (mask & surviving_mask) == 0 {
+        Some(())
+    } else {
+        None
+    }
 }
 
 /// Check if right shift would clear all bits in a mask.
@@ -156,12 +164,20 @@ fn shr_clears_mask(mask: i64, shift: i64) -> Option<()> {
     } else {
         ((1u64 << surviving_bits) - 1) as i64
     };
-    if (mask & surviving_mask) == 0 { Some(()) } else { None }
+    if (mask & surviving_mask) == 0 {
+        Some(())
+    } else {
+        None
+    }
 }
 
 /// Check if mask a is a superset of mask b.
 fn mask_superset(a: i64, b: i64) -> Option<()> {
-    if (a & b) == b { Some(()) } else { None }
+    if (a & b) == b {
+        Some(())
+    } else {
+        None
+    }
 }
 
 /// Find the least significant bit position (0-indexed), or -1 if zero.
@@ -301,49 +317,81 @@ fn float_neg32(a: i64) -> i64 {
 /// Check if an i64 represents f32 1.0 bit pattern.
 fn is_float_one32(x: i64) -> Option<()> {
     let f = f32::from_bits(x as u32);
-    if f == 1.0 { Some(()) } else { None }
+    if f == 1.0 {
+        Some(())
+    } else {
+        None
+    }
 }
 
 /// Check if an i64 represents f32 0.0 bit pattern.
 fn is_float_zero32(x: i64) -> Option<()> {
     let f = f32::from_bits(x as u32);
-    if f == 0.0 { Some(()) } else { None }
+    if f == 0.0 {
+        Some(())
+    } else {
+        None
+    }
 }
 
 /// Check if an i64 represents f32 -1.0 bit pattern.
 fn is_float_neg_one32(x: i64) -> Option<()> {
     let f = f32::from_bits(x as u32);
-    if f == -1.0 { Some(()) } else { None }
+    if f == -1.0 {
+        Some(())
+    } else {
+        None
+    }
 }
 
 /// Check if an i64 represents f32 2.0 bit pattern.
 fn is_float_two32(x: i64) -> Option<()> {
     let f = f32::from_bits(x as u32);
-    if f == 2.0 { Some(()) } else { None }
+    if f == 2.0 {
+        Some(())
+    } else {
+        None
+    }
 }
 
 /// Check if an i64 represents f32 3.0 bit pattern (for powi(3) optimization).
 fn is_float_three32(x: i64) -> Option<()> {
     let f = f32::from_bits(x as u32);
-    if f == 3.0 { Some(()) } else { None }
+    if f == 3.0 {
+        Some(())
+    } else {
+        None
+    }
 }
 
 /// Check if an i64 represents f32 4.0 bit pattern (for powi(4) optimization).
 fn is_float_four32(x: i64) -> Option<()> {
     let f = f32::from_bits(x as u32);
-    if f == 4.0 { Some(()) } else { None }
+    if f == 4.0 {
+        Some(())
+    } else {
+        None
+    }
 }
 
 /// Check if an i64 represents f32 0.5 bit pattern (for sqrt optimizations).
 fn is_float_half32(x: i64) -> Option<()> {
     let f = f32::from_bits(x as u32);
-    if f == 0.5 { Some(()) } else { None }
+    if f == 0.5 {
+        Some(())
+    } else {
+        None
+    }
 }
 
 /// Check if an i64 represents f32 -0.5 bit pattern (for inverse sqrt optimizations).
 fn is_float_neg_half32(x: i64) -> Option<()> {
     let f = f32::from_bits(x as u32);
-    if f == -0.5 { Some(()) } else { None }
+    if f == -0.5 {
+        Some(())
+    } else {
+        None
+    }
 }
 
 /// Check if an f32 constant (stored as i64 bit pattern) has an exact reciprocal.
@@ -357,7 +405,11 @@ fn has_exact_recip32(x: i64) -> Option<()> {
         return None;
     }
     let roundtrip = 1.0 / recip;
-    if roundtrip == f { Some(()) } else { None }
+    if roundtrip == f {
+        Some(())
+    } else {
+        None
+    }
 }
 
 /// Compute the reciprocal of an f32 constant (stored as i64 bit pattern).
@@ -603,12 +655,14 @@ pub fn create_spirv_egraph() -> Result<EGraph, EgglogOptError> {
     // Register all custom primitives FIRST (before loading rules that use them)
 
     // Bit reversal primitives
-    add_primitive!(&mut egraph, "bitrev32" = |a: i64| -> i64 {
-        bitreverse32(a)
-    });
-    add_primitive!(&mut egraph, "bitrev64" = |a: i64| -> i64 {
-        bitreverse64(a)
-    });
+    add_primitive!(
+        &mut egraph,
+        "bitrev32" = |a: i64| -> i64 { bitreverse32(a) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "bitrev64" = |a: i64| -> i64 { bitreverse64(a) }
+    );
 
     // Bit mask check primitives
     add_primitive!(&mut egraph, "bits-disjoint" = |a: i64, b: i64| -?> () {
@@ -625,18 +679,16 @@ pub fn create_spirv_egraph() -> Result<EGraph, EgglogOptError> {
     });
 
     // Bit manipulation primitives
-    add_primitive!(&mut egraph, "find-lsb" = |a: i64| -> i64 {
-        find_lsb(a)
-    });
-    add_primitive!(&mut egraph, "find-msb-unsigned" = |a: i64| -> i64 {
-        find_msb_unsigned(a)
-    });
-    add_primitive!(&mut egraph, "find-msb-signed" = |a: i64| -> i64 {
-        find_msb_signed(a)
-    });
-    add_primitive!(&mut egraph, "popcount" = |a: i64| -> i64 {
-        popcount(a)
-    });
+    add_primitive!(&mut egraph, "find-lsb" = |a: i64| -> i64 { find_lsb(a) });
+    add_primitive!(
+        &mut egraph,
+        "find-msb-unsigned" = |a: i64| -> i64 { find_msb_unsigned(a) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "find-msb-signed" = |a: i64| -> i64 { find_msb_signed(a) }
+    );
+    add_primitive!(&mut egraph, "popcount" = |a: i64| -> i64 { popcount(a) });
 
     // Guard primitive that succeeds only if a*b would not overflow.
     // Used in rule conditions to prevent rules from matching when multiplication would overflow.
@@ -653,25 +705,36 @@ pub fn create_spirv_egraph() -> Result<EGraph, EgglogOptError> {
     add_primitive!(&mut egraph, "is-pow2" = |a: i64| -?> () {
         is_pow2(a)
     });
-    add_primitive!(&mut egraph, "log2-pow2" = |a: i64| -> i64 {
-        log2_pow2(a)
-    });
+    add_primitive!(&mut egraph, "log2-pow2" = |a: i64| -> i64 { log2_pow2(a) });
 
     // Float reciprocal primitives for x/c -> x*(1/c) optimization (f64 versions, legacy)
     add_primitive!(&mut egraph, "has-exact-recip" = |a: i64| -?> () {
         has_exact_recip(a)
     });
-    add_primitive!(&mut egraph, "float-recip" = |a: i64| -> i64 {
-        float_recip(a)
-    });
+    add_primitive!(
+        &mut egraph,
+        "float-recip" = |a: i64| -> i64 { float_recip(a) }
+    );
 
     // f32 arithmetic primitives for FP constant folding
     // These interpret i64 as f32 bit patterns (lower 32 bits)
-    add_primitive!(&mut egraph, "float-mul32" = |a: i64, b: i64| -> i64 { float_mul32(a, b) });
+    add_primitive!(
+        &mut egraph,
+        "float-mul32" = |a: i64, b: i64| -> i64 { float_mul32(a, b) }
+    );
     add_primitive!(&mut egraph, "float-div32" = |a: i64, b: i64| -?> i64 { float_div32(a, b) });
-    add_primitive!(&mut egraph, "float-add32" = |a: i64, b: i64| -> i64 { float_add32(a, b) });
-    add_primitive!(&mut egraph, "float-sub32" = |a: i64, b: i64| -> i64 { float_sub32(a, b) });
-    add_primitive!(&mut egraph, "float-neg32" = |a: i64| -> i64 { float_neg32(a) });
+    add_primitive!(
+        &mut egraph,
+        "float-add32" = |a: i64, b: i64| -> i64 { float_add32(a, b) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-sub32" = |a: i64, b: i64| -> i64 { float_sub32(a, b) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-neg32" = |a: i64| -> i64 { float_neg32(a) }
+    );
 
     // f32 identity check primitives
     add_primitive!(&mut egraph, "is-float-one32" = |a: i64| -?> () { is_float_one32(a) });
@@ -685,42 +748,126 @@ pub fn create_spirv_egraph() -> Result<EGraph, EgglogOptError> {
 
     // f32 reciprocal primitives
     add_primitive!(&mut egraph, "has-exact-recip32" = |a: i64| -?> () { has_exact_recip32(a) });
-    add_primitive!(&mut egraph, "float-recip32" = |a: i64| -> i64 { float_recip32(a) });
+    add_primitive!(
+        &mut egraph,
+        "float-recip32" = |a: i64| -> i64 { float_recip32(a) }
+    );
 
     // GLSL transcendental constant folding primitives
     add_primitive!(&mut egraph, "float-sin" = |a: i64| -> i64 { float_sin(a) });
     add_primitive!(&mut egraph, "float-cos" = |a: i64| -> i64 { float_cos(a) });
     add_primitive!(&mut egraph, "float-tan" = |a: i64| -> i64 { float_tan(a) });
-    add_primitive!(&mut egraph, "float-asin" = |a: i64| -> i64 { float_asin(a) });
-    add_primitive!(&mut egraph, "float-acos" = |a: i64| -> i64 { float_acos(a) });
-    add_primitive!(&mut egraph, "float-atan" = |a: i64| -> i64 { float_atan(a) });
-    add_primitive!(&mut egraph, "float-atan2" = |y: i64, x: i64| -> i64 { float_atan2(y, x) });
-    add_primitive!(&mut egraph, "float-sinh" = |a: i64| -> i64 { float_sinh(a) });
-    add_primitive!(&mut egraph, "float-cosh" = |a: i64| -> i64 { float_cosh(a) });
-    add_primitive!(&mut egraph, "float-tanh" = |a: i64| -> i64 { float_tanh(a) });
-    add_primitive!(&mut egraph, "float-asinh" = |a: i64| -> i64 { float_asinh(a) });
-    add_primitive!(&mut egraph, "float-acosh" = |a: i64| -> i64 { float_acosh(a) });
-    add_primitive!(&mut egraph, "float-atanh" = |a: i64| -> i64 { float_atanh(a) });
+    add_primitive!(
+        &mut egraph,
+        "float-asin" = |a: i64| -> i64 { float_asin(a) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-acos" = |a: i64| -> i64 { float_acos(a) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-atan" = |a: i64| -> i64 { float_atan(a) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-atan2" = |y: i64, x: i64| -> i64 { float_atan2(y, x) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-sinh" = |a: i64| -> i64 { float_sinh(a) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-cosh" = |a: i64| -> i64 { float_cosh(a) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-tanh" = |a: i64| -> i64 { float_tanh(a) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-asinh" = |a: i64| -> i64 { float_asinh(a) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-acosh" = |a: i64| -> i64 { float_acosh(a) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-atanh" = |a: i64| -> i64 { float_atanh(a) }
+    );
     add_primitive!(&mut egraph, "float-exp" = |a: i64| -> i64 { float_exp(a) });
-    add_primitive!(&mut egraph, "float-exp2" = |a: i64| -> i64 { float_exp2(a) });
+    add_primitive!(
+        &mut egraph,
+        "float-exp2" = |a: i64| -> i64 { float_exp2(a) }
+    );
     add_primitive!(&mut egraph, "float-log" = |a: i64| -> i64 { float_log(a) });
-    add_primitive!(&mut egraph, "float-log2" = |a: i64| -> i64 { float_log2(a) });
-    add_primitive!(&mut egraph, "float-sqrt" = |a: i64| -> i64 { float_sqrt(a) });
-    add_primitive!(&mut egraph, "float-inversesqrt" = |a: i64| -> i64 { float_inversesqrt(a) });
-    add_primitive!(&mut egraph, "float-pow" = |x: i64, y: i64| -> i64 { float_pow(x, y) });
-    add_primitive!(&mut egraph, "float-floor" = |a: i64| -> i64 { float_floor(a) });
-    add_primitive!(&mut egraph, "float-ceil" = |a: i64| -> i64 { float_ceil(a) });
-    add_primitive!(&mut egraph, "float-round" = |a: i64| -> i64 { float_round(a) });
-    add_primitive!(&mut egraph, "float-trunc" = |a: i64| -> i64 { float_trunc(a) });
+    add_primitive!(
+        &mut egraph,
+        "float-log2" = |a: i64| -> i64 { float_log2(a) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-sqrt" = |a: i64| -> i64 { float_sqrt(a) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-inversesqrt" = |a: i64| -> i64 { float_inversesqrt(a) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-pow" = |x: i64, y: i64| -> i64 { float_pow(x, y) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-floor" = |a: i64| -> i64 { float_floor(a) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-ceil" = |a: i64| -> i64 { float_ceil(a) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-round" = |a: i64| -> i64 { float_round(a) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-trunc" = |a: i64| -> i64 { float_trunc(a) }
+    );
     add_primitive!(&mut egraph, "float-abs" = |a: i64| -> i64 { float_abs(a) });
-    add_primitive!(&mut egraph, "float-sign" = |a: i64| -> i64 { float_sign(a) });
-    add_primitive!(&mut egraph, "float-fract" = |a: i64| -> i64 { float_fract(a) });
-    add_primitive!(&mut egraph, "float-min" = |x: i64, y: i64| -> i64 { float_min(x, y) });
-    add_primitive!(&mut egraph, "float-max" = |x: i64, y: i64| -> i64 { float_max(x, y) });
-    add_primitive!(&mut egraph, "float-clamp" = |x: i64, lo: i64, hi: i64| -> i64 { float_clamp(x, lo, hi) });
-    add_primitive!(&mut egraph, "float-mix" = |x: i64, y: i64, a: i64| -> i64 { float_mix(x, y, a) });
-    add_primitive!(&mut egraph, "float-step" = |edge: i64, x: i64| -> i64 { float_step(edge, x) });
-    add_primitive!(&mut egraph, "float-smoothstep" = |e0: i64, e1: i64, x: i64| -> i64 { float_smoothstep(e0, e1, x) });
+    add_primitive!(
+        &mut egraph,
+        "float-sign" = |a: i64| -> i64 { float_sign(a) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-fract" = |a: i64| -> i64 { float_fract(a) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-min" = |x: i64, y: i64| -> i64 { float_min(x, y) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-max" = |x: i64, y: i64| -> i64 { float_max(x, y) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-clamp" = |x: i64, lo: i64, hi: i64| -> i64 { float_clamp(x, lo, hi) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-mix" = |x: i64, y: i64, a: i64| -> i64 { float_mix(x, y, a) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-step" = |edge: i64, x: i64| -> i64 { float_step(edge, x) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-smoothstep" = |e0: i64, e1: i64, x: i64| -> i64 { float_smoothstep(e0, e1, x) }
+    );
 
     // Now load the base SPIR-V language and rules (which use the primitives above)
     egraph
@@ -742,7 +889,11 @@ mod tests {
     #[test]
     fn test_create_egraph() {
         let result = create_spirv_egraph();
-        assert!(result.is_ok(), "Failed to create egraph: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Failed to create egraph: {:?}",
+            result.err()
+        );
     }
 
     #[test]
@@ -750,13 +901,22 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // Add expression: x + 0 and (Sym "x") - they should be equivalent
-        egraph.parse_and_run_program(None, r#"(let add_form (Add (Sym "x") (Const 0)))"#).unwrap();
-        egraph.parse_and_run_program(None, r#"(let x_form (Sym "x"))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 3 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let add_form (Add (Sym "x") (Const 0)))"#)
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let x_form (Sym "x"))"#)
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 3 (run)))")
+            .unwrap();
 
         // Check that they are equivalent in the e-graph
         let check = egraph.parse_and_run_program(None, "(check (= add_form x_form))");
-        assert!(check.is_ok(), "Expected x + 0 to be equivalent to x in the e-graph");
+        assert!(
+            check.is_ok(),
+            "Expected x + 0 to be equivalent to x in the e-graph"
+        );
     }
 
     #[test]
@@ -764,15 +924,27 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // Add expression: x | (x & y) - should simplify to x
-        egraph.parse_and_run_program(None, r#"(let root (BitOr (Sym "x") (BitAnd (Sym "x") (Sym "y"))))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"(let root (BitOr (Sym "x") (BitAnd (Sym "x") (Sym "y"))))"#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         assert!(!results.is_empty());
         let result = format!("{}", results[0]);
         // Should simplify to just (Sym "x")
-        assert!(result.contains("Sym") && result.contains("x") && !result.contains("BitOr"),
-                "Expected absorption to (Sym \"x\"), got: {}", result);
+        assert!(
+            result.contains("Sym") && result.contains("x") && !result.contains("BitOr"),
+            "Expected absorption to (Sym \"x\"), got: {}",
+            result
+        );
     }
 
     #[test]
@@ -780,16 +952,28 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // Add expression: (x * 2) + (x * 3) should simplify to x * 5
-        egraph.parse_and_run_program(None, r#"(let root (Add (Mul (Sym "x") (Const 2)) (Mul (Sym "x") (Const 3))))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 20 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"(let root (Add (Mul (Sym "x") (Const 2)) (Mul (Sym "x") (Const 3))))"#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 20 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         assert!(!results.is_empty());
         let result = format!("{}", results[0]);
         eprintln!("Factoring result: {}", result);
         // Should factor to (Mul (Sym "x") (Const 5))
-        assert!(result.contains("Mul") && result.contains("5"),
-                "Expected factoring to (Mul x 5), got: {}", result);
+        assert!(
+            result.contains("Mul") && result.contains("5"),
+            "Expected factoring to (Mul x 5), got: {}",
+            result
+        );
     }
 
     #[test]
@@ -797,13 +981,23 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // FindILsb(12) = 2 (binary: 1100, lowest set bit is at position 2)
-        egraph.parse_and_run_program(None, "(let root (FindILsb (Const 12)))").unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, "(let root (FindILsb (Const 12)))")
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         assert!(!results.is_empty());
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 2"), "Expected (Const 2), got: {}", result);
+        assert!(
+            result.contains("Const 2"),
+            "Expected (Const 2), got: {}",
+            result
+        );
     }
 
     #[test]
@@ -811,13 +1005,23 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // FindILsb(0) = -1
-        egraph.parse_and_run_program(None, "(let root (FindILsb (Const 0)))").unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, "(let root (FindILsb (Const 0)))")
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         assert!(!results.is_empty());
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const -1"), "Expected (Const -1), got: {}", result);
+        assert!(
+            result.contains("Const -1"),
+            "Expected (Const -1), got: {}",
+            result
+        );
     }
 
     #[test]
@@ -825,13 +1029,23 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // FindUMsb(8) = 3 (binary: 1000, highest set bit is at position 3)
-        egraph.parse_and_run_program(None, "(let root (FindUMsb (Const 8)))").unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, "(let root (FindUMsb (Const 8)))")
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         assert!(!results.is_empty());
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 3"), "Expected (Const 3), got: {}", result);
+        assert!(
+            result.contains("Const 3"),
+            "Expected (Const 3), got: {}",
+            result
+        );
     }
 
     #[test]
@@ -839,13 +1053,23 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // BitCount(15) = 4 (binary: 1111, four 1-bits)
-        egraph.parse_and_run_program(None, "(let root (BitCount (Const 15)))").unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, "(let root (BitCount (Const 15)))")
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         assert!(!results.is_empty());
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 4"), "Expected (Const 4), got: {}", result);
+        assert!(
+            result.contains("Const 4"),
+            "Expected (Const 4), got: {}",
+            result
+        );
     }
 
     #[test]
@@ -881,7 +1105,9 @@ mod tests {
             .parse_and_run_program(None, "(run-schedule (repeat 3 (run)))")
             .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         assert!(!results.is_empty());
         let result = format!("{}", results[0]);
         eprintln!("Mul by zero result: {}", result);
@@ -902,12 +1128,16 @@ mod tests {
             .unwrap();
 
         // After initial insertion - what does extract give us?
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         eprintln!("Initial: {:?}", results);
 
         // Run 1 iteration
         egraph.parse_and_run_program(None, "(run 1)").unwrap();
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         eprintln!("After 1 iteration: {:?}", results);
 
         // Check if we already got 0
@@ -919,7 +1149,9 @@ mod tests {
 
         // Run 2nd iteration
         egraph.parse_and_run_program(None, "(run 1)").unwrap();
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         eprintln!("After 2 iterations: {:?}", results);
 
         let result = format!("{}", results[0]);
@@ -930,7 +1162,9 @@ mod tests {
 
         // Run 3rd iteration
         egraph.parse_and_run_program(None, "(run 1)").unwrap();
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         eprintln!("After 3 iterations: {:?}", results);
 
         let result = format!("{}", results[0]);
@@ -946,14 +1180,27 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // (x * 3) * 4 should merge to x * 12
-        egraph.parse_and_run_program(None, r#"(let root (Mul (Mul (Sym "x") (Const 3)) (Const 4)))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"(let root (Mul (Mul (Sym "x") (Const 3)) (Const 4)))"#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         assert!(!results.is_empty());
         let result = format!("{}", results[0]);
         eprintln!("Mul chain result: {}", result);
-        assert!(result.contains("12"), "Expected merged constant 12, got: {}", result);
+        assert!(
+            result.contains("12"),
+            "Expected merged constant 12, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -961,14 +1208,27 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // (x + 5) + 7 should merge to x + 12
-        egraph.parse_and_run_program(None, r#"(let root (Add (Add (Sym "x") (Const 5)) (Const 7)))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"(let root (Add (Add (Sym "x") (Const 5)) (Const 7)))"#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         assert!(!results.is_empty());
         let result = format!("{}", results[0]);
         eprintln!("Add chain result: {}", result);
-        assert!(result.contains("12"), "Expected merged constant 12, got: {}", result);
+        assert!(
+            result.contains("12"),
+            "Expected merged constant 12, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -976,16 +1236,28 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // (x & 0xFF) & 0x0F should merge to x & 0x0F
-        egraph.parse_and_run_program(None, r#"(let root (BitAnd (BitAnd (Sym "x") (Const 255)) (Const 15)))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"(let root (BitAnd (BitAnd (Sym "x") (Const 255)) (Const 15)))"#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         assert!(!results.is_empty());
         let result = format!("{}", results[0]);
         eprintln!("BitAnd chain result: {}", result);
         // 255 & 15 = 15
-        assert!(result.contains("15") && !result.contains("255"),
-                "Expected merged constant 15, got: {}", result);
+        assert!(
+            result.contains("15") && !result.contains("255"),
+            "Expected merged constant 15, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -993,10 +1265,19 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // select(a < b, a, b) should simplify to min(a, b)
-        egraph.parse_and_run_program(None, r#"(let root (Gamma (SLt (Sym "a") (Sym "b")) (Sym "a") (Sym "b")))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 15 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"(let root (Gamma (SLt (Sym "a") (Sym "b")) (Sym "a") (Sym "b")))"#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 15 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         assert!(!results.is_empty());
         let result = format!("{}", results[0]);
         eprintln!("Gamma to min result: {}", result);
@@ -1008,10 +1289,19 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // select(a < b, b, a) should simplify to max(a, b)
-        egraph.parse_and_run_program(None, r#"(let root (Gamma (SLt (Sym "a") (Sym "b")) (Sym "b") (Sym "a")))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 15 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"(let root (Gamma (SLt (Sym "a") (Sym "b")) (Sym "b") (Sym "a")))"#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 15 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         assert!(!results.is_empty());
         let result = format!("{}", results[0]);
         eprintln!("Gamma to max result: {}", result);
@@ -1023,16 +1313,25 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // !(a && b) should equal !a || !b
-        egraph.parse_and_run_program(None, r#"(let root (LogNot (LogAnd (Sym "a") (Sym "b"))))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let root (LogNot (LogAnd (Sym "a") (Sym "b"))))"#)
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         assert!(!results.is_empty());
         let result = format!("{}", results[0]);
         eprintln!("De Morgan result: {}", result);
         // Should contain LogOr with LogNot on both operands
-        assert!(result.contains("LogOr") || result.contains("LogNot"),
-                "Expected De Morgan's law application, got: {}", result);
+        assert!(
+            result.contains("LogOr") || result.contains("LogNot"),
+            "Expected De Morgan's law application, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -1040,10 +1339,19 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // Add(LoopInvariant(a), LoopInvariant(b)) should become LoopInvariant(Add(a, b))
-        egraph.parse_and_run_program(None, r#"(let root (Add (LoopInvariant (Sym "a")) (LoopInvariant (Sym "b"))))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"(let root (Add (LoopInvariant (Sym "a")) (LoopInvariant (Sym "b"))))"#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         assert!(!results.is_empty());
         let result = format!("{}", results[0]);
         eprintln!("Loop invariant result: {}", result);
@@ -1057,15 +1365,28 @@ mod tests {
 
         // (x * 2.0) * 3.0 should merge to x * 6.0
         // f32 bit patterns: 2.0 = 1073741824, 3.0 = 1077936128, 6.0 = 1086324736
-        egraph.parse_and_run_program(None, r#"(let root (FMul (FMul (Sym "x") (Const 1073741824)) (Const 1077936128)))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"(let root (FMul (FMul (Sym "x") (Const 1073741824)) (Const 1077936128)))"#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         assert!(!results.is_empty());
         let result = format!("{}", results[0]);
         eprintln!("FMul chain result: {}", result);
         // Should contain the bit pattern for 6.0 = 1086324736
-        assert!(result.contains("1086324736"), "Expected merged constant for 6.0 (1086324736), got: {}", result);
+        assert!(
+            result.contains("1086324736"),
+            "Expected merged constant for 6.0 (1086324736), got: {}",
+            result
+        );
     }
 
     #[test]
@@ -1074,15 +1395,27 @@ mod tests {
 
         // 1.0 / (1.0 / x) should equal x
         // f32 bit pattern: 1.0 = 1065353216
-        egraph.parse_and_run_program(None, r#"(let root (FDiv (Const 1065353216) (FDiv (Const 1065353216) (Sym "x"))))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"(let root (FDiv (Const 1065353216) (FDiv (Const 1065353216) (Sym "x"))))"#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         assert!(!results.is_empty());
         let result = format!("{}", results[0]);
         eprintln!("Reciprocal chain result: {}", result);
-        assert!(result.contains("Sym") && result.contains("x") && !result.contains("FDiv"),
-                "Expected just (Sym \"x\"), got: {}", result);
+        assert!(
+            result.contains("Sym") && result.contains("x") && !result.contains("FDiv"),
+            "Expected just (Sym \"x\"), got: {}",
+            result
+        );
     }
 
     #[test]
@@ -1091,13 +1424,22 @@ mod tests {
 
         // x * 8 should be equivalent to x << 3 in the e-graph
         // Both forms are valid; the e-graph knows they're equal
-        egraph.parse_and_run_program(None, r#"(let mul_form (Mul (Sym "x") (Const 8)))"#).unwrap();
-        egraph.parse_and_run_program(None, r#"(let shift_form (Shl (Sym "x") (Const 3)))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let mul_form (Mul (Sym "x") (Const 8)))"#)
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let shift_form (Shl (Sym "x") (Const 3)))"#)
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         // Check that both forms are in the same equivalence class
         let check = egraph.parse_and_run_program(None, "(check (= mul_form shift_form))");
-        assert!(check.is_ok(), "Expected mul and shift forms to be equivalent");
+        assert!(
+            check.is_ok(),
+            "Expected mul and shift forms to be equivalent"
+        );
     }
 
     #[test]
@@ -1105,13 +1447,22 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // x / 4 (unsigned) should be equivalent to x >> 2 in the e-graph
-        egraph.parse_and_run_program(None, r#"(let div_form (UDiv (Sym "x") (Const 4)))"#).unwrap();
-        egraph.parse_and_run_program(None, r#"(let shift_form (ShrU (Sym "x") (Const 2)))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let div_form (UDiv (Sym "x") (Const 4)))"#)
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let shift_form (ShrU (Sym "x") (Const 2)))"#)
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         // Check that both forms are in the same equivalence class
         let check = egraph.parse_and_run_program(None, "(check (= div_form shift_form))");
-        assert!(check.is_ok(), "Expected div and shift forms to be equivalent");
+        assert!(
+            check.is_ok(),
+            "Expected div and shift forms to be equivalent"
+        );
     }
 
     #[test]
@@ -1119,9 +1470,15 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // x % 8 (unsigned) should be equivalent to x & 7 in the e-graph
-        egraph.parse_and_run_program(None, r#"(let mod_form (UMod (Sym "x") (Const 8)))"#).unwrap();
-        egraph.parse_and_run_program(None, r#"(let and_form (BitAnd (Sym "x") (Const 7)))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let mod_form (UMod (Sym "x") (Const 8)))"#)
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let and_form (BitAnd (Sym "x") (Const 7)))"#)
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         // Check that both forms are in the same equivalence class
         let check = egraph.parse_and_run_program(None, "(check (= mod_form and_form))");
@@ -1133,15 +1490,24 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // --x should become x
-        egraph.parse_and_run_program(None, r#"(let root (Neg (Neg (Sym "x"))))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let root (Neg (Neg (Sym "x"))))"#)
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         assert!(!results.is_empty());
         let result = format!("{}", results[0]);
         eprintln!("Double negation result: {}", result);
-        assert!(result.contains("Sym") && !result.contains("Neg"),
-                "Expected (Sym \"x\"), got: {}", result);
+        assert!(
+            result.contains("Sym") && !result.contains("Neg"),
+            "Expected (Sym \"x\"), got: {}",
+            result
+        );
     }
 
     #[test]
@@ -1149,15 +1515,24 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // ~~x should become x
-        egraph.parse_and_run_program(None, r#"(let root (BitNot (BitNot (Sym "x"))))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let root (BitNot (BitNot (Sym "x"))))"#)
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         assert!(!results.is_empty());
         let result = format!("{}", results[0]);
         eprintln!("Double BitNot result: {}", result);
-        assert!(result.contains("Sym") && !result.contains("BitNot"),
-                "Expected (Sym \"x\"), got: {}", result);
+        assert!(
+            result.contains("Sym") && !result.contains("BitNot"),
+            "Expected (Sym \"x\"), got: {}",
+            result
+        );
     }
 
     #[test]
@@ -1165,15 +1540,24 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // select(true, a, b) = a
-        egraph.parse_and_run_program(None, r#"(let root (Gamma (Const 1) (Sym "a") (Sym "b")))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let root (Gamma (Const 1) (Sym "a") (Sym "b")))"#)
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         assert!(!results.is_empty());
         let result = format!("{}", results[0]);
         eprintln!("Gamma true result: {}", result);
-        assert!(result.contains("Sym") && result.contains("a") && !result.contains("Gamma"),
-                "Expected (Sym \"a\"), got: {}", result);
+        assert!(
+            result.contains("Sym") && result.contains("a") && !result.contains("Gamma"),
+            "Expected (Sym \"a\"), got: {}",
+            result
+        );
     }
 
     #[test]
@@ -1181,15 +1565,24 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // select(false, a, b) = b
-        egraph.parse_and_run_program(None, r#"(let root (Gamma (Const 0) (Sym "a") (Sym "b")))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let root (Gamma (Const 0) (Sym "a") (Sym "b")))"#)
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         assert!(!results.is_empty());
         let result = format!("{}", results[0]);
         eprintln!("Gamma false result: {}", result);
-        assert!(result.contains("Sym") && result.contains("b") && !result.contains("Gamma"),
-                "Expected (Sym \"b\"), got: {}", result);
+        assert!(
+            result.contains("Sym") && result.contains("b") && !result.contains("Gamma"),
+            "Expected (Sym \"b\"), got: {}",
+            result
+        );
     }
 
     #[test]
@@ -1197,15 +1590,24 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // select(c, x, x) = x
-        egraph.parse_and_run_program(None, r#"(let root (Gamma (Sym "c") (Sym "x") (Sym "x")))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let root (Gamma (Sym "c") (Sym "x") (Sym "x")))"#)
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         assert!(!results.is_empty());
         let result = format!("{}", results[0]);
         eprintln!("Gamma same branches result: {}", result);
-        assert!(result.contains("Sym") && result.contains("x") && !result.contains("Gamma"),
-                "Expected (Sym \"x\"), got: {}", result);
+        assert!(
+            result.contains("Sym") && result.contains("x") && !result.contains("Gamma"),
+            "Expected (Sym \"x\"), got: {}",
+            result
+        );
     }
 
     #[test]
@@ -1213,15 +1615,24 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // clamp(x, a, a) = a
-        egraph.parse_and_run_program(None, r#"(let root (SClamp (Sym "x") (Sym "a") (Sym "a")))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let root (SClamp (Sym "x") (Sym "a") (Sym "a")))"#)
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         assert!(!results.is_empty());
         let result = format!("{}", results[0]);
         eprintln!("Clamp same bounds result: {}", result);
-        assert!(result.contains("Sym") && result.contains("a") && !result.contains("Clamp"),
-                "Expected (Sym \"a\"), got: {}", result);
+        assert!(
+            result.contains("Sym") && result.contains("a") && !result.contains("Clamp"),
+            "Expected (Sym \"a\"), got: {}",
+            result
+        );
     }
 
     #[test]
@@ -1229,15 +1640,27 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // sqrt(x) * sqrt(x) = x
-        egraph.parse_and_run_program(None, r#"(let root (FMul (Sqrt (Sym "x")) (Sqrt (Sym "x"))))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"(let root (FMul (Sqrt (Sym "x")) (Sqrt (Sym "x"))))"#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         assert!(!results.is_empty());
         let result = format!("{}", results[0]);
         eprintln!("Sqrt squared result: {}", result);
-        assert!(result.contains("Sym") && result.contains("x") && !result.contains("Sqrt"),
-                "Expected (Sym \"x\"), got: {}", result);
+        assert!(
+            result.contains("Sym") && result.contains("x") && !result.contains("Sqrt"),
+            "Expected (Sym \"x\"), got: {}",
+            result
+        );
     }
 
     #[test]
@@ -1245,15 +1668,24 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // log(exp(x)) = x
-        egraph.parse_and_run_program(None, r#"(let root (Log (Exp (Sym "x"))))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let root (Log (Exp (Sym "x"))))"#)
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         assert!(!results.is_empty());
         let result = format!("{}", results[0]);
         eprintln!("Log/Exp cancel result: {}", result);
-        assert!(result.contains("Sym") && !result.contains("Log") && !result.contains("Exp"),
-                "Expected (Sym \"x\"), got: {}", result);
+        assert!(
+            result.contains("Sym") && !result.contains("Log") && !result.contains("Exp"),
+            "Expected (Sym \"x\"), got: {}",
+            result
+        );
     }
 
     #[test]
@@ -1261,15 +1693,24 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // mix(a, a, t) = a
-        egraph.parse_and_run_program(None, r#"(let root (FMix (Sym "a") (Sym "a") (Sym "t")))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let root (FMix (Sym "a") (Sym "a") (Sym "t")))"#)
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         assert!(!results.is_empty());
         let result = format!("{}", results[0]);
         eprintln!("FMix same args result: {}", result);
-        assert!(result.contains("Sym") && result.contains("a") && !result.contains("FMix"),
-                "Expected (Sym \"a\"), got: {}", result);
+        assert!(
+            result.contains("Sym") && result.contains("a") && !result.contains("FMix"),
+            "Expected (Sym \"a\"), got: {}",
+            result
+        );
     }
 
     #[test]
@@ -1277,16 +1718,26 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // normalize(normalize(v)) = normalize(v)
-        egraph.parse_and_run_program(None, r#"(let root (Normalize (Normalize (Sym "v"))))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let root (Normalize (Normalize (Sym "v"))))"#)
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         assert!(!results.is_empty());
         let result = format!("{}", results[0]);
         eprintln!("Double normalize result: {}", result);
         // Should simplify to single Normalize
         let normalize_count = result.matches("Normalize").count();
-        assert!(normalize_count == 1, "Expected single Normalize, got: {}", result);
+        assert!(
+            normalize_count == 1,
+            "Expected single Normalize, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -1294,15 +1745,27 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // x * inversesqrt(x) = sqrt(x)
-        egraph.parse_and_run_program(None, r#"(let root (FMul (Sym "x") (InverseSqrt (Sym "x"))))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"(let root (FMul (Sym "x") (InverseSqrt (Sym "x"))))"#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         assert!(!results.is_empty());
         let result = format!("{}", results[0]);
         eprintln!("x * inversesqrt(x) result: {}", result);
-        assert!(result.contains("Sqrt") && !result.contains("InverseSqrt"),
-                "Expected Sqrt, got: {}", result);
+        assert!(
+            result.contains("Sqrt") && !result.contains("InverseSqrt"),
+            "Expected Sqrt, got: {}",
+            result
+        );
     }
 
     // Tests for generic add/sub cancellation (C++ MergeGenericAddSubArithmetic)
@@ -1311,9 +1774,18 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // (a - b) + b should simplify to a
-        egraph.parse_and_run_program(None, r#"(let expr (Add (Sub (Sym "a") (Sym "b")) (Sym "b")))"#).unwrap();
-        egraph.parse_and_run_program(None, r#"(let expected (Sym "a"))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 3 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"(let expr (Add (Sub (Sym "a") (Sym "b")) (Sym "b")))"#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let expected (Sym "a"))"#)
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 3 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= expr expected))");
         assert!(check.is_ok(), "Expected (a - b) + b to simplify to a");
@@ -1324,9 +1796,18 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // (a + b) - b should simplify to a
-        egraph.parse_and_run_program(None, r#"(let expr (Sub (Add (Sym "a") (Sym "b")) (Sym "b")))"#).unwrap();
-        egraph.parse_and_run_program(None, r#"(let expected (Sym "a"))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 3 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"(let expr (Sub (Add (Sym "a") (Sym "b")) (Sym "b")))"#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let expected (Sym "a"))"#)
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 3 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= expr expected))");
         assert!(check.is_ok(), "Expected (a + b) - b to simplify to a");
@@ -1338,12 +1819,27 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // (a & m) | (b & m) should simplify to (a | b) & m
-        egraph.parse_and_run_program(None, r#"(let expr (BitOr (BitAnd (Sym "a") (Sym "m")) (BitAnd (Sym "b") (Sym "m"))))"#).unwrap();
-        egraph.parse_and_run_program(None, r#"(let expected (BitAnd (BitOr (Sym "a") (Sym "b")) (Sym "m")))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 3 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"(let expr (BitOr (BitAnd (Sym "a") (Sym "m")) (BitAnd (Sym "b") (Sym "m"))))"#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"(let expected (BitAnd (BitOr (Sym "a") (Sym "b")) (Sym "m")))"#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 3 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= expr expected))");
-        assert!(check.is_ok(), "Expected (a & m) | (b & m) to simplify to (a | b) & m");
+        assert!(
+            check.is_ok(),
+            "Expected (a & m) | (b & m) to simplify to (a | b) & m"
+        );
     }
 
     // Test FP add/sub cancellation
@@ -1352,9 +1848,18 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // (a - b) + b should simplify to a for floating point
-        egraph.parse_and_run_program(None, r#"(let expr (FAdd (FSub (Sym "a") (Sym "b")) (Sym "b")))"#).unwrap();
-        egraph.parse_and_run_program(None, r#"(let expected (Sym "a"))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 3 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"(let expr (FAdd (FSub (Sym "a") (Sym "b")) (Sym "b")))"#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let expected (Sym "a"))"#)
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 3 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= expr expected))");
         assert!(check.is_ok(), "Expected FP (a - b) + b to simplify to a");
@@ -1366,9 +1871,18 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // (y / x) * x should simplify to y
-        egraph.parse_and_run_program(None, r#"(let expr (FMul (FDiv (Sym "y") (Sym "x")) (Sym "x")))"#).unwrap();
-        egraph.parse_and_run_program(None, r#"(let expected (Sym "y"))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 3 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"(let expr (FMul (FDiv (Sym "y") (Sym "x")) (Sym "x")))"#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let expected (Sym "y"))"#)
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 3 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= expr expected))");
         assert!(check.is_ok(), "Expected (y / x) * x to simplify to y");
@@ -1380,9 +1894,15 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // (-x) + c should simplify to c - x
-        egraph.parse_and_run_program(None, r#"(let expr (Add (Neg (Sym "x")) (Const 5)))"#).unwrap();
-        egraph.parse_and_run_program(None, r#"(let expected (Sub (Const 5) (Sym "x")))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 3 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let expr (Add (Neg (Sym "x")) (Const 5)))"#)
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let expected (Sub (Const 5) (Sym "x")))"#)
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 3 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= expr expected))");
         assert!(check.is_ok(), "Expected (-x) + c to simplify to c - x");
@@ -1394,9 +1914,18 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // 10 - (x + 3) should simplify to 7 - x = (10 - 3) - x
-        egraph.parse_and_run_program(None, r#"(let expr (Sub (Const 10) (Add (Sym "x") (Const 3))))"#).unwrap();
-        egraph.parse_and_run_program(None, r#"(let expected (Sub (Const 7) (Sym "x")))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"(let expr (Sub (Const 10) (Add (Sym "x") (Const 3))))"#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let expected (Sub (Const 7) (Sym "x")))"#)
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= expr expected))");
         assert!(check.is_ok(), "Expected 10 - (x + 3) to simplify to 7 - x");
@@ -1408,9 +1937,18 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // 10 - (x - 3) should simplify to 13 - x = (10 + 3) - x
-        egraph.parse_and_run_program(None, r#"(let expr (Sub (Const 10) (Sub (Sym "x") (Const 3))))"#).unwrap();
-        egraph.parse_and_run_program(None, r#"(let expected (Sub (Const 13) (Sym "x")))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"(let expr (Sub (Const 10) (Sub (Sym "x") (Const 3))))"#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let expected (Sub (Const 13) (Sym "x")))"#)
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= expr expected))");
         assert!(check.is_ok(), "Expected 10 - (x - 3) to simplify to 13 - x");
@@ -1422,7 +1960,12 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // (x + 5) - 5 should simplify to x
-        egraph.parse_and_run_program(None, r#"(let root (Sub (Add (Sym "x") (Const 5)) (Const 5)))"#).unwrap();
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"(let root (Sub (Add (Sym "x") (Const 5)) (Const 5)))"#,
+            )
+            .unwrap();
 
         // Trace iteration by iteration
         for i in 1..=5 {
@@ -1430,7 +1973,9 @@ mod tests {
             egraph.parse_and_run_program(None, "(run 1)").unwrap();
             let elapsed = start.elapsed();
 
-            let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+            let results = egraph
+                .parse_and_run_program(None, "(extract root)")
+                .unwrap();
             let result = format!("{}", results[0]);
             eprintln!("Iter {}: {} ({:?})", i, result, elapsed);
 
@@ -1442,15 +1987,24 @@ mod tests {
 
             // If iteration takes too long, we have explosion
             if elapsed.as_millis() > 500 {
-                eprintln!("WARNING: Iteration {} took {:?} - possible explosion", i, elapsed);
+                eprintln!(
+                    "WARNING: Iteration {} took {:?} - possible explosion",
+                    i, elapsed
+                );
             }
         }
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
         // Should have simplified to x
-        assert!(result == "(Sym \"x\")" || result.contains("Sym") && !result.contains("Add") && !result.contains("Sub"),
-                "Expected (Sym \"x\"), got: {}", result);
+        assert!(
+            result == "(Sym \"x\")"
+                || result.contains("Sym") && !result.contains("Add") && !result.contains("Sub"),
+            "Expected (Sym \"x\"), got: {}",
+            result
+        );
     }
 
     // Test real SPIR-V like scenario with multiple expressions
@@ -1461,10 +2015,18 @@ mod tests {
         // Simulate what the FFI test does: x is a function parameter (id1), 5 is a constant (id2)
         // add = x + 5 (id3), sub = add - 5 (id4)
         // The e-graph will have: id1 = (Sym "id1"), id2 = (Const 5), id3 = (Add id1 id2), id4 = (Sub id3 id2)
-        egraph.parse_and_run_program(None, r#"(let id1 (Sym "id1"))"#).unwrap();
-        egraph.parse_and_run_program(None, r#"(let id2 (Const 5))"#).unwrap();
-        egraph.parse_and_run_program(None, r#"(let id3 (Add id1 id2))"#).unwrap();
-        egraph.parse_and_run_program(None, r#"(let id4 (Sub id3 id2))"#).unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let id1 (Sym "id1"))"#)
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let id2 (Const 5))"#)
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let id3 (Add id1 id2))"#)
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let id4 (Sub id3 id2))"#)
+            .unwrap();
 
         // Trace iteration by iteration - run up to 20 like the direct optimizer
         for i in 1..=20 {
@@ -1477,7 +2039,11 @@ mod tests {
             eprintln!("Iter {}: {} ({:?})", i, result, elapsed);
 
             // If we already got id1 (which should alias to x), we're done
-            if result.contains("Sym") && result.contains("id1") && !result.contains("Add") && !result.contains("Sub") {
+            if result.contains("Sym")
+                && result.contains("id1")
+                && !result.contains("Add")
+                && !result.contains("Sub")
+            {
                 eprintln!("SUCCESS: Simplified to id1 after {} iterations", i);
                 return;
             }
@@ -1491,8 +2057,14 @@ mod tests {
         let results = egraph.parse_and_run_program(None, "(extract id4)").unwrap();
         let result = format!("{}", results[0]);
         // Should have simplified to id1
-        assert!(result.contains("Sym") && result.contains("id1") && !result.contains("Add") && !result.contains("Sub"),
-                "Expected (Sym \"id1\"), got: {}", result);
+        assert!(
+            result.contains("Sym")
+                && result.contains("id1")
+                && !result.contains("Add")
+                && !result.contains("Sub"),
+            "Expected (Sym \"id1\"), got: {}",
+            result
+        );
     }
 
     // Test 4*2 + 4*3 = 20 - trace the explosion
@@ -1501,7 +2073,12 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // 4*2 + 4*3 should fold to 20 (via 8 + 12)
-        egraph.parse_and_run_program(None, r#"(let root (Add (Mul (Const 4) (Const 2)) (Mul (Const 4) (Const 3))))"#).unwrap();
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"(let root (Add (Mul (Const 4) (Const 2)) (Mul (Const 4) (Const 3))))"#,
+            )
+            .unwrap();
 
         // Trace iteration by iteration
         for i in 1..=10 {
@@ -1509,7 +2086,9 @@ mod tests {
             egraph.parse_and_run_program(None, "(run 1)").unwrap();
             let elapsed = start.elapsed();
 
-            let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+            let results = egraph
+                .parse_and_run_program(None, "(extract root)")
+                .unwrap();
             let result = format!("{}", results[0]);
             eprintln!("Iter {}: {} ({:?})", i, result, elapsed);
 
@@ -1521,16 +2100,25 @@ mod tests {
 
             // If iteration takes too long, we have explosion
             if elapsed.as_millis() > 500 {
-                eprintln!("WARNING: Iteration {} took {:?} - possible explosion", i, elapsed);
+                eprintln!(
+                    "WARNING: Iteration {} took {:?} - possible explosion",
+                    i, elapsed
+                );
                 // Don't continue if it's exploding
                 break;
             }
         }
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
         // Should have folded to 20
-        assert!(result.contains("20"), "Expected constant 20, got: {}", result);
+        assert!(
+            result.contains("20"),
+            "Expected constant 20, got: {}",
+            result
+        );
     }
 
     // =============================================================================
@@ -1542,13 +2130,23 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // sin(0) should fold to 0
-        egraph.parse_and_run_program(None, "(let root (Sin (Const 0)))").unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, "(let root (Sin (Const 0)))")
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
         // Result should be a constant (sin(0) = 0)
-        assert!(result.contains("Const"), "sin(0) should fold to a constant, got: {}", result);
+        assert!(
+            result.contains("Const"),
+            "sin(0) should fold to a constant, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -1557,13 +2155,23 @@ mod tests {
 
         // exp(0) should fold to 1 (as float bits)
         // 1.0f64.to_bits() = 4607182418800017408
-        egraph.parse_and_run_program(None, "(let root (Exp (Const 0)))").unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, "(let root (Exp (Const 0)))")
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
         // Result should be a constant
-        assert!(result.contains("Const"), "exp(0) should fold to a constant, got: {}", result);
+        assert!(
+            result.contains("Const"),
+            "exp(0) should fold to a constant, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -1575,12 +2183,20 @@ mod tests {
         let four_bits = 4.0_f64.to_bits() as i64;
         let expr = format!("(let root (Sqrt (Const {})))", four_bits);
         egraph.parse_and_run_program(None, &expr).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
         // Result should be a constant
-        assert!(result.contains("Const"), "sqrt(4.0) should fold to a constant, got: {}", result);
+        assert!(
+            result.contains("Const"),
+            "sqrt(4.0) should fold to a constant, got: {}",
+            result
+        );
     }
 
     // =============================================================================
@@ -1597,7 +2213,9 @@ mod tests {
         let one_f32 = 1.0f32.to_bits() as i64;
         let expr = format!(r#"(let root (Pow (Sym "x") (Const {})))"#, zero_f32);
         egraph.parse_and_run_program(None, &expr).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         // Check that Pow(x, 0) equals Const(1.0)
         let expected = format!("(let expected (Const {}))", one_f32);
@@ -1615,10 +2233,14 @@ mod tests {
         let one_f32 = 1.0f32.to_bits() as i64;
         let expr = format!(r#"(let root (Pow (Sym "x") (Const {})))"#, one_f32);
         egraph.parse_and_run_program(None, &expr).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         // Check that Pow(x, 1) equals x
-        egraph.parse_and_run_program(None, r#"(let expected (Sym "x"))"#).unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let expected (Sym "x"))"#)
+            .unwrap();
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
         assert!(check.is_ok(), "Pow(x, 1) should equal x");
     }
@@ -1632,10 +2254,14 @@ mod tests {
         let two_f32 = 2.0f32.to_bits() as i64;
         let expr = format!(r#"(let root (Pow (Sym "x") (Const {})))"#, two_f32);
         egraph.parse_and_run_program(None, &expr).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         // Check that Pow(x, 2) equals FMul(x, x)
-        egraph.parse_and_run_program(None, r#"(let expected (FMul (Sym "x") (Sym "x")))"#).unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let expected (FMul (Sym "x") (Sym "x")))"#)
+            .unwrap();
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
         assert!(check.is_ok(), "Pow(x, 2) should equal x * x");
     }
@@ -1649,10 +2275,17 @@ mod tests {
         let three_f32 = 3.0f32.to_bits() as i64;
         let expr = format!(r#"(let root (Pow (Sym "x") (Const {})))"#, three_f32);
         egraph.parse_and_run_program(None, &expr).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         // Check that Pow(x, 3) equals FMul(FMul(x, x), x)
-        egraph.parse_and_run_program(None, r#"(let expected (FMul (FMul (Sym "x") (Sym "x")) (Sym "x")))"#).unwrap();
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"(let expected (FMul (FMul (Sym "x") (Sym "x")) (Sym "x")))"#,
+            )
+            .unwrap();
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
         assert!(check.is_ok(), "Pow(x, 3) should equal (x * x) * x");
     }
@@ -1666,10 +2299,17 @@ mod tests {
         let four_f32 = 4.0f32.to_bits() as i64;
         let expr = format!(r#"(let root (Pow (Sym "x") (Const {})))"#, four_f32);
         egraph.parse_and_run_program(None, &expr).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         // Check that Pow(x, 4) equals FMul(FMul(x, x), FMul(x, x))
-        egraph.parse_and_run_program(None, r#"(let expected (FMul (FMul (Sym "x") (Sym "x")) (FMul (Sym "x") (Sym "x"))))"#).unwrap();
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"(let expected (FMul (FMul (Sym "x") (Sym "x")) (FMul (Sym "x") (Sym "x"))))"#,
+            )
+            .unwrap();
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
         assert!(check.is_ok(), "Pow(x, 4) should equal (x * x) * (x * x)");
     }
@@ -1683,10 +2323,14 @@ mod tests {
         let half_f32 = 0.5f32.to_bits() as i64;
         let expr = format!(r#"(let root (Pow (Sym "x") (Const {})))"#, half_f32);
         egraph.parse_and_run_program(None, &expr).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         // Check that Pow(x, 0.5) equals Sqrt(x)
-        egraph.parse_and_run_program(None, r#"(let expected (Sqrt (Sym "x")))"#).unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let expected (Sqrt (Sym "x")))"#)
+            .unwrap();
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
         assert!(check.is_ok(), "Pow(x, 0.5) should equal Sqrt(x)");
     }
@@ -1700,10 +2344,14 @@ mod tests {
         let neg_half_f32 = (-0.5f32).to_bits() as i64;
         let expr = format!(r#"(let root (Pow (Sym "x") (Const {})))"#, neg_half_f32);
         egraph.parse_and_run_program(None, &expr).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         // Check that Pow(x, -0.5) equals InverseSqrt(x)
-        egraph.parse_and_run_program(None, r#"(let expected (InverseSqrt (Sym "x")))"#).unwrap();
+        egraph
+            .parse_and_run_program(None, r#"(let expected (InverseSqrt (Sym "x")))"#)
+            .unwrap();
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
         assert!(check.is_ok(), "Pow(x, -0.5) should equal InverseSqrt(x)");
     }
@@ -1718,7 +2366,9 @@ mod tests {
         let one_f32 = 1.0f32.to_bits() as i64;
         let expr = format!(r#"(let root (Pow (Sym "x") (Const {})))"#, neg_one_f32);
         egraph.parse_and_run_program(None, &expr).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         // Check that Pow(x, -1) equals FDiv(1, x)
         let expected = format!(r#"(let expected (FDiv (Const {}) (Sym "x")))"#, one_f32);
@@ -1736,12 +2386,25 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // FClamp(x, lo, hi) < lo => false (Const 0)
-        egraph.parse_and_run_program(None, r#"(let root (FOrdLt (FClamp (Sym "x") (Sym "lo") (Sym "hi")) (Sym "lo")))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"(let root (FOrdLt (FClamp (Sym "x") (Sym "lo") (Sym "hi")) (Sym "lo")))"#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 0"), "clamp(x, lo, hi) < lo should be false, got: {}", result);
+        assert!(
+            result.contains("Const 0"),
+            "clamp(x, lo, hi) < lo should be false, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -1749,12 +2412,25 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // FClamp(x, lo, hi) >= lo => true (Const 1)
-        egraph.parse_and_run_program(None, r#"(let root (FOrdGe (FClamp (Sym "x") (Sym "lo") (Sym "hi")) (Sym "lo")))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"(let root (FOrdGe (FClamp (Sym "x") (Sym "lo") (Sym "hi")) (Sym "lo")))"#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 1"), "clamp(x, lo, hi) >= lo should be true, got: {}", result);
+        assert!(
+            result.contains("Const 1"),
+            "clamp(x, lo, hi) >= lo should be true, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -1762,12 +2438,25 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // FClamp(x, lo, hi) > hi => false (Const 0)
-        egraph.parse_and_run_program(None, r#"(let root (FOrdGt (FClamp (Sym "x") (Sym "lo") (Sym "hi")) (Sym "hi")))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"(let root (FOrdGt (FClamp (Sym "x") (Sym "lo") (Sym "hi")) (Sym "hi")))"#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 0"), "clamp(x, lo, hi) > hi should be false, got: {}", result);
+        assert!(
+            result.contains("Const 0"),
+            "clamp(x, lo, hi) > hi should be false, got: {}",
+            result
+        );
     }
 
     // =============================================================================
@@ -1779,14 +2468,26 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // (y / x) * x should simplify to y
-        egraph.parse_and_run_program(None, r#"(let root (Mul (SDiv (Sym "y") (Sym "x")) (Sym "x")))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"(let root (Mul (SDiv (Sym "y") (Sym "x")) (Sym "x")))"#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
         // Should simplify to just y
-        assert!(result.contains("Sym") && result.contains("y") && !result.contains("SDiv"),
-                "(y / x) * x should simplify to y, got: {}", result);
+        assert!(
+            result.contains("Sym") && result.contains("y") && !result.contains("SDiv"),
+            "(y / x) * x should simplify to y, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -1794,14 +2495,26 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // x * (y / x) should simplify to y
-        egraph.parse_and_run_program(None, r#"(let root (Mul (Sym "x") (UDiv (Sym "y") (Sym "x"))))"#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"(let root (Mul (Sym "x") (UDiv (Sym "y") (Sym "x"))))"#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
         // Should simplify to just y
-        assert!(result.contains("Sym") && result.contains("y") && !result.contains("UDiv"),
-                "x * (y / x) should simplify to y, got: {}", result);
+        assert!(
+            result.contains("Sym") && result.contains("y") && !result.contains("UDiv"),
+            "x * (y / x) should simplify to y, got: {}",
+            result
+        );
     }
 
     /// Test that identity operations don't cause e-graph explosion
@@ -1810,12 +2523,20 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // Add with Const 0 - this used to cause explosion due to associativity rule interaction
-        egraph.parse_and_run_program(None, "(let c5 (Const 5))").unwrap();
-        egraph.parse_and_run_program(None, "(let c0 (Const 0))").unwrap();
-        egraph.parse_and_run_program(None, "(let expr (Add c5 c0))").unwrap(); // 5 + 0 = 5 (identity)
+        egraph
+            .parse_and_run_program(None, "(let c5 (Const 5))")
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(let c0 (Const 0))")
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(let expr (Add c5 c0))")
+            .unwrap(); // 5 + 0 = 5 (identity)
 
         // Run 20 iterations - should complete quickly
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 20 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 20 (run)))")
+            .unwrap();
 
         // Extract - should be (Const 5)
         let results = egraph.parse_and_run_program(None, "(extract c5)").unwrap();
@@ -1833,18 +2554,30 @@ mod tests {
 
         // Load from a pointer that was just stored to should return the stored value
         // Load(ptr, StoreMem(ptr, val, prev)) = val
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let ptr (Var "x" 0))
             (let val (Const 42))
             (let mem (StoreMem ptr val (InitMem)))
             (let root (Load ptr mem))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 42"),
-                "Load after store should forward value, got: {}", result);
+        assert!(
+            result.contains("Const 42"),
+            "Load after store should forward value, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -1853,13 +2586,20 @@ mod tests {
 
         // Store-after-store: second store kills the first
         // StoreMem(ptr, val2, StoreMem(ptr, val1, prev)) = StoreMem(ptr, val2, prev)
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let ptr (Var "x" 0))
             (let inner (StoreMem ptr (Const 10) (InitMem)))
             (let root (StoreMem ptr (Const 20) inner))
             (let expected (StoreMem ptr (Const 20) (InitMem)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         // Check that root equals expected (dead store eliminated)
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
@@ -1871,16 +2611,28 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // MergeMem with same state on both branches = that state
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let mem (InitMem))
             (let root (MergeMem (Sym "cond") mem mem))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("InitMem") && !result.contains("MergeMem"),
-                "MergeMem with same branches should simplify, got: {}", result);
+        assert!(
+            result.contains("InitMem") && !result.contains("MergeMem"),
+            "MergeMem with same branches should simplify, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -1888,15 +2640,25 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // MergeMem with constant true condition = then branch
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let then_mem (StoreMem (Var "x" 0) (Const 1) (InitMem)))
             (let else_mem (StoreMem (Var "y" 0) (Const 2) (InitMem)))
             (let root (MergeMem (Const 1) then_mem else_mem))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root then_mem))");
-        assert!(check.is_ok(), "MergeMem with true condition should select then branch");
+        assert!(
+            check.is_ok(),
+            "MergeMem with true condition should select then branch"
+        );
     }
 
     #[test]
@@ -1904,18 +2666,30 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // Load through access chain from store through same access chain
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let base (Var "arr" 0))
             (let chain (AccessChain1 base 5))
             (let mem (StoreMem chain (Const 99) (InitMem)))
             (let root (Load chain mem))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 99"),
-                "Access chain load-store forwarding should work, got: {}", result);
+        assert!(
+            result.contains("Const 99"),
+            "Access chain load-store forwarding should work, got: {}",
+            result
+        );
     }
 
     // =========================================================================
@@ -1927,16 +2701,28 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // Subst(Arg(0), 0, val) = val
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let val (Const 42))
             (let root (Subst (Arg 0) 0 val))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 42"),
-                "Subst(Arg(0), 0, val) should equal val, got: {}", result);
+        assert!(
+            result.contains("Const 42"),
+            "Subst(Arg(0), 0, val) should equal val, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -1944,15 +2730,27 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // Subst(Const c, idx, val) = Const c (constants don't change)
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let root (Subst (Const 100) 0 (Const 999)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 100") && !result.contains("999"),
-                "Subst on constant should be unchanged, got: {}", result);
+        assert!(
+            result.contains("Const 100") && !result.contains("999"),
+            "Subst on constant should be unchanged, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -1960,17 +2758,29 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // Subst(Add(Arg(0), Const(5)), 0, Const(10)) = Add(Const(10), Const(5)) = Const(15)
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let body (Add (Arg 0) (Const 5)))
             (let root (Subst body 0 (Const 10)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
         // Should fold to Const 15
-        assert!(result.contains("Const 15"),
-                "Subst should propagate and fold, got: {}", result);
+        assert!(
+            result.contains("Const 15"),
+            "Subst should propagate and fold, got: {}",
+            result
+        );
     }
 
     // =========================================================================
@@ -1982,17 +2792,29 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // BoundedTheta with 0 iterations returns init
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let init (Const 42))
             (let body (Add (Arg 0) (Const 1)))
             (let root (BoundedTheta 0 body init))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 42"),
-                "BoundedTheta(0, ...) should return init, got: {}", result);
+        assert!(
+            result.contains("Const 42"),
+            "BoundedTheta(0, ...) should return init, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -2000,16 +2822,28 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // Theta with constant false condition returns init
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let init (Const 100))
             (let root (Theta (Const 0) (Add (LoopVar) (Const 1)) init))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 100"),
-                "Theta with false condition should return init, got: {}", result);
+        assert!(
+            result.contains("Const 100"),
+            "Theta with false condition should return init, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -2017,11 +2851,18 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // LoopVar * 4 should become LoopVar << 2
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let root (Mul (LoopVar) (Const 4)))
             (let expected (Shl (LoopVar) (Const 2)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
         assert!(check.is_ok(), "LoopVar * 4 should equal LoopVar << 2");
@@ -2032,16 +2873,26 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // Operations on loop-invariant values should be loop-invariant
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let a (LoopInvariant (Const 10)))
             (let b (LoopInvariant (Const 20)))
             (let root (Add a b))
             (let expected (LoopInvariant (Add (Const 10) (Const 20))))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-        assert!(check.is_ok(), "Add of loop-invariants should be loop-invariant");
+        assert!(
+            check.is_ok(),
+            "Add of loop-invariants should be loop-invariant"
+        );
     }
 
     #[test]
@@ -2049,16 +2900,28 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // LoopIter(0, x) = x
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let val (Const 77))
             (let root (LoopIter 0 val))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 77"),
-                "LoopIter(0, x) should equal x, got: {}", result);
+        assert!(
+            result.contains("Const 77"),
+            "LoopIter(0, x) should equal x, got: {}",
+            result
+        );
     }
 
     // =========================================================================
@@ -2070,16 +2933,28 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // SpecAdd(x, 0) = x
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let spec (SpecConst 0 42))
             (let root (SpecAdd spec (Const 0)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("SpecConst") && !result.contains("SpecAdd"),
-                "SpecAdd(x, 0) should simplify to x, got: {}", result);
+        assert!(
+            result.contains("SpecConst") && !result.contains("SpecAdd"),
+            "SpecAdd(x, 0) should simplify to x, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -2087,16 +2962,28 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // SpecMul(x, 0) = 0
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let spec (SpecConst 0 42))
             (let root (SpecMul spec (Const 0)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 0"),
-                "SpecMul(x, 0) should be 0, got: {}", result);
+        assert!(
+            result.contains("Const 0"),
+            "SpecMul(x, 0) should be 0, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -2104,17 +2991,29 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // SpecSelect(true, a, b) = a
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let a (Const 10))
             (let b (Const 20))
             (let root (SpecSelect (Const 1) a b))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 10"),
-                "SpecSelect(true, a, b) should be a, got: {}", result);
+        assert!(
+            result.contains("Const 10"),
+            "SpecSelect(true, a, b) should be a, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -2122,16 +3021,28 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // SpecEq(x, x) = 1 (true)
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let spec (SpecConst 0 42))
             (let root (SpecEq spec spec))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 1"),
-                "SpecEq(x, x) should be true (1), got: {}", result);
+        assert!(
+            result.contains("Const 1"),
+            "SpecEq(x, x) should be true (1), got: {}",
+            result
+        );
     }
 
     #[test]
@@ -2139,12 +3050,19 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // SpecMul(x, 4) should become SpecShl(x, 2)
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let spec (SpecConst 0 42))
             (let root (SpecMul spec (Const 4)))
             (let expected (SpecShl spec (Const 2)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
         assert!(check.is_ok(), "SpecMul(x, 4) should equal SpecShl(x, 2)");
@@ -2159,15 +3077,27 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // DPdx(Const c) = 0
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let root (DPdx (Const 42)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 0"),
-                "DPdx of constant should be 0, got: {}", result);
+        assert!(
+            result.contains("Const 0"),
+            "DPdx of constant should be 0, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -2175,15 +3105,27 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // Fwidth(Const c) = 0
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let root (Fwidth (Const 42)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 0"),
-                "Fwidth of constant should be 0, got: {}", result);
+        assert!(
+            result.contains("Const 0"),
+            "Fwidth of constant should be 0, got: {}",
+            result
+        );
     }
 
     // =========================================================================
@@ -2195,15 +3137,27 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // GroupBroadcast(Const c, lane) = Const c
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let root (GroupBroadcast (Const 42) (Const 0)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 42") && !result.contains("GroupBroadcast"),
-                "GroupBroadcast of constant should be that constant, got: {}", result);
+        assert!(
+            result.contains("Const 42") && !result.contains("GroupBroadcast"),
+            "GroupBroadcast of constant should be that constant, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -2211,15 +3165,27 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // GroupBroadcastFirst(Const c) = Const c
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let root (GroupBroadcastFirst (Const 123)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 123") && !result.contains("GroupBroadcastFirst"),
-                "GroupBroadcastFirst of constant should be that constant, got: {}", result);
+        assert!(
+            result.contains("Const 123") && !result.contains("GroupBroadcastFirst"),
+            "GroupBroadcastFirst of constant should be that constant, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -2227,15 +3193,27 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // GroupAll(true) = true
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let root (GroupAll (Const 1)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 1") && !result.contains("GroupAll"),
-                "GroupAll(true) should be true, got: {}", result);
+        assert!(
+            result.contains("Const 1") && !result.contains("GroupAll"),
+            "GroupAll(true) should be true, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -2243,15 +3221,27 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // GroupAny(false) = false
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let root (GroupAny (Const 0)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 0") && !result.contains("GroupAny"),
-                "GroupAny(false) should be false, got: {}", result);
+        assert!(
+            result.contains("Const 0") && !result.contains("GroupAny"),
+            "GroupAny(false) should be false, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -2259,15 +3249,27 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // GroupAllEqual(Const c) = true (all lanes have same constant)
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let root (GroupAllEqual (Const 42)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 1"),
-                "GroupAllEqual of constant should be true, got: {}", result);
+        assert!(
+            result.contains("Const 1"),
+            "GroupAllEqual of constant should be true, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -2275,11 +3277,18 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // GroupShuffleXor(x, 0) = x (identity shuffle)
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let val (Sym "x"))
             (let root (GroupShuffleXor val (Const 0)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root val))");
         assert!(check.is_ok(), "GroupShuffleXor(x, 0) should equal x");
@@ -2290,15 +3299,27 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // GroupIAdd(0) = 0 (sum of zeros)
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let root (GroupIAdd (Const 0)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 0"),
-                "GroupIAdd(0) should be 0, got: {}", result);
+        assert!(
+            result.contains("Const 0"),
+            "GroupIAdd(0) should be 0, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -2306,15 +3327,27 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // GroupIMul(1) = 1 (product of ones)
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let root (GroupIMul (Const 1)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 1"),
-                "GroupIMul(1) should be 1, got: {}", result);
+        assert!(
+            result.contains("Const 1"),
+            "GroupIMul(1) should be 1, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -2322,15 +3355,27 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // GroupBitOr(0) = 0 (OR of zeros)
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let root (GroupBitOr (Const 0)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 0"),
-                "GroupBitOr(0) should be 0, got: {}", result);
+        assert!(
+            result.contains("Const 0"),
+            "GroupBitOr(0) should be 0, got: {}",
+            result
+        );
     }
 
     // =========================================================================
@@ -2342,15 +3387,25 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // AccessChain1(AccessChain1(base, i1), i2) = AccessChain2(base, i1, i2)
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let base (Var "arr" 0))
             (let root (AccessChain1 (AccessChain1 base 0) 1))
             (let expected (AccessChain2 base 0 1))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-        assert!(check.is_ok(), "Nested AccessChain1 should combine into AccessChain2");
+        assert!(
+            check.is_ok(),
+            "Nested AccessChain1 should combine into AccessChain2"
+        );
     }
 
     #[test]
@@ -2358,15 +3413,25 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // AccessChain1(AccessChain2(base, i1, i2), i3) = AccessChain3(base, i1, i2, i3)
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let base (Var "struct" 0))
             (let root (AccessChain1 (AccessChain2 base 0 1) 2))
             (let expected (AccessChain3 base 0 1 2))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-        assert!(check.is_ok(), "AccessChain1 of AccessChain2 should combine into AccessChain3");
+        assert!(
+            check.is_ok(),
+            "AccessChain1 of AccessChain2 should combine into AccessChain3"
+        );
     }
 
     #[test]
@@ -2374,15 +3439,25 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // AccessChainDyn(base, Const i) = AccessChain1(base, i)
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let base (Var "arr" 0))
             (let root (AccessChainDyn base (Const 5)))
             (let expected (AccessChain1 base 5))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-        assert!(check.is_ok(), "AccessChainDyn with constant should become AccessChain1");
+        assert!(
+            check.is_ok(),
+            "AccessChainDyn with constant should become AccessChain1"
+        );
     }
 
     #[test]
@@ -2390,17 +3465,27 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // Load from loop-invariant pointer and memory is loop-invariant
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let ptr (LoopInvariant (Var "p" 0)))
             (let mem (LoopInvariant (InitMem)))
             (let root (Load ptr mem))
             (let inner_load (Load (Var "p" 0) (InitMem)))
             (let expected (LoopInvariant inner_load))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-        assert!(check.is_ok(), "Load from loop-invariant ptr and mem should be loop-invariant");
+        assert!(
+            check.is_ok(),
+            "Load from loop-invariant ptr and mem should be loop-invariant"
+        );
     }
 
     #[test]
@@ -2408,7 +3493,10 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // Store followed by MergeMem where both branches overwrite eliminates first store
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let ptr (Var "p" 0))
             (let cond (Sym "c"))
             (let prev (InitMem))
@@ -2419,11 +3507,18 @@ mod tests {
             (let expected_b1 (StoreMem ptr (Const 1) prev))
             (let expected_b2 (StoreMem ptr (Const 2) prev))
             (let expected (MergeMem cond expected_b1 expected_b2))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-        assert!(check.is_ok(), "Dead store before branch should be eliminated");
+        assert!(
+            check.is_ok(),
+            "Dead store before branch should be eliminated"
+        );
     }
 
     // =========================================================================
@@ -2435,13 +3530,20 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // DPdx(a + b) = DPdx(a) + DPdx(b)
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let a (Sym "a"))
             (let b (Sym "b"))
             (let root (DPdx (FAdd a b)))
             (let expected (FAdd (DPdx a) (DPdx b)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
         assert!(check.is_ok(), "DPdx should distribute over FAdd");
@@ -2452,12 +3554,19 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // DPdx(-x) = -DPdx(x)
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let x (Sym "x"))
             (let root (DPdx (FNeg x)))
             (let expected (FNeg (DPdx x)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
         assert!(check.is_ok(), "DPdx should distribute through FNeg");
@@ -2468,15 +3577,25 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // Fwidth(-x) = Fwidth(x) since fwidth uses absolute values
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let x (Sym "x"))
             (let root (Fwidth (FNeg x)))
             (let expected (Fwidth x))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-        assert!(check.is_ok(), "Fwidth of negated value should equal Fwidth of original");
+        assert!(
+            check.is_ok(),
+            "Fwidth of negated value should equal Fwidth of original"
+        );
     }
 
     #[test]
@@ -2484,16 +3603,26 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // ImageSample with loop-invariant coordinate is loop-invariant
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let img (Sym "texture"))
             (let coord (LoopInvariant (Sym "uv")))
             (let root (ImageSample img coord))
             (let expected (LoopInvariant (ImageSample img (Sym "uv"))))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-        assert!(check.is_ok(), "ImageSample with loop-invariant coord should be loop-invariant");
+        assert!(
+            check.is_ok(),
+            "ImageSample with loop-invariant coord should be loop-invariant"
+        );
     }
 
     // =========================================================================
@@ -2505,14 +3634,24 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // BitFieldUExtract(x, 0, 32) = x (full word extract is identity)
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let x (Sym "x"))
             (let root (BitFieldUExtract x (Const 0) (Const 32)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root x))");
-        assert!(check.is_ok(), "BitFieldUExtract of full word should be identity");
+        assert!(
+            check.is_ok(),
+            "BitFieldUExtract of full word should be identity"
+        );
     }
 
     #[test]
@@ -2520,15 +3659,28 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // BitFieldUExtract(x, offset, 0) = 0 (extracting 0 bits)
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let x (Sym "x"))
             (let root (BitFieldUExtract x (Const 5) (Const 0)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 0"), "BitFieldUExtract with 0 count should be 0, got: {}", result);
+        assert!(
+            result.contains("Const 0"),
+            "BitFieldUExtract with 0 count should be 0, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -2536,15 +3688,25 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // BitFieldInsert(base, val, offset, 0) = base (inserting 0 bits)
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let base (Sym "base"))
             (let val (Sym "val"))
             (let root (BitFieldInsert base val (Const 5) (Const 0)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root base))");
-        assert!(check.is_ok(), "BitFieldInsert with 0 count should be identity");
+        assert!(
+            check.is_ok(),
+            "BitFieldInsert with 0 count should be identity"
+        );
     }
 
     #[test]
@@ -2552,11 +3714,18 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // BitReverse(BitReverse(x)) = x
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let x (Sym "x"))
             (let root (BitReverse (BitReverse x)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root x))");
         assert!(check.is_ok(), "Double BitReverse should be identity");
@@ -2567,14 +3736,27 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // BitCount(0) = 0
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let root (BitCount (Const 0)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 0"), "BitCount of 0 should be 0, got: {}", result);
+        assert!(
+            result.contains("Const 0"),
+            "BitCount of 0 should be 0, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -2582,14 +3764,27 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // BitCount(power of 2) = 1
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let root (BitCount (Const 128)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 1"), "BitCount of power of 2 should be 1, got: {}", result);
+        assert!(
+            result.contains("Const 1"),
+            "BitCount of power of 2 should be 1, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -2597,14 +3792,27 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // FindILsb(16) = 4 (bit 4 is set)
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let root (FindILsb (Const 16)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 4"), "FindILsb(16) should be 4, got: {}", result);
+        assert!(
+            result.contains("Const 4"),
+            "FindILsb(16) should be 4, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -2612,12 +3820,19 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // BitCount(BitReverse(x)) = BitCount(x)
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let x (Sym "x"))
             (let root (BitCount (BitReverse x)))
             (let expected (BitCount x))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
         assert!(check.is_ok(), "BitCount should be invariant to BitReverse");
@@ -2628,15 +3843,25 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // BitFieldUExtract(x, 0, 8) = BitAnd(x, 255)
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let x (Sym "x"))
             (let root (BitFieldUExtract x (Const 0) (Const 8)))
             (let expected (BitAnd x (Const 255)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-        assert!(check.is_ok(), "BitFieldUExtract low byte should be BitAnd with 255");
+        assert!(
+            check.is_ok(),
+            "BitFieldUExtract low byte should be BitAnd with 255"
+        );
     }
 
     // =========================================================================
@@ -2648,17 +3873,27 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // c && select(c, a, b) = c && a
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let c (Sym "c"))
             (let a (Sym "a"))
             (let b (Sym "b"))
             (let root (LogAnd c (Gamma c a b)))
             (let expected (LogAnd c a))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-        assert!(check.is_ok(), "c && select(c, a, b) should simplify to c && a");
+        assert!(
+            check.is_ok(),
+            "c && select(c, a, b) should simplify to c && a"
+        );
     }
 
     #[test]
@@ -2666,17 +3901,27 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // c || select(c, a, b) = c || b
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let c (Sym "c"))
             (let a (Sym "a"))
             (let b (Sym "b"))
             (let root (LogOr c (Gamma c a b)))
             (let expected (LogOr c b))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-        assert!(check.is_ok(), "c || select(c, a, b) should simplify to c || b");
+        assert!(
+            check.is_ok(),
+            "c || select(c, a, b) should simplify to c || b"
+        );
     }
 
     #[test]
@@ -2684,17 +3929,27 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // !c && select(c, a, b) = !c && b
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let c (Sym "c"))
             (let a (Sym "a"))
             (let b (Sym "b"))
             (let root (LogAnd (LogNot c) (Gamma c a b)))
             (let expected (LogAnd (LogNot c) b))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-        assert!(check.is_ok(), "!c && select(c, a, b) should simplify to !c && b");
+        assert!(
+            check.is_ok(),
+            "!c && select(c, a, b) should simplify to !c && b"
+        );
     }
 
     #[test]
@@ -2702,7 +3957,10 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // select(c, a, b) && select(c, x, y) = select(c, a && x, b && y)
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let c (Sym "c"))
             (let a (Sym "a"))
             (let b (Sym "b"))
@@ -2710,11 +3968,18 @@ mod tests {
             (let y (Sym "y"))
             (let root (LogAnd (Gamma c a b) (Gamma c x y)))
             (let expected (Gamma c (LogAnd a x) (LogAnd b y)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-        assert!(check.is_ok(), "LogAnd of two Gammas with same condition should fuse");
+        assert!(
+            check.is_ok(),
+            "LogAnd of two Gammas with same condition should fuse"
+        );
     }
 
     #[test]
@@ -2722,7 +3987,10 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // select(c, a, b) || select(c, x, y) = select(c, a || x, b || y)
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let c (Sym "c"))
             (let a (Sym "a"))
             (let b (Sym "b"))
@@ -2730,11 +3998,18 @@ mod tests {
             (let y (Sym "y"))
             (let root (LogOr (Gamma c a b) (Gamma c x y)))
             (let expected (Gamma c (LogOr a x) (LogOr b y)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-        assert!(check.is_ok(), "LogOr of two Gammas with same condition should fuse");
+        assert!(
+            check.is_ok(),
+            "LogOr of two Gammas with same condition should fuse"
+        );
     }
 
     #[test]
@@ -2742,16 +4017,26 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // select(c, c && a, false) = c && a
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let c (Sym "c"))
             (let a (Sym "a"))
             (let root (Gamma c (LogAnd c a) (Const 0)))
             (let expected (LogAnd c a))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-        assert!(check.is_ok(), "select(c, c && a, false) should simplify to c && a");
+        assert!(
+            check.is_ok(),
+            "select(c, c && a, false) should simplify to c && a"
+        );
     }
 
     #[test]
@@ -2759,15 +4044,28 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // (x & 0xFF) < 256 is always true
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let x (Sym "x"))
             (let root (ULt (BitAnd x (Const 255)) (Const 256)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 1"), "Byte mask comparison should be true, got: {}", result);
+        assert!(
+            result.contains("Const 1"),
+            "Byte mask comparison should be true, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -2775,16 +4073,29 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // (x & 1) == 0 && (x & 1) == 1 is always false
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let x (Sym "x"))
             (let root (LogAnd (Eq (BitAnd x (Const 1)) (Const 0))
                              (Eq (BitAnd x (Const 1)) (Const 1))))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 0"), "Bit mask contradiction should be false, got: {}", result);
+        assert!(
+            result.contains("Const 0"),
+            "Bit mask contradiction should be false, got: {}",
+            result
+        );
     }
 
     // =========================================================================
@@ -2796,14 +4107,27 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // 0 * Undef = 0 (zero multiplication dominates)
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let root (Mul (Const 0) (Undef)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 0"), "0 * Undef should be 0, got: {}", result);
+        assert!(
+            result.contains("Const 0"),
+            "0 * Undef should be 0, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -2811,14 +4135,27 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // Undef & 0 = 0
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let root (BitAnd (Undef) (Const 0)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 0"), "Undef & 0 should be 0, got: {}", result);
+        assert!(
+            result.contains("Const 0"),
+            "Undef & 0 should be 0, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -2826,14 +4163,27 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // Undef | -1 = -1 (all bits set)
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let root (BitOr (Undef) (Const -1)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const -1"), "Undef | -1 should be -1, got: {}", result);
+        assert!(
+            result.contains("Const -1"),
+            "Undef | -1 should be -1, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -2841,14 +4191,27 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // false && Undef = false
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let root (LogAnd (Const 0) (Undef)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 0"), "false && Undef should be false, got: {}", result);
+        assert!(
+            result.contains("Const 0"),
+            "false && Undef should be false, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -2856,14 +4219,27 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // true || Undef = true
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let root (LogOr (Const 1) (Undef)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Const 1"), "true || Undef should be true, got: {}", result);
+        assert!(
+            result.contains("Const 1"),
+            "true || Undef should be true, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -2871,14 +4247,27 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // VecExtract(Undef, i) = Undef
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let root (VecExtract (Undef) 2))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
-        let results = egraph.parse_and_run_program(None, "(extract root)").unwrap();
+        let results = egraph
+            .parse_and_run_program(None, "(extract root)")
+            .unwrap();
         let result = format!("{}", results[0]);
-        assert!(result.contains("Undef"), "VecExtract from Undef should be Undef, got: {}", result);
+        assert!(
+            result.contains("Undef"),
+            "VecExtract from Undef should be Undef, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -2886,15 +4275,25 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // StoreMem(ptr, Undef, prev) = prev (dead store)
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let prev (InitMem))
             (let ptr (Sym "ptr"))
             (let root (StoreMem ptr (Undef) prev))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root prev))");
-        assert!(check.is_ok(), "Storing Undef should be equivalent to no-op (dead store)");
+        assert!(
+            check.is_ok(),
+            "Storing Undef should be equivalent to no-op (dead store)"
+        );
     }
 
     #[test]
@@ -2902,17 +4301,27 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // NClamp(NClamp(x, lo, hi), lo, hi) = NClamp(x, lo, hi)
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let x (Sym "x"))
             (let lo (Sym "lo"))
             (let hi (Sym "hi"))
             (let inner (NClamp x lo hi))
             (let root (NClamp inner lo hi))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root inner))");
-        assert!(check.is_ok(), "NClamp(NClamp(x, lo, hi), lo, hi) should equal NClamp(x, lo, hi)");
+        assert!(
+            check.is_ok(),
+            "NClamp(NClamp(x, lo, hi), lo, hi) should equal NClamp(x, lo, hi)"
+        );
     }
 
     // =========================================================================
@@ -2926,7 +4335,10 @@ mod tests {
         let mut egraph = create_spirv_egraph().unwrap();
 
         // Use VecExtract which is a proper constructor
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let mem (InitMem))
             (let ptr (Var "struct_ptr" 0))
             (let loaded (Load ptr mem))
@@ -2934,15 +4346,25 @@ mod tests {
             (let field1 (VecExtract loaded 1))
             (let direct0 (Load (AccessChain1 ptr 0) mem))
             (let direct1 (Load (AccessChain1 ptr 1) mem))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         // Extract from loaded struct should equal direct field load
         let check0 = egraph.parse_and_run_program(None, "(check (= field0 direct0))");
-        assert!(check0.is_ok(), "VecExtract(Load(ptr), 0) should equal Load(AccessChain1(ptr, 0))");
+        assert!(
+            check0.is_ok(),
+            "VecExtract(Load(ptr), 0) should equal Load(AccessChain1(ptr, 0))"
+        );
 
         let check1 = egraph.parse_and_run_program(None, "(check (= field1 direct1))");
-        assert!(check1.is_ok(), "VecExtract(Load(ptr), 1) should equal Load(AccessChain1(ptr, 1))");
+        assert!(
+            check1.is_ok(),
+            "VecExtract(Load(ptr), 1) should equal Load(AccessChain1(ptr, 1))"
+        );
     }
 
     #[test]
@@ -2950,7 +4372,10 @@ mod tests {
         // VecExtract(Load(ptr, mem), idx) = Load(AccessChain1(ptr, idx), mem)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let mem (InitMem))
             (let ptr (Var "vec_ptr" 0))
             (let loaded (Load ptr mem))
@@ -2958,14 +4383,24 @@ mod tests {
             (let comp1 (VecExtract loaded 1))
             (let direct0 (Load (AccessChain1 ptr 0) mem))
             (let direct1 (Load (AccessChain1 ptr 1) mem))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check0 = egraph.parse_and_run_program(None, "(check (= comp0 direct0))");
-        assert!(check0.is_ok(), "VecExtract(Load(ptr), 0) should equal Load(AccessChain1(ptr, 0))");
+        assert!(
+            check0.is_ok(),
+            "VecExtract(Load(ptr), 0) should equal Load(AccessChain1(ptr, 0))"
+        );
 
         let check1 = egraph.parse_and_run_program(None, "(check (= comp1 direct1))");
-        assert!(check1.is_ok(), "VecExtract(Load(ptr), 1) should equal Load(AccessChain1(ptr, 1))");
+        assert!(
+            check1.is_ok(),
+            "VecExtract(Load(ptr), 1) should equal Load(AccessChain1(ptr, 1))"
+        );
     }
 
     #[test]
@@ -2974,15 +4409,22 @@ mod tests {
         // Note: CompositeExtract is a function, we test with VecExtract
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let mem (InitMem))
             (let ptr (Var "nested_struct_ptr" 0))
             (let loaded (Load ptr mem))
             (let inner (VecExtract loaded 0))
             (let field (VecExtract inner 1))
             (let direct (Load (AccessChain2 ptr 0 1) mem))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         // Note: This test verifies the memory.egg rule for CompositeExtract, but since
         // VecExtract is different, we just test the access chain combining
@@ -2999,7 +4441,10 @@ mod tests {
         // Store(ptr, Vec2(a, b), mem) = Store(AC(ptr,1), b, Store(AC(ptr,0), a, mem))
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let mem (InitMem))
             (let ptr (Var "vec2_ptr" 0))
             (let a (Const 10))
@@ -3007,11 +4452,18 @@ mod tests {
             (let whole_store (StoreMem ptr (Vec2 a b) mem))
             (let field_stores (StoreMem (AccessChain1 ptr 1) b
                               (StoreMem (AccessChain1 ptr 0) a mem)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= whole_store field_stores))");
-        assert!(check.is_ok(), "Vec2 store should decompose into field stores");
+        assert!(
+            check.is_ok(),
+            "Vec2 store should decompose into field stores"
+        );
     }
 
     #[test]
@@ -3019,7 +4471,10 @@ mod tests {
         // Store(ptr, Vec4(a, b, c, d), mem) = Store(AC(ptr,3), d, Store(AC(ptr,2), c, ...))
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let mem (InitMem))
             (let ptr (Var "vec4_ptr" 0))
             (let a (Const 1))
@@ -3031,11 +4486,18 @@ mod tests {
                               (StoreMem (AccessChain1 ptr 2) c
                               (StoreMem (AccessChain1 ptr 1) b
                               (StoreMem (AccessChain1 ptr 0) a mem)))))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= whole_store field_stores))");
-        assert!(check.is_ok(), "Vec4 store should decompose into field stores");
+        assert!(
+            check.is_ok(),
+            "Vec4 store should decompose into field stores"
+        );
     }
 
     #[test]
@@ -3043,7 +4505,10 @@ mod tests {
         // Store(field, v2, Store(field, v1, mem)) = Store(field, v2, mem)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let mem (InitMem))
             (let ptr (Var "struct_ptr" 0))
             (let field0 (AccessChain1 ptr 0))
@@ -3051,11 +4516,18 @@ mod tests {
             (let v2 (Const 200))
             (let double_store (StoreMem field0 v2 (StoreMem field0 v1 mem)))
             (let single_store (StoreMem field0 v2 mem))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= double_store single_store))");
-        assert!(check.is_ok(), "Double store to same field should eliminate first store");
+        assert!(
+            check.is_ok(),
+            "Double store to same field should eliminate first store"
+        );
     }
 
     #[test]
@@ -3063,18 +4535,28 @@ mod tests {
         // Load(field, Store(field, val, mem)) = val
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let mem (InitMem))
             (let ptr (Var "struct_ptr" 0))
             (let field0 (AccessChain1 ptr 0))
             (let val (Const 42))
             (let stored (StoreMem field0 val mem))
             (let loaded (Load field0 stored))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= loaded val))");
-        assert!(check.is_ok(), "Load after store to same field should forward the stored value");
+        assert!(
+            check.is_ok(),
+            "Load after store to same field should forward the stored value"
+        );
     }
 
     #[test]
@@ -3082,7 +4564,10 @@ mod tests {
         // Load(field0, Store(field1, val, mem)) = Load(field0, mem)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let mem (InitMem))
             (let ptr (Var "struct_ptr" 0))
             (let field0 (AccessChain1 ptr 0))
@@ -3091,11 +4576,18 @@ mod tests {
             (let stored (StoreMem field1 val mem))
             (let loaded (Load field0 stored))
             (let original (Load field0 mem))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= loaded original))");
-        assert!(check.is_ok(), "Load from different field should see original memory");
+        assert!(
+            check.is_ok(),
+            "Load from different field should see original memory"
+        );
     }
 
     #[test]
@@ -3104,7 +4596,10 @@ mod tests {
         // Note: CompositeInsert is a function, we test with VecInsert
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let mem (InitMem))
             (let ptr (Var "struct_ptr" 0))
             (let val (Const 99))
@@ -3112,11 +4607,18 @@ mod tests {
             (let modified (VecInsert loaded val 1))
             (let rmw (StoreMem ptr modified mem))
             (let direct (StoreMem (AccessChain1 ptr 1) val mem))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 15 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 15 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= rmw direct))");
-        assert!(check.is_ok(), "Read-modify-write should become direct field store");
+        assert!(
+            check.is_ok(),
+            "Read-modify-write should become direct field store"
+        );
     }
 
     #[test]
@@ -3124,17 +4626,27 @@ mod tests {
         // Store(field, Load(field, mem), mem) = mem (storing what was already there)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let mem (InitMem))
             (let ptr (Var "struct_ptr" 0))
             (let field0 (AccessChain1 ptr 0))
             (let loaded (Load field0 mem))
             (let stored (StoreMem field0 loaded mem))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= stored mem))");
-        assert!(check.is_ok(), "Storing loaded value back to same field should be identity");
+        assert!(
+            check.is_ok(),
+            "Storing loaded value back to same field should be identity"
+        );
     }
 
     #[test]
@@ -3142,16 +4654,26 @@ mod tests {
         // Store(ptr, Load(ptr, mem), mem) = mem
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let mem (InitMem))
             (let ptr (Var "ptr" 0))
             (let loaded (Load ptr mem))
             (let stored (StoreMem ptr loaded mem))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= stored mem))");
-        assert!(check.is_ok(), "Load then store same location should be identity");
+        assert!(
+            check.is_ok(),
+            "Load then store same location should be identity"
+        );
     }
 
     #[test]
@@ -3159,18 +4681,28 @@ mod tests {
         // Vec2(Load(AC(ptr,0), m), Load(AC(ptr,1), m)) = Load(ptr, m)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let mem (InitMem))
             (let ptr (Var "vec2_ptr" 0))
             (let comp0 (Load (AccessChain1 ptr 0) mem))
             (let comp1 (Load (AccessChain1 ptr 1) mem))
             (let reconstructed (Vec2 comp0 comp1))
             (let whole_load (Load ptr mem))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= reconstructed whole_load))");
-        assert!(check.is_ok(), "Vec2 from field loads should equal whole vector load");
+        assert!(
+            check.is_ok(),
+            "Vec2 from field loads should equal whole vector load"
+        );
     }
 
     #[test]
@@ -3178,7 +4710,10 @@ mod tests {
         // Vec4(Load(AC(ptr,0), m), ..., Load(AC(ptr,3), m)) = Load(ptr, m)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let mem (InitMem))
             (let ptr (Var "vec4_ptr" 0))
             (let comp0 (Load (AccessChain1 ptr 0) mem))
@@ -3187,11 +4722,18 @@ mod tests {
             (let comp3 (Load (AccessChain1 ptr 3) mem))
             (let reconstructed (Vec4 comp0 comp1 comp2 comp3))
             (let whole_load (Load ptr mem))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= reconstructed whole_load))");
-        assert!(check.is_ok(), "Vec4 from field loads should equal whole vector load");
+        assert!(
+            check.is_ok(),
+            "Vec4 from field loads should equal whole vector load"
+        );
     }
 
     #[test]
@@ -3199,7 +4741,10 @@ mod tests {
         // MergeMem where both branches store same value to same field
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let mem (InitMem))
             (let ptr (Var "struct_ptr" 0))
             (let field0 (AccessChain1 ptr 0))
@@ -3209,11 +4754,18 @@ mod tests {
             (let else_mem (StoreMem field0 val mem))
             (let merged (MergeMem cond then_mem else_mem))
             (let unconditional (StoreMem field0 val mem))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= merged unconditional))");
-        assert!(check.is_ok(), "Same store in both branches should become unconditional");
+        assert!(
+            check.is_ok(),
+            "Same store in both branches should become unconditional"
+        );
     }
 
     #[test]
@@ -3224,7 +4776,10 @@ mod tests {
         // the basic equivalence
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let mem (InitMem))
             (let ptr (Var "struct_ptr" 0))
             (let a (Const 10))
@@ -3232,11 +4787,18 @@ mod tests {
             (let whole_store (StoreMem ptr (Vec2 a b) mem))
             (let field_stores (StoreMem (AccessChain1 ptr 1) b
                               (StoreMem (AccessChain1 ptr 0) a mem)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= whole_store field_stores))");
-        assert!(check.is_ok(), "Vec2 store should decompose into field stores");
+        assert!(
+            check.is_ok(),
+            "Vec2 store should decompose into field stores"
+        );
     }
 
     #[test]
@@ -3245,7 +4807,10 @@ mod tests {
         // Should optimize to just the modified field being different
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let mem (InitMem))
             (let ptr (Var "struct_ptr" 0))
             (let a (Const 10))
@@ -3263,12 +4828,19 @@ mod tests {
 
             ; Load field 1 - should be 'new_b'
             (let loaded1 (Load (AccessChain1 ptr 1) m2))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 20 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 20 (run)))")
+            .unwrap();
 
         // Field 0 should still be 'a' (Const 10)
         let check0 = egraph.parse_and_run_program(None, "(check (= loaded0 a))");
-        assert!(check0.is_ok(), "Field 0 should be original value after modifying field 1");
+        assert!(
+            check0.is_ok(),
+            "Field 0 should be original value after modifying field 1"
+        );
 
         // Field 1 should be 'new_b' (Const 30)
         let check1 = egraph.parse_and_run_program(None, "(check (= loaded1 new_b))");
@@ -3280,7 +4852,10 @@ mod tests {
         // Store to deeply nested field followed by another store to same location
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let mem (InitMem))
             (let ptr (Var "deep_struct_ptr" 0))
             (let field (AccessChain3 ptr 0 1 2))
@@ -3288,11 +4863,18 @@ mod tests {
             (let v2 (Const 200))
             (let double_store (StoreMem field v2 (StoreMem field v1 mem)))
             (let single_store (StoreMem field v2 mem))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= double_store single_store))");
-        assert!(check.is_ok(), "Double store to deeply nested field should eliminate first store");
+        assert!(
+            check.is_ok(),
+            "Double store to deeply nested field should eliminate first store"
+        );
     }
 
     #[test]
@@ -3300,7 +4882,10 @@ mod tests {
         // Store(ptr, VecInsert(Load(ptr, m), val, idx), m) = Store(AC(ptr, idx), val, m)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let mem (InitMem))
             (let ptr (Var "vec_ptr" 0))
             (let val (Const 99))
@@ -3308,11 +4893,18 @@ mod tests {
             (let modified (VecInsert loaded val 2))
             (let rmw (StoreMem ptr modified mem))
             (let direct (StoreMem (AccessChain1 ptr 2) val mem))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 15 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 15 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= rmw direct))");
-        assert!(check.is_ok(), "VecInsert read-modify-write should become direct field store");
+        assert!(
+            check.is_ok(),
+            "VecInsert read-modify-write should become direct field store"
+        );
     }
 
     // =========================================================================
@@ -3325,18 +4917,28 @@ mod tests {
         // StoreMem(ptr, v2, StoreMem(ptr, v1, prev)) = StoreMem(ptr, v2, prev)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let mem (InitMem))
             (let ptr (Var "x" 0))
             (let v1 (Const 10))
             (let v2 (Const 20))
             (let double_store (StoreMem ptr v2 (StoreMem ptr v1 mem)))
             (let single_store (StoreMem ptr v2 mem))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= double_store single_store))");
-        assert!(check.is_ok(), "Double store should eliminate the first dead store");
+        assert!(
+            check.is_ok(),
+            "Double store should eliminate the first dead store"
+        );
     }
 
     #[test]
@@ -3344,12 +4946,19 @@ mod tests {
         // Store of Undef is dead - StoreMem(ptr, Undef, prev) = prev
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let mem (InitMem))
             (let ptr (Var "x" 0))
             (let store_undef (StoreMem ptr (Undef) mem))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= store_undef mem))");
         assert!(check.is_ok(), "Store of Undef should be eliminated");
@@ -3360,15 +4969,25 @@ mod tests {
         // Gamma(1, t, f) = t - false branch is dead
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let t (Const 42))
             (let f (Const 99))
             (let result (Gamma (Const 1) t f))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= result t))");
-        assert!(check.is_ok(), "Gamma with true condition should return true branch");
+        assert!(
+            check.is_ok(),
+            "Gamma with true condition should return true branch"
+        );
     }
 
     #[test]
@@ -3376,15 +4995,25 @@ mod tests {
         // Gamma(0, t, f) = f - true branch is dead
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let t (Const 42))
             (let f (Const 99))
             (let result (Gamma (Const 0) t f))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= result f))");
-        assert!(check.is_ok(), "Gamma with false condition should return false branch");
+        assert!(
+            check.is_ok(),
+            "Gamma with false condition should return false branch"
+        );
     }
 
     #[test]
@@ -3392,15 +5021,25 @@ mod tests {
         // Gamma(c, x, x) = x - condition doesn't matter, branch computation is dead
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let cond (Sym "unknown"))
             (let val (Const 42))
             (let result (Gamma cond val val))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= result val))");
-        assert!(check.is_ok(), "Gamma with same branches should simplify to that value");
+        assert!(
+            check.is_ok(),
+            "Gamma with same branches should simplify to that value"
+        );
     }
 
     #[test]
@@ -3408,15 +5047,25 @@ mod tests {
         // Theta(0, body, init) = init - loop never executes, body is dead
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let init (Const 42))
             (let body (Add (LoopVar) (Const 1)))
             (let result (Theta (Const 0) body init))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= result init))");
-        assert!(check.is_ok(), "Theta with false condition should return init");
+        assert!(
+            check.is_ok(),
+            "Theta with false condition should return init"
+        );
     }
 
     #[test]
@@ -3424,12 +5073,19 @@ mod tests {
         // Theta(cond, LoopVar, init) = init - body doesn't change value
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let cond (Sym "continue"))
             (let init (Const 42))
             (let result (Theta cond (LoopVar) init))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= result init))");
         assert!(check.is_ok(), "Theta with identity body should return init");
@@ -3440,15 +5096,25 @@ mod tests {
         // BoundedTheta(0, body, init) = init - body is dead
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let init (Const 42))
             (let body (Add (LoopVar) (Const 1)))
             (let result (BoundedTheta 0 body init))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= result init))");
-        assert!(check.is_ok(), "BoundedTheta with 0 iterations should return init");
+        assert!(
+            check.is_ok(),
+            "BoundedTheta with 0 iterations should return init"
+        );
     }
 
     #[test]
@@ -3456,11 +5122,18 @@ mod tests {
         // Load(ptr, Undef) = Undef - loading from undefined memory is undefined
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let ptr (Var "x" 0))
             (let result (Load ptr (Undef)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= result (Undef)))");
         assert!(check.is_ok(), "Load from Undef memory should be Undef");
@@ -3471,11 +5144,18 @@ mod tests {
         // Load(Undef, mem) = Undef - loading from undefined pointer is undefined
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let mem (InitMem))
             (let result (Load (Undef) mem))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= result (Undef)))");
         assert!(check.is_ok(), "Load from Undef pointer should be Undef");
@@ -3487,7 +5167,10 @@ mod tests {
         // The field store is dead because whole struct overwrites it
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let mem (InitMem))
             (let ptr (Var "struct" 0))
             (let field_val (Const 10))
@@ -3495,11 +5178,18 @@ mod tests {
             (let with_field (StoreMem (AccessChain1 ptr 0) field_val mem))
             (let then_whole (StoreMem ptr whole_val with_field))
             (let just_whole (StoreMem ptr whole_val mem))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= then_whole just_whole))");
-        assert!(check.is_ok(), "Whole struct store should eliminate preceding field store");
+        assert!(
+            check.is_ok(),
+            "Whole struct store should eliminate preceding field store"
+        );
     }
 
     #[test]
@@ -3507,7 +5197,10 @@ mod tests {
         // ImageWrite followed by ImageWrite to same location - first is dead
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let mem (InitMem))
             (let img (Sym "image"))
             (let coord (Vec2 (Const 0) (Const 0)))
@@ -3515,11 +5208,18 @@ mod tests {
             (let data2 (Vec4 (Const 0) (Const 1) (Const 0) (Const 1)))
             (let double_write (ImageWrite img coord data2 (ImageWrite img coord data1 mem)))
             (let single_write (ImageWrite img coord data2 mem))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= double_write single_write))");
-        assert!(check.is_ok(), "Double ImageWrite should eliminate first dead write");
+        assert!(
+            check.is_ok(),
+            "Double ImageWrite should eliminate first dead write"
+        );
     }
 
     #[test]
@@ -3527,18 +5227,28 @@ mod tests {
         // AtomicStore followed by AtomicStore to same location - first is dead
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let mem (InitMem))
             (let ptr (Var "atomic_var" 0))
             (let v1 (Const 10))
             (let v2 (Const 20))
             (let double_atomic (AtomicStore ptr v2 (AtomicStore ptr v1 mem)))
             (let single_atomic (AtomicStore ptr v2 mem))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= double_atomic single_atomic))");
-        assert!(check.is_ok(), "Double AtomicStore should eliminate first dead store");
+        assert!(
+            check.is_ok(),
+            "Double AtomicStore should eliminate first dead store"
+        );
     }
 
     #[test]
@@ -3546,10 +5256,17 @@ mod tests {
         // GroupAll(true) = true - all invocations have true
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let result (GroupAll (Const 1)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= result (Const 1)))");
         assert!(check.is_ok(), "GroupAll(true) should be true");
@@ -3560,10 +5277,17 @@ mod tests {
         // GroupAll(false) = false - some invocation has false
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let result (GroupAll (Const 0)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= result (Const 0)))");
         assert!(check.is_ok(), "GroupAll(false) should be false");
@@ -3574,10 +5298,17 @@ mod tests {
         // GroupAny(true) = true - some invocation has true
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let result (GroupAny (Const 1)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= result (Const 1)))");
         assert!(check.is_ok(), "GroupAny(true) should be true");
@@ -3588,10 +5319,17 @@ mod tests {
         // GroupAny(false) = false - all invocations have false
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let result (GroupAny (Const 0)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= result (Const 0)))");
         assert!(check.is_ok(), "GroupAny(false) should be false");
@@ -3602,10 +5340,17 @@ mod tests {
         // GroupAllEqual(const) = true - all invocations have same constant
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let result (GroupAllEqual (Const 42)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= result (Const 1)))");
         assert!(check.is_ok(), "GroupAllEqual(const) should be true");
@@ -3617,7 +5362,10 @@ mod tests {
         // The stores can be hoisted out
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let mem (InitMem))
             (let cond (Sym "cond"))
             (let ptr (Var "x" 0))
@@ -3626,12 +5374,19 @@ mod tests {
             (let else_store (StoreMem ptr val mem))
             (let merged (MergeMem cond then_store else_store))
             (let unconditional (StoreMem ptr val mem))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         // Both branches store same value, so merged = unconditional store
         let check = egraph.parse_and_run_program(None, "(check (= merged unconditional))");
-        assert!(check.is_ok(), "MergeMem with identical stores should simplify");
+        assert!(
+            check.is_ok(),
+            "MergeMem with identical stores should simplify"
+        );
     }
 
     #[test]
@@ -3639,7 +5394,10 @@ mod tests {
         // End-to-end test: complex expression with dead branches
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let mem (InitMem))
             (let ptr (Var "x" 0))
 
@@ -3654,11 +5412,18 @@ mod tests {
 
             ; Should simplify to just storing v3
             (let simple (StoreMem ptr v3 mem))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 15 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 15 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= m3 simple))");
-        assert!(check.is_ok(), "Chain of stores to same location should simplify to final store");
+        assert!(
+            check.is_ok(),
+            "Chain of stores to same location should simplify to final store"
+        );
     }
 
     #[test]
@@ -3667,18 +5432,28 @@ mod tests {
         // Inner false branch is dead when outer condition is same
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let cond (Sym "c"))
             (let a (Const 1))
             (let b (Const 2))
             (let d (Const 4))
             (let nested (Gamma cond (Gamma cond a b) d))
             (let simplified (Gamma cond a d))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= nested simplified))");
-        assert!(check.is_ok(), "Nested Gamma with same condition should simplify");
+        assert!(
+            check.is_ok(),
+            "Nested Gamma with same condition should simplify"
+        );
     }
 
     #[test]
@@ -3686,10 +5461,17 @@ mod tests {
         // VecExtract(Undef, i) = Undef
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let result (VecExtract (Undef) 0))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= result (Undef)))");
         assert!(check.is_ok(), "VecExtract from Undef should be Undef");
@@ -3700,10 +5482,17 @@ mod tests {
         // DPdx(Const) = 0 - derivative of constant is zero
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let result (DPdx (Const 42)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= result (Const 0)))");
         assert!(check.is_ok(), "DPdx of constant should be 0");
@@ -3714,10 +5503,17 @@ mod tests {
         // Fwidth(Const) = 0 - width of constant is zero
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let result (Fwidth (Const 42)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= result (Const 0)))");
         assert!(check.is_ok(), "Fwidth of constant should be 0");
@@ -3729,13 +5525,20 @@ mod tests {
         // Note: Operations like 0*Undef=0 have special handling in datatypes.egg
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let add_undef (Add (Undef) (Undef)))
             (let sub_undef (Sub (Undef) (Undef)))
             (let neg_undef (Neg (Undef)))
-        "#).unwrap();
+        "#,
+            )
+            .unwrap();
         // Reduced iterations: Undef rules stabilize quickly, no need for many iterations
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 3 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 3 (run)))")
+            .unwrap();
 
         let check1 = egraph.parse_and_run_program(None, "(check (= add_undef (Undef)))");
         assert!(check1.is_ok(), "Add(Undef, Undef) should be Undef");
@@ -3753,14 +5556,21 @@ mod tests {
         // Note: FMul(0, Undef) = 0 is a special case in datatypes.egg
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let fadd_undef (FAdd (Undef) (Undef)))
             (let fmul_undef (FMul (Undef) (Undef)))
             (let fneg_undef (FNeg (Undef)))
             (let fabs_undef (FAbs (Undef)))
-        "#).unwrap();
+        "#,
+            )
+            .unwrap();
         // Reduced iterations: Undef rules stabilize quickly, no need for many iterations
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 3 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 3 (run)))")
+            .unwrap();
 
         let check1 = egraph.parse_and_run_program(None, "(check (= fadd_undef (Undef)))");
         assert!(check1.is_ok(), "FAdd(Undef, Undef) should be Undef");
@@ -3780,11 +5590,18 @@ mod tests {
         // Comparisons with both Undef produce Undef
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let eq_undef (Eq (Undef) (Undef)))
             (let ne_undef (Ne (Undef) (Undef)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check1 = egraph.parse_and_run_program(None, "(check (= eq_undef (Undef)))");
         assert!(check1.is_ok(), "Eq(Undef, Undef) should be Undef");
@@ -3798,12 +5615,19 @@ mod tests {
         // Gamma with Undef condition produces Undef
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let t (Const 1))
             (let f (Const 0))
             (let result (Gamma (Undef) t f))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= result (Undef)))");
         assert!(check.is_ok(), "Gamma with Undef condition should be Undef");
@@ -3814,12 +5638,19 @@ mod tests {
         // Store to Undef pointer is eliminated
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let mem (InitMem))
             (let val (Const 42))
             (let store_undef_ptr (StoreMem (Undef) val mem))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= store_undef_ptr mem))");
         assert!(check.is_ok(), "Store to Undef pointer should be eliminated");
@@ -3830,7 +5661,10 @@ mod tests {
         // Three stores to same location = single store of last value
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let mem (InitMem))
             (let ptr (Var "x" 0))
             (let v1 (Const 1))
@@ -3838,11 +5672,18 @@ mod tests {
             (let v3 (Const 3))
             (let triple_store (StoreMem ptr v3 (StoreMem ptr v2 (StoreMem ptr v1 mem))))
             (let single_store (StoreMem ptr v3 mem))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= triple_store single_store))");
-        assert!(check.is_ok(), "Triple store should simplify to single store");
+        assert!(
+            check.is_ok(),
+            "Triple store should simplify to single store"
+        );
     }
 
     #[test]
@@ -3860,10 +5701,15 @@ mod tests {
             (let quad_store (StoreMem ptr v4 (StoreMem ptr v3 (StoreMem ptr v2 (StoreMem ptr v1 mem)))))
             (let single_store (StoreMem ptr v4 mem))
         "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 15 (run)))").unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 15 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= quad_store single_store))");
-        assert!(check.is_ok(), "Quadruple store should simplify to single store");
+        assert!(
+            check.is_ok(),
+            "Quadruple store should simplify to single store"
+        );
     }
 
     #[test]
@@ -3871,18 +5717,28 @@ mod tests {
         // EffGamma(c, EffGamma(c, a, b), d) = EffGamma(c, a, d)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let cond (Sym "c"))
             (let a (Pure))
             (let b (Unreachable))
             (let d (Pure))
             (let nested (EffGamma cond (EffGamma cond a b) d))
             (let simplified (EffGamma cond a d))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= nested simplified))");
-        assert!(check.is_ok(), "Nested EffGamma with same condition should simplify");
+        assert!(
+            check.is_ok(),
+            "Nested EffGamma with same condition should simplify"
+        );
     }
 
     #[test]
@@ -3890,12 +5746,19 @@ mod tests {
         // Derivatives of Undef are zero (Undef is a constant, just unknown which)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let dpdx_undef (DPdx (Undef)))
             (let dpdy_undef (DPdy (Undef)))
             (let fwidth_undef (Fwidth (Undef)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check1 = egraph.parse_and_run_program(None, "(check (= dpdx_undef (Const 0)))");
         assert!(check1.is_ok(), "DPdx of Undef should be 0");
@@ -3912,12 +5775,19 @@ mod tests {
         // Subgroup operations on Undef produce Undef
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let group_all_undef (GroupAll (Undef)))
             (let group_any_undef (GroupAny (Undef)))
             (let broadcast_undef (GroupBroadcastFirst (Undef)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check1 = egraph.parse_and_run_program(None, "(check (= group_all_undef (Undef)))");
         assert!(check1.is_ok(), "GroupAll of Undef should be Undef");
@@ -3926,7 +5796,10 @@ mod tests {
         assert!(check2.is_ok(), "GroupAny of Undef should be Undef");
 
         let check3 = egraph.parse_and_run_program(None, "(check (= broadcast_undef (Undef)))");
-        assert!(check3.is_ok(), "GroupBroadcastFirst of Undef should be Undef");
+        assert!(
+            check3.is_ok(),
+            "GroupBroadcastFirst of Undef should be Undef"
+        );
     }
 
     #[test]
@@ -3934,12 +5807,19 @@ mod tests {
         // Type conversions of Undef produce Undef
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let ftos (ConvertFToS (Undef)))
             (let stof (ConvertSToF (Undef)))
             (let bitcast (Bitcast (Undef)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check1 = egraph.parse_and_run_program(None, "(check (= ftos (Undef)))");
         assert!(check1.is_ok(), "ConvertFToS of Undef should be Undef");
@@ -3956,12 +5836,19 @@ mod tests {
         // Vec constructed entirely from Undef = Undef
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let vec2_undef (Vec2 (Undef) (Undef)))
             (let vec3_undef (Vec3 (Undef) (Undef) (Undef)))
             (let vec4_undef (Vec4 (Undef) (Undef) (Undef) (Undef)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check1 = egraph.parse_and_run_program(None, "(check (= vec2_undef (Undef)))");
         assert!(check1.is_ok(), "Vec2 of all Undef should be Undef");
@@ -3979,17 +5866,27 @@ mod tests {
         // Loading, storing same value back, then loading again = original load
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let mem (InitMem))
             (let ptr (Var "x" 0))
             (let first_load (Load ptr mem))
             (let store_back (StoreMem ptr first_load mem))
             (let second_load (Load ptr store_back))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 15 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 15 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= second_load first_load))");
-        assert!(check.is_ok(), "Load after store of same load should equal original load");
+        assert!(
+            check.is_ok(),
+            "Load after store of same load should equal original load"
+        );
     }
 
     // =============================================================================
@@ -4001,11 +5898,18 @@ mod tests {
         // Subst(Arg(n), n, val) = val (base case - argument matches)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let val (Const 42))
             (let root (Subst (Arg 0) 0 val))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root val))");
         assert!(check.is_ok(), "Subst(Arg(0), 0, val) should equal val");
@@ -4016,12 +5920,19 @@ mod tests {
         // Subst(Arg(m), n, val) where m != n - argument does not match
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let val (Const 42))
             (let arg1 (Arg 1))
             (let root (Subst arg1 0 val))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         // Should remain as Arg(1) since indices don't match
         let check = egraph.parse_and_run_program(None, "(check (= root arg1))");
@@ -4033,15 +5944,25 @@ mod tests {
         // Subst(Const(c), n, val) = Const(c) - constants are unaffected
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let c (Const 100))
             (let val (Const 42))
             (let root (Subst c 0 val))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root c))");
-        assert!(check.is_ok(), "Subst(Const(100), 0, val) should equal Const(100)");
+        assert!(
+            check.is_ok(),
+            "Subst(Const(100), 0, val) should equal Const(100)"
+        );
     }
 
     #[test]
@@ -4049,12 +5970,19 @@ mod tests {
         // Subst(Sym(s), n, val) = Sym(s) - symbols are unaffected
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let s (Sym "x"))
             (let val (Const 42))
             (let root (Subst s 0 val))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root s))");
         assert!(check.is_ok(), "Subst(Sym(x), 0, val) should equal Sym(x)");
@@ -4065,12 +5993,19 @@ mod tests {
         // Subst(Undef, n, val) = Undef - undef is unaffected
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let u (Undef))
             (let val (Const 42))
             (let root (Subst u 0 val))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root u))");
         assert!(check.is_ok(), "Subst(Undef, 0, val) should equal Undef");
@@ -4081,16 +6016,26 @@ mod tests {
         // Subst(Add(Arg(0), Const(1)), 0, Const(5)) = Add(Const(5), Const(1))
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let body (Add (Arg 0) (Const 1)))
             (let val (Const 5))
             (let root (Subst body 0 val))
             (let expected (Add (Const 5) (Const 1)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-        assert!(check.is_ok(), "Subst(Add(Arg(0), Const(1)), 0, Const(5)) should equal Add(Const(5), Const(1))");
+        assert!(
+            check.is_ok(),
+            "Subst(Add(Arg(0), Const(1)), 0, Const(5)) should equal Add(Const(5), Const(1))"
+        );
     }
 
     #[test]
@@ -4099,16 +6044,26 @@ mod tests {
         // Subst(Add(Arg(0), Const(1)), 0, Const(5)) → Add(Const(5), Const(1)) → Const(6)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let body (Add (Arg 0) (Const 1)))
             (let val (Const 5))
             (let root (Subst body 0 val))
             (let expected (Const 6))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 15 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 15 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-        assert!(check.is_ok(), "Subst should fold to Const(6) after constant folding");
+        assert!(
+            check.is_ok(),
+            "Subst should fold to Const(6) after constant folding"
+        );
     }
 
     #[test]
@@ -4116,16 +6071,26 @@ mod tests {
         // Subst(Mul(Arg(0), Arg(0)), 0, Const(3)) = Mul(Const(3), Const(3)) = Const(9)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let body (Mul (Arg 0) (Arg 0)))
             (let val (Const 3))
             (let root (Subst body 0 val))
             (let expected (Const 9))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 15 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 15 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-        assert!(check.is_ok(), "Subst(Mul(Arg(0), Arg(0)), 0, Const(3)) should fold to Const(9)");
+        assert!(
+            check.is_ok(),
+            "Subst(Mul(Arg(0), Arg(0)), 0, Const(3)) should fold to Const(9)"
+        );
     }
 
     #[test]
@@ -4136,13 +6101,20 @@ mod tests {
         // = Const(9)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let body (Add (Mul (Arg 0) (Const 2)) (Arg 0)))
             (let val (Const 3))
             (let root (Subst body 0 val))
             (let expected (Const 9))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 20 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 20 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
         assert!(check.is_ok(), "Nested substitution should fold to Const(9)");
@@ -4153,14 +6125,21 @@ mod tests {
         // Subst(Gamma(c, Arg(0), Const(0)), 0, val) = Gamma(Subst(c), val, Const(0))
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let cond (Sym "cond"))
             (let body (Gamma cond (Arg 0) (Const 0)))
             (let val (Const 42))
             (let root (Subst body 0 val))
             (let expected (Gamma cond (Const 42) (Const 0)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
         assert!(check.is_ok(), "Subst should propagate through Gamma");
@@ -4171,16 +6150,26 @@ mod tests {
         // Subst(BitAnd(Arg(0), Const(0xFF)), 0, Const(0x123)) = BitAnd(Const(0x123), Const(0xFF)) = Const(0x23)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let body (BitAnd (Arg 0) (Const 255)))
             (let val (Const 291))
             (let root (Subst body 0 val))
             (let expected (Const 35))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 15 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 15 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-        assert!(check.is_ok(), "Subst through BitAnd should fold correctly (291 & 255 = 35)");
+        assert!(
+            check.is_ok(),
+            "Subst through BitAnd should fold correctly (291 & 255 = 35)"
+        );
     }
 
     #[test]
@@ -4188,16 +6177,26 @@ mod tests {
         // Subst(SLt(Arg(0), Const(10)), 0, Const(5)) = SLt(Const(5), Const(10)) = Const(1) (true)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let body (SLt (Arg 0) (Const 10)))
             (let val (Const 5))
             (let root (Subst body 0 val))
             (let expected (Const 1))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 15 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 15 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-        assert!(check.is_ok(), "Subst through SLt should fold to true (5 < 10)");
+        assert!(
+            check.is_ok(),
+            "Subst through SLt should fold to true (5 < 10)"
+        );
     }
 
     #[test]
@@ -4206,15 +6205,25 @@ mod tests {
         // Subst2(Add(Arg(0), Arg(1)), Const(3), Const(4)) = Add(Const(3), Const(4)) = Const(7)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let body (Add (Arg 0) (Arg 1)))
             (let root (Subst2 body (Const 3) (Const 4)))
             (let expected (Const 7))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 20 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 20 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-        assert!(check.is_ok(), "Subst2(Add(Arg(0), Arg(1)), 3, 4) should fold to 7");
+        assert!(
+            check.is_ok(),
+            "Subst2(Add(Arg(0), Arg(1)), 3, 4) should fold to 7"
+        );
     }
 
     #[test]
@@ -4223,15 +6232,25 @@ mod tests {
         // = Add(Add(v0, v1), v2)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let body (Add (Add (Arg 0) (Arg 1)) (Arg 2)))
             (let root (Subst3 body (Const 1) (Const 2) (Const 3)))
             (let expected (Const 6))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 25 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 25 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-        assert!(check.is_ok(), "Subst3 with three constants should fold to 6");
+        assert!(
+            check.is_ok(),
+            "Subst3 with three constants should fold to 6"
+        );
     }
 
     #[test]
@@ -4239,15 +6258,25 @@ mod tests {
         // Subst4 with four arguments
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let body (Add (Add (Arg 0) (Arg 1)) (Add (Arg 2) (Arg 3))))
             (let root (Subst4 body (Const 1) (Const 2) (Const 3) (Const 4)))
             (let expected (Const 10))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 30 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 30 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-        assert!(check.is_ok(), "Subst4 with four constants should fold to 10");
+        assert!(
+            check.is_ok(),
+            "Subst4 with four constants should fold to 10"
+        );
     }
 
     #[test]
@@ -4256,16 +6285,26 @@ mod tests {
         // Subst(Add(Arg(0), Const(1)), 0, Sym("x")) = Add(Sym("x"), Const(1))
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let body (Add (Arg 0) (Const 1)))
             (let val (Sym "x"))
             (let root (Subst body 0 val))
             (let expected (Add (Sym "x") (Const 1)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-        assert!(check.is_ok(), "Subst with symbolic value should preserve structure");
+        assert!(
+            check.is_ok(),
+            "Subst with symbolic value should preserve structure"
+        );
     }
 
     #[test]
@@ -4273,13 +6312,20 @@ mod tests {
         // Substituting for Arg(0) should not affect Arg(1)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let body (Add (Arg 0) (Arg 1)))
             (let val (Const 5))
             (let root (Subst body 0 val))
             (let expected (Add (Const 5) (Arg 1)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
         assert!(check.is_ok(), "Subst for Arg(0) should not affect Arg(1)");
@@ -4290,13 +6336,20 @@ mod tests {
         // Subst(Neg(Arg(0)), 0, Const(5)) = Neg(Const(5)) = Const(-5)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let body (Neg (Arg 0)))
             (let val (Const 5))
             (let root (Subst body 0 val))
             (let expected (Const -5))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 15 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 15 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
         assert!(check.is_ok(), "Subst through Neg should fold to -5");
@@ -4307,13 +6360,20 @@ mod tests {
         // Subst(Sub(Arg(0), Const(3)), 0, Const(10)) = Sub(Const(10), Const(3)) = Const(7)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let body (Sub (Arg 0) (Const 3)))
             (let val (Const 10))
             (let root (Subst body 0 val))
             (let expected (Const 7))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 15 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 15 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
         assert!(check.is_ok(), "Subst through Sub should fold to 7");
@@ -4324,16 +6384,26 @@ mod tests {
         // Subst(Shl(Arg(0), Const(2)), 0, Const(3)) = Shl(Const(3), Const(2)) = Const(12)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let body (Shl (Arg 0) (Const 2)))
             (let val (Const 3))
             (let root (Subst body 0 val))
             (let expected (Const 12))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 15 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 15 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-        assert!(check.is_ok(), "Subst through Shl should fold to 12 (3 << 2)");
+        assert!(
+            check.is_ok(),
+            "Subst through Shl should fold to 12 (3 << 2)"
+        );
     }
 
     #[test]
@@ -4341,13 +6411,20 @@ mod tests {
         // Subst(SMin(Arg(0), Const(10)), 0, Const(5)) = SMin(Const(5), Const(10)) = Const(5)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let body (SMin (Arg 0) (Const 10)))
             (let val (Const 5))
             (let root (Subst body 0 val))
             (let expected (Const 5))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 15 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 15 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
         assert!(check.is_ok(), "Subst through SMin should fold to 5");
@@ -4360,13 +6437,20 @@ mod tests {
         // Subst with Const(5): ((5 + 1) * 2) - 5 = (6 * 2) - 5 = 12 - 5 = 7
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let body (Sub (Mul (Add (Arg 0) (Const 1)) (Const 2)) (Arg 0)))
             (let val (Const 5))
             (let root (Subst body 0 val))
             (let expected (Const 7))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 25 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 25 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
         assert!(check.is_ok(), "Deeply nested substitution should fold to 7");
@@ -4377,13 +6461,20 @@ mod tests {
         // Test that liveness propagates through Subst nodes
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let body (Add (Arg 0) (Const 1)))
             (let val (Sym "x"))
             (let root (Subst body 0 val))
             (Live root)
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         // Liveness should propagate to both body and val
         let check1 = egraph.parse_and_run_program(None, "(check (Live body))");
@@ -4398,15 +6489,25 @@ mod tests {
         // Subst(CopyObject(Arg(0)), 0, val) = CopyObject(val) = val
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let body (CopyObject (Arg 0)))
             (let val (Const 42))
             (let root (Subst body 0 val))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root val))");
-        assert!(check.is_ok(), "Subst through CopyObject should simplify to val");
+        assert!(
+            check.is_ok(),
+            "Subst through CopyObject should simplify to val"
+        );
     }
 
     #[test]
@@ -4414,13 +6515,20 @@ mod tests {
         // Subst(SAbs(Arg(0)), 0, Const(-5)) = SAbs(Const(-5)) = Const(5)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let body (SAbs (Arg 0)))
             (let val (Const -5))
             (let root (Subst body 0 val))
             (let expected (Const 5))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 15 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 15 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
         assert!(check.is_ok(), "Subst through SAbs should fold to 5");
@@ -4438,16 +6546,26 @@ mod tests {
         // Using VecInsert/VecExtract since they are constructors
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let v (Sym "vec"))
             (let val (Const 42))
             (let inserted (VecInsert v val 0))
             (let extracted (VecExtract inserted 0))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= extracted val))");
-        assert!(check.is_ok(), "Extracting at inserted index should return inserted value");
+        assert!(
+            check.is_ok(),
+            "Extracting at inserted index should return inserted value"
+        );
     }
 
     #[test]
@@ -4456,17 +6574,27 @@ mod tests {
         // The insert at index 0 doesn't affect extraction at index 1
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let v (Sym "vec"))
             (let val (Const 42))
             (let inserted (VecInsert v val 0))
             (let extracted (VecExtract inserted 1))
             (let expected (VecExtract v 1))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= extracted expected))");
-        assert!(check.is_ok(), "Extracting at non-inserted index should bypass the insert");
+        assert!(
+            check.is_ok(),
+            "Extracting at non-inserted index should bypass the insert"
+        );
     }
 
     #[test]
@@ -4475,7 +6603,10 @@ mod tests {
         // Neither insert affects index 2
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let v (Sym "vec"))
             (let v1 (Const 1))
             (let v2 (Const 2))
@@ -4483,11 +6614,18 @@ mod tests {
             (let ins2 (VecInsert ins1 v2 1))
             (let extracted (VecExtract ins2 2))
             (let expected (VecExtract v 2))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 15 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 15 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= extracted expected))");
-        assert!(check.is_ok(), "Extraction at index 2 should bypass both inserts at 0 and 1");
+        assert!(
+            check.is_ok(),
+            "Extraction at index 2 should bypass both inserts at 0 and 1"
+        );
     }
 
     #[test]
@@ -4496,15 +6634,25 @@ mod tests {
         // Inserting what was already there is identity
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let v (Sym "vec"))
             (let extracted (VecExtract v 0))
             (let reinserted (VecInsert v extracted 0))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= reinserted v))");
-        assert!(check.is_ok(), "Reinserting extracted value at same index should be identity");
+        assert!(
+            check.is_ok(),
+            "Reinserting extracted value at same index should be identity"
+        );
     }
 
     #[test]
@@ -4513,16 +6661,26 @@ mod tests {
         // Using VecExtract since CompositeExtract is a function
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let original (Sym "vec2"))
             (let e0 (VecExtract original 0))
             (let e1 (VecExtract original 1))
             (let reconstructed (Vec2 e0 e1))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= reconstructed original))");
-        assert!(check.is_ok(), "Reconstructing from extractions should equal original");
+        assert!(
+            check.is_ok(),
+            "Reconstructing from extractions should equal original"
+        );
     }
 
     #[test]
@@ -4530,13 +6688,20 @@ mod tests {
         // Vec2(VecExtract(v, 0), VecExtract(v, 1)) = v
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let original (Sym "vec2"))
             (let e0 (VecExtract original 0))
             (let e1 (VecExtract original 1))
             (let reconstructed (Vec2 e0 e1))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= reconstructed original))");
         assert!(check.is_ok(), "Vec2 from VecExtracts should equal original");
@@ -4547,17 +6712,27 @@ mod tests {
         // Load(ptr, StoreMem(ptr, val, prev)) = val
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let ptr (Sym "ptr"))
             (let val (Const 42))
             (let prev (Sym "initial_mem"))
             (let mem_after_store (StoreMem ptr val prev))
             (let loaded (Load ptr mem_after_store))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= loaded val))");
-        assert!(check.is_ok(), "Loading from just-stored location should return stored value");
+        assert!(
+            check.is_ok(),
+            "Loading from just-stored location should return stored value"
+        );
     }
 
     #[test]
@@ -4566,7 +6741,10 @@ mod tests {
         // First store is dead (overwritten)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let ptr (Sym "ptr"))
             (let v1 (Const 1))
             (let v2 (Const 2))
@@ -4574,11 +6752,18 @@ mod tests {
             (let mem1 (StoreMem ptr v1 prev))
             (let mem2 (StoreMem ptr v2 mem1))
             (let expected (StoreMem ptr v2 prev))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= mem2 expected))");
-        assert!(check.is_ok(), "Store-after-store should eliminate first store");
+        assert!(
+            check.is_ok(),
+            "Store-after-store should eliminate first store"
+        );
     }
 
     #[test]
@@ -4587,18 +6772,28 @@ mod tests {
         // This is the core of copy propagation for arrays
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let src (Sym "source"))
             (let dst (Sym "dest"))
             (let mem (Sym "mem"))
             (let src_val (Load src mem))
             (let mem_after_copy (StoreMem dst src_val mem))
             (let loaded_from_dst (Load dst mem_after_copy))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= loaded_from_dst src_val))");
-        assert!(check.is_ok(), "Loading from copy destination should equal source value");
+        assert!(
+            check.is_ok(),
+            "Loading from copy destination should equal source value"
+        );
     }
 
     #[test]
@@ -4607,13 +6802,20 @@ mod tests {
         // Note: We use VecExtract since CompositeExtract is a function
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let ptr (Sym "vec_ptr"))
             (let mem (Sym "mem"))
             (let loaded_vec (Load ptr mem))
             (let elem0 (VecExtract loaded_vec 0))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         // The VecExtract from Load should exist and be a valid expression
         let check = egraph.parse_and_run_program(None, "(check (= elem0 elem0))");
@@ -4630,7 +6832,10 @@ mod tests {
         // Note: Using VecExtract since CompositeExtract is a function
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let src (Sym "source_vec"))
             (let local (Sym "local_copy"))
             (let mem (Sym "mem"))
@@ -4640,12 +6845,19 @@ mod tests {
             (let mem_after_copy (StoreMem local vec_val mem))
             ; Load from local after copy - should equal the stored value
             (let loaded_from_local (Load local mem_after_copy))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 20 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 20 (run)))")
+            .unwrap();
 
         // Load(local, StoreMem(local, vec_val, mem)) should equal vec_val
         let check = egraph.parse_and_run_program(None, "(check (= loaded_from_local vec_val))");
-        assert!(check.is_ok(), "Loading from local after store should return stored value");
+        assert!(
+            check.is_ok(),
+            "Loading from local after store should return stored value"
+        );
     }
 
     #[test]
@@ -4653,17 +6865,27 @@ mod tests {
         // VecExtract(VecInsert(v, x, 0), 1) = VecExtract(v, 1)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let v (Sym "vec"))
             (let x (Const 99))
             (let inserted (VecInsert v x 0))
             (let extracted (VecExtract inserted 1))
             (let expected (VecExtract v 1))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= extracted expected))");
-        assert!(check.is_ok(), "VecExtract at non-inserted index should bypass VecInsert");
+        assert!(
+            check.is_ok(),
+            "VecExtract at non-inserted index should bypass VecInsert"
+        );
     }
 
     #[test]
@@ -4671,16 +6893,26 @@ mod tests {
         // VecExtract(VecInsert(v, x, 0), 0) = x
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let v (Sym "vec"))
             (let x (Const 99))
             (let inserted (VecInsert v x 0))
             (let extracted (VecExtract inserted 0))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= extracted x))");
-        assert!(check.is_ok(), "VecExtract at inserted index should return inserted value");
+        assert!(
+            check.is_ok(),
+            "VecExtract at inserted index should return inserted value"
+        );
     }
 
     #[test]
@@ -4688,16 +6920,26 @@ mod tests {
         // AccessChain1(AccessChain1(base, i1), i2) = AccessChain2(base, i1, i2)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let base (Sym "base"))
             (let ac1 (AccessChain1 base 0))
             (let ac2 (AccessChain1 ac1 1))
             (let expected (AccessChain2 base 0 1))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= ac2 expected))");
-        assert!(check.is_ok(), "Nested AccessChain1 should combine to AccessChain2");
+        assert!(
+            check.is_ok(),
+            "Nested AccessChain1 should combine to AccessChain2"
+        );
     }
 
     #[test]
@@ -4705,18 +6947,28 @@ mod tests {
         // Load(AccessChain1(ptr, idx), StoreMem(AccessChain1(ptr, idx), val, prev)) = val
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let ptr (Sym "struct_ptr"))
             (let val (Const 123))
             (let prev (Sym "mem"))
             (let field_ptr (AccessChain1 ptr 0))
             (let mem_after_store (StoreMem field_ptr val prev))
             (let loaded (Load field_ptr mem_after_store))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= loaded val))");
-        assert!(check.is_ok(), "Load through access chain after store should return stored value");
+        assert!(
+            check.is_ok(),
+            "Load through access chain after store should return stored value"
+        );
     }
 
     #[test]
@@ -4725,15 +6977,22 @@ mod tests {
         // Using VecInsert since CompositeInsert is a function
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let dummy (Undef))
             (let v0 (Const 10))
             (let v1 (Const 20))
             (let ins1 (VecInsert dummy v0 0))
             (let ins2 (VecInsert ins1 v1 1))
             (let expected (Vec2 v0 v1))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 15 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 15 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= ins2 expected))");
         assert!(check.is_ok(), "Insert chain should simplify to Vec2");
@@ -4744,12 +7003,19 @@ mod tests {
         // StoreMem(ptr, Undef, prev) = prev
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let ptr (Sym "ptr"))
             (let prev (Sym "mem"))
             (let stored (StoreMem ptr (Undef) prev))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= stored prev))");
         assert!(check.is_ok(), "Storing Undef should be eliminated");
@@ -4760,7 +7026,10 @@ mod tests {
         // StoreMem(ptr, Vec2(a, b), prev) = StoreMem(AC(ptr,1), b, StoreMem(AC(ptr,0), a, prev))
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let ptr (Sym "ptr"))
             (let a (Const 1))
             (let b (Const 2))
@@ -4768,11 +7037,18 @@ mod tests {
             (let vec_store (StoreMem ptr (Vec2 a b) prev))
             (let expected (StoreMem (AccessChain1 ptr 1) b
                           (StoreMem (AccessChain1 ptr 0) a prev)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 15 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 15 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= vec_store expected))");
-        assert!(check.is_ok(), "Vector store should decompose to field stores");
+        assert!(
+            check.is_ok(),
+            "Vector store should decompose to field stores"
+        );
     }
 
     // =========================================================================
@@ -4784,11 +7060,18 @@ mod tests {
         // Transpose(Transpose(M)) = M
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let m (Sym "matrix"))
             (let root (Transpose (Transpose m)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root m))");
         assert!(check.is_ok(), "Transpose(Transpose(M)) should equal M");
@@ -4799,11 +7082,18 @@ mod tests {
         // MatTimesScalar(M, 1) = M
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let m (Sym "matrix"))
             (let root (MatTimesScalar m (Const 1)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root m))");
         assert!(check.is_ok(), "M * 1 should equal M");
@@ -4814,11 +7104,18 @@ mod tests {
         // MatInverse(MatInverse(M)) = M
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let m (Sym "matrix"))
             (let root (MatInverse (MatInverse m)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root m))");
         assert!(check.is_ok(), "Inverse(Inverse(M)) should equal M");
@@ -4829,16 +7126,26 @@ mod tests {
         // Transpose(OuterProduct(a, b)) = OuterProduct(b, a)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let a (Sym "vec_a"))
             (let b (Sym "vec_b"))
             (let root (Transpose (OuterProduct a b)))
             (let expected (OuterProduct b a))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-        assert!(check.is_ok(), "Transpose(OuterProduct(a,b)) should equal OuterProduct(b,a)");
+        assert!(
+            check.is_ok(),
+            "Transpose(OuterProduct(a,b)) should equal OuterProduct(b,a)"
+        );
     }
 
     #[test]
@@ -4846,14 +7153,21 @@ mod tests {
         // (A * B) * C = A * (B * C)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let a (Sym "mat_a"))
             (let b (Sym "mat_b"))
             (let c (Sym "mat_c"))
             (let left_assoc (MatTimesMat (MatTimesMat a b) c))
             (let right_assoc (MatTimesMat a (MatTimesMat b c)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= left_assoc right_assoc))");
         assert!(check.is_ok(), "(A*B)*C should equal A*(B*C)");
@@ -4864,14 +7178,21 @@ mod tests {
         // (A * B) * v = A * (B * v)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let a (Sym "mat_a"))
             (let b (Sym "mat_b"))
             (let v (Sym "vec"))
             (let left (MatTimesVec (MatTimesMat a b) v))
             (let right (MatTimesVec a (MatTimesVec b v)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= left right))");
         assert!(check.is_ok(), "(A*B)*v should equal A*(B*v)");
@@ -4882,14 +7203,21 @@ mod tests {
         // v * (A * B) = (v * A) * B
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let a (Sym "mat_a"))
             (let b (Sym "mat_b"))
             (let v (Sym "vec"))
             (let left (VecTimesMat v (MatTimesMat a b)))
             (let right (VecTimesMat (VecTimesMat v a) b))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= left right))");
         assert!(check.is_ok(), "v*(A*B) should equal (v*A)*B");
@@ -4900,13 +7228,20 @@ mod tests {
         // (A*B)^T = B^T * A^T
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let a (Sym "mat_a"))
             (let b (Sym "mat_b"))
             (let left (Transpose (MatTimesMat a b)))
             (let right (MatTimesMat (Transpose b) (Transpose a)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= left right))");
         assert!(check.is_ok(), "(A*B)^T should equal B^T * A^T");
@@ -4917,12 +7252,19 @@ mod tests {
         // (M * a) * b = M * (a * b)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let m (Sym "matrix"))
             (let root (MatTimesScalar (MatTimesScalar m (Const 2)) (Const 3)))
             (let expected (MatTimesScalar m (Const 6)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
         assert!(check.is_ok(), "(M*2)*3 should equal M*6");
@@ -4933,12 +7275,19 @@ mod tests {
         // det(A^T) = det(A)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let m (Sym "matrix"))
             (let root (Determinant (Transpose m)))
             (let expected (Determinant m))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
         assert!(check.is_ok(), "det(A^T) should equal det(A)");
@@ -4949,13 +7298,20 @@ mod tests {
         // det(A*B) = det(A) * det(B)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let a (Sym "mat_a"))
             (let b (Sym "mat_b"))
             (let root (Determinant (MatTimesMat a b)))
             (let expected (FMul (Determinant a) (Determinant b)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
         assert!(check.is_ok(), "det(A*B) should equal det(A)*det(B)");
@@ -4966,12 +7322,19 @@ mod tests {
         // det(A^-1) = 1/det(A)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let m (Sym "matrix"))
             (let root (Determinant (MatInverse m)))
             (let expected (FDiv (Const 1) (Determinant m)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
         assert!(check.is_ok(), "det(A^-1) should equal 1/det(A)");
@@ -4982,13 +7345,20 @@ mod tests {
         // (A*B)^-1 = B^-1 * A^-1
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let a (Sym "mat_a"))
             (let b (Sym "mat_b"))
             (let root (MatInverse (MatTimesMat a b)))
             (let expected (MatTimesMat (MatInverse b) (MatInverse a)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
         assert!(check.is_ok(), "(A*B)^-1 should equal B^-1 * A^-1");
@@ -4999,12 +7369,19 @@ mod tests {
         // (A^T)^-1 = (A^-1)^T
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let m (Sym "matrix"))
             (let root (MatInverse (Transpose m)))
             (let expected (Transpose (MatInverse m)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
         assert!(check.is_ok(), "(A^T)^-1 should equal (A^-1)^T");
@@ -5015,13 +7392,20 @@ mod tests {
         // MatTimesVec(A^T, v) = VecTimesMat(v, A)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let m (Sym "matrix"))
             (let v (Sym "vec"))
             (let root (MatTimesVec (Transpose m) v))
             (let expected (VecTimesMat v m))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
         assert!(check.is_ok(), "M^T * v should equal v * M");
@@ -5032,16 +7416,26 @@ mod tests {
         // LoopInvariant matrices multiplied together are loop invariant
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let a (Sym "mat_a"))
             (let b (Sym "mat_b"))
             (let root (MatTimesMat (LoopInvariant a) (LoopInvariant b)))
             (let expected (LoopInvariant (MatTimesMat a b)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-        assert!(check.is_ok(), "LoopInvariant(A) * LoopInvariant(B) should be LoopInvariant(A*B)");
+        assert!(
+            check.is_ok(),
+            "LoopInvariant(A) * LoopInvariant(B) should be LoopInvariant(A*B)"
+        );
     }
 
     #[test]
@@ -5049,18 +7443,28 @@ mod tests {
         // Gamma(c, M*v1, M*v2) = M * Gamma(c, v1, v2)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let m (Sym "matrix"))
             (let v1 (Sym "vec1"))
             (let v2 (Sym "vec2"))
             (let c (Sym "cond"))
             (let root (Gamma c (MatTimesVec m v1) (MatTimesVec m v2)))
             (let expected (MatTimesVec m (Gamma c v1 v2)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-        assert!(check.is_ok(), "Gamma(c, M*v1, M*v2) should equal M*Gamma(c, v1, v2)");
+        assert!(
+            check.is_ok(),
+            "Gamma(c, M*v1, M*v2) should equal M*Gamma(c, v1, v2)"
+        );
     }
 
     #[test]
@@ -5068,18 +7472,28 @@ mod tests {
         // Gamma(c, M*s1, M*s2) = M * Gamma(c, s1, s2)
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let m (Sym "matrix"))
             (let s1 (Const 2))
             (let s2 (Const 3))
             (let c (Sym "cond"))
             (let root (Gamma c (MatTimesScalar m s1) (MatTimesScalar m s2)))
             (let expected (MatTimesScalar m (Gamma c s1 s2)))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 5 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-        assert!(check.is_ok(), "Gamma(c, M*s1, M*s2) should equal M*Gamma(c, s1, s2)");
+        assert!(
+            check.is_ok(),
+            "Gamma(c, M*s1, M*s2) should equal M*Gamma(c, s1, s2)"
+        );
     }
 
     #[test]
@@ -5087,18 +7501,24 @@ mod tests {
         // Test a complex chain: ((A*B)^T)^-1 = (B^-1 * A^-1)^T using rules
         let mut egraph = create_spirv_egraph().unwrap();
 
-        egraph.parse_and_run_program(None, r#"
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
             (let a (Sym "mat_a"))
             (let b (Sym "mat_b"))
             ; ((A*B)^T)^-1 via inverse of transpose rule: = (A*B)^-1)^T
             ; Then inverse of product: = (B^-1 * A^-1)^T
             (let left (MatInverse (Transpose (MatTimesMat a b))))
             (let right (Transpose (MatTimesMat (MatInverse b) (MatInverse a))))
-        "#).unwrap();
-        egraph.parse_and_run_program(None, "(run-schedule (repeat 10 (run)))").unwrap();
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= left right))");
         assert!(check.is_ok(), "((A*B)^T)^-1 should equal (B^-1 * A^-1)^T");
     }
-
 }

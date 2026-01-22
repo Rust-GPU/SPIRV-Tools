@@ -25,7 +25,12 @@ fn removes_dead_add_not_feeding_return() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     b.builder.begin_block(None).expect("begin block");
 
@@ -71,7 +76,12 @@ fn removes_dead_instruction_chain() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     b.builder.begin_block(None).expect("begin block");
 
@@ -101,7 +111,11 @@ fn removes_dead_instruction_chain() {
             .module
             .all_inst_iter()
             .any(|inst| inst.result_id == Some(dead_id));
-        assert!(!dead_exists, "dead instruction {} should be removed", dead_id);
+        assert!(
+            !dead_exists,
+            "dead instruction {} should be removed",
+            dead_id
+        );
     }
 
     // Dead constants (10, 20, 2, 5) should be removed
@@ -133,7 +147,12 @@ fn removes_dead_but_preserves_shared_operand() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     b.builder.begin_block(None).expect("begin block");
 
@@ -181,7 +200,12 @@ fn removes_dead_constant_only_used_by_dead_code() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     b.builder.begin_block(None).expect("begin block");
 
@@ -229,7 +253,12 @@ fn removes_dead_using_param_preserves_live_using_param() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let param = b.builder.function_parameter(b.int_ty).expect("param");
     b.builder.begin_block(None).expect("begin block");
@@ -283,7 +312,12 @@ fn preserves_all_live_instructions() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     b.builder.begin_block(None).expect("begin block");
 
@@ -355,7 +389,12 @@ fn removes_multiple_independent_dead_branches() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     b.builder.begin_block(None).expect("begin block");
 
@@ -391,7 +430,11 @@ fn removes_multiple_independent_dead_branches() {
             .module
             .all_inst_iter()
             .any(|inst| inst.result_id == Some(dead_id));
-        assert!(!dead_exists, "dead instruction {} should be removed", dead_id);
+        assert!(
+            !dead_exists,
+            "dead instruction {} should be removed",
+            dead_id
+        );
     }
 
     // Dead constants should be removed
@@ -420,7 +463,12 @@ fn removes_dead_tree_structure() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     b.builder.begin_block(None).expect("begin block");
 
@@ -433,7 +481,10 @@ fn removes_dead_tree_structure() {
     let dead2 = b.builder.i_add(b.int_ty, None, c30, c40).expect("dead2");
 
     // Convergence - dead because it only feeds dead3
-    let dead3 = b.builder.i_add(b.int_ty, None, dead1, dead2).expect("dead3");
+    let dead3 = b
+        .builder
+        .i_add(b.int_ty, None, dead1, dead2)
+        .expect("dead3");
 
     let c1 = b.const_i32(1);
     let c2 = b.const_i32(2);
@@ -451,7 +502,11 @@ fn removes_dead_tree_structure() {
             .module
             .all_inst_iter()
             .any(|inst| inst.result_id == Some(dead_id));
-        assert!(!dead_exists, "dead instruction {} should be removed", dead_id);
+        assert!(
+            !dead_exists,
+            "dead instruction {} should be removed",
+            dead_id
+        );
     }
 
     // Live result should be folded to 3
@@ -475,7 +530,12 @@ fn preserves_diamond_pattern_all_live() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     b.builder.begin_block(None).expect("begin block");
 
@@ -484,7 +544,10 @@ fn preserves_diamond_pattern_all_live() {
     let left = b.builder.i_add(b.int_ty, None, shared, c1).expect("left");
     let c2 = b.const_i32(2);
     let right = b.builder.i_add(b.int_ty, None, shared, c2).expect("right");
-    let result = b.builder.i_add(b.int_ty, None, left, right).expect("result");
+    let result = b
+        .builder
+        .i_add(b.int_ty, None, left, right)
+        .expect("result");
 
     b.builder.ret_value(result).expect("ret");
     b.builder.end_function().expect("end function");
@@ -508,7 +571,12 @@ fn removes_dead_branch_in_diamond() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     b.builder.begin_block(None).expect("begin block");
 
@@ -558,7 +626,12 @@ fn preserves_live_chain_with_param() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let param = b.builder.function_parameter(b.int_ty).expect("param");
     b.builder.begin_block(None).expect("begin block");
@@ -579,9 +652,8 @@ fn preserves_live_chain_with_param() {
     // With an unknown param, we can't fold everything, but we should preserve the chain
     // The optimizer might simplify: (x+1)*2 - 3 = 2x + 2 - 3 = 2x - 1
     // or keep the chain. Either way, some computation should remain.
-    let has_arith = result.has_opcode(Op::IAdd)
-        || result.has_opcode(Op::IMul)
-        || result.has_opcode(Op::ISub);
+    let has_arith =
+        result.has_opcode(Op::IAdd) || result.has_opcode(Op::IMul) || result.has_opcode(Op::ISub);
     assert!(
         has_arith,
         "some arithmetic should remain with unknown param"
@@ -600,14 +672,22 @@ fn removes_dead_param_use_keeps_live_param_use() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty, b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let param_x = b.builder.function_parameter(b.int_ty).expect("param x");
     let param_y = b.builder.function_parameter(b.int_ty).expect("param y");
     b.builder.begin_block(None).expect("begin block");
 
     let c100 = b.const_i32(100);
-    let dead = b.builder.i_add(b.int_ty, None, param_y, c100).expect("dead");
+    let dead = b
+        .builder
+        .i_add(b.int_ty, None, param_y, c100)
+        .expect("dead");
     let c2 = b.const_i32(2);
     let live = b.builder.i_mul(b.int_ty, None, param_x, c2).expect("live");
 
@@ -654,7 +734,12 @@ fn removes_dead_across_different_op_types() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     b.builder.begin_block(None).expect("begin block");
 
@@ -693,7 +778,11 @@ fn removes_dead_across_different_op_types() {
             .module
             .all_inst_iter()
             .any(|inst| inst.result_id == Some(dead_id));
-        assert!(!dead_exists, "dead instruction {} should be removed", dead_id);
+        assert!(
+            !dead_exists,
+            "dead instruction {} should be removed",
+            dead_id
+        );
     }
 
     // Live result should be 3
@@ -712,7 +801,12 @@ fn removes_dead_bitwise_chain() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     b.builder.begin_block(None).expect("begin block");
 
@@ -745,7 +839,11 @@ fn removes_dead_bitwise_chain() {
             .module
             .all_inst_iter()
             .any(|inst| inst.result_id == Some(dead_id));
-        assert!(!dead_exists, "dead instruction {} should be removed", dead_id);
+        assert!(
+            !dead_exists,
+            "dead instruction {} should be removed",
+            dead_id
+        );
     }
 
     // Live result should be 2
@@ -765,7 +863,12 @@ fn handles_single_live_instruction() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     b.builder.begin_block(None).expect("begin block");
 
@@ -792,7 +895,12 @@ fn handles_all_dead_except_return() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     b.builder.begin_block(None).expect("begin block");
 
@@ -819,7 +927,11 @@ fn handles_all_dead_except_return() {
             .module
             .all_inst_iter()
             .any(|inst| inst.result_id == Some(dead_id));
-        assert!(!dead_exists, "dead instruction {} should be removed", dead_id);
+        assert!(
+            !dead_exists,
+            "dead instruction {} should be removed",
+            dead_id
+        );
     }
 
     // Dead constants should be removed
@@ -832,7 +944,10 @@ fn handles_all_dead_except_return() {
     }
 
     // Only the return constant should remain
-    assert!(result.has_constant_u32(99), "return constant 99 should remain");
+    assert!(
+        result.has_constant_u32(99),
+        "return constant 99 should remain"
+    );
 }
 
 #[test]
@@ -851,7 +966,12 @@ fn handles_deeply_nested_dead_expression() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     b.builder.begin_block(None).expect("begin block");
 
@@ -882,7 +1002,11 @@ fn handles_deeply_nested_dead_expression() {
             .module
             .all_inst_iter()
             .any(|inst| inst.result_id == Some(dead_id));
-        assert!(!dead_exists, "dead instruction {} should be removed", dead_id);
+        assert!(
+            !dead_exists,
+            "dead instruction {} should be removed",
+            dead_id
+        );
     }
 
     // Return constant should remain
@@ -901,7 +1025,12 @@ fn handles_identity_operations_dead() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty, b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let param_x = b.builder.function_parameter(b.int_ty).expect("param x");
     let param_y = b.builder.function_parameter(b.int_ty).expect("param y");
@@ -934,7 +1063,11 @@ fn handles_identity_operations_dead() {
             .module
             .all_inst_iter()
             .any(|inst| inst.result_id == Some(dead_id));
-        assert!(!dead_exists, "dead instruction {} should be removed", dead_id);
+        assert!(
+            !dead_exists,
+            "dead instruction {} should be removed",
+            dead_id
+        );
     }
 
     // Live result should be 10
@@ -954,7 +1087,12 @@ fn preserves_both_uses_of_shared_value() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let param = b.builder.function_parameter(b.int_ty).expect("param");
     b.builder.begin_block(None).expect("begin block");
@@ -996,7 +1134,12 @@ fn does_not_remove_returned_constant() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     b.builder.begin_block(None).expect("begin block");
 
@@ -1022,7 +1165,12 @@ fn does_not_remove_computation_feeding_return() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     b.builder.begin_block(None).expect("begin block");
 
@@ -1053,7 +1201,12 @@ fn does_not_remove_param_based_computation() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let param = b.builder.function_parameter(b.int_ty).expect("param");
     b.builder.begin_block(None).expect("begin block");
@@ -1090,7 +1243,12 @@ fn does_not_remove_intermediate_in_live_chain() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let param = b.builder.function_parameter(b.int_ty).expect("param");
     b.builder.begin_block(None).expect("begin block");
@@ -1128,7 +1286,10 @@ fn void_function_all_dead_code_removed() {
     let c2 = b.const_i32(2);
     let dead_add = b.builder.i_add(b.int_ty, None, c1, c2).expect("dead_add");
     let c3 = b.const_i32(3);
-    let _dead_mul = b.builder.i_mul(b.int_ty, None, dead_add, c3).expect("dead_mul");
+    let _dead_mul = b
+        .builder
+        .i_mul(b.int_ty, None, dead_add, c3)
+        .expect("dead_mul");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -1156,7 +1317,10 @@ fn void_function_with_param_all_dead() {
     let c1 = b.const_i32(1);
     let dead_add = b.builder.i_add(b.int_ty, None, x, c1).expect("dead_add");
     let c2 = b.const_i32(2);
-    let _dead_mul = b.builder.i_mul(b.int_ty, None, dead_add, c2).expect("dead_mul");
+    let _dead_mul = b
+        .builder
+        .i_mul(b.int_ty, None, dead_add, c2)
+        .expect("dead_mul");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -1188,7 +1352,12 @@ fn dce_across_multiple_functions() {
     // First function: returns a value (live)
     let func1_ty = b.builder.type_function(b.int_ty, vec![]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func1_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func1_ty,
+        )
         .expect("begin f");
     b.builder.begin_block(None).expect("begin block");
     let c5 = b.const_i32(5);
@@ -1200,7 +1369,12 @@ fn dce_across_multiple_functions() {
     // Second function: void with dead code
     let func2_ty = b.builder.type_function(b.void_ty, vec![]);
     b.builder
-        .begin_function(b.void_ty, None, rspirv::spirv::FunctionControl::NONE, func2_ty)
+        .begin_function(
+            b.void_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func2_ty,
+        )
         .expect("begin g");
     b.builder.begin_block(None).expect("begin block");
     let c10 = b.const_i32(10);
@@ -1250,7 +1424,12 @@ fn dce_with_diamond_use_pattern() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let param = b.builder.function_parameter(b.int_ty).expect("param");
     b.builder.begin_block(None).expect("begin block");
@@ -1258,9 +1437,15 @@ fn dce_with_diamond_use_pattern() {
     let c1 = b.const_i32(1);
     let base = b.builder.i_add(b.int_ty, None, param, c1).expect("base");
     let c2 = b.const_i32(2);
-    let live_path = b.builder.i_mul(b.int_ty, None, base, c2).expect("live_path");
+    let live_path = b
+        .builder
+        .i_mul(b.int_ty, None, base, c2)
+        .expect("live_path");
     let c3 = b.const_i32(3);
-    let dead_path = b.builder.i_mul(b.int_ty, None, base, c3).expect("dead_path");
+    let dead_path = b
+        .builder
+        .i_mul(b.int_ty, None, base, c3)
+        .expect("dead_path");
 
     b.builder.ret_value(live_path).expect("ret");
     b.builder.end_function().expect("end function");
@@ -1296,15 +1481,26 @@ fn dce_constant_used_by_both_dead_and_live() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let param = b.builder.function_parameter(b.int_ty).expect("param");
     b.builder.begin_block(None).expect("begin block");
 
     let shared_const = b.const_i32(5);
     let c1 = b.const_i32(1);
-    let _dead_use = b.builder.i_add(b.int_ty, None, shared_const, c1).expect("dead_use");
-    let live_use = b.builder.i_mul(b.int_ty, None, param, shared_const).expect("live_use");
+    let _dead_use = b
+        .builder
+        .i_add(b.int_ty, None, shared_const, c1)
+        .expect("dead_use");
+    let live_use = b
+        .builder
+        .i_mul(b.int_ty, None, param, shared_const)
+        .expect("live_use");
 
     b.builder.ret_value(live_use).expect("ret");
     b.builder.end_function().expect("end function");
@@ -1326,10 +1522,7 @@ fn dce_constant_used_by_both_dead_and_live() {
                 _ => false,
             })
     });
-    assert!(
-        !has_6,
-        "dead computation 5+1=6 should not produce constant"
-    );
+    assert!(!has_6, "dead computation 5+1=6 should not produce constant");
 }
 
 #[test]
@@ -1346,7 +1539,12 @@ fn dce_long_dead_chain_completely_removed() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     b.builder.begin_block(None).expect("begin block");
 
@@ -1384,7 +1582,10 @@ fn dce_long_dead_chain_completely_removed() {
     );
 
     // Return value 42 must be preserved
-    assert!(result.has_constant_u32(42), "return value 42 must be preserved");
+    assert!(
+        result.has_constant_u32(42),
+        "return value 42 must be preserved"
+    );
 }
 
 #[test]
@@ -1400,7 +1601,12 @@ fn dce_preserves_all_ops_in_live_chain() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let param = b.builder.function_parameter(b.int_ty).expect("param");
     b.builder.begin_block(None).expect("begin block");
@@ -1423,9 +1629,8 @@ fn dce_preserves_all_ops_in_live_chain() {
     // Some arithmetic must remain (can't fully fold with unknown param)
     // The expression is: ((param + 1) * 2 - 3) + 4 = 2*param + 2 - 3 + 4 = 2*param + 3
     // Either way, some ops should remain
-    let has_arith = result.has_opcode(Op::IAdd)
-        || result.has_opcode(Op::IMul)
-        || result.has_opcode(Op::ISub);
+    let has_arith =
+        result.has_opcode(Op::IAdd) || result.has_opcode(Op::IMul) || result.has_opcode(Op::ISub);
     assert!(has_arith, "live chain arithmetic should be preserved");
 }
 
@@ -1442,17 +1647,30 @@ fn dce_dead_bitwise_operations() {
     let _guard = OptimizerEnvGuard::new();
 
     let mut b = TestModuleBuilder::new();
-    let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty, b.int_ty, b.int_ty]);
+    let func_ty = b
+        .builder
+        .type_function(b.int_ty, vec![b.int_ty, b.int_ty, b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     let y = b.builder.function_parameter(b.int_ty).expect("y");
     let z = b.builder.function_parameter(b.int_ty).expect("z");
     b.builder.begin_block(None).expect("begin block");
 
-    let dead_and = b.builder.bitwise_and(b.int_ty, None, x, y).expect("dead_and");
-    let _dead_or = b.builder.bitwise_or(b.int_ty, None, dead_and, z).expect("dead_or");
+    let dead_and = b
+        .builder
+        .bitwise_and(b.int_ty, None, x, y)
+        .expect("dead_and");
+    let _dead_or = b
+        .builder
+        .bitwise_or(b.int_ty, None, dead_and, z)
+        .expect("dead_or");
 
     let c0 = b.const_i32(0);
     b.builder.ret_value(c0).expect("ret");
@@ -1480,9 +1698,16 @@ fn dce_preserves_live_bitwise_operations() {
     let _guard = OptimizerEnvGuard::new();
 
     let mut b = TestModuleBuilder::new();
-    let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty, b.int_ty, b.int_ty]);
+    let func_ty = b
+        .builder
+        .type_function(b.int_ty, vec![b.int_ty, b.int_ty, b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     let y = b.builder.function_parameter(b.int_ty).expect("y");
@@ -1490,7 +1715,10 @@ fn dce_preserves_live_bitwise_operations() {
     b.builder.begin_block(None).expect("begin block");
 
     let and_result = b.builder.bitwise_and(b.int_ty, None, x, y).expect("and");
-    let result = b.builder.bitwise_or(b.int_ty, None, and_result, z).expect("or");
+    let result = b
+        .builder
+        .bitwise_or(b.int_ty, None, and_result, z)
+        .expect("or");
 
     b.builder.ret_value(result).expect("ret");
     b.builder.end_function().expect("end function");
@@ -1524,15 +1752,26 @@ fn dce_dead_shift_operations() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     b.builder.begin_block(None).expect("begin block");
 
     let c2 = b.const_i32(2);
-    let dead_shl = b.builder.shift_left_logical(b.int_ty, None, x, c2).expect("dead_shl");
+    let dead_shl = b
+        .builder
+        .shift_left_logical(b.int_ty, None, x, c2)
+        .expect("dead_shl");
     let c1 = b.const_i32(1);
-    let _dead_shr = b.builder.shift_right_logical(b.int_ty, None, dead_shl, c1).expect("dead_shr");
+    let _dead_shr = b
+        .builder
+        .shift_right_logical(b.int_ty, None, dead_shl, c1)
+        .expect("dead_shr");
 
     let c0 = b.const_i32(0);
     b.builder.ret_value(c0).expect("ret");
@@ -1561,15 +1800,26 @@ fn dce_preserves_live_shift_operations() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     b.builder.begin_block(None).expect("begin block");
 
     let c2 = b.const_i32(2);
-    let shl = b.builder.shift_left_logical(b.int_ty, None, x, c2).expect("shl");
+    let shl = b
+        .builder
+        .shift_left_logical(b.int_ty, None, x, c2)
+        .expect("shl");
     let c1 = b.const_i32(1);
-    let result = b.builder.shift_right_logical(b.int_ty, None, shl, c1).expect("shr");
+    let result = b
+        .builder
+        .shift_right_logical(b.int_ty, None, shl, c1)
+        .expect("shr");
 
     b.builder.ret_value(result).expect("ret");
     b.builder.end_function().expect("end function");
@@ -1578,8 +1828,8 @@ fn dce_preserves_live_shift_operations() {
     let result_mod = OptimizedModule::from_words(&words).expect("optimizer runs");
 
     // Some shift ops should remain (may be optimized to single shift by 1)
-    let has_shift = result_mod.has_opcode(Op::ShiftLeftLogical)
-        || result_mod.has_opcode(Op::ShiftRightLogical);
+    let has_shift =
+        result_mod.has_opcode(Op::ShiftLeftLogical) || result_mod.has_opcode(Op::ShiftRightLogical);
     assert!(has_shift, "live shift operations should be preserved");
 }
 
@@ -1597,13 +1847,21 @@ fn dce_dead_comparison_operations() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty, b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     let y = b.builder.function_parameter(b.int_ty).expect("y");
     b.builder.begin_block(None).expect("begin block");
 
-    let _dead_cmp = b.builder.s_less_than(b.bool_ty, None, x, y).expect("dead_cmp");
+    let _dead_cmp = b
+        .builder
+        .s_less_than(b.bool_ty, None, x, y)
+        .expect("dead_cmp");
 
     let c42 = b.const_i32(42);
     b.builder.ret_value(c42).expect("ret");
@@ -1629,14 +1887,22 @@ fn dce_dead_equality_comparison() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty, b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     let y = b.builder.function_parameter(b.int_ty).expect("y");
     b.builder.begin_block(None).expect("begin block");
 
     let _dead_eq = b.builder.i_equal(b.bool_ty, None, x, y).expect("dead_eq");
-    let _dead_ne = b.builder.i_not_equal(b.bool_ty, None, x, y).expect("dead_ne");
+    let _dead_ne = b
+        .builder
+        .i_not_equal(b.bool_ty, None, x, y)
+        .expect("dead_ne");
 
     let c0 = b.const_i32(0);
     b.builder.ret_value(c0).expect("ret");
@@ -1669,7 +1935,12 @@ fn dce_dead_negation() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     b.builder.begin_block(None).expect("begin block");
@@ -1699,7 +1970,12 @@ fn dce_preserves_live_negation() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     b.builder.begin_block(None).expect("begin block");
@@ -1727,7 +2003,12 @@ fn dce_dead_bitwise_not() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     b.builder.begin_block(None).expect("begin block");
@@ -1741,10 +2022,7 @@ fn dce_dead_bitwise_not() {
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
 
-    assert!(
-        !result.has_opcode(Op::Not),
-        "dead Not should be removed"
-    );
+    assert!(!result.has_opcode(Op::Not), "dead Not should be removed");
 }
 
 // =============================================================================
@@ -1770,7 +2048,12 @@ fn dce_deeply_nested_dead_expression_10_levels() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     b.builder.begin_block(None).expect("begin block");
@@ -1830,7 +2113,12 @@ fn dce_multiple_independent_dead_chains() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     b.builder.begin_block(None).expect("begin block");
 
@@ -1872,7 +2160,10 @@ fn dce_multiple_independent_dead_chains() {
         "dead chains' IMul should be removed"
     );
     // Return value preserved
-    assert!(result.has_constant_u32(42), "return value 42 must be preserved");
+    assert!(
+        result.has_constant_u32(42),
+        "return value 42 must be preserved"
+    );
 }
 
 // =============================================================================
@@ -1890,7 +2181,12 @@ fn dce_same_operand_dead_and_live_uses() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     b.builder.begin_block(None).expect("begin block");
@@ -1928,7 +2224,12 @@ fn dce_same_constant_multiple_dead_uses() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty, b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     let y = b.builder.function_parameter(b.int_ty).expect("y");
@@ -1946,14 +2247,8 @@ fn dce_same_constant_multiple_dead_uses() {
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
 
     // All arithmetic should be removed
-    assert!(
-        !result.has_opcode(Op::IAdd),
-        "dead IAdd should be removed"
-    );
-    assert!(
-        !result.has_opcode(Op::IMul),
-        "dead IMul should be removed"
-    );
+    assert!(!result.has_opcode(Op::IAdd), "dead IAdd should be removed");
+    assert!(!result.has_opcode(Op::IMul), "dead IMul should be removed");
 }
 
 // =============================================================================
@@ -1970,7 +2265,12 @@ fn dce_dead_constant_computation_not_folded_to_output() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     b.builder.begin_block(None).expect("begin block");
 
@@ -1999,7 +2299,10 @@ fn dce_dead_constant_computation_not_folded_to_output() {
     );
 
     // Return value 1 must be preserved
-    assert!(result.has_constant_u32(1), "return value 1 must be preserved");
+    assert!(
+        result.has_constant_u32(1),
+        "return value 1 must be preserved"
+    );
 }
 
 #[test]
@@ -2012,7 +2315,12 @@ fn dce_live_constant_computation_is_folded() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     b.builder.begin_block(None).expect("begin block");
 
@@ -2055,7 +2363,12 @@ fn dce_mixed_dead_ops_arithmetic_bitwise_shift() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     b.builder.begin_block(None).expect("begin block");
@@ -2065,7 +2378,10 @@ fn dce_mixed_dead_ops_arithmetic_bitwise_shift() {
     let c_ff = b.const_i32(0xFF);
     let d2 = b.builder.bitwise_and(b.int_ty, None, d1, c_ff).expect("d2");
     let c2 = b.const_i32(2);
-    let d3 = b.builder.shift_left_logical(b.int_ty, None, d2, c2).expect("d3");
+    let d3 = b
+        .builder
+        .shift_left_logical(b.int_ty, None, d2, c2)
+        .expect("d3");
     let c_10 = b.const_i32(0x10);
     let _d4 = b.builder.bitwise_or(b.int_ty, None, d3, c_10).expect("d4");
 
@@ -2078,9 +2394,18 @@ fn dce_mixed_dead_ops_arithmetic_bitwise_shift() {
 
     // All ops should be removed
     assert!(!result.has_opcode(Op::IAdd), "dead IAdd should be removed");
-    assert!(!result.has_opcode(Op::BitwiseAnd), "dead BitwiseAnd should be removed");
-    assert!(!result.has_opcode(Op::ShiftLeftLogical), "dead ShiftLeftLogical should be removed");
-    assert!(!result.has_opcode(Op::BitwiseOr), "dead BitwiseOr should be removed");
+    assert!(
+        !result.has_opcode(Op::BitwiseAnd),
+        "dead BitwiseAnd should be removed"
+    );
+    assert!(
+        !result.has_opcode(Op::ShiftLeftLogical),
+        "dead ShiftLeftLogical should be removed"
+    );
+    assert!(
+        !result.has_opcode(Op::BitwiseOr),
+        "dead BitwiseOr should be removed"
+    );
 }
 
 #[test]
@@ -2096,7 +2421,12 @@ fn dce_mixed_live_ops_arithmetic_bitwise_shift() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     b.builder.begin_block(None).expect("begin block");
@@ -2106,7 +2436,10 @@ fn dce_mixed_live_ops_arithmetic_bitwise_shift() {
     let c_ff = b.const_i32(0xFF);
     let l2 = b.builder.bitwise_and(b.int_ty, None, l1, c_ff).expect("l2");
     let c2 = b.const_i32(2);
-    let l3 = b.builder.shift_left_logical(b.int_ty, None, l2, c2).expect("l3");
+    let l3 = b
+        .builder
+        .shift_left_logical(b.int_ty, None, l2, c2)
+        .expect("l3");
     let c_10 = b.const_i32(0x10);
     let l4 = b.builder.bitwise_or(b.int_ty, None, l3, c_10).expect("l4");
 
@@ -2118,9 +2451,18 @@ fn dce_mixed_live_ops_arithmetic_bitwise_shift() {
 
     // All ops should remain (can't fold with unknown param)
     assert!(result.has_opcode(Op::IAdd), "live IAdd should be preserved");
-    assert!(result.has_opcode(Op::BitwiseAnd), "live BitwiseAnd should be preserved");
-    assert!(result.has_opcode(Op::ShiftLeftLogical), "live ShiftLeftLogical should be preserved");
-    assert!(result.has_opcode(Op::BitwiseOr), "live BitwiseOr should be preserved");
+    assert!(
+        result.has_opcode(Op::BitwiseAnd),
+        "live BitwiseAnd should be preserved"
+    );
+    assert!(
+        result.has_opcode(Op::ShiftLeftLogical),
+        "live ShiftLeftLogical should be preserved"
+    );
+    assert!(
+        result.has_opcode(Op::BitwiseOr),
+        "live BitwiseOr should be preserved"
+    );
 }
 
 // =============================================================================
@@ -2137,13 +2479,21 @@ fn dce_dead_xor_operations() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty, b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     let y = b.builder.function_parameter(b.int_ty).expect("y");
     b.builder.begin_block(None).expect("begin block");
 
-    let _dead_xor = b.builder.bitwise_xor(b.int_ty, None, x, y).expect("dead_xor");
+    let _dead_xor = b
+        .builder
+        .bitwise_xor(b.int_ty, None, x, y)
+        .expect("dead_xor");
 
     let c0 = b.const_i32(0);
     b.builder.ret_value(c0).expect("ret");
@@ -2168,7 +2518,12 @@ fn dce_preserves_live_xor_operations() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty, b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     let y = b.builder.function_parameter(b.int_ty).expect("y");
@@ -2202,7 +2557,12 @@ fn dce_dead_subtraction() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty, b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     let y = b.builder.function_parameter(b.int_ty).expect("y");
@@ -2217,10 +2577,7 @@ fn dce_dead_subtraction() {
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
 
-    assert!(
-        !result.has_opcode(Op::ISub),
-        "dead ISub should be removed"
-    );
+    assert!(!result.has_opcode(Op::ISub), "dead ISub should be removed");
 }
 
 #[test]
@@ -2233,7 +2590,12 @@ fn dce_preserves_live_subtraction() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty, b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     let y = b.builder.function_parameter(b.int_ty).expect("y");
@@ -2267,7 +2629,12 @@ fn dce_dead_signed_division() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty, b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     let y = b.builder.function_parameter(b.int_ty).expect("y");
@@ -2282,10 +2649,7 @@ fn dce_dead_signed_division() {
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
 
-    assert!(
-        !result.has_opcode(Op::SDiv),
-        "dead SDiv should be removed"
-    );
+    assert!(!result.has_opcode(Op::SDiv), "dead SDiv should be removed");
 }
 
 #[test]
@@ -2298,7 +2662,12 @@ fn dce_preserves_live_signed_division() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty, b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     let y = b.builder.function_parameter(b.int_ty).expect("y");
@@ -2328,7 +2697,12 @@ fn dce_dead_unsigned_division() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty, b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     let y = b.builder.function_parameter(b.int_ty).expect("y");
@@ -2343,10 +2717,7 @@ fn dce_dead_unsigned_division() {
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
 
-    assert!(
-        !result.has_opcode(Op::UDiv),
-        "dead UDiv should be removed"
-    );
+    assert!(!result.has_opcode(Op::UDiv), "dead UDiv should be removed");
 }
 
 #[test]
@@ -2359,7 +2730,12 @@ fn dce_dead_signed_modulo() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty, b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     let y = b.builder.function_parameter(b.int_ty).expect("y");
@@ -2374,10 +2750,7 @@ fn dce_dead_signed_modulo() {
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
 
-    assert!(
-        !result.has_opcode(Op::SMod),
-        "dead SMod should be removed"
-    );
+    assert!(!result.has_opcode(Op::SMod), "dead SMod should be removed");
 }
 
 #[test]
@@ -2390,7 +2763,12 @@ fn dce_dead_unsigned_modulo() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty, b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     let y = b.builder.function_parameter(b.int_ty).expect("y");
@@ -2405,10 +2783,7 @@ fn dce_dead_unsigned_modulo() {
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
 
-    assert!(
-        !result.has_opcode(Op::UMod),
-        "dead UMod should be removed"
-    );
+    assert!(!result.has_opcode(Op::UMod), "dead UMod should be removed");
 }
 
 // =============================================================================
@@ -2425,9 +2800,16 @@ fn dce_dead_float_add() {
     let _guard = OptimizerEnvGuard::new();
 
     let mut b = TestModuleBuilder::new();
-    let func_ty = b.builder.type_function(b.float_ty, vec![b.float_ty, b.float_ty]);
+    let func_ty = b
+        .builder
+        .type_function(b.float_ty, vec![b.float_ty, b.float_ty]);
     b.builder
-        .begin_function(b.float_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.float_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.float_ty).expect("x");
     let y = b.builder.function_parameter(b.float_ty).expect("y");
@@ -2442,10 +2824,7 @@ fn dce_dead_float_add() {
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
 
-    assert!(
-        !result.has_opcode(Op::FAdd),
-        "dead FAdd should be removed"
-    );
+    assert!(!result.has_opcode(Op::FAdd), "dead FAdd should be removed");
 }
 
 #[test]
@@ -2456,9 +2835,16 @@ fn dce_preserves_live_float_add() {
     let _guard = OptimizerEnvGuard::new();
 
     let mut b = TestModuleBuilder::new();
-    let func_ty = b.builder.type_function(b.float_ty, vec![b.float_ty, b.float_ty]);
+    let func_ty = b
+        .builder
+        .type_function(b.float_ty, vec![b.float_ty, b.float_ty]);
     b.builder
-        .begin_function(b.float_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.float_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.float_ty).expect("x");
     let y = b.builder.function_parameter(b.float_ty).expect("y");
@@ -2486,9 +2872,16 @@ fn dce_dead_float_mul() {
     let _guard = OptimizerEnvGuard::new();
 
     let mut b = TestModuleBuilder::new();
-    let func_ty = b.builder.type_function(b.float_ty, vec![b.float_ty, b.float_ty]);
+    let func_ty = b
+        .builder
+        .type_function(b.float_ty, vec![b.float_ty, b.float_ty]);
     b.builder
-        .begin_function(b.float_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.float_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.float_ty).expect("x");
     let y = b.builder.function_parameter(b.float_ty).expect("y");
@@ -2503,10 +2896,7 @@ fn dce_dead_float_mul() {
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
 
-    assert!(
-        !result.has_opcode(Op::FMul),
-        "dead FMul should be removed"
-    );
+    assert!(!result.has_opcode(Op::FMul), "dead FMul should be removed");
 }
 
 #[test]
@@ -2517,9 +2907,16 @@ fn dce_dead_float_sub() {
     let _guard = OptimizerEnvGuard::new();
 
     let mut b = TestModuleBuilder::new();
-    let func_ty = b.builder.type_function(b.float_ty, vec![b.float_ty, b.float_ty]);
+    let func_ty = b
+        .builder
+        .type_function(b.float_ty, vec![b.float_ty, b.float_ty]);
     b.builder
-        .begin_function(b.float_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.float_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.float_ty).expect("x");
     let y = b.builder.function_parameter(b.float_ty).expect("y");
@@ -2534,10 +2931,7 @@ fn dce_dead_float_sub() {
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
 
-    assert!(
-        !result.has_opcode(Op::FSub),
-        "dead FSub should be removed"
-    );
+    assert!(!result.has_opcode(Op::FSub), "dead FSub should be removed");
 }
 
 #[test]
@@ -2548,9 +2942,16 @@ fn dce_dead_float_div() {
     let _guard = OptimizerEnvGuard::new();
 
     let mut b = TestModuleBuilder::new();
-    let func_ty = b.builder.type_function(b.float_ty, vec![b.float_ty, b.float_ty]);
+    let func_ty = b
+        .builder
+        .type_function(b.float_ty, vec![b.float_ty, b.float_ty]);
     b.builder
-        .begin_function(b.float_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.float_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.float_ty).expect("x");
     let y = b.builder.function_parameter(b.float_ty).expect("y");
@@ -2565,10 +2966,7 @@ fn dce_dead_float_div() {
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
 
-    assert!(
-        !result.has_opcode(Op::FDiv),
-        "dead FDiv should be removed"
-    );
+    assert!(!result.has_opcode(Op::FDiv), "dead FDiv should be removed");
 }
 
 #[test]
@@ -2581,7 +2979,12 @@ fn dce_dead_float_negate() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.float_ty, vec![b.float_ty]);
     b.builder
-        .begin_function(b.float_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.float_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.float_ty).expect("x");
     b.builder.begin_block(None).expect("begin block");
@@ -2611,7 +3014,12 @@ fn dce_preserves_live_float_negate() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.float_ty, vec![b.float_ty]);
     b.builder
-        .begin_function(b.float_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.float_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.float_ty).expect("x");
     b.builder.begin_block(None).expect("begin block");
@@ -2646,7 +3054,12 @@ fn dce_interleaved_dead_live_dead() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     b.builder.begin_block(None).expect("begin block");
@@ -2667,7 +3080,11 @@ fn dce_interleaved_dead_live_dead() {
 
     // Should have exactly 1 IAdd (the live one)
     let iadd_count = result.count_opcode(Op::IAdd);
-    assert_eq!(iadd_count, 1, "should have exactly 1 live IAdd, got {}", iadd_count);
+    assert_eq!(
+        iadd_count, 1,
+        "should have exactly 1 live IAdd, got {}",
+        iadd_count
+    );
 }
 
 #[test]
@@ -2682,7 +3099,12 @@ fn dce_interleaved_live_dead_live() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     b.builder.begin_block(None).expect("begin block");
@@ -2723,7 +3145,12 @@ fn dce_alternating_dead_live_pattern() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     b.builder.begin_block(None).expect("begin block");
@@ -2737,8 +3164,14 @@ fn dce_alternating_dead_live_pattern() {
     let _dead_add = b.builder.i_add(b.int_ty, None, x, c1).expect("dead_add");
     let live_mul = b.builder.i_mul(b.int_ty, None, x, c2).expect("live_mul");
     let _dead_sub = b.builder.i_sub(b.int_ty, None, x, c3).expect("dead_sub");
-    let live_result = b.builder.i_add(b.int_ty, None, live_mul, c4).expect("live_result");
-    let _dead_and = b.builder.bitwise_and(b.int_ty, None, x, c5).expect("dead_and");
+    let live_result = b
+        .builder
+        .i_add(b.int_ty, None, live_mul, c4)
+        .expect("live_result");
+    let _dead_and = b
+        .builder
+        .bitwise_and(b.int_ty, None, x, c5)
+        .expect("dead_and");
 
     b.builder.ret_value(live_result).expect("ret");
     b.builder.end_function().expect("end function");
@@ -2747,10 +3180,7 @@ fn dce_alternating_dead_live_pattern() {
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
 
     // Dead operations should be removed
-    assert!(
-        !result.has_opcode(Op::ISub),
-        "dead ISub should be removed"
-    );
+    assert!(!result.has_opcode(Op::ISub), "dead ISub should be removed");
     assert!(
         !result.has_opcode(Op::BitwiseAnd),
         "dead BitwiseAnd should be removed"
@@ -2774,7 +3204,12 @@ fn dce_long_live_chain_20_ops() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     b.builder.begin_block(None).expect("begin block");
@@ -2813,7 +3248,12 @@ fn dce_long_dead_chain_20_ops() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     b.builder.begin_block(None).expect("begin block");
@@ -2854,7 +3294,12 @@ fn dce_instruction_used_twice_in_same_op() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     b.builder.begin_block(None).expect("begin block");
@@ -2869,7 +3314,9 @@ fn dce_instruction_used_twice_in_same_op() {
 
     // Should preserve the x + x computation (or strength reduced to x * 2 or x << 1)
     assert!(
-        result.has_opcode(Op::IAdd) || result.has_opcode(Op::IMul) || result.has_opcode(Op::ShiftLeftLogical),
+        result.has_opcode(Op::IAdd)
+            || result.has_opcode(Op::IMul)
+            || result.has_opcode(Op::ShiftLeftLogical),
         "should preserve doubling computation"
     );
 }
@@ -2887,7 +3334,12 @@ fn dce_instruction_used_in_multiple_live_ops() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     b.builder.begin_block(None).expect("begin block");
@@ -2896,9 +3348,18 @@ fn dce_instruction_used_in_multiple_live_ops() {
     let c2 = b.const_i32(2);
     let c3 = b.const_i32(3);
 
-    let intermediate = b.builder.i_add(b.int_ty, None, x, c1).expect("intermediate");
-    let use1 = b.builder.i_add(b.int_ty, None, intermediate, c2).expect("use1");
-    let use2 = b.builder.i_add(b.int_ty, None, intermediate, c3).expect("use2");
+    let intermediate = b
+        .builder
+        .i_add(b.int_ty, None, x, c1)
+        .expect("intermediate");
+    let use1 = b
+        .builder
+        .i_add(b.int_ty, None, intermediate, c2)
+        .expect("use1");
+    let use2 = b
+        .builder
+        .i_add(b.int_ty, None, intermediate, c3)
+        .expect("use2");
     let result = b.builder.i_add(b.int_ty, None, use1, use2).expect("result");
 
     b.builder.ret_value(result).expect("ret");
@@ -2926,7 +3387,12 @@ fn dce_instruction_used_in_one_live_one_dead() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     b.builder.begin_block(None).expect("begin block");
@@ -2935,9 +3401,18 @@ fn dce_instruction_used_in_one_live_one_dead() {
     let c2 = b.const_i32(2);
     let c3 = b.const_i32(3);
 
-    let intermediate = b.builder.i_add(b.int_ty, None, x, c1).expect("intermediate");
-    let live_use = b.builder.i_add(b.int_ty, None, intermediate, c2).expect("live_use");
-    let _dead_use = b.builder.i_add(b.int_ty, None, intermediate, c3).expect("dead_use");
+    let intermediate = b
+        .builder
+        .i_add(b.int_ty, None, x, c1)
+        .expect("intermediate");
+    let live_use = b
+        .builder
+        .i_add(b.int_ty, None, intermediate, c2)
+        .expect("live_use");
+    let _dead_use = b
+        .builder
+        .i_add(b.int_ty, None, intermediate, c3)
+        .expect("dead_use");
 
     b.builder.ret_value(live_use).expect("ret");
     b.builder.end_function().expect("end function");
@@ -2969,7 +3444,12 @@ fn dce_dead_code_after_return_value_computed() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     b.builder.begin_block(None).expect("begin block");
@@ -2990,7 +3470,11 @@ fn dce_dead_code_after_return_value_computed() {
 
     // Should have only 1 IAdd (the live one)
     let iadd_count = result.count_opcode(Op::IAdd);
-    assert_eq!(iadd_count, 1, "should have exactly 1 live IAdd, got {}", iadd_count);
+    assert_eq!(
+        iadd_count, 1,
+        "should have exactly 1 live IAdd, got {}",
+        iadd_count
+    );
 }
 
 // =============================================================================
@@ -3008,12 +3492,20 @@ fn dce_dead_convert_s_to_f() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     b.builder.begin_block(None).expect("begin block");
 
-    let _dead_conv = b.builder.convert_s_to_f(b.float_ty, None, x).expect("dead_conv");
+    let _dead_conv = b
+        .builder
+        .convert_s_to_f(b.float_ty, None, x)
+        .expect("dead_conv");
 
     let c0 = b.const_i32(0);
     b.builder.ret_value(c0).expect("ret");
@@ -3038,7 +3530,12 @@ fn dce_preserves_live_convert_s_to_f() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.float_ty, vec![b.int_ty]);
     b.builder
-        .begin_function(b.float_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.float_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     b.builder.begin_block(None).expect("begin block");
@@ -3067,12 +3564,20 @@ fn dce_dead_convert_f_to_s() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.float_ty, vec![b.float_ty]);
     b.builder
-        .begin_function(b.float_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.float_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.float_ty).expect("x");
     b.builder.begin_block(None).expect("begin block");
 
-    let _dead_conv = b.builder.convert_f_to_s(b.int_ty, None, x).expect("dead_conv");
+    let _dead_conv = b
+        .builder
+        .convert_f_to_s(b.int_ty, None, x)
+        .expect("dead_conv");
 
     let c0 = b.const_f32(0.0);
     b.builder.ret_value(c0).expect("ret");
@@ -3097,12 +3602,20 @@ fn dce_dead_convert_u_to_f() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     b.builder.begin_block(None).expect("begin block");
 
-    let _dead_conv = b.builder.convert_u_to_f(b.float_ty, None, x).expect("dead_conv");
+    let _dead_conv = b
+        .builder
+        .convert_u_to_f(b.float_ty, None, x)
+        .expect("dead_conv");
 
     let c0 = b.const_i32(0);
     b.builder.ret_value(c0).expect("ret");
@@ -3131,13 +3644,21 @@ fn dce_dead_greater_than_comparison() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty, b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     let y = b.builder.function_parameter(b.int_ty).expect("y");
     b.builder.begin_block(None).expect("begin block");
 
-    let _dead_cmp = b.builder.s_greater_than(b.bool_ty, None, x, y).expect("dead_cmp");
+    let _dead_cmp = b
+        .builder
+        .s_greater_than(b.bool_ty, None, x, y)
+        .expect("dead_cmp");
 
     let c0 = b.const_i32(0);
     b.builder.ret_value(c0).expect("ret");
@@ -3162,13 +3683,21 @@ fn dce_dead_less_than_or_equal_comparison() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty, b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     let y = b.builder.function_parameter(b.int_ty).expect("y");
     b.builder.begin_block(None).expect("begin block");
 
-    let _dead_cmp = b.builder.s_less_than_equal(b.bool_ty, None, x, y).expect("dead_cmp");
+    let _dead_cmp = b
+        .builder
+        .s_less_than_equal(b.bool_ty, None, x, y)
+        .expect("dead_cmp");
 
     let c0 = b.const_i32(0);
     b.builder.ret_value(c0).expect("ret");
@@ -3193,13 +3722,21 @@ fn dce_dead_greater_than_or_equal_comparison() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty, b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     let y = b.builder.function_parameter(b.int_ty).expect("y");
     b.builder.begin_block(None).expect("begin block");
 
-    let _dead_cmp = b.builder.s_greater_than_equal(b.bool_ty, None, x, y).expect("dead_cmp");
+    let _dead_cmp = b
+        .builder
+        .s_greater_than_equal(b.bool_ty, None, x, y)
+        .expect("dead_cmp");
 
     let c0 = b.const_i32(0);
     b.builder.ret_value(c0).expect("ret");
@@ -3222,15 +3759,25 @@ fn dce_dead_float_comparison_ordered_less_than() {
     let _guard = OptimizerEnvGuard::new();
 
     let mut b = TestModuleBuilder::new();
-    let func_ty = b.builder.type_function(b.float_ty, vec![b.float_ty, b.float_ty]);
+    let func_ty = b
+        .builder
+        .type_function(b.float_ty, vec![b.float_ty, b.float_ty]);
     b.builder
-        .begin_function(b.float_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.float_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.float_ty).expect("x");
     let y = b.builder.function_parameter(b.float_ty).expect("y");
     b.builder.begin_block(None).expect("begin block");
 
-    let _dead_cmp = b.builder.f_ord_less_than(b.bool_ty, None, x, y).expect("dead_cmp");
+    let _dead_cmp = b
+        .builder
+        .f_ord_less_than(b.bool_ty, None, x, y)
+        .expect("dead_cmp");
 
     let c0 = b.const_f32(0.0);
     b.builder.ret_value(c0).expect("ret");
@@ -3253,15 +3800,25 @@ fn dce_dead_float_comparison_ordered_equal() {
     let _guard = OptimizerEnvGuard::new();
 
     let mut b = TestModuleBuilder::new();
-    let func_ty = b.builder.type_function(b.float_ty, vec![b.float_ty, b.float_ty]);
+    let func_ty = b
+        .builder
+        .type_function(b.float_ty, vec![b.float_ty, b.float_ty]);
     b.builder
-        .begin_function(b.float_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.float_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.float_ty).expect("x");
     let y = b.builder.function_parameter(b.float_ty).expect("y");
     b.builder.begin_block(None).expect("begin block");
 
-    let _dead_cmp = b.builder.f_ord_equal(b.bool_ty, None, x, y).expect("dead_cmp");
+    let _dead_cmp = b
+        .builder
+        .f_ord_equal(b.bool_ty, None, x, y)
+        .expect("dead_cmp");
 
     let c0 = b.const_f32(0.0);
     b.builder.ret_value(c0).expect("ret");
@@ -3288,15 +3845,25 @@ fn dce_dead_logical_and() {
     let _guard = OptimizerEnvGuard::new();
 
     let mut b = TestModuleBuilder::new();
-    let func_ty = b.builder.type_function(b.bool_ty, vec![b.bool_ty, b.bool_ty]);
+    let func_ty = b
+        .builder
+        .type_function(b.bool_ty, vec![b.bool_ty, b.bool_ty]);
     b.builder
-        .begin_function(b.bool_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.bool_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let a = b.builder.function_parameter(b.bool_ty).expect("a");
     let bb = b.builder.function_parameter(b.bool_ty).expect("b");
     b.builder.begin_block(None).expect("begin block");
 
-    let _dead_and = b.builder.logical_and(b.bool_ty, None, a, bb).expect("dead_and");
+    let _dead_and = b
+        .builder
+        .logical_and(b.bool_ty, None, a, bb)
+        .expect("dead_and");
 
     let false_val = b.const_bool(false);
     b.builder.ret_value(false_val).expect("ret");
@@ -3319,15 +3886,25 @@ fn dce_dead_logical_or() {
     let _guard = OptimizerEnvGuard::new();
 
     let mut b = TestModuleBuilder::new();
-    let func_ty = b.builder.type_function(b.bool_ty, vec![b.bool_ty, b.bool_ty]);
+    let func_ty = b
+        .builder
+        .type_function(b.bool_ty, vec![b.bool_ty, b.bool_ty]);
     b.builder
-        .begin_function(b.bool_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.bool_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let a = b.builder.function_parameter(b.bool_ty).expect("a");
     let bb = b.builder.function_parameter(b.bool_ty).expect("b");
     b.builder.begin_block(None).expect("begin block");
 
-    let _dead_or = b.builder.logical_or(b.bool_ty, None, a, bb).expect("dead_or");
+    let _dead_or = b
+        .builder
+        .logical_or(b.bool_ty, None, a, bb)
+        .expect("dead_or");
 
     let false_val = b.const_bool(false);
     b.builder.ret_value(false_val).expect("ret");
@@ -3352,7 +3929,12 @@ fn dce_dead_logical_not() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.bool_ty, vec![b.bool_ty]);
     b.builder
-        .begin_function(b.bool_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.bool_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let a = b.builder.function_parameter(b.bool_ty).expect("a");
     b.builder.begin_block(None).expect("begin block");
@@ -3380,9 +3962,16 @@ fn dce_preserves_live_logical_and() {
     let _guard = OptimizerEnvGuard::new();
 
     let mut b = TestModuleBuilder::new();
-    let func_ty = b.builder.type_function(b.bool_ty, vec![b.bool_ty, b.bool_ty]);
+    let func_ty = b
+        .builder
+        .type_function(b.bool_ty, vec![b.bool_ty, b.bool_ty]);
     b.builder
-        .begin_function(b.bool_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.bool_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let a = b.builder.function_parameter(b.bool_ty).expect("a");
     let bb = b.builder.function_parameter(b.bool_ty).expect("b");
@@ -3414,16 +4003,26 @@ fn dce_dead_select_operation() {
     let _guard = OptimizerEnvGuard::new();
 
     let mut b = TestModuleBuilder::new();
-    let func_ty = b.builder.type_function(b.int_ty, vec![b.bool_ty, b.int_ty, b.int_ty]);
+    let func_ty = b
+        .builder
+        .type_function(b.int_ty, vec![b.bool_ty, b.int_ty, b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let cond = b.builder.function_parameter(b.bool_ty).expect("cond");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     let y = b.builder.function_parameter(b.int_ty).expect("y");
     b.builder.begin_block(None).expect("begin block");
 
-    let _dead_sel = b.builder.select(b.int_ty, None, cond, x, y).expect("dead_sel");
+    let _dead_sel = b
+        .builder
+        .select(b.int_ty, None, cond, x, y)
+        .expect("dead_sel");
 
     let c0 = b.const_i32(0);
     b.builder.ret_value(c0).expect("ret");
@@ -3446,9 +4045,16 @@ fn dce_preserves_live_select() {
     let _guard = OptimizerEnvGuard::new();
 
     let mut b = TestModuleBuilder::new();
-    let func_ty = b.builder.type_function(b.int_ty, vec![b.bool_ty, b.int_ty, b.int_ty]);
+    let func_ty = b
+        .builder
+        .type_function(b.int_ty, vec![b.bool_ty, b.int_ty, b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let cond = b.builder.function_parameter(b.bool_ty).expect("cond");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
@@ -3486,7 +4092,12 @@ fn dce_complex_diamond_with_dead_side_branch() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     b.builder.begin_block(None).expect("begin block");
@@ -3525,7 +4136,12 @@ fn dce_parallel_dead_computations_from_same_inputs() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty, b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     let y = b.builder.function_parameter(b.int_ty).expect("y");
@@ -3547,7 +4163,10 @@ fn dce_parallel_dead_computations_from_same_inputs() {
     assert!(!result.has_opcode(Op::IAdd), "dead IAdd should be removed");
     assert!(!result.has_opcode(Op::ISub), "dead ISub should be removed");
     assert!(!result.has_opcode(Op::IMul), "dead IMul should be removed");
-    assert!(!result.has_opcode(Op::BitwiseAnd), "dead BitwiseAnd should be removed");
+    assert!(
+        !result.has_opcode(Op::BitwiseAnd),
+        "dead BitwiseAnd should be removed"
+    );
 }
 
 #[test]
@@ -3564,7 +4183,12 @@ fn dce_tree_structure_with_multiple_live_leaves() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     b.builder.begin_block(None).expect("begin block");
@@ -3579,7 +4203,7 @@ fn dce_tree_structure_with_multiple_live_leaves() {
     let bb_val = b.builder.i_add(b.int_ty, None, x, c2).expect("b");
     let c = b.builder.i_add(b.int_ty, None, a, c3).expect("c");
     let d = b.builder.i_add(b.int_ty, None, bb_val, c4).expect("d");
-    let _e = b.builder.i_add(b.int_ty, None, a, c5).expect("e");  // dead
+    let _e = b.builder.i_add(b.int_ty, None, a, c5).expect("e"); // dead
     let result = b.builder.i_add(b.int_ty, None, c, d).expect("result");
 
     b.builder.ret_value(result).expect("ret");
@@ -3589,10 +4213,7 @@ fn dce_tree_structure_with_multiple_live_leaves() {
     let result_mod = OptimizedModule::from_words(&words).expect("optimizer runs");
 
     // Should have IAdds for the live path
-    assert!(
-        result_mod.has_opcode(Op::IAdd),
-        "should have live IAdds"
-    );
+    assert!(result_mod.has_opcode(Op::IAdd), "should have live IAdds");
 }
 
 // =============================================================================
@@ -3611,7 +4232,12 @@ fn dce_dead_chain_of_identity_ops() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     b.builder.begin_block(None).expect("begin block");
@@ -3648,7 +4274,12 @@ fn dce_live_chain_of_identity_ops_preserved() {
     let mut b = TestModuleBuilder::new();
     let func_ty = b.builder.type_function(b.int_ty, vec![b.int_ty]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     let x = b.builder.function_parameter(b.int_ty).expect("x");
     b.builder.begin_block(None).expect("begin block");
@@ -3670,7 +4301,9 @@ fn dce_live_chain_of_identity_ops_preserved() {
     // This is fine - we just want to ensure DCE doesn't incorrectly remove live code
     // The function should still return the correct value
     assert!(
-        result.has_opcode(Op::FunctionParameter) || result.has_opcode(Op::IAdd) || result.has_opcode(Op::Constant),
+        result.has_opcode(Op::FunctionParameter)
+            || result.has_opcode(Op::IAdd)
+            || result.has_opcode(Op::Constant),
         "should preserve the live computation in some form"
     );
 }

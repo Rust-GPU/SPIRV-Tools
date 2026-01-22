@@ -63,16 +63,9 @@ pub fn create(te: Option<TargetEnv>) -> impl Assembler {
 }
 
 /// A pure Rust implementation of the SPIR-V assembler.
+#[derive(Default)]
 pub struct RustAssembler {
     target_env: TargetEnv,
-}
-
-impl Default for RustAssembler {
-    fn default() -> Self {
-        Self {
-            target_env: TargetEnv::default(),
-        }
-    }
 }
 
 /// Convert spirv-tools TargetEnv to spirv-tools-core TargetEnv
@@ -119,7 +112,9 @@ fn to_core_assembly_options(options: AssemblerOptions) -> spirv_tools_core::Text
 }
 
 /// Convert disassemble options to spirv-tools-core BinaryToTextOptions
-fn to_core_disassemble_options(options: DisassembleOptions) -> spirv_tools_core::BinaryToTextOptions {
+fn to_core_disassemble_options(
+    options: DisassembleOptions,
+) -> spirv_tools_core::BinaryToTextOptions {
     let mut core_options = spirv_tools_core::BinaryToTextOptions::empty();
     if options.print {
         core_options |= spirv_tools_core::BinaryToTextOptions::PRINT;

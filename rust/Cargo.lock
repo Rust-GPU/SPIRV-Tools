@@ -1625,7 +1625,6 @@ version = "0.1.0"
 dependencies = [
  "arbitrary",
  "clap",
- "criterion",
  "egglog",
  "pretty_assertions",
  "rspirv",

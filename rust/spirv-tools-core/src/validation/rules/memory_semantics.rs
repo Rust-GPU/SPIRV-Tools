@@ -14,10 +14,10 @@ use rspirv::dr::Operand;
 use rspirv::spirv::{Capability, MemoryModel, MemorySemantics as MemorySemanticsMask, Op, Scope};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::helpers::is_constant_opcode;
 use crate::validation::types::ResultId;
+use crate::validation::ValidationResult;
 
 /// Bit mask for memory ordering flags.
 const MEMORY_ORDER_MASK: u32 = MemorySemanticsMask::ACQUIRE.bits()
@@ -196,20 +196,17 @@ impl MemorySemanticsRule {
         };
 
         // Check capability requirements for various flags
-        if value & MemorySemanticsMask::UNIFORM_MEMORY.bits() != 0 {
-            if !has_shader_cap {
-                return Err(ValidationError::MemorySemanticsUniformMemoryRequiresShader { opcode }.into());
-            }
+        if value & MemorySemanticsMask::UNIFORM_MEMORY.bits() != 0 && !has_shader_cap {
+            return Err(
+                ValidationError::MemorySemanticsUniformMemoryRequiresShader { opcode }.into(),
+            );
         }
 
-        if value & MemorySemanticsMask::OUTPUT_MEMORY.bits() != 0 {
-            if !has_vulkan_memory_model {
-                return Err(
-                    ValidationError::MemorySemanticsOutputMemoryRequiresVulkanMemoryModel {
-                        opcode,
-                    }.into(),
-                        );
-            }
+        if value & MemorySemanticsMask::OUTPUT_MEMORY.bits() != 0 && !has_vulkan_memory_model {
+            return Err(
+                ValidationError::MemorySemanticsOutputMemoryRequiresVulkanMemoryModel { opcode }
+                    .into(),
+            );
         }
 
         // Check memory order - at most one bit may be set
@@ -222,7 +219,9 @@ impl MemorySemanticsRule {
 
         // Vulkan forbids SequentiallyConsistent
         if is_vulkan && (value & MemorySemanticsMask::SEQUENTIALLY_CONSISTENT.bits() != 0) {
-            return Err(ValidationError::MemorySemanticsSequentiallyConsistentInVulkan { opcode }.into());
+            return Err(
+                ValidationError::MemorySemanticsSequentiallyConsistentInVulkan { opcode }.into(),
+            );
         }
 
         // AtomicStore/AtomicFlagClear cannot use Acquire or AcquireRelease
@@ -256,12 +255,16 @@ impl MemorySemanticsRule {
 
             // Non-relaxed order requires storage class
             if num_order_bits > 0 && !includes_storage_class {
-                return Err(ValidationError::MemorySemanticsOrderWithoutStorageClass { opcode }.into());
+                return Err(
+                    ValidationError::MemorySemanticsOrderWithoutStorageClass { opcode }.into(),
+                );
             }
 
             // Storage class requires non-relaxed order
             if num_order_bits == 0 && includes_storage_class {
-                return Err(ValidationError::MemorySemanticsStorageClassWithoutOrder { opcode }.into());
+                return Err(
+                    ValidationError::MemorySemanticsStorageClassWithoutOrder { opcode }.into(),
+                );
             }
         }
 
@@ -271,15 +274,18 @@ impl MemorySemanticsRule {
                 return Err(
                     ValidationError::MemorySemanticsMakeAvailableRequiresVulkanMemoryModel {
                         opcode,
-                    }.into(),
-                        );
+                    }
+                    .into(),
+                );
             }
             if (value
                 & (MemorySemanticsMask::RELEASE.bits()
                     | MemorySemanticsMask::ACQUIRE_RELEASE.bits()))
                 == 0
             {
-                return Err(ValidationError::MemorySemanticsMakeAvailableRequiresRelease { opcode }.into());
+                return Err(
+                    ValidationError::MemorySemanticsMakeAvailableRequiresRelease { opcode }.into(),
+                );
             }
         }
 
@@ -287,24 +293,28 @@ impl MemorySemanticsRule {
         if value & MemorySemanticsMask::MAKE_VISIBLE.bits() != 0 {
             if !has_vulkan_memory_model {
                 return Err(
-                    ValidationError::MemorySemanticsMakeVisibleRequiresVulkanMemoryModel { opcode }.into(),
-                        );
+                    ValidationError::MemorySemanticsMakeVisibleRequiresVulkanMemoryModel { opcode }
+                        .into(),
+                );
             }
             if (value
                 & (MemorySemanticsMask::ACQUIRE.bits()
                     | MemorySemanticsMask::ACQUIRE_RELEASE.bits()))
                 == 0
             {
-                return Err(ValidationError::MemorySemanticsMakeVisibleRequiresAcquire { opcode }.into());
+                return Err(
+                    ValidationError::MemorySemanticsMakeVisibleRequiresAcquire { opcode }.into(),
+                );
             }
         }
 
         // Volatile validation
         if value & MemorySemanticsMask::VOLATILE.bits() != 0 {
             if !has_vulkan_memory_model {
-                return Err(ValidationError::MemorySemanticsVolatileRequiresVulkanMemoryModel {
-                    opcode,
-                }.into());
+                return Err(
+                    ValidationError::MemorySemanticsVolatileRequiresVulkanMemoryModel { opcode }
+                        .into(),
+                );
             }
             if !is_atomic_op(opcode) {
                 return Err(ValidationError::MemorySemanticsVolatileWithBarrier { opcode }.into());
@@ -343,7 +353,8 @@ impl MemorySemanticsRule {
                 {
                     return Err(ValidationError::MemorySemanticsUnequalStrongerThanEqual {
                         opcode,
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -353,9 +364,12 @@ impl MemorySemanticsRule {
             if let Some(scope_id) = memory_scope {
                 if let Some(scope_value) = eval_const_u32(scope_id, ctx) {
                     if scope_value == Scope::Invocation as u32 {
-                        return Err(ValidationError::MemorySemanticsRequiresRelaxedWithInvocation {
-                            opcode,
-                        }.into());
+                        return Err(
+                            ValidationError::MemorySemanticsRequiresRelaxedWithInvocation {
+                                opcode,
+                            }
+                            .into(),
+                        );
                     }
                 }
             }
@@ -370,10 +384,10 @@ impl MemorySemanticsRule {
 fn get_memory_semantics_operand_indices(opcode: Op) -> Vec<(usize, bool)> {
     match opcode {
         // Atomic operations with one memory semantics operand
-        Op::AtomicLoad => vec![(2, false)],          // Pointer, Scope, Semantics
-        Op::AtomicStore => vec![(2, false)],         // Pointer, Scope, Semantics, Value
+        Op::AtomicLoad => vec![(2, false)], // Pointer, Scope, Semantics
+        Op::AtomicStore => vec![(2, false)], // Pointer, Scope, Semantics, Value
         Op::AtomicFlagTestAndSet => vec![(2, false)], // Pointer, Scope, Semantics
-        Op::AtomicFlagClear => vec![(2, false)],     // Pointer, Scope, Semantics
+        Op::AtomicFlagClear => vec![(2, false)], // Pointer, Scope, Semantics
 
         // Atomic operations with semantics at position 3
         Op::AtomicExchange
@@ -398,8 +412,8 @@ fn get_memory_semantics_operand_indices(opcode: Op) -> Vec<(usize, bool)> {
         }
 
         // Barrier operations
-        Op::MemoryBarrier => vec![(1, false)],    // Scope, Semantics
-        Op::ControlBarrier => vec![(2, false)],   // Execution, Memory, Semantics
+        Op::MemoryBarrier => vec![(1, false)], // Scope, Semantics
+        Op::ControlBarrier => vec![(2, false)], // Execution, Memory, Semantics
         Op::MemoryNamedBarrier => vec![(2, false)], // Named, Memory, Semantics
 
         _ => vec![],

@@ -13,3 +13,6 @@ pub use error::{Error, SpirvResult};
 
 // Re-export TargetEnv from our implementation
 pub use crate::error::TargetEnv;
+
+// Re-export validation types for consumers who want structured error data
+pub use val::{ValidationError, ValidatorError};

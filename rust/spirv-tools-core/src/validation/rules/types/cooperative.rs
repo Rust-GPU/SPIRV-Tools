@@ -8,9 +8,9 @@ use rspirv::dr::Operand;
 use rspirv::spirv::Op;
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::{Id, ResultId, TypeId};
+use crate::validation::ValidationResult;
 
 use super::helpers::{get_constant_int_value, is_constant_opcode, is_scalar_numeric_type};
 
@@ -61,7 +61,8 @@ impl ValidationRule for TypeCooperativeMatrixRule {
                         return Err(ValidationError::TypeCooperativeMatrixComponentNotScalar {
                             type_id,
                             opcode,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -81,20 +82,23 @@ impl ValidationRule for TypeCooperativeMatrixRule {
                         return Err(ValidationError::TypeCooperativeMatrixScopeNotConstant {
                             type_id,
                             opcode,
-                        }.into());
+                        }
+                        .into());
                     }
 
                     // Must have integer type
                     if let Some(scope_type_raw) = scope_inst.result_type {
                         if let Ok(scope_type_result_id) = ResultId::try_from(scope_type_raw) {
-                            if let Some(scope_type_opcode) = ctx.opcodes.get(&scope_type_result_id) {
+                            if let Some(scope_type_opcode) = ctx.opcodes.get(&scope_type_result_id)
+                            {
                                 if *scope_type_opcode != Op::TypeInt {
                                     return Err(
                                         ValidationError::TypeCooperativeMatrixScopeNotInteger {
                                             type_id,
                                             opcode,
-                                        }.into(),
-                        );
+                                        }
+                                        .into(),
+                                    );
                                 }
                             }
                         }
@@ -115,7 +119,8 @@ impl ValidationRule for TypeCooperativeMatrixRule {
                         return Err(ValidationError::TypeCooperativeMatrixRowsNotConstant {
                             type_id,
                             opcode,
-                        }.into());
+                        }
+                        .into());
                     }
 
                     // Try to evaluate and check it's positive
@@ -125,7 +130,8 @@ impl ValidationRule for TypeCooperativeMatrixRule {
                                 type_id,
                                 opcode,
                                 value: rows_value,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -144,7 +150,8 @@ impl ValidationRule for TypeCooperativeMatrixRule {
                         return Err(ValidationError::TypeCooperativeMatrixColumnsNotConstant {
                             type_id,
                             opcode,
-                        }.into());
+                        }
+                        .into());
                     }
 
                     // Try to evaluate and check it's positive
@@ -154,7 +161,8 @@ impl ValidationRule for TypeCooperativeMatrixRule {
                                 type_id,
                                 opcode,
                                 value: cols_value,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -173,7 +181,8 @@ impl ValidationRule for TypeCooperativeMatrixRule {
                         if !is_constant_opcode(use_inst.class.opcode) {
                             return Err(ValidationError::TypeCooperativeMatrixUseNotConstant {
                                 type_id,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -225,7 +234,8 @@ impl ValidationRule for TypeCooperativeVectorNVRule {
                         return Err(ValidationError::TypeCooperativeVectorComponentNotScalar {
                             type_id,
                             component_type,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -245,13 +255,15 @@ impl ValidationRule for TypeCooperativeVectorNVRule {
                         return Err(ValidationError::TypeCooperativeVectorCountNotConstant {
                             type_id,
                             count_id,
-                        }.into());
+                        }
+                        .into());
                     }
 
                     // Must have integer type
                     if let Some(count_type_raw) = count_inst.result_type {
                         if let Ok(count_type_result_id) = ResultId::try_from(count_type_raw) {
-                            if let Some(count_type_opcode) = ctx.opcodes.get(&count_type_result_id) {
+                            if let Some(count_type_opcode) = ctx.opcodes.get(&count_type_result_id)
+                            {
                                 if *count_type_opcode != Op::TypeInt {
                                     let count_id = Id::try_from(count_id_raw)
                                         .unwrap_or_else(|_| Id::try_from(1u32).unwrap());
@@ -259,8 +271,9 @@ impl ValidationRule for TypeCooperativeVectorNVRule {
                                         ValidationError::TypeCooperativeVectorCountNotInteger {
                                             type_id,
                                             count_id,
-                                        }.into(),
-                        );
+                                        }
+                                        .into(),
+                                    );
                                 }
                             }
                         }
@@ -272,7 +285,8 @@ impl ValidationRule for TypeCooperativeVectorNVRule {
                             return Err(ValidationError::TypeCooperativeVectorCountInvalid {
                                 type_id,
                                 value: count_value,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }

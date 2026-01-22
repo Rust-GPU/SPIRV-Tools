@@ -26,9 +26,9 @@ use crate::validation::span::ValidationErrorExt;
 use crate::validation::types::ResultId;
 use crate::validation::ValidationResult;
 use crate::validation::{
-    LIMIT_MAX_ACCESS_CHAIN_INDEXES, LIMIT_MAX_CONTROL_FLOW_NESTING_DEPTH,
-    LIMIT_MAX_FUNCTION_ARGS, LIMIT_MAX_GLOBAL_VARIABLES, LIMIT_MAX_LOCAL_VARIABLES,
-    LIMIT_MAX_STRUCT_DEPTH, LIMIT_MAX_STRUCT_MEMBERS, LIMIT_MAX_SWITCH_BRANCHES,
+    LIMIT_MAX_ACCESS_CHAIN_INDEXES, LIMIT_MAX_CONTROL_FLOW_NESTING_DEPTH, LIMIT_MAX_FUNCTION_ARGS,
+    LIMIT_MAX_GLOBAL_VARIABLES, LIMIT_MAX_LOCAL_VARIABLES, LIMIT_MAX_STRUCT_DEPTH,
+    LIMIT_MAX_STRUCT_MEMBERS, LIMIT_MAX_SWITCH_BRANCHES,
 };
 
 // ============================================================================
@@ -54,7 +54,8 @@ impl ValidationRule for StructMemberLimitRule {
                     limit_kind: LIMIT_MAX_STRUCT_MEMBERS,
                     limit,
                     found: member_count as u32,
-                }.at_id_ctx(
+                }
+                .at_id_ctx(
                     struct_id,
                     format!("struct has {} members, limit is {}", member_count, limit),
                     ctx,
@@ -90,7 +91,8 @@ impl ValidationRule for FunctionArgLimitRule {
                     limit_kind: LIMIT_MAX_FUNCTION_ARGS,
                     limit,
                     found: arg_count,
-                }.at_id_ctx(
+                }
+                .at_id_ctx(
                     func_id,
                     format!("function has {} arguments, limit is {}", arg_count, limit),
                     ctx,
@@ -168,7 +170,8 @@ impl ValidationRule for StructDepthLimitRule {
                                 limit_kind: LIMIT_MAX_STRUCT_DEPTH,
                                 limit,
                                 found: depth,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -208,7 +211,8 @@ impl ValidationRule for GlobalVariableLimitRule {
                 limit_kind: LIMIT_MAX_GLOBAL_VARIABLES,
                 limit,
                 found: globals,
-            }.into());
+            }
+            .into());
         }
         Ok(())
     }
@@ -247,7 +251,8 @@ impl ValidationRule for LocalVariableLimitRule {
                 limit_kind: LIMIT_MAX_LOCAL_VARIABLES,
                 limit,
                 found: locals,
-            }.into());
+            }
+            .into());
         }
         Ok(())
     }
@@ -262,7 +267,11 @@ impl ValidationRule for ControlFlowNestingLimitRule {
     }
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
-        let Some(&limit) = ctx.options.limits.get(&LIMIT_MAX_CONTROL_FLOW_NESTING_DEPTH) else {
+        let Some(&limit) = ctx
+            .options
+            .limits
+            .get(&LIMIT_MAX_CONTROL_FLOW_NESTING_DEPTH)
+        else {
             return Ok(());
         };
 
@@ -290,7 +299,8 @@ impl ValidationRule for ControlFlowNestingLimitRule {
                 limit_kind: LIMIT_MAX_CONTROL_FLOW_NESTING_DEPTH,
                 limit,
                 found: max_depth,
-            }.into());
+            }
+            .into());
         }
         Ok(())
     }
@@ -328,7 +338,8 @@ impl ValidationRule for SwitchBranchLimitRule {
                                 limit_kind: LIMIT_MAX_SWITCH_BRANCHES,
                                 limit,
                                 found: branches,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -383,7 +394,8 @@ impl ValidationRule for AccessChainLimitRule {
                     limit_kind: LIMIT_MAX_ACCESS_CHAIN_INDEXES,
                     limit,
                     found: indexes,
-                }.into());
+                }
+                .into());
             }
             Ok(())
         };

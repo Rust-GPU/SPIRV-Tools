@@ -82,7 +82,9 @@ impl TestModuleBuilder {
 
     /// Begin a function with specified parameter types.
     pub fn begin_function_with_params(&mut self, param_types: Vec<u32>) -> Vec<u32> {
-        let func_ty = self.builder.type_function(self.void_ty, param_types.clone());
+        let func_ty = self
+            .builder
+            .type_function(self.void_ty, param_types.clone());
         self.builder
             .begin_function(self.void_ty, None, FunctionControl::NONE, func_ty)
             .expect("begin function");

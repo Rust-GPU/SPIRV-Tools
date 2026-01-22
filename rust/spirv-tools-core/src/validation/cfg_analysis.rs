@@ -95,11 +95,7 @@ impl ControlFlowGraph {
         let entry = get_block_label(entry_block)?;
 
         // Collect all block IDs
-        let blocks: HashSet<Id> = function
-            .blocks
-            .iter()
-            .filter_map(get_block_label)
-            .collect();
+        let blocks: HashSet<Id> = function.blocks.iter().filter_map(get_block_label).collect();
 
         // Initialize predecessor/successor maps
         let mut predecessors: HashMap<Id, HashSet<Id>> = blocks
@@ -344,12 +340,7 @@ mod tests {
     #[test]
     fn test_branch_targets_extraction() {
         // Test Branch
-        let mut branch = rspirv::dr::Instruction::new(
-            Op::Branch,
-            None,
-            None,
-            vec![Operand::IdRef(10)],
-        );
+        let branch = rspirv::dr::Instruction::new(Op::Branch, None, None, vec![Operand::IdRef(10)]);
         let targets = get_branch_targets(&branch);
         assert_eq!(targets.len(), 1);
 

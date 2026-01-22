@@ -27,7 +27,7 @@ pub enum ModuleError {
 ///
 /// This performs whole-module optimization in a single egglog pass.
 pub fn optimize_bytes(bytes: &[u8]) -> Result<Vec<u8>, ModuleError> {
-    if bytes.len() % 4 != 0 {
+    if !bytes.len().is_multiple_of(4) {
         return Err(ModuleError::ParseError(
             "input length is not a multiple of 4".to_string(),
         ));

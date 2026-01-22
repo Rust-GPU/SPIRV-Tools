@@ -9,10 +9,10 @@ use rspirv::dr::{Instruction, Operand};
 use rspirv::spirv::Op;
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::type_ext::{DefaultTypeResolver, TypeResolver};
 use crate::validation::types::{Id, ResultId};
+use crate::validation::ValidationResult;
 
 use super::glsl::get_vector_component_count;
 
@@ -543,7 +543,8 @@ impl ValidationRule for OpenClFloatOpsRule {
                             return Err(ValidationError::OpenClExtInstResultTypeMustBeFloat {
                                 function: function_id,
                                 block: block_id,
-                            }.into());
+                            }
+                            .into());
                         }
 
                         // Check vector dimension (must be 2, 3, 4, 8, or 16)
@@ -553,7 +554,8 @@ impl ValidationRule for OpenClFloatOpsRule {
                             return Err(ValidationError::OpenClExtInstBadVectorDimension {
                                 function: function_id,
                                 block: block_id,
-                            }.into());
+                            }
+                            .into());
                         }
 
                         // All operands must match Result Type
@@ -641,7 +643,8 @@ impl ValidationRule for OpenClIntOpsRule {
                             return Err(ValidationError::OpenClExtInstResultTypeMustBeInt {
                                 function: function_id,
                                 block: block_id,
-                            }.into());
+                            }
+                            .into());
                         }
 
                         // Check vector dimension
@@ -651,7 +654,8 @@ impl ValidationRule for OpenClIntOpsRule {
                             return Err(ValidationError::OpenClExtInstBadVectorDimension {
                                 function: function_id,
                                 block: block_id,
-                            }.into());
+                            }
+                            .into());
                         }
 
                         // All operands must match Result Type
@@ -733,8 +737,8 @@ impl ValidationRule for OpenClGeometryOpsRule {
                             opencl::CROSS => {
                                 // Result Type must be 3 or 4 component float vector
                                 // Check it's float scalar or vector and is a vector (has component count)
-                                let is_float =
-                                    resolver.is_float_scalar_or_vector(result_type, ctx.definitions);
+                                let is_float = resolver
+                                    .is_float_scalar_or_vector(result_type, ctx.definitions);
                                 let num_components =
                                     get_vector_component_count(result_type, ctx.definitions);
                                 if !is_float || num_components.is_none() {
@@ -742,17 +746,17 @@ impl ValidationRule for OpenClGeometryOpsRule {
                                         ValidationError::OpenClCrossResultMustBeFloatVector {
                                             function: function_id,
                                             block: block_id,
-                                        }.into(),
-                        );
+                                        }
+                                        .into(),
+                                    );
                                 }
                                 let num_components = num_components.unwrap_or(0);
                                 if num_components != 3 && num_components != 4 {
-                                    return Err(
-                                        ValidationError::OpenClCrossBadVectorDimension {
-                                            function: function_id,
-                                            block: block_id,
-                                        }.into(),
-                        );
+                                    return Err(ValidationError::OpenClCrossBadVectorDimension {
+                                        function: function_id,
+                                        block: block_id,
+                                    }
+                                    .into());
                                 }
                             }
                             opencl::DISTANCE
@@ -765,14 +769,15 @@ impl ValidationRule for OpenClGeometryOpsRule {
                                         ValidationError::OpenClGeometryResultMustBeFloatScalar {
                                             function: function_id,
                                             block: block_id,
-                                        }.into(),
-                        );
+                                        }
+                                        .into(),
+                                    );
                                 }
                             }
                             opencl::NORMALIZE | opencl::FAST_NORMALIZE => {
                                 // Result Type must be float vector (float scalar or vector, but must be vector)
-                                let is_float =
-                                    resolver.is_float_scalar_or_vector(result_type, ctx.definitions);
+                                let is_float = resolver
+                                    .is_float_scalar_or_vector(result_type, ctx.definitions);
                                 let is_vector =
                                     get_vector_component_count(result_type, ctx.definitions)
                                         .is_some();
@@ -781,8 +786,9 @@ impl ValidationRule for OpenClGeometryOpsRule {
                                         ValidationError::OpenClNormalizeResultMustBeFloatVector {
                                             function: function_id,
                                             block: block_id,
-                                        }.into(),
-                        );
+                                        }
+                                        .into(),
+                                    );
                                 }
                             }
                             _ => {}
@@ -795,7 +801,6 @@ impl ValidationRule for OpenClGeometryOpsRule {
         Ok(())
     }
 }
-
 
 #[cfg(test)]
 mod tests {

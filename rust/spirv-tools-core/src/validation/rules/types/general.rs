@@ -44,9 +44,13 @@ impl ValidationRule for ResultTypesAreTypesRule {
                                 instruction: inst.class.opcode,
                                 result_type: Id::from(type_id),
                                 found: *type_opcode,
-                            }.at_ids(
+                            }
+                            .at_ids(
                                 inst_id,
-                                format!("instruction uses non-type {:?} as result type", type_opcode),
+                                format!(
+                                    "instruction uses non-type {:?} as result type",
+                                    type_opcode
+                                ),
                                 type_id,
                                 format!("defined as {:?}, not a type opcode", type_opcode),
                                 ctx,
@@ -124,7 +128,8 @@ impl ValidationRule for TypeFunctionsRule {
                     return Err(ValidationError::FunctionTypeParameterVoid {
                         type_id,
                         parameter: param_type,
-                    }.into());
+                    }
+                    .into());
                 }
                 if !is_type_opcode(param_opcode) {
                     return Err(ValidationError::InvalidTypeFunction { type_id }.into());
@@ -301,7 +306,8 @@ impl ValidationRule for TypeUniquenessRule {
                             return Err(ValidationError::DuplicateTypeDeclaration {
                                 opcode: inst.class.opcode,
                                 type_id,
-                            }.into());
+                            }
+                            .into());
                         }
                         seen_types.insert(signature, type_id);
                     }
@@ -342,7 +348,8 @@ impl ValidationRule for ReservedOpcodeRule {
             if is_reserved {
                 return Err(ValidationError::ReservedOpcode {
                     opcode: inst.class.opcode,
-                }.into());
+                }
+                .into());
             }
         }
         Ok(())
@@ -456,7 +463,10 @@ fn generates_untyped_pointer(opcode: Op) -> bool {
 }
 
 /// Checks if an instruction is part of a non-semantic extended instruction set.
-fn is_non_semantic_instruction(inst: &rspirv::dr::Instruction, ctx: &ValidationContext<'_>) -> bool {
+fn is_non_semantic_instruction(
+    inst: &rspirv::dr::Instruction,
+    ctx: &ValidationContext<'_>,
+) -> bool {
     if inst.class.opcode != Op::ExtInst && inst.class.opcode != Op::ExtInstWithForwardRefsKHR {
         return false;
     }
@@ -523,8 +533,10 @@ impl ValidationRule for IdPassRule {
                         // Check: Type operand cannot be used where value is expected
                         if is_type_opcode(def_opcode) && !can_have_type_ops {
                             return Err(ValidationError::OperandCannotBeType {
-                                operand: Id::try_from(*operand_id).unwrap_or(Id::try_from(1u32).unwrap()),
-                            }.into());
+                                operand: Id::try_from(*operand_id)
+                                    .unwrap_or(Id::try_from(1u32).unwrap()),
+                            }
+                            .into());
                         }
 
                         // Check: Operand must have a type if required
@@ -533,15 +545,19 @@ impl ValidationRule for IdPassRule {
                             && requires_typed_ops
                         {
                             return Err(ValidationError::OperandRequiresType {
-                                operand: Id::try_from(*operand_id).unwrap_or(Id::try_from(1u32).unwrap()),
-                            }.into());
+                                operand: Id::try_from(*operand_id)
+                                    .unwrap_or(Id::try_from(1u32).unwrap()),
+                            }
+                            .into());
                         }
 
                         // Check: Non-semantic result cannot be used in semantic instruction
                         if is_semantic && is_non_semantic_instruction(def_inst, ctx) {
                             return Err(ValidationError::NonSemanticUsedInSemantic {
-                                operand: Id::try_from(*operand_id).unwrap_or(Id::try_from(1u32).unwrap()),
-                            }.into());
+                                operand: Id::try_from(*operand_id)
+                                    .unwrap_or(Id::try_from(1u32).unwrap()),
+                            }
+                            .into());
                         }
                     }
                 }

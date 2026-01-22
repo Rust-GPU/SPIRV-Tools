@@ -351,8 +351,11 @@ pub trait TypeResolver {
     ) -> bool;
 
     /// Returns the bit width if the type is a numeric scalar or the component of a numeric vector.
-    fn get_bit_width(&self, type_id: u32, definitions: &HashMap<ResultId, Instruction>)
-        -> Option<u32>;
+    fn get_bit_width(
+        &self,
+        type_id: u32,
+        definitions: &HashMap<ResultId, Instruction>,
+    ) -> Option<u32>;
 
     /// Returns the dimension (1 for scalar, N for vecN).
     fn get_dimension(&self, type_id: u32, definitions: &HashMap<ResultId, Instruction>) -> u32;
@@ -360,8 +363,11 @@ pub trait TypeResolver {
     /// Returns true if the type is a BFloat16 scalar type.
     ///
     /// BFloat16 is identified by OpTypeFloat with 16-bit width and BFloat16KHR encoding.
-    fn is_bfloat16_scalar(&self, type_id: u32, definitions: &HashMap<ResultId, Instruction>)
-        -> bool;
+    fn is_bfloat16_scalar(
+        &self,
+        type_id: u32,
+        definitions: &HashMap<ResultId, Instruction>,
+    ) -> bool;
 
     /// Returns true if the type is a cooperative matrix type.
     fn is_cooperative_matrix(
@@ -606,7 +612,12 @@ impl TypeResolver for DefaultTypeResolver {
         // Must have BFloat16KHR encoding (second operand)
         inst.operands
             .get(1)
-            .map(|op| matches!(op, Operand::FPEncoding(rspirv::spirv::FPEncoding::BFloat16KHR)))
+            .map(|op| {
+                matches!(
+                    op,
+                    Operand::FPEncoding(rspirv::spirv::FPEncoding::BFloat16KHR)
+                )
+            })
             .unwrap_or(false)
     }
 

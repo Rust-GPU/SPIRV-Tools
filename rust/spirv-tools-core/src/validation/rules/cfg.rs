@@ -25,9 +25,9 @@ use rspirv::spirv::{ExecutionMode, LoopControl, Op, SelectionControl};
 
 use crate::validation::cfg_analysis::{get_block_label, ControlFlowGraph};
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::{Id, MergeTargetKind};
+use crate::validation::ValidationResult;
 use crate::version::SpirvVersion;
 
 /// Helper to convert a raw u32 ID to our Id wrapper type.
@@ -68,15 +68,18 @@ impl ValidationRule for BlockStructureRule {
             // A function with parameters but no blocks is a definition with missing entry block.
             if func.blocks.is_empty() {
                 if !func.parameters.is_empty() {
-                    return Err(ValidationError::MissingFunctionEntryBlock { function: func_id }.into());
+                    return Err(
+                        ValidationError::MissingFunctionEntryBlock { function: func_id }.into(),
+                    );
                 }
                 continue;
             }
 
             // Validate entry block exists
-            let entry_block = func.blocks.first().ok_or(ValidationError::MissingFunctionEntryBlock {
-                function: func_id,
-            })?;
+            let entry_block = func
+                .blocks
+                .first()
+                .ok_or(ValidationError::MissingFunctionEntryBlock { function: func_id })?;
 
             let entry_label = entry_block
                 .label
@@ -84,7 +87,9 @@ impl ValidationRule for BlockStructureRule {
                 .ok_or(ValidationError::MissingFunctionEntryBlock { function: func_id })?;
 
             if entry_label.class.opcode != Op::Label {
-                return Err(ValidationError::MissingFunctionEntryBlock { function: func_id }.into());
+                return Err(
+                    ValidationError::MissingFunctionEntryBlock { function: func_id }.into(),
+                );
             }
 
             // Build CFG to check entry predecessors
@@ -93,7 +98,8 @@ impl ValidationRule for BlockStructureRule {
                     return Err(ValidationError::EntryBlockHasPredecessor {
                         function: func_id,
                         entry: cfg.entry,
-                    }.into());
+                    }
+                    .into());
                 }
             }
 
@@ -114,20 +120,21 @@ impl ValidationRule for BlockStructureRule {
                     return Err(ValidationError::MissingBlockLabel {
                         function: func_id,
                         block_index,
-                    }.into());
+                    }
+                    .into());
                 }
 
                 // Find terminator
-                let terminator_index = block
-                    .instructions
-                    .iter()
-                    .position(|inst| rspirv::grammar::reflect::is_block_terminator(inst.class.opcode));
+                let terminator_index = block.instructions.iter().position(|inst| {
+                    rspirv::grammar::reflect::is_block_terminator(inst.class.opcode)
+                });
 
                 let Some(term_idx) = terminator_index else {
                     return Err(ValidationError::MissingBlockTerminator {
                         function: func_id,
                         block: block_id,
-                    }.into());
+                    }
+                    .into());
                 };
 
                 // Check no instructions after terminator
@@ -135,7 +142,8 @@ impl ValidationRule for BlockStructureRule {
                     return Err(ValidationError::InstructionsAfterTerminator {
                         function: func_id,
                         block: block_id,
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -175,11 +183,8 @@ impl ValidationRule for MergeInstructionRule {
                 .unwrap_or_else(|| to_id(0));
 
             // Collect all block IDs in function
-            let block_ids: std::collections::HashSet<Id> = func
-                .blocks
-                .iter()
-                .filter_map(get_block_label)
-                .collect();
+            let block_ids: std::collections::HashSet<Id> =
+                func.blocks.iter().filter_map(get_block_label).collect();
 
             for block in &func.blocks {
                 let block_id = get_block_label(block).unwrap_or(func_id);
@@ -189,14 +194,14 @@ impl ValidationRule for MergeInstructionRule {
 
                 for (index, inst) in block.instructions.iter().enumerate() {
                     // Track merge instructions
-                    if inst.class.opcode == Op::SelectionMerge
-                        || inst.class.opcode == Op::LoopMerge
+                    if inst.class.opcode == Op::SelectionMerge || inst.class.opcode == Op::LoopMerge
                     {
                         if merge_info.is_some() {
                             return Err(ValidationError::DuplicateMergeInstruction {
                                 function: func_id,
                                 block: block_id,
-                            }.into());
+                            }
+                            .into());
                         }
                         merge_info = Some((index, inst));
                     }
@@ -209,13 +214,16 @@ impl ValidationRule for MergeInstructionRule {
                 }
 
                 // If we have a merge instruction, validate it
-                if let (Some((merge_idx, merge_inst)), Some(term_idx)) = (merge_info, terminator_index) {
+                if let (Some((merge_idx, merge_inst)), Some(term_idx)) =
+                    (merge_info, terminator_index)
+                {
                     // Merge must immediately precede terminator
                     if merge_idx + 1 != term_idx {
                         return Err(ValidationError::MergeInstructionNotBeforeTerminator {
                             function: func_id,
                             block: block_id,
-                        }.into());
+                        }
+                        .into());
                     }
 
                     let terminator = &block.instructions[term_idx];
@@ -231,7 +239,8 @@ impl ValidationRule for MergeInstructionRule {
                                     function: func_id,
                                     block: block_id,
                                     terminator: terminator.class.opcode,
-                                }.into());
+                                }
+                                .into());
                             }
 
                             // Validate merge target
@@ -244,7 +253,8 @@ impl ValidationRule for MergeInstructionRule {
                                         block: block_id,
                                         kind: MergeTargetKind::Merge,
                                         target,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
 
                                 if !block_ids.contains(&target) {
@@ -253,7 +263,8 @@ impl ValidationRule for MergeInstructionRule {
                                         block: block_id,
                                         kind: MergeTargetKind::Merge,
                                         target,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -266,7 +277,8 @@ impl ValidationRule for MergeInstructionRule {
                                     function: func_id,
                                     block: block_id,
                                     terminator: terminator.class.opcode,
-                                }.into());
+                                }
+                                .into());
                             }
 
                             // Validate merge and continue targets
@@ -292,7 +304,8 @@ impl ValidationRule for MergeInstructionRule {
                                         block: block_id,
                                         kind: MergeTargetKind::Merge,
                                         target,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                                 if !block_ids.contains(&target) {
                                     return Err(ValidationError::MergeTargetMissing {
@@ -300,7 +313,8 @@ impl ValidationRule for MergeInstructionRule {
                                         block: block_id,
                                         kind: MergeTargetKind::Merge,
                                         target,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
 
@@ -311,7 +325,8 @@ impl ValidationRule for MergeInstructionRule {
                                         block: block_id,
                                         kind: MergeTargetKind::Continue,
                                         target,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                                 if !block_ids.contains(&target) {
                                     return Err(ValidationError::MergeTargetMissing {
@@ -319,7 +334,8 @@ impl ValidationRule for MergeInstructionRule {
                                         block: block_id,
                                         kind: MergeTargetKind::Continue,
                                         target,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
 
@@ -330,7 +346,8 @@ impl ValidationRule for MergeInstructionRule {
                                         function: func_id,
                                         block: block_id,
                                         target: merge,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -351,7 +368,8 @@ impl ValidationRule for MergeInstructionRule {
                                 function: func_id,
                                 block: block_id,
                                 terminator: terminator.class.opcode,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -411,13 +429,16 @@ impl ValidationRule for MergeDominationRule {
                                 let merge_target = to_id(*raw_merge);
 
                                 // Merge target must be dominated by header
-                                if !cfg.dominates(block_id, merge_target) && block_id != merge_target {
+                                if !cfg.dominates(block_id, merge_target)
+                                    && block_id != merge_target
+                                {
                                     return Err(ValidationError::MergeTargetNotDominated {
                                         function: func_id,
                                         block: block_id,
                                         kind: MergeTargetKind::Merge,
                                         target: merge_target,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -426,13 +447,16 @@ impl ValidationRule for MergeDominationRule {
                             if let Some(Operand::IdRef(raw_merge)) = inst.operands.first() {
                                 let merge_target = to_id(*raw_merge);
 
-                                if !cfg.dominates(block_id, merge_target) && block_id != merge_target {
+                                if !cfg.dominates(block_id, merge_target)
+                                    && block_id != merge_target
+                                {
                                     return Err(ValidationError::MergeTargetNotDominated {
                                         function: func_id,
                                         block: block_id,
                                         kind: MergeTargetKind::Merge,
                                         target: merge_target,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
 
@@ -440,13 +464,16 @@ impl ValidationRule for MergeDominationRule {
                             if let Some(Operand::IdRef(raw_continue)) = inst.operands.get(1) {
                                 let continue_target = to_id(*raw_continue);
 
-                                if !cfg.dominates(block_id, continue_target) && block_id != continue_target {
+                                if !cfg.dominates(block_id, continue_target)
+                                    && block_id != continue_target
+                                {
                                     return Err(ValidationError::MergeTargetNotDominated {
                                         function: func_id,
                                         block: block_id,
                                         kind: MergeTargetKind::Continue,
                                         target: continue_target,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -513,19 +540,19 @@ impl ValidationRule for LoopBackEdgeRule {
                                     function: func_id,
                                     header: header_id,
                                     continue_target,
-                                }.into());
+                                }
+                                .into());
                             }
 
                             // Check for back edge: continue block or its successors must branch to header
                             // The continue block terminates the continue construct, and one of its
                             // successors must be the header block for a proper loop.
-                            let has_back_edge = if let Some(successors) =
-                                cfg.get_successors(continue_target)
-                            {
-                                successors.contains(&header_id)
-                            } else {
-                                false
-                            };
+                            let has_back_edge =
+                                if let Some(successors) = cfg.get_successors(continue_target) {
+                                    successors.contains(&header_id)
+                                } else {
+                                    false
+                                };
 
                             if !has_back_edge {
                                 // Also check if header is a successor of continue target's successors
@@ -546,7 +573,8 @@ impl ValidationRule for LoopBackEdgeRule {
                                         function: func_id,
                                         header: header_id,
                                         continue_target,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -583,41 +611,36 @@ impl ValidationRule for BranchTargetRule {
                 .unwrap_or_else(|| to_id(0));
 
             // Collect all block IDs
-            let block_ids: std::collections::HashSet<Id> = func
-                .blocks
-                .iter()
-                .filter_map(get_block_label)
-                .collect();
+            let block_ids: std::collections::HashSet<Id> =
+                func.blocks.iter().filter_map(get_block_label).collect();
 
             for block in &func.blocks {
                 for inst in &block.instructions {
                     let targets: Vec<Id> = match inst.class.opcode {
-                        Op::Branch => {
-                            inst.operands
-                                .first()
-                                .and_then(|op| {
-                                    if let Operand::IdRef(raw) = op {
-                                        Some(vec![to_id(*raw)])
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .unwrap_or_default()
-                        }
-                        Op::BranchConditional => {
-                            inst.operands
-                                .iter()
-                                .skip(1)
-                                .take(2)
-                                .filter_map(|op| {
-                                    if let Operand::IdRef(raw) = op {
-                                        Some(to_id(*raw))
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .collect()
-                        }
+                        Op::Branch => inst
+                            .operands
+                            .first()
+                            .and_then(|op| {
+                                if let Operand::IdRef(raw) = op {
+                                    Some(vec![to_id(*raw)])
+                                } else {
+                                    None
+                                }
+                            })
+                            .unwrap_or_default(),
+                        Op::BranchConditional => inst
+                            .operands
+                            .iter()
+                            .skip(1)
+                            .take(2)
+                            .filter_map(|op| {
+                                if let Operand::IdRef(raw) = op {
+                                    Some(to_id(*raw))
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect(),
                         Op::Switch => {
                             inst.operands
                                 .iter()
@@ -644,7 +667,8 @@ impl ValidationRule for BranchTargetRule {
                             return Err(ValidationError::MissingBlockTarget {
                                 function: func_id,
                                 target,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -709,10 +733,7 @@ impl ValidationRule for PhiInstructionRule {
             for block in &func.blocks {
                 let block_id = get_block_label(block).unwrap_or(func_id);
 
-                let expected_preds = cfg
-                    .get_predecessors(block_id)
-                    .map(|p| p.len())
-                    .unwrap_or(0);
+                let expected_preds = cfg.get_predecessors(block_id).map(|p| p.len()).unwrap_or(0);
 
                 let mut seen_non_phi = false;
 
@@ -723,13 +744,14 @@ impl ValidationRule for PhiInstructionRule {
                             return Err(ValidationError::PhiAfterNonPhi {
                                 function: func_id,
                                 block: block_id,
-                            }.into());
+                            }
+                            .into());
                         }
 
                         // Validate result type is not void, pointer (without VariablePointers),
                         // or sampled image/image/sampler
                         if let Some(result_type_id) = inst.result_type {
-                            if let Some(result_type_rid) = ResultId::try_from(result_type_id).ok() {
+                            if let Ok(result_type_rid) = ResultId::try_from(result_type_id) {
                                 if let Some(type_inst) = ctx.definitions.get(&result_type_rid) {
                                     let type_op = type_inst.class.opcode;
 
@@ -738,7 +760,8 @@ impl ValidationRule for PhiInstructionRule {
                                         return Err(ValidationError::PhiVoidResultType {
                                             function: func_id,
                                             block: block_id,
-                                        }.into());
+                                        }
+                                        .into());
                                     }
 
                                     // OpPhi with pointer requires VariablePointers in logical addressing
@@ -765,17 +788,18 @@ impl ValidationRule for PhiInstructionRule {
                                     let has_bindless = ctx
                                         .declared_capabilities
                                         .contains(&rspirv::spirv::Capability::BindlessTextureNV);
-                                    if !has_bindless {
-                                        if matches!(
+                                    if !has_bindless
+                                        && matches!(
                                             type_op,
                                             Op::TypeSampledImage | Op::TypeImage | Op::TypeSampler
-                                        ) {
-                                            return Err(ValidationError::PhiInvalidResultType {
-                                                function: func_id,
-                                                block: block_id,
-                                                type_opcode: type_op,
-                                            }.into());
+                                        )
+                                    {
+                                        return Err(ValidationError::PhiInvalidResultType {
+                                            function: func_id,
+                                            block: block_id,
+                                            type_opcode: type_op,
                                         }
+                                        .into());
                                     }
                                 }
                             }
@@ -789,13 +813,13 @@ impl ValidationRule for PhiInstructionRule {
                                 block: block_id,
                                 expected: expected_preds,
                                 found: pair_count,
-                            }.into());
+                            }
+                            .into());
                         }
 
                         // Get phi result type
-                        let phi_result_type = inst
-                            .result_type
-                            .and_then(|raw| TypeId::try_from(raw).ok());
+                        let phi_result_type =
+                            inst.result_type.and_then(|raw| TypeId::try_from(raw).ok());
 
                         let mut seen_incoming: HashSet<Id> = HashSet::new();
 
@@ -822,7 +846,8 @@ impl ValidationRule for PhiInstructionRule {
                                         function: func_id,
                                         block: block_id,
                                         incoming,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
 
                                 // Incoming block must be a predecessor
@@ -832,7 +857,8 @@ impl ValidationRule for PhiInstructionRule {
                                             function: func_id,
                                             block: block_id,
                                             incoming,
-                                        }.into());
+                                        }
+                                        .into());
                                     }
                                 }
 
@@ -842,7 +868,8 @@ impl ValidationRule for PhiInstructionRule {
                                         function: func_id,
                                         block: block_id,
                                         incoming,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
 
                                 // Validate incoming value type matches phi type
@@ -852,13 +879,16 @@ impl ValidationRule for PhiInstructionRule {
                                     if let Ok(value_id) = ResultId::try_from(value_raw) {
                                         if let Some(found_type) = ctx.result_types.get(&value_id) {
                                             if *found_type != expected_type {
-                                                return Err(ValidationError::PhiIncomingTypeMismatch {
-                                                    function: func_id,
-                                                    block: block_id,
-                                                    incoming: to_id(value_raw),
-                                                    expected: expected_type,
-                                                    found: *found_type,
-                                                }.into());
+                                                return Err(
+                                                    ValidationError::PhiIncomingTypeMismatch {
+                                                        function: func_id,
+                                                        block: block_id,
+                                                        incoming: to_id(value_raw),
+                                                        expected: expected_type,
+                                                        found: *found_type,
+                                                    }
+                                                    .into(),
+                                                );
                                             }
                                         }
                                     }
@@ -1008,10 +1038,13 @@ impl ValidationRule for DominanceValidationRule {
                             if let (Some(value_id), Some(incoming)) = (value_ref, incoming_block) {
                                 if let Some(def_block) = definition_blocks.get(&value_id) {
                                     if !cfg.blocks.contains(def_block) {
-                                        return Err(ValidationError::ValueDefinedInAnotherFunction {
-                                            function: func_id,
-                                            value: Id::from(value_id),
-                                        }.into());
+                                        return Err(
+                                            ValidationError::ValueDefinedInAnotherFunction {
+                                                function: func_id,
+                                                value: Id::from(value_id),
+                                            }
+                                            .into(),
+                                        );
                                     }
                                     if !cfg.dominates(*def_block, incoming) {
                                         return Err(ValidationError::PhiIncomingNotDominated {
@@ -1019,7 +1052,8 @@ impl ValidationRule for DominanceValidationRule {
                                             block: block_id,
                                             incoming,
                                             value: Id::from(value_id),
-                                        }.into());
+                                        }
+                                        .into());
                                     }
                                 }
                             }
@@ -1044,21 +1078,24 @@ impl ValidationRule for DominanceValidationRule {
                                     return Err(ValidationError::ValueDefinedInAnotherFunction {
                                         function: func_id,
                                         value: Id::from(result_id),
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                                 if !cfg.dominates(*def_block, block_id) {
                                     return Err(ValidationError::ValueNotDominated {
                                         function: func_id,
                                         block: block_id,
                                         value: Id::from(result_id),
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             } else if function_local_ids.contains(&result_id) {
                                 // ID is defined in some function but not this one
                                 return Err(ValidationError::ValueDefinedInAnotherFunction {
                                     function: func_id,
                                     value: Id::from(result_id),
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -1120,7 +1157,8 @@ impl ValidationRule for LoopControlRule {
                         return Err(ValidationError::LoopControlUnrollAndDontUnroll {
                             function: func_id,
                             block: block_id,
-                        }.into());
+                        }
+                        .into());
                     }
 
                     // Check PeelCount and DontUnroll cannot both be specified
@@ -1130,7 +1168,8 @@ impl ValidationRule for LoopControlRule {
                         return Err(ValidationError::LoopControlPeelCountAndDontUnroll {
                             function: func_id,
                             block: block_id,
-                        }.into());
+                        }
+                        .into());
                     }
 
                     // Check PartialCount and DontUnroll cannot both be specified
@@ -1140,7 +1179,8 @@ impl ValidationRule for LoopControlRule {
                         return Err(ValidationError::LoopControlPartialCountAndDontUnroll {
                             function: func_id,
                             block: block_id,
-                        }.into());
+                        }
+                        .into());
                     }
 
                     // Validate IterationMultiple operand if flag is set
@@ -1161,12 +1201,14 @@ impl ValidationRule for LoopControlRule {
                         }
 
                         // Now operand_index should point to IterationMultiple operand
-                        if let Some(Operand::LiteralBit32(value)) = inst.operands.get(operand_index) {
+                        if let Some(Operand::LiteralBit32(value)) = inst.operands.get(operand_index)
+                        {
                             if *value == 0 {
                                 return Err(ValidationError::LoopControlIterationMultipleZero {
                                     function: func_id,
                                     block: block_id,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -1225,7 +1267,8 @@ impl ValidationRule for SelectionControlRule {
                         return Err(ValidationError::SelectionControlFlattenAndDontFlatten {
                             function: func_id,
                             block: block_id,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -1336,7 +1379,8 @@ impl ValidationRule for BranchConditionalRule {
                             return Err(ValidationError::BranchConditionalSameLabels {
                                 function: func_id,
                                 block: block_id,
-                            }.into());
+                            }
+                            .into());
                         }
 
                         // In MaximallyReconvergesKHR execution mode, this is also an error
@@ -1345,8 +1389,9 @@ impl ValidationRule for BranchConditionalRule {
                                 ValidationError::BranchConditionalSameLabelsMaximalReconvergence {
                                     function: func_id,
                                     block: block_id,
-                                }.into(),
-                        );
+                                }
+                                .into(),
+                            );
                         }
                     }
                 }
@@ -1447,11 +1492,7 @@ impl ValidationRule for MaximalReconvergencePredecessorsRule {
             let mut allowed_multi_pred_blocks: HashSet<u32> = HashSet::new();
 
             for block in &func.blocks {
-                let block_label = block
-                    .label
-                    .as_ref()
-                    .and_then(|l| l.result_id)
-                    .unwrap_or(0);
+                let block_label = block.label.as_ref().and_then(|l| l.result_id).unwrap_or(0);
 
                 // Check if this block is a loop header (has OpLoopMerge)
                 for inst in &block.instructions {
@@ -1518,11 +1559,7 @@ impl ValidationRule for MaximalReconvergencePredecessorsRule {
 
             // Now check each block for invalid multiple predecessors
             for block in &func.blocks {
-                let block_label = block
-                    .label
-                    .as_ref()
-                    .and_then(|l| l.result_id)
-                    .unwrap_or(0);
+                let block_label = block.label.as_ref().and_then(|l| l.result_id).unwrap_or(0);
 
                 let preds: &HashSet<u32> = match predecessors.get(&block_label) {
                     Some(p) => p,
@@ -1554,7 +1591,8 @@ impl ValidationRule for MaximalReconvergencePredecessorsRule {
                 return Err(ValidationError::MaximalReconvergenceMultiplePredecessors {
                     function: func_id,
                     block: block_id,
-                }.into());
+                }
+                .into());
             }
         }
 

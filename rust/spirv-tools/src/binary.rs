@@ -28,7 +28,7 @@ impl TryFrom<Vec<u8>> for Binary {
 
     #[inline]
     fn try_from(v: Vec<u8>) -> Result<Self, Self::Error> {
-        if v.len() % size_of::<u32>() != 0 {
+        if !v.len().is_multiple_of(size_of::<u32>()) {
             Err(Error {
                 inner: SpirvResult::InvalidBinary,
                 diagnostic: None,
@@ -84,18 +84,22 @@ pub fn from_binary(bin: &[u32]) -> &[u8] {
 /// Fails if the input length is not a multiple of 4 or not properly aligned.
 #[inline]
 pub fn to_binary(bytes: &[u8]) -> Result<&[u32], Error> {
-    if bytes.len() % size_of::<u32>() != 0 {
+    if !bytes.len().is_multiple_of(size_of::<u32>()) {
         return Err(Error {
             inner: SpirvResult::InvalidBinary,
             diagnostic: None,
         });
     }
-    if (bytes.as_ptr() as usize) % size_of::<u32>() != 0 {
+    if !(bytes.as_ptr() as usize).is_multiple_of(size_of::<u32>()) {
         return Err(Error {
             inner: SpirvResult::InvalidBinary,
             diagnostic: None,
         });
     }
 
-    Ok(unsafe { std::slice::from_raw_parts(bytes.as_ptr().cast(), bytes.len() / size_of::<u32>()) })
+    Ok(
+        unsafe {
+            std::slice::from_raw_parts(bytes.as_ptr().cast(), bytes.len() / size_of::<u32>())
+        },
+    )
 }

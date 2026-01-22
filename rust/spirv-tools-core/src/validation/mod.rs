@@ -27,7 +27,7 @@ use operand_versions::grammar_required_spirv_version_for_operand;
 // Type definitions
 pub mod types;
 pub use types::{
-    CheckedBound, DecorationTargetId, DecorationTargetKind, DeclaredBound, ExtensionName, Id,
+    CheckedBound, DeclaredBound, DecorationTargetId, DecorationTargetKind, ExtensionName, Id,
     IdBound, IdKind, MemberDecorationTargetId, MemberIndex, MergeTargetKind, ModuleWords,
     OperandId, ResultId, Schema, TypeId, ZeroIdError,
 };
@@ -35,10 +35,10 @@ pub use types::{
 // Validator options and limits
 pub mod options;
 pub use options::{
-    ValidationOptions, ValidationLimits,
-    LIMIT_MAX_STRUCT_MEMBERS, LIMIT_MAX_STRUCT_DEPTH, LIMIT_MAX_LOCAL_VARIABLES,
-    LIMIT_MAX_GLOBAL_VARIABLES, LIMIT_MAX_SWITCH_BRANCHES, LIMIT_MAX_FUNCTION_ARGS,
-    LIMIT_MAX_CONTROL_FLOW_NESTING_DEPTH, LIMIT_MAX_ACCESS_CHAIN_INDEXES, LIMIT_MAX_ID_BOUND,
+    ValidationLimits, ValidationOptions, LIMIT_MAX_ACCESS_CHAIN_INDEXES,
+    LIMIT_MAX_CONTROL_FLOW_NESTING_DEPTH, LIMIT_MAX_FUNCTION_ARGS, LIMIT_MAX_GLOBAL_VARIABLES,
+    LIMIT_MAX_ID_BOUND, LIMIT_MAX_LOCAL_VARIABLES, LIMIT_MAX_STRUCT_DEPTH,
+    LIMIT_MAX_STRUCT_MEMBERS, LIMIT_MAX_SWITCH_BRANCHES,
 };
 
 // Validated header
@@ -47,54 +47,59 @@ pub use header::ValidatedHeader;
 
 // Friendly names for error messages
 pub mod friendly_names;
-pub use friendly_names::{FriendlyNames, build_friendly_name_table, format_validation_error, format_validation_error_from_words};
+pub use friendly_names::{
+    build_friendly_name_table, format_validation_error, format_validation_error_from_words,
+    FriendlyNames,
+};
 
 // ValidModule and related types
 pub mod valid_module;
-pub use valid_module::{ValidModule, ValidModuleCache, MaybeValidModule, ValidatableModule};
+pub use valid_module::{MaybeValidModule, ValidModule, ValidModuleCache, ValidatableModule};
 
 // Shared helper utilities
 pub mod helpers;
 
 // Type extension traits for rspirv types
 pub mod type_ext;
-pub use type_ext::{TypeInstructionExt, TypeResolver, DefaultTypeResolver};
+pub use type_ext::{DefaultTypeResolver, TypeInstructionExt, TypeResolver};
 
 // Opcode classification extension traits
 pub mod op_ext;
-pub use op_ext::{OpExt, DecorationExt, BuiltInExt};
+pub use op_ext::{BuiltInExt, DecorationExt, OpExt};
 
 // Validation context and rule trait
 pub mod context;
-pub use context::{ValidationContext, ValidationRule, run_rules, run_boxed_rules, TestContextData};
+pub use context::{run_boxed_rules, run_rules, TestContextData, ValidationContext, ValidationRule};
 
 // CFG analysis utilities
 pub mod cfg_analysis;
-pub use cfg_analysis::{ControlFlowGraph, MergeInfo, get_block_label, get_merge_info, get_terminator};
+pub use cfg_analysis::{
+    get_block_label, get_merge_info, get_terminator, ControlFlowGraph, MergeInfo,
+};
 
 // Source span information for rich error reporting
 pub mod span;
 pub use span::{
-    extract_source_snippet, spanned_err, LabeledSpan, LabelKind, SourceLocation, SourceSnippet,
+    extract_source_snippet, spanned_err, LabelKind, LabeledSpan, SourceLocation, SourceSnippet,
     SourceSpan, SpanLabel, SpanMap, SpannedError, SpannedResult, SpannedValidationError,
     ValidationErrorExt, ValidationResult, WithSpan,
 };
 
 // Validation rules organized by category
 pub mod rules;
-use rules::limits::all_limit_rules;
-use rules::extensions::{
-    extension_operand, extension_satisfied, validate_extension_allowlist, validate_extensions,
-    ExtensionSet,
+use helpers::{
+    collect_declared_capabilities, collect_execution_models, collect_result_instructions,
+    collect_result_opcodes, collect_result_types, is_memory_object_declaration,
 };
 use rules::capabilities::{
     capability_operand, capability_satisfied, required_extension_for_capability,
     validate_capabilities,
 };
-use helpers::{
-    collect_declared_capabilities, collect_execution_models, collect_result_instructions,
-    collect_result_opcodes, collect_result_types, is_memory_object_declaration,
+use rules::extensions::{
+    extension_operand, extension_satisfied, validate_extension_allowlist, validate_extensions,
+    ExtensionSet,
 };
+use rules::limits::all_limit_rules;
 
 /// A set of declared capabilities for a module.
 #[derive(Debug, Default)]
@@ -117,7 +122,6 @@ impl CapabilitySet {
         self.insert_unchecked(capability)
     }
 }
-
 
 fn merge_versions(
     grammar: Option<SpirvVersion>,
@@ -235,8 +239,13 @@ pub fn validate_module_with_spans(
     options: ValidationOptions,
     span_map: &span::SpanMap,
 ) -> Result<(), SpannedValidationError> {
-    validate_words_internal(ModuleWords::from(Arc::from(words)), env, options, Some(span_map))
-        .map(|_| ())
+    validate_words_internal(
+        ModuleWords::from(Arc::from(words)),
+        env,
+        options,
+        Some(span_map),
+    )
+    .map(|_| ())
 }
 
 pub(crate) fn validate_words_internal(
@@ -257,7 +266,8 @@ pub(crate) fn validate_words_internal(
             return Err(ValidationError::IdBoundExceedsLimit {
                 declared: header.bound().declared(),
                 limit,
-            }.into());
+            }
+            .into());
         }
     }
     let module_version = header.version();
@@ -284,7 +294,8 @@ pub(crate) fn validate_words_internal(
     validate_decorations(&module, &defined_result_ids)?;
     let entry_models = collect_execution_models(&module);
     validate_decoration_target_categories(&module, &opcodes, &definitions, &capabilities)?;
-    let _entry_points = validate_entry_points(&module, &defined_result_ids, &opcodes, &definitions)?;
+    let _entry_points =
+        validate_entry_points(&module, &defined_result_ids, &opcodes, &definitions)?;
     // Entry point interface storage class validation is handled by EntryPointInterfaceStorageClassesRule in entry_points.rs
     // Entry point location conflict validation is handled by LocationConflictRule in interfaces.rs
     // Execution mode validation is handled by ExecutionModesRule in execution_modes.rs
@@ -310,17 +321,32 @@ pub(crate) fn validate_words_internal(
         span_map,
     };
     run_rules(&validation_ctx, &all_limit_rules())?;
-    run_rules(&validation_ctx, &rules::block_layout::all_block_layout_rules())?;
+    run_rules(
+        &validation_ctx,
+        &rules::block_layout::all_block_layout_rules(),
+    )?;
     run_rules(&validation_ctx, &rules::vulkan::all_vulkan_rules())?;
     run_rules(&validation_ctx, &rules::pointers::all_pointer_rules())?;
     run_rules(&validation_ctx, &rules::decorations::all_decoration_rules())?;
-    run_rules(&validation_ctx, &rules::storage_classes::all_storage_class_rules())?;
+    run_rules(
+        &validation_ctx,
+        &rules::storage_classes::all_storage_class_rules(),
+    )?;
     run_rules(&validation_ctx, &rules::builtins::all_builtin_rules())?;
-    run_rules(&validation_ctx, &rules::interpolation::all_interpolation_rules())?;
+    run_rules(
+        &validation_ctx,
+        &rules::interpolation::all_interpolation_rules(),
+    )?;
     run_rules(&validation_ctx, &rules::composites::all_composite_rules())?;
     run_rules(&validation_ctx, &rules::cfg::all_cfg_rules())?;
-    run_rules(&validation_ctx, &rules::entry_points::all_entry_point_rules())?;
-    run_rules(&validation_ctx, &rules::execution_modes::all_execution_mode_rules())?;
+    run_rules(
+        &validation_ctx,
+        &rules::entry_points::all_entry_point_rules(),
+    )?;
+    run_rules(
+        &validation_ctx,
+        &rules::execution_modes::all_execution_mode_rules(),
+    )?;
     run_rules(&validation_ctx, &rules::functions::all_function_rules())?;
     run_rules(&validation_ctx, &rules::adjacency::all_adjacency_rules())?;
     run_rules(&validation_ctx, &rules::arithmetics::all_arithmetic_rules())?;
@@ -343,18 +369,42 @@ pub(crate) fn validate_words_internal(
     run_boxed_rules(&validation_ctx, &rules::graph::all_graph_rules())?;
     run_boxed_rules(&validation_ctx, &rules::hit_object::all_hit_object_rules())?;
     run_boxed_rules(&validation_ctx, &rules::interfaces::all_interface_rules())?;
-    run_boxed_rules(&validation_ctx, &rules::invalid_type::all_invalid_type_rules())?;
-    run_boxed_rules(&validation_ctx, &rules::memory_semantics::all_memory_semantics_rules())?;
-    run_boxed_rules(&validation_ctx, &rules::mesh_shading::all_mesh_shading_rules())?;
+    run_boxed_rules(
+        &validation_ctx,
+        &rules::invalid_type::all_invalid_type_rules(),
+    )?;
+    run_boxed_rules(
+        &validation_ctx,
+        &rules::memory_semantics::all_memory_semantics_rules(),
+    )?;
+    run_boxed_rules(
+        &validation_ctx,
+        &rules::mesh_shading::all_mesh_shading_rules(),
+    )?;
     run_boxed_rules(&validation_ctx, &rules::misc::all_misc_rules())?;
-    run_boxed_rules(&validation_ctx, &rules::mode_setting::all_mode_setting_rules())?;
-    run_boxed_rules(&validation_ctx, &rules::non_uniform::all_non_uniform_rules())?;
+    run_boxed_rules(
+        &validation_ctx,
+        &rules::mode_setting::all_mode_setting_rules(),
+    )?;
+    run_boxed_rules(
+        &validation_ctx,
+        &rules::non_uniform::all_non_uniform_rules(),
+    )?;
     run_boxed_rules(&validation_ctx, &rules::primitives::all_primitive_rules())?;
-    run_boxed_rules(&validation_ctx, &rules::ray_tracing::all_ray_tracing_rules())?;
+    run_boxed_rules(
+        &validation_ctx,
+        &rules::ray_tracing::all_ray_tracing_rules(),
+    )?;
     run_boxed_rules(&validation_ctx, &rules::scopes::all_scope_rules())?;
-    run_boxed_rules(&validation_ctx, &rules::small_type_uses::all_small_type_uses_rules())?;
+    run_boxed_rules(
+        &validation_ctx,
+        &rules::small_type_uses::all_small_type_uses_rules(),
+    )?;
     run_boxed_rules(&validation_ctx, &rules::tensor::all_tensor_rules())?;
-    run_boxed_rules(&validation_ctx, &rules::tensor_layout::all_tensor_layout_rules())?;
+    run_boxed_rules(
+        &validation_ctx,
+        &rules::tensor_layout::all_tensor_layout_rules(),
+    )?;
 
     let friendly_names = options
         .use_friendly_names
@@ -766,8 +816,6 @@ fn instruction_section(current: Section, inst: &rspirv::dr::Instruction) -> Sect
     }
 }
 
-
-
 fn validate_instruction_requirements(
     module: &Module,
     module_version: SpirvVersion,
@@ -796,13 +844,16 @@ fn validate_instruction_requirements(
         }
         // Instruction capabilities are disjunctive - you need AT LEAST ONE from the list
         if !inst.class.capabilities.is_empty() {
-            let has_any_capability = inst.class.capabilities.iter().any(|&required_cap| {
-                capability_satisfied(required_cap, capabilities)
-            });
+            let has_any_capability = inst
+                .class
+                .capabilities
+                .iter()
+                .any(|&required_cap| capability_satisfied(required_cap, capabilities));
             // Special case for PtrDiff which has alternative capabilities
             let ptrdiff_alternative = inst.class.opcode == rspirv::spirv::Op::PtrDiff
                 && (capabilities.contains(&rspirv::spirv::Capability::UntypedPointersKHR)
-                    || capabilities.contains(&rspirv::spirv::Capability::PhysicalStorageBufferAddresses));
+                    || capabilities
+                        .contains(&rspirv::spirv::Capability::PhysicalStorageBufferAddresses));
             // Special case for AMD Shader Ballot: OpGroup*NonUniformAMD opcodes normally require
             // Group capability, but when SPV_AMD_shader_ballot extension is present, the capability
             // requirement is waived.
@@ -816,7 +867,10 @@ fn validate_instruction_requirements(
                     | rspirv::spirv::Op::GroupFMaxNonUniformAMD
                     | rspirv::spirv::Op::GroupUMaxNonUniformAMD
                     | rspirv::spirv::Op::GroupSMaxNonUniformAMD
-            ) && extensions.values.iter().any(|ext| ext.as_str() == "SPV_AMD_shader_ballot");
+            ) && extensions
+                .values
+                .iter()
+                .any(|ext| ext.as_str() == "SPV_AMD_shader_ballot");
             if !has_any_capability && !ptrdiff_alternative && !amd_shader_ballot_alternative {
                 // Report the first required capability for the error message
                 return Err(ValidationError::MissingInstructionCapability {
@@ -827,9 +881,10 @@ fn validate_instruction_requirements(
         }
         // Instruction extensions are disjunctive - you need AT LEAST ONE from the list
         if !inst.class.extensions.is_empty() {
-            let has_any_extension = inst.class.extensions.iter().any(|&required_ext| {
-                extension_satisfied(required_ext, extensions, target_version)
-            });
+            let has_any_extension =
+                inst.class.extensions.iter().any(|&required_ext| {
+                    extension_satisfied(required_ext, extensions, target_version)
+                });
             if !has_any_extension {
                 return Err(ValidationError::MissingInstructionExtension {
                     opcode: inst.class.opcode,
@@ -841,9 +896,11 @@ fn validate_instruction_requirements(
             if target_version < required_version {
                 // Check if an enabling extension is available and declared
                 let has_extension_from_inst = !inst.class.extensions.is_empty()
-                    && inst.class.extensions.iter().any(|&ext| {
-                        extension_satisfied(ext, extensions, target_version)
-                    });
+                    && inst
+                        .class
+                        .extensions
+                        .iter()
+                        .any(|&ext| extension_satisfied(ext, extensions, target_version));
                 // Also check if any of the instruction's required capabilities have enabling extensions
                 let has_extension_from_cap = !inst.class.capabilities.is_empty()
                     && inst.class.capabilities.iter().any(|&cap| {
@@ -903,11 +960,17 @@ fn validate_instruction_requirements(
             // and you need AT LEAST ONE from the combined set.
             let mut all_required_caps: Vec<rspirv::spirv::Capability> = Vec::new();
             all_required_caps.extend(operand.required_capabilities());
-            all_required_caps.extend(manual_required_capabilities_for_operand(operand).iter().copied());
+            all_required_caps.extend(
+                manual_required_capabilities_for_operand(operand)
+                    .iter()
+                    .copied(),
+            );
             all_required_caps.extend(grammar_required_capabilities_for_operand(operand));
 
             if !all_required_caps.is_empty() {
-                let has_any = all_required_caps.iter().any(|&cap| capability_satisfied(cap, capabilities));
+                let has_any = all_required_caps
+                    .iter()
+                    .any(|&cap| capability_satisfied(cap, capabilities));
                 if !has_any {
                     return Err(ValidationError::MissingOperandCapability {
                         opcode: inst.class.opcode,
@@ -973,9 +1036,6 @@ fn validate_sampler_image_addressing_mode(
     Ok(())
 }
 
-
-
-
 fn manual_required_spirv_version_for_opcode(opcode: rspirv::spirv::Op) -> Option<SpirvVersion> {
     match opcode {
         rspirv::spirv::Op::TypeAccelerationStructureKHR | rspirv::spirv::Op::TypeRayQueryKHR => {
@@ -1035,8 +1095,6 @@ fn required_spirv_version_for_operand(operand: &rspirv::dr::Operand) -> Option<S
         manual_required_spirv_version_for_operand(operand),
     )
 }
-
-
 
 fn member_decoration_target(inst: &rspirv::dr::Instruction) -> Option<MemberDecorationTargetId> {
     use rspirv::spirv::Op::*;
@@ -1873,7 +1931,6 @@ fn validate_instruction_ids(
 
     Ok(())
 }
-
 
 #[cfg(test)]
 mod tests;

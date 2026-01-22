@@ -14,9 +14,9 @@ use rspirv::dr::{Instruction, Operand};
 use rspirv::spirv::Op;
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::ResultId;
+use crate::validation::ValidationResult;
 
 // ============================================================================
 // Common Debug Info Instruction Constants
@@ -156,10 +156,7 @@ fn get_debug_info_name(opcode: u32) -> &'static str {
 }
 
 /// Check if an operand is a constant (OpConstant).
-fn is_constant(
-    operand_id: u32,
-    definitions: &HashMap<ResultId, Instruction>,
-) -> bool {
+fn is_constant(operand_id: u32, definitions: &HashMap<ResultId, Instruction>) -> bool {
     if let Ok(result_id) = ResultId::try_from(operand_id) {
         if let Some(inst) = definitions.get(&result_id) {
             return matches!(
@@ -218,8 +215,8 @@ fn is_debug_type(
             if is_debug_info_ext_inst(inst, import_id) {
                 if let Some(opcode) = get_debug_info_opcode(inst) {
                     // Debug type opcodes are 2-14 (DebugTypeBasic to DebugTypeTemplate)
-                    if opcode >= debug_info::DEBUG_TYPE_BASIC
-                        && opcode <= debug_info::DEBUG_TYPE_TEMPLATE
+                    if (debug_info::DEBUG_TYPE_BASIC..=debug_info::DEBUG_TYPE_TEMPLATE)
+                        .contains(&opcode)
                     {
                         return true;
                     }
@@ -318,7 +315,8 @@ impl ValidationRule for DebugSourceRule {
                     return Err(ValidationError::DebugInfoOperandNotString {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "File",
-                    }.into());
+                    }
+                    .into());
                 }
             }
 
@@ -330,13 +328,15 @@ impl ValidationRule for DebugSourceRule {
                         return Err(ValidationError::DebugInfoOperandNotString {
                             instruction: get_debug_info_name(opcode),
                             operand_name: "Text",
-                        }.into());
+                        }
+                        .into());
                     }
                 } else if !is_op_string(text_id, ctx.definitions) {
                     return Err(ValidationError::DebugInfoOperandNotString {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "Text",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -392,7 +392,8 @@ impl ValidationRule for DebugCompilationUnitRule {
                         return Err(ValidationError::DebugInfoOperandNotConstant {
                             instruction: get_debug_info_name(opcode),
                             operand_name: "Version",
-                        }.into());
+                        }
+                        .into());
                     }
                 }
 
@@ -402,7 +403,8 @@ impl ValidationRule for DebugCompilationUnitRule {
                         return Err(ValidationError::DebugInfoOperandNotConstant {
                             instruction: get_debug_info_name(opcode),
                             operand_name: "DWARF Version",
-                        }.into());
+                        }
+                        .into());
                     }
                 }
 
@@ -418,7 +420,8 @@ impl ValidationRule for DebugCompilationUnitRule {
                             instruction: get_debug_info_name(opcode),
                             operand_name: "Source",
                             expected: "DebugSource",
-                        }.into());
+                        }
+                        .into());
                     }
                 }
 
@@ -428,7 +431,8 @@ impl ValidationRule for DebugCompilationUnitRule {
                         return Err(ValidationError::DebugInfoOperandNotConstant {
                             instruction: get_debug_info_name(opcode),
                             operand_name: "Language",
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             } else {
@@ -447,7 +451,8 @@ impl ValidationRule for DebugCompilationUnitRule {
                             instruction: get_debug_info_name(opcode),
                             operand_name: "Source",
                             expected: "DebugSource",
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -500,7 +505,8 @@ impl ValidationRule for DebugTypeBasicRule {
                     return Err(ValidationError::DebugInfoOperandNotString {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "Name",
-                    }.into());
+                    }
+                    .into());
                 }
             }
 
@@ -510,7 +516,8 @@ impl ValidationRule for DebugTypeBasicRule {
                     return Err(ValidationError::DebugInfoOperandNotConstant {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "Size",
-                    }.into());
+                    }
+                    .into());
                 }
             }
 
@@ -521,7 +528,8 @@ impl ValidationRule for DebugTypeBasicRule {
                         return Err(ValidationError::DebugInfoOperandNotConstant {
                             instruction: get_debug_info_name(opcode),
                             operand_name: "Encoding",
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -580,7 +588,8 @@ impl ValidationRule for DebugTypeVectorRule {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "Base Type",
                         expected: "DebugTypeBasic",
-                    }.into());
+                    }
+                    .into());
                 }
             }
 
@@ -592,16 +601,20 @@ impl ValidationRule for DebugTypeVectorRule {
                         return Err(ValidationError::DebugInfoOperandNotConstant {
                             instruction: get_debug_info_name(opcode),
                             operand_name: "Component Count",
-                        }.into());
+                        }
+                        .into());
                     }
                     // Check the constant value is 1-4
                     if let Ok(result_id) = ResultId::try_from(count_id) {
                         if let Some(const_inst) = ctx.definitions.get(&result_id) {
                             if let Some(Operand::LiteralBit32(val)) = const_inst.operands.first() {
                                 if *val == 0 || *val > 4 {
-                                    return Err(ValidationError::DebugTypeVectorInvalidComponentCount {
-                                        count: *val,
-                                    }.into());
+                                    return Err(
+                                        ValidationError::DebugTypeVectorInvalidComponentCount {
+                                            count: *val,
+                                        }
+                                        .into(),
+                                    );
                                 }
                             }
                         }
@@ -613,7 +626,8 @@ impl ValidationRule for DebugTypeVectorRule {
                     if count == 0 || count > 4 {
                         return Err(ValidationError::DebugTypeVectorInvalidComponentCount {
                             count,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -666,7 +680,8 @@ impl ValidationRule for DebugTypePointerRule {
                     return Err(ValidationError::DebugInfoOperandNotDebugType {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "Base Type",
-                    }.into());
+                    }
+                    .into());
                 }
             }
 
@@ -677,7 +692,8 @@ impl ValidationRule for DebugTypePointerRule {
                         return Err(ValidationError::DebugInfoOperandNotConstant {
                             instruction: get_debug_info_name(opcode),
                             operand_name: "Storage Class",
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -689,7 +705,8 @@ impl ValidationRule for DebugTypePointerRule {
                         return Err(ValidationError::DebugInfoOperandNotConstant {
                             instruction: get_debug_info_name(opcode),
                             operand_name: "Flags",
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -747,7 +764,8 @@ impl ValidationRule for DebugLocalVariableRule {
                     return Err(ValidationError::DebugInfoOperandNotString {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "Name",
-                    }.into());
+                    }
+                    .into());
                 }
             }
 
@@ -757,7 +775,8 @@ impl ValidationRule for DebugLocalVariableRule {
                     return Err(ValidationError::DebugInfoOperandNotDebugType {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "Type",
-                    }.into());
+                    }
+                    .into());
                 }
             }
 
@@ -773,7 +792,8 @@ impl ValidationRule for DebugLocalVariableRule {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "Source",
                         expected: "DebugSource",
-                    }.into());
+                    }
+                    .into());
                 }
             }
 
@@ -784,7 +804,8 @@ impl ValidationRule for DebugLocalVariableRule {
                         return Err(ValidationError::DebugInfoOperandNotConstant {
                             instruction: get_debug_info_name(opcode),
                             operand_name: "Line",
-                        }.into());
+                        }
+                        .into());
                     }
                 }
 
@@ -794,7 +815,8 @@ impl ValidationRule for DebugLocalVariableRule {
                         return Err(ValidationError::DebugInfoOperandNotConstant {
                             instruction: get_debug_info_name(opcode),
                             operand_name: "Column",
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -806,7 +828,8 @@ impl ValidationRule for DebugLocalVariableRule {
                     return Err(ValidationError::DebugInfoOperandNotLexicalScope {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "Scope",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -857,7 +880,8 @@ impl ValidationRule for DebugScopeRule {
                     return Err(ValidationError::DebugInfoOperandNotLexicalScope {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "Scope",
-                    }.into());
+                    }
+                    .into());
                 }
             }
 
@@ -873,7 +897,8 @@ impl ValidationRule for DebugScopeRule {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "InlinedAt",
                         expected: "DebugInlinedAt",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -931,7 +956,8 @@ impl ValidationRule for DebugDeclareRule {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "Local Variable",
                         expected: "DebugLocalVariable",
-                    }.into());
+                    }
+                    .into());
                 }
             }
 
@@ -947,7 +973,8 @@ impl ValidationRule for DebugDeclareRule {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "Expression",
                         expected: "DebugExpression",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -1006,7 +1033,8 @@ impl ValidationRule for DebugValueRule {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "Local Variable",
                         expected: "DebugLocalVariable",
-                    }.into());
+                    }
+                    .into());
                 }
             }
 
@@ -1022,7 +1050,8 @@ impl ValidationRule for DebugValueRule {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "Expression",
                         expected: "DebugExpression",
-                    }.into());
+                    }
+                    .into());
                 }
             }
 
@@ -1034,7 +1063,8 @@ impl ValidationRule for DebugValueRule {
                             return Err(ValidationError::DebugInfoOperandNotConstant {
                                 instruction: get_debug_info_name(opcode),
                                 operand_name: "Index",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -1090,7 +1120,8 @@ impl ValidationRule for DebugOperationRule {
                     return Err(ValidationError::DebugInfoOperandNotConstant {
                         instruction: get_debug_info_name(opcode),
                         operand_name: "Operation",
-                    }.into());
+                    }
+                    .into());
                 }
             }
 
@@ -1101,7 +1132,8 @@ impl ValidationRule for DebugOperationRule {
                         return Err(ValidationError::DebugInfoOperandNotConstant {
                             instruction: get_debug_info_name(opcode),
                             operand_name: "Operand",
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -1140,13 +1172,31 @@ mod tests {
 
     #[test]
     fn test_debug_info_instruction_names() {
-        assert_eq!(get_debug_info_name(debug_info::DEBUG_INFO_NONE), "DebugInfoNone");
+        assert_eq!(
+            get_debug_info_name(debug_info::DEBUG_INFO_NONE),
+            "DebugInfoNone"
+        );
         assert_eq!(get_debug_info_name(debug_info::DEBUG_SOURCE), "DebugSource");
-        assert_eq!(get_debug_info_name(debug_info::DEBUG_COMPILATION_UNIT), "DebugCompilationUnit");
-        assert_eq!(get_debug_info_name(debug_info::DEBUG_TYPE_BASIC), "DebugTypeBasic");
-        assert_eq!(get_debug_info_name(debug_info::DEBUG_TYPE_VECTOR), "DebugTypeVector");
-        assert_eq!(get_debug_info_name(debug_info::DEBUG_LOCAL_VARIABLE), "DebugLocalVariable");
-        assert_eq!(get_debug_info_name(debug_info::DEBUG_DECLARE), "DebugDeclare");
+        assert_eq!(
+            get_debug_info_name(debug_info::DEBUG_COMPILATION_UNIT),
+            "DebugCompilationUnit"
+        );
+        assert_eq!(
+            get_debug_info_name(debug_info::DEBUG_TYPE_BASIC),
+            "DebugTypeBasic"
+        );
+        assert_eq!(
+            get_debug_info_name(debug_info::DEBUG_TYPE_VECTOR),
+            "DebugTypeVector"
+        );
+        assert_eq!(
+            get_debug_info_name(debug_info::DEBUG_LOCAL_VARIABLE),
+            "DebugLocalVariable"
+        );
+        assert_eq!(
+            get_debug_info_name(debug_info::DEBUG_DECLARE),
+            "DebugDeclare"
+        );
         assert_eq!(get_debug_info_name(debug_info::DEBUG_VALUE), "DebugValue");
         assert_eq!(get_debug_info_name(999), "Unknown");
     }
@@ -1190,7 +1240,12 @@ mod tests {
     }
 
     /// Helper to create a debug info extended instruction (for Vulkan NonSemantic)
-    fn make_debug_ext_inst(result_id: u32, ext_set_id: u32, opcode: u32, operands: Vec<u32>) -> Instruction {
+    fn make_debug_ext_inst(
+        result_id: u32,
+        ext_set_id: u32,
+        opcode: u32,
+        operands: Vec<u32>,
+    ) -> Instruction {
         let mut ops = vec![
             Operand::IdRef(ext_set_id),
             Operand::LiteralExtInstInteger(opcode),
@@ -1252,7 +1307,8 @@ mod tests {
         // Create OpString for file
         let file_string = make_op_string(2, "test.glsl");
         data.module.debug_string_source.push(file_string.clone());
-        data.definitions.insert(ResultId::try_from(2).unwrap(), file_string);
+        data.definitions
+            .insert(ResultId::try_from(2).unwrap(), file_string);
 
         // Create DebugSource with File operand
         let debug_source = make_debug_ext_inst(
@@ -1278,7 +1334,8 @@ mod tests {
         // Create type int instead of OpString
         let type_int = make_type_int(2, 32, 0);
         data.module.types_global_values.push(type_int.clone());
-        data.definitions.insert(ResultId::try_from(2).unwrap(), type_int);
+        data.definitions
+            .insert(ResultId::try_from(2).unwrap(), type_int);
 
         // Create DebugSource with non-string file operand
         let debug_source = make_debug_ext_inst(
@@ -1293,7 +1350,11 @@ mod tests {
         let result = DebugSourceRule.validate(&ctx);
         assert!(result.is_err());
         if let Err(spanned) = result {
-            if let ValidationError::DebugInfoOperandNotString { instruction, operand_name } = spanned.error {
+            if let ValidationError::DebugInfoOperandNotString {
+                instruction,
+                operand_name,
+            } = spanned.error
+            {
                 assert_eq!(instruction, "DebugSource");
                 assert_eq!(operand_name, "File");
             } else {
@@ -1317,33 +1378,34 @@ mod tests {
         // Create constants
         let type_int = make_type_int(2, 32, 0);
         data.module.types_global_values.push(type_int.clone());
-        data.definitions.insert(ResultId::try_from(2).unwrap(), type_int);
+        data.definitions
+            .insert(ResultId::try_from(2).unwrap(), type_int);
 
         let version = make_op_constant(3, 2, 1);
         data.module.types_global_values.push(version.clone());
-        data.definitions.insert(ResultId::try_from(3).unwrap(), version);
+        data.definitions
+            .insert(ResultId::try_from(3).unwrap(), version);
 
         let dwarf_version = make_op_constant(4, 2, 4);
         data.module.types_global_values.push(dwarf_version.clone());
-        data.definitions.insert(ResultId::try_from(4).unwrap(), dwarf_version);
+        data.definitions
+            .insert(ResultId::try_from(4).unwrap(), dwarf_version);
 
         let language = make_op_constant(6, 2, 2); // GLSL
         data.module.types_global_values.push(language.clone());
-        data.definitions.insert(ResultId::try_from(6).unwrap(), language);
+        data.definitions
+            .insert(ResultId::try_from(6).unwrap(), language);
 
         // Create DebugSource first
         let file_string = make_op_string(7, "test.glsl");
         data.module.debug_string_source.push(file_string.clone());
-        data.definitions.insert(ResultId::try_from(7).unwrap(), file_string);
+        data.definitions
+            .insert(ResultId::try_from(7).unwrap(), file_string);
 
-        let debug_source = make_debug_ext_inst(
-            5,
-            1,
-            debug_info::DEBUG_SOURCE,
-            vec![7],
-        );
+        let debug_source = make_debug_ext_inst(5, 1, debug_info::DEBUG_SOURCE, vec![7]);
         data.module.types_global_values.push(debug_source.clone());
-        data.definitions.insert(ResultId::try_from(5).unwrap(), debug_source);
+        data.definitions
+            .insert(ResultId::try_from(5).unwrap(), debug_source);
 
         // Create DebugCompilationUnit
         let debug_cu = make_debug_ext_inst(
@@ -1369,24 +1431,29 @@ mod tests {
         // Create constants
         let type_int = make_type_int(2, 32, 0);
         data.module.types_global_values.push(type_int.clone());
-        data.definitions.insert(ResultId::try_from(2).unwrap(), type_int);
+        data.definitions
+            .insert(ResultId::try_from(2).unwrap(), type_int);
 
         let version = make_op_constant(3, 2, 1);
         data.module.types_global_values.push(version.clone());
-        data.definitions.insert(ResultId::try_from(3).unwrap(), version);
+        data.definitions
+            .insert(ResultId::try_from(3).unwrap(), version);
 
         let dwarf_version = make_op_constant(4, 2, 4);
         data.module.types_global_values.push(dwarf_version.clone());
-        data.definitions.insert(ResultId::try_from(4).unwrap(), dwarf_version);
+        data.definitions
+            .insert(ResultId::try_from(4).unwrap(), dwarf_version);
 
         let language = make_op_constant(6, 2, 2);
         data.module.types_global_values.push(language.clone());
-        data.definitions.insert(ResultId::try_from(6).unwrap(), language);
+        data.definitions
+            .insert(ResultId::try_from(6).unwrap(), language);
 
         // Create NOT a DebugSource (just a constant)
         let fake_source = make_op_constant(5, 2, 0);
         data.module.types_global_values.push(fake_source.clone());
-        data.definitions.insert(ResultId::try_from(5).unwrap(), fake_source);
+        data.definitions
+            .insert(ResultId::try_from(5).unwrap(), fake_source);
 
         // Create DebugCompilationUnit with invalid source
         let debug_cu = make_debug_ext_inst(
@@ -1401,7 +1468,12 @@ mod tests {
         let result = DebugCompilationUnitRule.validate(&ctx);
         assert!(result.is_err());
         if let Err(spanned) = result {
-            if let ValidationError::DebugInfoOperandNotDebugInstruction { instruction, operand_name, expected } = spanned.error {
+            if let ValidationError::DebugInfoOperandNotDebugInstruction {
+                instruction,
+                operand_name,
+                expected,
+            } = spanned.error
+            {
                 assert_eq!(instruction, "DebugCompilationUnit");
                 assert_eq!(operand_name, "Source");
                 assert_eq!(expected, "DebugSource");
@@ -1426,22 +1498,26 @@ mod tests {
         // Create base type
         let type_int = make_type_int(2, 32, 0);
         data.module.types_global_values.push(type_int.clone());
-        data.definitions.insert(ResultId::try_from(2).unwrap(), type_int);
+        data.definitions
+            .insert(ResultId::try_from(2).unwrap(), type_int);
 
         // Create OpString for name
         let name_string = make_op_string(3, "float");
         data.module.debug_string_source.push(name_string.clone());
-        data.definitions.insert(ResultId::try_from(3).unwrap(), name_string);
+        data.definitions
+            .insert(ResultId::try_from(3).unwrap(), name_string);
 
         // Create size constant
         let size_const = make_op_constant(4, 2, 32);
         data.module.types_global_values.push(size_const.clone());
-        data.definitions.insert(ResultId::try_from(4).unwrap(), size_const);
+        data.definitions
+            .insert(ResultId::try_from(4).unwrap(), size_const);
 
         // Create encoding constant
         let encoding_const = make_op_constant(5, 2, 4); // Float encoding
         data.module.types_global_values.push(encoding_const.clone());
-        data.definitions.insert(ResultId::try_from(5).unwrap(), encoding_const);
+        data.definitions
+            .insert(ResultId::try_from(5).unwrap(), encoding_const);
 
         // Create DebugTypeBasic first
         let debug_type_basic = make_debug_ext_inst(
@@ -1450,13 +1526,17 @@ mod tests {
             debug_info::DEBUG_TYPE_BASIC,
             vec![3, 4, 5], // name, size, encoding
         );
-        data.module.types_global_values.push(debug_type_basic.clone());
-        data.definitions.insert(ResultId::try_from(6).unwrap(), debug_type_basic);
+        data.module
+            .types_global_values
+            .push(debug_type_basic.clone());
+        data.definitions
+            .insert(ResultId::try_from(6).unwrap(), debug_type_basic);
 
         // Create component count constant (valid: 4)
         let count_const = make_op_constant(7, 2, 4);
         data.module.types_global_values.push(count_const.clone());
-        data.definitions.insert(ResultId::try_from(7).unwrap(), count_const);
+        data.definitions
+            .insert(ResultId::try_from(7).unwrap(), count_const);
 
         // Create DebugTypeVector
         let debug_type_vec = make_debug_ext_inst(
@@ -1482,44 +1562,43 @@ mod tests {
         // Create base type
         let type_int = make_type_int(2, 32, 0);
         data.module.types_global_values.push(type_int.clone());
-        data.definitions.insert(ResultId::try_from(2).unwrap(), type_int);
+        data.definitions
+            .insert(ResultId::try_from(2).unwrap(), type_int);
 
         // Create OpString for name
         let name_string = make_op_string(3, "float");
         data.module.debug_string_source.push(name_string.clone());
-        data.definitions.insert(ResultId::try_from(3).unwrap(), name_string);
+        data.definitions
+            .insert(ResultId::try_from(3).unwrap(), name_string);
 
         // Create size and encoding constants
         let size_const = make_op_constant(4, 2, 32);
         data.module.types_global_values.push(size_const.clone());
-        data.definitions.insert(ResultId::try_from(4).unwrap(), size_const);
+        data.definitions
+            .insert(ResultId::try_from(4).unwrap(), size_const);
 
         let encoding_const = make_op_constant(5, 2, 4);
         data.module.types_global_values.push(encoding_const.clone());
-        data.definitions.insert(ResultId::try_from(5).unwrap(), encoding_const);
+        data.definitions
+            .insert(ResultId::try_from(5).unwrap(), encoding_const);
 
         // Create DebugTypeBasic
-        let debug_type_basic = make_debug_ext_inst(
-            6,
-            1,
-            debug_info::DEBUG_TYPE_BASIC,
-            vec![3, 4, 5],
-        );
-        data.module.types_global_values.push(debug_type_basic.clone());
-        data.definitions.insert(ResultId::try_from(6).unwrap(), debug_type_basic);
+        let debug_type_basic =
+            make_debug_ext_inst(6, 1, debug_info::DEBUG_TYPE_BASIC, vec![3, 4, 5]);
+        data.module
+            .types_global_values
+            .push(debug_type_basic.clone());
+        data.definitions
+            .insert(ResultId::try_from(6).unwrap(), debug_type_basic);
 
         // Create component count constant (INVALID: 0)
         let count_const = make_op_constant(7, 2, 0);
         data.module.types_global_values.push(count_const.clone());
-        data.definitions.insert(ResultId::try_from(7).unwrap(), count_const);
+        data.definitions
+            .insert(ResultId::try_from(7).unwrap(), count_const);
 
         // Create DebugTypeVector
-        let debug_type_vec = make_debug_ext_inst(
-            8,
-            1,
-            debug_info::DEBUG_TYPE_VECTOR,
-            vec![6, 7],
-        );
+        let debug_type_vec = make_debug_ext_inst(8, 1, debug_info::DEBUG_TYPE_VECTOR, vec![6, 7]);
         data.module.types_global_values.push(debug_type_vec);
 
         let ctx = data.as_context();
@@ -1545,44 +1624,43 @@ mod tests {
         // Create base type
         let type_int = make_type_int(2, 32, 0);
         data.module.types_global_values.push(type_int.clone());
-        data.definitions.insert(ResultId::try_from(2).unwrap(), type_int);
+        data.definitions
+            .insert(ResultId::try_from(2).unwrap(), type_int);
 
         // Create name string
         let name_string = make_op_string(3, "float");
         data.module.debug_string_source.push(name_string.clone());
-        data.definitions.insert(ResultId::try_from(3).unwrap(), name_string);
+        data.definitions
+            .insert(ResultId::try_from(3).unwrap(), name_string);
 
         // Create size and encoding constants
         let size_const = make_op_constant(4, 2, 32);
         data.module.types_global_values.push(size_const.clone());
-        data.definitions.insert(ResultId::try_from(4).unwrap(), size_const);
+        data.definitions
+            .insert(ResultId::try_from(4).unwrap(), size_const);
 
         let encoding_const = make_op_constant(5, 2, 4);
         data.module.types_global_values.push(encoding_const.clone());
-        data.definitions.insert(ResultId::try_from(5).unwrap(), encoding_const);
+        data.definitions
+            .insert(ResultId::try_from(5).unwrap(), encoding_const);
 
         // Create DebugTypeBasic
-        let debug_type_basic = make_debug_ext_inst(
-            6,
-            1,
-            debug_info::DEBUG_TYPE_BASIC,
-            vec![3, 4, 5],
-        );
-        data.module.types_global_values.push(debug_type_basic.clone());
-        data.definitions.insert(ResultId::try_from(6).unwrap(), debug_type_basic);
+        let debug_type_basic =
+            make_debug_ext_inst(6, 1, debug_info::DEBUG_TYPE_BASIC, vec![3, 4, 5]);
+        data.module
+            .types_global_values
+            .push(debug_type_basic.clone());
+        data.definitions
+            .insert(ResultId::try_from(6).unwrap(), debug_type_basic);
 
         // Create component count constant (INVALID: 5, exceeds max of 4)
         let count_const = make_op_constant(7, 2, 5);
         data.module.types_global_values.push(count_const.clone());
-        data.definitions.insert(ResultId::try_from(7).unwrap(), count_const);
+        data.definitions
+            .insert(ResultId::try_from(7).unwrap(), count_const);
 
         // Create DebugTypeVector
-        let debug_type_vec = make_debug_ext_inst(
-            8,
-            1,
-            debug_info::DEBUG_TYPE_VECTOR,
-            vec![6, 7],
-        );
+        let debug_type_vec = make_debug_ext_inst(8, 1, debug_info::DEBUG_TYPE_VECTOR, vec![6, 7]);
         data.module.types_global_values.push(debug_type_vec);
 
         let ctx = data.as_context();
@@ -1608,17 +1686,20 @@ mod tests {
         // Create base type
         let type_int = make_type_int(2, 32, 0);
         data.module.types_global_values.push(type_int.clone());
-        data.definitions.insert(ResultId::try_from(2).unwrap(), type_int);
+        data.definitions
+            .insert(ResultId::try_from(2).unwrap(), type_int);
 
         // Create a constant that is NOT DebugTypeBasic
         let fake_base = make_op_constant(6, 2, 0);
         data.module.types_global_values.push(fake_base.clone());
-        data.definitions.insert(ResultId::try_from(6).unwrap(), fake_base);
+        data.definitions
+            .insert(ResultId::try_from(6).unwrap(), fake_base);
 
         // Create component count constant
         let count_const = make_op_constant(7, 2, 4);
         data.module.types_global_values.push(count_const.clone());
-        data.definitions.insert(ResultId::try_from(7).unwrap(), count_const);
+        data.definitions
+            .insert(ResultId::try_from(7).unwrap(), count_const);
 
         // Create DebugTypeVector with invalid base type
         let debug_type_vec = make_debug_ext_inst(
@@ -1633,7 +1714,12 @@ mod tests {
         let result = DebugTypeVectorRule.validate(&ctx);
         assert!(result.is_err());
         if let Err(spanned) = result {
-            if let ValidationError::DebugInfoOperandNotDebugInstruction { instruction, operand_name, expected } = spanned.error {
+            if let ValidationError::DebugInfoOperandNotDebugInstruction {
+                instruction,
+                operand_name,
+                expected,
+            } = spanned.error
+            {
                 assert_eq!(instruction, "DebugTypeVector");
                 assert_eq!(operand_name, "Base Type");
                 assert_eq!(expected, "DebugTypeBasic");
@@ -1658,22 +1744,26 @@ mod tests {
         // Create int type for constants
         let type_int = make_type_int(2, 32, 0);
         data.module.types_global_values.push(type_int.clone());
-        data.definitions.insert(ResultId::try_from(2).unwrap(), type_int);
+        data.definitions
+            .insert(ResultId::try_from(2).unwrap(), type_int);
 
         // Create OpString for name
         let name_string = make_op_string(3, "float");
         data.module.debug_string_source.push(name_string.clone());
-        data.definitions.insert(ResultId::try_from(3).unwrap(), name_string);
+        data.definitions
+            .insert(ResultId::try_from(3).unwrap(), name_string);
 
         // Create size constant
         let size_const = make_op_constant(4, 2, 32);
         data.module.types_global_values.push(size_const.clone());
-        data.definitions.insert(ResultId::try_from(4).unwrap(), size_const);
+        data.definitions
+            .insert(ResultId::try_from(4).unwrap(), size_const);
 
         // Create encoding constant
         let encoding_const = make_op_constant(5, 2, 4);
         data.module.types_global_values.push(encoding_const.clone());
-        data.definitions.insert(ResultId::try_from(5).unwrap(), encoding_const);
+        data.definitions
+            .insert(ResultId::try_from(5).unwrap(), encoding_const);
 
         // Create DebugTypeBasic
         let debug_type_basic = make_debug_ext_inst(
@@ -1699,22 +1789,26 @@ mod tests {
         // Create int type
         let type_int = make_type_int(2, 32, 0);
         data.module.types_global_values.push(type_int.clone());
-        data.definitions.insert(ResultId::try_from(2).unwrap(), type_int);
+        data.definitions
+            .insert(ResultId::try_from(2).unwrap(), type_int);
 
         // Create a constant instead of OpString for name (INVALID)
         let fake_name = make_op_constant(3, 2, 0);
         data.module.types_global_values.push(fake_name.clone());
-        data.definitions.insert(ResultId::try_from(3).unwrap(), fake_name);
+        data.definitions
+            .insert(ResultId::try_from(3).unwrap(), fake_name);
 
         // Create size constant
         let size_const = make_op_constant(4, 2, 32);
         data.module.types_global_values.push(size_const.clone());
-        data.definitions.insert(ResultId::try_from(4).unwrap(), size_const);
+        data.definitions
+            .insert(ResultId::try_from(4).unwrap(), size_const);
 
         // Create encoding constant
         let encoding_const = make_op_constant(5, 2, 4);
         data.module.types_global_values.push(encoding_const.clone());
-        data.definitions.insert(ResultId::try_from(5).unwrap(), encoding_const);
+        data.definitions
+            .insert(ResultId::try_from(5).unwrap(), encoding_const);
 
         // Create DebugTypeBasic with invalid name
         let debug_type_basic = make_debug_ext_inst(
@@ -1729,7 +1823,11 @@ mod tests {
         let result = DebugTypeBasicRule.validate(&ctx);
         assert!(result.is_err());
         if let Err(spanned) = result {
-            if let ValidationError::DebugInfoOperandNotString { instruction, operand_name } = spanned.error {
+            if let ValidationError::DebugInfoOperandNotString {
+                instruction,
+                operand_name,
+            } = spanned.error
+            {
                 assert_eq!(instruction, "DebugTypeBasic");
                 assert_eq!(operand_name, "Name");
             } else {
@@ -1753,15 +1851,11 @@ mod tests {
         // Create OpString for file
         let file_string = make_op_string(2, "test.cl");
         data.module.debug_string_source.push(file_string.clone());
-        data.definitions.insert(ResultId::try_from(2).unwrap(), file_string);
+        data.definitions
+            .insert(ResultId::try_from(2).unwrap(), file_string);
 
         // Create DebugSource
-        let debug_source = make_debug_ext_inst(
-            3,
-            1,
-            debug_info::DEBUG_SOURCE,
-            vec![2],
-        );
+        let debug_source = make_debug_ext_inst(3, 1, debug_info::DEBUG_SOURCE, vec![2]);
         data.module.types_global_values.push(debug_source);
 
         let ctx = data.as_context();
@@ -1819,12 +1913,7 @@ mod tests {
         assert!(!is_debug_info_ext_inst(&valid_inst, 99));
 
         // Not an ExtInst
-        let non_ext_inst = Instruction::new(
-            Op::Nop,
-            None,
-            None,
-            vec![],
-        );
+        let non_ext_inst = Instruction::new(Op::Nop, None, None, vec![]);
         assert!(!is_debug_info_ext_inst(&non_ext_inst, import_id));
     }
 
@@ -1839,15 +1928,14 @@ mod tests {
                 Operand::LiteralExtInstInteger(debug_info::DEBUG_TYPE_BASIC),
             ],
         );
-        assert_eq!(get_debug_info_opcode(&inst), Some(debug_info::DEBUG_TYPE_BASIC));
+        assert_eq!(
+            get_debug_info_opcode(&inst),
+            Some(debug_info::DEBUG_TYPE_BASIC)
+        );
 
         // No opcode operand
-        let inst_no_opcode = Instruction::new(
-            Op::ExtInst,
-            Some(1),
-            Some(100),
-            vec![Operand::IdRef(10)],
-        );
+        let inst_no_opcode =
+            Instruction::new(Op::ExtInst, Some(1), Some(100), vec![Operand::IdRef(10)]);
         assert_eq!(get_debug_info_opcode(&inst_no_opcode), None);
     }
 
@@ -1864,10 +1952,8 @@ mod tests {
         // Test various debug type opcodes (2-14)
         for opcode in debug_info::DEBUG_TYPE_BASIC..=debug_info::DEBUG_TYPE_TEMPLATE {
             let debug_type = make_debug_ext_inst(100 + opcode, import_id, opcode, vec![]);
-            data.definitions.insert(
-                ResultId::try_from(100 + opcode).unwrap(),
-                debug_type,
-            );
+            data.definitions
+                .insert(ResultId::try_from(100 + opcode).unwrap(), debug_type);
             assert!(
                 is_debug_type(100 + opcode, import_id, &data.definitions, false),
                 "Opcode {} should be a debug type",
@@ -1877,7 +1963,8 @@ mod tests {
 
         // Non-debug-type opcodes should not be considered debug types
         let non_type = make_debug_ext_inst(200, import_id, debug_info::DEBUG_SOURCE, vec![]);
-        data.definitions.insert(ResultId::try_from(200).unwrap(), non_type);
+        data.definitions
+            .insert(ResultId::try_from(200).unwrap(), non_type);
         assert!(!is_debug_type(200, import_id, &data.definitions, false));
     }
 
@@ -1901,7 +1988,8 @@ mod tests {
 
         for (id, opcode) in scopes {
             let inst = make_debug_ext_inst(id, import_id, opcode, vec![]);
-            data.definitions.insert(ResultId::try_from(id).unwrap(), inst);
+            data.definitions
+                .insert(ResultId::try_from(id).unwrap(), inst);
             assert!(
                 is_lexical_scope(id, import_id, &data.definitions),
                 "Opcode {} should be a lexical scope",
@@ -1911,7 +1999,8 @@ mod tests {
 
         // Non-lexical-scope should not be considered
         let non_scope = make_debug_ext_inst(20, import_id, debug_info::DEBUG_SOURCE, vec![]);
-        data.definitions.insert(ResultId::try_from(20).unwrap(), non_scope);
+        data.definitions
+            .insert(ResultId::try_from(20).unwrap(), non_scope);
         assert!(!is_lexical_scope(20, import_id, &data.definitions));
     }
 }

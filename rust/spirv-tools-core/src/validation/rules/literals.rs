@@ -15,9 +15,9 @@ use rspirv::dr::Operand;
 use rspirv::spirv::Op;
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::{Id, ResultId, TypeId};
+use crate::validation::ValidationResult;
 
 // ============================================================================
 // Literal Encoding Helpers
@@ -43,7 +43,7 @@ pub enum NumberKind {
 /// Returns `true` if the encoding is valid, `false` otherwise.
 fn verify_upper_bits(value: u32, bit_width: u32, kind: NumberKind) -> bool {
     // Bit widths that are a multiple of 32 have no upper bits to check
-    if bit_width == 0 || bit_width >= 32 || bit_width % 32 == 0 {
+    if bit_width == 0 || bit_width >= 32 || bit_width.is_multiple_of(32) {
         return true;
     }
 
@@ -180,7 +180,8 @@ impl ValidationRule for ConstantLiteralEncodingRule {
                         type_id,
                         bit_width,
                         is_signed,
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }

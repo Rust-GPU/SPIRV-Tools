@@ -156,10 +156,13 @@ impl<'a> MaybeValidModule<'a> {
         options: ValidationOptions,
     ) -> Result<ValidModule, ValidationError> {
         match self {
-            MaybeValidModule::Binary(words) => {
-                super::validate_words_internal(ModuleWords::from(Arc::from(words)), env, options, None)
-                    .map_err(|e: SpannedValidationError| e.error)
-            }
+            MaybeValidModule::Binary(words) => super::validate_words_internal(
+                ModuleWords::from(Arc::from(words)),
+                env,
+                options,
+                None,
+            )
+            .map_err(|e: SpannedValidationError| e.error),
             MaybeValidModule::Text(text) => {
                 let binary = ModuleWords::from(Arc::<[u32]>::from(
                     crate::assembly::assemble_text(text)

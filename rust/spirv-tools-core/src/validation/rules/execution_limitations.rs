@@ -15,9 +15,9 @@ use rspirv::dr::Operand;
 use rspirv::spirv::{ExecutionModel, Op};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::Id;
+use crate::validation::ValidationResult;
 
 /// Helper to convert a raw u32 ID to our Id wrapper type.
 fn to_id(raw: u32) -> Option<Id> {
@@ -127,7 +127,9 @@ impl ExecutionModelLimitation {
                 "workgroup memory requires compute-like execution model (GLCompute, Kernel, etc.)"
             }
             Self::SubgroupOperations => "subgroup operations have execution model restrictions",
-            Self::InputAttachment => "InputAttachment storage class requires Fragment execution model",
+            Self::InputAttachment => {
+                "InputAttachment storage class requires Fragment execution model"
+            }
             Self::GeometryInstructions => "geometry instructions require Geometry execution model",
             Self::TessellationInstructions => {
                 "tessellation instructions require TessellationControl or TessellationEvaluation"
@@ -165,9 +167,10 @@ fn collect_function_limitations(
                 | Op::FwidthCoarse => Some(ExecutionModelLimitation::DerivativeInstructions),
 
                 // Geometry instructions
-                Op::EmitVertex | Op::EndPrimitive | Op::EmitStreamVertex | Op::EndStreamPrimitive => {
-                    Some(ExecutionModelLimitation::GeometryInstructions)
-                }
+                Op::EmitVertex
+                | Op::EndPrimitive
+                | Op::EmitStreamVertex
+                | Op::EndStreamPrimitive => Some(ExecutionModelLimitation::GeometryInstructions),
 
                 // Mesh shading instructions
                 Op::SetMeshOutputsEXT
@@ -218,11 +221,7 @@ fn build_callgraph(ctx: &ValidationContext<'_>) -> HashMap<Id, HashSet<Id>> {
     let mut callgraph: HashMap<Id, HashSet<Id>> = HashMap::new();
 
     for func in &ctx.module.functions {
-        let func_id = func
-            .def
-            .as_ref()
-            .and_then(|d| d.result_id)
-            .and_then(to_id);
+        let func_id = func.def.as_ref().and_then(|d| d.result_id).and_then(to_id);
 
         let Some(func_id) = func_id else {
             continue;
@@ -283,11 +282,7 @@ impl ValidationRule for ExecutionLimitationsRule {
         let mut function_limitations: HashMap<Id, Vec<ExecutionModelLimitation>> = HashMap::new();
 
         for func in &ctx.module.functions {
-            let func_id = func
-                .def
-                .as_ref()
-                .and_then(|d| d.result_id)
-                .and_then(to_id);
+            let func_id = func.def.as_ref().and_then(|d| d.result_id).and_then(to_id);
 
             if let Some(func_id) = func_id {
                 let limitations = collect_function_limitations(ctx, func);
@@ -327,7 +322,8 @@ impl ValidationRule for ExecutionLimitationsRule {
                                 function: *func_id,
                                 execution_model,
                                 reason: limitation.description().to_string(),
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }

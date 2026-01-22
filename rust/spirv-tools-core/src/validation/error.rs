@@ -3,7 +3,7 @@
 use thiserror::Error;
 
 use super::types::{
-    CheckedBound, DecorationTargetId, DecorationTargetKind, DeclaredBound, ExtensionName, Id,
+    CheckedBound, DeclaredBound, DecorationTargetId, DecorationTargetKind, ExtensionName, Id,
     IdKind, MemberDecorationTargetId, MemberIndex, MergeTargetKind, ResultId, TypeId,
 };
 use crate::{target_env::TargetEnv, version::SpirvVersion};
@@ -284,7 +284,9 @@ pub enum ValidationError {
         struct_id: u32,
     },
     /// A Vulkan StorageBuffer variable has a BufferBlock decoration (not allowed).
-    #[error("Vulkan StorageBuffer variables cannot use BufferBlock decoration (struct id {struct_id})")]
+    #[error(
+        "Vulkan StorageBuffer variables cannot use BufferBlock decoration (struct id {struct_id})"
+    )]
     VulkanStorageBufferHasBufferBlock {
         /// The struct type ID.
         struct_id: u32,
@@ -507,7 +509,9 @@ pub enum ValidationError {
         storage_class: rspirv::spirv::StorageClass,
     },
     /// A BuiltIn decoration has the wrong storage class direction for the execution model.
-    #[error("BuiltIn {builtin:?} cannot use {storage_class:?} in execution model {execution_model:?}")]
+    #[error(
+        "BuiltIn {builtin:?} cannot use {storage_class:?} in execution model {execution_model:?}"
+    )]
     BuiltInWrongStorageClassForExecutionModel {
         /// The built-in kind.
         builtin: rspirv::spirv::BuiltIn,
@@ -529,7 +533,9 @@ pub enum ValidationError {
         bit_width: u32,
     },
     /// `OpSamplerImageAddressingModeNV` requires `BindlessTextureNV` capability.
-    #[error("OpSamplerImageAddressingModeNV supported only with extension SPV_NV_bindless_texture")]
+    #[error(
+        "OpSamplerImageAddressingModeNV supported only with extension SPV_NV_bindless_texture"
+    )]
     SamplerImageAddressingModeNVRequiresBindlessTextureNV,
     /// Duplicate extension declarations were found.
     #[error("extension {extension} is declared more than once")]
@@ -600,7 +606,9 @@ pub enum ValidationError {
     #[error("FPRoundingMode decoration requires writes to StorageBuffer, Uniform, or PhysicalStorageBuffer storage classes")]
     FPRoundingModeInvalidStorageClass,
     /// FPRoundingMode decoration in Vulkan only allows RTE or RTZ.
-    #[error("In Vulkan, FPRoundingMode decoration only allows RTE or RTZ rounding modes, got {mode:?}")]
+    #[error(
+        "In Vulkan, FPRoundingMode decoration only allows RTE or RTZ rounding modes, got {mode:?}"
+    )]
     FPRoundingModeVulkanInvalidMode {
         /// The invalid rounding mode.
         mode: rspirv::spirv::FPRoundingMode,
@@ -612,7 +620,9 @@ pub enum ValidationError {
         opcode: rspirv::spirv::Op,
     },
     /// NoSignedWrap/NoUnsignedWrap decoration only applies to integer operations.
-    #[error("NoSignedWrap/NoUnsignedWrap decoration on {opcode:?} is only valid for integer arithmetic")]
+    #[error(
+        "NoSignedWrap/NoUnsignedWrap decoration on {opcode:?} is only valid for integer arithmetic"
+    )]
     IntegerWrapDecorationInvalidOp {
         /// The opcode being decorated.
         opcode: rspirv::spirv::Op,
@@ -688,9 +698,7 @@ pub enum ValidationError {
         storage_class: rspirv::spirv::StorageClass,
     },
     /// In logical addressing, a load/store pointer must come from a logical pointer-producing opcode.
-    #[error(
-        "Op{instruction:?} Pointer <id> '{pointer}' is not a logical pointer."
-    )]
+    #[error("Op{instruction:?} Pointer <id> '{pointer}' is not a logical pointer.")]
     NotALogicalPointer {
         /// The load/store instruction.
         instruction: rspirv::spirv::Op,
@@ -744,9 +752,7 @@ pub enum ValidationError {
         pointer: Id,
     },
     /// Instruction may not have logical pointer operands.
-    #[error(
-        "Instruction {opcode:?} may not have a logical pointer operand"
-    )]
+    #[error("Instruction {opcode:?} may not have a logical pointer operand")]
     LogicalPointerOperandNotAllowed {
         /// The opcode with invalid logical pointer operand.
         opcode: rspirv::spirv::Op,
@@ -760,9 +766,7 @@ pub enum ValidationError {
         opcode: rspirv::spirv::Op,
     },
     /// Instruction may not return a logical pointer.
-    #[error(
-        "Instruction {opcode:?} may not return a logical pointer"
-    )]
+    #[error("Instruction {opcode:?} may not return a logical pointer")]
     LogicalPointerReturnNotAllowed {
         /// The opcode that cannot return logical pointer.
         opcode: rspirv::spirv::Op,
@@ -1688,7 +1692,6 @@ pub enum ValidationError {
     // ============================================================================
     // Cooperative Matrix Errors
     // ============================================================================
-
     /// OpCooperativeMatrixLengthKHR/NV result type must be OpTypeInt with width 32 and signedness 0.
     #[error("{op_name} result type must be OpTypeInt with width 32 and signedness 0")]
     CooperativeMatrixLengthResultTypeMismatch {
@@ -1813,7 +1816,6 @@ pub enum ValidationError {
     // ============================================================================
     // Cooperative Matrix MulAdd Errors
     // ============================================================================
-
     /// Cooperative matrix MulAdd operand is not a cooperative matrix type.
     #[error("{op_name} {operand_name} is not a cooperative matrix type")]
     CooperativeMatrixMulAddTypeMismatch {
@@ -1877,7 +1879,9 @@ pub enum ValidationError {
         block: Option<Id>,
     },
     /// OpCooperativeMatrixPerElementOpNV Matrix operand is not a cooperative matrix.
-    #[error("OpCooperativeMatrixPerElementOpNV Matrix <id> {matrix_id:?} is not a cooperative matrix")]
+    #[error(
+        "OpCooperativeMatrixPerElementOpNV Matrix <id> {matrix_id:?} is not a cooperative matrix"
+    )]
     CooperativeMatrixPerElementOpMatrixNotCooperative {
         /// The matrix operand ID.
         matrix_id: Id,
@@ -1976,7 +1980,6 @@ pub enum ValidationError {
     // ============================================================================
     // Cooperative Vector Errors
     // ============================================================================
-
     /// Cooperative vector load/store result type or object type is not a cooperative vector type.
     #[error("{op_name} {operand_name} is not a cooperative vector type")]
     CooperativeVectorLoadStoreTypeMismatch {
@@ -2110,7 +2113,9 @@ pub enum ValidationError {
         block: Option<Id>,
     },
     /// Cooperative vector matrix mul M does not match result type component count.
-    #[error("{op_name} result type number of components {result_components} does not match M {m_value}")]
+    #[error(
+        "{op_name} result type number of components {result_components} does not match M {m_value}"
+    )]
     CooperativeVectorMatrixMulMDimensionMismatch {
         /// The opcode name.
         op_name: &'static str,
@@ -2139,7 +2144,6 @@ pub enum ValidationError {
     // ============================================================================
     // CompositeConstruct Errors
     // ============================================================================
-
     /// OpCompositeConstruct result type is not a composite type.
     #[error("OpCompositeConstruct result type must be a composite type (vector, matrix, array, or struct)")]
     CompositeConstructResultTypeInvalid {
@@ -2229,7 +2233,9 @@ pub enum ValidationError {
         block: Option<Id>,
     },
     /// OpCompositeConstruct constituent type mismatch for struct member.
-    #[error("OpCompositeConstruct constituent type must match struct member type at index {index}")]
+    #[error(
+        "OpCompositeConstruct constituent type must match struct member type at index {index}"
+    )]
     CompositeConstructStructConstituentTypeMismatch {
         /// The index of the mismatched member.
         index: u32,
@@ -2258,7 +2264,6 @@ pub enum ValidationError {
     // ============================================================================
     // CopyLogical Errors
     // ============================================================================
-
     /// OpCopyLogical result type must not equal operand type.
     #[error("OpCopyLogical result type must not equal the operand type")]
     CopyLogicalTypesEqual {
@@ -2469,7 +2474,9 @@ pub enum ValidationError {
         component_type: TypeId,
     },
     /// OpTypeVector component is not a scalar or pointer type (with MaskedGatherScatterINTEL).
-    #[error("OpTypeVector Component Type is not a scalar or pointer type (MaskedGatherScatterINTEL)")]
+    #[error(
+        "OpTypeVector Component Type is not a scalar or pointer type (MaskedGatherScatterINTEL)"
+    )]
     TypeVectorComponentNotScalarOrPointer {
         /// The type ID.
         type_id: TypeId,
@@ -2477,7 +2484,9 @@ pub enum ValidationError {
         component_type: TypeId,
     },
     /// OpTypeVector uses 8 or 16 components without Vector16 capability.
-    #[error("Having {component_count} components for OpTypeVector requires the Vector16 capability")]
+    #[error(
+        "Having {component_count} components for OpTypeVector requires the Vector16 capability"
+    )]
     TypeVectorRequiresVector16Capability {
         /// The type ID.
         type_id: TypeId,
@@ -2573,7 +2582,9 @@ pub enum ValidationError {
         member_type: TypeId,
     },
     /// OpTypeRuntimeArray is not the last member of the struct (Vulkan).
-    #[error("In Vulkan, OpTypeRuntimeArray must only be used for the last member of an OpTypeStruct")]
+    #[error(
+        "In Vulkan, OpTypeRuntimeArray must only be used for the last member of an OpTypeStruct"
+    )]
     TypeStructRuntimeArrayNotLast {
         /// The type ID of the struct.
         type_id: TypeId,
@@ -3987,9 +3998,7 @@ pub enum ValidationError {
         opcode: rspirv::spirv::Op,
     },
     /// OpFunction has an invalid function type.
-    #[error(
-        "OpFunction {function:?} has Function Type {function_type:?} which is not {expected}"
-    )]
+    #[error("OpFunction {function:?} has Function Type {function_type:?} which is not {expected}")]
     FunctionTypeInvalid {
         /// The function with the invalid type.
         function: Id,
@@ -4023,7 +4032,9 @@ pub enum ValidationError {
         constituent: Id,
     },
     /// A constant composite has the wrong number of constituents.
-    #[error("{opcode:?} has {found} constituents but result type {result_type:?} expects {expected}")]
+    #[error(
+        "{opcode:?} has {found} constituents but result type {result_type:?} expects {expected}"
+    )]
     ConstantCompositeCountMismatch {
         /// The composite constant opcode.
         opcode: rspirv::spirv::Op,
@@ -5589,7 +5600,9 @@ pub enum ValidationError {
     },
 
     /// Hit object hint must be 32-bit int.
-    #[error("instruction in block {block:?} of function {function:?}: Hint must be a 32-bit int scalar")]
+    #[error(
+        "instruction in block {block:?} of function {function:?}: Hint must be a 32-bit int scalar"
+    )]
     HitObjectInvalidHint {
         /// The function containing the instruction.
         function: Option<Id>,
@@ -5598,7 +5611,9 @@ pub enum ValidationError {
     },
 
     /// Hit object bits must be 32-bit int.
-    #[error("instruction in block {block:?} of function {function:?}: Bits must be a 32-bit int scalar")]
+    #[error(
+        "instruction in block {block:?} of function {function:?}: Bits must be a 32-bit int scalar"
+    )]
     HitObjectInvalidBits {
         /// The function containing the instruction.
         function: Option<Id>,
@@ -5881,7 +5896,9 @@ pub enum ValidationError {
         opcode: rspirv::spirv::Op,
     },
     /// Memory Semantics OutputMemoryKHR requires capability VulkanMemoryModelKHR.
-    #[error("{opcode:?}: Memory Semantics OutputMemoryKHR requires capability VulkanMemoryModelKHR")]
+    #[error(
+        "{opcode:?}: Memory Semantics OutputMemoryKHR requires capability VulkanMemoryModelKHR"
+    )]
     MemorySemanticsOutputMemoryRequiresVulkanMemoryModel {
         /// The opcode.
         opcode: rspirv::spirv::Op,
@@ -5929,7 +5946,9 @@ pub enum ValidationError {
         opcode: rspirv::spirv::Op,
     },
     /// MakeAvailableKHR requires VulkanMemoryModelKHR capability.
-    #[error("{opcode:?}: Memory Semantics MakeAvailableKHR requires capability VulkanMemoryModelKHR")]
+    #[error(
+        "{opcode:?}: Memory Semantics MakeAvailableKHR requires capability VulkanMemoryModelKHR"
+    )]
     MemorySemanticsMakeAvailableRequiresVulkanMemoryModel {
         /// The opcode.
         opcode: rspirv::spirv::Op,
@@ -5941,7 +5960,9 @@ pub enum ValidationError {
         opcode: rspirv::spirv::Op,
     },
     /// MakeVisibleKHR requires VulkanMemoryModelKHR capability.
-    #[error("{opcode:?}: Memory Semantics MakeVisibleKHR requires capability VulkanMemoryModelKHR")]
+    #[error(
+        "{opcode:?}: Memory Semantics MakeVisibleKHR requires capability VulkanMemoryModelKHR"
+    )]
     MemorySemanticsMakeVisibleRequiresVulkanMemoryModel {
         /// The opcode.
         opcode: rspirv::spirv::Op,
@@ -5965,7 +5986,9 @@ pub enum ValidationError {
         opcode: rspirv::spirv::Op,
     },
     /// Unequal memory semantics must not use Release or AcquireRelease.
-    #[error("{opcode:?}: Unequal Memory Semantics must not use Release or AcquireRelease memory order")]
+    #[error(
+        "{opcode:?}: Unequal Memory Semantics must not use Release or AcquireRelease memory order"
+    )]
     MemorySemanticsUnequalInvalidOrder {
         /// The opcode.
         opcode: rspirv::spirv::Op,
@@ -6000,7 +6023,9 @@ pub enum ValidationError {
         value: u32,
     },
     /// Execution scope limited in Vulkan.
-    #[error("{opcode:?}: in Vulkan environment Execution Scope is limited to Workgroup and Subgroup")]
+    #[error(
+        "{opcode:?}: in Vulkan environment Execution Scope is limited to Workgroup and Subgroup"
+    )]
     ScopeExecutionLimitedInVulkan {
         /// The opcode.
         opcode: rspirv::spirv::Op,
@@ -6243,7 +6268,9 @@ pub enum ValidationError {
         entry_point: Id,
     },
     /// LocalSize product is zero.
-    #[error("LocalSize execution mode must not have a product of zero (X = {x}, Y = {y}, Z = {z})")]
+    #[error(
+        "LocalSize execution mode must not have a product of zero (X = {x}, Y = {y}, Z = {z})"
+    )]
     LocalSizeProductZero {
         /// X dimension.
         x: u32,
@@ -6261,7 +6288,9 @@ pub enum ValidationError {
         y: u64,
     },
     /// DerivativeGroupLinearKHR requires LocalSize product to be multiple of 4.
-    #[error("LocalSize with DerivativeGroupLinearKHR: product ({product}) must be a multiple of 4")]
+    #[error(
+        "LocalSize with DerivativeGroupLinearKHR: product ({product}) must be a multiple of 4"
+    )]
     DerivativeGroupLinearRequiresMultipleOf4 {
         /// The product of local size dimensions.
         product: u64,
@@ -6484,7 +6513,9 @@ pub enum ValidationError {
         storage_class: rspirv::spirv::StorageClass,
     },
     /// Vulkan: InputAttachmentIndex requires UniformConstant storage class.
-    #[error("InputAttachmentIndex decoration must be in the UniformConstant storage class (VUID-6678)")]
+    #[error(
+        "InputAttachmentIndex decoration must be in the UniformConstant storage class (VUID-6678)"
+    )]
     VulkanInputAttachmentIndexInvalidStorageClass {
         /// The target ID.
         target_id: Id,
@@ -6691,7 +6722,9 @@ pub enum ValidationError {
     },
 
     /// OpAssumeTrueKHR value must be bool.
-    #[error("In function {function:?} block {block:?}: OpAssumeTrueKHR value must be a boolean scalar")]
+    #[error(
+        "In function {function:?} block {block:?}: OpAssumeTrueKHR value must be a boolean scalar"
+    )]
     AssumeTrueNotBool {
         /// The function ID.
         function: Option<Id>,
@@ -6754,7 +6787,9 @@ pub enum ValidationError {
     },
 
     /// Invocation interlock instructions require Fragment execution model.
-    #[error("In function {function:?} block {block:?}: {opcode:?} requires Fragment execution model")]
+    #[error(
+        "In function {function:?} block {block:?}: {opcode:?} requires Fragment execution model"
+    )]
     InvocationInterlockRequiresFragment {
         /// The function ID.
         function: Option<Id>,
@@ -6898,7 +6933,9 @@ pub enum ValidationError {
     },
 
     /// OpGraphInputARM ElementIndex not allowed.
-    #[error("OpGraphInputARM {instruction_id:?}: ElementIndex not allowed when input is not an array")]
+    #[error(
+        "OpGraphInputARM {instruction_id:?}: ElementIndex not allowed when input is not an array"
+    )]
     GraphInputElementIndexNotAllowed {
         /// The instruction ID.
         instruction_id: Option<Id>,
@@ -6984,7 +7021,9 @@ pub enum ValidationError {
     },
 
     /// Operation doesn't support FP8 E4M3/E5M2 types.
-    #[error("In function {function:?} block {block:?}: {opcode:?} doesn't support FP8 E4M3/E5M2 types")]
+    #[error(
+        "In function {function:?} block {block:?}: {opcode:?} doesn't support FP8 E4M3/E5M2 types"
+    )]
     InvalidTypeFP8 {
         /// The function ID.
         function: Option<Id>,
@@ -6996,7 +7035,9 @@ pub enum ValidationError {
 
     // ========== PRIMITIVES ==========
     /// Primitive instruction requires Geometry execution model.
-    #[error("In function {function:?} block {block:?}: {opcode:?} requires Geometry execution model")]
+    #[error(
+        "In function {function:?} block {block:?}: {opcode:?} requires Geometry execution model"
+    )]
     PrimitiveRequiresGeometry {
         /// The function ID.
         function: Option<Id>,
@@ -7018,7 +7059,9 @@ pub enum ValidationError {
     },
 
     /// Stream primitive instruction requires Stream to be constant.
-    #[error("In function {function:?} block {block:?}: {opcode:?} Stream must be constant instruction")]
+    #[error(
+        "In function {function:?} block {block:?}: {opcode:?} Stream must be constant instruction"
+    )]
     StreamNotConstant {
         /// The function ID.
         function: Option<Id>,
@@ -7096,7 +7139,9 @@ pub enum ValidationError {
 
     // ========== COOPERATIVE_MATRIX_TYPE ==========
     /// OpTypeCooperativeMatrixKHR/NV component type must be a scalar numeric type.
-    #[error("{opcode:?} {type_id:?}: Component Type must be a scalar integer or floating-point type")]
+    #[error(
+        "{opcode:?} {type_id:?}: Component Type must be a scalar integer or floating-point type"
+    )]
     TypeCooperativeMatrixComponentNotScalar {
         /// The type ID.
         type_id: TypeId,
@@ -7239,7 +7284,9 @@ pub enum ValidationError {
         operand: Id,
     },
     /// Non-semantic instruction result used in semantic instruction.
-    #[error("Operand {operand:?} in semantic instruction cannot be a non-semantic instruction result")]
+    #[error(
+        "Operand {operand:?} in semantic instruction cannot be a non-semantic instruction result"
+    )]
     NonSemanticUsedInSemantic {
         /// The non-semantic operand.
         operand: Id,
@@ -7275,7 +7322,9 @@ pub enum ValidationError {
         found: u32,
     },
     /// CLSpv reflection operand must be an OpString.
-    #[error("NonSemantic.ClspvReflection.{instruction}: operand {operand_name} must be an OpString")]
+    #[error(
+        "NonSemantic.ClspvReflection.{instruction}: operand {operand_name} must be an OpString"
+    )]
     ClspvOperandMustBeString {
         /// The instruction name.
         instruction: &'static str,
@@ -7320,7 +7369,9 @@ pub enum ValidationError {
         component_type: TypeId,
     },
     /// OpTypeCooperativeVectorNV component count must be a constant.
-    #[error("OpTypeCooperativeVectorNV component count {count_id:?} is not a constant instruction")]
+    #[error(
+        "OpTypeCooperativeVectorNV component count {count_id:?} is not a constant instruction"
+    )]
     TypeCooperativeVectorCountNotConstant {
         /// The type ID.
         type_id: TypeId,
@@ -7328,7 +7379,9 @@ pub enum ValidationError {
         count_id: Id,
     },
     /// OpTypeCooperativeVectorNV component count must be an integer type.
-    #[error("OpTypeCooperativeVectorNV component count {count_id:?} is not a constant integer type")]
+    #[error(
+        "OpTypeCooperativeVectorNV component count {count_id:?} is not a constant integer type"
+    )]
     TypeCooperativeVectorCountNotInteger {
         /// The type ID.
         type_id: TypeId,

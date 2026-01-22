@@ -16,7 +16,10 @@ fn select_true_condition() {
     let params = b.begin_function_with_params(vec![b.int_ty, b.int_ty]);
     let (a, b_param) = (params[0], params[1]);
     let true_const = b.const_true();
-    let _ = b.builder.select(b.int_ty, None, true_const, a, b_param).expect("select");
+    let _ = b
+        .builder
+        .select(b.int_ty, None, true_const, a, b_param)
+        .expect("select");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -35,7 +38,10 @@ fn select_false_condition() {
     let params = b.begin_function_with_params(vec![b.int_ty, b.int_ty]);
     let (a, b_param) = (params[0], params[1]);
     let false_const = b.const_false();
-    let _ = b.builder.select(b.int_ty, None, false_const, a, b_param).expect("select");
+    let _ = b
+        .builder
+        .select(b.int_ty, None, false_const, a, b_param)
+        .expect("select");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -53,7 +59,10 @@ fn select_same_both_arms() {
     let mut b = TestModuleBuilder::new();
     let params = b.begin_function_with_params(vec![b.bool_ty, b.int_ty]);
     let (cond, x) = (params[0], params[1]);
-    let _ = b.builder.select(b.int_ty, None, cond, x, x).expect("select");
+    let _ = b
+        .builder
+        .select(b.int_ty, None, cond, x, x)
+        .expect("select");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -76,7 +85,10 @@ fn select_with_add_same_base() {
     let params = b.begin_function_with_params(vec![b.bool_ty, b.int_ty, b.int_ty]);
     let (cond, x, y) = (params[0], params[1], params[2]);
     let x_plus_y = b.builder.i_add(b.int_ty, None, x, y).expect("add");
-    let _ = b.builder.select(b.int_ty, None, cond, x_plus_y, x).expect("select");
+    let _ = b
+        .builder
+        .select(b.int_ty, None, cond, x_plus_y, x)
+        .expect("select");
     let words = b.finish();
 
     // Just verify it runs without error
@@ -92,7 +104,10 @@ fn select_with_mul_same_base() {
     let params = b.begin_function_with_params(vec![b.bool_ty, b.int_ty, b.int_ty]);
     let (cond, x, y) = (params[0], params[1], params[2]);
     let x_mul_y = b.builder.i_mul(b.int_ty, None, x, y).expect("mul");
-    let _ = b.builder.select(b.int_ty, None, cond, x_mul_y, x).expect("select");
+    let _ = b
+        .builder
+        .select(b.int_ty, None, cond, x_mul_y, x)
+        .expect("select");
     let words = b.finish();
 
     let _ = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -111,8 +126,14 @@ fn sub_with_conditional_zero() {
     let params = b.begin_function_with_params(vec![b.bool_ty, b.int_ty, b.int_ty]);
     let (cond, x, y) = (params[0], params[1], params[2]);
     let zero = b.const_i32(0);
-    let select_y_or_zero = b.builder.select(b.int_ty, None, cond, y, zero).expect("select");
-    let _ = b.builder.i_sub(b.int_ty, None, x, select_y_or_zero).expect("sub");
+    let select_y_or_zero = b
+        .builder
+        .select(b.int_ty, None, cond, y, zero)
+        .expect("select");
+    let _ = b
+        .builder
+        .i_sub(b.int_ty, None, x, select_y_or_zero)
+        .expect("sub");
     let words = b.finish();
 
     let _ = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -127,8 +148,14 @@ fn add_with_conditional_zero() {
     let params = b.begin_function_with_params(vec![b.bool_ty, b.int_ty, b.int_ty]);
     let (cond, x, y) = (params[0], params[1], params[2]);
     let zero = b.const_i32(0);
-    let select_y_or_zero = b.builder.select(b.int_ty, None, cond, y, zero).expect("select");
-    let _ = b.builder.i_add(b.int_ty, None, x, select_y_or_zero).expect("add");
+    let select_y_or_zero = b
+        .builder
+        .select(b.int_ty, None, cond, y, zero)
+        .expect("select");
+    let _ = b
+        .builder
+        .i_add(b.int_ty, None, x, select_y_or_zero)
+        .expect("add");
     let words = b.finish();
 
     let _ = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -148,7 +175,10 @@ fn select_with_logical_and_condition() {
     let (c, x) = (params[0], params[1]);
     let c_and_x = b.builder.logical_and(b.bool_ty, None, c, x).expect("and");
     let false_const = b.const_false();
-    let _ = b.builder.select(b.bool_ty, None, c, c_and_x, false_const).expect("select");
+    let _ = b
+        .builder
+        .select(b.bool_ty, None, c, c_and_x, false_const)
+        .expect("select");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -170,8 +200,14 @@ fn nested_select_same_condition() {
     let mut b = TestModuleBuilder::new();
     let params = b.begin_function_with_params(vec![b.bool_ty, b.int_ty, b.int_ty, b.int_ty]);
     let (cond, a, b_param, d) = (params[0], params[1], params[2], params[3]);
-    let inner = b.builder.select(b.int_ty, None, cond, a, b_param).expect("inner select");
-    let _ = b.builder.select(b.int_ty, None, cond, inner, d).expect("outer select");
+    let inner = b
+        .builder
+        .select(b.int_ty, None, cond, a, b_param)
+        .expect("inner select");
+    let _ = b
+        .builder
+        .select(b.int_ty, None, cond, inner, d)
+        .expect("outer select");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -191,10 +227,17 @@ fn select_distribution_over_add() {
     let _guard = OptimizerEnvGuard::new();
 
     let mut b = TestModuleBuilder::new();
-    let params = b.begin_function_with_params(vec![b.bool_ty, b.int_ty, b.int_ty, b.int_ty, b.int_ty]);
+    let params =
+        b.begin_function_with_params(vec![b.bool_ty, b.int_ty, b.int_ty, b.int_ty, b.int_ty]);
     let (cond, a, b_param, x, y) = (params[0], params[1], params[2], params[3], params[4]);
-    let sel1 = b.builder.select(b.int_ty, None, cond, a, b_param).expect("select1");
-    let sel2 = b.builder.select(b.int_ty, None, cond, x, y).expect("select2");
+    let sel1 = b
+        .builder
+        .select(b.int_ty, None, cond, a, b_param)
+        .expect("select1");
+    let sel2 = b
+        .builder
+        .select(b.int_ty, None, cond, x, y)
+        .expect("select2");
     let _ = b.builder.i_add(b.int_ty, None, sel1, sel2).expect("add");
     let words = b.finish();
 
@@ -218,9 +261,15 @@ fn abs_pattern_with_select() {
     let params = b.begin_function_with_params(vec![b.int_ty]);
     let x = params[0];
     let zero = b.const_i32(0);
-    let cond = b.builder.s_greater_than_equal(b.bool_ty, None, x, zero).expect("cmp");
+    let cond = b
+        .builder
+        .s_greater_than_equal(b.bool_ty, None, x, zero)
+        .expect("cmp");
     let neg_x = b.builder.s_negate(b.int_ty, None, x).expect("neg");
-    let _ = b.builder.select(b.int_ty, None, cond, x, neg_x).expect("select");
+    let _ = b
+        .builder
+        .select(b.int_ty, None, cond, x, neg_x)
+        .expect("select");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");

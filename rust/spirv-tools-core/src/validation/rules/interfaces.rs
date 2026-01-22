@@ -13,9 +13,9 @@ use rspirv::dr::Operand;
 use rspirv::spirv::{Decoration, ExecutionModel, Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::{Id, ResultId};
+use crate::validation::ValidationResult;
 use crate::version::SpirvVersion;
 
 /// Limit the number of checked locations to 4096. Multiplied by 4 to represent
@@ -242,8 +242,9 @@ impl ValidationRule for PhysicalStorageBufferInterfaceRule {
                                 return Err(
                                     ValidationError::InterfaceContainsPhysicalStorageBuffer {
                                         variable_id: to_id(var_id),
-                                    }.into(),
-                        );
+                                    }
+                                    .into(),
+                                );
                             }
                         }
                     }
@@ -348,21 +349,29 @@ impl ValidationRule for LocationConflictRule {
                 ExecutionModel::Fragment,
             ];
 
-            if !execution_model.map_or(false, |m| check_models.contains(&m)) {
+            if !execution_model.is_some_and(|m| check_models.contains(&m)) {
                 continue;
             }
 
-            let entry_point_id = ep.operands.get(1).and_then(|op| match op {
-                Operand::IdRef(id) => Id::try_from(*id).ok(),
-                _ => None,
-            }).unwrap_or_else(|| Id::try_from(1u32).unwrap());
+            let entry_point_id = ep
+                .operands
+                .get(1)
+                .and_then(|op| match op {
+                    Operand::IdRef(id) => Id::try_from(*id).ok(),
+                    _ => None,
+                })
+                .unwrap_or_else(|| Id::try_from(1u32).unwrap());
 
             // Collect input and output locations - patch and non-patch have separate domains
             // Use (location, component) -> var_id to track which variable owns each slot
-            let mut input_locations: std::collections::HashMap<(u32, u32), u32> = std::collections::HashMap::new();
-            let mut output_locations: std::collections::HashMap<(u32, u32), u32> = std::collections::HashMap::new();
-            let mut input_patch_locations: std::collections::HashMap<(u32, u32), u32> = std::collections::HashMap::new();
-            let mut output_patch_locations: std::collections::HashMap<(u32, u32), u32> = std::collections::HashMap::new();
+            let mut input_locations: std::collections::HashMap<(u32, u32), u32> =
+                std::collections::HashMap::new();
+            let mut output_locations: std::collections::HashMap<(u32, u32), u32> =
+                std::collections::HashMap::new();
+            let mut input_patch_locations: std::collections::HashMap<(u32, u32), u32> =
+                std::collections::HashMap::new();
+            let mut output_patch_locations: std::collections::HashMap<(u32, u32), u32> =
+                std::collections::HashMap::new();
             let mut seen_vars: HashSet<u32> = HashSet::new();
 
             for operand in ep.operands.iter().skip(3) {
@@ -436,9 +445,12 @@ impl ValidationRule for LocationConflictRule {
                             storage_class: *sc,
                             location: loc_component.0,
                             component: loc_component.1,
-                            first_var: Id::try_from(first_var_id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()),
-                            second_var: Id::try_from(*var_id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()),
-                        }.into());
+                            first_var: Id::try_from(first_var_id)
+                                .unwrap_or_else(|_| Id::try_from(1u32).unwrap()),
+                            second_var: Id::try_from(*var_id)
+                                .unwrap_or_else(|_| Id::try_from(1u32).unwrap()),
+                        }
+                        .into());
                     }
                     locations.insert(loc_component, *var_id);
                 }
@@ -525,24 +537,26 @@ impl ValidationRule for IndexDecorationRule {
             if sc != Some(&StorageClass::Output) {
                 return Err(ValidationError::IndexDecorationNotOutput {
                     variable_id: to_id(var_id),
-                }.into());
+                }
+                .into());
             }
 
             // Check that it's used in a Fragment entry point
             let mut is_fragment = false;
             for (ep_id, interfaces) in &entry_point_interfaces {
-                if interfaces.contains(&var_id) {
-                    if entry_point_models.get(ep_id) == Some(&ExecutionModel::Fragment) {
-                        is_fragment = true;
-                        break;
-                    }
+                if interfaces.contains(&var_id)
+                    && entry_point_models.get(ep_id) == Some(&ExecutionModel::Fragment)
+                {
+                    is_fragment = true;
+                    break;
                 }
             }
 
             if !is_fragment {
                 return Err(ValidationError::IndexDecorationNotFragment {
                     variable_id: to_id(var_id),
-                }.into());
+                }
+                .into());
             }
         }
 
@@ -649,7 +663,8 @@ impl ValidationRule for PerVertexKHRRule {
             if found_in_non_fragment && !found_in_fragment {
                 return Err(ValidationError::VulkanPerVertexDecorationNotFragment {
                     variable_id: to_id(var_id),
-                }.into());
+                }
+                .into());
             }
 
             // Check that the type is an array

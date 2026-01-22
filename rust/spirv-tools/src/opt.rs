@@ -113,18 +113,10 @@ pub fn create(te: Option<TargetEnv>) -> impl Optimizer {
 
 /// A pure Rust implementation of the SPIR-V optimizer.
 #[allow(dead_code)]
+#[derive(Default)]
 pub struct RustOptimizer {
     target_env: TargetEnv,
     passes: Vec<Passes>,
-}
-
-impl Default for RustOptimizer {
-    fn default() -> Self {
-        Self {
-            target_env: TargetEnv::default(),
-            passes: Vec::new(),
-        }
-    }
 }
 
 impl Optimizer for RustOptimizer {

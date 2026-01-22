@@ -6,9 +6,9 @@ use rspirv::dr::Operand;
 use rspirv::spirv::{MemoryAccess, Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::ResultId;
+use crate::validation::ValidationResult;
 
 use super::helpers::{
     allows_non_private_pointer, contains_runtime_array, get_largest_scalar_type, get_pointee_type,
@@ -58,7 +58,8 @@ impl ValidationRule for LoadRule {
                     instruction: Op::Load,
                     pointer: id_from_u32(*pointer_id),
                     source_opcode: pointer_inst.class.opcode,
-                }.into());
+                }
+                .into());
             }
 
             // Get pointer type
@@ -77,7 +78,8 @@ impl ValidationRule for LoadRule {
             {
                 return Err(ValidationError::LoadPointerNotPointerType {
                     pointer: id_from_u32(*pointer_id),
-                }.into());
+                }
+                .into());
             }
 
             // For typed pointers, check pointee type matches result type
@@ -87,7 +89,8 @@ impl ValidationRule for LoadRule {
                         return Err(ValidationError::LoadResultTypeMismatch {
                             result_type: type_id_from_u32(result_type_id),
                             pointee_type: type_id_from_u32(pointee_id),
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -149,7 +152,8 @@ fn validate_memory_access_for_load(
             if !allows_non_private_pointer(sc) {
                 return Err(ValidationError::NonPrivatePointerInvalidStorageClass {
                     storage_class: sc,
-                }.into());
+                }
+                .into());
             }
         }
     }
@@ -163,10 +167,8 @@ fn validate_memory_access_for_load(
 
     // PhysicalStorageBuffer requires Aligned
     if let Some(sc) = storage_class {
-        if sc == StorageClass::PhysicalStorageBuffer {
-            if !access.contains(MemoryAccess::ALIGNED) {
-                return Err(ValidationError::PhysicalStorageBufferRequiresAligned.into());
-            }
+        if sc == StorageClass::PhysicalStorageBuffer && !access.contains(MemoryAccess::ALIGNED) {
+            return Err(ValidationError::PhysicalStorageBufferRequiresAligned.into());
         }
     }
 
@@ -180,7 +182,8 @@ fn validate_memory_access_for_load(
             if *aligned_value == 0 || (*aligned_value & (*aligned_value - 1)) != 0 {
                 return Err(ValidationError::AlignedValueNotPowerOfTwo {
                     value: *aligned_value,
-                }.into());
+                }
+                .into());
             }
 
             // For PhysicalStorageBuffer, alignment must be >= largest scalar type
@@ -195,7 +198,8 @@ fn validate_memory_access_for_load(
                         return Err(ValidationError::AlignedValueTooSmall {
                             alignment: *aligned_value,
                             largest_scalar,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -260,7 +264,8 @@ impl ValidationRule for StoreRule {
                     instruction: Op::Store,
                     pointer: id_from_u32(*pointer_id),
                     source_opcode: pointer_inst.class.opcode,
-                }.into());
+                }
+                .into());
             }
 
             // Get pointer type
@@ -279,7 +284,8 @@ impl ValidationRule for StoreRule {
             {
                 return Err(ValidationError::StorePointerNotPointerType {
                     pointer: id_from_u32(*pointer_id),
-                }.into());
+                }
+                .into());
             }
 
             // Check storage class is not read-only
@@ -288,7 +294,8 @@ impl ValidationRule for StoreRule {
                     return Err(ValidationError::StoreToReadOnlyStorageClass {
                         pointer: id_from_u32(*pointer_id),
                         storage_class: sc,
-                    }.into());
+                    }
+                    .into());
                 }
 
                 // ShaderRecordBufferKHR is also read-only
@@ -296,7 +303,8 @@ impl ValidationRule for StoreRule {
                     return Err(ValidationError::StoreToReadOnlyStorageClass {
                         pointer: id_from_u32(*pointer_id),
                         storage_class: sc,
-                    }.into());
+                    }
+                    .into());
                 }
             }
 
@@ -358,7 +366,8 @@ fn validate_memory_access_for_store(
             if !allows_non_private_pointer(sc) {
                 return Err(ValidationError::NonPrivatePointerInvalidStorageClass {
                     storage_class: sc,
-                }.into());
+                }
+                .into());
             }
         }
     }
@@ -372,10 +381,8 @@ fn validate_memory_access_for_store(
 
     // PhysicalStorageBuffer requires Aligned
     if let Some(sc) = storage_class {
-        if sc == StorageClass::PhysicalStorageBuffer {
-            if !access.contains(MemoryAccess::ALIGNED) {
-                return Err(ValidationError::PhysicalStorageBufferRequiresAligned.into());
-            }
+        if sc == StorageClass::PhysicalStorageBuffer && !access.contains(MemoryAccess::ALIGNED) {
+            return Err(ValidationError::PhysicalStorageBufferRequiresAligned.into());
         }
     }
 
@@ -389,7 +396,8 @@ fn validate_memory_access_for_store(
             if *aligned_value == 0 || (*aligned_value & (*aligned_value - 1)) != 0 {
                 return Err(ValidationError::AlignedValueNotPowerOfTwo {
                     value: *aligned_value,
-                }.into());
+                }
+                .into());
             }
 
             // For PhysicalStorageBuffer, alignment must be >= largest scalar type
@@ -405,7 +413,8 @@ fn validate_memory_access_for_store(
                             return Err(ValidationError::AlignedValueTooSmall {
                                 alignment: *aligned_value,
                                 largest_scalar,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }

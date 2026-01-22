@@ -155,10 +155,11 @@ impl<'a> ValidationContext<'a> {
         if let Some(ref memory_model) = self.module.memory_model {
             matches!(
                 memory_model.operands.first(),
-                Some(rspirv::dr::Operand::AddressingModel(AddressingModel::Logical))
-                    | Some(rspirv::dr::Operand::AddressingModel(
-                        AddressingModel::PhysicalStorageBuffer64
-                    ))
+                Some(rspirv::dr::Operand::AddressingModel(
+                    AddressingModel::Logical
+                )) | Some(rspirv::dr::Operand::AddressingModel(
+                    AddressingModel::PhysicalStorageBuffer64
+                ))
             )
         } else {
             // Default to true for safety if memory model is missing
@@ -195,7 +196,8 @@ impl<'a> ValidationContext<'a> {
     /// Returns `None` if no span map is available or the offset is not found.
     #[inline]
     pub fn get_instruction_span(&self, word_offset: u32) -> Option<SourceSpan> {
-        self.span_map.and_then(|map| map.get_instruction_span(word_offset))
+        self.span_map
+            .and_then(|map| map.get_instruction_span(word_offset))
     }
 
     /// Returns true if span information is available.

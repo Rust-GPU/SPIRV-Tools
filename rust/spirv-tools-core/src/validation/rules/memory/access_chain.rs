@@ -10,13 +10,11 @@ use rspirv::dr::Operand;
 use rspirv::spirv::{Decoration, Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::{Id, ResultId};
+use crate::validation::ValidationResult;
 
-use super::helpers::{
-    get_pointer_storage_class, get_pointee_type, id_from_u32, type_id_from_u32,
-};
+use super::helpers::{get_pointee_type, get_pointer_storage_class, id_from_u32, type_id_from_u32};
 
 // ============================================================================
 // Access Chain Validation Rule
@@ -85,7 +83,8 @@ impl ValidationRule for AccessChainRule {
                             block: block_id,
                             instruction: opcode,
                             result_type: type_id_from_u32(result_type_id),
-                        }.into());
+                        }
+                        .into());
                     }
 
                     // Get base operand
@@ -120,7 +119,8 @@ impl ValidationRule for AccessChainRule {
                             block: block_id,
                             instruction: opcode,
                             base_type: type_id_from_u32(base_type_id),
-                        }.into());
+                        }
+                        .into());
                     }
 
                     // Storage classes must match
@@ -134,7 +134,8 @@ impl ValidationRule for AccessChainRule {
                                 instruction: opcode,
                                 base_storage_class: b_sc,
                                 result_storage_class: r_sc,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -163,11 +164,13 @@ impl ValidationRule for AccessChainRule {
                                 let Some(element_type_id) = element_inst.result_type else {
                                     continue;
                                 };
-                                let Some(element_type_rid) = ResultId::try_from(element_type_id).ok()
+                                let Some(element_type_rid) =
+                                    ResultId::try_from(element_type_id).ok()
                                 else {
                                     continue;
                                 };
-                                let Some(element_type) = ctx.definitions.get(&element_type_rid) else {
+                                let Some(element_type) = ctx.definitions.get(&element_type_rid)
+                                else {
                                     continue;
                                 };
 
@@ -178,7 +181,8 @@ impl ValidationRule for AccessChainRule {
                                         instruction: opcode,
                                         operand_index: 1,
                                         found: type_id_from_u32(element_type_id),
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                             2 // Start composite indices at operand 2
@@ -219,7 +223,8 @@ impl ValidationRule for AccessChainRule {
                                     instruction: opcode,
                                     operand_index: actual_operand_index,
                                     found: type_id_from_u32(index_type_id),
-                                }.into());
+                                }
+                                .into());
                             }
 
                             // Check for negative signed integer constants in logical addressing
@@ -252,21 +257,20 @@ impl ValidationRule for AccessChainRule {
                                                     instruction: opcode,
                                                     operand_index: actual_operand_index,
                                                     value: signed_val as i64,
-                                                }.into(),
-                        );
+                                                }
+                                                .into(),
+                                            );
                                         }
                                     }
                                 }
                             }
 
                             // Get current type instruction
-                            let Some(current_type_rid) =
-                                ResultId::try_from(current_type_id).ok()
+                            let Some(current_type_rid) = ResultId::try_from(current_type_id).ok()
                             else {
                                 break;
                             };
-                            let Some(current_type) = ctx.definitions.get(&current_type_rid)
-                            else {
+                            let Some(current_type) = ctx.definitions.get(&current_type_rid) else {
                                 break;
                             };
 
@@ -298,8 +302,9 @@ impl ValidationRule for AccessChainRule {
                                                 block: block_id,
                                                 instruction: opcode,
                                                 composite_type: type_id_from_u32(current_type_id),
-                                            }.into(),
-                        );
+                                            }
+                                            .into(),
+                                        );
                                     }
 
                                     // Get member type by index
@@ -334,7 +339,8 @@ impl ValidationRule for AccessChainRule {
                                         block: block_id,
                                         instruction: opcode,
                                         composite_type: type_id_from_u32(current_type_id),
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -353,7 +359,8 @@ impl ValidationRule for AccessChainRule {
                                         instruction: opcode,
                                         expected: type_id_from_u32(current_type_id),
                                         found: type_id_from_u32(result_pointee_id),
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             } else if is_ptr_access_chain {
                                 // PtrAccessChain with just element operand: result must match base pointee
@@ -364,7 +371,8 @@ impl ValidationRule for AccessChainRule {
                                         instruction: opcode,
                                         expected: type_id_from_u32(current_type_id),
                                         found: type_id_from_u32(result_pointee_id),
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -427,7 +435,8 @@ impl ValidationRule for RawAccessChainRule {
                         return Err(ValidationError::RawAccessChainResultNotPointer {
                             function: function_id,
                             block: block_id,
-                        }.into());
+                        }
+                        .into());
                     }
 
                     // Validate storage class
@@ -443,7 +452,8 @@ impl ValidationRule for RawAccessChainRule {
                         return Err(ValidationError::RawAccessChainInvalidStorageClass {
                             function: function_id,
                             block: block_id,
-                        }.into());
+                        }
+                        .into());
                     }
 
                     // Validate pointed type is not Array, Matrix, or Struct
@@ -455,10 +465,13 @@ impl ValidationRule for RawAccessChainRule {
                                     || pointee_op == Op::TypeMatrix
                                     || pointee_op == Op::TypeStruct
                                 {
-                                    return Err(ValidationError::RawAccessChainInvalidPointedType {
-                                        function: function_id,
-                                        block: block_id,
-                                    }.into());
+                                    return Err(
+                                        ValidationError::RawAccessChainInvalidPointedType {
+                                            function: function_id,
+                                            block: block_id,
+                                        }
+                                        .into(),
+                                    );
                                 }
                             }
                         }
@@ -472,7 +485,8 @@ impl ValidationRule for RawAccessChainRule {
                                     return Err(ValidationError::RawAccessChainStrideNotConstant {
                                         function: function_id,
                                         block: block_id,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
 
                                 // Check stride type is OpTypeInt
@@ -486,8 +500,9 @@ impl ValidationRule for RawAccessChainRule {
                                                     ValidationError::RawAccessChainStrideNotInt {
                                                         function: function_id,
                                                         block: block_id,
-                                                    }.into(),
-                        );
+                                                    }
+                                                    .into(),
+                                                );
                                             }
                                         }
                                     }
@@ -497,28 +512,10 @@ impl ValidationRule for RawAccessChainRule {
                     }
 
                     // Validate Index (operand 2) is 32-bit int
-                    if let Err(e) = validate_32bit_int_operand(
-                        inst,
-                        2,
-                        "Index",
-                        ctx,
-                        function_id,
-                        block_id,
-                    ) {
-                        return Err(e);
-                    }
+                    validate_32bit_int_operand(inst, 2, "Index", ctx, function_id, block_id)?;
 
                     // Validate Offset (operand 3) is 32-bit int
-                    if let Err(e) = validate_32bit_int_operand(
-                        inst,
-                        3,
-                        "Offset",
-                        ctx,
-                        function_id,
-                        block_id,
-                    ) {
-                        return Err(e);
-                    }
+                    validate_32bit_int_operand(inst, 3, "Offset", ctx, function_id, block_id)?
                 }
             }
         }
@@ -547,18 +544,22 @@ fn validate_32bit_int_operand(
                                     function: function_id,
                                     block: block_id,
                                     operand_name,
-                                }.into());
+                                }
+                                .into());
                             }
                             // Check width is 32
                             if let Some(Operand::LiteralBit32(width)) =
                                 operand_type_inst.operands.first()
                             {
                                 if *width != 32 {
-                                    return Err(ValidationError::RawAccessChainOperandNot32BitInt {
-                                        function: function_id,
-                                        block: block_id,
-                                        operand_name,
-                                    }.into());
+                                    return Err(
+                                        ValidationError::RawAccessChainOperandNot32BitInt {
+                                            function: function_id,
+                                            block: block_id,
+                                            operand_name,
+                                        }
+                                        .into(),
+                                    );
                                 }
                             }
                         }
@@ -653,8 +654,9 @@ impl ValidationRule for PtrAccessChainRule {
                                                     ValidationError::PtrAccessChainElementNotInt {
                                                         function: function_id,
                                                         block: block_id,
-                                                    }.into(),
-                        );
+                                                    }
+                                                    .into(),
+                                                );
                                             }
                                         }
                                     }
@@ -699,8 +701,9 @@ impl ValidationRule for PtrAccessChainRule {
                                     ValidationError::PtrAccessChainInvalidVulkanStorageClass {
                                         function: function_id,
                                         block: block_id,
-                                    }.into(),
-                        );
+                                    }
+                                    .into(),
+                                );
                             }
                         }
                     }
@@ -717,17 +720,15 @@ impl ValidationRule for PtrAccessChainRule {
 
                         if needs_array_stride {
                             // Check if base type has ArrayStride decoration
-                            let has_array_stride = has_decoration_on_type(
-                                base_type_id,
-                                Decoration::ArrayStride,
-                                ctx,
-                            );
+                            let has_array_stride =
+                                has_decoration_on_type(base_type_id, Decoration::ArrayStride, ctx);
 
                             if !has_array_stride {
                                 return Err(ValidationError::PtrAccessChainMissingArrayStride {
                                     function: function_id,
                                     block: block_id,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }

@@ -35,7 +35,12 @@ fn folds_constant_add_preserves_id() {
     // Use a function that returns a value so DCE doesn't remove everything
     let func_ty = b.builder.type_function(b.int_ty, vec![]);
     b.builder
-        .begin_function(b.int_ty, None, rspirv::spirv::FunctionControl::NONE, func_ty)
+        .begin_function(
+            b.int_ty,
+            None,
+            rspirv::spirv::FunctionControl::NONE,
+            func_ty,
+        )
         .expect("begin function");
     b.builder.begin_block(None).expect("begin block");
     let c2 = b.const_i32(2);
@@ -60,7 +65,8 @@ fn folds_constant_add_preserves_id() {
     );
     assert!(
         has_const_5_with_add_id,
-        "constant 5 should have the same id as the original add (id={})", add_id
+        "constant 5 should have the same id as the original add (id={})",
+        add_id
     );
 }
 
@@ -98,10 +104,7 @@ fn sub_self_to_zero() {
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
-    assert!(
-        !result.has_opcode(Op::ISub),
-        "x - x should be folded to 0"
-    );
+    assert!(!result.has_opcode(Op::ISub), "x - x should be folded to 0");
 }
 
 #[test]
@@ -186,9 +189,18 @@ fn factors_common_multiplicand() {
     let param = params[0];
     let c2 = b.const_u32(2);
     let c3 = b.const_u32(3);
-    let mul_left = b.builder.i_mul(b.uint_ty, None, param, c2).expect("mul left");
-    let mul_right = b.builder.i_mul(b.uint_ty, None, param, c3).expect("mul right");
-    let _ = b.builder.i_add(b.uint_ty, None, mul_left, mul_right).expect("add");
+    let mul_left = b
+        .builder
+        .i_mul(b.uint_ty, None, param, c2)
+        .expect("mul left");
+    let mul_right = b
+        .builder
+        .i_mul(b.uint_ty, None, param, c3)
+        .expect("mul right");
+    let _ = b
+        .builder
+        .i_add(b.uint_ty, None, mul_left, mul_right)
+        .expect("add");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");

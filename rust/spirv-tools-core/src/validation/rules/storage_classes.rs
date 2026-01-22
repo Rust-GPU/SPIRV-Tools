@@ -13,10 +13,10 @@ use rspirv::dr::Module;
 use rspirv::spirv::{Decoration, Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::helpers::{build_decoration_lookup, is_vulkan_env};
 use crate::validation::types::{Id, ResultId};
+use crate::validation::ValidationResult;
 use crate::version::SpirvVersion;
 
 // ============================================================================
@@ -98,7 +98,8 @@ impl ValidationRule for BlockStorageClassRule {
                         decoration: *decoration,
                         required_version: SpirvVersion::new(1, 3),
                         target_version,
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -128,7 +129,8 @@ impl ValidationRule for BlockStorageClassRule {
                     return Err(ValidationError::InvalidBlockDecorationStorageClass {
                         decoration,
                         storage_class,
-                    }.into());
+                    }
+                    .into());
                 }
 
                 // PushConstant requires Block, never BufferBlock.
@@ -138,7 +140,8 @@ impl ValidationRule for BlockStorageClassRule {
                     return Err(ValidationError::InvalidBlockDecorationStorageClass {
                         decoration,
                         storage_class,
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -208,7 +211,8 @@ impl ValidationRule for DescriptorStorageClassRule {
             if !allowed {
                 return Err(ValidationError::InvalidDescriptorStorageClass {
                     storage_class: *storage_class,
-                }.into());
+                }
+                .into());
             }
         }
 
@@ -284,12 +288,14 @@ impl ValidationRule for DescriptorRequirementsRule {
             if !has_descriptor_set {
                 return Err(ValidationError::MissingDescriptorSetDecoration {
                     variable: Id::from(rid),
-                }.into());
+                }
+                .into());
             }
             if !has_binding {
                 return Err(ValidationError::MissingBindingDecoration {
                     variable: Id::from(rid),
-                }.into());
+                }
+                .into());
             }
         }
 
@@ -374,7 +380,8 @@ impl ValidationRule for StructBlockRequirementsRule {
                         return Err(ValidationError::InvalidBlockDecorationStorageClass {
                             decoration: Decoration::BufferBlock,
                             storage_class,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             } else {
@@ -467,7 +474,8 @@ impl ValidationRule for LocationStorageClassRule {
                     if !allowed {
                         return Err(ValidationError::InvalidLocationStorageClass {
                             storage_class: *storage_class,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
                 Decoration::Component => {
@@ -477,7 +485,8 @@ impl ValidationRule for LocationStorageClassRule {
                         if *component > 3 {
                             return Err(ValidationError::ComponentOutOfRange {
                                 component: *component,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -495,7 +504,8 @@ impl ValidationRule for LocationStorageClassRule {
                     if !allowed {
                         return Err(ValidationError::InvalidLocationStorageClass {
                             storage_class: *storage_class,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
                 _ => {}

@@ -70,7 +70,10 @@ fn sle_self_folds_to_true() {
     let mut b = TestModuleBuilder::new();
     let params = b.begin_function_with_params(vec![b.int_ty]);
     let x = params[0];
-    let _ = b.builder.s_less_than_equal(b.bool_ty, None, x, x).expect("sle");
+    let _ = b
+        .builder
+        .s_less_than_equal(b.bool_ty, None, x, x)
+        .expect("sle");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -88,7 +91,10 @@ fn sgt_self_folds_to_false() {
     let mut b = TestModuleBuilder::new();
     let params = b.begin_function_with_params(vec![b.int_ty]);
     let x = params[0];
-    let _ = b.builder.s_greater_than(b.bool_ty, None, x, x).expect("sgt");
+    let _ = b
+        .builder
+        .s_greater_than(b.bool_ty, None, x, x)
+        .expect("sgt");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -106,7 +112,10 @@ fn sge_self_folds_to_true() {
     let mut b = TestModuleBuilder::new();
     let params = b.begin_function_with_params(vec![b.int_ty]);
     let x = params[0];
-    let _ = b.builder.s_greater_than_equal(b.bool_ty, None, x, x).expect("sge");
+    let _ = b
+        .builder
+        .s_greater_than_equal(b.bool_ty, None, x, x)
+        .expect("sge");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -146,7 +155,10 @@ fn ule_self_folds_to_true() {
     let mut b = TestModuleBuilder::new();
     let params = b.begin_function_with_params(vec![b.uint_ty]);
     let x = params[0];
-    let _ = b.builder.u_less_than_equal(b.bool_ty, None, x, x).expect("ule");
+    let _ = b
+        .builder
+        .u_less_than_equal(b.bool_ty, None, x, x)
+        .expect("ule");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -164,7 +176,10 @@ fn ugt_self_folds_to_false() {
     let mut b = TestModuleBuilder::new();
     let params = b.begin_function_with_params(vec![b.uint_ty]);
     let x = params[0];
-    let _ = b.builder.u_greater_than(b.bool_ty, None, x, x).expect("ugt");
+    let _ = b
+        .builder
+        .u_greater_than(b.bool_ty, None, x, x)
+        .expect("ugt");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -182,7 +197,10 @@ fn uge_self_folds_to_true() {
     let mut b = TestModuleBuilder::new();
     let params = b.begin_function_with_params(vec![b.uint_ty]);
     let x = params[0];
-    let _ = b.builder.u_greater_than_equal(b.bool_ty, None, x, x).expect("uge");
+    let _ = b
+        .builder
+        .u_greater_than_equal(b.bool_ty, None, x, x)
+        .expect("uge");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -271,7 +289,10 @@ fn ule_zero_to_eq_zero() {
     let params = b.begin_function_with_params(vec![b.uint_ty]);
     let x = params[0];
     let c0 = b.const_u32(0);
-    let _ = b.builder.u_less_than_equal(b.bool_ty, None, x, c0).expect("ule");
+    let _ = b
+        .builder
+        .u_less_than_equal(b.bool_ty, None, x, c0)
+        .expect("ule");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -291,7 +312,10 @@ fn ugt_zero_to_ne_zero() {
     let params = b.begin_function_with_params(vec![b.uint_ty]);
     let x = params[0];
     let c0 = b.const_u32(0);
-    let _ = b.builder.u_greater_than(b.bool_ty, None, x, c0).expect("ugt");
+    let _ = b
+        .builder
+        .u_greater_than(b.bool_ty, None, x, c0)
+        .expect("ugt");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -311,7 +335,10 @@ fn uge_one_to_ne_zero() {
     let params = b.begin_function_with_params(vec![b.uint_ty]);
     let x = params[0];
     let c1 = b.const_u32(1);
-    let _ = b.builder.u_greater_than_equal(b.bool_ty, None, x, c1).expect("uge");
+    let _ = b
+        .builder
+        .u_greater_than_equal(b.bool_ty, None, x, c1)
+        .expect("uge");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -336,7 +363,10 @@ fn eq_with_common_addend_simplifies() {
     let (a, bval, c) = (params[0], params[1], params[2]);
     let add_ac = b.builder.i_add(b.int_ty, None, a, c).expect("add1");
     let add_bc = b.builder.i_add(b.int_ty, None, bval, c).expect("add2");
-    let _ = b.builder.i_equal(b.bool_ty, None, add_ac, add_bc).expect("eq");
+    let _ = b
+        .builder
+        .i_equal(b.bool_ty, None, add_ac, add_bc)
+        .expect("eq");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -357,7 +387,10 @@ fn ne_with_common_addend_simplifies() {
     let (a, bval, c) = (params[0], params[1], params[2]);
     let add_ac = b.builder.i_add(b.int_ty, None, a, c).expect("add1");
     let add_bc = b.builder.i_add(b.int_ty, None, bval, c).expect("add2");
-    let _ = b.builder.i_not_equal(b.bool_ty, None, add_ac, add_bc).expect("ne");
+    let _ = b
+        .builder
+        .i_not_equal(b.bool_ty, None, add_ac, add_bc)
+        .expect("ne");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -398,7 +431,10 @@ fn ford_ne_self_folds() {
     let mut b = TestModuleBuilder::new();
     let params = b.begin_function_with_params(vec![b.float_ty]);
     let x = params[0];
-    let _ = b.builder.f_ord_not_equal(b.bool_ty, None, x, x).expect("fne");
+    let _ = b
+        .builder
+        .f_ord_not_equal(b.bool_ty, None, x, x)
+        .expect("fne");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -416,7 +452,10 @@ fn ford_lt_self_folds() {
     let mut b = TestModuleBuilder::new();
     let params = b.begin_function_with_params(vec![b.float_ty]);
     let x = params[0];
-    let _ = b.builder.f_ord_less_than(b.bool_ty, None, x, x).expect("flt");
+    let _ = b
+        .builder
+        .f_ord_less_than(b.bool_ty, None, x, x)
+        .expect("flt");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -434,7 +473,10 @@ fn ford_le_self_folds() {
     let mut b = TestModuleBuilder::new();
     let params = b.begin_function_with_params(vec![b.float_ty]);
     let x = params[0];
-    let _ = b.builder.f_ord_less_than_equal(b.bool_ty, None, x, x).expect("fle");
+    let _ = b
+        .builder
+        .f_ord_less_than_equal(b.bool_ty, None, x, x)
+        .expect("fle");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -452,7 +494,10 @@ fn ford_gt_self_folds() {
     let mut b = TestModuleBuilder::new();
     let params = b.begin_function_with_params(vec![b.float_ty]);
     let x = params[0];
-    let _ = b.builder.f_ord_greater_than(b.bool_ty, None, x, x).expect("fgt");
+    let _ = b
+        .builder
+        .f_ord_greater_than(b.bool_ty, None, x, x)
+        .expect("fgt");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -470,7 +515,10 @@ fn ford_ge_self_folds() {
     let mut b = TestModuleBuilder::new();
     let params = b.begin_function_with_params(vec![b.float_ty]);
     let x = params[0];
-    let _ = b.builder.f_ord_greater_than_equal(b.bool_ty, None, x, x).expect("fge");
+    let _ = b
+        .builder
+        .f_ord_greater_than_equal(b.bool_ty, None, x, x)
+        .expect("fge");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");

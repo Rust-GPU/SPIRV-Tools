@@ -12,9 +12,9 @@ use rspirv::spirv::{Capability, Decoration, ExecutionMode, ExecutionModel, FPFas
 
 use crate::target_env::TargetEnv;
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::{IdKind, ResultId};
+use crate::validation::ValidationResult;
 
 // ============================================================================
 // Execution Modes Rule
@@ -79,7 +79,8 @@ impl ValidationRule for ExecutionModesRule {
             if !entry_points.contains(&function) {
                 return Err(ValidationError::ExecutionModeWithoutEntryPoint {
                     function: function.into_inner(),
-                }.into());
+                }
+                .into());
             }
 
             let execution_mode = execution_mode_from_operand(mode.operands.get(1));
@@ -104,7 +105,8 @@ impl ValidationRule for ExecutionModesRule {
                                     mode: execution_mode,
                                     execution_model: *model,
                                     allowed_models: allowed.to_vec(),
-                                }.into());
+                                }
+                                .into());
                             }
                             if ctx.env.is_vulkan()
                                 && ctx
@@ -118,7 +120,8 @@ impl ValidationRule for ExecutionModesRule {
                                     entry_point: function.into_inner(),
                                     mode: execution_mode,
                                     value: 0,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                         ExecutionMode::OutputLinesEXT
@@ -131,7 +134,8 @@ impl ValidationRule for ExecutionModesRule {
                                     mode: execution_mode,
                                     execution_model: *model,
                                     allowed_models: allowed.to_vec(),
-                                }.into());
+                                }
+                                .into());
                             }
                             if ctx.env.is_vulkan()
                                 && ctx
@@ -144,7 +148,8 @@ impl ValidationRule for ExecutionModesRule {
                                     entry_point: function.into_inner(),
                                     mode: execution_mode,
                                     value: 0,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                         _ => {}
@@ -217,7 +222,8 @@ impl ValidationRule for DuplicateExecutionModesRule {
                     return Err(ValidationError::DuplicateExecutionModePerEntry {
                         entry_point: *entry_point,
                         execution_mode: mode,
-                    }.into());
+                    }
+                    .into());
                 }
             } else {
                 // This mode can appear multiple times but only with different operands
@@ -233,7 +239,8 @@ impl ValidationRule for DuplicateExecutionModesRule {
                         entry_point: *entry_point,
                         execution_mode: mode,
                         operand,
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -412,8 +419,9 @@ impl ValidationRule for FloatControls2Rule {
                                     result_id,
                                     decoration: decoration_name.to_string(),
                                     entry_points: reachable_entry_points.iter().copied().collect(),
-                                }.into(),
-                        );
+                                }
+                                .into(),
+                            );
                         }
                     }
                 }

@@ -51,7 +51,11 @@ impl ExtensionSet {
     }
 
     /// Inserts an extension into the set, validating it against the environment.
-    pub fn insert(&mut self, extension: ExtensionName, env: TargetEnv) -> Result<(), ValidationError> {
+    pub fn insert(
+        &mut self,
+        extension: ExtensionName,
+        env: TargetEnv,
+    ) -> Result<(), ValidationError> {
         self.insert_unchecked(extension.clone())?;
         if !env.is_extension_allowed(&extension) {
             return Err(ValidationError::DisallowedExtension { extension, env });
@@ -76,9 +80,7 @@ pub fn extension_operand(inst: &Instruction) -> Option<ExtensionName> {
 }
 
 /// Returns an iterator over all extension instructions in a module.
-pub fn module_extension_instructions(
-    module: &Module,
-) -> impl Iterator<Item = &Instruction> {
+pub fn module_extension_instructions(module: &Module) -> impl Iterator<Item = &Instruction> {
     let top_level = module.extensions.iter();
     let function_bodies = module.functions.iter().flat_map(|function| {
         function.parameters.iter().chain(
@@ -96,7 +98,10 @@ pub fn module_extension_instructions(
 // ============================================================================
 
 /// Validates that all extensions are allowed by the environment.
-pub fn validate_extension_allowlist(module: &Module, env: TargetEnv) -> Result<(), ValidationError> {
+pub fn validate_extension_allowlist(
+    module: &Module,
+    env: TargetEnv,
+) -> Result<(), ValidationError> {
     for inst in module_extension_instructions(module) {
         if let Some(extension) = extension_operand(inst) {
             if !env.is_extension_allowed(&extension) {
@@ -304,6 +309,10 @@ pub fn extension_promoted_to_core_version(extension: &str) -> Option<SpirvVersio
         "spv_khr_integer_dot_product" => Some(SpirvVersion::new(1, 6)),
         // Workgroup memory explicit layout was promoted in SPIR-V 1.4
         "spv_khr_workgroup_memory_explicit_layout" => Some(SpirvVersion::new(1, 4)),
+        // Google decorate string (OpDecorateString/OpMemberDecorateString) was promoted in SPIR-V 1.4
+        "spv_google_decorate_string" => Some(SpirvVersion::new(1, 4)),
+        // Google HLSL functionality (UserSemantic decoration) was promoted in SPIR-V 1.4
+        "spv_google_hlsl_functionality1" => Some(SpirvVersion::new(1, 4)),
         _ => None,
     }
 }

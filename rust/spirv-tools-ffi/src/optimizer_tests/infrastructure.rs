@@ -51,7 +51,10 @@ fn respects_disable_env() {
 
     let result = optimize_wrapped_block(&words);
     assert!(result.success);
-    assert_eq!(result.words, words, "module should be unchanged when disabled");
+    assert_eq!(
+        result.words, words,
+        "module should be unchanged when disabled"
+    );
 }
 
 #[test]

@@ -13,11 +13,11 @@ use rspirv::dr::Operand;
 use rspirv::spirv::{Capability, ExecutionMode, ExecutionModel, Op, Scope};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::helpers::get_type_structure;
 use crate::validation::type_ext::{DefaultTypeResolver, TypeResolver};
 use crate::validation::types::{Id, ResultId, TypeId, TypeStructure};
+use crate::validation::ValidationResult;
 
 fn to_id(id: u32) -> Id {
     Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
@@ -60,9 +60,9 @@ fn contains_limited_type_recursive(
         TypeStructure::RuntimeArray { element } => {
             contains_limited_type_recursive(element, ctx, has_int8, has_int16, has_float16)
         }
-        TypeStructure::Struct { members } => members.iter().any(|m| {
-            contains_limited_type_recursive(*m, ctx, has_int8, has_int16, has_float16)
-        }),
+        TypeStructure::Struct { members } => members
+            .iter()
+            .any(|m| contains_limited_type_recursive(*m, ctx, has_int8, has_int16, has_float16)),
         TypeStructure::Pointer { pointee, .. } => {
             if let Some(p) = pointee {
                 contains_limited_type_recursive(p, ctx, has_int8, has_int16, has_float16)
@@ -109,7 +109,8 @@ impl ValidationRule for UndefRule {
                     if type_inst.class.opcode == Op::TypeVoid {
                         return Err(ValidationError::UndefCannotBeVoid {
                             instruction_id: inst.result_id.map(to_id),
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -120,7 +121,8 @@ impl ValidationRule for UndefRule {
                     if !is_pointer_type(type_id, ctx) && contains_limited_use_type(type_id, ctx) {
                         return Err(ValidationError::UndefCannotBeSmallType {
                             instruction_id: inst.result_id.map(to_id),
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -145,18 +147,10 @@ impl ValidationRule for ShaderClockRule {
         let resolver = DefaultTypeResolver;
 
         for func in &ctx.module.functions {
-            let func_id = func
-                .def
-                .as_ref()
-                .and_then(|d| d.result_id)
-                .map(to_id);
+            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(to_id);
 
             for block in &func.blocks {
-                let block_id = block
-                    .label
-                    .as_ref()
-                    .and_then(|l| l.result_id)
-                    .map(to_id);
+                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(to_id);
 
                 for inst in &block.instructions {
                     if inst.class.opcode != Op::ReadClockKHR {
@@ -182,22 +176,21 @@ impl ValidationRule for ShaderClockRule {
                                                         function: func_id,
                                                         block: block_id,
                                                         expected: "Subgroup or Device",
-                                                    }.into(),
-                        );
+                                                    }
+                                                    .into(),
+                                                );
                                             }
-                                        } else if ctx.env.is_opencl() {
-                                            if scope != Some(Scope::Subgroup)
-                                                && scope != Some(Scope::Workgroup)
-                                                && scope != Some(Scope::Device)
-                                            {
-                                                return Err(
-                                                    ValidationError::ShaderClockInvalidScope {
-                                                        function: func_id,
-                                                        block: block_id,
-                                                        expected: "Subgroup, Workgroup, or Device",
-                                                    }.into(),
-                        );
+                                        } else if ctx.env.is_opencl()
+                                            && scope != Some(Scope::Subgroup)
+                                            && scope != Some(Scope::Workgroup)
+                                            && scope != Some(Scope::Device)
+                                        {
+                                            return Err(ValidationError::ShaderClockInvalidScope {
+                                                function: func_id,
+                                                block: block_id,
+                                                expected: "Subgroup, Workgroup, or Device",
                                             }
+                                            .into());
                                         }
                                     }
                                 }
@@ -210,7 +203,8 @@ impl ValidationRule for ShaderClockRule {
                         // Could be: u64 scalar OR vec2<u32>
                         let bit_width = resolver.get_bit_width(result_type_id, ctx.definitions);
                         let dimension = resolver.get_dimension(result_type_id, ctx.definitions);
-                        let is_unsigned = resolver.is_unsigned_int_scalar_or_vector(result_type_id, ctx.definitions);
+                        let is_unsigned = resolver
+                            .is_unsigned_int_scalar_or_vector(result_type_id, ctx.definitions);
 
                         // Valid: u64 (dim=1, width=64) or uvec2<u32> (dim=2, width=32)
                         let is_valid = is_unsigned
@@ -221,7 +215,8 @@ impl ValidationRule for ShaderClockRule {
                             return Err(ValidationError::ShaderClockInvalidResultType {
                                 function: func_id,
                                 block: block_id,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -246,18 +241,10 @@ impl ValidationRule for AssumeTrueRule {
         let resolver = DefaultTypeResolver;
 
         for func in &ctx.module.functions {
-            let func_id = func
-                .def
-                .as_ref()
-                .and_then(|d| d.result_id)
-                .map(to_id);
+            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(to_id);
 
             for block in &func.blocks {
-                let block_id = block
-                    .label
-                    .as_ref()
-                    .and_then(|l| l.result_id)
-                    .map(to_id);
+                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(to_id);
 
                 for inst in &block.instructions {
                     if inst.class.opcode != Op::AssumeTrueKHR {
@@ -272,7 +259,8 @@ impl ValidationRule for AssumeTrueRule {
                                         return Err(ValidationError::AssumeTrueNotBool {
                                             function: func_id,
                                             block: block_id,
-                                        }.into());
+                                        }
+                                        .into());
                                     }
                                 }
                             }
@@ -301,18 +289,10 @@ impl ValidationRule for ExpectRule {
         let resolver = DefaultTypeResolver;
 
         for func in &ctx.module.functions {
-            let func_id = func
-                .def
-                .as_ref()
-                .and_then(|d| d.result_id)
-                .map(to_id);
+            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(to_id);
 
             for block in &func.blocks {
-                let block_id = block
-                    .label
-                    .as_ref()
-                    .and_then(|l| l.result_id)
-                    .map(to_id);
+                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(to_id);
 
                 for inst in &block.instructions {
                     if inst.class.opcode != Op::ExpectKHR {
@@ -324,14 +304,16 @@ impl ValidationRule for ExpectRule {
                     };
 
                     // Result must be int or bool scalar/vector
-                    let is_valid_result = resolver.is_bool_scalar_or_vector(result_type_id, ctx.definitions)
+                    let is_valid_result = resolver
+                        .is_bool_scalar_or_vector(result_type_id, ctx.definitions)
                         || resolver.is_int_scalar_or_vector(result_type_id, ctx.definitions);
 
                     if !is_valid_result {
                         return Err(ValidationError::ExpectInvalidResultType {
                             function: func_id,
                             block: block_id,
-                        }.into());
+                        }
+                        .into());
                     }
 
                     // Check Value operand type matches
@@ -351,7 +333,8 @@ impl ValidationRule for ExpectRule {
                             return Err(ValidationError::ExpectValueTypeMismatch {
                                 function: func_id,
                                 block: block_id,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -360,7 +343,8 @@ impl ValidationRule for ExpectRule {
                             return Err(ValidationError::ExpectExpectedValueTypeMismatch {
                                 function: func_id,
                                 block: block_id,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -387,9 +371,11 @@ impl ValidationRule for IsHelperInvocationRule {
 
         // Check if any IsHelperInvocationEXT instructions exist
         let has_is_helper = ctx.module.functions.iter().any(|f| {
-            f.blocks
-                .iter()
-                .any(|b| b.instructions.iter().any(|i| i.class.opcode == Op::IsHelperInvocationEXT))
+            f.blocks.iter().any(|b| {
+                b.instructions
+                    .iter()
+                    .any(|i| i.class.opcode == Op::IsHelperInvocationEXT)
+            })
         });
 
         if !has_is_helper {
@@ -409,7 +395,8 @@ impl ValidationRule for IsHelperInvocationRule {
                             return Err(ValidationError::IsHelperInvocationRequiresFragment {
                                 function: func_id,
                                 block: block_id,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -417,18 +404,10 @@ impl ValidationRule for IsHelperInvocationRule {
         }
 
         for func in &ctx.module.functions {
-            let func_id = func
-                .def
-                .as_ref()
-                .and_then(|d| d.result_id)
-                .map(to_id);
+            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(to_id);
 
             for block in &func.blocks {
-                let block_id = block
-                    .label
-                    .as_ref()
-                    .and_then(|l| l.result_id)
-                    .map(to_id);
+                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(to_id);
 
                 for inst in &block.instructions {
                     if inst.class.opcode != Op::IsHelperInvocationEXT {
@@ -441,7 +420,8 @@ impl ValidationRule for IsHelperInvocationRule {
                             return Err(ValidationError::IsHelperInvocationNotBool {
                                 function: func_id,
                                 block: block_id,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -465,9 +445,11 @@ impl ValidationRule for DemoteToHelperInvocationRule {
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         // Check if any DemoteToHelperInvocationEXT instructions exist
         let has_demote = ctx.module.functions.iter().any(|f| {
-            f.blocks
-                .iter()
-                .any(|b| b.instructions.iter().any(|i| i.class.opcode == Op::DemoteToHelperInvocationEXT))
+            f.blocks.iter().any(|b| {
+                b.instructions
+                    .iter()
+                    .any(|i| i.class.opcode == Op::DemoteToHelperInvocationEXT)
+            })
         });
 
         if !has_demote {
@@ -487,7 +469,8 @@ impl ValidationRule for DemoteToHelperInvocationRule {
                             return Err(ValidationError::DemoteToHelperRequiresFragment {
                                 function: func_id,
                                 block: block_id,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -553,7 +536,8 @@ impl ValidationRule for InvocationInterlockRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: inst.class.opcode,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -586,7 +570,8 @@ impl ValidationRule for InvocationInterlockRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: inst.class.opcode,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }

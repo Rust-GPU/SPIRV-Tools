@@ -13,10 +13,10 @@ use rspirv::dr::Instruction;
 use rspirv::spirv::{Capability, Decoration, ExecutionModel, Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::helpers::{build_decoration_lookup, is_vulkan_env};
 use crate::validation::types::ResultId;
+use crate::validation::ValidationResult;
 
 // ============================================================================
 // Interpolation Storage Class Rule
@@ -80,8 +80,9 @@ impl ValidationRule for InterpolationStorageClassRule {
                     ValidationError::InterpolationDecorationInvalidStorageClass {
                         decoration,
                         storage_class,
-                    }.into(),
-                        );
+                    }
+                    .into(),
+                );
             }
 
             if decoration == Decoration::Sample
@@ -92,13 +93,17 @@ impl ValidationRule for InterpolationStorageClassRule {
                 return Err(ValidationError::DecorationRequiresCapability {
                     decoration,
                     capability: Capability::SampleRateShading,
-                }.into());
+                }
+                .into());
             }
 
             if decoration != Decoration::Patch
                 && !ctx.entry_models.contains(&ExecutionModel::Fragment)
             {
-                return Err(ValidationError::InterpolationDecorationRequiresFragment { decoration }.into());
+                return Err(ValidationError::InterpolationDecorationRequiresFragment {
+                    decoration,
+                }
+                .into());
             }
         }
 
@@ -170,7 +175,8 @@ impl ValidationRule for InterpolationExclusivityRule {
                         return Err(ValidationError::InterpolationDecorationConflict {
                             decoration,
                             existing,
-                        }.into());
+                        }
+                        .into());
                     }
                 } else {
                     entry.base = Some(decoration);
@@ -186,7 +192,8 @@ impl ValidationRule for InterpolationExclusivityRule {
                         return Err(ValidationError::InterpolationDecorationConflict {
                             decoration,
                             existing,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
                 if let Some(existing) = entry.centroid_sample_patch {
@@ -194,7 +201,8 @@ impl ValidationRule for InterpolationExclusivityRule {
                         return Err(ValidationError::InterpolationDecorationConflict {
                             decoration,
                             existing,
-                        }.into());
+                        }
+                        .into());
                     }
                 } else {
                     entry.centroid_sample_patch = Some(decoration);
@@ -206,7 +214,8 @@ impl ValidationRule for InterpolationExclusivityRule {
                     return Err(ValidationError::InterpolationDecorationConflict {
                         decoration,
                         existing,
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -281,7 +290,8 @@ impl ValidationRule for InterpolationEntryPointRule {
                                         .unwrap(),
                                     storage_class,
                                     execution_model: model,
-                                }.into(),
+                                }
+                                .into(),
                             );
                         }
                         StorageClass::Output if model == ExecutionModel::Fragment => {
@@ -301,7 +311,8 @@ impl ValidationRule for InterpolationEntryPointRule {
                                         .unwrap(),
                                     storage_class,
                                     execution_model: model,
-                                }.into(),
+                                }
+                                .into(),
                             );
                         }
                         _ => {}
@@ -326,10 +337,10 @@ impl ValidationRule for InterpolationEntryPointRule {
 // ============================================================================
 
 /// Resolves the pointee type for a variable (through pointer indirection).
-fn resolve_builtin_pointee_type<'a>(
-    definitions: &'a HashMap<ResultId, Instruction>,
+fn resolve_builtin_pointee_type(
+    definitions: &HashMap<ResultId, Instruction>,
     var_id: ResultId,
-) -> Option<&'a Instruction> {
+) -> Option<&Instruction> {
     let var_inst = definitions.get(&var_id)?;
     let ptr_type_id = var_inst.result_type?;
     let ptr_type = ResultId::try_from(ptr_type_id)

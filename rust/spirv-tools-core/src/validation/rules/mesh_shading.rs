@@ -10,10 +10,10 @@ use rspirv::dr::Operand;
 use rspirv::spirv::{Capability, Decoration, ExecutionModel, Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::helpers::get_type_structure;
 use crate::validation::types::{Id, ResultId, ScalarKind, TypeId, TypeStructure};
+use crate::validation::ValidationResult;
 
 #[cfg(test)]
 use crate::validation::types::BitWidth;
@@ -73,8 +73,9 @@ impl ValidationRule for EmitMeshTasksRule {
                                                 function: func_id,
                                                 block: block_id,
                                                 component: name,
-                                            }.into(),
-                        );
+                                            }
+                                            .into(),
+                                        );
                                     }
                                 }
                             }
@@ -90,8 +91,9 @@ impl ValidationRule for EmitMeshTasksRule {
                                             ValidationError::MeshShadingPayloadMustBeVariable {
                                                 function: func_id,
                                                 block: block_id,
-                                            }.into(),
-                        );
+                                            }
+                                            .into(),
+                                        );
                                     }
 
                                     // Check storage class is TaskPayloadWorkgroupEXT
@@ -146,13 +148,12 @@ impl ValidationRule for SetMeshOutputsRule {
                         if let Some(Operand::IdRef(id)) = inst.operands.first() {
                             if let Some(ty) = get_operand_type(*id, ctx) {
                                 if !is_uint32_scalar(&ty) {
-                                    return Err(
-                                        ValidationError::MeshShadingInvalidOutputCount {
-                                            function: func_id,
-                                            block: block_id,
-                                            count_name: "Vertex Count",
-                                        }.into(),
-                        );
+                                    return Err(ValidationError::MeshShadingInvalidOutputCount {
+                                        function: func_id,
+                                        block: block_id,
+                                        count_name: "Vertex Count",
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -161,13 +162,12 @@ impl ValidationRule for SetMeshOutputsRule {
                         if let Some(Operand::IdRef(id)) = inst.operands.get(1) {
                             if let Some(ty) = get_operand_type(*id, ctx) {
                                 if !is_uint32_scalar(&ty) {
-                                    return Err(
-                                        ValidationError::MeshShadingInvalidOutputCount {
-                                            function: func_id,
-                                            block: block_id,
-                                            count_name: "Primitive Count",
-                                        }.into(),
-                        );
+                                    return Err(ValidationError::MeshShadingInvalidOutputCount {
+                                        function: func_id,
+                                        block: block_id,
+                                        count_name: "Primitive Count",
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -233,8 +233,7 @@ impl ValidationRule for PerPrimitiveDecorationRule {
         }
 
         // Build map of execution model -> interface variables
-        let mut mesh_interfaces: std::collections::HashSet<u32> =
-            std::collections::HashSet::new();
+        let mut mesh_interfaces: std::collections::HashSet<u32> = std::collections::HashSet::new();
         let mut fragment_interfaces: std::collections::HashSet<u32> =
             std::collections::HashSet::new();
 
@@ -270,8 +269,9 @@ impl ValidationRule for PerPrimitiveDecorationRule {
                     return Err(
                         ValidationError::MeshShadingPerPrimitiveFragmentWrongStorageClass {
                             variable_id: to_id(*var_id),
-                        }.into(),
-                        );
+                        }
+                        .into(),
+                    );
                 }
 
                 // MeshEXT: PerPrimitiveEXT requires Output storage class
@@ -279,8 +279,9 @@ impl ValidationRule for PerPrimitiveDecorationRule {
                     return Err(
                         ValidationError::MeshShadingPerPrimitiveMeshWrongStorageClass {
                             variable_id: to_id(*var_id),
-                        }.into(),
-                        );
+                        }
+                        .into(),
+                    );
                 }
             }
         }

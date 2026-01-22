@@ -22,12 +22,12 @@ use rspirv::spirv::{Capability, Op, StorageClass};
 use std::collections::HashMap;
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::helpers::is_vulkan_env;
 use crate::validation::op_ext::OpExt;
 use crate::validation::type_ext::{DefaultTypeResolver, TypeInstructionExt, TypeResolver};
 use crate::validation::types::{Id, ResultId, TypeId};
+use crate::validation::ValidationResult;
 use rspirv::dr::Instruction;
 
 // Note: Basic atomic opcode classification is provided by OpExt::is_atomic().
@@ -40,7 +40,10 @@ fn has_return_type(op: Op) -> bool {
 
 /// Returns true if the atomic opcode requires a float result type.
 fn requires_float_result(op: Op) -> bool {
-    matches!(op, Op::AtomicFAddEXT | Op::AtomicFMinEXT | Op::AtomicFMaxEXT)
+    matches!(
+        op,
+        Op::AtomicFAddEXT | Op::AtomicFMinEXT | Op::AtomicFMaxEXT
+    )
 }
 
 /// Returns true if the atomic opcode requires an integer result type.
@@ -77,10 +80,7 @@ fn requires_bool_result(op: Op) -> bool {
 ///
 /// This is used for checking if AtomicFloat16VectorNV capability is required
 /// for float atomic operations with 16-bit float vector types.
-fn is_float16_vec2_or_vec4(
-    type_id: u32,
-    definitions: &HashMap<ResultId, Instruction>,
-) -> bool {
+fn is_float16_vec2_or_vec4(type_id: u32, definitions: &HashMap<ResultId, Instruction>) -> bool {
     let Ok(result_id) = ResultId::try_from(type_id) else {
         return false;
     };
@@ -225,69 +225,65 @@ impl ValidationRule for AtomicResultTypeRule {
                     // Check result type requirements based on opcode
                     if requires_float_result(op) {
                         if !resolver.is_float_scalar(result_type_id, ctx.definitions) {
-                            if let (Some(func), Some(block), Ok(result_type)) = (
-                                function_id,
-                                block_id,
-                                TypeId::try_from(result_type_id),
-                            ) {
+                            if let (Some(func), Some(block), Ok(result_type)) =
+                                (function_id, block_id, TypeId::try_from(result_type_id))
+                            {
                                 return Err(ValidationError::AtomicResultTypeInvalid {
                                     function: func,
                                     block,
                                     opcode: op,
                                     result_type,
                                     expected: "float scalar",
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     } else if requires_int_result(op) {
                         if !resolver.is_int_scalar(result_type_id, ctx.definitions) {
-                            if let (Some(func), Some(block), Ok(result_type)) = (
-                                function_id,
-                                block_id,
-                                TypeId::try_from(result_type_id),
-                            ) {
+                            if let (Some(func), Some(block), Ok(result_type)) =
+                                (function_id, block_id, TypeId::try_from(result_type_id))
+                            {
                                 return Err(ValidationError::AtomicResultTypeInvalid {
                                     function: func,
                                     block,
                                     opcode: op,
                                     result_type,
                                     expected: "integer scalar",
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     } else if allows_int_or_float_result(op) {
                         let is_int = resolver.is_int_scalar(result_type_id, ctx.definitions);
                         let is_float = resolver.is_float_scalar(result_type_id, ctx.definitions);
                         if !is_int && !is_float {
-                            if let (Some(func), Some(block), Ok(result_type)) = (
-                                function_id,
-                                block_id,
-                                TypeId::try_from(result_type_id),
-                            ) {
+                            if let (Some(func), Some(block), Ok(result_type)) =
+                                (function_id, block_id, TypeId::try_from(result_type_id))
+                            {
                                 return Err(ValidationError::AtomicResultTypeInvalid {
                                     function: func,
                                     block,
                                     opcode: op,
                                     result_type,
                                     expected: "integer or float scalar",
-                                }.into());
+                                }
+                                .into());
                             }
                         }
-                    } else if requires_bool_result(op) {
-                        if !resolver.is_bool_scalar(result_type_id, ctx.definitions) {
-                            if let (Some(func), Some(block), Ok(result_type)) = (
-                                function_id,
-                                block_id,
-                                TypeId::try_from(result_type_id),
-                            ) {
-                                return Err(ValidationError::AtomicResultTypeInvalid {
-                                    function: func,
-                                    block,
-                                    opcode: op,
-                                    result_type,
-                                    expected: "bool scalar",
-                                }.into());
+                    } else if requires_bool_result(op)
+                        && !resolver.is_bool_scalar(result_type_id, ctx.definitions)
+                    {
+                        if let (Some(func), Some(block), Ok(result_type)) =
+                            (function_id, block_id, TypeId::try_from(result_type_id))
+                        {
+                            return Err(ValidationError::AtomicResultTypeInvalid {
+                                function: func,
+                                block,
+                                opcode: op,
+                                result_type,
+                                expected: "bool scalar",
                             }
+                            .into());
                         }
                     }
                 }
@@ -347,12 +343,13 @@ impl ValidationRule for AtomicStorageClassRule {
                         0
                     };
 
-                    let pointer_id = inst.operands.get(pointer_operand_idx).and_then(|op| {
-                        match op {
-                            Operand::IdRef(id) => Some(*id),
-                            _ => None,
-                        }
-                    });
+                    let pointer_id =
+                        inst.operands
+                            .get(pointer_operand_idx)
+                            .and_then(|op| match op {
+                                Operand::IdRef(id) => Some(*id),
+                                _ => None,
+                            });
 
                     let Some(pointer_id) = pointer_id else {
                         continue;
@@ -382,12 +379,11 @@ impl ValidationRule for AtomicStorageClassRule {
                     }
 
                     // Storage class is the first operand of OpTypePointer
-                    let storage_class = pointer_type_inst.operands.first().and_then(|op| {
-                        match op {
+                    let storage_class =
+                        pointer_type_inst.operands.first().and_then(|op| match op {
                             Operand::StorageClass(sc) => Some(*sc),
                             _ => None,
-                        }
-                    });
+                        });
 
                     let Some(storage_class) = storage_class else {
                         continue;
@@ -402,7 +398,8 @@ impl ValidationRule for AtomicStorageClassRule {
                                 opcode: inst.class.opcode,
                                 storage_class,
                                 reason: "forbidden by universal validation rules",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -415,7 +412,8 @@ impl ValidationRule for AtomicStorageClassRule {
                                 opcode: inst.class.opcode,
                                 storage_class,
                                 reason: "forbidden in Vulkan environment",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -441,8 +439,10 @@ impl ValidationRule for AtomicStorageClassRule {
                                     block,
                                     opcode: inst.class.opcode,
                                     storage_class,
-                                    reason: "storage class cannot be Generic in OpenCL 1.2 environment",
-                                }.into());
+                                    reason:
+                                        "storage class cannot be Generic in OpenCL 1.2 environment",
+                                }
+                                .into());
                             }
                         }
                     }
@@ -534,7 +534,8 @@ impl ValidationRule for AtomicInt64CapabilityRule {
                                 block,
                                 opcode: inst.class.opcode,
                                 required_capability: Capability::Int64Atomics,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -621,7 +622,8 @@ impl ValidationRule for AtomicFlagPointerTypeRule {
                                 function: func,
                                 block,
                                 opcode: op,
-                            }.into());
+                            }
+                            .into());
                         }
                         continue;
                     }
@@ -631,11 +633,11 @@ impl ValidationRule for AtomicFlagPointerTypeRule {
                     }
 
                     // Get the pointee type (second operand of OpTypePointer)
-                    let pointee_type_id = pointer_type_inst.operands.get(1).and_then(|op| match op
-                    {
-                        Operand::IdRef(id) => Some(*id),
-                        _ => None,
-                    });
+                    let pointee_type_id =
+                        pointer_type_inst.operands.get(1).and_then(|op| match op {
+                            Operand::IdRef(id) => Some(*id),
+                            _ => None,
+                        });
 
                     let Some(pointee_type_id) = pointee_type_id else {
                         continue;
@@ -651,7 +653,8 @@ impl ValidationRule for AtomicFlagPointerTypeRule {
                                 function: func,
                                 block,
                                 opcode: op,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -707,7 +710,10 @@ impl ValidationRule for AtomicFloatCapabilityRule {
                     let op = inst.class.opcode;
 
                     // Only check float atomic operations
-                    if !matches!(op, Op::AtomicFAddEXT | Op::AtomicFMinEXT | Op::AtomicFMaxEXT) {
+                    if !matches!(
+                        op,
+                        Op::AtomicFAddEXT | Op::AtomicFMinEXT | Op::AtomicFMaxEXT
+                    ) {
                         continue;
                     }
 
@@ -795,7 +801,8 @@ impl ValidationRule for AtomicFloatCapabilityRule {
                                 block,
                                 opcode: op,
                                 required_capability: cap,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -890,7 +897,8 @@ impl ValidationRule for AtomicStorePointerTypeRule {
                                 function: func,
                                 block,
                                 opcode: op,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -933,7 +941,10 @@ impl ValidationRule for AtomicCompareExchangeComparatorRule {
                     let op = inst.class.opcode;
 
                     // Only check compare-exchange operations
-                    if !matches!(op, Op::AtomicCompareExchange | Op::AtomicCompareExchangeWeak) {
+                    if !matches!(
+                        op,
+                        Op::AtomicCompareExchange | Op::AtomicCompareExchangeWeak
+                    ) {
                         continue;
                     }
 
@@ -967,8 +978,9 @@ impl ValidationRule for AtomicCompareExchangeComparatorRule {
                                     function: func,
                                     block,
                                     opcode: op,
-                                }.into(),
-                        );
+                                }
+                                .into(),
+                            );
                         }
                     }
                 }
@@ -1071,7 +1083,8 @@ impl ValidationRule for AtomicStoreValueTypeRule {
                                 function: func,
                                 block,
                                 opcode: op,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -1175,7 +1188,8 @@ impl ValidationRule for AtomicValueTypeRule {
                                 function: func,
                                 block,
                                 opcode: op,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -1315,16 +1329,12 @@ mod tests {
 
         // Float16 type (id=1)
         let mut float16_inst = Instruction::new(Op::TypeFloat, None, Some(1), vec![]);
-        float16_inst
-            .operands
-            .push(Operand::LiteralBit32(16)); // 16-bit width
+        float16_inst.operands.push(Operand::LiteralBit32(16)); // 16-bit width
         definitions.insert(ResultId::try_from(1).unwrap(), float16_inst);
 
         // Float32 type (id=2)
         let mut float32_inst = Instruction::new(Op::TypeFloat, None, Some(2), vec![]);
-        float32_inst
-            .operands
-            .push(Operand::LiteralBit32(32)); // 32-bit width
+        float32_inst.operands.push(Operand::LiteralBit32(32)); // 32-bit width
         definitions.insert(ResultId::try_from(2).unwrap(), float32_inst);
 
         // Vec2<f16> (id=3)
@@ -1352,8 +1362,14 @@ mod tests {
         definitions.insert(ResultId::try_from(6).unwrap(), vec2_f32_inst);
 
         // Test valid float16 vec2/vec4
-        assert!(is_float16_vec2_or_vec4(3, &definitions), "vec2<f16> should match");
-        assert!(is_float16_vec2_or_vec4(4, &definitions), "vec4<f16> should match");
+        assert!(
+            is_float16_vec2_or_vec4(3, &definitions),
+            "vec2<f16> should match"
+        );
+        assert!(
+            is_float16_vec2_or_vec4(4, &definitions),
+            "vec4<f16> should match"
+        );
 
         // Test invalid cases
         assert!(

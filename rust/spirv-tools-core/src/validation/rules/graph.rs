@@ -16,9 +16,9 @@ use rspirv::dr::Operand;
 use rspirv::spirv::{Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::{Id, ResultId};
+use crate::validation::ValidationResult;
 
 fn to_id(id: u32) -> Id {
     Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
@@ -100,10 +100,12 @@ fn graph_type_input_at(inst: &rspirv::dr::Instruction, index: usize) -> Option<u
 /// Get an output type ID at the given index from an OpTypeGraphARM.
 fn graph_type_output_at(inst: &rspirv::dr::Instruction, index: usize) -> Option<u32> {
     let num_inputs = graph_type_num_inputs(inst) as usize;
-    inst.operands.get(1 + num_inputs + index).and_then(|op| match op {
-        Operand::IdRef(id) => Some(*id),
-        _ => None,
-    })
+    inst.operands
+        .get(1 + num_inputs + index)
+        .and_then(|op| match op {
+            Operand::IdRef(id) => Some(*id),
+            _ => None,
+        })
 }
 
 /// Try to evaluate a constant u64 value from an ID.
@@ -151,14 +153,16 @@ impl ValidationRule for GraphTypeRule {
                     instruction_id: inst.result_id.map(to_id),
                     num_io_types: num_io,
                     num_inputs,
-                }.into());
+                }
+                .into());
             }
 
             // Check there is at least one output
             if num_io == num_inputs as usize {
                 return Err(ValidationError::GraphTypeNoOutputs {
                     instruction_id: inst.result_id.map(to_id),
-                }.into());
+                }
+                .into());
             }
 
             // Check all I/O types are graph interface types
@@ -168,7 +172,8 @@ impl ValidationRule for GraphTypeRule {
                         return Err(ValidationError::GraphTypeInvalidIOType {
                             instruction_id: inst.result_id.map(to_id),
                             io_type: to_id(*type_id),
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -202,7 +207,8 @@ impl ValidationRule for GraphConstantRule {
                 if !is_tensor_type(result_type_id, ctx.definitions) {
                     return Err(ValidationError::GraphConstantNotTensorType {
                         instruction_id: inst.result_id.map(to_id),
-                    }.into());
+                    }
+                    .into());
                 }
             }
 
@@ -212,7 +218,8 @@ impl ValidationRule for GraphConstantRule {
                     return Err(ValidationError::GraphConstantDuplicateId {
                         instruction_id: inst.result_id.map(to_id),
                         constant_id: *constant_id,
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -244,7 +251,8 @@ impl ValidationRule for GraphRule {
                         if !is_graph_type(type_inst) {
                             return Err(ValidationError::GraphInvalidResultType {
                                 instruction_id: inst.result_id.map(to_id),
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -290,7 +298,8 @@ impl ValidationRule for GraphEntryPointRule {
                 return Err(ValidationError::GraphEntryPointInvalidGraph {
                     instruction_id: inst.result_id.map(to_id),
                     graph_id: to_id(*graph_id),
-                }.into());
+                }
+                .into());
             }
 
             // Get graph type
@@ -318,7 +327,8 @@ impl ValidationRule for GraphEntryPointRule {
                     instruction_id: inst.result_id.map(to_id),
                     expected: num_io,
                     actual: num_interface,
-                }.into());
+                }
+                .into());
             }
 
             // Check each interface variable
@@ -339,16 +349,20 @@ impl ValidationRule for GraphEntryPointRule {
                     return Err(ValidationError::GraphEntryPointInterfaceNotVariable {
                         instruction_id: inst.result_id.map(to_id),
                         interface_id: to_id(*interface_id),
-                    }.into());
+                    }
+                    .into());
                 }
 
                 // Check storage class (operand 0 of OpVariable)
                 if let Some(Operand::StorageClass(sc)) = interface_inst.operands.first() {
                     if *sc != StorageClass::UniformConstant {
-                        return Err(ValidationError::GraphEntryPointInterfaceNotUniformConstant {
-                            instruction_id: inst.result_id.map(to_id),
-                            interface_id: to_id(*interface_id),
-                        }.into());
+                        return Err(
+                            ValidationError::GraphEntryPointInterfaceNotUniformConstant {
+                                instruction_id: inst.result_id.map(to_id),
+                                interface_id: to_id(*interface_id),
+                            }
+                            .into(),
+                        );
                     }
                 }
 
@@ -373,12 +387,15 @@ impl ValidationRule for GraphEntryPointRule {
                         // OpTypePointer has storage class at operand 0 and pointee type at operand 1
                         if let Some(Operand::IdRef(pointee_type)) = ptr_inst.operands.get(1) {
                             if *pointee_type != expected_type {
-                                return Err(ValidationError::GraphEntryPointInterfaceTypeMismatch {
-                                    instruction_id: inst.result_id.map(to_id),
-                                    interface_id: to_id(*interface_id),
-                                    expected_type: to_id(expected_type),
-                                    actual_type: to_id(*pointee_type),
-                                }.into());
+                                return Err(
+                                    ValidationError::GraphEntryPointInterfaceTypeMismatch {
+                                        instruction_id: inst.result_id.map(to_id),
+                                        interface_id: to_id(*interface_id),
+                                        expected_type: to_id(expected_type),
+                                        actual_type: to_id(*pointee_type),
+                                    }
+                                    .into(),
+                                );
                             }
                         }
                     }
@@ -444,7 +461,8 @@ impl ValidationRule for GraphInputRule {
                                         return Err(ValidationError::GraphInputIndexNotInt32 {
                                             instruction_id: inst.result_id.map(to_id),
                                             operand: "InputIndex",
-                                        }.into());
+                                        }
+                                        .into());
                                     }
                                     // Check width is 32
                                     if let Some(Operand::LiteralBit32(width)) =
@@ -454,7 +472,8 @@ impl ValidationRule for GraphInputRule {
                                             return Err(ValidationError::GraphInputIndexNotInt32 {
                                                 instruction_id: inst.result_id.map(to_id),
                                                 operand: "InputIndex",
-                                            }.into());
+                                            }
+                                            .into());
                                         }
                                     }
                                 }
@@ -477,7 +496,8 @@ impl ValidationRule for GraphInputRule {
                                         return Err(ValidationError::GraphInputIndexNotInt32 {
                                             instruction_id: inst.result_id.map(to_id),
                                             operand: "ElementIndex",
-                                        }.into());
+                                        }
+                                        .into());
                                     }
                                     if let Some(Operand::LiteralBit32(width)) =
                                         type_inst.operands.first()
@@ -486,7 +506,8 @@ impl ValidationRule for GraphInputRule {
                                             return Err(ValidationError::GraphInputIndexNotInt32 {
                                                 instruction_id: inst.result_id.map(to_id),
                                                 operand: "ElementIndex",
-                                            }.into());
+                                            }
+                                            .into());
                                         }
                                     }
                                 }
@@ -500,8 +521,7 @@ impl ValidationRule for GraphInputRule {
                             if let Some(input_index) =
                                 eval_constant_u64(*input_index_id, ctx.definitions)
                             {
-                                let num_inputs =
-                                    graph_type_num_inputs(graph_type_inst) as u64;
+                                let num_inputs = graph_type_num_inputs(graph_type_inst) as u64;
 
                                 // Check index in range
                                 if input_index >= num_inputs {
@@ -509,7 +529,8 @@ impl ValidationRule for GraphInputRule {
                                         instruction_id: inst.result_id.map(to_id),
                                         input_index,
                                         num_inputs,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
 
                                 let has_element_index = inst.operands.len() > 1;
@@ -523,8 +544,9 @@ impl ValidationRule for GraphInputRule {
                                             return Err(
                                                 ValidationError::GraphInputElementIndexNotAllowed {
                                                     instruction_id: inst.result_id.map(to_id),
-                                                }.into(),
-                        );
+                                                }
+                                                .into(),
+                                            );
                                         }
                                     }
                                 }
@@ -558,7 +580,8 @@ impl ValidationRule for GraphInputRule {
                                             instruction_id: inst.result_id.map(to_id),
                                             expected_type: to_id(expected),
                                             actual_type: to_id(result_type),
-                                        }.into());
+                                        }
+                                        .into());
                                     }
                                 }
                             }
@@ -624,16 +647,20 @@ impl ValidationRule for GraphSetOutputRule {
                                         return Err(ValidationError::GraphOutputIndexNotInt32 {
                                             instruction_id: inst.result_id.map(to_id),
                                             operand: "OutputIndex",
-                                        }.into());
+                                        }
+                                        .into());
                                     }
                                     if let Some(Operand::LiteralBit32(width)) =
                                         type_inst.operands.first()
                                     {
                                         if *width != 32 {
-                                            return Err(ValidationError::GraphOutputIndexNotInt32 {
-                                                instruction_id: inst.result_id.map(to_id),
-                                                operand: "OutputIndex",
-                                            }.into());
+                                            return Err(
+                                                ValidationError::GraphOutputIndexNotInt32 {
+                                                    instruction_id: inst.result_id.map(to_id),
+                                                    operand: "OutputIndex",
+                                                }
+                                                .into(),
+                                            );
                                         }
                                     }
                                 }
@@ -656,16 +683,20 @@ impl ValidationRule for GraphSetOutputRule {
                                         return Err(ValidationError::GraphOutputIndexNotInt32 {
                                             instruction_id: inst.result_id.map(to_id),
                                             operand: "ElementIndex",
-                                        }.into());
+                                        }
+                                        .into());
                                     }
                                     if let Some(Operand::LiteralBit32(width)) =
                                         type_inst.operands.first()
                                     {
                                         if *width != 32 {
-                                            return Err(ValidationError::GraphOutputIndexNotInt32 {
-                                                instruction_id: inst.result_id.map(to_id),
-                                                operand: "ElementIndex",
-                                            }.into());
+                                            return Err(
+                                                ValidationError::GraphOutputIndexNotInt32 {
+                                                    instruction_id: inst.result_id.map(to_id),
+                                                    operand: "ElementIndex",
+                                                }
+                                                .into(),
+                                            );
                                         }
                                     }
                                 }
@@ -686,7 +717,8 @@ impl ValidationRule for GraphSetOutputRule {
                                         instruction_id: inst.result_id.map(to_id),
                                         output_index,
                                         num_outputs,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
 
                                 let has_element_index = inst.operands.len() > 2;
@@ -740,8 +772,9 @@ impl ValidationRule for GraphSetOutputRule {
                                                         instruction_id: inst.result_id.map(to_id),
                                                         expected_type: to_id(expected),
                                                         actual_type: to_id(value_type),
-                                                    }.into(),
-                        );
+                                                    }
+                                                    .into(),
+                                                );
                                             }
                                         }
                                     }
@@ -807,14 +840,13 @@ impl ValidationRule for GraphEndRule {
                                     || (element_index.is_some()
                                         && input_indices.contains(&no_element_key))
                                     || (element_index.is_none()
-                                        && input_indices
-                                            .iter()
-                                            .any(|(idx, _)| *idx == input_index))
+                                        && input_indices.iter().any(|(idx, _)| *idx == input_index))
                                 {
                                     return Err(ValidationError::GraphDuplicateInputIndex {
                                         instruction_id: inst.result_id.map(to_id),
                                         input_index,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                                 input_indices.insert(key);
                             }
@@ -848,7 +880,8 @@ impl ValidationRule for GraphEndRule {
                                     return Err(ValidationError::GraphDuplicateOutputIndex {
                                         instruction_id: inst.result_id.map(to_id),
                                         output_index,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                                 output_indices.insert(key);
                             }

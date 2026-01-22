@@ -13,10 +13,10 @@ use rspirv::dr::{Instruction, Module};
 use rspirv::spirv::{BuiltIn, Capability, Decoration, ExecutionModel, Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::op_ext::BuiltInExt;
 use crate::validation::types::ResultId;
+use crate::validation::ValidationResult;
 
 // ============================================================================
 // Built-in Location Exclusivity Rule
@@ -175,7 +175,8 @@ impl ValidationRule for BuiltinStorageClassRule {
                 return Err(ValidationError::InvalidBuiltInStorageClass {
                     builtin,
                     storage_class,
-                }.into());
+                }
+                .into());
             }
 
             // ViewIndex special case
@@ -192,18 +193,15 @@ impl ValidationRule for BuiltinStorageClassRule {
                         ExecutionModel::MeshEXT,
                         ExecutionModel::MeshNV,
                     ],
-                }.into());
+                }
+                .into());
             }
 
             // Capability requirements
-            if let Err(e) = check_builtin_capability(builtin, capabilities) {
-                return Err(e);
-            }
+            check_builtin_capability(builtin, capabilities)?;
 
             // Fragment-only built-ins
-            if builtin.is_fragment_only()
-                && !entry_models.contains(&ExecutionModel::Fragment)
-            {
+            if builtin.is_fragment_only() && !entry_models.contains(&ExecutionModel::Fragment) {
                 return Err(ValidationError::BuiltInRequiresFragment { builtin }.into());
             }
 
@@ -212,14 +210,16 @@ impl ValidationRule for BuiltinStorageClassRule {
                 return Err(ValidationError::InvalidBuiltInStorageClass {
                     builtin,
                     storage_class,
-                }.into());
+                }
+                .into());
             }
 
             if builtin == BuiltIn::ShadingRateKHR && storage_class != StorageClass::Input {
                 return Err(ValidationError::InvalidBuiltInStorageClass {
                     builtin,
                     storage_class,
-                }.into());
+                }
+                .into());
             }
 
             // Mesh output-only built-ins
@@ -227,7 +227,8 @@ impl ValidationRule for BuiltinStorageClassRule {
                 return Err(ValidationError::InvalidBuiltInStorageClass {
                     builtin,
                     storage_class,
-                }.into());
+                }
+                .into());
             }
 
             if builtin == BuiltIn::PrimitiveShadingRateKHR && storage_class != StorageClass::Output
@@ -235,7 +236,8 @@ impl ValidationRule for BuiltinStorageClassRule {
                 return Err(ValidationError::InvalidBuiltInStorageClass {
                     builtin,
                     storage_class,
-                }.into());
+                }
+                .into());
             }
 
             // Compute-only built-ins
@@ -246,7 +248,8 @@ impl ValidationRule for BuiltinStorageClassRule {
                 return Err(ValidationError::BuiltInRequiresExecutionModel {
                     builtin,
                     allowed: vec![ExecutionModel::GLCompute, ExecutionModel::Kernel],
-                }.into());
+                }
+                .into());
             }
 
             // Kernel-only built-ins
@@ -254,7 +257,8 @@ impl ValidationRule for BuiltinStorageClassRule {
                 return Err(ValidationError::BuiltInRequiresExecutionModel {
                     builtin,
                     allowed: vec![ExecutionModel::Kernel],
-                }.into());
+                }
+                .into());
             }
 
             // Execution model allowlists
@@ -263,7 +267,8 @@ impl ValidationRule for BuiltinStorageClassRule {
                     return Err(ValidationError::BuiltInRequiresExecutionModel {
                         builtin,
                         allowed: models.to_vec(),
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -308,9 +313,10 @@ fn check_builtin_capability(
         | BuiltIn::SubgroupGeMask
         | BuiltIn::SubgroupGtMask
         | BuiltIn::SubgroupLeMask
-        | BuiltIn::SubgroupLtMask => {
-            Some(&[Capability::GroupNonUniformBallot, Capability::SubgroupBallotKHR])
-        }
+        | BuiltIn::SubgroupLtMask => Some(&[
+            Capability::GroupNonUniformBallot,
+            Capability::SubgroupBallotKHR,
+        ]),
         BuiltIn::BaryCoordKHR
         | BuiltIn::BaryCoordNoPerspKHR
         | BuiltIn::BaryCoordSmoothAMD
@@ -351,12 +357,12 @@ fn check_builtin_capability(
             return Err(ValidationError::BuiltInRequiresCapability {
                 builtin,
                 capability: required_caps[0],
-            }.into());
+            }
+            .into());
         }
     }
     Ok(())
 }
-
 
 fn required_execution_models(builtin: BuiltIn) -> Option<&'static [ExecutionModel]> {
     match builtin {
@@ -376,10 +382,9 @@ fn required_execution_models(builtin: BuiltIn) -> Option<&'static [ExecutionMode
             ExecutionModel::ClosestHitKHR,
         ]),
         // HitKindKHR and HitTNV: only AnyHit and ClosestHit
-        BuiltIn::HitKindKHR | BuiltIn::HitTNV => Some(&[
-            ExecutionModel::AnyHitKHR,
-            ExecutionModel::ClosestHitKHR,
-        ]),
+        BuiltIn::HitKindKHR | BuiltIn::HitTNV => {
+            Some(&[ExecutionModel::AnyHitKHR, ExecutionModel::ClosestHitKHR])
+        }
         // Object space ray tracing built-ins: Intersection, AnyHit, ClosestHit only
         BuiltIn::InstanceCustomIndexKHR
         | BuiltIn::RayGeometryIndexKHR
@@ -446,10 +451,10 @@ fn required_execution_models(builtin: BuiltIn) -> Option<&'static [ExecutionMode
     }
 }
 
-fn resolve_builtin_pointee_type<'a>(
-    definitions: &'a HashMap<ResultId, Instruction>,
+fn resolve_builtin_pointee_type(
+    definitions: &HashMap<ResultId, Instruction>,
     var_id: ResultId,
-) -> Option<&'a Instruction> {
+) -> Option<&Instruction> {
     let var_inst = definitions.get(&var_id)?;
     let ptr_type_id = var_inst.result_type?;
     let ptr_type = ResultId::try_from(ptr_type_id)
@@ -1131,9 +1136,7 @@ impl ValidationRule for BuiltinStorageClassDirectionRule {
 
             // Validate direction per built-in per execution model
             for model in entry_models {
-                if let Some(error) =
-                    validate_builtin_direction(builtin, storage_class, *model)
-                {
+                if let Some(error) = validate_builtin_direction(builtin, storage_class, *model) {
                     return Err(error.into());
                 }
             }
@@ -1152,49 +1155,49 @@ fn validate_builtin_direction(
     match builtin {
         // Position: Output in Vertex/Mesh, Input not allowed in Vertex/Mesh
         BuiltIn::Position => {
-            if storage_class == StorageClass::Input {
-                if matches!(
+            if storage_class == StorageClass::Input
+                && matches!(
                     model,
                     ExecutionModel::Vertex | ExecutionModel::MeshNV | ExecutionModel::MeshEXT
-                ) {
-                    return Some(ValidationError::BuiltInWrongStorageClassForExecutionModel {
-                        builtin,
-                        storage_class,
-                        execution_model: model,
-                    });
-                }
+                )
+            {
+                return Some(ValidationError::BuiltInWrongStorageClassForExecutionModel {
+                    builtin,
+                    storage_class,
+                    execution_model: model,
+                });
             }
         }
 
         // PointSize: Same rules as Position
         BuiltIn::PointSize => {
-            if storage_class == StorageClass::Input {
-                if matches!(
+            if storage_class == StorageClass::Input
+                && matches!(
                     model,
                     ExecutionModel::Vertex | ExecutionModel::MeshNV | ExecutionModel::MeshEXT
-                ) {
-                    return Some(ValidationError::BuiltInWrongStorageClassForExecutionModel {
-                        builtin,
-                        storage_class,
-                        execution_model: model,
-                    });
-                }
+                )
+            {
+                return Some(ValidationError::BuiltInWrongStorageClassForExecutionModel {
+                    builtin,
+                    storage_class,
+                    execution_model: model,
+                });
             }
         }
 
         // ClipDistance/CullDistance: Input not allowed in Vertex/Mesh, Output not allowed in Fragment
         BuiltIn::ClipDistance | BuiltIn::CullDistance => {
-            if storage_class == StorageClass::Input {
-                if matches!(
+            if storage_class == StorageClass::Input
+                && matches!(
                     model,
                     ExecutionModel::Vertex | ExecutionModel::MeshNV | ExecutionModel::MeshEXT
-                ) {
-                    return Some(ValidationError::BuiltInWrongStorageClassForExecutionModel {
-                        builtin,
-                        storage_class,
-                        execution_model: model,
-                    });
-                }
+                )
+            {
+                return Some(ValidationError::BuiltInWrongStorageClassForExecutionModel {
+                    builtin,
+                    storage_class,
+                    execution_model: model,
+                });
             }
             if storage_class == StorageClass::Output && model == ExecutionModel::Fragment {
                 return Some(ValidationError::BuiltInWrongStorageClassForExecutionModel {
@@ -1229,7 +1232,10 @@ fn validate_builtin_direction(
 
         // FrontFacing, HelperInvocation, SampleId, SamplePosition, SampleMask (input):
         // Must be Input in Fragment
-        BuiltIn::FrontFacing | BuiltIn::HelperInvocation | BuiltIn::SampleId | BuiltIn::SamplePosition => {
+        BuiltIn::FrontFacing
+        | BuiltIn::HelperInvocation
+        | BuiltIn::SampleId
+        | BuiltIn::SamplePosition => {
             if model == ExecutionModel::Fragment && storage_class != StorageClass::Input {
                 return Some(ValidationError::BuiltInWrongStorageClassForExecutionModel {
                     builtin,
@@ -1240,7 +1246,11 @@ fn validate_builtin_direction(
         }
 
         // VertexIndex, InstanceIndex: Must be Input in Vertex
-        BuiltIn::VertexIndex | BuiltIn::InstanceIndex | BuiltIn::BaseVertex | BuiltIn::BaseInstance | BuiltIn::DrawIndex => {
+        BuiltIn::VertexIndex
+        | BuiltIn::InstanceIndex
+        | BuiltIn::BaseVertex
+        | BuiltIn::BaseInstance
+        | BuiltIn::DrawIndex => {
             if model == ExecutionModel::Vertex && storage_class != StorageClass::Input {
                 return Some(ValidationError::BuiltInWrongStorageClassForExecutionModel {
                     builtin,
@@ -1259,8 +1269,10 @@ fn validate_builtin_direction(
                     execution_model: model,
                 });
             }
-            if matches!(model, ExecutionModel::Geometry | ExecutionModel::MeshNV | ExecutionModel::MeshEXT)
-                && storage_class != StorageClass::Output
+            if matches!(
+                model,
+                ExecutionModel::Geometry | ExecutionModel::MeshNV | ExecutionModel::MeshEXT
+            ) && storage_class != StorageClass::Output
             {
                 // In Geometry, PrimitiveId can be both Input and Output
                 // Only check for mesh shaders where it must be Output
@@ -1302,8 +1314,10 @@ fn validate_builtin_direction(
 
         // InvocationId: Input in Geometry and TessellationControl
         BuiltIn::InvocationId => {
-            if matches!(model, ExecutionModel::Geometry | ExecutionModel::TessellationControl)
-                && storage_class != StorageClass::Input
+            if matches!(
+                model,
+                ExecutionModel::Geometry | ExecutionModel::TessellationControl
+            ) && storage_class != StorageClass::Input
             {
                 return Some(ValidationError::BuiltInWrongStorageClassForExecutionModel {
                     builtin,
@@ -1315,7 +1329,9 @@ fn validate_builtin_direction(
 
         // TessCoord: Must be Input in TessellationEvaluation
         BuiltIn::TessCoord => {
-            if model == ExecutionModel::TessellationEvaluation && storage_class != StorageClass::Input {
+            if model == ExecutionModel::TessellationEvaluation
+                && storage_class != StorageClass::Input
+            {
                 return Some(ValidationError::BuiltInWrongStorageClassForExecutionModel {
                     builtin,
                     storage_class,
@@ -1326,14 +1342,17 @@ fn validate_builtin_direction(
 
         // TessLevelOuter, TessLevelInner: Output in TessControl, Input in TessEval
         BuiltIn::TessLevelOuter | BuiltIn::TessLevelInner => {
-            if model == ExecutionModel::TessellationControl && storage_class != StorageClass::Output {
+            if model == ExecutionModel::TessellationControl && storage_class != StorageClass::Output
+            {
                 return Some(ValidationError::BuiltInWrongStorageClassForExecutionModel {
                     builtin,
                     storage_class,
                     execution_model: model,
                 });
             }
-            if model == ExecutionModel::TessellationEvaluation && storage_class != StorageClass::Input {
+            if model == ExecutionModel::TessellationEvaluation
+                && storage_class != StorageClass::Input
+            {
                 return Some(ValidationError::BuiltInWrongStorageClassForExecutionModel {
                     builtin,
                     storage_class,
@@ -1562,7 +1581,8 @@ impl ValidationRule for BuiltinExecutionModeRule {
                     return Err(ValidationError::BuiltInRequiresExecutionModeDeclaration {
                         builtin,
                         required_mode,
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -1572,9 +1592,7 @@ impl ValidationRule for BuiltinExecutionModeRule {
 }
 
 /// Returns the execution mode required by a built-in, if any.
-fn required_execution_mode_for_builtin(
-    builtin: BuiltIn,
-) -> Option<rspirv::spirv::ExecutionMode> {
+fn required_execution_mode_for_builtin(builtin: BuiltIn) -> Option<rspirv::spirv::ExecutionMode> {
     match builtin {
         // FragDepth requires DepthReplacing
         BuiltIn::FragDepth => Some(rspirv::spirv::ExecutionMode::DepthReplacing),

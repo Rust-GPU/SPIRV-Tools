@@ -7,9 +7,9 @@ use rspirv::dr::{Instruction, Operand};
 use rspirv::spirv::Op;
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::ResultId;
+use crate::validation::ValidationResult;
 
 // ============================================================================
 // NonSemantic.ClspvReflection Instruction Type and Extension Trait
@@ -155,8 +155,10 @@ fn is_uint32_constant(id: u32, ctx: &ValidationContext<'_>) -> bool {
                         if let Some(type_inst) = ctx.definitions.get(&type_result_id) {
                             if type_inst.class.opcode == Op::TypeInt {
                                 // Check it's 32-bit unsigned
-                                if let (Some(Operand::LiteralBit32(width)), Some(Operand::LiteralBit32(signedness))) =
-                                    (type_inst.operands.first(), type_inst.operands.get(1))
+                                if let (
+                                    Some(Operand::LiteralBit32(width)),
+                                    Some(Operand::LiteralBit32(signedness)),
+                                ) = (type_inst.operands.first(), type_inst.operands.get(1))
                                 {
                                     return *width == 32 && *signedness == 0;
                                 }
@@ -329,7 +331,8 @@ impl ClspvReflectionRule {
                     if type_inst.class.opcode != Op::TypeVoid {
                         return Err(ValidationError::ClspvResultTypeMustBeVoid {
                             instruction: inst_name,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -342,7 +345,8 @@ impl ClspvReflectionRule {
                 instruction: inst_name,
                 required: min_version,
                 found: version,
-            }.into());
+            }
+            .into());
         }
 
         // Validate specific instruction operands
@@ -459,7 +463,8 @@ impl ClspvReflectionRule {
                     return Err(ValidationError::ClspvOperandMustBeString {
                         instruction: inst_name,
                         operand_name: "Name",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -471,7 +476,8 @@ impl ClspvReflectionRule {
                     return Err(ValidationError::ClspvOperandMustBeUint32Constant {
                         instruction: inst_name,
                         operand_name: "NumArguments",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -483,7 +489,8 @@ impl ClspvReflectionRule {
                     return Err(ValidationError::ClspvOperandMustBeUint32Constant {
                         instruction: inst_name,
                         operand_name: "Flags",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -495,7 +502,8 @@ impl ClspvReflectionRule {
                     return Err(ValidationError::ClspvOperandMustBeString {
                         instruction: inst_name,
                         operand_name: "Attributes",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -522,7 +530,8 @@ impl ClspvReflectionRule {
                     return Err(ValidationError::ClspvOperandMustBeString {
                         instruction: inst_name,
                         operand_name: "Name",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -534,7 +543,8 @@ impl ClspvReflectionRule {
                     return Err(ValidationError::ClspvOperandMustBeString {
                         instruction: inst_name,
                         operand_name: "TypeName",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -546,7 +556,8 @@ impl ClspvReflectionRule {
                     return Err(ValidationError::ClspvOperandMustBeUint32Constant {
                         instruction: inst_name,
                         operand_name: "AddressQualifier",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -558,7 +569,8 @@ impl ClspvReflectionRule {
                     return Err(ValidationError::ClspvOperandMustBeUint32Constant {
                         instruction: inst_name,
                         operand_name: "AccessQualifier",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -570,7 +582,8 @@ impl ClspvReflectionRule {
                     return Err(ValidationError::ClspvOperandMustBeUint32Constant {
                         instruction: inst_name,
                         operand_name: "TypeQualifier",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -598,7 +611,8 @@ impl ClspvReflectionRule {
                     return Err(ValidationError::ClspvOperandMustBeKernel {
                         instruction: inst_name,
                         operand_name: "Kernel",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -610,7 +624,8 @@ impl ClspvReflectionRule {
                     return Err(ValidationError::ClspvOperandMustBeUint32Constant {
                         instruction: inst_name,
                         operand_name: "Ordinal",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -622,7 +637,8 @@ impl ClspvReflectionRule {
                     return Err(ValidationError::ClspvOperandMustBeUint32Constant {
                         instruction: inst_name,
                         operand_name: "DescriptorSet",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -634,7 +650,8 @@ impl ClspvReflectionRule {
                     return Err(ValidationError::ClspvOperandMustBeUint32Constant {
                         instruction: inst_name,
                         operand_name: "Binding",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -646,7 +663,8 @@ impl ClspvReflectionRule {
                     return Err(ValidationError::ClspvOperandMustBeArgumentInfo {
                         instruction: inst_name,
                         operand_name: "ArgumentInfo",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -677,19 +695,27 @@ impl ClspvReflectionRule {
                     return Err(ValidationError::ClspvOperandMustBeKernel {
                         instruction: inst_name,
                         operand_name: "Kernel",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
 
-        for (idx, name) in [(3, "Ordinal"), (4, "DescriptorSet"), (5, "Binding"), (6, "Offset"), (7, "Size")] {
+        for (idx, name) in [
+            (3, "Ordinal"),
+            (4, "DescriptorSet"),
+            (5, "Binding"),
+            (6, "Offset"),
+            (7, "Size"),
+        ] {
             if inst.operands.len() > idx {
                 if let Some(Operand::IdRef(id)) = inst.operands.get(idx) {
                     if !is_uint32_constant(*id, ctx) {
                         return Err(ValidationError::ClspvOperandMustBeUint32Constant {
                             instruction: inst_name,
                             operand_name: name,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -702,7 +728,8 @@ impl ClspvReflectionRule {
                     return Err(ValidationError::ClspvOperandMustBeArgumentInfo {
                         instruction: inst_name,
                         operand_name: "ArgumentInfo",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -730,7 +757,8 @@ impl ClspvReflectionRule {
                     return Err(ValidationError::ClspvOperandMustBeKernel {
                         instruction: inst_name,
                         operand_name: "Kernel",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -742,7 +770,8 @@ impl ClspvReflectionRule {
                         return Err(ValidationError::ClspvOperandMustBeUint32Constant {
                             instruction: inst_name,
                             operand_name: name,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -755,7 +784,8 @@ impl ClspvReflectionRule {
                     return Err(ValidationError::ClspvOperandMustBeArgumentInfo {
                         instruction: inst_name,
                         operand_name: "ArgumentInfo",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -783,7 +813,8 @@ impl ClspvReflectionRule {
                     return Err(ValidationError::ClspvOperandMustBeKernel {
                         instruction: inst_name,
                         operand_name: "Kernel",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -795,7 +826,8 @@ impl ClspvReflectionRule {
                         return Err(ValidationError::ClspvOperandMustBeUint32Constant {
                             instruction: inst_name,
                             operand_name: name,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -808,7 +840,8 @@ impl ClspvReflectionRule {
                     return Err(ValidationError::ClspvOperandMustBeArgumentInfo {
                         instruction: inst_name,
                         operand_name: "ArgumentInfo",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -834,7 +867,8 @@ impl ClspvReflectionRule {
                         return Err(ValidationError::ClspvOperandMustBeUint32Constant {
                             instruction: inst_name,
                             operand_name: name,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -858,7 +892,8 @@ impl ClspvReflectionRule {
                     return Err(ValidationError::ClspvOperandMustBeUint32Constant {
                         instruction: inst_name,
                         operand_name: "SpecId",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -883,7 +918,8 @@ impl ClspvReflectionRule {
                         return Err(ValidationError::ClspvOperandMustBeUint32Constant {
                             instruction: inst_name,
                             operand_name: name,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -910,7 +946,8 @@ impl ClspvReflectionRule {
                         return Err(ValidationError::ClspvOperandMustBeUint32Constant {
                             instruction: inst_name,
                             operand_name: name,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -922,7 +959,8 @@ impl ClspvReflectionRule {
                     return Err(ValidationError::ClspvOperandMustBeString {
                         instruction: inst_name,
                         operand_name: "Data",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -948,7 +986,8 @@ impl ClspvReflectionRule {
                         return Err(ValidationError::ClspvOperandMustBeUint32Constant {
                             instruction: inst_name,
                             operand_name: name,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -976,7 +1015,8 @@ impl ClspvReflectionRule {
                     return Err(ValidationError::ClspvOperandMustBeKernel {
                         instruction: inst_name,
                         operand_name: "Kernel",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -988,7 +1028,8 @@ impl ClspvReflectionRule {
                         return Err(ValidationError::ClspvOperandMustBeUint32Constant {
                             instruction: inst_name,
                             operand_name: name,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -1015,7 +1056,8 @@ impl ClspvReflectionRule {
                         return Err(ValidationError::ClspvOperandMustBeUint32Constant {
                             instruction: inst_name,
                             operand_name: name,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -1027,7 +1069,8 @@ impl ClspvReflectionRule {
                     return Err(ValidationError::ClspvOperandMustBeString {
                         instruction: inst_name,
                         operand_name: "Data",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -1046,14 +1089,19 @@ impl ClspvReflectionRule {
         // Operand 3: pointer_offset (uint32 constant)
         // Operand 4: pointer_size (uint32 constant)
 
-        for (idx, name) in [(2, "ObjectOffset"), (3, "PointerOffset"), (4, "PointerSize")] {
+        for (idx, name) in [
+            (2, "ObjectOffset"),
+            (3, "PointerOffset"),
+            (4, "PointerSize"),
+        ] {
             if inst.operands.len() > idx {
                 if let Some(Operand::IdRef(id)) = inst.operands.get(idx) {
                     if !is_uint32_constant(*id, ctx) {
                         return Err(ValidationError::ClspvOperandMustBeUint32Constant {
                             instruction: inst_name,
                             operand_name: name,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -1081,7 +1129,8 @@ impl ClspvReflectionRule {
                     return Err(ValidationError::ClspvOperandMustBeKernel {
                         instruction: inst_name,
                         operand_name: "Kernel",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -1093,7 +1142,8 @@ impl ClspvReflectionRule {
                         return Err(ValidationError::ClspvOperandMustBeUint32Constant {
                             instruction: inst_name,
                             operand_name: name,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -1123,7 +1173,8 @@ impl ClspvReflectionRule {
                     return Err(ValidationError::ClspvOperandMustBeKernel {
                         instruction: inst_name,
                         operand_name: "Kernel",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -1141,7 +1192,8 @@ impl ClspvReflectionRule {
                         return Err(ValidationError::ClspvOperandMustBeUint32Constant {
                             instruction: inst_name,
                             operand_name: name,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -1168,7 +1220,8 @@ impl ClspvReflectionRule {
                         return Err(ValidationError::ClspvOperandMustBeUint32Constant {
                             instruction: inst_name,
                             operand_name: name,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -1180,7 +1233,8 @@ impl ClspvReflectionRule {
                     return Err(ValidationError::ClspvOperandMustBeString {
                         instruction: inst_name,
                         operand_name: "Data",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -1205,7 +1259,8 @@ impl ClspvReflectionRule {
                     return Err(ValidationError::ClspvOperandMustBeUint32Constant {
                         instruction: inst_name,
                         operand_name: "PrintfID",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -1216,7 +1271,8 @@ impl ClspvReflectionRule {
                     return Err(ValidationError::ClspvOperandMustBeString {
                         instruction: inst_name,
                         operand_name: "FormatString",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -1228,7 +1284,8 @@ impl ClspvReflectionRule {
                     return Err(ValidationError::ClspvOperandMustBeUint32Constant {
                         instruction: inst_name,
                         operand_name: "ArgSize",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -1254,7 +1311,8 @@ impl ClspvReflectionRule {
                         return Err(ValidationError::ClspvOperandMustBeUint32Constant {
                             instruction: inst_name,
                             operand_name: name,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -1281,7 +1339,8 @@ impl ClspvReflectionRule {
                         return Err(ValidationError::ClspvOperandMustBeUint32Constant {
                             instruction: inst_name,
                             operand_name: name,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -1309,7 +1368,8 @@ impl ClspvReflectionRule {
                     return Err(ValidationError::ClspvOperandMustBeKernel {
                         instruction: inst_name,
                         operand_name: "Kernel",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -1321,7 +1381,8 @@ impl ClspvReflectionRule {
                         return Err(ValidationError::ClspvOperandMustBeUint32Constant {
                             instruction: inst_name,
                             operand_name: name,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -1348,7 +1409,8 @@ impl ClspvReflectionRule {
                     return Err(ValidationError::ClspvOperandMustBeKernel {
                         instruction: inst_name,
                         operand_name: "Kernel",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -1360,7 +1422,8 @@ impl ClspvReflectionRule {
                         return Err(ValidationError::ClspvOperandMustBeUint32Constant {
                             instruction: inst_name,
                             operand_name: name,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -1370,7 +1433,6 @@ impl ClspvReflectionRule {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1379,9 +1441,15 @@ mod tests {
     fn test_clspv_name_lookup() {
         assert_eq!(ClspvInstruction::KERNEL.name(), "Kernel");
         assert_eq!(ClspvInstruction::ARGUMENT_INFO.name(), "ArgumentInfo");
-        assert_eq!(ClspvInstruction::ARGUMENT_STORAGE_BUFFER.name(), "ArgumentStorageBuffer");
+        assert_eq!(
+            ClspvInstruction::ARGUMENT_STORAGE_BUFFER.name(),
+            "ArgumentStorageBuffer"
+        );
         assert_eq!(ClspvInstruction::PRINTF_INFO.name(), "PrintfInfo");
-        assert_eq!(ClspvInstruction::WORKGROUP_VARIABLE_SIZE.name(), "WorkgroupVariableSize");
+        assert_eq!(
+            ClspvInstruction::WORKGROUP_VARIABLE_SIZE.name(),
+            "WorkgroupVariableSize"
+        );
         assert_eq!(ClspvInstruction(999).name(), "Unknown");
     }
 
@@ -1390,25 +1458,49 @@ mod tests {
         // Version 1 instructions
         assert_eq!(ClspvInstruction::KERNEL.min_version(), 1);
         assert_eq!(ClspvInstruction::ARGUMENT_INFO.min_version(), 1);
-        assert_eq!(ClspvInstruction::PROPERTY_REQUIRED_WORKGROUP_SIZE.min_version(), 1);
+        assert_eq!(
+            ClspvInstruction::PROPERTY_REQUIRED_WORKGROUP_SIZE.min_version(),
+            1
+        );
 
         // Version 3 instruction
-        assert_eq!(ClspvInstruction::SPEC_CONSTANT_SUBGROUP_MAX_SIZE.min_version(), 3);
+        assert_eq!(
+            ClspvInstruction::SPEC_CONSTANT_SUBGROUP_MAX_SIZE.min_version(),
+            3
+        );
 
         // Version 4 instructions
-        assert_eq!(ClspvInstruction::ARGUMENT_POINTER_PUSH_CONSTANT.min_version(), 4);
-        assert_eq!(ClspvInstruction::IMAGE_ARGUMENT_INFO_CHANNEL_DATA_TYPE_UNIFORM.min_version(), 4);
+        assert_eq!(
+            ClspvInstruction::ARGUMENT_POINTER_PUSH_CONSTANT.min_version(),
+            4
+        );
+        assert_eq!(
+            ClspvInstruction::IMAGE_ARGUMENT_INFO_CHANNEL_DATA_TYPE_UNIFORM.min_version(),
+            4
+        );
 
         // Version 5 instructions
-        assert_eq!(ClspvInstruction::ARGUMENT_STORAGE_TEXEL_BUFFER.min_version(), 5);
-        assert_eq!(ClspvInstruction::PROGRAM_SCOPE_VARIABLE_POINTER_PUSH_CONSTANT.min_version(), 5);
+        assert_eq!(
+            ClspvInstruction::ARGUMENT_STORAGE_TEXEL_BUFFER.min_version(),
+            5
+        );
+        assert_eq!(
+            ClspvInstruction::PROGRAM_SCOPE_VARIABLE_POINTER_PUSH_CONSTANT.min_version(),
+            5
+        );
 
         // Version 6 instructions
         assert_eq!(ClspvInstruction::PRINTF_INFO.min_version(), 6);
-        assert_eq!(ClspvInstruction::PRINTF_BUFFER_POINTER_PUSH_CONSTANT.min_version(), 6);
+        assert_eq!(
+            ClspvInstruction::PRINTF_BUFFER_POINTER_PUSH_CONSTANT.min_version(),
+            6
+        );
 
         // Version 7 instructions
-        assert_eq!(ClspvInstruction::NORMALIZED_SAMPLER_MASK_PUSH_CONSTANT.min_version(), 7);
+        assert_eq!(
+            ClspvInstruction::NORMALIZED_SAMPLER_MASK_PUSH_CONSTANT.min_version(),
+            7
+        );
         assert_eq!(ClspvInstruction::WORKGROUP_VARIABLE_SIZE.min_version(), 7);
     }
 }

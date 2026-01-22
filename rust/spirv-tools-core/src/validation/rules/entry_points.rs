@@ -8,15 +8,13 @@
 
 use std::collections::HashSet;
 
-use rspirv::spirv::{
-    Capability, Decoration, ExecutionModel, FPEncoding, Op, StorageClass,
-};
+use rspirv::spirv::{Capability, Decoration, ExecutionModel, FPEncoding, Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::helpers::{build_decoration_lookup, is_vulkan_env};
 use crate::validation::types::{Id, ResultId};
+use crate::validation::ValidationResult;
 
 // ============================================================================
 // Entry Point Interface Storage Classes Rule
@@ -80,7 +78,8 @@ impl ValidationRule for EntryPointInterfaceStorageClassesRule {
                                 return Err(ValidationError::DuplicateEntryPointInterface {
                                     entry_point: entry_point_id,
                                     interface: id.into(),
-                                }.into());
+                                }
+                                .into());
                             }
                             let has_patch = decoration_lookup
                                 .get(&id)
@@ -110,16 +109,20 @@ impl ValidationRule for EntryPointInterfaceStorageClassesRule {
                                         entry_point: entry_point_id,
                                         interface: id.into_inner(),
                                         storage_class: *storage,
-                                    }.into(),
-                        );
+                                    }
+                                    .into(),
+                                );
                             }
                             if has_patch
-                                && !ctx.declared_capabilities.contains(&Capability::Tessellation)
+                                && !ctx
+                                    .declared_capabilities
+                                    .contains(&Capability::Tessellation)
                             {
                                 return Err(ValidationError::DecorationRequiresCapability {
                                     decoration: Decoration::Patch,
                                     capability: Capability::Tessellation,
-                                }.into());
+                                }
+                                .into());
                             }
                             if has_patch
                                 && !matches!(
@@ -128,11 +131,10 @@ impl ValidationRule for EntryPointInterfaceStorageClassesRule {
                                         | ExecutionModel::TessellationEvaluation
                                 )
                             {
-                                return Err(
-                                    ValidationError::PatchDecorationRequiresTessellation {
-                                        execution_model: exec_model,
-                                    }.into(),
-                        );
+                                return Err(ValidationError::PatchDecorationRequiresTessellation {
+                                    execution_model: exec_model,
+                                }
+                                .into());
                             }
                             if matches!(
                                 exec_model,
@@ -162,8 +164,9 @@ impl ValidationRule for EntryPointInterfaceStorageClassesRule {
                                             entry_point: entry_point_id,
                                             interface: id.into_inner(),
                                             storage_class: *storage,
-                                        }.into(),
-                        );
+                                        }
+                                        .into(),
+                                    );
                                 }
                             } else {
                                 // Non-ray entry points cannot list ray-specific storage classes.
@@ -181,8 +184,9 @@ impl ValidationRule for EntryPointInterfaceStorageClassesRule {
                                             entry_point: entry_point_id,
                                             interface: id.into_inner(),
                                             storage_class: *storage,
-                                        }.into(),
-                        );
+                                        }
+                                        .into(),
+                                    );
                                 }
                             }
                             match storage {
@@ -266,8 +270,7 @@ impl ValidationRule for EntryPointInterfaceStorageClassesRule {
                                             if let Some(rspirv::dr::Operand::IdRef(pointee)) =
                                                 pointer_inst.operands.get(1)
                                             {
-                                                if let Ok(pointee_id) =
-                                                    ResultId::try_from(*pointee)
+                                                if let Ok(pointee_id) = ResultId::try_from(*pointee)
                                                 {
                                                     let mut seen_types = HashSet::new();
                                                     if let Some(encoding) =
@@ -319,8 +322,7 @@ impl ValidationRule for EntryPointInterfaceStorageClassesRule {
                                             if let Some(rspirv::dr::Operand::IdRef(pointee)) =
                                                 pointer_inst.operands.get(1)
                                             {
-                                                if let Ok(pointee_id) =
-                                                    ResultId::try_from(*pointee)
+                                                if let Ok(pointee_id) = ResultId::try_from(*pointee)
                                                 {
                                                     let mut seen_types = HashSet::new();
                                                     if let Some(encoding) =
@@ -349,8 +351,9 @@ impl ValidationRule for EntryPointInterfaceStorageClassesRule {
                                             entry_point: entry_point_id,
                                             interface: id.into_inner(),
                                             storage_class: *storage,
-                                        }.into(),
-                        );
+                                        }
+                                        .into(),
+                                    );
                                 }
                                 _ => {}
                             }

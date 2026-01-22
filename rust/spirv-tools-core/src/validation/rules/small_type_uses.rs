@@ -15,10 +15,10 @@ use rspirv::dr::Operand;
 use rspirv::spirv::{Capability, Op};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::helpers::get_type_structure;
 use crate::validation::types::{Id, TypeId, TypeStructure};
+use crate::validation::ValidationResult;
 
 /// Helper to convert a u32 to Id (with fallback to id 1).
 fn to_id(id: u32) -> Id {
@@ -64,22 +64,16 @@ fn contains_sized_int(type_id: TypeId, bit_width: u32, ctx: &ValidationContext<'
         | TypeStructure::Scalar(crate::validation::types::ScalarKind::UnsignedInt(w)) => {
             w.get() == bit_width
         }
-        TypeStructure::Vector { component, .. } => {
-            let comp_ty = match component {
-                crate::validation::types::ScalarKind::SignedInt(w)
-                | crate::validation::types::ScalarKind::UnsignedInt(w) => w.get() == bit_width,
-                _ => false,
-            };
-            comp_ty
-        }
-        TypeStructure::Matrix { component, .. } => {
-            let comp_ty = match component {
-                crate::validation::types::ScalarKind::SignedInt(w)
-                | crate::validation::types::ScalarKind::UnsignedInt(w) => w.get() == bit_width,
-                _ => false,
-            };
-            comp_ty
-        }
+        TypeStructure::Vector { component, .. } => match component {
+            crate::validation::types::ScalarKind::SignedInt(w)
+            | crate::validation::types::ScalarKind::UnsignedInt(w) => w.get() == bit_width,
+            _ => false,
+        },
+        TypeStructure::Matrix { component, .. } => match component {
+            crate::validation::types::ScalarKind::SignedInt(w)
+            | crate::validation::types::ScalarKind::UnsignedInt(w) => w.get() == bit_width,
+            _ => false,
+        },
         TypeStructure::Array { element, .. } => contains_sized_int(element, bit_width, ctx),
         TypeStructure::RuntimeArray { element } => contains_sized_int(element, bit_width, ctx),
         TypeStructure::Struct { members } => members
@@ -103,20 +97,14 @@ fn contains_sized_float(type_id: TypeId, bit_width: u32, ctx: &ValidationContext
         TypeStructure::Scalar(crate::validation::types::ScalarKind::Float(w)) => {
             w.get() == bit_width
         }
-        TypeStructure::Vector { component, .. } => {
-            let comp_ty = match component {
-                crate::validation::types::ScalarKind::Float(w) => w.get() == bit_width,
-                _ => false,
-            };
-            comp_ty
-        }
-        TypeStructure::Matrix { component, .. } => {
-            let comp_ty = match component {
-                crate::validation::types::ScalarKind::Float(w) => w.get() == bit_width,
-                _ => false,
-            };
-            comp_ty
-        }
+        TypeStructure::Vector { component, .. } => match component {
+            crate::validation::types::ScalarKind::Float(w) => w.get() == bit_width,
+            _ => false,
+        },
+        TypeStructure::Matrix { component, .. } => match component {
+            crate::validation::types::ScalarKind::Float(w) => w.get() == bit_width,
+            _ => false,
+        },
         TypeStructure::Array { element, .. } => contains_sized_float(element, bit_width, ctx),
         TypeStructure::RuntimeArray { element } => contains_sized_float(element, bit_width, ctx),
         TypeStructure::Struct { members } => members
@@ -136,7 +124,10 @@ fn contains_sized_float(type_id: TypeId, bit_width: u32, ctx: &ValidationContext
 /// Check if a type is a pointer type.
 fn is_pointer_type(type_id: TypeId, ctx: &ValidationContext<'_>) -> bool {
     let ty = get_type_structure(type_id, ctx.definitions);
-    matches!(ty, TypeStructure::Pointer { .. } | TypeStructure::ForwardPointer { .. })
+    matches!(
+        ty,
+        TypeStructure::Pointer { .. } | TypeStructure::ForwardPointer { .. }
+    )
 }
 
 /// Check if a type is scalar, vector, or matrix (numeric types allowed for limited-use Load/Store).
@@ -234,7 +225,8 @@ impl ValidationRule for SmallTypeUsesRule {
                                 return Err(ValidationError::InvalidSmallTypeUse {
                                     instruction_id: user_result_id.map(to_id),
                                     opcode: *user_opcode,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -301,7 +293,8 @@ impl ValidationRule for SmallTypeLoadStoreRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: Op::Load,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -313,7 +306,9 @@ impl ValidationRule for SmallTypeLoadStoreRule {
                         };
 
                         // Look up the object's definition to get its type
-                        let Some(obj_rid) = crate::validation::types::ResultId::try_from(*object_id).ok() else {
+                        let Some(obj_rid) =
+                            crate::validation::types::ResultId::try_from(*object_id).ok()
+                        else {
                             continue;
                         };
                         let Some(obj_inst) = ctx.definitions.get(&obj_rid) else {
@@ -337,7 +332,8 @@ impl ValidationRule for SmallTypeLoadStoreRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: Op::Store,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -350,7 +346,10 @@ impl ValidationRule for SmallTypeLoadStoreRule {
 
 /// Returns all small type usage validation rules.
 pub fn all_small_type_uses_rules() -> Vec<Box<dyn ValidationRule>> {
-    vec![Box::new(SmallTypeUsesRule), Box::new(SmallTypeLoadStoreRule)]
+    vec![
+        Box::new(SmallTypeUsesRule),
+        Box::new(SmallTypeLoadStoreRule),
+    ]
 }
 
 #[cfg(test)]

@@ -75,7 +75,7 @@ impl Default for SourceLocation {
 /// A span covering a range in the source.
 ///
 /// Spans are half-open intervals `[start, end)` in the source.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct SourceSpan {
     /// Starting location (inclusive).
     pub start: SourceLocation,
@@ -90,12 +90,7 @@ impl SourceSpan {
     }
 
     /// Creates a span from text positions (zero-based line/column).
-    pub const fn text(
-        start_line: u32,
-        start_column: u32,
-        end_line: u32,
-        end_column: u32,
-    ) -> Self {
+    pub const fn text(start_line: u32, start_column: u32, end_line: u32, end_column: u32) -> Self {
         Self {
             start: SourceLocation::text(start_line, start_column),
             end: SourceLocation::text(end_line, end_column),
@@ -153,15 +148,6 @@ impl SourceSpan {
         Self {
             start: SourceLocation::from_position(span.start()),
             end: SourceLocation::from_position(span.end()),
-        }
-    }
-}
-
-impl Default for SourceSpan {
-    fn default() -> Self {
-        Self {
-            start: SourceLocation::default(),
-            end: SourceLocation::default(),
         }
     }
 }
@@ -628,7 +614,11 @@ pub trait WithSpan: Sized {
     }
 
     /// Wraps this error with a primary span.
-    fn with_primary_span_at(self, span: SourceSpan, message: impl Into<String>) -> SpannedError<Self> {
+    fn with_primary_span_at(
+        self,
+        span: SourceSpan,
+        message: impl Into<String>,
+    ) -> SpannedError<Self> {
         SpannedError::new(self).with_primary_span(span, message)
     }
 }
@@ -668,10 +658,20 @@ pub trait ValidationErrorExt {
     fn into_spanned(self) -> SpannedValidationError;
 
     /// Wraps this error as a spanned validation error with a primary span at an ID.
-    fn at_id(self, id: u32, message: impl Into<String>, span_map: Option<&SpanMap>) -> SpannedValidationError;
+    fn at_id(
+        self,
+        id: u32,
+        message: impl Into<String>,
+        span_map: Option<&SpanMap>,
+    ) -> SpannedValidationError;
 
     /// Wraps this error with a primary span at an ID using the context's span map.
-    fn at_id_ctx(self, id: impl Into<u32>, message: impl Into<String>, ctx: &super::context::ValidationContext<'_>) -> SpannedValidationError;
+    fn at_id_ctx(
+        self,
+        id: impl Into<u32>,
+        message: impl Into<String>,
+        ctx: &super::context::ValidationContext<'_>,
+    ) -> SpannedValidationError;
 
     /// Wraps this error with a primary span at an ID, and a secondary span at another ID.
     fn at_ids(
@@ -689,7 +689,12 @@ impl ValidationErrorExt for super::error::ValidationError {
         SpannedError::new(self)
     }
 
-    fn at_id(self, id: u32, message: impl Into<String>, span_map: Option<&SpanMap>) -> SpannedValidationError {
+    fn at_id(
+        self,
+        id: u32,
+        message: impl Into<String>,
+        span_map: Option<&SpanMap>,
+    ) -> SpannedValidationError {
         let mut spanned = SpannedError::new(self);
         if let Some(map) = span_map {
             if let Some(span) = map.get_id_span(id) {
@@ -699,7 +704,12 @@ impl ValidationErrorExt for super::error::ValidationError {
         spanned
     }
 
-    fn at_id_ctx(self, id: impl Into<u32>, message: impl Into<String>, ctx: &super::context::ValidationContext<'_>) -> SpannedValidationError {
+    fn at_id_ctx(
+        self,
+        id: impl Into<u32>,
+        message: impl Into<String>,
+        ctx: &super::context::ValidationContext<'_>,
+    ) -> SpannedValidationError {
         self.at_id(id.into(), message, ctx.span_map)
     }
 
@@ -752,7 +762,10 @@ mod tests {
         assert!(matches!(text_loc, SourceLocation::Text(_)));
 
         let binary_loc = SourceLocation::binary(100);
-        assert!(matches!(binary_loc, SourceLocation::Binary { word_offset: 100 }));
+        assert!(matches!(
+            binary_loc,
+            SourceLocation::Binary { word_offset: 100 }
+        ));
 
         let inst_loc = SourceLocation::instruction(50, Some(2));
         assert!(matches!(

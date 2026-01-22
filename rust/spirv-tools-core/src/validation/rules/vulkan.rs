@@ -11,10 +11,10 @@ use std::collections::HashSet;
 use rspirv::spirv::{Capability, Decoration, ImageOperands, Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::helpers::is_vulkan_env;
 use crate::validation::types::{ResultId, TypeId};
+use crate::validation::ValidationResult;
 
 // ============================================================================
 // Offset Texture Operand Rule
@@ -53,7 +53,8 @@ impl ValidationRule for OffsetTextureOperandRule {
             if has_offset && !gather_opcodes.contains(&inst.class.opcode) {
                 return Err(ValidationError::OffsetTextureOperandDisallowed {
                     opcode: inst.class.opcode,
-                }.into());
+                }
+                .into());
             }
         }
 
@@ -110,7 +111,8 @@ impl ValidationRule for VulkanBitwiseWidthsRule {
                     return Err(ValidationError::VulkanBitwiseRequires32Bit {
                         opcode: inst.class.opcode,
                         bit_width,
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -199,20 +201,25 @@ impl ValidationRule for SmallTypeStorageCapabilitiesRule {
                                 bit_width: 8,
                                 storage_class,
                                 required_capability: Capability::StorageBuffer8BitAccess,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                     StorageClass::Uniform => {
-                        if !ctx.has_capability(Capability::UniformAndStorageBuffer8BitAccess) {
-                            if !ctx.has_capability(Capability::StorageBuffer8BitAccess)
-                                || !has_decoration(ctx, u32::from(pointee), Decoration::BufferBlock)
-                            {
-                                return Err(ValidationError::SmallTypeMissingCapability {
-                                    bit_width: 8,
-                                    storage_class,
-                                    required_capability: Capability::UniformAndStorageBuffer8BitAccess,
-                                }.into());
+                        if !ctx.has_capability(Capability::UniformAndStorageBuffer8BitAccess)
+                            && (!ctx.has_capability(Capability::StorageBuffer8BitAccess)
+                                || !has_decoration(
+                                    ctx,
+                                    u32::from(pointee),
+                                    Decoration::BufferBlock,
+                                ))
+                        {
+                            return Err(ValidationError::SmallTypeMissingCapability {
+                                bit_width: 8,
+                                storage_class,
+                                required_capability: Capability::UniformAndStorageBuffer8BitAccess,
                             }
+                            .into());
                         }
                     }
                     StorageClass::PushConstant => {
@@ -221,23 +228,29 @@ impl ValidationRule for SmallTypeStorageCapabilitiesRule {
                                 bit_width: 8,
                                 storage_class,
                                 required_capability: Capability::StoragePushConstant8,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                     StorageClass::Workgroup => {
-                        if !ctx.has_capability(Capability::WorkgroupMemoryExplicitLayout8BitAccessKHR) {
+                        if !ctx
+                            .has_capability(Capability::WorkgroupMemoryExplicitLayout8BitAccessKHR)
+                        {
                             return Err(ValidationError::SmallTypeMissingCapability {
                                 bit_width: 8,
                                 storage_class,
-                                required_capability: Capability::WorkgroupMemoryExplicitLayout8BitAccessKHR,
-                            }.into());
+                                required_capability:
+                                    Capability::WorkgroupMemoryExplicitLayout8BitAccessKHR,
+                            }
+                            .into());
                         }
                     }
                     _ => {
                         return Err(ValidationError::SmallTypeDisallowedInStorageClass {
                             bit_width: 8,
                             storage_class,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -246,8 +259,8 @@ impl ValidationRule for SmallTypeStorageCapabilitiesRule {
             // When Int16/Float16 is present, 16-bit types can be used in any storage class.
             // When Int16/Float16 is NOT present, storage-specific capabilities are required.
             let has_16bit = contains_int(16) || contains_float(16);
-            let has_16bit_cap = ctx.has_capability(Capability::Int16)
-                || ctx.has_capability(Capability::Float16);
+            let has_16bit_cap =
+                ctx.has_capability(Capability::Int16) || ctx.has_capability(Capability::Float16);
 
             if has_16bit && !has_16bit_cap {
                 match storage_class {
@@ -257,20 +270,25 @@ impl ValidationRule for SmallTypeStorageCapabilitiesRule {
                                 bit_width: 16,
                                 storage_class,
                                 required_capability: Capability::StorageBuffer16BitAccess,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                     StorageClass::Uniform => {
-                        if !ctx.has_capability(Capability::UniformAndStorageBuffer16BitAccess) {
-                            if !ctx.has_capability(Capability::StorageBuffer16BitAccess)
-                                || !has_decoration(ctx, u32::from(pointee), Decoration::BufferBlock)
-                            {
-                                return Err(ValidationError::SmallTypeMissingCapability {
-                                    bit_width: 16,
-                                    storage_class,
-                                    required_capability: Capability::UniformAndStorageBuffer16BitAccess,
-                                }.into());
+                        if !ctx.has_capability(Capability::UniformAndStorageBuffer16BitAccess)
+                            && (!ctx.has_capability(Capability::StorageBuffer16BitAccess)
+                                || !has_decoration(
+                                    ctx,
+                                    u32::from(pointee),
+                                    Decoration::BufferBlock,
+                                ))
+                        {
+                            return Err(ValidationError::SmallTypeMissingCapability {
+                                bit_width: 16,
+                                storage_class,
+                                required_capability: Capability::UniformAndStorageBuffer16BitAccess,
                             }
+                            .into());
                         }
                     }
                     StorageClass::PushConstant => {
@@ -279,7 +297,8 @@ impl ValidationRule for SmallTypeStorageCapabilitiesRule {
                                 bit_width: 16,
                                 storage_class,
                                 required_capability: Capability::StoragePushConstant16,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                     StorageClass::Input | StorageClass::Output => {
@@ -288,29 +307,36 @@ impl ValidationRule for SmallTypeStorageCapabilitiesRule {
                                 bit_width: 16,
                                 storage_class,
                                 required_capability: Capability::StorageInputOutput16,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                     StorageClass::Workgroup => {
-                        if !ctx.has_capability(Capability::WorkgroupMemoryExplicitLayout16BitAccessKHR) {
+                        if !ctx
+                            .has_capability(Capability::WorkgroupMemoryExplicitLayout16BitAccessKHR)
+                        {
                             return Err(ValidationError::SmallTypeMissingCapability {
                                 bit_width: 16,
                                 storage_class,
-                                required_capability: Capability::WorkgroupMemoryExplicitLayout16BitAccessKHR,
-                            }.into());
+                                required_capability:
+                                    Capability::WorkgroupMemoryExplicitLayout16BitAccessKHR,
+                            }
+                            .into());
                         }
                     }
                     StorageClass::UniformConstant => {
                         return Err(ValidationError::SmallTypeDisallowedInStorageClass {
                             bit_width: 16,
                             storage_class,
-                        }.into());
+                        }
+                        .into());
                     }
                     _ => {
                         return Err(ValidationError::SmallTypeDisallowedInStorageClass {
                             bit_width: 16,
                             storage_class,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -464,9 +490,10 @@ impl ValidationRule for VulkanDescriptorBindingRule {
             // Skip if variable is not used by any entry point (HLSL legalization case)
             // We check if the variable appears in any entry point interface
             let is_referenced = ctx.module.entry_points.iter().any(|ep| {
-                ep.operands.iter().skip(2).any(|op| {
-                    matches!(op, rspirv::dr::Operand::IdRef(id) if *id == var_id)
-                })
+                ep.operands
+                    .iter()
+                    .skip(2)
+                    .any(|op| matches!(op, rspirv::dr::Operand::IdRef(id) if *id == var_id))
             });
 
             if !is_referenced && ctx.options.before_hlsl_legalization {
@@ -478,7 +505,8 @@ impl ValidationRule for VulkanDescriptorBindingRule {
             if !has_descriptor_set {
                 return Err(ValidationError::MissingDescriptorSetDecoration {
                     variable: Id::try_from(var_id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()),
-                }.into());
+                }
+                .into());
             }
 
             // Check for Binding decoration
@@ -486,7 +514,8 @@ impl ValidationRule for VulkanDescriptorBindingRule {
             if !has_binding {
                 return Err(ValidationError::MissingBindingDecoration {
                     variable: Id::try_from(var_id).unwrap_or_else(|_| Id::try_from(1u32).unwrap()),
-                }.into());
+                }
+                .into());
             }
         }
 
@@ -525,7 +554,9 @@ impl ValidationRule for VulkanPushConstantBlockRule {
                 (inst.class.opcode == Op::Variable || inst.class.opcode == Op::UntypedVariableKHR)
                     && matches!(
                         inst.operands.first(),
-                        Some(rspirv::dr::Operand::StorageClass(StorageClass::PushConstant))
+                        Some(rspirv::dr::Operand::StorageClass(
+                            StorageClass::PushConstant
+                        ))
                     )
             })
             .filter_map(|inst| inst.result_id)
@@ -565,7 +596,8 @@ impl ValidationRule for VulkanPushConstantBlockRule {
                         .and_then(|id| Id::try_from(id).ok())
                         .unwrap_or_else(|| Id::try_from(1u32).unwrap()),
                     storage_class: StorageClass::PushConstant,
-                }.into());
+                }
+                .into());
             }
         }
 
@@ -618,7 +650,10 @@ impl ValidationRule for VulkanBufferBlockDecorationsRule {
                 .copied();
 
             // If it's an array, get the element type
-            let final_struct_id = if matches!(pointee_opcode, Some(Op::TypeArray) | Some(Op::TypeRuntimeArray)) {
+            let final_struct_id = if matches!(
+                pointee_opcode,
+                Some(Op::TypeArray) | Some(Op::TypeRuntimeArray)
+            ) {
                 get_array_element_struct(struct_id, ctx)
             } else if pointee_opcode == Some(Op::TypeStruct) {
                 Some(struct_id)
@@ -639,27 +674,31 @@ impl ValidationRule for VulkanBufferBlockDecorationsRule {
                         return Err(ValidationError::VulkanBufferMissingBlockDecoration {
                             storage_class,
                             struct_id,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
                 StorageClass::StorageBuffer => {
                     if has_buffer_block {
                         return Err(ValidationError::VulkanStorageBufferHasBufferBlock {
                             struct_id,
-                        }.into());
+                        }
+                        .into());
                     }
                     if !has_block {
                         return Err(ValidationError::VulkanBufferMissingBlockDecoration {
                             storage_class,
                             struct_id,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
                 StorageClass::Uniform => {
                     if !has_block && !has_buffer_block {
                         return Err(ValidationError::VulkanUniformMissingBlockDecoration {
                             struct_id,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
                 _ => {}
@@ -671,7 +710,10 @@ impl ValidationRule for VulkanBufferBlockDecorationsRule {
 }
 
 /// Gets the pointee type ID from a variable instruction.
-fn get_variable_pointee_type(inst: &rspirv::dr::Instruction, ctx: &ValidationContext<'_>) -> Option<u32> {
+fn get_variable_pointee_type(
+    inst: &rspirv::dr::Instruction,
+    ctx: &ValidationContext<'_>,
+) -> Option<u32> {
     // For untyped variables, the data type is in operand 1
     if inst.class.opcode == Op::UntypedVariableKHR {
         return inst.operands.get(1).and_then(|op| {
@@ -824,7 +866,8 @@ fn check_struct_layout_decorations(
                     return Err(ValidationError::BlockMissingArrayStride {
                         struct_id,
                         decoration_type,
-                    }.into());
+                    }
+                    .into());
                 }
 
                 // For matrix members inside arrays, check the element type
@@ -842,7 +885,13 @@ fn check_struct_layout_decorations(
                 }
             }
             Some(Op::TypeMatrix) => {
-                check_matrix_decorations(struct_id, member_idx, member_type_id, decoration_type, ctx)?;
+                check_matrix_decorations(
+                    struct_id,
+                    member_idx,
+                    member_type_id,
+                    decoration_type,
+                    ctx,
+                )?;
             }
             Some(Op::TypeStruct) => {
                 // Recursively check nested structs
@@ -904,7 +953,8 @@ fn check_matrix_decorations(
         return Err(ValidationError::BlockMissingMatrixStride {
             struct_id,
             decoration_type,
-        }.into());
+        }
+        .into());
     }
 
     // Check RowMajor or ColMajor on the type itself or as a member decoration
@@ -917,7 +967,8 @@ fn check_matrix_decorations(
         return Err(ValidationError::BlockMissingMatrixOrder {
             struct_id,
             decoration_type,
-        }.into());
+        }
+        .into());
     }
 
     Ok(())

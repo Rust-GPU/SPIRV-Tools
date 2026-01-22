@@ -248,10 +248,7 @@ impl ValidationRule for ConstantBoolTypeRule {
             let opcode = inst.class.opcode;
             if !matches!(
                 opcode,
-                Op::ConstantTrue
-                    | Op::ConstantFalse
-                    | Op::SpecConstantTrue
-                    | Op::SpecConstantFalse
+                Op::ConstantTrue | Op::ConstantFalse | Op::SpecConstantTrue | Op::SpecConstantFalse
             ) {
                 continue;
             }
@@ -272,11 +269,15 @@ impl ValidationRule for ConstantBoolTypeRule {
                         opcode,
                         result_type,
                         expected: "OpTypeBool",
-                    }.at_ids(
+                    }
+                    .at_ids(
                         const_id,
                         format!("{:?} requires OpTypeBool as result type", opcode),
                         result_type,
-                        format!("result type is {:?}, not OpTypeBool", type_opcode.unwrap_or(Op::Nop)),
+                        format!(
+                            "result type is {:?}, not OpTypeBool",
+                            type_opcode.unwrap_or(Op::Nop)
+                        ),
                         ctx,
                     ));
                 }
@@ -322,7 +323,8 @@ impl ValidationRule for ConstantSamplerTypeRule {
                         opcode: Op::ConstantSampler,
                         result_type,
                         expected: "OpTypeSampler",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -401,7 +403,8 @@ impl ValidationRule for SpecConstantTypeRule {
                         opcode: Op::SpecConstant,
                         result_type,
                         expected: "OpTypeInt or OpTypeFloat",
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -448,13 +451,16 @@ impl ValidationRule for ConstantCompositeRule {
             };
 
             // Check that result type is a composite type (or shaped tensor)
-            if !is_composite_type(result_type_inst.class.opcode) && !is_shaped_tensor(result_type_inst) {
+            if !is_composite_type(result_type_inst.class.opcode)
+                && !is_shaped_tensor(result_type_inst)
+            {
                 if let Ok(result_type) = TypeId::try_from(result_type_id) {
                     return Err(ValidationError::ConstantResultTypeInvalid {
                         opcode,
                         result_type,
                         expected: "a composite type",
-                    }.into());
+                    }
+                    .into());
                 }
             }
 
@@ -476,7 +482,8 @@ impl ValidationRule for ConstantCompositeRule {
                             return Err(ValidationError::ConstantCompositeConstituentNotConstant {
                                 opcode,
                                 constituent,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -504,7 +511,8 @@ impl ValidationRule for ConstantCompositeRule {
                                 result_type,
                                 expected: component_count,
                                 found: constituent_count,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -528,7 +536,8 @@ impl ValidationRule for ConstantCompositeRule {
                                 result_type,
                                 expected: column_count,
                                 found: constituent_count,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -550,7 +559,8 @@ impl ValidationRule for ConstantCompositeRule {
                                         result_type,
                                         expected: array_length as usize,
                                         found: constituent_count,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -568,7 +578,8 @@ impl ValidationRule for ConstantCompositeRule {
                                 result_type,
                                 expected: member_count,
                                 found: constituent_count,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -583,7 +594,8 @@ impl ValidationRule for ConstantCompositeRule {
                                 result_type,
                                 expected: 1,
                                 found: constituent_count,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -635,7 +647,8 @@ impl ValidationRule for SpecConstantOpCapabilityRule {
                 return Err(ValidationError::SpecConstantOpMissingCapability {
                     inner_opcode: Op::QuantizeToF16,
                     required_capability: Capability::Shader,
-                }.into());
+                }
+                .into());
             }
 
             // Kernel-only operations:
@@ -645,9 +658,12 @@ impl ValidationRule for SpecConstantOpCapabilityRule {
             // AccessChain = 65, InBoundsAccessChain = 66, PtrAccessChain = 67, InBoundsPtrAccessChain = 70
             let kernel_ops = [
                 109, 111, 110, 112, // ConvertFToS, ConvertSToF, ConvertFToU, ConvertUToF
-                117, 120, 122, 121, // ConvertPtrToU, ConvertUToPtr, GenericCastToPtr, PtrCastToGeneric
-                124, 127, 129, 131, 133, 136, 140, 141, // Bitcast, FNegate, FAdd, FSub, FMul, FDiv, FRem, FMod
-                65, 66, 67, 70, // AccessChain, InBoundsAccessChain, PtrAccessChain, InBoundsPtrAccessChain
+                117, 120, 122,
+                121, // ConvertPtrToU, ConvertUToPtr, GenericCastToPtr, PtrCastToGeneric
+                124, 127, 129, 131, 133, 136, 140,
+                141, // Bitcast, FNegate, FAdd, FSub, FMul, FDiv, FRem, FMod
+                65, 66, 67,
+                70, // AccessChain, InBoundsAccessChain, PtrAccessChain, InBoundsPtrAccessChain
             ];
 
             if kernel_ops.contains(&inner_op_num) && !has_kernel {
@@ -678,7 +694,8 @@ impl ValidationRule for SpecConstantOpCapabilityRule {
                 return Err(ValidationError::SpecConstantOpMissingCapability {
                     inner_opcode: inner_op,
                     required_capability: Capability::Kernel,
-                }.into());
+                }
+                .into());
             }
         }
 
@@ -766,9 +783,9 @@ impl ValidationRule for SpecConstantOpUConvertRule {
 
         // Check if SPV_AMD_gpu_shader_int16 extension is present
         let has_amd_ext = ctx.module.extensions.iter().any(|ext| {
-            ext.operands.first().map_or(false, |op| {
-                matches!(op, Operand::LiteralString(s) if s == "SPV_AMD_gpu_shader_int16")
-            })
+            ext.operands.first().is_some_and(
+                |op| matches!(op, Operand::LiteralString(s) if s == "SPV_AMD_gpu_shader_int16"),
+            )
         });
 
         if has_amd_ext {

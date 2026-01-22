@@ -13,10 +13,10 @@ use rspirv::dr::Operand;
 use rspirv::spirv::{Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::helpers::{get_type_structure, id_ref};
 use crate::validation::types::{Id, ResultId, ScalarKind, TypeId, TypeStructure, VectorSize};
+use crate::validation::ValidationResult;
 
 fn to_id(id: u32) -> Id {
     Id::try_from(id).unwrap_or_else(|_| Id::try_from(1u32).unwrap())
@@ -101,7 +101,8 @@ fn validate_hit_object_pointer(
                 function: func_id,
                 block: block_id,
                 opcode: inst.class.opcode,
-            }.into());
+            }
+            .into());
         }
     };
 
@@ -114,7 +115,8 @@ fn validate_hit_object_pointer(
             function: func_id,
             block: block_id,
             opcode: inst.class.opcode,
-        }.into());
+        }
+        .into());
     }
 
     // Get pointer type
@@ -125,7 +127,8 @@ fn validate_hit_object_pointer(
                 function: func_id,
                 block: block_id,
                 opcode: inst.class.opcode,
-            }.into());
+            }
+            .into());
         }
     };
 
@@ -139,7 +142,8 @@ fn validate_hit_object_pointer(
                 function: func_id,
                 block: block_id,
                 opcode: inst.class.opcode,
-            }.into());
+            }
+            .into());
         }
     };
 
@@ -148,7 +152,8 @@ fn validate_hit_object_pointer(
             function: func_id,
             block: block_id,
             opcode: inst.class.opcode,
-        }.into());
+        }
+        .into());
     }
 
     // Get pointee type (second operand of OpTypePointer after storage class)
@@ -159,7 +164,8 @@ fn validate_hit_object_pointer(
                 function: func_id,
                 block: block_id,
                 opcode: inst.class.opcode,
-            }.into());
+            }
+            .into());
         }
     };
 
@@ -173,7 +179,8 @@ fn validate_hit_object_pointer(
                 function: func_id,
                 block: block_id,
                 opcode: inst.class.opcode,
-            }.into());
+            }
+            .into());
         }
     };
 
@@ -182,7 +189,8 @@ fn validate_hit_object_pointer(
             function: func_id,
             block: block_id,
             opcode: inst.class.opcode,
-        }.into());
+        }
+        .into());
     }
 
     Ok(())
@@ -211,7 +219,8 @@ fn validate_hit_object_attribute(
                 function: func_id,
                 block: block_id,
                 opcode: inst.class.opcode,
-            }.into());
+            }
+            .into());
         }
     };
 
@@ -220,7 +229,8 @@ fn validate_hit_object_attribute(
             function: func_id,
             block: block_id,
             opcode: inst.class.opcode,
-        }.into());
+        }
+        .into());
     }
 
     // Check storage class
@@ -230,24 +240,23 @@ fn validate_hit_object_attribute(
                 function: func_id,
                 block: block_id,
                 opcode: inst.class.opcode,
-            }.into());
+            }
+            .into());
         }
     } else {
         return Err(ValidationError::HitObjectAttributeInvalid {
             function: func_id,
             block: block_id,
             opcode: inst.class.opcode,
-        }.into());
+        }
+        .into());
     }
 
     Ok(())
 }
 
 /// Get array length from array type instruction.
-fn get_array_length(
-    array_type_id: u32,
-    ctx: &ValidationContext<'_>,
-) -> Option<u32> {
+fn get_array_length(array_type_id: u32, ctx: &ValidationContext<'_>) -> Option<u32> {
     let type_result_id = ResultId::try_from(array_type_id).ok()?;
     let array_type_inst = ctx.definitions.get(&type_result_id)?;
 
@@ -283,18 +292,10 @@ impl ValidationRule for HitObjectBoolResultRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func
-                .def
-                .as_ref()
-                .and_then(|d| d.result_id)
-                .map(to_id);
+            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(to_id);
 
             for block in &func.blocks {
-                let block_id = block
-                    .label
-                    .as_ref()
-                    .and_then(|l| l.result_id)
-                    .map(to_id);
+                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(to_id);
 
                 for inst in &block.instructions {
                     let opcode = inst.class.opcode;
@@ -323,7 +324,8 @@ impl ValidationRule for HitObjectBoolResultRule {
                                     block: block_id,
                                     opcode,
                                     expected: "bool scalar",
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -349,18 +351,10 @@ impl ValidationRule for HitObjectIntResultRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func
-                .def
-                .as_ref()
-                .and_then(|d| d.result_id)
-                .map(to_id);
+            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(to_id);
 
             for block in &func.blocks {
-                let block_id = block
-                    .label
-                    .as_ref()
-                    .and_then(|l| l.result_id)
-                    .map(to_id);
+                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(to_id);
 
                 for inst in &block.instructions {
                     let opcode = inst.class.opcode;
@@ -391,7 +385,8 @@ impl ValidationRule for HitObjectIntResultRule {
                                     block: block_id,
                                     opcode,
                                     expected: "32-bit int scalar",
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -415,18 +410,10 @@ impl ValidationRule for HitObjectFloatResultRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func
-                .def
-                .as_ref()
-                .and_then(|d| d.result_id)
-                .map(to_id);
+            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(to_id);
 
             for block in &func.blocks {
-                let block_id = block
-                    .label
-                    .as_ref()
-                    .and_then(|l| l.result_id)
-                    .map(to_id);
+                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(to_id);
 
                 for inst in &block.instructions {
                     let opcode = inst.class.opcode;
@@ -454,7 +441,8 @@ impl ValidationRule for HitObjectFloatResultRule {
                                     block: block_id,
                                     opcode,
                                     expected: "32-bit float scalar",
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -479,18 +467,10 @@ impl ValidationRule for HitObjectVec3ResultRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func
-                .def
-                .as_ref()
-                .and_then(|d| d.result_id)
-                .map(to_id);
+            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(to_id);
 
             for block in &func.blocks {
-                let block_id = block
-                    .label
-                    .as_ref()
-                    .and_then(|l| l.result_id)
-                    .map(to_id);
+                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(to_id);
 
                 for inst in &block.instructions {
                     let opcode = inst.class.opcode;
@@ -519,7 +499,8 @@ impl ValidationRule for HitObjectVec3ResultRule {
                                     block: block_id,
                                     opcode,
                                     expected: "32-bit float 3-component vector",
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -542,18 +523,10 @@ impl ValidationRule for HitObjectMatrixResultRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func
-                .def
-                .as_ref()
-                .and_then(|d| d.result_id)
-                .map(to_id);
+            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(to_id);
 
             for block in &func.blocks {
-                let block_id = block
-                    .label
-                    .as_ref()
-                    .and_then(|l| l.result_id)
-                    .map(to_id);
+                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(to_id);
 
                 for inst in &block.instructions {
                     let opcode = inst.class.opcode;
@@ -573,7 +546,11 @@ impl ValidationRule for HitObjectMatrixResultRule {
                         if let Ok(type_id) = TypeId::try_from(result_type_id) {
                             let ty = get_type_structure(type_id, ctx.definitions);
                             let is_valid = match ty {
-                                TypeStructure::Matrix { component, rows, cols } => {
+                                TypeStructure::Matrix {
+                                    component,
+                                    rows,
+                                    cols,
+                                } => {
                                     matches!(component, ScalarKind::Float(w) if w.get() == 32)
                                         && rows == VectorSize::VEC3
                                         && cols.get() == 4
@@ -586,7 +563,8 @@ impl ValidationRule for HitObjectMatrixResultRule {
                                     block: block_id,
                                     opcode,
                                     expected: "4x3 matrix of 32-bit floats",
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -607,18 +585,10 @@ impl ValidationRule for HitObjectBufferHandleRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func
-                .def
-                .as_ref()
-                .and_then(|d| d.result_id)
-                .map(to_id);
+            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(to_id);
 
             for block in &func.blocks {
-                let block_id = block
-                    .label
-                    .as_ref()
-                    .and_then(|l| l.result_id)
-                    .map(to_id);
+                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(to_id);
 
                 for inst in &block.instructions {
                     if inst.class.opcode != Op::HitObjectGetShaderRecordBufferHandleNV {
@@ -638,7 +608,8 @@ impl ValidationRule for HitObjectBufferHandleRule {
                                     block: block_id,
                                     opcode: inst.class.opcode,
                                     expected: "32-bit int 2-component vector",
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -659,18 +630,10 @@ impl ValidationRule for HitObjectAttributeAccessRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func
-                .def
-                .as_ref()
-                .and_then(|d| d.result_id)
-                .map(to_id);
+            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(to_id);
 
             for block in &func.blocks {
-                let block_id = block
-                    .label
-                    .as_ref()
-                    .and_then(|l| l.result_id)
-                    .map(to_id);
+                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(to_id);
 
                 for inst in &block.instructions {
                     let opcode = inst.class.opcode;
@@ -698,7 +661,8 @@ impl ValidationRule for HitObjectAttributeAccessRule {
                                     function: func_id,
                                     block: block_id,
                                     opcode,
-                                }.into());
+                                }
+                                .into());
                             }
                         };
                         if variable.class.opcode != Op::Variable {
@@ -706,7 +670,8 @@ impl ValidationRule for HitObjectAttributeAccessRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode,
-                            }.into());
+                            }
+                            .into());
                         }
                         if let Some(Operand::StorageClass(sc)) = variable.operands.first() {
                             if *sc != StorageClass::RayPayloadKHR {
@@ -714,7 +679,8 @@ impl ValidationRule for HitObjectAttributeAccessRule {
                                     function: func_id,
                                     block: block_id,
                                     opcode,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -735,18 +701,10 @@ impl ValidationRule for HitObjectRecordEmptyRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func
-                .def
-                .as_ref()
-                .and_then(|d| d.result_id)
-                .map(to_id);
+            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(to_id);
 
             for block in &func.blocks {
-                let block_id = block
-                    .label
-                    .as_ref()
-                    .and_then(|l| l.result_id)
-                    .map(to_id);
+                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(to_id);
 
                 for inst in &block.instructions {
                     if inst.class.opcode != Op::HitObjectRecordEmptyNV {
@@ -772,18 +730,10 @@ impl ValidationRule for HitObjectRecordMissRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func
-                .def
-                .as_ref()
-                .and_then(|d| d.result_id)
-                .map(to_id);
+            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(to_id);
 
             for block in &func.blocks {
-                let block_id = block
-                    .label
-                    .as_ref()
-                    .and_then(|l| l.result_id)
-                    .map(to_id);
+                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(to_id);
 
                 for inst in &block.instructions {
                     if inst.class.opcode != Op::HitObjectRecordMissNV {
@@ -799,7 +749,8 @@ impl ValidationRule for HitObjectRecordMissRule {
                             return Err(ValidationError::HitObjectInvalidMissIndex {
                                 function: func_id,
                                 block: block_id,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -810,7 +761,8 @@ impl ValidationRule for HitObjectRecordMissRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: inst.class.opcode,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -822,7 +774,8 @@ impl ValidationRule for HitObjectRecordMissRule {
                                 block: block_id,
                                 opcode: inst.class.opcode,
                                 param_name: "TMin",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -833,7 +786,8 @@ impl ValidationRule for HitObjectRecordMissRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: inst.class.opcode,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -845,7 +799,8 @@ impl ValidationRule for HitObjectRecordMissRule {
                                 block: block_id,
                                 opcode: inst.class.opcode,
                                 param_name: "TMax",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -865,18 +820,10 @@ impl ValidationRule for ReorderThreadWithHintRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func
-                .def
-                .as_ref()
-                .and_then(|d| d.result_id)
-                .map(to_id);
+            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(to_id);
 
             for block in &func.blocks {
-                let block_id = block
-                    .label
-                    .as_ref()
-                    .and_then(|l| l.result_id)
-                    .map(to_id);
+                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(to_id);
 
                 for inst in &block.instructions {
                     if inst.class.opcode != Op::ReorderThreadWithHintNV {
@@ -889,7 +836,8 @@ impl ValidationRule for ReorderThreadWithHintRule {
                             return Err(ValidationError::HitObjectInvalidHint {
                                 function: func_id,
                                 block: block_id,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -899,7 +847,8 @@ impl ValidationRule for ReorderThreadWithHintRule {
                             return Err(ValidationError::HitObjectInvalidBits {
                                 function: func_id,
                                 block: block_id,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -919,18 +868,10 @@ impl ValidationRule for ReorderThreadWithHitObjectRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func
-                .def
-                .as_ref()
-                .and_then(|d| d.result_id)
-                .map(to_id);
+            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(to_id);
 
             for block in &func.blocks {
-                let block_id = block
-                    .label
-                    .as_ref()
-                    .and_then(|l| l.result_id)
-                    .map(to_id);
+                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(to_id);
 
                 for inst in &block.instructions {
                     if inst.class.opcode != Op::ReorderThreadWithHitObjectNV {
@@ -947,7 +888,8 @@ impl ValidationRule for ReorderThreadWithHitObjectRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: inst.class.opcode,
-                            }.into());
+                            }
+                            .into());
                         }
 
                         // Hint (operand 1) must be 32-bit int
@@ -956,7 +898,8 @@ impl ValidationRule for ReorderThreadWithHitObjectRule {
                                 return Err(ValidationError::HitObjectInvalidHint {
                                     function: func_id,
                                     block: block_id,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
 
@@ -966,7 +909,8 @@ impl ValidationRule for ReorderThreadWithHitObjectRule {
                                 return Err(ValidationError::HitObjectInvalidBits {
                                     function: func_id,
                                     block: block_id,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -987,18 +931,10 @@ impl ValidationRule for HitObjectTraceRayRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func
-                .def
-                .as_ref()
-                .and_then(|d| d.result_id)
-                .map(to_id);
+            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(to_id);
 
             for block in &func.blocks {
-                let block_id = block
-                    .label
-                    .as_ref()
-                    .and_then(|l| l.result_id)
-                    .map(to_id);
+                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(to_id);
 
                 for inst in &block.instructions {
                     if inst.class.opcode != Op::HitObjectTraceRayNV {
@@ -1024,7 +960,8 @@ impl ValidationRule for HitObjectTraceRayRule {
                                         function: func_id,
                                         block: block_id,
                                         opcode: inst.class.opcode,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -1037,7 +974,8 @@ impl ValidationRule for HitObjectTraceRayRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: inst.class.opcode,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -1048,7 +986,8 @@ impl ValidationRule for HitObjectTraceRayRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: inst.class.opcode,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -1059,7 +998,8 @@ impl ValidationRule for HitObjectTraceRayRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: inst.class.opcode,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -1070,7 +1010,8 @@ impl ValidationRule for HitObjectTraceRayRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: inst.class.opcode,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -1080,7 +1021,8 @@ impl ValidationRule for HitObjectTraceRayRule {
                             return Err(ValidationError::HitObjectInvalidMissIndex {
                                 function: func_id,
                                 block: block_id,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -1091,7 +1033,8 @@ impl ValidationRule for HitObjectTraceRayRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: inst.class.opcode,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -1103,7 +1046,8 @@ impl ValidationRule for HitObjectTraceRayRule {
                                 block: block_id,
                                 opcode: inst.class.opcode,
                                 param_name: "TMin",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -1114,7 +1058,8 @@ impl ValidationRule for HitObjectTraceRayRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: inst.class.opcode,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -1126,7 +1071,8 @@ impl ValidationRule for HitObjectTraceRayRule {
                                 block: block_id,
                                 opcode: inst.class.opcode,
                                 param_name: "TMax",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -1141,7 +1087,8 @@ impl ValidationRule for HitObjectTraceRayRule {
                                     function: func_id,
                                     block: block_id,
                                     opcode: inst.class.opcode,
-                                }.into());
+                                }
+                                .into());
                             }
                             if let Some(Operand::StorageClass(sc)) = variable.operands.first() {
                                 if *sc != StorageClass::RayPayloadKHR
@@ -1151,7 +1098,8 @@ impl ValidationRule for HitObjectTraceRayRule {
                                         function: func_id,
                                         block: block_id,
                                         opcode: inst.class.opcode,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -1173,18 +1121,10 @@ impl ValidationRule for HitObjectTraceRayMotionRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func
-                .def
-                .as_ref()
-                .and_then(|d| d.result_id)
-                .map(to_id);
+            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(to_id);
 
             for block in &func.blocks {
-                let block_id = block
-                    .label
-                    .as_ref()
-                    .and_then(|l| l.result_id)
-                    .map(to_id);
+                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(to_id);
 
                 for inst in &block.instructions {
                     if inst.class.opcode != Op::HitObjectTraceRayMotionNV {
@@ -1210,7 +1150,8 @@ impl ValidationRule for HitObjectTraceRayMotionRule {
                                         function: func_id,
                                         block: block_id,
                                         opcode: inst.class.opcode,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -1223,7 +1164,8 @@ impl ValidationRule for HitObjectTraceRayMotionRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: inst.class.opcode,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -1234,7 +1176,8 @@ impl ValidationRule for HitObjectTraceRayMotionRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: inst.class.opcode,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -1245,7 +1188,8 @@ impl ValidationRule for HitObjectTraceRayMotionRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: inst.class.opcode,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -1256,7 +1200,8 @@ impl ValidationRule for HitObjectTraceRayMotionRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: inst.class.opcode,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -1266,7 +1211,8 @@ impl ValidationRule for HitObjectTraceRayMotionRule {
                             return Err(ValidationError::HitObjectInvalidMissIndex {
                                 function: func_id,
                                 block: block_id,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -1277,7 +1223,8 @@ impl ValidationRule for HitObjectTraceRayMotionRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: inst.class.opcode,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -1289,7 +1236,8 @@ impl ValidationRule for HitObjectTraceRayMotionRule {
                                 block: block_id,
                                 opcode: inst.class.opcode,
                                 param_name: "TMin",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -1300,7 +1248,8 @@ impl ValidationRule for HitObjectTraceRayMotionRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: inst.class.opcode,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -1312,7 +1261,8 @@ impl ValidationRule for HitObjectTraceRayMotionRule {
                                 block: block_id,
                                 opcode: inst.class.opcode,
                                 param_name: "TMax",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -1323,7 +1273,8 @@ impl ValidationRule for HitObjectTraceRayMotionRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode: inst.class.opcode,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -1338,7 +1289,8 @@ impl ValidationRule for HitObjectTraceRayMotionRule {
                                     function: func_id,
                                     block: block_id,
                                     opcode: inst.class.opcode,
-                                }.into());
+                                }
+                                .into());
                             }
                             if let Some(Operand::StorageClass(sc)) = variable.operands.first() {
                                 if *sc != StorageClass::RayPayloadKHR
@@ -1348,7 +1300,8 @@ impl ValidationRule for HitObjectTraceRayMotionRule {
                                         function: func_id,
                                         block: block_id,
                                         opcode: inst.class.opcode,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -1370,18 +1323,10 @@ impl ValidationRule for HitObjectRecordHitRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func
-                .def
-                .as_ref()
-                .and_then(|d| d.result_id)
-                .map(to_id);
+            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(to_id);
 
             for block in &func.blocks {
-                let block_id = block
-                    .label
-                    .as_ref()
-                    .and_then(|l| l.result_id)
-                    .map(to_id);
+                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(to_id);
 
                 for inst in &block.instructions {
                     let opcode = inst.class.opcode;
@@ -1411,7 +1356,8 @@ impl ValidationRule for HitObjectRecordHitRule {
                                         function: func_id,
                                         block: block_id,
                                         opcode,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -1424,7 +1370,8 @@ impl ValidationRule for HitObjectRecordHitRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -1435,7 +1382,8 @@ impl ValidationRule for HitObjectRecordHitRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -1446,7 +1394,8 @@ impl ValidationRule for HitObjectRecordHitRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -1457,7 +1406,8 @@ impl ValidationRule for HitObjectRecordHitRule {
                                 function: func_id,
                                 block: block_id,
                                 opcode,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -1470,7 +1420,8 @@ impl ValidationRule for HitObjectRecordHitRule {
                                     function: func_id,
                                     block: block_id,
                                     opcode,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
 
@@ -1481,7 +1432,8 @@ impl ValidationRule for HitObjectRecordHitRule {
                                     function: func_id,
                                     block: block_id,
                                     opcode,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
 
@@ -1493,7 +1445,8 @@ impl ValidationRule for HitObjectRecordHitRule {
                                     block: block_id,
                                     opcode,
                                     param_name: "TMin",
-                                }.into());
+                                }
+                                .into());
                             }
                         }
 
@@ -1504,7 +1457,8 @@ impl ValidationRule for HitObjectRecordHitRule {
                                     function: func_id,
                                     block: block_id,
                                     opcode,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
 
@@ -1516,7 +1470,8 @@ impl ValidationRule for HitObjectRecordHitRule {
                                     block: block_id,
                                     opcode,
                                     param_name: "TMax",
-                                }.into());
+                                }
+                                .into());
                             }
                         }
 
@@ -1530,7 +1485,8 @@ impl ValidationRule for HitObjectRecordHitRule {
                                     function: func_id,
                                     block: block_id,
                                     opcode,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
 
@@ -1541,7 +1497,8 @@ impl ValidationRule for HitObjectRecordHitRule {
                                     function: func_id,
                                     block: block_id,
                                     opcode,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
 
@@ -1552,7 +1509,8 @@ impl ValidationRule for HitObjectRecordHitRule {
                                     function: func_id,
                                     block: block_id,
                                     opcode,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
 
@@ -1564,7 +1522,8 @@ impl ValidationRule for HitObjectRecordHitRule {
                                     block: block_id,
                                     opcode,
                                     param_name: "TMin",
-                                }.into());
+                                }
+                                .into());
                             }
                         }
 
@@ -1575,7 +1534,8 @@ impl ValidationRule for HitObjectRecordHitRule {
                                     function: func_id,
                                     block: block_id,
                                     opcode,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
 
@@ -1587,7 +1547,8 @@ impl ValidationRule for HitObjectRecordHitRule {
                                     block: block_id,
                                     opcode,
                                     param_name: "TMax",
-                                }.into());
+                                }
+                                .into());
                             }
                         }
 
@@ -1613,18 +1574,10 @@ impl ValidationRule for HitObjectLSSArrayRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         for func in &ctx.module.functions {
-            let func_id = func
-                .def
-                .as_ref()
-                .and_then(|d| d.result_id)
-                .map(to_id);
+            let func_id = func.def.as_ref().and_then(|d| d.result_id).map(to_id);
 
             for block in &func.blocks {
-                let block_id = block
-                    .label
-                    .as_ref()
-                    .and_then(|l| l.result_id)
-                    .map(to_id);
+                let block_id = block.label.as_ref().and_then(|l| l.result_id).map(to_id);
 
                 for inst in &block.instructions {
                     let opcode = inst.class.opcode;
@@ -1642,15 +1595,22 @@ impl ValidationRule for HitObjectLSSArrayRule {
                                     block: block_id,
                                     opcode,
                                     expected: "2-element array of 32-bit float 3-component vectors",
-                                }.into());
+                                }
+                                .into());
                             }
 
                             // Check element type
                             if let Ok(type_result_id) = ResultId::try_from(result_type_id) {
-                                if let Some(array_type_inst) = ctx.definitions.get(&type_result_id) {
-                                    if let Some(element_id) = array_type_inst.operands.first().and_then(id_ref) {
+                                if let Some(array_type_inst) = ctx.definitions.get(&type_result_id)
+                                {
+                                    if let Some(element_id) =
+                                        array_type_inst.operands.first().and_then(id_ref)
+                                    {
                                         if let Ok(element_type_id) = TypeId::try_from(element_id) {
-                                            let element_ty = get_type_structure(element_type_id, ctx.definitions);
+                                            let element_ty = get_type_structure(
+                                                element_type_id,
+                                                ctx.definitions,
+                                            );
                                             if !is_float32_vec3(&element_ty) {
                                                 return Err(ValidationError::HitObjectInvalidResultType {
                                                     function: func_id,
@@ -1677,15 +1637,22 @@ impl ValidationRule for HitObjectLSSArrayRule {
                                     block: block_id,
                                     opcode,
                                     expected: "2-element array of 32-bit float scalars",
-                                }.into());
+                                }
+                                .into());
                             }
 
                             // Check element type
                             if let Ok(type_result_id) = ResultId::try_from(result_type_id) {
-                                if let Some(array_type_inst) = ctx.definitions.get(&type_result_id) {
-                                    if let Some(element_id) = array_type_inst.operands.first().and_then(id_ref) {
+                                if let Some(array_type_inst) = ctx.definitions.get(&type_result_id)
+                                {
+                                    if let Some(element_id) =
+                                        array_type_inst.operands.first().and_then(id_ref)
+                                    {
                                         if let Ok(element_type_id) = TypeId::try_from(element_id) {
-                                            let element_ty = get_type_structure(element_type_id, ctx.definitions);
+                                            let element_ty = get_type_structure(
+                                                element_type_id,
+                                                ctx.definitions,
+                                            );
                                             if !is_float32_scalar(&element_ty) {
                                                 return Err(ValidationError::HitObjectInvalidResultType {
                                                     function: func_id,

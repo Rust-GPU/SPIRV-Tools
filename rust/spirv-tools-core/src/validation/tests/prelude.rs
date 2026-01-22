@@ -7,10 +7,9 @@
 pub use crate::validation::{
     format_validation_error, format_validation_error_from_words, validate_module,
     validate_module_with_options, CheckedBound, DeclaredBound, DecorationTargetId,
-    DecorationTargetKind, ExtensionName, FriendlyNames, Id, IdKind,
-    MaybeValidModule, MemberDecorationTargetId, MemberIndex, MergeTargetKind, ModuleWords,
-    OperandId, ResultId, Schema, TypeId, ValidModuleCache, ValidatableModule, ValidationError,
-    ValidationOptions,
+    DecorationTargetKind, ExtensionName, FriendlyNames, Id, IdKind, MaybeValidModule,
+    MemberDecorationTargetId, MemberIndex, MergeTargetKind, ModuleWords, OperandId, ResultId,
+    Schema, TypeId, ValidModuleCache, ValidatableModule, ValidationError, ValidationOptions,
 };
 
 // Re-export common crate types
@@ -24,7 +23,7 @@ pub use rspirv::spirv::{
 };
 
 // Re-export std types
-pub use std::collections::{HashMap, HashSet};
+pub use std::collections::HashMap;
 pub use std::num::NonZeroU32;
 pub use std::sync::Arc;
 

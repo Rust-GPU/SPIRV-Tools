@@ -487,13 +487,13 @@ pub struct BitWidth(NonZeroU32);
 
 impl BitWidth {
     /// 8-bit width.
-    pub const BITS_8: Self = Self(unsafe { NonZeroU32::new_unchecked(8) });
+    pub const BITS_8: Self = Self(NonZeroU32::new(8).unwrap());
     /// 16-bit width.
-    pub const BITS_16: Self = Self(unsafe { NonZeroU32::new_unchecked(16) });
+    pub const BITS_16: Self = Self(NonZeroU32::new(16).unwrap());
     /// 32-bit width.
-    pub const BITS_32: Self = Self(unsafe { NonZeroU32::new_unchecked(32) });
+    pub const BITS_32: Self = Self(NonZeroU32::new(32).unwrap());
     /// 64-bit width.
-    pub const BITS_64: Self = Self(unsafe { NonZeroU32::new_unchecked(64) });
+    pub const BITS_64: Self = Self(NonZeroU32::new(64).unwrap());
 
     /// Creates a new bit width from a raw value.
     pub fn new(width: u32) -> Option<Self> {
@@ -568,7 +568,7 @@ impl MatrixColumns {
     /// Creates a new matrix column count from a raw value.
     pub fn new(cols: u32) -> Option<Self> {
         match cols {
-            2 | 3 | 4 => Some(Self(cols as u8)),
+            2..=4 => Some(Self(cols as u8)),
             _ => None,
         }
     }
@@ -689,13 +689,9 @@ pub enum TypeStructure {
         params: Vec<TypeId>,
     },
     /// Cooperative matrix type (KHR or NV).
-    CooperativeMatrix {
-        component: TypeId,
-    },
+    CooperativeMatrix { component: TypeId },
     /// Cooperative vector type (NV).
-    CooperativeVector {
-        component: TypeId,
-    },
+    CooperativeVector { component: TypeId },
     /// Forward pointer declaration.
     ForwardPointer {
         storage_class: rspirv::spirv::StorageClass,
@@ -739,11 +735,14 @@ impl TypeStructure {
 
     /// Returns true if this is a bool scalar or vector.
     pub fn is_bool_scalar_or_vector(&self) -> bool {
-        match self {
-            TypeStructure::Scalar(ScalarKind::Bool) => true,
-            TypeStructure::Vector { component: ScalarKind::Bool, .. } => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            TypeStructure::Scalar(ScalarKind::Bool)
+                | TypeStructure::Vector {
+                    component: ScalarKind::Bool,
+                    ..
+                }
+        )
     }
 
     /// Returns true if this is an int scalar type (signed or unsigned).
@@ -770,11 +769,14 @@ impl TypeStructure {
 
     /// Returns true if this is an unsigned int scalar or vector.
     pub fn is_unsigned_int_scalar_or_vector(&self) -> bool {
-        match self {
-            TypeStructure::Scalar(ScalarKind::UnsignedInt(_)) => true,
-            TypeStructure::Vector { component: ScalarKind::UnsignedInt(_), .. } => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            TypeStructure::Scalar(ScalarKind::UnsignedInt(_))
+                | TypeStructure::Vector {
+                    component: ScalarKind::UnsignedInt(_),
+                    ..
+                }
+        )
     }
 
     /// Returns true if this is a float scalar type.
@@ -784,11 +786,14 @@ impl TypeStructure {
 
     /// Returns true if this is a float scalar or vector.
     pub fn is_float_scalar_or_vector(&self) -> bool {
-        match self {
-            TypeStructure::Scalar(ScalarKind::Float(_)) => true,
-            TypeStructure::Vector { component: ScalarKind::Float(_), .. } => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            TypeStructure::Scalar(ScalarKind::Float(_))
+                | TypeStructure::Vector {
+                    component: ScalarKind::Float(_),
+                    ..
+                }
+        )
     }
 
     /// Returns true if this is a cooperative matrix type.
@@ -839,8 +844,14 @@ impl fmt::Display for TypeStructure {
         match self {
             TypeStructure::Void => write!(f, "void"),
             TypeStructure::Scalar(k) => write!(f, "{}", k),
-            TypeStructure::Vector { component, size } => write!(f, "vec{}({})", size.get(), component),
-            TypeStructure::Matrix { component, rows, cols } => {
+            TypeStructure::Vector { component, size } => {
+                write!(f, "vec{}({})", size.get(), component)
+            }
+            TypeStructure::Matrix {
+                component,
+                rows,
+                cols,
+            } => {
                 write!(f, "mat{}x{}({})", cols.get(), rows.get(), component)
             }
             TypeStructure::Array { .. } => write!(f, "array"),

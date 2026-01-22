@@ -14,9 +14,9 @@ use rspirv::dr::Operand;
 use rspirv::spirv::{Decoration, Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::{Id, ResultId};
+use crate::validation::ValidationResult;
 
 /// Helper to convert a u32 to Id (with fallback to id 1).
 fn to_id(id: u32) -> Id {
@@ -133,24 +133,26 @@ impl ValidationRule for DecorateValidationRule {
             };
 
             // Vulkan restrictions
-            if ctx.env.is_vulkan() {
-                if *dec == Decoration::GLSLShared || *dec == Decoration::GLSLPacked {
-                    return Err(ValidationError::VulkanDecorationNotAllowed {
-                        decoration: *dec,
-                    }.into());
-                }
+            if ctx.env.is_vulkan()
+                && (*dec == Decoration::GLSLShared || *dec == Decoration::GLSLPacked)
+            {
+                return Err(
+                    ValidationError::VulkanDecorationNotAllowed { decoration: *dec }.into(),
+                );
             }
 
             // FPFastMathMode and NoContraction cannot be on same target
             if *dec == Decoration::FPFastMathMode && no_contraction_ids.contains(target_id) {
                 return Err(ValidationError::FPFastMathModeConflictsWithNoContraction {
                     target_id: to_id(*target_id),
-                }.into());
+                }
+                .into());
             }
             if *dec == Decoration::NoContraction && fp_fast_math_ids.contains(target_id) {
                 return Err(ValidationError::FPFastMathModeConflictsWithNoContraction {
                     target_id: to_id(*target_id),
-                }.into());
+                }
+                .into());
             }
 
             // FPFastMathMode validation
@@ -166,24 +168,29 @@ impl ValidationRule for DecorateValidationRule {
                     let allow_reassoc = (*mask & ALLOW_REASSOC) != 0;
 
                     if allow_transform && !(allow_contract && allow_reassoc) {
-                        return Err(ValidationError::FPFastMathAllowTransformRequiresContractReassoc {
-                            target_id: to_id(*target_id),
-                        }.into());
+                        return Err(
+                            ValidationError::FPFastMathAllowTransformRequiresContractReassoc {
+                                target_id: to_id(*target_id),
+                            }
+                            .into(),
+                        );
                     }
                 }
             }
 
             // Decorations taking ID parameters must not use OpDecorate
             if decoration_takes_id_parameters(*dec) {
-                return Err(ValidationError::DecorationRequiresDecorateId {
-                    decoration: *dec,
-                }.into());
+                return Err(
+                    ValidationError::DecorationRequiresDecorateId { decoration: *dec }.into(),
+                );
             }
 
             // Check member-only decorations are not on non-struct targets
-            let target = ctx
-                .definitions
-                .get(&ResultId::try_from(*target_id).ok().unwrap_or(ResultId::try_from(1u32).unwrap()));
+            let target = ctx.definitions.get(
+                &ResultId::try_from(*target_id)
+                    .ok()
+                    .unwrap_or(ResultId::try_from(1u32).unwrap()),
+            );
             if let Some(target_inst) = target {
                 // Member-only decorations cannot be applied to non-struct targets
                 if target_inst.class.opcode != Op::DecorationGroup
@@ -192,7 +199,8 @@ impl ValidationRule for DecorateValidationRule {
                     return Err(ValidationError::MemberDecorationOnNonMember {
                         decoration: *dec,
                         target_id: to_id(*target_id),
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -229,7 +237,8 @@ impl ValidationRule for DecorateIdValidationRule {
                     if target_inst.class.opcode == Op::DecorationGroup {
                         return Err(ValidationError::DecorateIdTargetIsDecorationGroup {
                             target_id: to_id(*target_id),
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -238,7 +247,8 @@ impl ValidationRule for DecorateIdValidationRule {
             if !decoration_takes_id_parameters(*dec) {
                 return Err(ValidationError::DecorationDoesNotTakeIdParameters {
                     decoration: *dec,
-                }.into());
+                }
+                .into());
             }
         }
 
@@ -286,7 +296,8 @@ impl ValidationRule for MemberDecorateValidationRule {
             let Some(&member_count) = struct_members.get(struct_id) else {
                 return Err(ValidationError::MemberDecorateTargetNotStruct {
                     target_id: to_id(*struct_id),
-                }.into());
+                }
+                .into());
             };
 
             // Member index must be in range
@@ -295,7 +306,8 @@ impl ValidationRule for MemberDecorateValidationRule {
                     struct_id: to_id(*struct_id),
                     member_index: *member_index,
                     member_count,
-                }.into());
+                }
+                .into());
             }
 
             // Check decorations that cannot be applied to members
@@ -304,7 +316,8 @@ impl ValidationRule for MemberDecorateValidationRule {
                     decoration: *dec,
                     struct_id: to_id(*struct_id),
                     member_index: *member_index,
-                }.into());
+                }
+                .into());
             }
         }
 
@@ -367,7 +380,8 @@ impl ValidationRule for GroupDecorateValidationRule {
             if !decoration_groups.contains(group_id) {
                 return Err(ValidationError::GroupDecorateNotDecorationGroup {
                     target_id: to_id(*group_id),
-                }.into());
+                }
+                .into());
             }
 
             // Targets must not be decoration groups
@@ -376,7 +390,8 @@ impl ValidationRule for GroupDecorateValidationRule {
                     if decoration_groups.contains(target_id) {
                         return Err(ValidationError::GroupDecorateTargetIsDecorationGroup {
                             target_id: to_id(*target_id),
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -427,7 +442,8 @@ impl ValidationRule for GroupMemberDecorateValidationRule {
             if !decoration_groups.contains(group_id) {
                 return Err(ValidationError::GroupMemberDecorateNotDecorationGroup {
                     target_id: to_id(*group_id),
-                }.into());
+                }
+                .into());
             }
 
             // Remaining operands are (struct_id, member_index) pairs
@@ -445,7 +461,8 @@ impl ValidationRule for GroupMemberDecorateValidationRule {
                 let Some(&member_count) = struct_members.get(&struct_id) else {
                     return Err(ValidationError::GroupMemberDecorateTargetNotStruct {
                         struct_id: to_id(struct_id),
-                    }.into());
+                    }
+                    .into());
                 };
 
                 // Member index must be in range
@@ -454,7 +471,8 @@ impl ValidationRule for GroupMemberDecorateValidationRule {
                         struct_id: to_id(struct_id),
                         member_index,
                         member_count,
-                    }.into());
+                    }
+                    .into());
                 }
 
                 i += 2;
@@ -557,7 +575,8 @@ impl ValidationRule for VulkanDecorationStorageClassRule {
                             target_id: to_id(*target_id),
                             storage_class,
                             vuid: 6672,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
                 Decoration::Index => {
@@ -565,7 +584,8 @@ impl ValidationRule for VulkanDecorationStorageClassRule {
                         return Err(ValidationError::VulkanIndexDecorationNotOutput {
                             target_id: to_id(*target_id),
                             storage_class,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
                 Decoration::Binding | Decoration::DescriptorSet => {
@@ -576,10 +596,13 @@ impl ValidationRule for VulkanDecorationStorageClassRule {
                             | StorageClass::UniformConstant
                             | StorageClass::TileAttachmentQCOM
                     ) {
-                        return Err(ValidationError::VulkanBindingDecorationInvalidStorageClass {
-                            target_id: to_id(*target_id),
-                            storage_class,
-                        }.into());
+                        return Err(
+                            ValidationError::VulkanBindingDecorationInvalidStorageClass {
+                                target_id: to_id(*target_id),
+                                storage_class,
+                            }
+                            .into(),
+                        );
                     }
                 }
                 Decoration::InputAttachmentIndex => {
@@ -588,7 +611,8 @@ impl ValidationRule for VulkanDecorationStorageClassRule {
                             ValidationError::VulkanInputAttachmentIndexInvalidStorageClass {
                                 target_id: to_id(*target_id),
                                 storage_class,
-                            }.into(),
+                            }
+                            .into(),
                         );
                     }
                 }
@@ -602,7 +626,8 @@ impl ValidationRule for VulkanDecorationStorageClassRule {
                                 decoration: *dec,
                                 target_id: to_id(*target_id),
                                 storage_class,
-                            }.into(),
+                            }
+                            .into(),
                         );
                     }
                 }
@@ -611,7 +636,8 @@ impl ValidationRule for VulkanDecorationStorageClassRule {
                         return Err(ValidationError::VulkanPerVertexDecorationNotInput {
                             target_id: to_id(*target_id),
                             storage_class,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
                 _ => {}

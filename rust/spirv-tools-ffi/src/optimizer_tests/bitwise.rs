@@ -35,7 +35,10 @@ fn bitand_all_ones() {
     let params = b.begin_function_with_params(vec![b.uint_ty]);
     let x = params[0];
     let all_ones = b.const_u32(0xFFFFFFFF);
-    let _ = b.builder.bitwise_and(b.uint_ty, None, x, all_ones).expect("and");
+    let _ = b
+        .builder
+        .bitwise_and(b.uint_ty, None, x, all_ones)
+        .expect("and");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -70,7 +73,10 @@ fn bitand_complement() {
     let params = b.begin_function_with_params(vec![b.uint_ty]);
     let x = params[0];
     let not_x = b.builder.not(b.uint_ty, None, x).expect("not");
-    let _ = b.builder.bitwise_and(b.uint_ty, None, x, not_x).expect("and");
+    let _ = b
+        .builder
+        .bitwise_and(b.uint_ty, None, x, not_x)
+        .expect("and");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -98,7 +104,9 @@ fn bitand_complement_width_aware() {
     let param = builder.function_parameter(int64).expect("param");
     builder.begin_block(None).unwrap();
     let not_param = builder.not(int64, None, param).expect("not");
-    let _ = builder.bitwise_and(int64, None, param, not_param).expect("and");
+    let _ = builder
+        .bitwise_and(int64, None, param, not_param)
+        .expect("and");
     builder.ret().unwrap();
     builder.end_function().unwrap();
     let words = builder.module().assemble();
@@ -140,7 +148,10 @@ fn bitor_all_ones() {
     let params = b.begin_function_with_params(vec![b.uint_ty]);
     let x = params[0];
     let all_ones = b.const_u32(0xFFFFFFFF);
-    let _ = b.builder.bitwise_or(b.uint_ty, None, x, all_ones).expect("or");
+    let _ = b
+        .builder
+        .bitwise_or(b.uint_ty, None, x, all_ones)
+        .expect("or");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -233,7 +244,10 @@ fn bitxor_all_ones_to_not() {
     let params = b.begin_function_with_params(vec![b.uint_ty]);
     let x = params[0];
     let all_ones = b.const_u32(0xFFFFFFFF);
-    let _ = b.builder.bitwise_xor(b.uint_ty, None, x, all_ones).expect("xor");
+    let _ = b
+        .builder
+        .bitwise_xor(b.uint_ty, None, x, all_ones)
+        .expect("xor");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -260,8 +274,14 @@ fn band_xor_same_operand() {
     let param = params[0];
     let mask = b.const_u32(0xFF);
     let xor_val = b.const_u32(0x0F);
-    let xor_result = b.builder.bitwise_xor(b.uint_ty, None, param, xor_val).expect("xor");
-    let _ = b.builder.bitwise_and(b.uint_ty, None, mask, xor_result).expect("and");
+    let xor_result = b
+        .builder
+        .bitwise_xor(b.uint_ty, None, param, xor_val)
+        .expect("xor");
+    let _ = b
+        .builder
+        .bitwise_and(b.uint_ty, None, mask, xor_result)
+        .expect("and");
     let words = b.finish();
 
     let _ = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -276,8 +296,14 @@ fn bor_xor_same_operand() {
     b.begin_void_function();
     let mask = b.const_u32(0xFF);
     let xor_val = b.const_u32(0x0F);
-    let xor_result = b.builder.bitwise_xor(b.uint_ty, None, mask, xor_val).expect("xor");
-    let _ = b.builder.bitwise_or(b.uint_ty, None, mask, xor_result).expect("or");
+    let xor_result = b
+        .builder
+        .bitwise_xor(b.uint_ty, None, mask, xor_val)
+        .expect("xor");
+    let _ = b
+        .builder
+        .bitwise_or(b.uint_ty, None, mask, xor_result)
+        .expect("or");
     let words = b.finish();
 
     let _ = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -296,7 +322,10 @@ fn shift_by_zero() {
     let params = b.begin_function_with_params(vec![b.uint_ty]);
     let x = params[0];
     let c0 = b.const_u32(0);
-    let _ = b.builder.shift_left_logical(b.uint_ty, None, x, c0).expect("shl");
+    let _ = b
+        .builder
+        .shift_left_logical(b.uint_ty, None, x, c0)
+        .expect("shl");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -320,8 +349,14 @@ fn rotate_pattern() {
     let x = params[0];
     let n = b.const_u32(5);
     let shift_amount = b.const_u32(27); // 32 - 5
-    let shl = b.builder.shift_left_logical(b.uint_ty, None, x, n).expect("shl");
-    let shr = b.builder.shift_right_logical(b.uint_ty, None, x, shift_amount).expect("shr");
+    let shl = b
+        .builder
+        .shift_left_logical(b.uint_ty, None, x, n)
+        .expect("shl");
+    let shr = b
+        .builder
+        .shift_right_logical(b.uint_ty, None, x, shift_amount)
+        .expect("shr");
     let _ = b.builder.bitwise_or(b.uint_ty, None, shl, shr).expect("or");
     let words = b.finish();
 
@@ -339,8 +374,14 @@ fn rotate_pattern_commuted_or() {
     let x = params[0];
     let n = b.const_u32(5);
     let shift_amount = b.const_u32(27);
-    let shl = b.builder.shift_left_logical(b.uint_ty, None, x, n).expect("shl");
-    let shr = b.builder.shift_right_logical(b.uint_ty, None, x, shift_amount).expect("shr");
+    let shl = b
+        .builder
+        .shift_left_logical(b.uint_ty, None, x, n)
+        .expect("shl");
+    let shr = b
+        .builder
+        .shift_right_logical(b.uint_ty, None, x, shift_amount)
+        .expect("shr");
     let _ = b.builder.bitwise_or(b.uint_ty, None, shr, shl).expect("or");
     let words = b.finish();
 
@@ -367,7 +408,9 @@ fn rotate_pattern_u64() {
     let n = builder.constant_bit64(int64, 13);
     let shift_amount = builder.constant_bit64(int64, 51); // 64 - 13
     let shl = builder.shift_left_logical(int64, None, x, n).expect("shl");
-    let shr = builder.shift_right_logical(int64, None, x, shift_amount).expect("shr");
+    let shr = builder
+        .shift_right_logical(int64, None, x, shift_amount)
+        .expect("shr");
     let _ = builder.bitwise_or(int64, None, shl, shr).expect("or");
     builder.ret().unwrap();
     builder.end_function().unwrap();
@@ -389,7 +432,10 @@ fn simplifies_bitand_all_ones() {
     let x = params[0];
     // Using signed -1 which is all-ones in two's complement
     let all_ones = b.const_i32(-1);
-    let _ = b.builder.bitwise_and(b.int_ty, None, x, all_ones).expect("and");
+    let _ = b
+        .builder
+        .bitwise_and(b.int_ty, None, x, all_ones)
+        .expect("and");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -407,7 +453,10 @@ fn simplifies_bitor_all_ones() {
     let params = b.begin_function_with_params(vec![b.int_ty]);
     let x = params[0];
     let all_ones = b.const_i32(-1);
-    let _ = b.builder.bitwise_or(b.int_ty, None, x, all_ones).expect("or");
+    let _ = b
+        .builder
+        .bitwise_or(b.int_ty, None, x, all_ones)
+        .expect("or");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -439,7 +488,10 @@ fn shr_logical_by_zero() {
     let params = b.begin_function_with_params(vec![b.uint_ty]);
     let x = params[0];
     let c0 = b.const_u32(0);
-    let _ = b.builder.shift_right_logical(b.uint_ty, None, x, c0).expect("shr");
+    let _ = b
+        .builder
+        .shift_right_logical(b.uint_ty, None, x, c0)
+        .expect("shr");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -458,7 +510,10 @@ fn shr_arithmetic_by_zero() {
     let params = b.begin_function_with_params(vec![b.int_ty]);
     let x = params[0];
     let c0 = b.const_i32(0);
-    let _ = b.builder.shift_right_arithmetic(b.int_ty, None, x, c0).expect("shra");
+    let _ = b
+        .builder
+        .shift_right_arithmetic(b.int_ty, None, x, c0)
+        .expect("shra");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -477,7 +532,10 @@ fn shl_zero() {
     let params = b.begin_function_with_params(vec![b.uint_ty]);
     let x = params[0];
     let c0 = b.const_u32(0);
-    let _ = b.builder.shift_left_logical(b.uint_ty, None, c0, x).expect("shl");
+    let _ = b
+        .builder
+        .shift_left_logical(b.uint_ty, None, c0, x)
+        .expect("shl");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -496,7 +554,10 @@ fn shr_logical_zero() {
     let params = b.begin_function_with_params(vec![b.uint_ty]);
     let x = params[0];
     let c0 = b.const_u32(0);
-    let _ = b.builder.shift_right_logical(b.uint_ty, None, c0, x).expect("shr");
+    let _ = b
+        .builder
+        .shift_right_logical(b.uint_ty, None, c0, x)
+        .expect("shr");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -515,7 +576,10 @@ fn shr_arithmetic_zero() {
     let params = b.begin_function_with_params(vec![b.int_ty]);
     let x = params[0];
     let c0 = b.const_i32(0);
-    let _ = b.builder.shift_right_arithmetic(b.int_ty, None, c0, x).expect("shra");
+    let _ = b
+        .builder
+        .shift_right_arithmetic(b.int_ty, None, c0, x)
+        .expect("shra");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -561,7 +625,10 @@ fn bitor_and_absorption() {
     let params = b.begin_function_with_params(vec![b.uint_ty, b.uint_ty]);
     let (x, y) = (params[0], params[1]);
     let and_xy = b.builder.bitwise_and(b.uint_ty, None, x, y).expect("and");
-    let _ = b.builder.bitwise_or(b.uint_ty, None, x, and_xy).expect("or");
+    let _ = b
+        .builder
+        .bitwise_or(b.uint_ty, None, x, and_xy)
+        .expect("or");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -580,7 +647,10 @@ fn bitand_or_absorption() {
     let params = b.begin_function_with_params(vec![b.uint_ty, b.uint_ty]);
     let (x, y) = (params[0], params[1]);
     let or_xy = b.builder.bitwise_or(b.uint_ty, None, x, y).expect("or");
-    let _ = b.builder.bitwise_and(b.uint_ty, None, x, or_xy).expect("and");
+    let _ = b
+        .builder
+        .bitwise_and(b.uint_ty, None, x, or_xy)
+        .expect("and");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -603,7 +673,10 @@ fn xor_not_simplifies() {
     let params = b.begin_function_with_params(vec![b.uint_ty, b.uint_ty]);
     let (x, y) = (params[0], params[1]);
     let not_x = b.builder.not(b.uint_ty, None, x).expect("not");
-    let _ = b.builder.bitwise_xor(b.uint_ty, None, not_x, y).expect("xor");
+    let _ = b
+        .builder
+        .bitwise_xor(b.uint_ty, None, not_x, y)
+        .expect("xor");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -625,8 +698,14 @@ fn bitor_factor_common_mask() {
     let params = b.begin_function_with_params(vec![b.uint_ty, b.uint_ty, b.uint_ty]);
     let (a, bval, m) = (params[0], params[1], params[2]);
     let and_am = b.builder.bitwise_and(b.uint_ty, None, a, m).expect("and1");
-    let and_bm = b.builder.bitwise_and(b.uint_ty, None, bval, m).expect("and2");
-    let _ = b.builder.bitwise_or(b.uint_ty, None, and_am, and_bm).expect("or");
+    let and_bm = b
+        .builder
+        .bitwise_and(b.uint_ty, None, bval, m)
+        .expect("and2");
+    let _ = b
+        .builder
+        .bitwise_or(b.uint_ty, None, and_am, and_bm)
+        .expect("or");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -644,8 +723,14 @@ fn bitxor_factor_common_mask() {
     let params = b.begin_function_with_params(vec![b.uint_ty, b.uint_ty, b.uint_ty]);
     let (a, bval, m) = (params[0], params[1], params[2]);
     let and_am = b.builder.bitwise_and(b.uint_ty, None, a, m).expect("and1");
-    let and_bm = b.builder.bitwise_and(b.uint_ty, None, bval, m).expect("and2");
-    let _ = b.builder.bitwise_xor(b.uint_ty, None, and_am, and_bm).expect("xor");
+    let and_bm = b
+        .builder
+        .bitwise_and(b.uint_ty, None, bval, m)
+        .expect("and2");
+    let _ = b
+        .builder
+        .bitwise_xor(b.uint_ty, None, and_am, and_bm)
+        .expect("xor");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");

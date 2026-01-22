@@ -50,17 +50,27 @@ impl TargetEnv {
     /// Returns the SPIR-V version for this target environment.
     pub fn spirv_version(&self) -> (u8, u8) {
         match self {
-            Self::Universal_1_0 | Self::Vulkan_1_0 | Self::OpenGL_4_0 | Self::OpenGL_4_1
-            | Self::OpenGL_4_2 | Self::OpenGL_4_3 => (1, 0),
+            Self::Universal_1_0
+            | Self::Vulkan_1_0
+            | Self::OpenGL_4_0
+            | Self::OpenGL_4_1
+            | Self::OpenGL_4_2
+            | Self::OpenGL_4_3 => (1, 0),
 
             Self::Universal_1_1 | Self::OpenGL_4_5 => (1, 1),
 
             Self::Universal_1_2 | Self::OpenCL_1_2 | Self::OpenCLEmbedded_1_2 => (1, 2),
 
-            Self::Universal_1_3 | Self::Vulkan_1_1 | Self::OpenCL_2_0 | Self::OpenCL_2_1
-            | Self::OpenCLEmbedded_2_0 | Self::OpenCLEmbedded_2_1 => (1, 3),
+            Self::Universal_1_3
+            | Self::Vulkan_1_1
+            | Self::OpenCL_2_0
+            | Self::OpenCL_2_1
+            | Self::OpenCLEmbedded_2_0
+            | Self::OpenCLEmbedded_2_1 => (1, 3),
 
-            Self::Universal_1_4 | Self::Vulkan_1_1_Spirv_1_4 | Self::OpenCL_2_2
+            Self::Universal_1_4
+            | Self::Vulkan_1_1_Spirv_1_4
+            | Self::OpenCL_2_2
             | Self::OpenCLEmbedded_2_2 => (1, 4),
 
             Self::Universal_1_5 | Self::Vulkan_1_2 | Self::WebGPU_0_DEPRECATED => (1, 5),

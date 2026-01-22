@@ -1,0 +1,4 @@
+# Clippy configuration for spirv-tools-rust
+# Allow larger error variants - boxing them would require significant refactoring
+# and the performance impact is negligible for this use case
+large-error-threshold = 256

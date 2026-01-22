@@ -10,9 +10,9 @@ use rspirv::dr::Operand;
 use rspirv::spirv::{Capability, FPEncoding, Op};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::TypeId;
+use crate::validation::ValidationResult;
 
 // ============================================================================
 // OpTypeInt Validation Rule
@@ -72,12 +72,16 @@ impl ValidationRule for TypeIntRule {
             match width {
                 8 => {
                     if !has_8bit_capability(ctx.declared_capabilities) {
-                        return Err(ValidationError::TypeIntRequiresInt8Capability { type_id }.into());
+                        return Err(
+                            ValidationError::TypeIntRequiresInt8Capability { type_id }.into()
+                        );
                     }
                 }
                 16 => {
                     if !has_16bit_int_capability(ctx.declared_capabilities) {
-                        return Err(ValidationError::TypeIntRequiresInt16Capability { type_id }.into());
+                        return Err(
+                            ValidationError::TypeIntRequiresInt16Capability { type_id }.into()
+                        );
                     }
                 }
                 32 => {
@@ -85,7 +89,9 @@ impl ValidationRule for TypeIntRule {
                 }
                 64 => {
                     if !ctx.declared_capabilities.contains(&Capability::Int64) {
-                        return Err(ValidationError::TypeIntRequiresInt64Capability { type_id }.into());
+                        return Err(
+                            ValidationError::TypeIntRequiresInt64Capability { type_id }.into()
+                        );
                     }
                 }
                 _ => {
@@ -101,7 +107,11 @@ impl ValidationRule for TypeIntRule {
 
             // Validate signedness value
             if signedness > 1 {
-                return Err(ValidationError::TypeIntInvalidSignedness { type_id, signedness }.into());
+                return Err(ValidationError::TypeIntInvalidSignedness {
+                    type_id,
+                    signedness,
+                }
+                .into());
             }
 
             // Kernel capability requires signedness 0
@@ -173,34 +183,32 @@ impl ValidationRule for TypeFloatRule {
                 8 => {
                     // Float8EXT capability required
                     if !ctx.declared_capabilities.contains(&Capability::Float8EXT) {
-                        return Err(ValidationError::TypeFloatRequiresFloat8Capability {
-                            type_id,
-                        }.into());
+                        return Err(
+                            ValidationError::TypeFloatRequiresFloat8Capability { type_id }.into(),
+                        );
                     }
                     // 8-bit float requires encoding
                     let Some(enc) = encoding else {
                         return Err(ValidationError::TypeFloat8RequiresEncoding { type_id }.into());
                     };
                     // Only Float8E4M3EXT and Float8E5M2EXT are supported
-                    if !matches!(
-                        enc,
-                        FPEncoding::Float8E4M3EXT | FPEncoding::Float8E5M2EXT
-                    ) {
+                    if !matches!(enc, FPEncoding::Float8E4M3EXT | FPEncoding::Float8E5M2EXT) {
                         return Err(ValidationError::TypeFloat8UnsupportedEncoding {
                             type_id,
                             encoding: enc,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
                 16 => {
                     // If there's an encoding, it's valid (e.g., BFloat16)
                     // Otherwise, Float16, Float16Buffer, or storage access capability required
-                    if encoding.is_none()
-                        && !has_16bit_float_capability(ctx.declared_capabilities)
+                    if encoding.is_none() && !has_16bit_float_capability(ctx.declared_capabilities)
                     {
                         return Err(ValidationError::TypeFloatRequiresFloat16Capability {
                             type_id,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
                 32 => {
@@ -210,7 +218,8 @@ impl ValidationRule for TypeFloatRule {
                     if !ctx.declared_capabilities.contains(&Capability::Float64) {
                         return Err(ValidationError::TypeFloatRequiresFloat64Capability {
                             type_id,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
                 _ => {

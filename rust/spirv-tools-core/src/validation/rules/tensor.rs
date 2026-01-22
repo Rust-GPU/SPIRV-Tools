@@ -12,10 +12,10 @@ use rspirv::dr::Operand;
 use rspirv::spirv::Op;
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::helpers::{get_type_structure, is_constant_opcode};
 use crate::validation::types::{Id, ResultId, ScalarKind, TypeId, TypeStructure};
+use crate::validation::ValidationResult;
 
 /// Helper to convert a u32 to Id (with fallback to id 1).
 fn to_id(id: u32) -> Id {
@@ -156,7 +156,8 @@ impl ValidationRule for TensorReadARMRule {
                             if !is_scalar_or_array_of_scalar(type_id, ctx) {
                                 return Err(ValidationError::TensorReadResultNotScalar {
                                     instruction_id: inst.result_id.map(to_id),
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -169,7 +170,8 @@ impl ValidationRule for TensorReadARMRule {
                                     if !is_ranked_tensor_arm(tensor_type, ctx) {
                                         return Err(ValidationError::TensorNotRankedTensor {
                                             instruction_id: inst.result_id.map(to_id),
-                                        }.into());
+                                        }
+                                        .into());
                                     }
                                 }
                             }
@@ -209,7 +211,8 @@ impl ValidationRule for TensorWriteARMRule {
                                     if !is_ranked_tensor_arm(tensor_type, ctx) {
                                         return Err(ValidationError::TensorNotRankedTensor {
                                             instruction_id: None,
-                                        }.into());
+                                        }
+                                        .into());
                                     }
                                 }
                             }
@@ -255,7 +258,8 @@ impl ValidationRule for TensorQuerySizeARMRule {
                             if !is_int_scalar {
                                 return Err(ValidationError::TensorQuerySizeResultNotInt {
                                     instruction_id: inst.result_id.map(to_id),
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -276,7 +280,8 @@ impl ValidationRule for TensorQuerySizeARMRule {
                         if !is_ranked_tensor_arm(tensor_type, ctx) {
                             return Err(ValidationError::TensorNotRankedTensor {
                                 instruction_id: inst.result_id.map(to_id),
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -295,7 +300,8 @@ impl ValidationRule for TensorQuerySizeARMRule {
                         if !is_constant || !is_int_scalar {
                             return Err(ValidationError::TensorQuerySizeDimensionNotConstant {
                                 instruction_id: inst.result_id.map(to_id),
-                            }.into());
+                            }
+                            .into());
                         }
 
                         // If we can evaluate both dimension and tensor rank, check dimension < rank
@@ -311,8 +317,9 @@ impl ValidationRule for TensorQuerySizeARMRule {
                                                 instruction_id: inst.result_id.map(to_id),
                                                 dimension: dim_val,
                                                 tensor_rank: rank_val,
-                                            }.into(),
-                        );
+                                            }
+                                            .into(),
+                                        );
                                     }
                                 }
                             }
@@ -349,7 +356,8 @@ impl ValidationRule for CreateTensorLayoutNVRule {
                         if !is_tensor_layout_nv(result_type, ctx) {
                             return Err(ValidationError::TensorLayoutResultNotTensorLayout {
                                 instruction_id: inst.result_id.map(to_id),
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -383,7 +391,8 @@ impl ValidationRule for CreateTensorViewNVRule {
                         if !is_tensor_view_nv(result_type, ctx) {
                             return Err(ValidationError::TensorViewResultNotTensorView {
                                 instruction_id: inst.result_id.map(to_id),
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }

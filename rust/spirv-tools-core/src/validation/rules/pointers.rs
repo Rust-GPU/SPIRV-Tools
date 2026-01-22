@@ -12,9 +12,9 @@ use rspirv::dr::{Module, Operand};
 use rspirv::spirv::{AddressingModel, Capability, Decoration, Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::{Id, ResultId, TypeId};
+use crate::validation::ValidationResult;
 
 // ============================================================================
 // Logical Pointer Rule
@@ -112,7 +112,8 @@ impl ValidationRule for LogicalPointerRule {
                             variable,
                             pointee_storage_class,
                             required_capability: Capability::VariablePointersStorageBuffer,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
                 StorageClass::Workgroup => {
@@ -124,14 +125,16 @@ impl ValidationRule for LogicalPointerRule {
                             variable,
                             pointee_storage_class,
                             required_capability: Capability::VariablePointers,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
                 _ => {
                     return Err(ValidationError::LogicalPointerPointeeStorageClassInvalid {
                         variable,
                         pointee_storage_class,
-                    }.into());
+                    }
+                    .into());
                 }
             }
 
@@ -149,7 +152,8 @@ impl ValidationRule for LogicalPointerRule {
                 return Err(ValidationError::LogicalPointerInvalidStorageClass {
                     variable,
                     storage_class: var_storage_class,
-                }.into());
+                }
+                .into());
             }
         }
 
@@ -232,12 +236,12 @@ impl ValidationRule for LoadStoreLogicalPointerRule {
             return Ok(());
         }
 
-        let has_variable_pointers =
-            ctx.declared_capabilities
-                .contains(&Capability::VariablePointers)
-                || ctx
-                    .declared_capabilities
-                    .contains(&Capability::VariablePointersStorageBuffer);
+        let has_variable_pointers = ctx
+            .declared_capabilities
+            .contains(&Capability::VariablePointers)
+            || ctx
+                .declared_capabilities
+                .contains(&Capability::VariablePointersStorageBuffer);
 
         for inst in ctx.module.all_inst_iter() {
             let (opcode, ptr_operand_index) = match inst.class.opcode {
@@ -286,12 +290,14 @@ impl ValidationRule for LoadStoreLogicalPointerRule {
             };
 
             if !is_valid {
-                let pointer = Id::try_from(*ptr_id_raw).unwrap_or_else(|_| Id::try_from(1).unwrap());
+                let pointer =
+                    Id::try_from(*ptr_id_raw).unwrap_or_else(|_| Id::try_from(1).unwrap());
                 return Err(ValidationError::NotALogicalPointer {
                     instruction: opcode,
                     pointer,
                     source_opcode,
-                }.into());
+                }
+                .into());
             }
 
             // For CopyMemory/CopyMemorySized, also check the source pointer
@@ -337,7 +343,8 @@ impl ValidationRule for LoadStoreLogicalPointerRule {
                         instruction: opcode,
                         pointer,
                         source_opcode: src_source_opcode,
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -438,7 +445,8 @@ impl ValidationRule for StoreTypeCompatibilityRule {
                 pointer: ptr_id,
                 pointer_type: pointee_id,
                 object_type: obj_type_id,
-            }.into());
+            }
+            .into());
         }
 
         Ok(())
@@ -805,9 +813,7 @@ fn is_block_array(
     definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
     module: &Module,
 ) -> bool {
-    if type_inst.class.opcode != Op::TypeArray
-        && type_inst.class.opcode != Op::TypeRuntimeArray
-    {
+    if type_inst.class.opcode != Op::TypeArray && type_inst.class.opcode != Op::TypeRuntimeArray {
         return false;
     }
 
@@ -833,8 +839,7 @@ fn is_block_array(
         if let (Some(Operand::IdRef(target)), Some(Operand::Decoration(dec))) =
             (annotation.operands.first(), annotation.operands.get(1))
         {
-            if *target == *elem_id
-                && (*dec == Decoration::Block || *dec == Decoration::BufferBlock)
+            if *target == *elem_id && (*dec == Decoration::Block || *dec == Decoration::BufferBlock)
             {
                 return true;
             }
@@ -883,8 +888,7 @@ fn traces_through_matrix(
                                                 if let Some(pointee_inst) =
                                                     definitions.get(&pointee_result_id)
                                                 {
-                                                    if pointee_inst.class.opcode == Op::TypeMatrix
-                                                    {
+                                                    if pointee_inst.class.opcode == Op::TypeMatrix {
                                                         return true;
                                                     }
                                                 }
@@ -1119,9 +1123,7 @@ impl ValidationRule for VariablePointerRule {
                             if let Some(Operand::IdRef(pointee_id)) = type_inst.operands.get(1) {
                                 if let Ok(pointee_type_id) = TypeId::try_from(*pointee_id) {
                                     // Check: variable pointer must not point to block array
-                                    if let Ok(pointee_result_id) =
-                                        ResultId::try_from(*pointee_id)
-                                    {
+                                    if let Ok(pointee_result_id) = ResultId::try_from(*pointee_id) {
                                         if let Some(pointee_inst) =
                                             ctx.definitions.get(&pointee_result_id)
                                         {
@@ -1133,8 +1135,9 @@ impl ValidationRule for VariablePointerRule {
                                                 return Err(
                                                     ValidationError::VariablePointerToBlockArray {
                                                         pointer: inst_id,
-                                                    }.into(),
-                        );
+                                                    }
+                                                    .into(),
+                                                );
                                             }
                                         }
                                     }
@@ -1146,11 +1149,10 @@ impl ValidationRule for VariablePointerRule {
                                         ctx.definitions,
                                         &mut visited,
                                     ) {
-                                        return Err(
-                                            ValidationError::VariablePointerToMatrixType {
-                                                pointer: inst_id,
-                                            }.into(),
-                        );
+                                        return Err(ValidationError::VariablePointerToMatrixType {
+                                            pointer: inst_id,
+                                        }
+                                        .into());
                                     }
                                 }
                             }
@@ -1162,9 +1164,9 @@ impl ValidationRule for VariablePointerRule {
             // Check: variable pointer must not point to matrix column/component
             let mut trace_visited = HashSet::new();
             if traces_through_matrix(inst, ctx.definitions, &mut trace_visited) {
-                return Err(ValidationError::VariablePointerToMatrixElement {
-                    pointer: inst_id,
-                }.into());
+                return Err(
+                    ValidationError::VariablePointerToMatrixElement { pointer: inst_id }.into(),
+                );
             }
 
             // Check same-buffer constraint for OpSelect/OpPhi without VariablePointers capability
@@ -1205,7 +1207,8 @@ impl ValidationRule for VariablePointerRule {
                     if source_vars.len() > 1 {
                         return Err(ValidationError::VariablePointerDifferentBuffers {
                             pointer: inst_id,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -1491,9 +1494,9 @@ impl ValidationRule for LogicalPointerOperandsRule {
                     continue;
                 }
 
-                return Err(ValidationError::LogicalPointerOperandRequiresCapability {
-                    opcode,
-                }.into());
+                return Err(
+                    ValidationError::LogicalPointerOperandRequiresCapability { opcode }.into(),
+                );
             }
 
             // Check if atomic operation (always allowed)
@@ -1619,9 +1622,9 @@ impl ValidationRule for LogicalPointerReturnsRule {
                     continue;
                 }
 
-                return Err(ValidationError::LogicalPointerReturnRequiresCapability {
-                    opcode,
-                }.into());
+                return Err(
+                    ValidationError::LogicalPointerReturnRequiresCapability { opcode }.into(),
+                );
             }
 
             // Otherwise not allowed

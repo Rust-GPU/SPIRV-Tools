@@ -16,10 +16,10 @@ use rspirv::dr::{Instruction, Operand};
 use rspirv::spirv::Op;
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::type_ext::{DefaultTypeResolver, TypeResolver};
 use crate::validation::types::{Id, ResultId};
+use crate::validation::ValidationResult;
 
 // ============================================================================
 // GLSL.std.450 Opcode Constants
@@ -349,7 +349,8 @@ impl ValidationRule for GlslFloatOpsRule {
                                 function: function_id,
                                 block: block_id,
                                 ext_inst_name: get_glsl_name(opcode),
-                            }.into());
+                            }
+                            .into());
                         }
 
                         // Validate all operands match result type
@@ -367,8 +368,9 @@ impl ValidationRule for GlslFloatOpsRule {
                                                         function: function_id,
                                                         block: block_id,
                                                         ext_inst_name: get_glsl_name(opcode),
-                                                    }.into(),
-                        );
+                                                    }
+                                                    .into(),
+                                                );
                                             }
                                         }
                                     }
@@ -459,7 +461,8 @@ impl ValidationRule for GlslIntOpsRule {
                                 function: function_id,
                                 block: block_id,
                                 ext_inst_name: get_glsl_name(opcode),
-                            }.into());
+                            }
+                            .into());
                         }
 
                         // For FindUMsb and FindSMsb, bit width must be 32
@@ -472,7 +475,8 @@ impl ValidationRule for GlslIntOpsRule {
                                             function: function_id,
                                             block: block_id,
                                             ext_inst_name: get_glsl_name(opcode),
-                                        }.into());
+                                        }
+                                        .into());
                                     }
                                 }
                             }
@@ -486,16 +490,18 @@ impl ValidationRule for GlslIntOpsRule {
                                         ctx.definitions.get(&operand_result_id)
                                     {
                                         if let Some(operand_type) = operand_inst.result_type {
-                                            if !resolver
-                                                .is_int_scalar_or_vector(operand_type, ctx.definitions)
-                                            {
+                                            if !resolver.is_int_scalar_or_vector(
+                                                operand_type,
+                                                ctx.definitions,
+                                            ) {
                                                 return Err(
                                                     ValidationError::ExtInstOperandMustBeInt {
                                                         function: function_id,
                                                         block: block_id,
                                                         ext_inst_name: get_glsl_name(opcode),
-                                                    }.into(),
-                        );
+                                                    }
+                                                    .into(),
+                                                );
                                             }
                                         }
                                     }
@@ -622,7 +628,8 @@ impl ValidationRule for GlslTrigOpsRule {
                                 function: function_id,
                                 block: block_id,
                                 ext_inst_name: get_glsl_name(opcode),
-                            }.into());
+                            }
+                            .into());
                         }
 
                         // Validate bit width is 16 or 32
@@ -634,7 +641,8 @@ impl ValidationRule for GlslTrigOpsRule {
                                         function: function_id,
                                         block: block_id,
                                         ext_inst_name: get_glsl_name(opcode),
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -653,8 +661,9 @@ impl ValidationRule for GlslTrigOpsRule {
                                                         function: function_id,
                                                         block: block_id,
                                                         ext_inst_name: get_glsl_name(opcode),
-                                                    }.into(),
-                        );
+                                                    }
+                                                    .into(),
+                                                );
                                             }
                                         }
                                     }
@@ -751,7 +760,8 @@ impl ValidationRule for GlslPackUnpackRule {
                                         function: function_id,
                                         block: block_id,
                                         ext_inst_name: get_glsl_name(opcode),
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
 
@@ -785,7 +795,8 @@ impl ValidationRule for GlslPackUnpackRule {
                                         function: function_id,
                                         block: block_id,
                                         ext_inst_name: get_glsl_name(opcode),
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
 
@@ -815,11 +826,14 @@ impl ValidationRule for GlslPackUnpackRule {
                         glsl::UNPACK_SNORM4X8 | glsl::UNPACK_UNORM4X8 => {
                             if let Some(result_type) = inst.result_type {
                                 if !is_float_vec4(result_type, ctx) {
-                                    return Err(ValidationError::ExtInstResultTypeMustBeVec4Float {
-                                        function: function_id,
-                                        block: block_id,
-                                        ext_inst_name: get_glsl_name(opcode),
-                                    }.into());
+                                    return Err(
+                                        ValidationError::ExtInstResultTypeMustBeVec4Float {
+                                            function: function_id,
+                                            block: block_id,
+                                            ext_inst_name: get_glsl_name(opcode),
+                                        }
+                                        .into(),
+                                    );
                                 }
                             }
 
@@ -838,8 +852,9 @@ impl ValidationRule for GlslPackUnpackRule {
                                                         function: function_id,
                                                         block: block_id,
                                                         ext_inst_name: get_glsl_name(opcode),
-                                                    }.into(),
-                        );
+                                                    }
+                                                    .into(),
+                                                );
                                             }
                                         }
                                     }
@@ -851,11 +866,14 @@ impl ValidationRule for GlslPackUnpackRule {
                         glsl::UNPACK_SNORM2X16 | glsl::UNPACK_UNORM2X16 | glsl::UNPACK_HALF2X16 => {
                             if let Some(result_type) = inst.result_type {
                                 if !is_float_vec2(result_type, ctx) {
-                                    return Err(ValidationError::ExtInstResultTypeMustBeVec2Float {
-                                        function: function_id,
-                                        block: block_id,
-                                        ext_inst_name: get_glsl_name(opcode),
-                                    }.into());
+                                    return Err(
+                                        ValidationError::ExtInstResultTypeMustBeVec2Float {
+                                            function: function_id,
+                                            block: block_id,
+                                            ext_inst_name: get_glsl_name(opcode),
+                                        }
+                                        .into(),
+                                    );
                                 }
                             }
 
@@ -874,8 +892,9 @@ impl ValidationRule for GlslPackUnpackRule {
                                                         function: function_id,
                                                         block: block_id,
                                                         ext_inst_name: get_glsl_name(opcode),
-                                                    }.into(),
-                        );
+                                                    }
+                                                    .into(),
+                                                );
                                             }
                                         }
                                     }
@@ -992,11 +1011,14 @@ impl ValidationRule for GlslGeometryOpsRule {
                         glsl::LENGTH => {
                             if let Some(result_type) = inst.result_type {
                                 if !resolver.is_float_scalar(result_type, ctx.definitions) {
-                                    return Err(ValidationError::ExtInstResultTypeMustBeFloatScalar {
-                                        function: function_id,
-                                        block: block_id,
-                                        ext_inst_name: get_glsl_name(opcode),
-                                    }.into());
+                                    return Err(
+                                        ValidationError::ExtInstResultTypeMustBeFloatScalar {
+                                            function: function_id,
+                                            block: block_id,
+                                            ext_inst_name: get_glsl_name(opcode),
+                                        }
+                                        .into(),
+                                    );
                                 }
                             }
 
@@ -1016,8 +1038,9 @@ impl ValidationRule for GlslGeometryOpsRule {
                                                         function: function_id,
                                                         block: block_id,
                                                         ext_inst_name: get_glsl_name(opcode),
-                                                    }.into(),
-                        );
+                                                    }
+                                                    .into(),
+                                                );
                                             }
                                         }
                                     }
@@ -1029,11 +1052,14 @@ impl ValidationRule for GlslGeometryOpsRule {
                         glsl::DISTANCE => {
                             if let Some(result_type) = inst.result_type {
                                 if !resolver.is_float_scalar(result_type, ctx.definitions) {
-                                    return Err(ValidationError::ExtInstResultTypeMustBeFloatScalar {
-                                        function: function_id,
-                                        block: block_id,
-                                        ext_inst_name: get_glsl_name(opcode),
-                                    }.into());
+                                    return Err(
+                                        ValidationError::ExtInstResultTypeMustBeFloatScalar {
+                                            function: function_id,
+                                            block: block_id,
+                                            ext_inst_name: get_glsl_name(opcode),
+                                        }
+                                        .into(),
+                                    );
                                 }
                             }
                         }
@@ -1042,11 +1068,14 @@ impl ValidationRule for GlslGeometryOpsRule {
                         glsl::CROSS => {
                             if let Some(result_type) = inst.result_type {
                                 if !is_float_vec3(result_type, ctx) {
-                                    return Err(ValidationError::ExtInstResultTypeMustBeVec3Float {
-                                        function: function_id,
-                                        block: block_id,
-                                        ext_inst_name: get_glsl_name(opcode),
-                                    }.into());
+                                    return Err(
+                                        ValidationError::ExtInstResultTypeMustBeVec3Float {
+                                            function: function_id,
+                                            block: block_id,
+                                            ext_inst_name: get_glsl_name(opcode),
+                                        }
+                                        .into(),
+                                    );
                                 }
                             }
                         }
@@ -1064,8 +1093,9 @@ impl ValidationRule for GlslGeometryOpsRule {
                                                     ValidationError::ExtInstEtaMustBeFloatScalar {
                                                         function: function_id,
                                                         block: block_id,
-                                                    }.into(),
-                        );
+                                                    }
+                                                    .into(),
+                                                );
                                             }
                                         }
                                     }
@@ -1164,10 +1194,7 @@ fn get_pointer_storage_class(
 }
 
 /// Get the pointee type of a pointer type.
-fn get_pointee_type(
-    type_id: u32,
-    definitions: &HashMap<ResultId, Instruction>,
-) -> Option<u32> {
+fn get_pointee_type(type_id: u32, definitions: &HashMap<ResultId, Instruction>) -> Option<u32> {
     if let Ok(result_id) = ResultId::try_from(type_id) {
         if let Some(type_inst) = definitions.get(&result_id) {
             if type_inst.class.opcode == Op::TypePointer {
@@ -1246,7 +1273,8 @@ impl ValidationRule for GlslStructOpsRule {
                                         return Err(ValidationError::GlslModfStructBadResult {
                                             function: function_id,
                                             block: block_id,
-                                        }.into());
+                                        }
+                                        .into());
                                     }
 
                                     // Both members must be the same type
@@ -1254,18 +1282,19 @@ impl ValidationRule for GlslStructOpsRule {
                                         return Err(ValidationError::GlslModfStructBadResult {
                                             function: function_id,
                                             block: block_id,
-                                        }.into());
+                                        }
+                                        .into());
                                     }
 
                                     // First member must be float scalar or vector
-                                    if !resolver.is_float_scalar_or_vector(
-                                        member_types[0],
-                                        ctx.definitions,
-                                    ) {
+                                    if !resolver
+                                        .is_float_scalar_or_vector(member_types[0], ctx.definitions)
+                                    {
                                         return Err(ValidationError::GlslModfStructBadResult {
                                             function: function_id,
                                             block: block_id,
-                                        }.into());
+                                        }
+                                        .into());
                                     }
 
                                     // Operand X must have the same type as the struct members
@@ -1290,7 +1319,8 @@ impl ValidationRule for GlslStructOpsRule {
                                     return Err(ValidationError::GlslModfStructBadResult {
                                         function: function_id,
                                         block: block_id,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -1305,29 +1335,30 @@ impl ValidationRule for GlslStructOpsRule {
                                         return Err(ValidationError::GlslFrexpStructBadResult {
                                             function: function_id,
                                             block: block_id,
-                                        }.into());
+                                        }
+                                        .into());
                                     }
 
                                     // First member must be float scalar or vector
-                                    if !resolver.is_float_scalar_or_vector(
-                                        member_types[0],
-                                        ctx.definitions,
-                                    ) {
+                                    if !resolver
+                                        .is_float_scalar_or_vector(member_types[0], ctx.definitions)
+                                    {
                                         return Err(ValidationError::GlslFrexpStructBadResult {
                                             function: function_id,
                                             block: block_id,
-                                        }.into());
+                                        }
+                                        .into());
                                     }
 
                                     // Second member must be 32-bit int scalar or vector
-                                    if !resolver.is_int_scalar_or_vector(
-                                        member_types[1],
-                                        ctx.definitions,
-                                    ) {
+                                    if !resolver
+                                        .is_int_scalar_or_vector(member_types[1], ctx.definitions)
+                                    {
                                         return Err(ValidationError::GlslFrexpStructBadResult {
                                             function: function_id,
                                             block: block_id,
-                                        }.into());
+                                        }
+                                        .into());
                                     }
 
                                     // Check second member is 32-bit int
@@ -1338,11 +1369,10 @@ impl ValidationRule for GlslStructOpsRule {
                                             let bit_width =
                                                 get_int_bit_width(int_type_inst, ctx.definitions);
                                             // Allow 32-bit, or 16-bit with extension
-                                            let has_amd_ext = ctx
-                                                .extensions
-                                                .values
-                                                .iter()
-                                                .any(|ext| ext.as_str() == "SPV_AMD_gpu_shader_int16");
+                                            let has_amd_ext =
+                                                ctx.extensions.values.iter().any(|ext| {
+                                                    ext.as_str() == "SPV_AMD_gpu_shader_int16"
+                                                });
                                             if bit_width != Some(32)
                                                 && !(has_amd_ext && bit_width == Some(16))
                                             {
@@ -1350,8 +1380,9 @@ impl ValidationRule for GlslStructOpsRule {
                                                     ValidationError::GlslFrexpStructBadResult {
                                                         function: function_id,
                                                         block: block_id,
-                                                    }.into(),
-                        );
+                                                    }
+                                                    .into(),
+                                                );
                                             }
                                         }
                                     }
@@ -1371,7 +1402,8 @@ impl ValidationRule for GlslStructOpsRule {
                                         return Err(ValidationError::GlslFrexpStructBadResult {
                                             function: function_id,
                                             block: block_id,
-                                        }.into());
+                                        }
+                                        .into());
                                     }
 
                                     // Operand X must have the same type as the first struct member
@@ -1396,7 +1428,8 @@ impl ValidationRule for GlslStructOpsRule {
                                     return Err(ValidationError::GlslFrexpStructBadResult {
                                         function: function_id,
                                         block: block_id,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -1471,7 +1504,8 @@ impl ValidationRule for GlslLdexpRule {
                                 function: function_id,
                                 block: block_id,
                                 ext_inst_name: "Ldexp",
-                            }.into());
+                            }
+                            .into());
                         }
 
                         // Operand X must have the same type as Result Type
@@ -1485,8 +1519,9 @@ impl ValidationRule for GlslLdexpRule {
                                                     function: function_id,
                                                     block: block_id,
                                                     ext_inst_name: "Ldexp",
-                                                }.into(),
-                        );
+                                                }
+                                                .into(),
+                                            );
                                         }
                                     }
                                 }
@@ -1504,7 +1539,8 @@ impl ValidationRule for GlslLdexpRule {
                                             return Err(ValidationError::GlslLdexpExpMustBeInt {
                                                 function: function_id,
                                                 block: block_id,
-                                            }.into());
+                                            }
+                                            .into());
                                         }
 
                                         // Check bit width is 32
@@ -1521,16 +1557,19 @@ impl ValidationRule for GlslLdexpRule {
                                                         ValidationError::GlslLdexpExpMustBe32Bit {
                                                             function: function_id,
                                                             block: block_id,
-                                                        }.into(),
-                        );
+                                                        }
+                                                        .into(),
+                                                    );
                                                 }
                                             }
                                         }
 
                                         // Check component count matches
-                                        let result_components =
-                                            get_vector_component_count(result_type, ctx.definitions)
-                                                .unwrap_or(1);
+                                        let result_components = get_vector_component_count(
+                                            result_type,
+                                            ctx.definitions,
+                                        )
+                                        .unwrap_or(1);
                                         let exp_components =
                                             get_vector_component_count(exp_type, ctx.definitions)
                                                 .unwrap_or(1);
@@ -1539,8 +1578,9 @@ impl ValidationRule for GlslLdexpRule {
                                                 ValidationError::GlslLdexpComponentCountMismatch {
                                                     function: function_id,
                                                     block: block_id,
-                                                }.into(),
-                        );
+                                                }
+                                                .into(),
+                                            );
                                         }
                                     }
                                 }
@@ -1627,7 +1667,8 @@ impl ValidationRule for GlslInterpolateRule {
                             function: function_id,
                             block: block_id,
                             ext_inst_name: get_glsl_name(opcode),
-                        }.into());
+                        }
+                        .into());
                     }
 
                     if let Some(result_type) = inst.result_type {
@@ -1637,7 +1678,8 @@ impl ValidationRule for GlslInterpolateRule {
                                 function: function_id,
                                 block: block_id,
                                 ext_inst_name: get_glsl_name(opcode),
-                            }.into());
+                            }
+                            .into());
                         }
 
                         // Check bit width is 32
@@ -1650,8 +1692,9 @@ impl ValidationRule for GlslInterpolateRule {
                                             function: function_id,
                                             block: block_id,
                                             ext_inst_name: get_glsl_name(opcode),
-                                        }.into(),
-                        );
+                                        }
+                                        .into(),
+                                    );
                                 }
                             }
                         }
@@ -1668,16 +1711,16 @@ impl ValidationRule for GlslInterpolateRule {
                                             interpolant_type,
                                             ctx.definitions,
                                         );
-                                        if storage_class
-                                            != Some(rspirv::spirv::StorageClass::Input)
+                                        if storage_class != Some(rspirv::spirv::StorageClass::Input)
                                         {
                                             return Err(
                                                 ValidationError::GlslInterpolateInputStorageClass {
                                                     function: function_id,
                                                     block: block_id,
                                                     ext_inst_name: get_glsl_name(opcode),
-                                                }.into(),
-                        );
+                                                }
+                                                .into(),
+                                            );
                                         }
 
                                         // Pointee type must match result type
@@ -1689,8 +1732,9 @@ impl ValidationRule for GlslInterpolateRule {
                                                     function: function_id,
                                                     block: block_id,
                                                     ext_inst_name: get_glsl_name(opcode),
-                                                }.into(),
-                        );
+                                                }
+                                                .into(),
+                                            );
                                         }
                                     }
                                 }
@@ -1709,8 +1753,9 @@ impl ValidationRule for GlslInterpolateRule {
                                                 ValidationError::GlslInterpolateSampleMustBeInt {
                                                     function: function_id,
                                                     block: block_id,
-                                                }.into(),
-                        );
+                                                }
+                                                .into(),
+                                            );
                                         }
 
                                         // Check bit width is 32
@@ -1788,7 +1833,6 @@ impl ValidationRule for GlslInterpolateRule {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1815,9 +1859,18 @@ mod tests {
 
     #[test]
     fn test_glsl_interpolate_names() {
-        assert_eq!(get_glsl_name(glsl::INTERPOLATE_AT_CENTROID), "InterpolateAtCentroid");
-        assert_eq!(get_glsl_name(glsl::INTERPOLATE_AT_SAMPLE), "InterpolateAtSample");
-        assert_eq!(get_glsl_name(glsl::INTERPOLATE_AT_OFFSET), "InterpolateAtOffset");
+        assert_eq!(
+            get_glsl_name(glsl::INTERPOLATE_AT_CENTROID),
+            "InterpolateAtCentroid"
+        );
+        assert_eq!(
+            get_glsl_name(glsl::INTERPOLATE_AT_SAMPLE),
+            "InterpolateAtSample"
+        );
+        assert_eq!(
+            get_glsl_name(glsl::INTERPOLATE_AT_OFFSET),
+            "InterpolateAtOffset"
+        );
     }
 
     #[test]

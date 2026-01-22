@@ -132,7 +132,10 @@ fn logical_and_complement_to_false() {
     let params = b.begin_function_with_params(vec![b.bool_ty]);
     let x = params[0];
     let not_x = b.builder.logical_not(b.bool_ty, None, x).expect("not");
-    let _ = b.builder.logical_and(b.bool_ty, None, x, not_x).expect("and");
+    let _ = b
+        .builder
+        .logical_and(b.bool_ty, None, x, not_x)
+        .expect("and");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -253,7 +256,10 @@ fn logical_not_equal_same_folds_to_false() {
     let mut b = TestModuleBuilder::new();
     let params = b.begin_function_with_params(vec![b.bool_ty]);
     let x = params[0];
-    let _ = b.builder.logical_not_equal(b.bool_ty, None, x, x).expect("ne");
+    let _ = b
+        .builder
+        .logical_not_equal(b.bool_ty, None, x, x)
+        .expect("ne");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -276,7 +282,10 @@ fn select_with_true_condition_folds() {
     let params = b.begin_function_with_params(vec![b.int_ty, b.int_ty]);
     let (a, bval) = (params[0], params[1]);
     let t = b.const_true();
-    let _ = b.builder.select(b.int_ty, None, t, a, bval).expect("select");
+    let _ = b
+        .builder
+        .select(b.int_ty, None, t, a, bval)
+        .expect("select");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -295,7 +304,10 @@ fn select_with_false_condition_folds() {
     let params = b.begin_function_with_params(vec![b.int_ty, b.int_ty]);
     let (a, bval) = (params[0], params[1]);
     let f = b.const_false();
-    let _ = b.builder.select(b.int_ty, None, f, a, bval).expect("select");
+    let _ = b
+        .builder
+        .select(b.int_ty, None, f, a, bval)
+        .expect("select");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -313,7 +325,10 @@ fn select_with_same_branches_folds() {
     let mut b = TestModuleBuilder::new();
     let params = b.begin_function_with_params(vec![b.bool_ty, b.int_ty]);
     let (cond, a) = (params[0], params[1]);
-    let _ = b.builder.select(b.int_ty, None, cond, a, a).expect("select");
+    let _ = b
+        .builder
+        .select(b.int_ty, None, cond, a, a)
+        .expect("select");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -333,7 +348,10 @@ fn select_with_negated_condition_normalizes() {
     let params = b.begin_function_with_params(vec![b.bool_ty, b.int_ty, b.int_ty]);
     let (cond, a, bval) = (params[0], params[1], params[2]);
     let not_cond = b.builder.logical_not(b.bool_ty, None, cond).expect("not");
-    let _ = b.builder.select(b.int_ty, None, not_cond, a, bval).expect("select");
+    let _ = b
+        .builder
+        .select(b.int_ty, None, not_cond, a, bval)
+        .expect("select");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");
@@ -439,7 +457,10 @@ fn constant_logical_equal_folds() {
     b.begin_void_function();
     let t1 = b.const_true();
     let t2 = b.const_true();
-    let _ = b.builder.logical_equal(b.bool_ty, None, t1, t2).expect("eq");
+    let _ = b
+        .builder
+        .logical_equal(b.bool_ty, None, t1, t2)
+        .expect("eq");
     let words = b.finish();
 
     let result = OptimizedModule::from_words(&words).expect("optimizer runs");

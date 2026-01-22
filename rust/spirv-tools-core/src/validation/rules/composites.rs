@@ -10,11 +10,11 @@
 use rspirv::spirv::{Capability, Op};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::helpers::vector_info;
 use crate::validation::type_ext::TypeInstructionExt;
 use crate::validation::types::{Id, ResultId, TypeId};
+use crate::validation::ValidationResult;
 
 // ============================================================================
 // Vector Dynamic Operations Rule
@@ -87,7 +87,8 @@ impl ValidationRule for VectorDynamicRule {
                                     instruction: inst.class.opcode,
                                     operand: 0,
                                     found: vector_type_id,
-                                }.into());
+                                }
+                                .into());
                             };
                             if vector_type_inst.class.opcode != Op::TypeVector {
                                 return Err(ValidationError::VectorOperandNotVector {
@@ -96,7 +97,8 @@ impl ValidationRule for VectorDynamicRule {
                                     instruction: inst.class.opcode,
                                     operand: 0,
                                     found: vector_type_id,
-                                }.into());
+                                }
+                                .into());
                             }
 
                             // Component type must match result type
@@ -109,7 +111,8 @@ impl ValidationRule for VectorDynamicRule {
                                         instruction: inst.class.opcode,
                                         expected: component_type,
                                         found: result_type_id,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
 
@@ -137,25 +140,24 @@ impl ValidationRule for VectorDynamicRule {
                                                 instruction: inst.class.opcode,
                                                 operand_index: 1,
                                                 found: index_type_id,
-                                            }.into());
+                                            }
+                                            .into());
                                         }
                                     }
                                 }
                             }
 
                             // Shader capability restricts 8/16-bit types
-                            if ctx.has_capability(Capability::Shader) {
-                                if contains_limited_type(
-                                    u32::from(result_type_id),
-                                    ctx.definitions,
-                                ) {
-                                    return Err(ValidationError::VectorDynamicLimitedType {
-                                        function: func,
-                                        block: blk,
-                                        instruction: inst.class.opcode,
-                                        operation: "extract from",
-                                    }.into());
+                            if ctx.has_capability(Capability::Shader)
+                                && contains_limited_type(u32::from(result_type_id), ctx.definitions)
+                            {
+                                return Err(ValidationError::VectorDynamicLimitedType {
+                                    function: func,
+                                    block: blk,
+                                    instruction: inst.class.opcode,
+                                    operation: "extract from",
                                 }
+                                .into());
                             }
                         }
                         Op::VectorInsertDynamic => {
@@ -192,7 +194,8 @@ impl ValidationRule for VectorDynamicRule {
                                     instruction: inst.class.opcode,
                                     operand: 0,
                                     found: vector_type_id,
-                                }.into());
+                                }
+                                .into());
                             };
                             if vector_type_inst.class.opcode != Op::TypeVector {
                                 return Err(ValidationError::VectorOperandNotVector {
@@ -201,7 +204,8 @@ impl ValidationRule for VectorDynamicRule {
                                     instruction: inst.class.opcode,
                                     operand: 0,
                                     found: vector_type_id,
-                                }.into());
+                                }
+                                .into());
                             }
 
                             // Result type must match vector type
@@ -212,7 +216,8 @@ impl ValidationRule for VectorDynamicRule {
                                     instruction: inst.class.opcode,
                                     expected: vector_type_id,
                                     found: result_type_id,
-                                }.into());
+                                }
+                                .into());
                             }
 
                             // Component operand must match vector element type
@@ -240,7 +245,8 @@ impl ValidationRule for VectorDynamicRule {
                                                 operand_index: 1,
                                                 expected: component_type,
                                                 found: component_operand_type,
-                                            }.into());
+                                            }
+                                            .into());
                                         }
                                     }
                                 }
@@ -270,25 +276,24 @@ impl ValidationRule for VectorDynamicRule {
                                                 instruction: inst.class.opcode,
                                                 operand_index: 2,
                                                 found: index_type_id,
-                                            }.into());
+                                            }
+                                            .into());
                                         }
                                     }
                                 }
                             }
 
                             // Shader capability restricts 8/16-bit types
-                            if ctx.has_capability(Capability::Shader) {
-                                if contains_limited_type(
-                                    u32::from(result_type_id),
-                                    ctx.definitions,
-                                ) {
-                                    return Err(ValidationError::VectorDynamicLimitedType {
-                                        function: func,
-                                        block: blk,
-                                        instruction: inst.class.opcode,
-                                        operation: "insert into",
-                                    }.into());
+                            if ctx.has_capability(Capability::Shader)
+                                && contains_limited_type(u32::from(result_type_id), ctx.definitions)
+                            {
+                                return Err(ValidationError::VectorDynamicLimitedType {
+                                    function: func,
+                                    block: blk,
+                                    instruction: inst.class.opcode,
+                                    operation: "insert into",
                                 }
+                                .into());
                             }
                         }
                         _ => continue,
@@ -360,7 +365,7 @@ impl ValidationRule for VectorShuffleRule {
                                     block: blk,
                                     operand: 0,
                                     found: ty,
-                                }.into());
+                                });
                             };
                             if type_inst.class.opcode != Op::TypeVector {
                                 return Err(ValidationError::VectorShuffleOperandNotVector {
@@ -368,7 +373,7 @@ impl ValidationRule for VectorShuffleRule {
                                     block: blk,
                                     operand: 0,
                                     found: ty,
-                                }.into());
+                                });
                             }
                             let (elem, count) = vector_info(type_inst);
                             match (elem, count) {
@@ -453,7 +458,8 @@ impl ValidationRule for VectorShuffleRule {
                             block: blk,
                             first: vec1_component,
                             second: vec2_component,
-                        }.into());
+                        }
+                        .into());
                     }
 
                     // Result type must be a vector with matching component type
@@ -469,7 +475,8 @@ impl ValidationRule for VectorShuffleRule {
                             block: blk,
                             result_type: result_type_id,
                             component_type: vec1_component,
-                        }.into());
+                        }
+                        .into());
                     }
                     let (result_component, result_len) = vector_info(result_vector_inst);
                     let Some(result_component) = result_component else {
@@ -478,7 +485,8 @@ impl ValidationRule for VectorShuffleRule {
                             block: blk,
                             result_type: result_type_id,
                             component_type: vec1_component,
-                        }.into());
+                        }
+                        .into());
                     };
                     if result_component != vec1_component {
                         return Err(ValidationError::VectorShuffleResultTypeMismatch {
@@ -486,7 +494,8 @@ impl ValidationRule for VectorShuffleRule {
                             block: blk,
                             result_type: result_type_id,
                             component_type: vec1_component,
-                        }.into());
+                        }
+                        .into());
                     }
 
                     // Validate component count matches result type
@@ -507,7 +516,8 @@ impl ValidationRule for VectorShuffleRule {
                             block: blk,
                             operand_components: operand_component_count,
                             result_components: 0,
-                        }.into());
+                        }
+                        .into());
                     };
                     if operand_component_count != result_component_len {
                         return Err(ValidationError::VectorShuffleComponentCountMismatch {
@@ -515,7 +525,8 @@ impl ValidationRule for VectorShuffleRule {
                             block: blk,
                             operand_components: operand_component_count,
                             result_components: result_component_len,
-                        }.into());
+                        }
+                        .into());
                     }
 
                     // Validate component indices are in range
@@ -531,7 +542,8 @@ impl ValidationRule for VectorShuffleRule {
                                 block: blk,
                                 value,
                                 max: max_index.saturating_sub(1),
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -601,7 +613,8 @@ impl ValidationRule for CopyObjectRule {
                                     opcode: inst.class.opcode,
                                     result_type,
                                     expected: "non-void type",
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -628,8 +641,9 @@ impl ValidationRule for CopyObjectRule {
                                                 block,
                                                 opcode: inst.class.opcode,
                                                 result_type,
-                                            }.into(),
-                        );
+                                            }
+                                            .into(),
+                                        );
                                     }
                                 }
                             }
@@ -706,7 +720,8 @@ impl ValidationRule for TransposeRule {
                                 opcode: inst.class.opcode,
                                 result_type,
                                 expected: "matrix type",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -741,8 +756,9 @@ impl ValidationRule for TransposeRule {
                                                     operand_index: 0,
                                                     result_type,
                                                     expected: "matrix type",
-                                                }.into(),
-                        );
+                                                }
+                                                .into(),
+                                            );
                                         }
                                     }
                                 }
@@ -803,11 +819,10 @@ impl ValidationRule for CompositeExtractInsertRule {
                             };
 
                             // Get composite operand type
-                            let composite_operand =
-                                inst.operands.first().and_then(|op| match op {
-                                    rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
-                                    _ => None,
-                                });
+                            let composite_operand = inst.operands.first().and_then(|op| match op {
+                                rspirv::dr::Operand::IdRef(id) => ResultId::try_from(*id).ok(),
+                                _ => None,
+                            });
                             let Some(composite_operand) = composite_operand else {
                                 continue;
                             };
@@ -837,34 +852,38 @@ impl ValidationRule for CompositeExtractInsertRule {
                                     function: func,
                                     block: blk,
                                     instruction: inst.class.opcode,
-                                }.into());
+                                }
+                                .into());
                             }
 
                             // Validate maximum of 255 indices
                             const MAX_COMPOSITE_INDICES: usize = 255;
                             if indices.len() > MAX_COMPOSITE_INDICES {
-                                return Err(ValidationError::CompositeExtractInsertTooManyIndices {
-                                    function: func,
-                                    block: blk,
-                                    instruction: inst.class.opcode,
-                                    count: indices.len(),
-                                }.into());
+                                return Err(
+                                    ValidationError::CompositeExtractInsertTooManyIndices {
+                                        function: func,
+                                        block: blk,
+                                        instruction: inst.class.opcode,
+                                        count: indices.len(),
+                                    }
+                                    .into(),
+                                );
                             }
 
                             // Walk the composite type to find the component type
-                            match walk_composite_type(
-                                composite_type_id,
-                                &indices,
-                                ctx.definitions,
-                            ) {
+                            match walk_composite_type(composite_type_id, &indices, ctx.definitions)
+                            {
                                 Ok(component_type) => {
                                     if component_type != result_type_id {
-                                        return Err(ValidationError::CompositeOperandTypeMismatch {
-                                            function: func,
-                                            block: blk,
-                                            opcode: inst.class.opcode,
-                                            result_type: result_type_id,
-                                        }.into());
+                                        return Err(
+                                            ValidationError::CompositeOperandTypeMismatch {
+                                                function: func,
+                                                block: blk,
+                                                opcode: inst.class.opcode,
+                                                result_type: result_type_id,
+                                            }
+                                            .into(),
+                                        );
                                     }
                                 }
                                 Err(CompositeWalkError::OutOfBounds {
@@ -881,7 +900,8 @@ impl ValidationRule for CompositeExtractInsertRule {
                                         index_position,
                                         index,
                                         bound,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                                 Err(CompositeWalkError::NotComposite) => {
                                     // Type not found or not a composite - skip
@@ -938,7 +958,8 @@ impl ValidationRule for CompositeExtractInsertRule {
                                     opcode: inst.class.opcode,
                                     result_type: result_type_id,
                                     expected: "same type as composite operand",
-                                }.into());
+                                }
+                                .into());
                             }
 
                             // Collect literal indices
@@ -958,26 +979,27 @@ impl ValidationRule for CompositeExtractInsertRule {
                                     function: func,
                                     block: blk,
                                     instruction: inst.class.opcode,
-                                }.into());
+                                }
+                                .into());
                             }
 
                             // Validate maximum of 255 indices
                             const MAX_COMPOSITE_INDICES: usize = 255;
                             if indices.len() > MAX_COMPOSITE_INDICES {
-                                return Err(ValidationError::CompositeExtractInsertTooManyIndices {
-                                    function: func,
-                                    block: blk,
-                                    instruction: inst.class.opcode,
-                                    count: indices.len(),
-                                }.into());
+                                return Err(
+                                    ValidationError::CompositeExtractInsertTooManyIndices {
+                                        function: func,
+                                        block: blk,
+                                        instruction: inst.class.opcode,
+                                        count: indices.len(),
+                                    }
+                                    .into(),
+                                );
                             }
 
                             // Walk the composite type to find the component type
-                            match walk_composite_type(
-                                composite_type_id,
-                                &indices,
-                                ctx.definitions,
-                            ) {
+                            match walk_composite_type(composite_type_id, &indices, ctx.definitions)
+                            {
                                 Ok(component_type) => {
                                     if component_type != object_type_id {
                                         return Err(ValidationError::CompositeOperandTypeInvalid {
@@ -987,7 +1009,8 @@ impl ValidationRule for CompositeExtractInsertRule {
                                             operand_index: 0,
                                             result_type: result_type_id,
                                             expected: "matching component type",
-                                        }.into());
+                                        }
+                                        .into());
                                     }
                                 }
                                 Err(CompositeWalkError::OutOfBounds {
@@ -1004,7 +1027,8 @@ impl ValidationRule for CompositeExtractInsertRule {
                                         index_position,
                                         index,
                                         bound,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                                 Err(CompositeWalkError::NotComposite) => {
                                     // Type not found or not a composite - skip
@@ -1218,10 +1242,8 @@ impl ValidationRule for CompositeConstructRule {
                     match result_type_inst.class.opcode {
                         Op::TypeVector | Op::TypeCooperativeVectorNV => {
                             // Get vector component type and size
-                            let component_type_id = result_type_inst
-                                .operands
-                                .first()
-                                .and_then(|op| {
+                            let component_type_id =
+                                result_type_inst.operands.first().and_then(|op| {
                                     if let rspirv::dr::Operand::IdRef(id) = op {
                                         Some(*id)
                                     } else {
@@ -1237,8 +1259,9 @@ impl ValidationRule for CompositeConstructRule {
                                     ValidationError::CompositeConstructVectorTooFewConstituents {
                                         function: function_id,
                                         block: block_id,
-                                    }.into(),
-                        );
+                                    }
+                                    .into(),
+                                );
                             }
 
                             // Get vector dimension if it's a regular vector
@@ -1270,9 +1293,13 @@ impl ValidationRule for CompositeConstructRule {
                                                     {
                                                         // Check if scalar (matching component type) or vector of same component type
                                                         match value_type_inst.class.opcode {
-                                                            Op::TypeInt | Op::TypeFloat | Op::TypeBool => {
+                                                            Op::TypeInt
+                                                            | Op::TypeFloat
+                                                            | Op::TypeBool => {
                                                                 // Scalar: check it matches component type
-                                                                if component_type_id != Some(value_type) {
+                                                                if component_type_id
+                                                                    != Some(value_type)
+                                                                {
                                                                     return Err(ValidationError::CompositeConstructVectorConstituentTypeMismatch {
                                                                         function: function_id,
                                                                         block: block_id,
@@ -1292,7 +1319,9 @@ impl ValidationRule for CompositeConstructRule {
                                                                             None
                                                                         }
                                                                     });
-                                                                if component_type_id != vec_component {
+                                                                if component_type_id
+                                                                    != vec_component
+                                                                {
                                                                     return Err(ValidationError::CompositeConstructVectorConstituentTypeMismatch {
                                                                         function: function_id,
                                                                         block: block_id,
@@ -1452,8 +1481,9 @@ impl ValidationRule for CompositeConstructRule {
                                         given: num_constituents as u32,
                                         function: function_id,
                                         block: block_id,
-                                    }.into(),
-                        );
+                                    }
+                                    .into(),
+                                );
                             }
 
                             // Validate each constituent matches member type
@@ -1525,7 +1555,8 @@ impl ValidationRule for CompositeConstructRule {
                             return Err(ValidationError::CompositeConstructResultTypeInvalid {
                                 function: function_id,
                                 block: block_id,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -1599,7 +1630,8 @@ impl ValidationRule for CopyLogicalRule {
                         return Err(ValidationError::CopyLogicalTypesEqual {
                             function: function_id,
                             block: block_id,
-                        }.into());
+                        }
+                        .into());
                     }
 
                     // Check Shader capability restriction for 8/16-bit types
@@ -1610,7 +1642,8 @@ impl ValidationRule for CopyLogicalRule {
                                 return Err(ValidationError::CopyLogicalSmallTypeRestriction {
                                     function: function_id,
                                     block: block_id,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -1637,7 +1670,7 @@ fn contains_limited_type(
     match type_inst.class.opcode {
         Op::TypeInt | Op::TypeFloat => {
             // Check width - 8 or 16-bit types are limited
-            type_inst.operands.first().map_or(false, |op| {
+            type_inst.operands.first().is_some_and(|op| {
                 if let rspirv::dr::Operand::LiteralBit32(width) = op {
                     *width == 8 || *width == 16
                 } else {
@@ -1657,9 +1690,7 @@ fn contains_limited_type(
                         None
                     }
                 })
-                .map_or(false, |elem_type_id| {
-                    contains_limited_type(elem_type_id, definitions)
-                })
+                .is_some_and(|elem_type_id| contains_limited_type(elem_type_id, definitions))
         }
         Op::TypeStruct => {
             // Check all member types
@@ -1684,7 +1715,7 @@ fn contains_small_type(type_id: ResultId, ctx: &ValidationContext<'_>) -> bool {
     match type_inst.class.opcode {
         Op::TypeInt | Op::TypeFloat => {
             // Check width
-            type_inst.operands.first().map_or(false, |op| {
+            type_inst.operands.first().is_some_and(|op| {
                 if let rspirv::dr::Operand::LiteralBit32(width) = op {
                     *width == 8 || *width == 16
                 } else {
@@ -1694,21 +1725,25 @@ fn contains_small_type(type_id: ResultId, ctx: &ValidationContext<'_>) -> bool {
         }
         Op::TypeVector | Op::TypeMatrix | Op::TypeArray | Op::TypeRuntimeArray => {
             // Check element type
-            type_inst.operands.first().and_then(|op| {
-                if let rspirv::dr::Operand::IdRef(id) = op {
-                    ResultId::try_from(*id).ok()
-                } else {
-                    None
-                }
-            }).map_or(false, |elem_type_id| contains_small_type(elem_type_id, ctx))
+            type_inst
+                .operands
+                .first()
+                .and_then(|op| {
+                    if let rspirv::dr::Operand::IdRef(id) = op {
+                        ResultId::try_from(*id).ok()
+                    } else {
+                        None
+                    }
+                })
+                .is_some_and(|elem_type_id| contains_small_type(elem_type_id, ctx))
         }
         Op::TypeStruct => {
             // Check all member types
             type_inst.operands.iter().any(|op| {
                 if let rspirv::dr::Operand::IdRef(id) = op {
-                    ResultId::try_from(*id).ok().map_or(false, |member_type_id| {
-                        contains_small_type(member_type_id, ctx)
-                    })
+                    ResultId::try_from(*id)
+                        .ok()
+                        .is_some_and(|member_type_id| contains_small_type(member_type_id, ctx))
                 } else {
                     false
                 }

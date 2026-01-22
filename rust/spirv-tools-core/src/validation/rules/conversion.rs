@@ -12,10 +12,10 @@
 use rspirv::spirv::Op;
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::type_ext::{DefaultTypeResolver, TypeInstructionExt, TypeResolver};
 use crate::validation::types::Id;
+use crate::validation::ValidationResult;
 
 // ============================================================================
 // Float to Integer Conversion Rule
@@ -64,8 +64,7 @@ impl ValidationRule for FloatToIntConversionRule {
                                 if let (Some(func), Some(block), Some(result_type)) = (
                                     function_id,
                                     block_id,
-                                    crate::validation::types::TypeId::try_from(result_type_id)
-                                        .ok(),
+                                    crate::validation::types::TypeId::try_from(result_type_id).ok(),
                                 ) {
                                     return Err(ValidationError::ConversionResultTypeInvalid {
                                         function: func,
@@ -73,7 +72,8 @@ impl ValidationRule for FloatToIntConversionRule {
                                         opcode: inst.class.opcode,
                                         result_type,
                                         expected: "unsigned int scalar or vector",
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
 
@@ -97,8 +97,7 @@ impl ValidationRule for FloatToIntConversionRule {
                                 if let (Some(func), Some(block), Some(result_type)) = (
                                     function_id,
                                     block_id,
-                                    crate::validation::types::TypeId::try_from(result_type_id)
-                                        .ok(),
+                                    crate::validation::types::TypeId::try_from(result_type_id).ok(),
                                 ) {
                                     return Err(ValidationError::ConversionResultTypeInvalid {
                                         function: func,
@@ -106,7 +105,8 @@ impl ValidationRule for FloatToIntConversionRule {
                                         opcode: inst.class.opcode,
                                         result_type,
                                         expected: "int scalar or vector",
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
 
@@ -159,7 +159,8 @@ impl FloatToIntConversionRule {
                                 opcode: inst.class.opcode,
                                 result_type,
                                 expected: "float scalar or vector",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -177,7 +178,8 @@ impl FloatToIntConversionRule {
                                 block,
                                 opcode: inst.class.opcode,
                                 result_type,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -220,8 +222,7 @@ impl ValidationRule for IntToFloatConversionRule {
                     .and_then(|id| Id::try_from(id).ok());
 
                 for inst in &block.instructions {
-                    if inst.class.opcode != Op::ConvertSToF
-                        && inst.class.opcode != Op::ConvertUToF
+                    if inst.class.opcode != Op::ConvertSToF && inst.class.opcode != Op::ConvertUToF
                     {
                         continue;
                     }
@@ -243,7 +244,8 @@ impl ValidationRule for IntToFloatConversionRule {
                                 opcode: inst.class.opcode,
                                 result_type,
                                 expected: "float scalar or vector",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -269,7 +271,8 @@ impl ValidationRule for IntToFloatConversionRule {
                                             opcode: inst.class.opcode,
                                             result_type,
                                             expected: "int scalar or vector",
-                                        }.into());
+                                        }
+                                        .into());
                                     }
                                 }
 
@@ -290,7 +293,8 @@ impl ValidationRule for IntToFloatConversionRule {
                                             block,
                                             opcode: inst.class.opcode,
                                             result_type,
-                                        }.into());
+                                        }
+                                        .into());
                                     }
                                 }
                             }
@@ -351,8 +355,7 @@ impl ValidationRule for IntWidthConversionRule {
                                 if let (Some(func), Some(block), Some(result_type)) = (
                                     function_id,
                                     block_id,
-                                    crate::validation::types::TypeId::try_from(result_type_id)
-                                        .ok(),
+                                    crate::validation::types::TypeId::try_from(result_type_id).ok(),
                                 ) {
                                     return Err(ValidationError::ConversionResultTypeInvalid {
                                         function: func,
@@ -360,7 +363,8 @@ impl ValidationRule for IntWidthConversionRule {
                                         opcode: inst.class.opcode,
                                         result_type,
                                         expected: "unsigned int scalar or vector",
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
 
@@ -383,8 +387,7 @@ impl ValidationRule for IntWidthConversionRule {
                                 if let (Some(func), Some(block), Some(result_type)) = (
                                     function_id,
                                     block_id,
-                                    crate::validation::types::TypeId::try_from(result_type_id)
-                                        .ok(),
+                                    crate::validation::types::TypeId::try_from(result_type_id).ok(),
                                 ) {
                                     return Err(ValidationError::ConversionResultTypeInvalid {
                                         function: func,
@@ -392,7 +395,8 @@ impl ValidationRule for IntWidthConversionRule {
                                         opcode: inst.class.opcode,
                                         result_type,
                                         expected: "int scalar or vector",
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
 
@@ -444,7 +448,8 @@ impl IntWidthConversionRule {
                                 opcode: inst.class.opcode,
                                 result_type,
                                 expected: "int scalar or vector",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -462,7 +467,8 @@ impl IntWidthConversionRule {
                                 block,
                                 opcode: inst.class.opcode,
                                 result_type,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -480,7 +486,8 @@ impl IntWidthConversionRule {
                                 block,
                                 opcode: inst.class.opcode,
                                 result_type,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -536,8 +543,7 @@ impl ValidationRule for FloatWidthConversionRule {
                                 if let (Some(func), Some(block), Some(result_type)) = (
                                     function_id,
                                     block_id,
-                                    crate::validation::types::TypeId::try_from(result_type_id)
-                                        .ok(),
+                                    crate::validation::types::TypeId::try_from(result_type_id).ok(),
                                 ) {
                                     return Err(ValidationError::ConversionResultTypeInvalid {
                                         function: func,
@@ -545,7 +551,8 @@ impl ValidationRule for FloatWidthConversionRule {
                                         opcode: inst.class.opcode,
                                         result_type,
                                         expected: "float scalar or vector",
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
 
@@ -579,8 +586,9 @@ impl ValidationRule for FloatWidthConversionRule {
                                                         opcode: inst.class.opcode,
                                                         result_type,
                                                         expected: "float scalar or vector",
-                                                    }.into(),
-                        );
+                                                    }
+                                                    .into(),
+                                                );
                                             }
                                         }
 
@@ -604,8 +612,9 @@ impl ValidationRule for FloatWidthConversionRule {
                                                         block,
                                                         opcode: inst.class.opcode,
                                                         result_type,
-                                                    }.into(),
-                        );
+                                                    }
+                                                    .into(),
+                                                );
                                             }
                                         }
 
@@ -631,8 +640,9 @@ impl ValidationRule for FloatWidthConversionRule {
                                                         block,
                                                         opcode: inst.class.opcode,
                                                         result_type,
-                                                    }.into(),
-                        );
+                                                    }
+                                                    .into(),
+                                                );
                                             }
                                         }
                                     }
@@ -650,8 +660,7 @@ impl ValidationRule for FloatWidthConversionRule {
                                 if let (Some(func), Some(block), Some(result_type)) = (
                                     function_id,
                                     block_id,
-                                    crate::validation::types::TypeId::try_from(result_type_id)
-                                        .ok(),
+                                    crate::validation::types::TypeId::try_from(result_type_id).ok(),
                                 ) {
                                     return Err(ValidationError::ConversionResultTypeInvalid {
                                         function: func,
@@ -659,7 +668,8 @@ impl ValidationRule for FloatWidthConversionRule {
                                         opcode: inst.class.opcode,
                                         result_type,
                                         expected: "32-bit float scalar or vector",
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
 
@@ -669,8 +679,7 @@ impl ValidationRule for FloatWidthConversionRule {
                                 if let (Some(func), Some(block), Some(result_type)) = (
                                     function_id,
                                     block_id,
-                                    crate::validation::types::TypeId::try_from(result_type_id)
-                                        .ok(),
+                                    crate::validation::types::TypeId::try_from(result_type_id).ok(),
                                 ) {
                                     return Err(ValidationError::ConversionResultTypeInvalid {
                                         function: func,
@@ -678,7 +687,8 @@ impl ValidationRule for FloatWidthConversionRule {
                                         opcode: inst.class.opcode,
                                         result_type,
                                         expected: "32-bit float scalar or vector",
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
 
@@ -709,8 +719,9 @@ impl ValidationRule for FloatWidthConversionRule {
                                                         opcode: inst.class.opcode,
                                                         result_type,
                                                         expected: "same type as result",
-                                                    }.into(),
-                        );
+                                                    }
+                                                    .into(),
+                                                );
                                             }
                                         }
                                     }
@@ -777,7 +788,8 @@ impl ValidationRule for BitcastRule {
                     let result_is_pointer = result_type_inst
                         .map(|i| i.is_pointer_type())
                         .unwrap_or(false);
-                    let result_is_numeric = resolver.is_int_scalar_or_vector(result_type_id, ctx.definitions)
+                    let result_is_numeric = resolver
+                        .is_int_scalar_or_vector(result_type_id, ctx.definitions)
                         || resolver.is_float_scalar_or_vector(result_type_id, ctx.definitions);
 
                     if !result_is_pointer && !result_is_numeric {
@@ -792,7 +804,8 @@ impl ValidationRule for BitcastRule {
                                 opcode: inst.class.opcode,
                                 result_type,
                                 expected: "pointer or int/float scalar or vector",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -830,7 +843,8 @@ impl ValidationRule for BitcastRule {
                                             opcode: inst.class.opcode,
                                             result_type,
                                             expected: "pointer or int/float scalar or vector",
-                                        }.into());
+                                        }
+                                        .into());
                                     }
                                 }
 
@@ -865,8 +879,9 @@ impl ValidationRule for BitcastRule {
                                                     block,
                                                     opcode: inst.class.opcode,
                                                     result_type,
-                                                }.into(),
-                        );
+                                                }
+                                                .into(),
+                                            );
                                         }
                                     }
                                 }
@@ -937,7 +952,8 @@ impl ValidationRule for SaturatingConversionRule {
                                 opcode: inst.class.opcode,
                                 result_type,
                                 expected: "int scalar or vector",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -963,7 +979,8 @@ impl ValidationRule for SaturatingConversionRule {
                                             opcode: inst.class.opcode,
                                             result_type,
                                             expected: "int scalar or vector",
-                                        }.into());
+                                        }
+                                        .into());
                                     }
                                 }
 
@@ -984,7 +1001,8 @@ impl ValidationRule for SaturatingConversionRule {
                                             block,
                                             opcode: inst.class.opcode,
                                             result_type,
-                                        }.into());
+                                        }
+                                        .into());
                                     }
                                 }
                             }
@@ -1032,8 +1050,10 @@ impl ValidationRule for PointerConversionRule {
             });
 
         let is_logical = matches!(addressing_model, Some(AddressingModel::Logical));
-        let is_physical_storage_buffer_64 =
-            matches!(addressing_model, Some(AddressingModel::PhysicalStorageBuffer64));
+        let is_physical_storage_buffer_64 = matches!(
+            addressing_model,
+            Some(AddressingModel::PhysicalStorageBuffer64)
+        );
 
         for function in &ctx.module.functions {
             let function_id = function
@@ -1057,14 +1077,11 @@ impl ValidationRule for PointerConversionRule {
                             };
 
                             // Result must be unsigned int scalar
-                            if !resolver
-                                .is_unsigned_int_scalar(result_type_id, ctx.definitions)
-                            {
+                            if !resolver.is_unsigned_int_scalar(result_type_id, ctx.definitions) {
                                 if let (Some(func), Some(block), Some(result_type)) = (
                                     function_id,
                                     block_id,
-                                    crate::validation::types::TypeId::try_from(result_type_id)
-                                        .ok(),
+                                    crate::validation::types::TypeId::try_from(result_type_id).ok(),
                                 ) {
                                     return Err(ValidationError::ConversionResultTypeInvalid {
                                         function: func,
@@ -1072,7 +1089,8 @@ impl ValidationRule for PointerConversionRule {
                                         opcode: inst.class.opcode,
                                         result_type,
                                         expected: "unsigned int scalar",
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
 
@@ -1084,8 +1102,9 @@ impl ValidationRule for PointerConversionRule {
                                             function: func,
                                             block,
                                             opcode: inst.class.opcode,
-                                        }.into(),
-                        );
+                                        }
+                                        .into(),
+                                    );
                                 }
                             }
 
@@ -1128,8 +1147,9 @@ impl ValidationRule for PointerConversionRule {
                                                         opcode: inst.class.opcode,
                                                         result_type,
                                                         expected: "pointer",
-                                                    }.into(),
-                        );
+                                                    }
+                                                    .into(),
+                                                );
                                             }
                                         }
 
@@ -1203,8 +1223,7 @@ impl ValidationRule for PointerConversionRule {
                                 if let (Some(func), Some(block), Some(result_type)) = (
                                     function_id,
                                     block_id,
-                                    crate::validation::types::TypeId::try_from(result_type_id)
-                                        .ok(),
+                                    crate::validation::types::TypeId::try_from(result_type_id).ok(),
                                 ) {
                                     return Err(ValidationError::ConversionResultTypeInvalid {
                                         function: func,
@@ -1212,7 +1231,8 @@ impl ValidationRule for PointerConversionRule {
                                         opcode: inst.class.opcode,
                                         result_type,
                                         expected: "pointer",
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
 
@@ -1224,8 +1244,9 @@ impl ValidationRule for PointerConversionRule {
                                             function: func,
                                             block,
                                             opcode: inst.class.opcode,
-                                        }.into(),
-                        );
+                                        }
+                                        .into(),
+                                    );
                                 }
                             }
 
@@ -1240,9 +1261,7 @@ impl ValidationRule for PointerConversionRule {
 
                                 if let Some(input_inst) = input_inst {
                                     if let Some(input_type_id) = input_inst.result_type {
-                                        if !resolver
-                                            .is_int_scalar(input_type_id, ctx.definitions)
-                                        {
+                                        if !resolver.is_int_scalar(input_type_id, ctx.definitions) {
                                             if let (Some(func), Some(block), Some(result_type)) = (
                                                 function_id,
                                                 block_id,
@@ -1258,22 +1277,22 @@ impl ValidationRule for PointerConversionRule {
                                                         opcode: inst.class.opcode,
                                                         result_type,
                                                         expected: "int scalar",
-                                                    }.into(),
-                        );
+                                                    }
+                                                    .into(),
+                                                );
                                             }
                                         }
 
                                         // PhysicalStorageBuffer64 requires PhysicalStorageBuffer storage class
                                         if is_physical_storage_buffer_64 {
-                                            let storage_class =
-                                                result_type_inst.and_then(|i| {
-                                                    i.operands.first().and_then(|op| match op {
-                                                        rspirv::dr::Operand::StorageClass(sc) => {
-                                                            Some(*sc)
-                                                        }
-                                                        _ => None,
-                                                    })
-                                                });
+                                            let storage_class = result_type_inst.and_then(|i| {
+                                                i.operands.first().and_then(|op| match op {
+                                                    rspirv::dr::Operand::StorageClass(sc) => {
+                                                        Some(*sc)
+                                                    }
+                                                    _ => None,
+                                                })
+                                            });
 
                                             if storage_class
                                                 != Some(StorageClass::PhysicalStorageBuffer)
@@ -1404,7 +1423,8 @@ impl ValidationRule for LimitedTypeConversionRule {
                                 function: func,
                                 block,
                                 opcode: inst.class.opcode,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -1423,8 +1443,9 @@ impl ValidationRule for LimitedTypeConversionRule {
                                                 function: func,
                                                 block,
                                                 opcode: inst.class.opcode,
-                                            }.into(),
-                        );
+                                            }
+                                            .into(),
+                                        );
                                     }
                                 }
                             }
@@ -1499,17 +1520,17 @@ impl ValidationRule for GenericPointerCastRule {
                                             opcode: inst.class.opcode,
                                             result_type,
                                             expected: "pointer",
-                                        }.into());
+                                        }
+                                        .into());
                                     }
                                 }
 
                                 // Check storage class is Generic
-                                let storage_class = type_inst.operands.first().and_then(|op| {
-                                    match op {
+                                let storage_class =
+                                    type_inst.operands.first().and_then(|op| match op {
                                         rspirv::dr::Operand::StorageClass(sc) => Some(*sc),
                                         _ => None,
-                                    }
-                                });
+                                    });
 
                                 if storage_class != Some(StorageClass::Generic) {
                                     if let (Some(func), Some(block)) = (function_id, block_id) {
@@ -1519,8 +1540,9 @@ impl ValidationRule for GenericPointerCastRule {
                                                 block,
                                                 opcode: inst.class.opcode,
                                                 expected: "Generic",
-                                            }.into(),
-                        );
+                                            }
+                                            .into(),
+                                        );
                                     }
                                 }
                             }
@@ -1570,15 +1592,14 @@ impl ValidationRule for GenericPointerCastRule {
                                             }
 
                                             // Source must be Workgroup, CrossWorkgroup, or Function
-                                            let input_sc =
-                                                input_type.operands.first().and_then(|op| {
-                                                    match op {
-                                                        rspirv::dr::Operand::StorageClass(sc) => {
-                                                            Some(*sc)
-                                                        }
-                                                        _ => None,
+                                            let input_sc = input_type.operands.first().and_then(
+                                                |op| match op {
+                                                    rspirv::dr::Operand::StorageClass(sc) => {
+                                                        Some(*sc)
                                                     }
-                                                });
+                                                    _ => None,
+                                                },
+                                            );
 
                                             if !matches!(
                                                 input_sc,
@@ -1629,16 +1650,16 @@ impl ValidationRule for GenericPointerCastRule {
                                             opcode: inst.class.opcode,
                                             result_type,
                                             expected: "pointer",
-                                        }.into());
+                                        }
+                                        .into());
                                     }
                                 }
 
-                                let storage_class = type_inst.operands.first().and_then(|op| {
-                                    match op {
+                                let storage_class =
+                                    type_inst.operands.first().and_then(|op| match op {
                                         rspirv::dr::Operand::StorageClass(sc) => Some(*sc),
                                         _ => None,
-                                    }
-                                });
+                                    });
 
                                 if !matches!(
                                     storage_class,
@@ -1653,8 +1674,9 @@ impl ValidationRule for GenericPointerCastRule {
                                                 block,
                                                 opcode: inst.class.opcode,
                                                 expected: "Workgroup, CrossWorkgroup, or Function",
-                                            }.into(),
-                        );
+                                            }
+                                            .into(),
+                                        );
                                     }
                                 }
                             }
@@ -1703,15 +1725,14 @@ impl ValidationRule for GenericPointerCastRule {
                                                 }
                                             }
 
-                                            let input_sc =
-                                                input_type.operands.first().and_then(|op| {
-                                                    match op {
-                                                        rspirv::dr::Operand::StorageClass(sc) => {
-                                                            Some(*sc)
-                                                        }
-                                                        _ => None,
+                                            let input_sc = input_type.operands.first().and_then(
+                                                |op| match op {
+                                                    rspirv::dr::Operand::StorageClass(sc) => {
+                                                        Some(*sc)
                                                     }
-                                                });
+                                                    _ => None,
+                                                },
+                                            );
 
                                             if input_sc != Some(StorageClass::Generic) {
                                                 if let (Some(func), Some(block)) =
@@ -1757,8 +1778,7 @@ impl ValidationRule for GenericPointerCastRule {
                                 if let (Some(func), Some(block), Some(result_type)) = (
                                     function_id,
                                     block_id,
-                                    crate::validation::types::TypeId::try_from(result_type_id)
-                                        .ok(),
+                                    crate::validation::types::TypeId::try_from(result_type_id).ok(),
                                 ) {
                                     return Err(ValidationError::ConversionResultTypeInvalid {
                                         function: func,
@@ -1766,7 +1786,8 @@ impl ValidationRule for GenericPointerCastRule {
                                         opcode: inst.class.opcode,
                                         result_type,
                                         expected: "pointer",
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
 
@@ -1788,8 +1809,9 @@ impl ValidationRule for GenericPointerCastRule {
                                                 block,
                                                 opcode: inst.class.opcode,
                                                 expected: "same as target storage class operand",
-                                            }.into(),
-                        );
+                                            }
+                                            .into(),
+                                        );
                                     }
                                 }
                             }
@@ -1838,15 +1860,14 @@ impl ValidationRule for GenericPointerCastRule {
                                                 }
                                             }
 
-                                            let input_sc =
-                                                input_type.operands.first().and_then(|op| {
-                                                    match op {
-                                                        rspirv::dr::Operand::StorageClass(sc) => {
-                                                            Some(*sc)
-                                                        }
-                                                        _ => None,
+                                            let input_sc = input_type.operands.first().and_then(
+                                                |op| match op {
+                                                    rspirv::dr::Operand::StorageClass(sc) => {
+                                                        Some(*sc)
                                                     }
-                                                });
+                                                    _ => None,
+                                                },
+                                            );
 
                                             if input_sc != Some(StorageClass::Generic) {
                                                 if let (Some(func), Some(block)) =
@@ -1967,8 +1988,9 @@ impl ValidationRule for CooperativeMatrixConversionRule {
                                         function: func,
                                         block,
                                         opcode: inst.class.opcode,
-                                    }.into(),
-                        );
+                                    }
+                                    .into(),
+                                );
                             }
                         }
 
@@ -1998,8 +2020,9 @@ impl ValidationRule for CooperativeMatrixConversionRule {
                                         function: func,
                                         block,
                                         opcode: inst.class.opcode,
-                                    }.into(),
-                        );
+                                    }
+                                    .into(),
+                                );
                             }
                         }
 
@@ -2050,7 +2073,8 @@ impl CooperativeMatrixConversionRule {
                     function: func,
                     block,
                     opcode,
-                }.into());
+                }
+                .into());
             }
         }
 
@@ -2085,7 +2109,8 @@ impl CooperativeMatrixConversionRule {
                             block,
                             opcode,
                             dimension: "scope",
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -2114,7 +2139,8 @@ impl CooperativeMatrixConversionRule {
                             block,
                             opcode,
                             dimension: "rows",
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -2143,7 +2169,8 @@ impl CooperativeMatrixConversionRule {
                             block,
                             opcode,
                             dimension: "columns",
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -2181,7 +2208,8 @@ impl CooperativeMatrixConversionRule {
                                 block,
                                 opcode,
                                 dimension: "use",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -2237,7 +2265,8 @@ impl CooperativeMatrixConversionRule {
                             block,
                             opcode,
                             dimension: "components",
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }

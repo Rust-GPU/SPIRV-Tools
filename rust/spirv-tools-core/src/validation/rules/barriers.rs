@@ -14,10 +14,10 @@ use rspirv::dr::Operand;
 use rspirv::spirv::{ExecutionModel, Op};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::type_ext::{DefaultTypeResolver, TypeResolver};
 use crate::validation::types::{Id, ResultId, TypeId};
+use crate::validation::ValidationResult;
 use crate::version::SpirvVersion;
 
 // ============================================================================
@@ -82,18 +82,17 @@ impl ValidationRule for NamedBarrierInitializeRule {
                         .copied();
 
                     if type_opcode != Some(Op::TypeNamedBarrier) {
-                        if let (Some(func), Some(block), Ok(result_type)) = (
-                            function_id,
-                            block_id,
-                            TypeId::try_from(result_type_id),
-                        ) {
+                        if let (Some(func), Some(block), Ok(result_type)) =
+                            (function_id, block_id, TypeId::try_from(result_type_id))
+                        {
                             return Err(ValidationError::BarrierResultTypeInvalid {
                                 function: func,
                                 block,
                                 opcode: inst.class.opcode,
                                 result_type,
                                 expected: "OpTypeNamedBarrier",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -124,7 +123,8 @@ impl ValidationRule for NamedBarrierInitializeRule {
                                     opcode: inst.class.opcode,
                                     operand_index: 0,
                                     expected: "32-bit integer",
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -200,7 +200,8 @@ impl ValidationRule for MemoryNamedBarrierRule {
                                     opcode: inst.class.opcode,
                                     operand_index: 0,
                                     expected: "OpTypeNamedBarrier",
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -282,7 +283,8 @@ impl ValidationRule for ControlBarrierExecutionModelRule {
                                     opcode: inst.class.opcode,
                                     allowed: CONTROL_BARRIER_MODELS_V12.to_vec(),
                                     spirv_version: ctx.target_version,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }

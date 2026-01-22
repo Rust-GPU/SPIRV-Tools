@@ -442,7 +442,12 @@ fn build_band_complement_u64_module() -> (Vec<u32>, (u32, u32)) {
         .expect("bitwise and");
     b.ret_value(band).unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.entry_point(
+        rspirv::spirv::ExecutionModel::GLCompute,
+        func,
+        "main",
+        [param],
+    );
     b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), (band, int))
 }
@@ -464,7 +469,12 @@ fn build_band_complement_u32_module() -> (Vec<u32>, (u32, u32)) {
         .expect("bitwise and");
     b.ret_value(band).unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.entry_point(
+        rspirv::spirv::ExecutionModel::GLCompute,
+        func,
+        "main",
+        [param],
+    );
     b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), (band, int))
 }
@@ -751,7 +761,12 @@ fn build_mul_pow2_module() -> (Vec<u32>, (u32, u32)) {
     let mul = b.i_mul(int, None, param, c8).expect("mul pow2");
     b.ret_value(mul).unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.entry_point(
+        rspirv::spirv::ExecutionModel::GLCompute,
+        func,
+        "main",
+        [param],
+    );
     b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), (mul, c3))
 }
@@ -772,7 +787,12 @@ fn build_mul_pow2_module_s32() -> (Vec<u32>, (u32, u32)) {
     let mul = b.i_mul(int, None, param, c8).expect("mul pow2 s32");
     b.ret_value(mul).unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.entry_point(
+        rspirv::spirv::ExecutionModel::GLCompute,
+        func,
+        "main",
+        [param],
+    );
     b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), (mul, c3))
 }
@@ -794,7 +814,12 @@ fn build_mul_pow2_module_s64() -> (Vec<u32>, (u32, u32)) {
     let mul = b.i_mul(int, None, param, c8).expect("mul pow2 s64");
     b.ret_value(mul).unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.entry_point(
+        rspirv::spirv::ExecutionModel::GLCompute,
+        func,
+        "main",
+        [param],
+    );
     b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), (mul, c3))
 }
@@ -816,7 +841,12 @@ fn build_mul_pow2_module_u64() -> (Vec<u32>, (u32, u32)) {
     let mul = b.i_mul(int, None, param, c8).expect("mul pow2 u64");
     b.ret_value(mul).unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.entry_point(
+        rspirv::spirv::ExecutionModel::GLCompute,
+        func,
+        "main",
+        [param],
+    );
     b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), (mul, c3))
 }
@@ -836,7 +866,12 @@ fn build_mul_neg_one_module() -> (Vec<u32>, u32) {
     let mul = b.i_mul(int, None, param, c_neg_one).expect("mul -1");
     b.ret_value(mul).unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.entry_point(
+        rspirv::spirv::ExecutionModel::GLCompute,
+        func,
+        "main",
+        [param],
+    );
     b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), mul)
 }
@@ -857,7 +892,12 @@ fn build_mul_neg_one_module_s64() -> (Vec<u32>, u32) {
     let mul = b.i_mul(int, None, param, c_neg_one).expect("mul -1 s64");
     b.ret_value(mul).unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.entry_point(
+        rspirv::spirv::ExecutionModel::GLCompute,
+        func,
+        "main",
+        [param],
+    );
     b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), mul)
 }
@@ -878,7 +918,12 @@ fn build_mul_neg_one_module_u64() -> (Vec<u32>, u32) {
     let mul = b.i_mul(int, None, param, c_neg_one).expect("mul -1 u64");
     b.ret_value(mul).unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.entry_point(
+        rspirv::spirv::ExecutionModel::GLCompute,
+        func,
+        "main",
+        [param],
+    );
     b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), mul)
 }
@@ -898,7 +943,12 @@ fn build_udiv_pow2_module() -> Vec<u32> {
     let div = b.u_div(int, None, param, c8).expect("udiv pow2");
     b.ret_value(div).unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.entry_point(
+        rspirv::spirv::ExecutionModel::GLCompute,
+        func,
+        "main",
+        [param],
+    );
     b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     b.module().assemble()
 }
@@ -918,7 +968,12 @@ fn build_umod_pow2_module() -> Vec<u32> {
     let rem = b.u_mod(int, None, param, c8).expect("umod pow2");
     b.ret_value(rem).unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.entry_point(
+        rspirv::spirv::ExecutionModel::GLCompute,
+        func,
+        "main",
+        [param],
+    );
     b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     b.module().assemble()
 }
@@ -939,7 +994,12 @@ fn build_udiv_pow2_module_u64() -> Vec<u32> {
     let div = b.u_div(int, None, param, c8).expect("udiv pow2 u64");
     b.ret_value(div).unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.entry_point(
+        rspirv::spirv::ExecutionModel::GLCompute,
+        func,
+        "main",
+        [param],
+    );
     b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     b.module().assemble()
 }
@@ -960,7 +1020,12 @@ fn build_umod_pow2_module_u64() -> Vec<u32> {
     let rem = b.u_mod(int, None, param, c8).expect("umod pow2 u64");
     b.ret_value(rem).unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.entry_point(
+        rspirv::spirv::ExecutionModel::GLCompute,
+        func,
+        "main",
+        [param],
+    );
     b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     b.module().assemble()
 }
@@ -980,7 +1045,12 @@ fn build_sdiv_pow2_module() -> Vec<u32> {
     let div = b.s_div(int, None, param, c8).expect("sdiv pow2");
     b.ret_value(div).unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.entry_point(
+        rspirv::spirv::ExecutionModel::GLCompute,
+        func,
+        "main",
+        [param],
+    );
     b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     b.module().assemble()
 }
@@ -1000,7 +1070,12 @@ fn build_srem_pow2_module() -> Vec<u32> {
     let rem = b.s_rem(int, None, param, c8).expect("srem pow2");
     b.ret_value(rem).unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.entry_point(
+        rspirv::spirv::ExecutionModel::GLCompute,
+        func,
+        "main",
+        [param],
+    );
     b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     b.module().assemble()
 }
@@ -1021,7 +1096,12 @@ fn build_sdiv_pow2_module_u64() -> Vec<u32> {
     let div = b.s_div(int, None, param, c8).expect("sdiv pow2 u64");
     b.ret_value(div).unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.entry_point(
+        rspirv::spirv::ExecutionModel::GLCompute,
+        func,
+        "main",
+        [param],
+    );
     b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     b.module().assemble()
 }
@@ -1042,7 +1122,12 @@ fn build_srem_pow2_module_u64() -> Vec<u32> {
     let rem = b.s_rem(int, None, param, c8).expect("srem pow2 u64");
     b.ret_value(rem).unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [param]);
+    b.entry_point(
+        rspirv::spirv::ExecutionModel::GLCompute,
+        func,
+        "main",
+        [param],
+    );
     b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     b.module().assemble()
 }
@@ -1116,7 +1201,12 @@ fn build_two_block_affine_cancel_module() -> (Vec<u32>, u32, u32) {
     let sub = b.i_sub(int, None, add, y).expect("sub");
     b.ret_value(sub).unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [x, y]);
+    b.entry_point(
+        rspirv::spirv::ExecutionModel::GLCompute,
+        func,
+        "main",
+        [x, y],
+    );
     b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), sub, x)
 }
@@ -1142,7 +1232,12 @@ fn build_cse_across_blocks_module() -> (Vec<u32>, u32, u32) {
     let add1 = b.i_add(int, None, x, y).expect("second add");
     b.ret_value(add1).unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [x, y]);
+    b.entry_point(
+        rspirv::spirv::ExecutionModel::GLCompute,
+        func,
+        "main",
+        [x, y],
+    );
     b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     let _ = entry;
     (b.module().assemble(), add0, add1)
@@ -1181,7 +1276,12 @@ fn build_selection_return_merge_module() -> (Vec<u32>, u32, u32, u32, u32, u32) 
     b.begin_block(Some(merge_label)).unwrap();
     b.unreachable().unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [x, y]);
+    b.entry_point(
+        rspirv::spirv::ExecutionModel::GLCompute,
+        func,
+        "main",
+        [x, y],
+    );
     b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
 
     (
@@ -1237,7 +1337,12 @@ fn build_switch_return_merge_module() -> SwitchReturnModule {
     b.begin_block(Some(merge_label)).unwrap();
     b.unreachable().unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [x, y]);
+    b.entry_point(
+        rspirv::spirv::ExecutionModel::GLCompute,
+        func,
+        "main",
+        [x, y],
+    );
     b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
 
     let expected_pairs = vec![(x, case0_label), (y, case1_label), (x, default_label)];
@@ -1308,7 +1413,12 @@ fn build_branch_shared_expr_pre_module() -> (Vec<u32>, u32, u32, u32, u32, u32, 
     b.branch(block_b).unwrap();
 
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [x, y]);
+    b.entry_point(
+        rspirv::spirv::ExecutionModel::GLCompute,
+        func,
+        "main",
+        [x, y],
+    );
     b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (
         b.module().assemble(),
@@ -1492,7 +1602,7 @@ fn cli_opt_block_folds_select_true() {
 fn cli_opt_block_folds_redundant_phi() {
     let _guard = env_guard();
     std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
-    let (words, phi_id, val_id) = build_redundant_phi_module();
+    let (words, phi_id, _val_id) = build_redundant_phi_module();
     let dir = tempdir().expect("tempdir");
     let input = dir.path().join("input.spv");
     let output = dir.path().join("output.spv");
@@ -1517,11 +1627,14 @@ fn cli_opt_block_folds_redundant_phi() {
         .any(|inst| inst.class.opcode == Op::Phi);
     // With DCE enabled, the dead Phi is removed entirely (not converted to CopyObject)
     // The Phi's value is never used by the void-returning function
-    let has_copy_or_removed = !module.all_inst_iter().any(|inst| {
-        inst.result_id == Some(phi_id)
-    });
+    let has_copy_or_removed = !module
+        .all_inst_iter()
+        .any(|inst| inst.result_id == Some(phi_id));
     assert!(!has_phi, "redundant phi should be folded away");
-    assert!(has_copy_or_removed, "phi should be removed by DCE (dead code)");
+    assert!(
+        has_copy_or_removed,
+        "phi should be removed by DCE (dead code)"
+    );
 }
 
 #[test]
@@ -4752,9 +4865,10 @@ fn cli_opt_block_propagates_copy() {
         .any(|inst| inst.class.opcode == Op::CopyObject);
     let has_const_84 = module.all_inst_iter().any(|inst| {
         inst.class.opcode == Op::Constant
-            && inst.operands.iter().any(|op| {
-                matches!(op, rspirv::dr::Operand::LiteralBit32(84))
-            })
+            && inst
+                .operands
+                .iter()
+                .any(|op| matches!(op, rspirv::dr::Operand::LiteralBit32(84)))
     });
     // Either copy is removed and we have folded constant, or copy was propagated
     assert!(
@@ -4778,10 +4892,17 @@ fn build_select_bool_module() -> (Vec<u32>, u32) {
     let true_val = b.constant_true(bool_ty);
     let false_val = b.constant_false(bool_ty);
     // select(cond, true, false) = cond
-    let sel = b.select(bool_ty, None, cond, true_val, false_val).expect("select");
+    let sel = b
+        .select(bool_ty, None, cond, true_val, false_val)
+        .expect("select");
     b.ret_value(sel).unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [cond]);
+    b.entry_point(
+        rspirv::spirv::ExecutionModel::GLCompute,
+        func,
+        "main",
+        [cond],
+    );
     b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), sel)
 }
@@ -4815,7 +4936,10 @@ fn cli_opt_block_simplifies_select_bool_true_false() {
         .all_inst_iter()
         .any(|inst| inst.class.opcode == Op::Select);
     // The select(cond, true, false) should simplify to just cond
-    assert!(!has_select, "select(cond, true, false) should be simplified to cond");
+    assert!(
+        !has_select,
+        "select(cond, true, false) should be simplified to cond"
+    );
 }
 
 // -----------------------------------------------------------------------------
@@ -4889,7 +5013,9 @@ fn build_bool_ne_false_module() -> (Vec<u32>, u32) {
     let _ = b.begin_block(None).unwrap();
     let false_val = b.constant_false(bool_ty);
     // (x != false) should simplify to x
-    let ne = b.logical_not_equal(bool_ty, None, x, false_val).expect("ne");
+    let ne = b
+        .logical_not_equal(bool_ty, None, x, false_val)
+        .expect("ne");
     b.ret_value(ne).unwrap();
     b.end_function().unwrap();
     b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [x]);
@@ -4948,12 +5074,27 @@ fn build_sqrt_square_module() -> (Vec<u32>, u32) {
     let _ = b.begin_block(None).unwrap();
     // sqrt(x * x) should become abs(x)
     let square = b.f_mul(float, None, x, x).expect("square");
-    let glsl_id = b.module_ref().ext_inst_imports.iter()
-        .find(|inst| inst.operands.iter().any(|op| matches!(op, rspirv::dr::Operand::LiteralString(s) if s == "GLSL.std.450")))
+    let glsl_id = b
+        .module_ref()
+        .ext_inst_imports
+        .iter()
+        .find(|inst| {
+            inst.operands.iter().any(
+                |op| matches!(op, rspirv::dr::Operand::LiteralString(s) if s == "GLSL.std.450"),
+            )
+        })
         .and_then(|inst| inst.result_id)
         .unwrap();
     // Sqrt is GLSL.std.450 instruction 31
-    let sqrt = b.ext_inst(float, None, glsl_id, 31, vec![rspirv::dr::Operand::IdRef(square)]).expect("sqrt");
+    let sqrt = b
+        .ext_inst(
+            float,
+            None,
+            glsl_id,
+            31,
+            vec![rspirv::dr::Operand::IdRef(square)],
+        )
+        .expect("sqrt");
     b.ret_value(sqrt).unwrap();
     b.end_function().unwrap();
     b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [x]);
@@ -5019,7 +5160,7 @@ fn build_branch_hoist_module() -> (Vec<u32>, u32) {
         .unwrap();
     let cond = b.function_parameter(bool_ty).unwrap();
 
-    let entry = b.begin_block(None).unwrap();
+    let _entry = b.begin_block(None).unwrap();
     let then_label = b.id();
     let else_label = b.id();
     let merge_label = b.id();
@@ -5027,8 +5168,10 @@ fn build_branch_hoist_module() -> (Vec<u32>, u32) {
     // Common value used in both branches
     let c42 = b.constant_bit32(int, 42);
 
-    b.selection_merge(merge_label, SelectionControl::NONE).unwrap();
-    b.branch_conditional(cond, then_label, else_label, vec![]).unwrap();
+    b.selection_merge(merge_label, SelectionControl::NONE)
+        .unwrap();
+    b.branch_conditional(cond, then_label, else_label, vec![])
+        .unwrap();
 
     // Then branch: return 42
     b.begin_block(Some(then_label)).unwrap();
@@ -5040,10 +5183,17 @@ fn build_branch_hoist_module() -> (Vec<u32>, u32) {
 
     // Merge: phi(42, 42) = 42
     b.begin_block(Some(merge_label)).unwrap();
-    let phi = b.phi(int, None, vec![(c42, then_label), (c42, else_label)]).expect("phi");
+    let phi = b
+        .phi(int, None, vec![(c42, then_label), (c42, else_label)])
+        .expect("phi");
     b.ret_value(phi).unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [cond]);
+    b.entry_point(
+        rspirv::spirv::ExecutionModel::GLCompute,
+        func,
+        "main",
+        [cond],
+    );
     b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), phi)
 }
@@ -5149,9 +5299,10 @@ fn cli_opt_block_folds_graphics_constant_math() {
     // (4 * 2) / 2 = 4 should be folded to constant 4
     let has_const_4 = module.all_inst_iter().any(|inst| {
         inst.class.opcode == Op::Constant
-            && inst.operands.iter().any(|op| {
-                matches!(op, rspirv::dr::Operand::LiteralBit32(4))
-            })
+            && inst
+                .operands
+                .iter()
+                .any(|op| matches!(op, rspirv::dr::Operand::LiteralBit32(4)))
     });
     // IMul and UDiv should be eliminated
     let has_mul = module
@@ -5191,7 +5342,12 @@ fn build_nested_select_same_module() -> (Vec<u32>, u32) {
     let outer = b.select(int, None, c1, inner1, inner2).expect("outer");
     b.ret_value(outer).unwrap();
     b.end_function().unwrap();
-    b.entry_point(rspirv::spirv::ExecutionModel::GLCompute, func, "main", [c1, c2]);
+    b.entry_point(
+        rspirv::spirv::ExecutionModel::GLCompute,
+        func,
+        "main",
+        [c1, c2],
+    );
     b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
     (b.module().assemble(), outer)
 }
@@ -5225,5 +5381,8 @@ fn cli_opt_block_simplifies_nested_select_same() {
         .all_inst_iter()
         .filter(|inst| inst.class.opcode == Op::Select)
         .count();
-    assert_eq!(select_count, 0, "nested selects returning same value should be eliminated");
+    assert_eq!(
+        select_count, 0,
+        "nested selects returning same value should be eliminated"
+    );
 }

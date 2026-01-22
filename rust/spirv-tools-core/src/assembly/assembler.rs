@@ -257,7 +257,11 @@ impl<'a> ModuleBuilder<'a> {
             integer_constants: BTreeMap::new(),
             ext_inst_imports: BTreeMap::new(),
             preserve_numeric_ids,
-            span_map: if track_spans { Some(SpanMap::new()) } else { None },
+            span_map: if track_spans {
+                Some(SpanMap::new())
+            } else {
+                None
+            },
         }
     }
 
@@ -693,7 +697,11 @@ impl<'a> AssemblyTranslator<'a> {
     }
 
     /// Creates a translator with full control over all options including span tracking.
-    pub fn with_full_options(env: TargetEnv, options: TextToBinaryOptions, track_spans: bool) -> Self {
+    pub fn with_full_options(
+        env: TargetEnv,
+        options: TextToBinaryOptions,
+        track_spans: bool,
+    ) -> Self {
         let mut builder = dr::Builder::new();
         configure_builder_for_env(&mut builder, env);
         let preserve_numeric_ids = options.contains(TextToBinaryOptions::PRESERVE_NUMERIC_IDS);
@@ -3837,7 +3845,9 @@ impl<'a> AssemblyTranslator<'a> {
     /// Finalizes the translation and returns the module, diagnostics, and span map.
     ///
     /// The span map is only populated if the translator was created with `track_spans: true`.
-    pub fn finish_with_spans(self) -> (dr::Module, Vec<DiagnosticMessage<'static>>, Option<SpanMap>) {
+    pub fn finish_with_spans(
+        self,
+    ) -> (dr::Module, Vec<DiagnosticMessage<'static>>, Option<SpanMap>) {
         let output = self.into_parts();
         (output.module, output.diagnostics, output.span_map)
     }
@@ -5815,7 +5825,10 @@ OpFunctionEnd"#;
         let result = assemble_text_with_spans(text).expect("assembly should succeed");
 
         // The ID %uint should be resolved to 1
-        let span = result.span_map.get_id_span(1).expect("should have span for ID 1");
+        let span = result
+            .span_map
+            .get_id_span(1)
+            .expect("should have span for ID 1");
 
         // The span should point to line 0 (zero-based), where %uint is defined
         match span.start {

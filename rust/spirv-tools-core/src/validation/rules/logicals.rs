@@ -12,10 +12,10 @@
 use rspirv::spirv::Op;
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::type_ext::{DefaultTypeResolver, TypeResolver};
 use crate::validation::types::Id;
+use crate::validation::ValidationResult;
 
 // ============================================================================
 // Boolean Reduction Rule
@@ -72,7 +72,8 @@ impl ValidationRule for BooleanReductionRule {
                                 opcode: inst.class.opcode,
                                 result_type,
                                 expected: "bool scalar",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -102,7 +103,8 @@ impl ValidationRule for BooleanReductionRule {
                                             opcode: inst.class.opcode,
                                             result_type,
                                             expected: "bool vector",
-                                        }.into());
+                                        }
+                                        .into());
                                     }
                                 }
                             }
@@ -180,7 +182,8 @@ impl ValidationRule for FloatClassificationRule {
                                 opcode: inst.class.opcode,
                                 result_type,
                                 expected: "bool scalar or vector",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -208,7 +211,8 @@ impl ValidationRule for FloatClassificationRule {
                                             opcode: inst.class.opcode,
                                             result_type,
                                             expected: "float scalar or vector",
-                                        }.into());
+                                        }
+                                        .into());
                                     }
                                 }
 
@@ -229,7 +233,8 @@ impl ValidationRule for FloatClassificationRule {
                                             block,
                                             opcode: inst.class.opcode,
                                             result_type,
-                                        }.into());
+                                        }
+                                        .into());
                                     }
                                 }
                             }
@@ -318,7 +323,8 @@ impl ValidationRule for FloatComparisonRule {
                                 opcode: inst.class.opcode,
                                 result_type,
                                 expected: "bool scalar or vector",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -331,10 +337,9 @@ impl ValidationRule for FloatComparisonRule {
                             _ => None,
                         })?;
 
-                        let operand_inst =
-                            crate::validation::types::ResultId::try_from(operand_id)
-                                .ok()
-                                .and_then(|rid| ctx.definitions.get(&rid))?;
+                        let operand_inst = crate::validation::types::ResultId::try_from(operand_id)
+                            .ok()
+                            .and_then(|rid| ctx.definitions.get(&rid))?;
 
                         operand_inst.result_type
                     };
@@ -355,7 +360,8 @@ impl ValidationRule for FloatComparisonRule {
                                     opcode: inst.class.opcode,
                                     result_type,
                                     expected: "float scalar or vector",
-                                }.into());
+                                }
+                                .into());
                             }
                         }
 
@@ -375,7 +381,8 @@ impl ValidationRule for FloatComparisonRule {
                                     opcode: inst.class.opcode,
                                     result_type,
                                     expected: "bool scalar or vector",
-                                }.into());
+                                }
+                                .into());
                             }
                         }
 
@@ -391,7 +398,8 @@ impl ValidationRule for FloatComparisonRule {
                                     block,
                                     opcode: inst.class.opcode,
                                     result_type,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -466,7 +474,8 @@ impl ValidationRule for LogicalOperationsRule {
                                 opcode: inst.class.opcode,
                                 result_type,
                                 expected: "bool scalar or vector",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -477,10 +486,9 @@ impl ValidationRule for LogicalOperationsRule {
                             _ => continue,
                         };
 
-                        let operand_inst =
-                            crate::validation::types::ResultId::try_from(operand_id)
-                                .ok()
-                                .and_then(|rid| ctx.definitions.get(&rid));
+                        let operand_inst = crate::validation::types::ResultId::try_from(operand_id)
+                            .ok()
+                            .and_then(|rid| ctx.definitions.get(&rid));
 
                         if let Some(operand_inst) = operand_inst {
                             if let Some(operand_type_id) = operand_inst.result_type {
@@ -496,7 +504,8 @@ impl ValidationRule for LogicalOperationsRule {
                                             block,
                                             opcode: inst.class.opcode,
                                             result_type,
-                                        }.into());
+                                        }
+                                        .into());
                                     }
                                 }
                             }
@@ -580,7 +589,8 @@ impl ValidationRule for IntComparisonRule {
                                 opcode: inst.class.opcode,
                                 result_type,
                                 expected: "bool scalar or vector",
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -593,10 +603,9 @@ impl ValidationRule for IntComparisonRule {
                             _ => None,
                         })?;
 
-                        let operand_inst =
-                            crate::validation::types::ResultId::try_from(operand_id)
-                                .ok()
-                                .and_then(|rid| ctx.definitions.get(&rid))?;
+                        let operand_inst = crate::validation::types::ResultId::try_from(operand_id)
+                            .ok()
+                            .and_then(|rid| ctx.definitions.get(&rid))?;
 
                         operand_inst.result_type
                     };
@@ -618,7 +627,8 @@ impl ValidationRule for IntComparisonRule {
                                     opcode: inst.class.opcode,
                                     result_type,
                                     expected: "int scalar or vector",
-                                }.into());
+                                }
+                                .into());
                             }
                         }
 
@@ -635,7 +645,8 @@ impl ValidationRule for IntComparisonRule {
                                     opcode: inst.class.opcode,
                                     result_type,
                                     expected: "int scalar or vector",
-                                }.into());
+                                }
+                                .into());
                             }
                         }
 
@@ -654,7 +665,8 @@ impl ValidationRule for IntComparisonRule {
                                     block,
                                     opcode: inst.class.opcode,
                                     result_type,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
 
@@ -673,7 +685,8 @@ impl ValidationRule for IntComparisonRule {
                                     block,
                                     opcode: inst.class.opcode,
                                     result_type,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
 
@@ -689,7 +702,8 @@ impl ValidationRule for IntComparisonRule {
                                     block,
                                     opcode: inst.class.opcode,
                                     result_type,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -743,7 +757,7 @@ impl ValidationRule for SelectRule {
         let has_bindless_texture = ctx.has_capability(Capability::BindlessTextureNV);
 
         // Check SPIR-V version for composite select support
-        let supports_composite_select = ctx.module.header.as_ref().map_or(false, |h| {
+        let supports_composite_select = ctx.module.header.as_ref().is_some_and(|h| {
             let version = h.version();
             version >= (1, 4)
         });
@@ -772,10 +786,11 @@ impl ValidationRule for SelectRule {
                     };
 
                     // Get result type opcode
-                    let result_type_opcode = crate::validation::types::ResultId::try_from(result_type_id)
-                        .ok()
-                        .and_then(|rid| ctx.definitions.get(&rid))
-                        .map(|inst| inst.class.opcode);
+                    let result_type_opcode =
+                        crate::validation::types::ResultId::try_from(result_type_id)
+                            .ok()
+                            .and_then(|rid| ctx.definitions.get(&rid))
+                            .map(|inst| inst.class.opcode);
 
                     let result_dim = resolver.get_dimension(result_type_id, ctx.definitions);
 
@@ -792,7 +807,8 @@ impl ValidationRule for SelectRule {
                                         function: func,
                                         block,
                                         result_type,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                             true
@@ -808,7 +824,8 @@ impl ValidationRule for SelectRule {
                                         function: func,
                                         block,
                                         result_type,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                             true
@@ -832,7 +849,8 @@ impl ValidationRule for SelectRule {
                                 block,
                                 result_type,
                                 supports_composites: supports_composite_select,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -862,7 +880,8 @@ impl ValidationRule for SelectRule {
                                     function: func,
                                     block,
                                     result_type,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
 
@@ -881,7 +900,8 @@ impl ValidationRule for SelectRule {
                                         function: func,
                                         block,
                                         result_type,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -914,7 +934,8 @@ impl ValidationRule for SelectRule {
                                         function: func,
                                         block,
                                         result_type,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }

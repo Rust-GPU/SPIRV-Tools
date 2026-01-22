@@ -19,9 +19,9 @@ use rspirv::spirv::{
 };
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::Id;
+use crate::validation::ValidationResult;
 
 /// Helper to convert a u32 to Id (with fallback to id 1).
 fn to_id(id: u32) -> Id {
@@ -97,7 +97,8 @@ impl ValidationRule for EntryPointValidationRule {
             let Some(func_type_id) = function_types.get(func_id) else {
                 return Err(ValidationError::EntryPointNotFunction {
                     entry_point: to_id(*func_id),
-                }.into());
+                }
+                .into());
             };
 
             // Get function type info
@@ -110,7 +111,8 @@ impl ValidationRule for EntryPointValidationRule {
                 if !void_types.contains(ret_type) {
                     return Err(ValidationError::EntryPointReturnTypeNotVoid {
                         entry_point: to_id(*func_id),
-                    }.into());
+                    }
+                    .into());
                 }
             }
 
@@ -119,7 +121,8 @@ impl ValidationRule for EntryPointValidationRule {
                 return Err(ValidationError::EntryPointNonZeroParameters {
                     entry_point: to_id(*func_id),
                     param_count: *param_count as u32,
-                }.into());
+                }
+                .into());
             }
         }
 
@@ -183,19 +186,21 @@ impl ValidationRule for FragmentExecutionModeRule {
             let modes = entry_point_modes.get(func_id);
 
             // Check origin modes
-            let has_upper = modes.map_or(false, |m| m.contains(&ExecutionMode::OriginUpperLeft));
-            let has_lower = modes.map_or(false, |m| m.contains(&ExecutionMode::OriginLowerLeft));
+            let has_upper = modes.is_some_and(|m| m.contains(&ExecutionMode::OriginUpperLeft));
+            let has_lower = modes.is_some_and(|m| m.contains(&ExecutionMode::OriginLowerLeft));
 
             if has_upper && has_lower {
                 return Err(ValidationError::FragmentMultipleOriginModes {
                     entry_point: to_id(*func_id),
-                }.into());
+                }
+                .into());
             }
 
             if !has_upper && !has_lower {
                 return Err(ValidationError::FragmentMissingOriginMode {
                     entry_point: to_id(*func_id),
-                }.into());
+                }
+                .into());
             }
 
             // Check depth modes
@@ -212,7 +217,8 @@ impl ValidationRule for FragmentExecutionModeRule {
                 if depth_count > 1 {
                     return Err(ValidationError::FragmentMultipleDepthModes {
                         entry_point: to_id(*func_id),
-                    }.into());
+                    }
+                    .into());
                 }
 
                 // Check interlock modes
@@ -231,7 +237,8 @@ impl ValidationRule for FragmentExecutionModeRule {
                 if interlock_count > 1 {
                     return Err(ValidationError::FragmentMultipleInterlockModes {
                         entry_point: to_id(*func_id),
-                    }.into());
+                    }
+                    .into());
                 }
 
                 // Check AMD stencil ref front modes
@@ -247,7 +254,8 @@ impl ValidationRule for FragmentExecutionModeRule {
                 if stencil_front_count > 1 {
                     return Err(ValidationError::FragmentMultipleStencilRefFrontModes {
                         entry_point: to_id(*func_id),
-                    }.into());
+                    }
+                    .into());
                 }
 
                 // Check AMD stencil ref back modes
@@ -263,7 +271,8 @@ impl ValidationRule for FragmentExecutionModeRule {
                 if stencil_back_count > 1 {
                     return Err(ValidationError::FragmentMultipleStencilRefBackModes {
                         entry_point: to_id(*func_id),
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -344,7 +353,8 @@ impl ValidationRule for TessellationExecutionModeRule {
             if spacing_count > 1 {
                 return Err(ValidationError::TessellationMultipleSpacingModes {
                     entry_point: to_id(*func_id),
-                }.into());
+                }
+                .into());
             }
 
             // Check primitive types
@@ -360,7 +370,8 @@ impl ValidationRule for TessellationExecutionModeRule {
             if primitive_count > 1 {
                 return Err(ValidationError::TessellationMultiplePrimitiveTypes {
                     entry_point: to_id(*func_id),
-                }.into());
+                }
+                .into());
             }
 
             // Check vertex order modes
@@ -372,7 +383,8 @@ impl ValidationRule for TessellationExecutionModeRule {
             if vertex_order_count > 1 {
                 return Err(ValidationError::TessellationMultipleVertexOrderModes {
                     entry_point: to_id(*func_id),
-                }.into());
+                }
+                .into());
             }
         }
 
@@ -443,13 +455,14 @@ impl ValidationRule for GeometryExecutionModeRule {
                 ExecutionMode::InputTrianglesAdjacency,
             ]
             .iter()
-            .filter(|m| modes.map_or(false, |s| s.contains(m)))
+            .filter(|m| modes.is_some_and(|s| s.contains(m)))
             .count();
 
             if input_count != 1 {
                 return Err(ValidationError::GeometryMissingInputPrimitiveType {
                     entry_point: to_id(*func_id),
-                }.into());
+                }
+                .into());
             }
 
             // Check output primitive types - exactly one required
@@ -459,13 +472,14 @@ impl ValidationRule for GeometryExecutionModeRule {
                 ExecutionMode::OutputTriangleStrip,
             ]
             .iter()
-            .filter(|m| modes.map_or(false, |s| s.contains(m)))
+            .filter(|m| modes.is_some_and(|s| s.contains(m)))
             .count();
 
             if output_count != 1 {
                 return Err(ValidationError::GeometryMissingOutputPrimitiveType {
                     entry_point: to_id(*func_id),
-                }.into());
+                }
+                .into());
             }
         }
 
@@ -534,25 +548,27 @@ impl ValidationRule for MeshExtExecutionModeRule {
                 ExecutionMode::OutputTrianglesEXT,
             ]
             .iter()
-            .filter(|m| modes.map_or(false, |s| s.contains(m)))
+            .filter(|m| modes.is_some_and(|s| s.contains(m)))
             .count();
 
             if output_prim_count != 1 {
                 return Err(ValidationError::MeshExtMissingOutputPrimitiveType {
                     entry_point: to_id(*func_id),
-                }.into());
+                }
+                .into());
             }
 
             // Check that both OutputPrimitivesEXT and OutputVertices are specified
             let has_output_prims =
-                modes.map_or(false, |s| s.contains(&ExecutionMode::OutputPrimitivesEXT));
+                modes.is_some_and(|s| s.contains(&ExecutionMode::OutputPrimitivesEXT));
             let has_output_verts =
-                modes.map_or(false, |s| s.contains(&ExecutionMode::OutputVertices));
+                modes.is_some_and(|s| s.contains(&ExecutionMode::OutputVertices));
 
             if !has_output_prims || !has_output_verts {
                 return Err(ValidationError::MeshExtMissingOutputModes {
                     entry_point: to_id(*func_id),
-                }.into());
+                }
+                .into());
             }
         }
 
@@ -581,8 +597,10 @@ impl ValidationRule for VulkanGLComputeLocalSizeRule {
         let mut has_workgroup_size = false;
         for inst in &module.annotations {
             if inst.class.opcode == Op::Decorate {
-                if let (Some(Operand::Decoration(Decoration::BuiltIn)), Some(Operand::BuiltIn(bi))) =
-                    (inst.operands.get(1), inst.operands.get(2))
+                if let (
+                    Some(Operand::Decoration(Decoration::BuiltIn)),
+                    Some(Operand::BuiltIn(bi)),
+                ) = (inst.operands.get(1), inst.operands.get(2))
                 {
                     if *bi == BuiltIn::WorkgroupSize {
                         has_workgroup_size = true;
@@ -607,8 +625,7 @@ impl ValidationRule for VulkanGLComputeLocalSizeRule {
                 .or_default()
                 .insert(*exec_mode);
 
-            if mode.class.opcode == Op::ExecutionModeId
-                && *exec_mode == ExecutionMode::LocalSizeId
+            if mode.class.opcode == Op::ExecutionModeId && *exec_mode == ExecutionMode::LocalSizeId
             {
                 has_local_size_id = true;
             }
@@ -628,18 +645,19 @@ impl ValidationRule for VulkanGLComputeLocalSizeRule {
             };
 
             let modes = entry_point_modes.get(func_id);
-            let has_local_size = modes.map_or(false, |s| s.contains(&ExecutionMode::LocalSize));
+            let has_local_size = modes.is_some_and(|s| s.contains(&ExecutionMode::LocalSize));
 
             // For TileShadingQCOM capability, TileShadingRateQCOM mode is also acceptable
             let has_tile_shading = ctx
                 .declared_capabilities
                 .contains(&Capability::TileShadingQCOM)
-                && modes.map_or(false, |s| s.contains(&ExecutionMode::TileShadingRateQCOM));
+                && modes.is_some_and(|s| s.contains(&ExecutionMode::TileShadingRateQCOM));
 
             if !has_local_size && !has_workgroup_size && !has_local_size_id && !has_tile_shading {
                 return Err(ValidationError::VulkanGLComputeMissingLocalSize {
                     entry_point: to_id(*func_id),
-                }.into());
+                }
+                .into());
             }
         }
 
@@ -705,28 +723,30 @@ impl ValidationRule for LocalSizeValidationRule {
                     x: *x,
                     y: *y,
                     z: *z,
-                }.into());
+                }
+                .into());
             }
 
             let modes = entry_point_modes.get(func_id);
 
             // Check DerivativeGroupQuadsKHR
-            if modes.map_or(false, |s| s.contains(&ExecutionMode::DerivativeGroupQuadsKHR)) {
-                if *x % 2 != 0 || *y % 2 != 0 {
-                    return Err(ValidationError::DerivativeGroupQuadsRequiresMultipleOf2 {
-                        x: *x as u64,
-                        y: *y as u64,
-                    }.into());
+            if modes.is_some_and(|s| s.contains(&ExecutionMode::DerivativeGroupQuadsKHR))
+                && (*x % 2 != 0 || *y % 2 != 0)
+            {
+                return Err(ValidationError::DerivativeGroupQuadsRequiresMultipleOf2 {
+                    x: *x as u64,
+                    y: *y as u64,
                 }
+                .into());
             }
 
             // Check DerivativeGroupLinearKHR
-            if modes.map_or(false, |s| s.contains(&ExecutionMode::DerivativeGroupLinearKHR)) {
-                if product % 4 != 0 {
-                    return Err(ValidationError::DerivativeGroupLinearRequiresMultipleOf4 {
-                        product,
-                    }.into());
-                }
+            if modes.is_some_and(|s| s.contains(&ExecutionMode::DerivativeGroupLinearKHR))
+                && !product.is_multiple_of(4)
+            {
+                return Err(
+                    ValidationError::DerivativeGroupLinearRequiresMultipleOf4 { product }.into(),
+                );
             }
         }
 
@@ -766,14 +786,17 @@ impl ValidationRule for FPFastMathDefaultConflictsRule {
         }
 
         // Check for conflicts
-        for (_func_id, modes) in &entry_point_modes {
+        for modes in entry_point_modes.values() {
             if modes.contains(&ExecutionMode::FPFastMathDefault) {
                 if modes.contains(&ExecutionMode::ContractionOff) {
-                    return Err(ValidationError::FPFastMathDefaultConflictsWithContractionOff.into());
+                    return Err(
+                        ValidationError::FPFastMathDefaultConflictsWithContractionOff.into(),
+                    );
                 }
                 if modes.contains(&ExecutionMode::SignedZeroInfNanPreserve) {
                     return Err(
-                        ValidationError::FPFastMathDefaultConflictsWithSignedZeroInfNanPreserve.into(),
+                        ValidationError::FPFastMathDefaultConflictsWithSignedZeroInfNanPreserve
+                            .into(),
                     );
                 }
             }
@@ -910,10 +933,9 @@ impl ValidationRule for MemoryModelValidationRule {
         if ctx
             .declared_capabilities
             .contains(&Capability::VulkanMemoryModelKHR)
+            && memory_model != Some(MemoryModel::VulkanKHR)
         {
-            if memory_model != Some(MemoryModel::VulkanKHR) {
-                return Err(ValidationError::VulkanMemoryModelCapabilityRequiresVulkanKHR.into());
-            }
+            return Err(ValidationError::VulkanMemoryModelCapabilityRequiresVulkanKHR.into());
         }
 
         // Vulkan environment restrictions
@@ -924,7 +946,8 @@ impl ValidationRule for MemoryModelValidationRule {
                 {
                     return Err(ValidationError::VulkanInvalidAddressingModel {
                         addressing_model: addr,
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -935,14 +958,15 @@ impl ValidationRule for MemoryModelValidationRule {
                 if addr != AddressingModel::Physical32 && addr != AddressingModel::Physical64 {
                     return Err(ValidationError::OpenCLInvalidAddressingModel {
                         addressing_model: addr,
-                    }.into());
+                    }
+                    .into());
                 }
             }
             if let Some(mem) = memory_model {
                 if mem != MemoryModel::OpenCL {
-                    return Err(ValidationError::OpenCLInvalidMemoryModel {
-                        memory_model: mem,
-                    }.into());
+                    return Err(
+                        ValidationError::OpenCLInvalidMemoryModel { memory_model: mem }.into(),
+                    );
                 }
             }
         }
@@ -1034,7 +1058,8 @@ impl ValidationRule for DuplicateExecutionModeRule {
                     return Err(ValidationError::DuplicateExecutionMode {
                         entry_point: to_id(*entry_point),
                         mode: *exec_mode,
-                    }.into());
+                    }
+                    .into());
                 }
             } else {
                 // Per-entry modes
@@ -1042,7 +1067,8 @@ impl ValidationRule for DuplicateExecutionModeRule {
                     return Err(ValidationError::DuplicateExecutionMode {
                         entry_point: to_id(*entry_point),
                         mode: *exec_mode,
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
@@ -1076,7 +1102,9 @@ impl ValidationRule for SamplerImageAddressingModeNVRule {
 
             // Requires BindlessTextureNV capability
             if !ctx.has_capability(Capability::BindlessTextureNV) {
-                return Err(ValidationError::SamplerImageAddressingModeNVRequiresBindlessTextureNV.into());
+                return Err(
+                    ValidationError::SamplerImageAddressingModeNVRequiresBindlessTextureNV.into(),
+                );
             }
 
             // Must only be provided once
@@ -1098,7 +1126,8 @@ impl ValidationRule for SamplerImageAddressingModeNVRule {
             if bit_width != 32 && bit_width != 64 {
                 return Err(ValidationError::InvalidSamplerImageAddressingModeBitWidth {
                     bit_width,
-                }.into());
+                }
+                .into());
             }
         }
 

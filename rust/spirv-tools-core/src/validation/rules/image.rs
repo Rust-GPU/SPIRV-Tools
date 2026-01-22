@@ -18,11 +18,11 @@ use rspirv::dr::{Instruction, Operand};
 use rspirv::spirv::{Capability, Decoration, Dim, ExecutionModel, ImageFormat, ImageOperands, Op};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::op_ext::OpExt;
 use crate::validation::type_ext::{DefaultTypeResolver, TypeInstructionExt, TypeResolver};
 use crate::validation::types::{Id, ResultId, TypeId};
+use crate::validation::ValidationResult;
 
 // ============================================================================
 // Image Type Information
@@ -86,7 +86,7 @@ impl ImageTypeInfo {
         }
 
         Some(ImageTypeInfo {
-            sampled_type: image_inst.operands.get(0)?.id_ref_any()?,
+            sampled_type: image_inst.operands.first()?.id_ref_any()?,
             dim: match &image_inst.operands.get(1)? {
                 Operand::Dim(d) => *d,
                 _ => return None,
@@ -122,6 +122,7 @@ impl ImageTypeInfo {
 // ============================================================================
 
 /// Get the number of coordinate components for a single plane.
+#[allow(dead_code)]
 fn get_plane_coord_size(info: &ImageTypeInfo) -> u32 {
     match info.dim {
         Dim::Dim1D | Dim::DimBuffer => 1,
@@ -131,6 +132,7 @@ fn get_plane_coord_size(info: &ImageTypeInfo) -> u32 {
 }
 
 /// Get the minimum coordinate size for an image operation.
+#[allow(dead_code)]
 fn get_min_coord_size(op: Op, info: &ImageTypeInfo) -> u32 {
     // Read/Write on Cube use UV (2D), not direction vector
     if info.dim == Dim::DimCube && op.is_image_read_write() {
@@ -160,10 +162,11 @@ impl ValidationRule for ImageTypeRule {
             // Validate operand count
             if inst.operands.len() < 7 {
                 return Err(ValidationError::ImageTypeInvalidOperandCount {
-                    type_id: inst.result_id.map(|id| TypeId::try_from(id).ok()).flatten(),
+                    type_id: inst.result_id.and_then(|id| TypeId::try_from(id).ok()),
                     expected: 7,
                     actual: inst.operands.len(),
-                }.into());
+                }
+                .into());
             }
 
             // Extract Dim
@@ -179,7 +182,7 @@ impl ValidationRule for ImageTypeRule {
             };
 
             // Extract format
-            let format = match &inst.operands.get(6) {
+            let _format = match &inst.operands.get(6) {
                 Some(Operand::ImageFormat(f)) => *f,
                 _ => continue,
             };
@@ -192,16 +195,17 @@ impl ValidationRule for ImageTypeRule {
                 };
                 if arrayed != 0 {
                     return Err(ValidationError::ImageTypeSubpassDataMustNotBeArrayed {
-                        type_id: inst.result_id.map(|id| TypeId::try_from(id).ok()).flatten(),
-                    }.into());
+                        type_id: inst.result_id.and_then(|id| TypeId::try_from(id).ok()),
+                    }
+                    .into());
                 }
                 if sampled != 2 {
                     return Err(ValidationError::ImageTypeSubpassDataSampledMustBeTwo {
-                        type_id: inst.result_id.map(|id| TypeId::try_from(id).ok()).flatten(),
-                    }.into());
+                        type_id: inst.result_id.and_then(|id| TypeId::try_from(id).ok()),
+                    }
+                    .into());
                 }
             }
-
         }
 
         Ok(())
@@ -221,7 +225,6 @@ impl ValidationRule for ImageOperandRule {
     }
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
-
         for function in &ctx.module.functions {
             let function_id = function
                 .def
@@ -259,17 +262,20 @@ impl ValidationRule for ImageOperandRule {
                     // Validate multisampled images require Sample operand for fetch, read, and write operations
                     // Query operations (OpImageQuerySize, etc.) don't require the Sample operand
                     if let Some(ref info) = image_type_info {
-                        let requires_sample = inst.class.opcode.is_fetch()
-                            || inst.class.opcode.is_image_read_write();
+                        let requires_sample =
+                            inst.class.opcode.is_fetch() || inst.class.opcode.is_image_read_write();
                         if info.multisampled != 0
                             && requires_sample
                             && !mask.contains(ImageOperands::SAMPLE)
                         {
-                            return Err(ValidationError::ImageOperandSampleRequiredForMultisampled {
-                                function: function_id,
-                                block: block_id,
-                                opcode: inst.class.opcode,
-                            }.into());
+                            return Err(
+                                ValidationError::ImageOperandSampleRequiredForMultisampled {
+                                    function: function_id,
+                                    block: block_id,
+                                    opcode: inst.class.opcode,
+                                }
+                                .into(),
+                            );
                         }
                     }
 
@@ -278,25 +284,28 @@ impl ValidationRule for ImageOperandRule {
                         mask.contains(ImageOperands::OFFSET),
                         mask.contains(ImageOperands::CONST_OFFSET),
                         mask.contains(ImageOperands::CONST_OFFSETS),
-                    ].iter().filter(|&&x| x).count();
+                    ]
+                    .iter()
+                    .filter(|&&x| x)
+                    .count();
 
                     if offset_count > 1 {
                         return Err(ValidationError::ImageOperandMultipleOffsets {
                             function: function_id,
                             block: block_id,
                             opcode: inst.class.opcode,
-                        }.into());
+                        }
+                        .into());
                     }
 
                     // Validate Bias operand
-                    if mask.contains(ImageOperands::BIAS) {
-                        if !inst.class.opcode.is_implicit_lod() {
-                            return Err(ValidationError::ImageOperandBiasRequiresImplicitLod {
-                                function: function_id,
-                                block: block_id,
-                                opcode: inst.class.opcode,
-                            }.into());
+                    if mask.contains(ImageOperands::BIAS) && !inst.class.opcode.is_implicit_lod() {
+                        return Err(ValidationError::ImageOperandBiasRequiresImplicitLod {
+                            function: function_id,
+                            block: block_id,
+                            opcode: inst.class.opcode,
                         }
+                        .into());
                     }
 
                     // Validate Lod operand
@@ -307,11 +316,14 @@ impl ValidationRule for ImageOperandRule {
                                 && ctx.has_capability(Capability::ImageReadWriteLodAMD));
 
                         if !valid_for_lod {
-                            return Err(ValidationError::ImageOperandLodRequiresExplicitLodOrFetch {
-                                function: function_id,
-                                block: block_id,
-                                opcode: inst.class.opcode,
-                            }.into());
+                            return Err(
+                                ValidationError::ImageOperandLodRequiresExplicitLodOrFetch {
+                                    function: function_id,
+                                    block: block_id,
+                                    opcode: inst.class.opcode,
+                                }
+                                .into(),
+                            );
                         }
 
                         // Lod and Grad are mutually exclusive
@@ -320,45 +332,45 @@ impl ValidationRule for ImageOperandRule {
                                 function: function_id,
                                 block: block_id,
                                 opcode: inst.class.opcode,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
                     // Validate Grad operand
-                    if mask.contains(ImageOperands::GRAD) {
-                        if !inst.class.opcode.is_explicit_lod() {
-                            return Err(ValidationError::ImageOperandGradRequiresExplicitLod {
-                                function: function_id,
-                                block: block_id,
-                                opcode: inst.class.opcode,
-                            }.into());
+                    if mask.contains(ImageOperands::GRAD) && !inst.class.opcode.is_explicit_lod() {
+                        return Err(ValidationError::ImageOperandGradRequiresExplicitLod {
+                            function: function_id,
+                            block: block_id,
+                            opcode: inst.class.opcode,
                         }
+                        .into());
                     }
 
                     // Validate ConstOffsets operand
-                    if mask.contains(ImageOperands::CONST_OFFSETS) {
-                        if !inst.class.opcode.is_gather() {
-                            return Err(ValidationError::ImageOperandConstOffsetsRequiresGather {
-                                function: function_id,
-                                block: block_id,
-                                opcode: inst.class.opcode,
-                            }.into());
+                    if mask.contains(ImageOperands::CONST_OFFSETS) && !inst.class.opcode.is_gather()
+                    {
+                        return Err(ValidationError::ImageOperandConstOffsetsRequiresGather {
+                            function: function_id,
+                            block: block_id,
+                            opcode: inst.class.opcode,
                         }
+                        .into());
                     }
 
                     // Validate offset operands cannot be used with Cube
                     if let Some(ref info) = image_type_info {
-                        if info.dim == Dim::DimCube {
-                            if mask.contains(ImageOperands::OFFSET)
+                        if info.dim == Dim::DimCube
+                            && (mask.contains(ImageOperands::OFFSET)
                                 || mask.contains(ImageOperands::CONST_OFFSET)
-                                || mask.contains(ImageOperands::CONST_OFFSETS)
-                            {
-                                return Err(ValidationError::ImageOperandOffsetCannotBeUsedWithCube {
-                                    function: function_id,
-                                    block: block_id,
-                                    opcode: inst.class.opcode,
-                                }.into());
+                                || mask.contains(ImageOperands::CONST_OFFSETS))
+                        {
+                            return Err(ValidationError::ImageOperandOffsetCannotBeUsedWithCube {
+                                function: function_id,
+                                block: block_id,
+                                opcode: inst.class.opcode,
                             }
+                            .into());
                         }
                     }
                 }
@@ -421,7 +433,8 @@ impl ValidationRule for ImageSampleExecutionModelRule {
                                 function: function_id,
                                 block: block_id,
                                 opcode: inst.class.opcode,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -471,7 +484,8 @@ impl ValidationRule for ImageReadWriteRule {
                                     function: function_id,
                                     block: block_id,
                                     opcode,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -484,7 +498,8 @@ impl ValidationRule for ImageReadWriteRule {
                                 return Err(ValidationError::ImageWriteRequiresStorageImage {
                                     function: function_id,
                                     block: block_id,
-                                }.into());
+                                }
+                                .into());
                             }
                         }
                     }
@@ -538,7 +553,8 @@ impl ValidationRule for ImageQueryRule {
                                         block: block_id,
                                         opcode,
                                         expected: "integer scalar or vector",
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
 
@@ -553,7 +569,8 @@ impl ValidationRule for ImageQueryRule {
                                         function: function_id,
                                         block: block_id,
                                         dim: info.dim,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -567,7 +584,8 @@ impl ValidationRule for ImageQueryRule {
                                         block: block_id,
                                         opcode,
                                         expected: "integer scalar or vector",
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
 
@@ -583,7 +601,8 @@ impl ValidationRule for ImageQueryRule {
                                         function: function_id,
                                         block: block_id,
                                         dim: info.dim,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -591,13 +610,15 @@ impl ValidationRule for ImageQueryRule {
                         Op::ImageQueryLod => {
                             // Result must be float vector of 2 components
                             if let Some(result_type) = inst.result_type {
-                                if !resolver.is_float_scalar_or_vector(result_type, ctx.definitions) {
+                                if !resolver.is_float_scalar_or_vector(result_type, ctx.definitions)
+                                {
                                     return Err(ValidationError::ImageQueryResultTypeInvalid {
                                         function: function_id,
                                         block: block_id,
                                         opcode,
                                         expected: "float vector",
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                                 // Validate vector component count is 2
                                 // Look up the type instruction to get vector component count
@@ -620,10 +641,13 @@ impl ValidationRule for ImageQueryRule {
                             // OpImageQueryLod cannot be used with multisampled images
                             if let Some(info) = get_image_type_from_instruction(inst, ctx) {
                                 if info.multisampled != 0 {
-                                    return Err(ValidationError::ImageQueryLodCannotUseMultisampled {
-                                        function: function_id,
-                                        block: block_id,
-                                    }.into());
+                                    return Err(
+                                        ValidationError::ImageQueryLodCannotUseMultisampled {
+                                            function: function_id,
+                                            block: block_id,
+                                        }
+                                        .into(),
+                                    );
                                 }
                             }
                         }
@@ -637,7 +661,8 @@ impl ValidationRule for ImageQueryRule {
                                         block: block_id,
                                         opcode,
                                         expected: "integer scalar",
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
 
@@ -651,7 +676,8 @@ impl ValidationRule for ImageQueryRule {
                                         function: function_id,
                                         block: block_id,
                                         dim: info.dim,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -665,17 +691,21 @@ impl ValidationRule for ImageQueryRule {
                                         block: block_id,
                                         opcode,
                                         expected: "integer scalar",
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
 
                             // OpImageQuerySamples requires multisampled image
                             if let Some(info) = get_image_type_from_instruction(inst, ctx) {
                                 if info.multisampled == 0 {
-                                    return Err(ValidationError::ImageQuerySamplesRequiresMultisampled {
-                                        function: function_id,
-                                        block: block_id,
-                                    }.into());
+                                    return Err(
+                                        ValidationError::ImageQuerySamplesRequiresMultisampled {
+                                            function: function_id,
+                                            block: block_id,
+                                        }
+                                        .into(),
+                                    );
                                 }
                             }
                         }
@@ -727,10 +757,13 @@ impl ValidationRule for SampledImageRule {
                         if let Ok(type_id) = ResultId::try_from(result_type) {
                             if let Some(type_inst) = ctx.definitions.get(&type_id) {
                                 if type_inst.class.opcode != Op::TypeSampledImage {
-                                    return Err(ValidationError::SampledImageResultTypeMustBeSampledImage {
-                                        function: function_id,
-                                        block: block_id,
-                                    }.into());
+                                    return Err(
+                                        ValidationError::SampledImageResultTypeMustBeSampledImage {
+                                            function: function_id,
+                                            block: block_id,
+                                        }
+                                        .into(),
+                                    );
                                 }
                             }
                         }
@@ -743,7 +776,8 @@ impl ValidationRule for SampledImageRule {
                             return Err(ValidationError::SampledImageRequiresSampledOne {
                                 function: function_id,
                                 block: block_id,
-                            }.into());
+                            }
+                            .into());
                         }
 
                         // SubpassData dimension cannot be used with OpSampledImage
@@ -751,20 +785,20 @@ impl ValidationRule for SampledImageRule {
                             return Err(ValidationError::SampledImageCannotUseSubpassData {
                                 function: function_id,
                                 block: block_id,
-                            }.into());
+                            }
+                            .into());
                         }
 
                         // In SPIR-V 1.6+, Buffer dimension is not allowed
-                        if ctx.target_version.major() > 1
-                            || (ctx.target_version.major() == 1
-                                && ctx.target_version.minor() >= 6)
+                        if (ctx.target_version.major() > 1
+                            || (ctx.target_version.major() == 1 && ctx.target_version.minor() >= 6))
+                            && info.dim == Dim::DimBuffer
                         {
-                            if info.dim == Dim::DimBuffer {
-                                return Err(ValidationError::SampledImageBufferDimInvalid {
-                                    function: function_id,
-                                    block: block_id,
-                                }.into());
+                            return Err(ValidationError::SampledImageBufferDimInvalid {
+                                function: function_id,
+                                block: block_id,
                             }
+                            .into());
                         }
                     }
 
@@ -783,11 +817,15 @@ impl ValidationRule for SampledImageRule {
                                         if let Some(image_inst) =
                                             ctx.definitions.get(&image_result_id)
                                         {
-                                            if let Some(actual_image_type) = image_inst.result_type {
+                                            if let Some(actual_image_type) = image_inst.result_type
+                                            {
                                                 // Image types should match (except depth is allowed to differ)
                                                 if *expected_image_type != actual_image_type {
                                                     // Check if they only differ in depth
-                                                    if let (Some(expected_info), Some(actual_info)) = (
+                                                    if let (
+                                                        Some(expected_info),
+                                                        Some(actual_info),
+                                                    ) = (
                                                         ImageTypeInfo::from_type_id(
                                                             *expected_image_type,
                                                             ctx,
@@ -897,14 +935,18 @@ impl ValidationRule for ImageTexelPointerRule {
                                 if type_inst.class.opcode != Op::TypePointer
                                     && type_inst.class.opcode != Op::TypeUntypedPointerKHR
                                 {
-                                    return Err(ValidationError::ImageTexelPointerResultMustBePointer {
-                                        function: function_id,
-                                        block: block_id,
-                                    }.into());
+                                    return Err(
+                                        ValidationError::ImageTexelPointerResultMustBePointer {
+                                            function: function_id,
+                                            block: block_id,
+                                        }
+                                        .into(),
+                                    );
                                 }
 
                                 // Validate storage class is Image
-                                if let Some(Operand::StorageClass(sc)) = type_inst.operands.first() {
+                                if let Some(Operand::StorageClass(sc)) = type_inst.operands.first()
+                                {
                                     if *sc != rspirv::spirv::StorageClass::Image {
                                         return Err(ValidationError::ImageTexelPointerStorageClassMustBeImage {
                                             function: function_id,
@@ -921,7 +963,9 @@ impl ValidationRule for ImageTexelPointerRule {
                         if let Ok(coord_result_id) = ResultId::try_from(*coord_id) {
                             if let Some(coord_inst) = ctx.definitions.get(&coord_result_id) {
                                 if let Some(coord_type) = coord_inst.result_type {
-                                    if !resolver.is_int_scalar_or_vector(coord_type, ctx.definitions) {
+                                    if !resolver
+                                        .is_int_scalar_or_vector(coord_type, ctx.definitions)
+                                    {
                                         return Err(ValidationError::ImageTexelPointerCoordMustBeIntScalarOrVector {
                                             function: function_id,
                                             block: block_id,
@@ -955,7 +999,8 @@ impl ValidationRule for ImageTexelPointerRule {
                             return Err(ValidationError::ImageTexelPointerCannotUseSubpassData {
                                 function: function_id,
                                 block: block_id,
-                            }.into());
+                            }
+                            .into());
                         }
 
                         // TileImageDataEXT cannot be used with ImageTexelPointer
@@ -963,7 +1008,8 @@ impl ValidationRule for ImageTexelPointerRule {
                             return Err(ValidationError::ImageTexelPointerCannotUseTileImageData {
                                 function: function_id,
                                 block: block_id,
-                            }.into());
+                            }
+                            .into());
                         }
 
                         // For non-multisampled images (MS=0), Sample must be constant 0
@@ -1012,11 +1058,14 @@ impl ValidationRule for ImageTexelPointerRule {
                                     | ImageFormat::R32ui
                             );
                             if !valid_format {
-                                return Err(ValidationError::ImageTexelPointerFormatInvalidForVulkan {
-                                    function: function_id,
-                                    block: block_id,
-                                    format: info.format,
-                                }.into());
+                                return Err(
+                                    ValidationError::ImageTexelPointerFormatInvalidForVulkan {
+                                        function: function_id,
+                                        block: block_id,
+                                        format: info.format,
+                                    }
+                                    .into(),
+                                );
                             }
                         }
                     }
@@ -1072,16 +1121,20 @@ impl ValidationRule for TypeSampledImageRule {
             if let Some(info) = ImageTypeInfo::from_type_id(image_type_id, ctx) {
                 // Sampled must be 0 or 1
                 if info.sampled != 0 && info.sampled != 1 {
-                    return Err(ValidationError::TypeSampledImageSampledMustBeZeroOrOne { type_id }.into());
+                    return Err(ValidationError::TypeSampledImageSampledMustBeZeroOrOne {
+                        type_id,
+                    }
+                    .into());
                 }
 
                 // In SPIR-V 1.6+, Buffer dimension is not allowed
-                if ctx.target_version.major() > 1
-                    || (ctx.target_version.major() == 1 && ctx.target_version.minor() >= 6)
+                if (ctx.target_version.major() > 1
+                    || (ctx.target_version.major() == 1 && ctx.target_version.minor() >= 6))
+                    && info.dim == Dim::DimBuffer
                 {
-                    if info.dim == Dim::DimBuffer {
-                        return Err(ValidationError::TypeSampledImageBufferDimInvalid { type_id }.into());
-                    }
+                    return Err(
+                        ValidationError::TypeSampledImageBufferDimInvalid { type_id }.into(),
+                    );
                 }
             }
         }
@@ -1130,7 +1183,8 @@ impl ValidationRule for ImageRule {
                                     return Err(ValidationError::ImageResultTypeMustBeImage {
                                         function: function_id,
                                         block: block_id,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
                             }
                         }
@@ -1228,8 +1282,9 @@ impl ValidationRule for ImageSparseTexelsResidentRule {
                                 ValidationError::ImageSparseTexelsResidentResultMustBeBool {
                                     function: function_id,
                                     block: block_id,
-                                }.into(),
-                        );
+                                }
+                                .into(),
+                            );
                         }
                     }
 
@@ -1329,7 +1384,8 @@ impl ValidationRule for SparseSampleResultTypeRule {
                             function: function_id,
                             block: block_id,
                             opcode,
-                        }.into());
+                        }
+                        .into());
                     }
 
                     // Struct must have exactly 2 members
@@ -1339,7 +1395,8 @@ impl ValidationRule for SparseSampleResultTypeRule {
                             function: function_id,
                             block: block_id,
                             opcode,
-                        }.into());
+                        }
+                        .into());
                     }
 
                     // First member (residency code) must be int scalar
@@ -1349,7 +1406,8 @@ impl ValidationRule for SparseSampleResultTypeRule {
                                 function: function_id,
                                 block: block_id,
                                 opcode,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -1470,7 +1528,8 @@ impl ValidationRule for ReservedImageOpcodeRule {
                             function: function_id,
                             block: block_id,
                             opcode: inst.class.opcode,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -1578,7 +1637,8 @@ impl QCOMImageProcessingRule {
                 function: function_id,
                 block: block_id,
                 opcode,
-            }.into());
+            }
+            .into());
         }
 
         // Get the variable being loaded
@@ -1594,7 +1654,8 @@ impl QCOMImageProcessingRule {
                 block: block_id,
                 opcode,
                 decoration: required_decoration,
-            }.into());
+            }
+            .into());
         }
 
         Ok(())
@@ -1812,7 +1873,8 @@ impl ValidationRule for SampledImageConsumerRule {
                                         block: block_id,
                                         sampled_image_id,
                                         consumer_opcode: opcode,
-                                    }.into());
+                                    }
+                                    .into());
                                 }
 
                                 // Check 2: Consumer must be in the same block as the definition
@@ -1823,8 +1885,9 @@ impl ValidationRule for SampledImageConsumerRule {
                                             def_block: *def_block,
                                             consumer_block: block_id,
                                             sampled_image_id,
-                                        }.into(),
-                        );
+                                        }
+                                        .into(),
+                                    );
                                 }
                             }
                         }
@@ -1887,7 +1950,8 @@ impl ValidationRule for ImageDrefRule {
                                 function: function_id,
                                 block: block_id,
                                 opcode,
-                            }.into());
+                            }
+                            .into());
                         }
 
                         // Check: Dref operations cannot use multisampled images
@@ -1896,7 +1960,8 @@ impl ValidationRule for ImageDrefRule {
                                 function: function_id,
                                 block: block_id,
                                 opcode,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -1917,7 +1982,8 @@ impl ValidationRule for ImageDrefRule {
                                             function: function_id,
                                             block: block_id,
                                             opcode,
-                                        }.into());
+                                        }
+                                        .into());
                                     }
                                 }
                             }
@@ -1984,7 +2050,8 @@ impl ValidationRule for ImageProjRule {
                                 block: block_id,
                                 opcode,
                                 dim: info.dim,
-                            }.into());
+                            }
+                            .into());
                         }
 
                         // Check: Proj cannot use multisampled images
@@ -1993,7 +2060,8 @@ impl ValidationRule for ImageProjRule {
                                 function: function_id,
                                 block: block_id,
                                 opcode,
-                            }.into());
+                            }
+                            .into());
                         }
 
                         // Check: Proj cannot use arrayed images
@@ -2002,7 +2070,8 @@ impl ValidationRule for ImageProjRule {
                                 function: function_id,
                                 block: block_id,
                                 opcode,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
                 }
@@ -2111,8 +2180,9 @@ impl ValidationRule for ImageReadVulkan4ComponentRule {
                                         block: block_id,
                                         opcode,
                                         actual_components: component_count,
-                                    }.into(),
-                        );
+                                    }
+                                    .into(),
+                                );
                             }
                         }
                     }
@@ -2194,7 +2264,8 @@ impl ValidationRule for ImageGatherRule {
                                 block: block_id,
                                 opcode,
                                 dim: info.dim,
-                            }.into());
+                            }
+                            .into());
                         }
                     }
 
@@ -2227,16 +2298,16 @@ impl ValidationRule for ImageGatherRule {
                                     }
 
                                     // Vulkan: Component must be constant
-                                    if ctx.is_vulkan_env() {
-                                        if !is_constant_opcode(component_inst.class.opcode) {
-                                            return Err(
+                                    if ctx.is_vulkan_env()
+                                        && !is_constant_opcode(component_inst.class.opcode)
+                                    {
+                                        return Err(
                                                 ValidationError::ImageGatherComponentMustBeConstantInVulkan {
                                                     function: function_id,
                                                     block: block_id,
                                                     opcode,
                                                 }.into(),
                         );
-                                        }
                                     }
                                 }
                             }
@@ -2316,21 +2387,68 @@ mod tests {
 
     #[test]
     fn test_get_plane_coord_size() {
-        assert_eq!(get_plane_coord_size(&ImageTypeInfo { dim: Dim::Dim1D, ..Default::default() }), 1);
-        assert_eq!(get_plane_coord_size(&ImageTypeInfo { dim: Dim::DimBuffer, ..Default::default() }), 1);
-        assert_eq!(get_plane_coord_size(&ImageTypeInfo { dim: Dim::Dim2D, ..Default::default() }), 2);
-        assert_eq!(get_plane_coord_size(&ImageTypeInfo { dim: Dim::DimRect, ..Default::default() }), 2);
-        assert_eq!(get_plane_coord_size(&ImageTypeInfo { dim: Dim::Dim3D, ..Default::default() }), 3);
-        assert_eq!(get_plane_coord_size(&ImageTypeInfo { dim: Dim::DimCube, ..Default::default() }), 3);
+        assert_eq!(
+            get_plane_coord_size(&ImageTypeInfo {
+                dim: Dim::Dim1D,
+                ..Default::default()
+            }),
+            1
+        );
+        assert_eq!(
+            get_plane_coord_size(&ImageTypeInfo {
+                dim: Dim::DimBuffer,
+                ..Default::default()
+            }),
+            1
+        );
+        assert_eq!(
+            get_plane_coord_size(&ImageTypeInfo {
+                dim: Dim::Dim2D,
+                ..Default::default()
+            }),
+            2
+        );
+        assert_eq!(
+            get_plane_coord_size(&ImageTypeInfo {
+                dim: Dim::DimRect,
+                ..Default::default()
+            }),
+            2
+        );
+        assert_eq!(
+            get_plane_coord_size(&ImageTypeInfo {
+                dim: Dim::Dim3D,
+                ..Default::default()
+            }),
+            3
+        );
+        assert_eq!(
+            get_plane_coord_size(&ImageTypeInfo {
+                dim: Dim::DimCube,
+                ..Default::default()
+            }),
+            3
+        );
     }
 
     #[test]
     fn test_get_min_coord_size() {
-        let info_2d = ImageTypeInfo { dim: Dim::Dim2D, arrayed: 0, ..Default::default() };
-        let info_2d_array = ImageTypeInfo { dim: Dim::Dim2D, arrayed: 1, ..Default::default() };
+        let info_2d = ImageTypeInfo {
+            dim: Dim::Dim2D,
+            arrayed: 0,
+            ..Default::default()
+        };
+        let info_2d_array = ImageTypeInfo {
+            dim: Dim::Dim2D,
+            arrayed: 1,
+            ..Default::default()
+        };
 
         assert_eq!(get_min_coord_size(Op::ImageFetch, &info_2d), 2);
         assert_eq!(get_min_coord_size(Op::ImageFetch, &info_2d_array), 3);
-        assert_eq!(get_min_coord_size(Op::ImageSampleProjImplicitLod, &info_2d), 3);
+        assert_eq!(
+            get_min_coord_size(Op::ImageSampleProjImplicitLod, &info_2d),
+            3
+        );
     }
 }

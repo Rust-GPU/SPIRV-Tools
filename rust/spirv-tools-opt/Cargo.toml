@@ -15,9 +15,4 @@ clap = { version = "4.5", features = ["derive"] }
 
 [dev-dependencies]
 pretty_assertions = "1.4"
-criterion = { version = "0.5", default-features = false, features = ["html_reports"] }
 tempfile = "3.10"
-
-[[bench]]
-name = "opt"
-harness = false

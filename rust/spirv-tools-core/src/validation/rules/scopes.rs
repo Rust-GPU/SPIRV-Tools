@@ -14,10 +14,10 @@ use rspirv::dr::Operand;
 use rspirv::spirv::{Capability, MemoryModel, Op, Scope};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::helpers::is_constant_opcode;
 use crate::validation::types::ResultId;
+use crate::validation::ValidationResult;
 
 /// Check if a scope value is valid.
 fn is_valid_scope(value: u32) -> bool {
@@ -315,7 +315,9 @@ impl MemoryScopeRule {
 
         // QueueFamilyKHR requires VulkanMemoryModelKHR capability
         if value == Scope::QueueFamily as u32 && !has_vulkan_memory_model {
-            return Err(ValidationError::ScopeQueueFamilyRequiresVulkanMemoryModel { opcode }.into());
+            return Err(
+                ValidationError::ScopeQueueFamilyRequiresVulkanMemoryModel { opcode }.into(),
+            );
         }
 
         // Device scope with VulkanMemoryModel requires VulkanMemoryModelDeviceScopeKHR
@@ -341,8 +343,7 @@ impl MemoryScopeRule {
 
             // Vulkan 1.0 specific: Subgroup scope requires SubgroupBallotKHR or SubgroupVoteKHR
             if ctx.is_vulkan_1_0() && value == Scope::Subgroup as u32 {
-                let has_subgroup_ballot =
-                    ctx.has_capability(Capability::SubgroupBallotKHR);
+                let has_subgroup_ballot = ctx.has_capability(Capability::SubgroupBallotKHR);
                 let has_subgroup_vote = ctx.has_capability(Capability::SubgroupVoteKHR);
                 if !has_subgroup_ballot && !has_subgroup_vote {
                     return Err(ValidationError::ScopeSubgroupNotAllowedVulkan10 { opcode }.into());
@@ -445,7 +446,10 @@ mod tests {
 
     #[test]
     fn test_get_execution_scope_operand_index() {
-        assert_eq!(get_execution_scope_operand_index(Op::ControlBarrier), Some(0));
+        assert_eq!(
+            get_execution_scope_operand_index(Op::ControlBarrier),
+            Some(0)
+        );
         assert_eq!(
             get_execution_scope_operand_index(Op::GroupNonUniformElect),
             Some(0)

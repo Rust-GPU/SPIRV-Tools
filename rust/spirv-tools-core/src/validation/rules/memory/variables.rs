@@ -6,9 +6,9 @@ use rspirv::dr::Operand;
 use rspirv::spirv::{Decoration, Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
-use crate::validation::ValidationResult;
 use crate::validation::error::ValidationError;
 use crate::validation::types::ResultId;
+use crate::validation::ValidationResult;
 
 use super::helpers::{
     contains_bool, get_pointee_type, get_pointer_storage_class, has_decoration, id_from_u32,
@@ -42,7 +42,8 @@ impl ValidationRule for VariableRule {
             if result_type.class.opcode != Op::TypePointer {
                 return Err(ValidationError::VariableResultTypeNotPointer {
                     variable: id_from_u32(inst.result_id.unwrap_or(0)),
-                }.into());
+                }
+                .into());
             }
 
             // Get storage class from operand
@@ -58,7 +59,8 @@ impl ValidationRule for VariableRule {
                         variable: id_from_u32(inst.result_id.unwrap_or(0)),
                         operand_class: *storage_class,
                         type_class: rsc,
-                    }.into());
+                    }
+                    .into());
                 }
             }
 
@@ -66,14 +68,16 @@ impl ValidationRule for VariableRule {
             if *storage_class == StorageClass::Generic {
                 return Err(ValidationError::VariableGenericStorageClass {
                     variable: id_from_u32(inst.result_id.unwrap_or(0)),
-                }.into());
+                }
+                .into());
             }
 
             // PhysicalStorageBuffer is not allowed for OpVariable
             if *storage_class == StorageClass::PhysicalStorageBuffer {
                 return Err(ValidationError::VariablePhysicalStorageBuffer {
                     variable: id_from_u32(inst.result_id.unwrap_or(0)),
-                }.into());
+                }
+                .into());
             }
 
             // Get pointee type
@@ -97,18 +101,23 @@ impl ValidationRule for VariableRule {
                 );
 
                 if !allows_bool
-                    && contains_bool(pt_id, ctx.definitions, &mut std::collections::HashSet::new())
+                    && contains_bool(
+                        pt_id,
+                        ctx.definitions,
+                        &mut std::collections::HashSet::new(),
+                    )
                 {
                     // Input/Output with BuiltIn is allowed
                     let is_builtin = inst
                         .result_id
-                        .map_or(false, |id| has_decoration(ctx.module, id, Decoration::BuiltIn));
+                        .is_some_and(|id| has_decoration(ctx.module, id, Decoration::BuiltIn));
 
                     if !is_builtin {
                         return Err(ValidationError::VariableContainsBool {
                             variable: id_from_u32(inst.result_id.unwrap_or(0)),
                             storage_class: *storage_class,
-                        }.into());
+                        }
+                        .into());
                     }
                 }
             }
@@ -126,7 +135,8 @@ impl ValidationRule for VariableRule {
                     return Err(ValidationError::VariableInitializerNotFound {
                         variable: id_from_u32(inst.result_id.unwrap_or(0)),
                         initializer: id_from_u32(*init_id),
-                    }.into());
+                    }
+                    .into());
                 };
 
                 // Initializer must be a constant or module-scope variable
@@ -147,7 +157,7 @@ impl ValidationRule for VariableRule {
                 );
 
                 let is_module_scope_var = init_inst.class.opcode == Op::Variable
-                    && init_inst.operands.first().map_or(false, |op| {
+                    && init_inst.operands.first().is_some_and(|op| {
                         matches!(op, Operand::StorageClass(sc) if *sc != StorageClass::Function)
                     });
 
@@ -155,14 +165,16 @@ impl ValidationRule for VariableRule {
                     return Err(ValidationError::VariableInitializerNotConstant {
                         variable: id_from_u32(inst.result_id.unwrap_or(0)),
                         initializer: id_from_u32(*init_id),
-                    }.into());
+                    }
+                    .into());
                 }
 
                 // Input storage class cannot have initializer
                 if *storage_class == StorageClass::Input {
                     return Err(ValidationError::VariableInputHasInitializer {
                         variable: id_from_u32(inst.result_id.unwrap_or(0)),
-                    }.into());
+                    }
+                    .into());
                 }
             }
         }
