@@ -5,13 +5,20 @@
 
 #include "spirv-tools-ffi/src/lib.rs.h"
 #include "rust/cxxbridge/spirv-tools-ffi/src/context_bridge.h"
-#include "source/reduce/reducer.h"
-#include "source/spirv_reducer_options.h"
 #include "source/table.h"
 #include "spirv-tools/libspirv.h"
+
+// When building with Rust target env, we don't need C++ fallback implementations
+// since Rust provides them. This avoids link dependencies on C++ SPIRV-Tools
+// libraries (libspirv.hpp, reducer.h) that would create circular dependencies.
+#ifndef SPIRV_RUST_TARGET_ENV
+#include "source/reduce/reducer.h"
+#include "source/spirv_reducer_options.h"
 #include "spirv-tools/libspirv.hpp"
+#endif
 
 namespace {
+#ifndef SPIRV_RUST_TARGET_ENV
 std::string FormatDiagnostic(spv_message_level_t, const spv_position_t& position,
                              const char* message) {
   std::ostringstream oss;
@@ -22,6 +29,7 @@ std::string FormatDiagnostic(spv_message_level_t, const spv_position_t& position
   oss << ": " << message;
   return oss.str();
 }
+#endif
 }  // namespace
 
 namespace spvtools::ffi {
@@ -58,6 +66,10 @@ void dispatch_context_message(std::uintptr_t context_ptr, std::uint32_t level,
 ValidateResult validate_binary_with_options(
     std::uint32_t env, rust::Slice<const std::uint32_t> words,
     const ValidatorOptions& options) {
+#ifdef SPIRV_RUST_TARGET_ENV
+  // When built with Rust target env, always use Rust validator
+  return validate_binary_rust(env, words, options);
+#else
   ValidateResult result{false, ::rust::String()};
   if (rust_validator_enabled()) {
     return validate_binary_rust(env, words, options);
@@ -78,6 +90,7 @@ ValidateResult validate_binary_with_options(
     result.message = ::rust::String(diagnostics);
   }
   return result;
+#endif
 }
 
 ValidateResult validate_binary(std::uint32_t env,
@@ -89,6 +102,18 @@ ValidateResult validate_binary(std::uint32_t env,
 ReduceResult reduce_with_cpp(std::uint32_t env,
                              rust::Slice<const std::uint32_t> words,
                              const ReduceOptions& options) {
+#ifdef SPIRV_RUST_TARGET_ENV
+  // When built with Rust target env, C++ reducer is not available.
+  // The Rust side should handle reduction.
+  (void)env;
+  (void)words;
+  (void)options;
+  ReduceResult result{/*success=*/false,
+                      ToolError::Disabled,
+                      ::rust::String("C++ reducer unavailable in Rust build; use Rust reducer"),
+                      ::rust::Vec<std::uint32_t>()};
+  return result;
+#else
   ReduceResult result{/*success=*/false,
                       ToolError::Parse,
                       ::rust::String(),
@@ -154,6 +179,7 @@ ReduceResult reduce_with_cpp(std::uint32_t env,
   }
 
   return result;
+#endif
 }
 
 FuzzResult fuzz_with_cpp(std::uint32_t env,
