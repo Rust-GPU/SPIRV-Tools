@@ -48,11 +48,13 @@ jobs:
 
       - name: Build Rust workspace
         working-directory: rust
-        run: cargo build --workspace
+        # Exclude spirv-tools-ffi which requires C++ build (tested in rust-ffi-tests job)
+        run: cargo build --workspace --exclude spirv-tools-ffi
 
       - name: Run Rust tests
         working-directory: rust
-        run: cargo test --workspace
+        # Exclude spirv-tools-ffi which requires C++ build (tested in rust-ffi-tests job)
+        run: cargo test --workspace --exclude spirv-tools-ffi
 
   # Rust FFI pretending to be C++ - runs C++ test suite against Rust implementation
   rust-ffi-tests:
@@ -154,13 +156,6 @@ jobs:
 
       - name: Run Clippy
         working-directory: rust
-        # Allow some lints that would require significant refactoring
-        run: |
-          cargo clippy --workspace --all-targets -- \
-            -D warnings \
-            -A clippy::result_large_err \
-            -A clippy::too_many_arguments \
-            -A clippy::type_complexity \
-            -A clippy::collapsible_if \
-            -A clippy::manual_is_multiple_of \
-            -A clippy::derivable_impls
+        # Exclude spirv-tools-ffi which requires C++ build (tested in rust-ffi-tests job)
+        # Lint configuration is in rust/Cargo.toml [workspace.lints.clippy]
+        run: cargo clippy --workspace --exclude spirv-tools-ffi --all-targets -- -D warnings

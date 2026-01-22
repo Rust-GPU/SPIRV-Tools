@@ -17,3 +17,6 @@ default = []
 # for compatibility with crates that depend on spirv-tools with these features.
 use-compiled-tools = []
 use-installed-tools = []
+
+[lints]
+workspace = true

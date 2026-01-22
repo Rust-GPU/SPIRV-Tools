@@ -26,3 +26,6 @@ spirv-tools-cli = { path = "../spirv-tools-cli" }
 
 [build-dependencies]
 cxx-build = "1"
+
+[lints]
+workspace = true

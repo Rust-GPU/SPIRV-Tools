@@ -8,6 +8,15 @@ members = [
 ]
 resolver = "2"
 
+[workspace.lints.clippy]
+# Allow some lints that would require significant refactoring
+result_large_err = "allow"
+too_many_arguments = "allow"
+type_complexity = "allow"
+collapsible_if = "allow"
+manual_is_multiple_of = "allow"
+derivable_impls = "allow"
+
 [patch.crates-io]
 rspirv = { git = "https://github.com/gfx-rs/rspirv", branch = "sdk-update" }
 spirv = { git = "https://github.com/gfx-rs/rspirv", branch = "sdk-update", package = "spirv" }

@@ -42,3 +42,6 @@ path = "src/bin/spirv-objdump.rs"
 [[bin]]
 name = "spirv-size"
 path = "src/bin/spirv-size.rs"
+
+[lints]
+workspace = true
