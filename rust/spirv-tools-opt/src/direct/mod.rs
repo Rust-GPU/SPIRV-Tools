@@ -79,7 +79,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     #[derive(Debug, Clone)]
     struct SwitchInfo {
         merge_label: Word,
-        case_labels: Vec<Word>,  // All case block labels (including default)
+        case_labels: Vec<Word>, // All case block labels (including default)
         func_idx: usize,
     }
     let mut switch_constructs: Vec<SwitchInfo> = Vec::new();
@@ -87,10 +87,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     // Loop detection: track back-edges for LICM
     #[derive(Debug, Clone)]
     struct LoopInfo {
-        header_label: Word,        // Loop header block label
-        header_block_idx: usize,   // Index of header block
         body_block_indices: Vec<usize>, // Indices of blocks in the loop body
-        preheader_block_idx: usize, // Block before the loop (where to hoist to)
         func_idx: usize,
     }
     let mut loop_constructs: Vec<LoopInfo> = Vec::new();
@@ -148,7 +145,9 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
 
                 // Detect BranchConditional
                 if inst.class.opcode == Op::BranchConditional {
-                    let operands: Vec<Word> = inst.operands.iter()
+                    let operands: Vec<Word> = inst
+                        .operands
+                        .iter()
                         .filter_map(|op| op.id_ref_any())
                         .collect();
                     if operands.len() >= 3 {
@@ -162,8 +161,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                 if inst.class.opcode == Op::Switch {
                     is_switch = true;
                     // Switch operands: selector, default_label, then pairs of (literal, label)
-                    let mut operand_idx = 0;
-                    for op in &inst.operands {
+                    for (operand_idx, op) in inst.operands.iter().enumerate() {
                         if operand_idx == 1 {
                             // Default label
                             if let Some(label) = op.id_ref_any() {
@@ -177,7 +175,6 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                                 }
                             }
                         }
-                        operand_idx += 1;
                     }
                 }
 
@@ -191,12 +188,8 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                                 // This is a loop: target_idx is the header, block_idx is the latch
                                 // Simple loop detection: body is all blocks from header to latch
                                 let body_indices: Vec<usize> = (target_idx..=block_idx).collect();
-                                let preheader = if target_idx > 0 { target_idx - 1 } else { 0 };
                                 loop_constructs.push(LoopInfo {
-                                    header_label: *target_label,
-                                    header_block_idx: target_idx,
                                     body_block_indices: body_indices,
-                                    preheader_block_idx: preheader,
                                     func_idx,
                                 });
                             }
@@ -206,7 +199,9 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
             }
 
             // If we found a selection construct, record it
-            if let (Some(merge), Some(then_l), Some(else_l), Some(cond)) = (merge_label, then_label, else_label, condition_id) {
+            if let (Some(merge), Some(then_l), Some(else_l), Some(cond)) =
+                (merge_label, then_label, else_label, condition_id)
+            {
                 selection_constructs.push(SelectionInfo {
                     merge_label: merge,
                     then_label: then_l,
@@ -276,7 +271,9 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
         let func = &module.functions[sel.func_idx];
 
         // Find header block label
-        let header_block_label = func.blocks.get(sel.header_block_idx)
+        let header_block_label = func
+            .blocks
+            .get(sel.header_block_idx)
             .and_then(|b| b.label.as_ref())
             .and_then(|l| l.result_id);
 
@@ -286,11 +283,15 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
         let header_label = header_block_label.unwrap();
 
         // Collect IDs defined in then and else blocks
-        let then_ids: Vec<Word> = ctx.root_ids.iter()
+        let then_ids: Vec<Word> = ctx
+            .root_ids
+            .iter()
             .filter(|&&id| id_to_block.get(&id) == Some(&sel.then_label))
             .copied()
             .collect();
-        let else_ids: Vec<Word> = ctx.root_ids.iter()
+        let else_ids: Vec<Word> = ctx
+            .root_ids
+            .iter()
             .filter(|&&id| id_to_block.get(&id) == Some(&sel.else_label))
             .copied()
             .collect();
@@ -358,21 +359,13 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     // Values that only depend on loop-invariant inputs (Sym/Const) will
     // be marked LoopInvariant and can be placed in the preheader.
 
-    // Track which IDs are in loops and their target preheader
-    #[derive(Debug, Clone)]
-    struct LoopValue {
-        id: Word,
-        preheader_block_idx: usize,
-        #[allow(dead_code)]
-        func_idx: usize,
-    }
-    let mut loop_body_values: Vec<LoopValue> = Vec::new();
-
     for loop_info in &loop_constructs {
         let func = &module.functions[loop_info.func_idx];
 
         // Collect all block labels in loop body
-        let body_labels: HashSet<Word> = loop_info.body_block_indices.iter()
+        let body_labels: HashSet<Word> = loop_info
+            .body_block_indices
+            .iter()
             .filter_map(|&idx| func.blocks.get(idx))
             .filter_map(|block| block.label.as_ref().and_then(|l| l.result_id))
             .collect();
@@ -400,12 +393,6 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                         egraph
                             .parse_and_run_program(None, &union_cmd)
                             .map_err(|e| EgglogOptError::ExecutionError(e.to_string()))?;
-
-                        loop_body_values.push(LoopValue {
-                            id,
-                            preheader_block_idx: loop_info.preheader_block_idx,
-                            func_idx: loop_info.func_idx,
-                        });
                     }
                 }
             }
@@ -429,7 +416,9 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
 
     // Helper to check if block ends with Unreachable
     fn ends_with_unreachable(block: &rspirv::dr::Block) -> bool {
-        block.instructions.last()
+        block
+            .instructions
+            .last()
             .map(|inst| inst.class.opcode == Op::Unreachable)
             .unwrap_or(false)
     }
@@ -454,7 +443,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
         else_label: Word,
         condition_id: Word,
         #[allow(dead_code)]
-        effect_var: String,  // The egglog variable name for this effect
+        effect_var: String, // The egglog variable name for this effect
     }
     let mut rvsdg_selections: Vec<RvsdgSelection> = Vec::new();
 
@@ -464,15 +453,26 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
 
         // Find the header block to get the condition
         let header_block = &func.blocks[sel.header_block_idx];
-        let condition_id = header_block.instructions.iter()
+        let condition_id = header_block
+            .instructions
+            .iter()
             .find(|inst| inst.class.opcode == Op::BranchConditional)
             .and_then(|inst| inst.operands.first())
             .and_then(|op| op.id_ref_any());
 
         // Find the blocks
-        let then_block = func.blocks.iter().find(|b| get_block_label(b) == Some(sel.then_label));
-        let else_block = func.blocks.iter().find(|b| get_block_label(b) == Some(sel.else_label));
-        let merge_block = func.blocks.iter().find(|b| get_block_label(b) == Some(sel.merge_label));
+        let then_block = func
+            .blocks
+            .iter()
+            .find(|b| get_block_label(b) == Some(sel.then_label));
+        let else_block = func
+            .blocks
+            .iter()
+            .find(|b| get_block_label(b) == Some(sel.else_label));
+        let merge_block = func
+            .blocks
+            .iter()
+            .find(|b| get_block_label(b) == Some(sel.merge_label));
 
         if let (Some(cond_id), Some(then_b), Some(else_b), Some(merge_b)) =
             (condition_id, then_block, else_block, merge_block)
@@ -552,7 +552,10 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
 
     for (sw_idx, sw) in switch_constructs.iter().enumerate() {
         let func = &module.functions[sw.func_idx];
-        let merge_block = func.blocks.iter().find(|b| get_block_label(b) == Some(sw.merge_label));
+        let merge_block = func
+            .blocks
+            .iter()
+            .find(|b| get_block_label(b) == Some(sw.merge_label));
 
         if let Some(merge_b) = merge_block {
             if !ends_with_unreachable(merge_b) {
@@ -564,10 +567,14 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
             let mut all_valid = true;
 
             for &case_label in &sw.case_labels {
-                let case_block = func.blocks.iter().find(|b| get_block_label(b) == Some(case_label));
+                let case_block = func
+                    .blocks
+                    .iter()
+                    .find(|b| get_block_label(b) == Some(case_label));
                 if let Some(case_b) = case_block {
                     if let Some(ret_val) = get_return_value_operand(case_b) {
-                        case_effects.push((case_label, format!("(ReturnValue (Sym \"id{}\"))", ret_val)));
+                        case_effects
+                            .push((case_label, format!("(ReturnValue (Sym \"id{}\"))", ret_val)));
                     } else if ends_with_unreachable(case_b) {
                         case_effects.push((case_label, "(Unreachable)".to_string()));
                     } else {
@@ -712,16 +719,22 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     // Get next available ID for synthesized constants
     let mut next_id = all_ssa_ids.iter().copied().max().unwrap_or(0) + 1;
     // Find a suitable integer type for synthesized constants
-    let int32_type = module.types_global_values.iter()
-        .find(|inst| inst.class.opcode == Op::TypeInt &&
-              inst.operands.first() == Some(&rspirv::dr::Operand::LiteralBit32(32)))
+    let int32_type = module
+        .types_global_values
+        .iter()
+        .find(|inst| {
+            inst.class.opcode == Op::TypeInt
+                && inst.operands.first() == Some(&rspirv::dr::Operand::LiteralBit32(32))
+        })
         .and_then(|inst| inst.result_id);
 
     // Only extract from IDs that are both:
     // 1. True roots (operands of side effects) - these are the outputs we need
     // 2. Live (reachable via liveness propagation in the e-graph)
     // This implements full in-e-graph DCE: liveness is computed during saturation
-    let extraction_roots: Vec<Word> = ctx.root_ids.iter()
+    let extraction_roots: Vec<Word> = ctx
+        .root_ids
+        .iter()
         .copied()
         .filter(|id| true_roots.contains(id) && live_ids.contains(id))
         .collect();
@@ -750,8 +763,8 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                 // If the ENTIRE term is just a constant (e.g., "(Const 84)"), use the
                 // current instruction's ID for that constant instead of synthesizing.
                 // This enables proper DCE - the instruction becomes the constant.
-                let is_root_const = term.trim().starts_with("(Const ") ||
-                                    term.trim().starts_with("(Const64 ");
+                let is_root_const =
+                    term.trim().starts_with("(Const ") || term.trim().starts_with("(Const64 ");
 
                 for (is_64, value) in find_inline_constants(&term) {
                     let key = if is_64 {
@@ -769,9 +782,14 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                             // Create a new constant for use as an operand
                             let const_type = if is_64 {
                                 // Try to find 64-bit int type
-                                module.types_global_values.iter()
-                                    .find(|inst| inst.class.opcode == Op::TypeInt &&
-                                          inst.operands.first() == Some(&rspirv::dr::Operand::LiteralBit32(64)))
+                                module
+                                    .types_global_values
+                                    .iter()
+                                    .find(|inst| {
+                                        inst.class.opcode == Op::TypeInt
+                                            && inst.operands.first()
+                                                == Some(&rspirv::dr::Operand::LiteralBit32(64))
+                                    })
                                     .and_then(|inst| inst.result_id)
                                     .or(int32_type)
                             } else {
@@ -814,17 +832,22 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                         id_aliases.insert(id, alias_id);
                         used_ids.insert(alias_id);
                         // Emit CopyObject to maintain SSA form
-                        optimized_instructions.insert(id, Instruction::new(
-                            Op::CopyObject,
-                            Some(result_type),
-                            Some(id),
-                            vec![rspirv::dr::Operand::IdRef(alias_id)],
-                        ));
+                        optimized_instructions.insert(
+                            id,
+                            Instruction::new(
+                                Op::CopyObject,
+                                Some(result_type),
+                                Some(id),
+                                vec![rspirv::dr::Operand::IdRef(alias_id)],
+                            ),
+                        );
                     }
                 } else {
                     let type_width = type_widths.get(&result_type).copied();
                     // Try simple term_to_instruction first
-                    if let Some(inst) = term_to_instruction(&term, id, result_type, &id_map, type_width) {
+                    if let Some(inst) =
+                        term_to_instruction(&term, id, result_type, &id_map, type_width)
+                    {
                         // Also collect IDs from the generated instruction
                         collect_ids_from_instruction(&inst, &mut used_ids);
                         optimized_instructions.insert(id, inst);
@@ -836,13 +859,12 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                             result_type,
                             &mut id_map,
                             &mut next_id,
-                            &type_widths,
                             int32_type,
                         ) {
                             let _ = final_id; // Suppress unused warning
-                            // Add synthesized intermediate instructions
-                            // The last instruction should use the original ID and gets stored in
-                            // optimized_instructions (to UPDATE the existing instruction, not INSERT new)
+                                              // Add synthesized intermediate instructions
+                                              // The last instruction should use the original ID and gets stored in
+                                              // optimized_instructions (to UPDATE the existing instruction, not INSERT new)
                             let num_insts = new_insts.len();
                             for (i, mut inst) in new_insts.into_iter().enumerate() {
                                 if i == num_insts - 1 {
@@ -864,9 +886,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                                     collect_ids_from_instruction(&inst, &mut used_ids);
                                     synthesized_instructions.push(inst.clone());
                                     // Track in optimized_instructions if it's a new ID
-                                    if !optimized_instructions.contains_key(&inst_id) {
-                                        optimized_instructions.insert(inst_id, inst);
-                                    }
+                                    optimized_instructions.entry(inst_id).or_insert(inst);
                                 }
                             }
                         }
@@ -885,10 +905,10 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     // Track hoisting information
     #[derive(Debug, Clone)]
     struct HoistInfo {
-        then_id: Word,           // ID from then-branch that should become CopyObject
-        else_id: Word,           // ID from else-branch that should become CopyObject
+        then_id: Word, // ID from then-branch that should become CopyObject
+        else_id: Word, // ID from else-branch that should become CopyObject
         #[allow(dead_code)]
-        hoisted_term: String,    // The term to compute in header
+        hoisted_term: String, // The term to compute in header
         header_block_label: Word,
         result_type: Word,
     }
@@ -946,16 +966,20 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
         id_aliases.insert(hoist.else_id, hoist.then_id);
 
         // Update else_id's instruction to be a CopyObject
-        optimized_instructions.insert(hoist.else_id, Instruction::new(
-            Op::CopyObject,
-            Some(hoist.result_type),
-            Some(hoist.else_id),
-            vec![rspirv::dr::Operand::IdRef(hoist.then_id)],
-        ));
+        optimized_instructions.insert(
+            hoist.else_id,
+            Instruction::new(
+                Op::CopyObject,
+                Some(hoist.result_type),
+                Some(hoist.else_id),
+                vec![rspirv::dr::Operand::IdRef(hoist.then_id)],
+            ),
+        );
     }
 
     // Track which IDs need to be moved to header blocks
-    let hoisted_id_to_header: HashMap<Word, Word> = hoisted_values.iter()
+    let hoisted_id_to_header: HashMap<Word, Word> = hoisted_values
+        .iter()
         .map(|h| (h.then_id, h.header_block_label))
         .collect();
 
@@ -972,7 +996,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     }
     #[derive(Debug)]
     enum NewTerminator {
-        Branch(Word),                              // Branch to merge
+        Branch(Word),                                     // Branch to merge
         ReturnValueWithPhi(Word, Word, Word, Word, Word), // phi_id, val1, label1, val2, label2
         ReturnValueWithMultiPhi(Word, Vec<(Word, Word)>), // phi_id, [(val, label), ...] for switch
     }
@@ -997,7 +1021,11 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
         // to a single block with Select + ReturnValue
         if let Some(effect) = parse_effect_result(&result_str) {
             match effect {
-                ParsedEffect::ReturnValueWithGamma { cond_term, then_term, else_term } => {
+                ParsedEffect::ReturnValueWithGamma {
+                    cond_term,
+                    then_term,
+                    else_term,
+                } => {
                     // The pattern was optimized to a single return with select
                     // Convert: then/else blocks branch to merge, merge has Select + ReturnValue
 
@@ -1016,7 +1044,8 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                     });
 
                     // Resolve terms to IDs
-                    let _cond_id = resolve_term_to_id_or_create(&cond_term, &id_map, sel.condition_id);
+                    let _cond_id =
+                        resolve_term_to_id_or_create(&cond_term, &id_map, sel.condition_id);
                     let then_id = resolve_term_to_id_simple(&then_term, &id_map);
                     let else_id = resolve_term_to_id_simple(&else_term, &id_map);
 
@@ -1090,10 +1119,13 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
         let mut all_valid = true;
 
         for &case_label in &sw.case_labels {
-            let case_block = func.blocks.iter().find(|b| get_block_label(b) == Some(case_label));
+            let case_block = func
+                .blocks
+                .iter()
+                .find(|b| get_block_label(b) == Some(case_label));
             if let Some(case_b) = case_block {
                 if let Some(ret_val) = get_return_value_operand(case_b) {
-                    case_values.push((ret_val, case_label));  // (value, label) order for phi
+                    case_values.push((ret_val, case_label)); // (value, label) order for phi
                 } else {
                     all_valid = false;
                     break;
@@ -1120,10 +1152,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
             block_transforms.push(BlockTransform {
                 func_idx: sw.func_idx,
                 block_label: sw.merge_label,
-                new_terminator: NewTerminator::ReturnValueWithMultiPhi(
-                    phi_id,
-                    case_values,
-                ),
+                new_terminator: NewTerminator::ReturnValueWithMultiPhi(phi_id, case_values),
             });
         }
     }
@@ -1137,10 +1166,17 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     output.types_global_values.retain(|inst| {
         match inst.class.opcode {
             // Constants are only kept if they're in used_ids (reachable from roots)
-            Op::Constant | Op::ConstantTrue | Op::ConstantFalse |
-            Op::ConstantComposite | Op::ConstantSampler | Op::ConstantNull |
-            Op::SpecConstant | Op::SpecConstantTrue | Op::SpecConstantFalse |
-            Op::SpecConstantComposite | Op::SpecConstantOp => {
+            Op::Constant
+            | Op::ConstantTrue
+            | Op::ConstantFalse
+            | Op::ConstantComposite
+            | Op::ConstantSampler
+            | Op::ConstantNull
+            | Op::SpecConstant
+            | Op::SpecConstantTrue
+            | Op::SpecConstantFalse
+            | Op::SpecConstantComposite
+            | Op::SpecConstantOp => {
                 if let Some(id) = inst.result_id {
                     used_ids.contains(&id)
                 } else {
@@ -1159,8 +1195,8 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                     }
                 });
                 match storage_class {
-                    Some(rspirv::spirv::StorageClass::Private) |
-                    Some(rspirv::spirv::StorageClass::Function) => {
+                    Some(rspirv::spirv::StorageClass::Private)
+                    | Some(rspirv::spirv::StorageClass::Function) => {
                         // Private/Function variables can be DCE'd if unused
                         if let Some(id) = inst.result_id {
                             used_ids.contains(&id)
@@ -1212,7 +1248,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     // Track IDs that were originally in function bodies but now fold to constants
     let mut folded_to_constant: HashSet<Word> = HashSet::new();
     // Track IDs that should become CopyObject to an existing constant
-    let mut copy_to_existing: HashMap<Word, Word> = HashMap::new();
+    let copy_to_existing: HashMap<Word, Word> = HashMap::new();
 
     // Check which function body instructions fold to constants
     // Note: We always add the folded constant to types_global_values with the original ID.
@@ -1307,9 +1343,11 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
         for func in &mut output.functions {
             if let Some(block) = func.blocks.first_mut() {
                 // Find the position before the first non-phi instruction
-                let insert_pos = block.instructions.iter().position(|inst| {
-                    !matches!(inst.class.opcode, Op::Phi)
-                }).unwrap_or(0);
+                let insert_pos = block
+                    .instructions
+                    .iter()
+                    .position(|inst| !matches!(inst.class.opcode, Op::Phi))
+                    .unwrap_or(0);
                 // Insert synthesized instructions at this position
                 for (i, inst) in synthesized_instructions.iter().enumerate() {
                     block.instructions.insert(insert_pos + i, inst.clone());
@@ -1344,18 +1382,22 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                     }
                     NewTerminator::ReturnValueWithPhi(phi_id, val1, label1, val2, label2) => {
                         // Remove Unreachable
-                        block.instructions.retain(|inst| {
-                            inst.class.opcode != Op::Unreachable
-                        });
+                        block
+                            .instructions
+                            .retain(|inst| inst.class.opcode != Op::Unreachable);
 
                         // Find the return type by looking at the original value's type
                         // Look up val1's type from the function or module
-                        let result_type = ctx.id_to_type.get(val1)
+                        let result_type = ctx
+                            .id_to_type
+                            .get(val1)
                             .or_else(|| ctx.id_to_type.get(val2))
                             .copied()
                             .unwrap_or_else(|| {
                                 // Fall back to finding the type from module types_global_values
-                                module.types_global_values.iter()
+                                module
+                                    .types_global_values
+                                    .iter()
                                     .find(|inst| inst.result_id == Some(*val1))
                                     .and_then(|inst| inst.result_type)
                                     .unwrap_or(0)
@@ -1384,18 +1426,22 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                     }
                     NewTerminator::ReturnValueWithMultiPhi(phi_id, case_values) => {
                         // Remove Unreachable
-                        block.instructions.retain(|inst| {
-                            inst.class.opcode != Op::Unreachable
-                        });
+                        block
+                            .instructions
+                            .retain(|inst| inst.class.opcode != Op::Unreachable);
 
                         // Find the return type by looking at the first value's type
-                        let result_type = case_values.first()
+                        let result_type = case_values
+                            .first()
                             .and_then(|(val, _)| ctx.id_to_type.get(val).copied())
                             .unwrap_or_else(|| {
                                 // Fall back to finding the type from module types_global_values
-                                case_values.first()
+                                case_values
+                                    .first()
                                     .and_then(|(val, _)| {
-                                        module.types_global_values.iter()
+                                        module
+                                            .types_global_values
+                                            .iter()
                                             .find(|inst| inst.result_id == Some(*val))
                                             .and_then(|inst| inst.result_type)
                                     })
@@ -1403,7 +1449,8 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                             });
 
                         // Build phi operands: (value, label) pairs flattened
-                        let phi_operands: Vec<rspirv::dr::Operand> = case_values.iter()
+                        let phi_operands: Vec<rspirv::dr::Operand> = case_values
+                            .iter()
                             .flat_map(|(val, label)| {
                                 vec![
                                     rspirv::dr::Operand::IdRef(*val),
@@ -1465,15 +1512,18 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
 
         // Insert hoisted instructions into header blocks (before SelectionMerge)
         for (header_label, inst) in hoisted_to_move {
-            let header_block = func.blocks.iter_mut().find(|b| {
-                b.label.as_ref().and_then(|l| l.result_id) == Some(header_label)
-            });
+            let header_block = func
+                .blocks
+                .iter_mut()
+                .find(|b| b.label.as_ref().and_then(|l| l.result_id) == Some(header_label));
 
             if let Some(block) = header_block {
                 // Find the SelectionMerge instruction and insert before it
-                let insert_pos = block.instructions.iter().position(|i| {
-                    i.class.opcode == Op::SelectionMerge
-                }).unwrap_or(block.instructions.len());
+                let insert_pos = block
+                    .instructions
+                    .iter()
+                    .position(|i| i.class.opcode == Op::SelectionMerge)
+                    .unwrap_or(block.instructions.len());
 
                 block.instructions.insert(insert_pos, inst);
             }
@@ -1499,7 +1549,11 @@ fn parse_sym_alias(term: &str, id_map: &HashMap<String, Word>) -> Option<Word> {
 }
 
 /// Clean up the module by removing redundant instructions and dead code
-fn cleanup_module(module: &mut Module, id_aliases: &HashMap<Word, Word>, true_roots: &HashSet<Word>) {
+fn cleanup_module(
+    module: &mut Module,
+    id_aliases: &HashMap<Word, Word>,
+    true_roots: &HashSet<Word>,
+) {
     // Build transitive alias map
     let mut final_aliases: HashMap<Word, Word> = HashMap::new();
     for (&from, &to) in id_aliases {
@@ -1584,7 +1638,10 @@ fn cleanup_module(module: &mut Module, id_aliases: &HashMap<Word, Word>, true_ro
         // Remove unused instructions (those whose result_id is not in used_ids)
         let mut removed_any = false;
         if std::env::var("DEBUG_DCE").is_ok() {
-            eprintln!("DEBUG_DCE: iteration {}, used_ids = {:?}", dce_iteration, used_ids);
+            eprintln!(
+                "DEBUG_DCE: iteration {}, used_ids = {:?}",
+                dce_iteration, used_ids
+            );
         }
         for func in &mut module.functions {
             for block in &mut func.blocks {
@@ -1599,7 +1656,10 @@ fn cleanup_module(module: &mut Module, id_aliases: &HashMap<Word, Word>, true_ro
                             }
                             // Not used and not aliased to something used - remove it
                             if std::env::var("DEBUG_DCE").is_ok() {
-                                eprintln!("DEBUG_DCE: Removing id{} ({:?})", result_id, inst.class.opcode);
+                                eprintln!(
+                                    "DEBUG_DCE: Removing id{} ({:?})",
+                                    result_id, inst.class.opcode
+                                );
                             }
                             return false;
                         }
@@ -1631,7 +1691,7 @@ fn collect_ids_from_term(term: &str, id_map: &HashMap<String, Word>, used_ids: &
     let bytes = term.as_bytes();
     while i < bytes.len() {
         // Look for (Sym "id
-        if i + 8 < bytes.len() && &bytes[i..i+8] == b"(Sym \"id" {
+        if i + 8 < bytes.len() && &bytes[i..i + 8] == b"(Sym \"id" {
             // Extract the number after "id"
             let start = i + 8;
             let mut end = start;
@@ -1646,7 +1706,7 @@ fn collect_ids_from_term(term: &str, id_map: &HashMap<String, Word>, used_ids: &
                 }
             }
             i = end;
-        } else if i + 10 < bytes.len() && &bytes[i..i+10] == b"(Sym \"const" {
+        } else if i + 10 < bytes.len() && &bytes[i..i + 10] == b"(Sym \"const" {
             // Look for (Sym "const_N") or (Sym "const64_N") patterns
             // These reference constants that need to be kept
             let start = i + 5; // After "(Sym "
@@ -1912,7 +1972,11 @@ fn split_terms_simple(s: &str) -> Vec<String> {
 }
 
 /// Resolve a term to an ID, with a fallback if it's a simple reference
-fn resolve_term_to_id_or_create(term: &str, id_map: &HashMap<String, Word>, fallback: Word) -> Word {
+fn resolve_term_to_id_or_create(
+    term: &str,
+    id_map: &HashMap<String, Word>,
+    fallback: Word,
+) -> Word {
     resolve_term_to_id_simple(term, id_map).unwrap_or(fallback)
 }
 
@@ -1942,7 +2006,6 @@ fn materialize_term(
     result_type: Word,
     id_map: &mut HashMap<String, Word>,
     next_id: &mut Word,
-    type_widths: &HashMap<Word, u32>,
     int32_type: Option<Word>,
 ) -> Option<(Word, Vec<Instruction>)> {
     let term = term.trim();
@@ -2070,14 +2133,12 @@ fn materialize_term(
                 let terms = split_terms_simple(rest);
                 if terms.len() >= 2 {
                     // Recursively materialize operands
-                    let (lhs_id, mut lhs_synth) = materialize_term(
-                        &terms[0], result_type, id_map, next_id, type_widths, int32_type,
-                    )?;
+                    let (lhs_id, mut lhs_synth) =
+                        materialize_term(&terms[0], result_type, id_map, next_id, int32_type)?;
                     synthesized.append(&mut lhs_synth);
 
-                    let (rhs_id, mut rhs_synth) = materialize_term(
-                        &terms[1], result_type, id_map, next_id, type_widths, int32_type,
-                    )?;
+                    let (rhs_id, mut rhs_synth) =
+                        materialize_term(&terms[1], result_type, id_map, next_id, int32_type)?;
                     synthesized.append(&mut rhs_synth);
 
                     // Create the binary instruction
@@ -2121,7 +2182,11 @@ fn materialize_term(
         if let Some(rest) = term.strip_prefix(&prefix) {
             if let Some(operand_term) = rest.strip_suffix(')') {
                 let (operand_id, mut operand_synth) = materialize_term(
-                    operand_term.trim(), result_type, id_map, next_id, type_widths, int32_type,
+                    operand_term.trim(),
+                    result_type,
+                    id_map,
+                    next_id,
+                    int32_type,
                 )?;
                 synthesized.append(&mut operand_synth);
 
@@ -2145,19 +2210,16 @@ fn materialize_term(
         if let Some(rest) = rest.strip_suffix(')') {
             let terms = split_terms_simple(rest);
             if terms.len() >= 3 {
-                let (cond_id, mut cond_synth) = materialize_term(
-                    &terms[0], result_type, id_map, next_id, type_widths, int32_type,
-                )?;
+                let (cond_id, mut cond_synth) =
+                    materialize_term(&terms[0], result_type, id_map, next_id, int32_type)?;
                 synthesized.append(&mut cond_synth);
 
-                let (then_id, mut then_synth) = materialize_term(
-                    &terms[1], result_type, id_map, next_id, type_widths, int32_type,
-                )?;
+                let (then_id, mut then_synth) =
+                    materialize_term(&terms[1], result_type, id_map, next_id, int32_type)?;
                 synthesized.append(&mut then_synth);
 
-                let (else_id, mut else_synth) = materialize_term(
-                    &terms[2], result_type, id_map, next_id, type_widths, int32_type,
-                )?;
+                let (else_id, mut else_synth) =
+                    materialize_term(&terms[2], result_type, id_map, next_id, int32_type)?;
                 synthesized.append(&mut else_synth);
 
                 let inst_id = *next_id;

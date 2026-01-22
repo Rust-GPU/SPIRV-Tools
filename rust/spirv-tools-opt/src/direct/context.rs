@@ -45,7 +45,10 @@ impl EgglogContext {
                 self.id_to_term.insert(result_id, term.clone());
                 // Constants are NOT roots - they're only live if referenced by a root
                 // This enables DCE to remove unused constants naturally through e-graph extraction
-                if !matches!(inst.class.opcode, Op::Constant | Op::ConstantTrue | Op::ConstantFalse) {
+                if !matches!(
+                    inst.class.opcode,
+                    Op::Constant | Op::ConstantTrue | Op::ConstantFalse
+                ) {
                     self.root_ids.push(result_id);
                 }
             }
@@ -163,7 +166,11 @@ impl EgglogContext {
             Op::ConvertSToF => self.unary_op("ConvertSToF", inst)?,
             Op::ConvertUToF => self.unary_op("ConvertUToF", inst)?,
             Op::Select => {
-                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                let ops: Vec<Word> = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .collect();
                 if ops.len() >= 3 {
                     let cond = self.get_or_create_term(ops[0]);
                     let t = self.get_or_create_term(ops[1]);
@@ -191,11 +198,19 @@ impl EgglogContext {
             // Composite operations
             Op::CompositeExtract => {
                 // CompositeExtract %type %composite indices...
-                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
-                let indices: Vec<u32> = inst.operands.iter().filter_map(|op| match op {
-                    rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
-                    _ => None,
-                }).collect();
+                let ops: Vec<Word> = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .collect();
+                let indices: Vec<u32> = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| match op {
+                        rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+                        _ => None,
+                    })
+                    .collect();
                 if !ops.is_empty() && !indices.is_empty() {
                     let composite = self.get_or_create_term(ops[0]);
                     // For now, only handle single-level extraction (most common case)
@@ -206,11 +221,19 @@ impl EgglogContext {
             }
             Op::CompositeInsert => {
                 // CompositeInsert %type %object %composite indices...
-                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
-                let indices: Vec<u32> = inst.operands.iter().filter_map(|op| match op {
-                    rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
-                    _ => None,
-                }).collect();
+                let ops: Vec<Word> = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .collect();
+                let indices: Vec<u32> = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| match op {
+                        rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+                        _ => None,
+                    })
+                    .collect();
                 if ops.len() >= 2 && !indices.is_empty() {
                     let object = self.get_or_create_term(ops[0]);
                     let composite = self.get_or_create_term(ops[1]);
@@ -221,7 +244,11 @@ impl EgglogContext {
             }
             Op::CompositeConstruct => {
                 // CompositeConstruct %type constituents...
-                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                let ops: Vec<Word> = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .collect();
                 if ops.is_empty() {
                     return None;
                 }
@@ -234,7 +261,11 @@ impl EgglogContext {
                 format!("(CompositeConstruct {})", expr_list)
             }
             Op::VectorExtractDynamic => {
-                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                let ops: Vec<Word> = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .collect();
                 if ops.len() >= 2 {
                     let vec = self.get_or_create_term(ops[0]);
                     let idx = self.get_or_create_term(ops[1]);
@@ -244,7 +275,11 @@ impl EgglogContext {
                 }
             }
             Op::VectorInsertDynamic => {
-                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                let ops: Vec<Word> = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .collect();
                 if ops.len() >= 3 {
                     let vec = self.get_or_create_term(ops[0]);
                     let component = self.get_or_create_term(ops[1]);
@@ -256,18 +291,32 @@ impl EgglogContext {
             }
             Op::VectorShuffle => {
                 // VectorShuffle %type %vec1 %vec2 indices...
-                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
-                let indices: Vec<i64> = inst.operands.iter().filter_map(|op| match op {
-                    Operand::LiteralBit32(v) => Some(*v as i64),
-                    _ => None,
-                }).collect();
+                let ops: Vec<Word> = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .collect();
+                let indices: Vec<i64> = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| match op {
+                        Operand::LiteralBit32(v) => Some(*v as i64),
+                        _ => None,
+                    })
+                    .collect();
                 if ops.len() >= 2 {
                     let v1 = self.get_or_create_term(ops[0]);
                     let v2 = self.get_or_create_term(ops[1]);
                     match indices.len() {
                         2 => format!("(VecShuffle2 {} {} {} {})", v1, v2, indices[0], indices[1]),
-                        3 => format!("(VecShuffle3 {} {} {} {} {})", v1, v2, indices[0], indices[1], indices[2]),
-                        4 => format!("(VecShuffle4 {} {} {} {} {} {})", v1, v2, indices[0], indices[1], indices[2], indices[3]),
+                        3 => format!(
+                            "(VecShuffle3 {} {} {} {} {})",
+                            v1, v2, indices[0], indices[1], indices[2]
+                        ),
+                        4 => format!(
+                            "(VecShuffle4 {} {} {} {} {} {})",
+                            v1, v2, indices[0], indices[1], indices[2], indices[3]
+                        ),
                         _ => return None,
                     }
                 } else {
@@ -295,9 +344,7 @@ impl EgglogContext {
             // Bit counting
             Op::BitCount => self.unary_op("BitCount", inst)?,
             // Extended instructions (GLSL.std.450)
-            Op::ExtInst => {
-                self.extended_instruction_to_term(inst)?
-            }
+            Op::ExtInst => self.extended_instruction_to_term(inst)?,
             // Memory operations - model in e-graph for load-store forwarding and dead store elimination
             Op::Load => {
                 // Load %type %pointer [memory_access]
@@ -314,16 +361,25 @@ impl EgglogContext {
             }
             Op::AccessChain => {
                 // AccessChain %type %base indices...
-                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                let ops: Vec<Word> = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .collect();
                 if ops.is_empty() {
                     return None;
                 }
                 let base = self.get_or_create_term(ops[0]);
                 // Get literal indices
-                let indices: Vec<u32> = inst.operands.iter().skip(1).filter_map(|op| match op {
-                    Operand::LiteralBit32(v) => Some(*v),
-                    _ => None,
-                }).collect();
+                let indices: Vec<u32> = inst
+                    .operands
+                    .iter()
+                    .skip(1)
+                    .filter_map(|op| match op {
+                        Operand::LiteralBit32(v) => Some(*v),
+                        _ => None,
+                    })
+                    .collect();
                 // Also check for ID references as indices (dynamic access)
                 let id_indices: Vec<Word> = ops.iter().skip(1).copied().collect();
 
@@ -332,7 +388,10 @@ impl EgglogContext {
                     match indices.len() {
                         1 => format!("(AccessChain1 {} {})", base, indices[0]),
                         2 => format!("(AccessChain2 {} {} {})", base, indices[0], indices[1]),
-                        3 => format!("(AccessChain3 {} {} {} {})", base, indices[0], indices[1], indices[2]),
+                        3 => format!(
+                            "(AccessChain3 {} {} {} {})",
+                            base, indices[0], indices[1], indices[2]
+                        ),
                         _ => return None,
                     }
                 } else if !id_indices.is_empty() {
@@ -345,22 +404,34 @@ impl EgglogContext {
             }
             Op::InBoundsAccessChain => {
                 // Same as AccessChain for optimization purposes
-                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                let ops: Vec<Word> = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .collect();
                 if ops.is_empty() {
                     return None;
                 }
                 let base = self.get_or_create_term(ops[0]);
-                let indices: Vec<u32> = inst.operands.iter().skip(1).filter_map(|op| match op {
-                    Operand::LiteralBit32(v) => Some(*v),
-                    _ => None,
-                }).collect();
+                let indices: Vec<u32> = inst
+                    .operands
+                    .iter()
+                    .skip(1)
+                    .filter_map(|op| match op {
+                        Operand::LiteralBit32(v) => Some(*v),
+                        _ => None,
+                    })
+                    .collect();
                 let id_indices: Vec<Word> = ops.iter().skip(1).copied().collect();
 
                 if !indices.is_empty() {
                     match indices.len() {
                         1 => format!("(AccessChain1 {} {})", base, indices[0]),
                         2 => format!("(AccessChain2 {} {} {})", base, indices[0], indices[1]),
-                        3 => format!("(AccessChain3 {} {} {} {})", base, indices[0], indices[1], indices[2]),
+                        3 => format!(
+                            "(AccessChain3 {} {} {} {})",
+                            base, indices[0], indices[1], indices[2]
+                        ),
                         _ => return None,
                     }
                 } else if !id_indices.is_empty() {
@@ -373,17 +444,28 @@ impl EgglogContext {
             Op::Variable => {
                 // Variable %type storage_class [initializer]
                 // Model as Var node with storage class
-                let storage_class = inst.operands.iter().find_map(|op| match op {
-                    Operand::StorageClass(sc) => Some(*sc as i64),
-                    _ => None,
-                }).unwrap_or(0);
-                let name = inst.result_id.map(|id| format!("var_{}", id)).unwrap_or_default();
+                let storage_class = inst
+                    .operands
+                    .iter()
+                    .find_map(|op| match op {
+                        Operand::StorageClass(sc) => Some(*sc as i64),
+                        _ => None,
+                    })
+                    .unwrap_or(0);
+                let name = inst
+                    .result_id
+                    .map(|id| format!("var_{}", id))
+                    .unwrap_or_default();
                 format!("(Var \"{}\" {})", name, storage_class)
             }
             // Image operations - model for texture hoisting and CSE
             Op::ImageSampleImplicitLod | Op::ImageSampleExplicitLod => {
                 // ImageSample* %type %sampled_image %coordinate [operands]
-                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                let ops: Vec<Word> = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .collect();
                 if ops.len() >= 2 {
                     let img = self.get_or_create_term(ops[0]);
                     let coord = self.get_or_create_term(ops[1]);
@@ -394,7 +476,11 @@ impl EgglogContext {
             }
             Op::ImageFetch => {
                 // ImageFetch %type %image %coordinate [operands]
-                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                let ops: Vec<Word> = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .collect();
                 if ops.len() >= 2 {
                     let img = self.get_or_create_term(ops[0]);
                     let coord = self.get_or_create_term(ops[1]);
@@ -405,7 +491,11 @@ impl EgglogContext {
             }
             Op::ImageRead => {
                 // ImageRead %type %image %coordinate [operands]
-                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                let ops: Vec<Word> = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .collect();
                 if ops.len() >= 2 {
                     let img = self.get_or_create_term(ops[0]);
                     let coord = self.get_or_create_term(ops[1]);
@@ -426,7 +516,11 @@ impl EgglogContext {
             // Atomic operations - model for optimization across atomics
             Op::AtomicLoad => {
                 // AtomicLoad %type %pointer %scope %semantics
-                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                let ops: Vec<Word> = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .collect();
                 if !ops.is_empty() {
                     let ptr = self.get_or_create_term(ops[0]);
                     format!("(AtomicLoad {} (InitMem))", ptr)
@@ -440,7 +534,11 @@ impl EgglogContext {
             }
             Op::AtomicExchange => {
                 // AtomicExchange %type %pointer %scope %semantics %value
-                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                let ops: Vec<Word> = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .collect();
                 if ops.len() >= 2 {
                     let ptr = self.get_or_create_term(ops[0]);
                     // Value is typically the last ID operand
@@ -452,7 +550,11 @@ impl EgglogContext {
             }
             Op::AtomicCompareExchange => {
                 // AtomicCompareExchange %type %ptr %scope %eq_sem %neq_sem %value %comparator
-                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                let ops: Vec<Word> = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .collect();
                 if ops.len() >= 3 {
                     let ptr = self.get_or_create_term(ops[0]);
                     let val = self.get_or_create_term(ops[ops.len() - 2]);
@@ -489,7 +591,11 @@ impl EgglogContext {
             }
             Op::GroupNonUniformAll => {
                 // GroupNonUniformAll %type %scope %predicate
-                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                let ops: Vec<Word> = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .collect();
                 if !ops.is_empty() {
                     let pred = self.get_or_create_term(*ops.last().unwrap());
                     format!("(GroupAll {})", pred)
@@ -498,7 +604,11 @@ impl EgglogContext {
                 }
             }
             Op::GroupNonUniformAny => {
-                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                let ops: Vec<Word> = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .collect();
                 if !ops.is_empty() {
                     let pred = self.get_or_create_term(*ops.last().unwrap());
                     format!("(GroupAny {})", pred)
@@ -507,7 +617,11 @@ impl EgglogContext {
                 }
             }
             Op::GroupNonUniformAllEqual => {
-                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                let ops: Vec<Word> = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .collect();
                 if !ops.is_empty() {
                     let val = self.get_or_create_term(*ops.last().unwrap());
                     format!("(GroupAllEqual {})", val)
@@ -517,7 +631,11 @@ impl EgglogContext {
             }
             Op::GroupNonUniformBroadcast => {
                 // GroupNonUniformBroadcast %type %scope %value %id
-                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                let ops: Vec<Word> = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .collect();
                 if ops.len() >= 2 {
                     let val = self.get_or_create_term(ops[ops.len() - 2]);
                     let id = self.get_or_create_term(ops[ops.len() - 1]);
@@ -527,7 +645,11 @@ impl EgglogContext {
                 }
             }
             Op::GroupNonUniformBroadcastFirst => {
-                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                let ops: Vec<Word> = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .collect();
                 if !ops.is_empty() {
                     let val = self.get_or_create_term(*ops.last().unwrap());
                     format!("(GroupBroadcastFirst {})", val)
@@ -536,7 +658,11 @@ impl EgglogContext {
                 }
             }
             Op::GroupNonUniformShuffle => {
-                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                let ops: Vec<Word> = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .collect();
                 if ops.len() >= 2 {
                     let val = self.get_or_create_term(ops[ops.len() - 2]);
                     let id = self.get_or_create_term(ops[ops.len() - 1]);
@@ -546,7 +672,11 @@ impl EgglogContext {
                 }
             }
             Op::GroupNonUniformShuffleXor => {
-                let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+                let ops: Vec<Word> = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .collect();
                 if ops.len() >= 2 {
                     let val = self.get_or_create_term(ops[ops.len() - 2]);
                     let mask = self.get_or_create_term(ops[ops.len() - 1]);
@@ -603,7 +733,11 @@ impl EgglogContext {
     }
 
     fn binary_op(&mut self, op: &str, inst: &Instruction) -> Option<String> {
-        let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+        let ops: Vec<Word> = inst
+            .operands
+            .iter()
+            .filter_map(|op| op.id_ref_any())
+            .collect();
         if ops.len() >= 2 {
             let lhs = self.get_or_create_term(ops[0]);
             let rhs = self.get_or_create_term(ops[1]);
@@ -617,18 +751,6 @@ impl EgglogContext {
         let operand_id = inst.operands.iter().find_map(|op| op.id_ref_any())?;
         let operand = self.get_or_create_term(operand_id);
         Some(format!("({} {})", op, operand))
-    }
-
-    fn ternary_op(&mut self, op: &str, inst: &Instruction) -> Option<String> {
-        let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
-        if ops.len() >= 3 {
-            let a = self.get_or_create_term(ops[0]);
-            let b = self.get_or_create_term(ops[1]);
-            let c = self.get_or_create_term(ops[2]);
-            Some(format!("({} {} {} {})", op, a, b, c))
-        } else {
-            None
-        }
     }
 
     /// Convert GLSL.std.450 extended instruction to egglog term.
@@ -650,33 +772,38 @@ impl EgglogContext {
         };
 
         // Get operand IDs (skip set ID and opcode)
-        let op_ids: Vec<Word> = inst.operands.iter().skip(2).filter_map(|op| op.id_ref_any()).collect();
+        let op_ids: Vec<Word> = inst
+            .operands
+            .iter()
+            .skip(2)
+            .filter_map(|op| op.id_ref_any())
+            .collect();
 
         // GLSL.std.450 instruction numbers
         // See: https://registry.khronos.org/SPIR-V/specs/unified1/GLSL.std.450.html
         match ext_opcode {
             // Trigonometric
-            13 => self.ext_unary("Sin", &op_ids),      // Sin
-            14 => self.ext_unary("Cos", &op_ids),      // Cos
-            15 => self.ext_unary("Tan", &op_ids),      // Tan
-            16 => self.ext_unary("Asin", &op_ids),     // Asin
-            17 => self.ext_unary("Acos", &op_ids),     // Acos
-            18 => self.ext_unary("Atan", &op_ids),     // Atan
-            19 => self.ext_unary("Sinh", &op_ids),     // Sinh
-            20 => self.ext_unary("Cosh", &op_ids),     // Cosh
-            21 => self.ext_unary("Tanh", &op_ids),     // Tanh
-            22 => self.ext_unary("Asinh", &op_ids),    // Asinh
-            23 => self.ext_unary("Acosh", &op_ids),    // Acosh
-            24 => self.ext_unary("Atanh", &op_ids),    // Atanh
-            25 => self.ext_binary("Atan2", &op_ids),   // Atan2
+            13 => self.ext_unary("Sin", &op_ids),    // Sin
+            14 => self.ext_unary("Cos", &op_ids),    // Cos
+            15 => self.ext_unary("Tan", &op_ids),    // Tan
+            16 => self.ext_unary("Asin", &op_ids),   // Asin
+            17 => self.ext_unary("Acos", &op_ids),   // Acos
+            18 => self.ext_unary("Atan", &op_ids),   // Atan
+            19 => self.ext_unary("Sinh", &op_ids),   // Sinh
+            20 => self.ext_unary("Cosh", &op_ids),   // Cosh
+            21 => self.ext_unary("Tanh", &op_ids),   // Tanh
+            22 => self.ext_unary("Asinh", &op_ids),  // Asinh
+            23 => self.ext_unary("Acosh", &op_ids),  // Acosh
+            24 => self.ext_unary("Atanh", &op_ids),  // Atanh
+            25 => self.ext_binary("Atan2", &op_ids), // Atan2
 
             // Exponential
-            26 => self.ext_binary("Pow", &op_ids),     // Pow
-            27 => self.ext_unary("Exp", &op_ids),      // Exp
-            28 => self.ext_unary("Log", &op_ids),      // Log
-            29 => self.ext_unary("Exp2", &op_ids),     // Exp2
-            30 => self.ext_unary("Log2", &op_ids),     // Log2
-            31 => self.ext_unary("Sqrt", &op_ids),     // Sqrt
+            26 => self.ext_binary("Pow", &op_ids), // Pow
+            27 => self.ext_unary("Exp", &op_ids),  // Exp
+            28 => self.ext_unary("Log", &op_ids),  // Log
+            29 => self.ext_unary("Exp2", &op_ids), // Exp2
+            30 => self.ext_unary("Log2", &op_ids), // Log2
+            31 => self.ext_unary("Sqrt", &op_ids), // Sqrt
             32 => self.ext_unary("InverseSqrt", &op_ids), // InverseSqrt
 
             // Common
@@ -684,11 +811,11 @@ impl EgglogContext {
             34 => self.ext_unary("MatInverse", &op_ids),  // MatrixInverse
 
             // Modf/Frexp with struct return
-            35 => self.ext_unary("ModfStruct", &op_ids),  // ModfStruct
-            36 => self.ext_unary("Modf", &op_ids),        // Modf (returns fraction)
+            35 => self.ext_unary("ModfStruct", &op_ids), // ModfStruct
+            36 => self.ext_unary("Modf", &op_ids),       // Modf (returns fraction)
             51 => self.ext_unary("FrexpStruct", &op_ids), // FrexpStruct
-            52 => self.ext_unary("Frexp", &op_ids),       // Frexp (returns sig)
-            53 => self.ext_binary("Ldexp", &op_ids),      // Ldexp
+            52 => self.ext_unary("Frexp", &op_ids),      // Frexp (returns sig)
+            53 => self.ext_binary("Ldexp", &op_ids),     // Ldexp
 
             // Pack/Unpack
             54 => self.ext_unary("PackSnorm4x8", &op_ids),
@@ -705,60 +832,60 @@ impl EgglogContext {
             65 => self.ext_unary("UnpackDouble2x32", &op_ids),
 
             // Length/Distance/Cross
-            66 => self.ext_unary("Length", &op_ids),      // Length
-            67 => self.ext_binary("Distance", &op_ids),   // Distance
-            68 => self.ext_binary("Cross", &op_ids),      // Cross
-            69 => self.ext_unary("Normalize", &op_ids),   // Normalize
+            66 => self.ext_unary("Length", &op_ids), // Length
+            67 => self.ext_binary("Distance", &op_ids), // Distance
+            68 => self.ext_binary("Cross", &op_ids), // Cross
+            69 => self.ext_unary("Normalize", &op_ids), // Normalize
             70 => self.ext_ternary("FaceForward", &op_ids), // FaceForward
-            71 => self.ext_binary("Reflect", &op_ids),    // Reflect
-            72 => self.ext_ternary("Refract", &op_ids),   // Refract
+            71 => self.ext_binary("Reflect", &op_ids), // Reflect
+            72 => self.ext_ternary("Refract", &op_ids), // Refract
 
             // Integer bit manipulation
-            73 => self.ext_unary("FindILsb", &op_ids),    // FindILsb
-            74 => self.ext_unary("FindSMsb", &op_ids),    // FindSMsb
-            75 => self.ext_unary("FindUMsb", &op_ids),    // FindUMsb
+            73 => self.ext_unary("FindILsb", &op_ids), // FindILsb
+            74 => self.ext_unary("FindSMsb", &op_ids), // FindSMsb
+            75 => self.ext_unary("FindUMsb", &op_ids), // FindUMsb
 
             // Abs/Sign
-            4 => self.ext_unary("FAbs", &op_ids),         // FAbs
-            5 => self.ext_unary("SAbs", &op_ids),         // SAbs
-            6 => self.ext_unary("FSign", &op_ids),        // FSign
-            7 => self.ext_unary("Sign", &op_ids),         // SSign
+            4 => self.ext_unary("FAbs", &op_ids),  // FAbs
+            5 => self.ext_unary("SAbs", &op_ids),  // SAbs
+            6 => self.ext_unary("FSign", &op_ids), // FSign
+            7 => self.ext_unary("Sign", &op_ids),  // SSign
 
             // Floor/Ceil/Round/Trunc/Fract
-            8 => self.ext_unary("FFloor", &op_ids),       // Floor
-            9 => self.ext_unary("FCeil", &op_ids),        // Ceil
-            10 => self.ext_unary("Fract", &op_ids),       // Fract
-            11 => self.ext_unary("Radians", &op_ids),     // Radians
-            12 => self.ext_unary("Degrees", &op_ids),     // Degrees
+            8 => self.ext_unary("FFloor", &op_ids),   // Floor
+            9 => self.ext_unary("FCeil", &op_ids),    // Ceil
+            10 => self.ext_unary("Fract", &op_ids),   // Fract
+            11 => self.ext_unary("Radians", &op_ids), // Radians
+            12 => self.ext_unary("Degrees", &op_ids), // Degrees
 
             // Round/Trunc
-            1 => self.ext_unary("FRound", &op_ids),       // Round
-            2 => self.ext_unary("FRound", &op_ids),       // RoundEven (same as Round for now)
-            3 => self.ext_unary("FTrunc", &op_ids),       // Trunc
+            1 => self.ext_unary("FRound", &op_ids), // Round
+            2 => self.ext_unary("FRound", &op_ids), // RoundEven (same as Round for now)
+            3 => self.ext_unary("FTrunc", &op_ids), // Trunc
 
             // Min/Max/Clamp (GLSL.std.450 opcodes)
-            37 => self.ext_binary("FMin", &op_ids),       // FMin
-            38 => self.ext_binary("UMin", &op_ids),       // UMin
-            39 => self.ext_binary("SMin", &op_ids),       // SMin
-            40 => self.ext_binary("FMax", &op_ids),       // FMax
-            41 => self.ext_binary("UMax", &op_ids),       // UMax
-            42 => self.ext_binary("SMax", &op_ids),       // SMax
-            43 => self.ext_ternary("FClamp", &op_ids),    // FClamp
-            44 => self.ext_ternary("UClamp", &op_ids),    // UClamp
-            45 => self.ext_ternary("SClamp", &op_ids),    // SClamp
-            46 => self.ext_ternary("FMix", &op_ids),      // FMix
+            37 => self.ext_binary("FMin", &op_ids),    // FMin
+            38 => self.ext_binary("UMin", &op_ids),    // UMin
+            39 => self.ext_binary("SMin", &op_ids),    // SMin
+            40 => self.ext_binary("FMax", &op_ids),    // FMax
+            41 => self.ext_binary("UMax", &op_ids),    // UMax
+            42 => self.ext_binary("SMax", &op_ids),    // SMax
+            43 => self.ext_ternary("FClamp", &op_ids), // FClamp
+            44 => self.ext_ternary("UClamp", &op_ids), // UClamp
+            45 => self.ext_ternary("SClamp", &op_ids), // SClamp
+            46 => self.ext_ternary("FMix", &op_ids),   // FMix
 
             // Step/SmoothStep
-            48 => self.ext_binary("Step", &op_ids),       // Step
+            48 => self.ext_binary("Step", &op_ids), // Step
             49 => self.ext_ternary("SmoothStep", &op_ids), // SmoothStep
 
             // Fma
-            50 => self.ext_ternary("Fma", &op_ids),       // Fma
+            50 => self.ext_ternary("Fma", &op_ids), // Fma
 
             // NMin/NMax/NClamp
-            79 => self.ext_binary("NMin", &op_ids),       // NMin
-            80 => self.ext_binary("NMax", &op_ids),       // NMax
-            81 => self.ext_ternary("NClamp", &op_ids),    // NClamp
+            79 => self.ext_binary("NMin", &op_ids),    // NMin
+            80 => self.ext_binary("NMax", &op_ids),    // NMax
+            81 => self.ext_ternary("NClamp", &op_ids), // NClamp
 
             _ => None,
         }
@@ -797,7 +924,11 @@ impl EgglogContext {
     /// Convert atomic binary operations (ptr, value) to e-graph term.
     fn atomic_binary_op(&mut self, op: &str, inst: &Instruction) -> Option<String> {
         // Atomic binary ops: %type %ptr %scope %semantics %value
-        let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+        let ops: Vec<Word> = inst
+            .operands
+            .iter()
+            .filter_map(|op| op.id_ref_any())
+            .collect();
         if ops.len() >= 2 {
             let ptr = self.get_or_create_term(ops[0]);
             // Value is the last ID operand
@@ -811,7 +942,11 @@ impl EgglogContext {
     /// Convert subgroup reduction operations to e-graph term.
     fn subgroup_reduction_op(&mut self, op: &str, inst: &Instruction) -> Option<String> {
         // GroupNonUniform* %type %scope %operation %value [cluster_size]
-        let ops: Vec<Word> = inst.operands.iter().filter_map(|op| op.id_ref_any()).collect();
+        let ops: Vec<Word> = inst
+            .operands
+            .iter()
+            .filter_map(|op| op.id_ref_any())
+            .collect();
         if !ops.is_empty() {
             // Value is the last ID operand
             let val = self.get_or_create_term(*ops.last().unwrap());
