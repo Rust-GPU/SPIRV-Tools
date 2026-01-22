@@ -29,7 +29,14 @@ fn main() {
     .expect("failed to copy context bridge header");
 
     let mut bridge_builder = cxx_build::bridge("src/lib.rs");
-    bridge_builder.define("SPIRV_RUST_TARGET_ENV", None);
+    // Only define SPIRV_RUST_TARGET_ENV when NOT building via CMake.
+    // When building via CMake, the FFI library should include its own implementations
+    // of dispatch_context_message and assemble_text_with_context (from context_bridge.cc)
+    // to avoid circular dependency issues at link time.
+    // CMake sets SPIRV_TOOLS_FFI_SKIP_CPP_LINK=1 when invoking cargo.
+    if env::var("SPIRV_TOOLS_FFI_SKIP_CPP_LINK").is_err() {
+        bridge_builder.define("SPIRV_RUST_TARGET_ENV", None);
+    }
     bridge_builder
         .file("src/context_bridge.cc")
         .include(repo_root)
