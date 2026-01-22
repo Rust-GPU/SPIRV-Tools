@@ -519,6 +519,8 @@ cc_library(
     exclude = [
         "test/cpp_interface_test.cpp",
         "test/pch_test.cpp",
+        # Requires Rust FFI build (spirv_tools_enable_rust=true)
+        "test/rust_validator_override_test.cpp",
     ],
 )]
 
