@@ -523,6 +523,7 @@ cc_library(
         "test/rust_validator_override_test.cpp",
         "test/rust_disassembler_diagnostics_test.cpp",
         "test/disassemble_rust_fallback_test.cpp",
+        "test/rust_optimizer_error_test.cpp",
     ],
 )]
 
