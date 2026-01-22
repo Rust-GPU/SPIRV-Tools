@@ -37,7 +37,7 @@ namespace spvtools::ffi {
 // assemble_text_with_context are provided by source/text.cpp using internal APIs.
 // In standalone Rust builds (Bazel), we provide them here.
 #ifndef SPIRV_RUST_TARGET_ENV
-void dispatch_context_message(std::uintptr_t context_ptr, std::uint32_t level,
+void dispatch_context_message(std::size_t context_ptr, std::uint32_t level,
                               bool has_source, rust::Str source,
                               MessagePosition position, rust::Str message) {
   // This function is intentionally a no-op in standalone Rust builds.
