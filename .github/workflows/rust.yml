@@ -48,13 +48,15 @@ jobs:
 
       - name: Build Rust workspace
         working-directory: rust
-        # Exclude spirv-tools-ffi which requires C++ build (tested in rust-ffi-tests job)
-        run: cargo build --workspace --exclude spirv-tools-ffi
+        # Exclude crates requiring C++ build (tested in rust-ffi-tests job)
+        # spirv-tools-cli depends on spirv-tools-ffi, so both must be excluded
+        run: cargo build --workspace --exclude spirv-tools-ffi --exclude spirv-tools-cli
 
       - name: Run Rust tests
         working-directory: rust
-        # Exclude spirv-tools-ffi which requires C++ build (tested in rust-ffi-tests job)
-        run: cargo test --workspace --exclude spirv-tools-ffi
+        # Exclude crates requiring C++ build (tested in rust-ffi-tests job)
+        # spirv-tools-cli depends on spirv-tools-ffi, so both must be excluded
+        run: cargo test --workspace --exclude spirv-tools-ffi --exclude spirv-tools-cli
 
   # Rust FFI pretending to be C++ - runs C++ test suite against Rust implementation
   rust-ffi-tests:
@@ -156,6 +158,7 @@ jobs:
 
       - name: Run Clippy
         working-directory: rust
-        # Exclude spirv-tools-ffi which requires C++ build (tested in rust-ffi-tests job)
+        # Exclude crates requiring C++ build (tested in rust-ffi-tests job)
+        # spirv-tools-cli depends on spirv-tools-ffi, so both must be excluded
         # Lint configuration is in rust/Cargo.toml [workspace.lints.clippy]
-        run: cargo clippy --workspace --exclude spirv-tools-ffi --all-targets -- -D warnings
+        run: cargo clippy --workspace --exclude spirv-tools-ffi --exclude spirv-tools-cli --all-targets -- -D warnings
