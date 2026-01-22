@@ -164,3 +164,11 @@ def generate_extinst_lang_headers(name, grammar = None):
         tools = [":generate_language_headers"],
         visibility = ["//visibility:private"],
     )
+
+def build_rust_cmd(profile):
+    """Returns the command to build the Rust FFI library."""
+    return (
+        "$(location :build_rust_ffi) " +
+        "--manifest-path $(location rust/Cargo.toml) " +
+        "--profile {profile} --target-dir $(@D)/cargo --output $@"
+    ).format(profile = profile)

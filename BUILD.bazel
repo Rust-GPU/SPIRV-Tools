@@ -1,5 +1,6 @@
 load(
     ":build_defs.bzl",
+    "build_rust_cmd",
     "CLDEBUGINFO100_GRAMMAR_JSON_FILE",
     "COMMON_COPTS",
     "DEBUGINFO_GRAMMAR_JSON_FILE",
@@ -35,15 +36,6 @@ config_setting(
     name = "spirv_rust_profile_debug",
     define_values = {"spirv_tools_rust_profile": "debug"},
 )
-
-
-def _build_rust_cmd(profile):
-    return (
-        "$(location :build_rust_ffi) " +
-        "--manifest-path $(location rust/Cargo.toml) " +
-        "--profile {profile} --target-dir $(@D)/cargo --output $@"
-    ).format(profile = profile)
-
 
 py_binary(
     name = "build_rust_ffi",
@@ -153,12 +145,12 @@ genrule(
     ),
     outs = ["rust/libspirv_tools_ffi.a"],
     cmd = select({
-        "//:spirv_rust_profile_debug": _build_rust_cmd("debug"),
-        "//conditions:default": _build_rust_cmd("release"),
+        "//:spirv_rust_profile_debug": build_rust_cmd("debug"),
+        "//conditions:default": build_rust_cmd("release"),
     }),
     cmd_bat = select({
-        "//:spirv_rust_profile_debug": _build_rust_cmd("debug"),
-        "//conditions:default": _build_rust_cmd("release"),
+        "//:spirv_rust_profile_debug": build_rust_cmd("debug"),
+        "//conditions:default": build_rust_cmd("release"),
     }),
     tools = [":build_rust_ffi"],
     tags = ["requires-cargo"],
