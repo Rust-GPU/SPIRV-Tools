@@ -410,6 +410,15 @@ endif()
 add_subdirectory(source)
 add_subdirectory(tools)
 
+# The Rust FFI build needs generated headers to exist first
+if(SPIRV_ENABLE_RUST_TARGET_ENV)
+  add_dependencies(spirv-tools-ffi-rust
+    spirv-tools-tables
+    spirv-tools-header-DebugInfo
+    spirv-tools-header-OpenCLDebugInfo100
+    spirv-tools-header-NonSemanticShaderDebugInfo100)
+endif()
+
 add_subdirectory(test)
 add_subdirectory(examples)
 
