@@ -1086,7 +1086,7 @@ spv_position_t ToSpvPosition(MessagePosition position) {
 }
 }  // namespace
 
-void dispatch_context_message(std::uintptr_t context_ptr, std::uint32_t level,
+void dispatch_context_message(std::size_t context_ptr, std::uint32_t level,
                               bool has_source, rust::Str source,
                               MessagePosition position, rust::Str message) {
   auto* context = reinterpret_cast<spv_context>(context_ptr);
