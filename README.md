@@ -1,6 +1,11 @@
 # SPIR-V Tools
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/KhronosGroup/SPIRV-Tools/badge)](https://securityscorecards.dev/viewer/?uri=github.com/KhronosGroup/SPIRV-Tools)
 
+> **Note:** This fork tracks the upstream [KhronosGroup/SPIRV-Tools](https://github.com/KhronosGroup/SPIRV-Tools)
+> repository and adds a largely AI-generated pure Rust port in the `rust/` directory.
+> The Rust implementation provides assembler, validator, and optimizer functionality
+> for use with [rust-gpu](https://github.com/rust-gpu/rust-gpu).
+
 NEWS 2023-01-11: Development occurs on the `main` branch.
 
 ## Overview
