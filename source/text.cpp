@@ -1071,43 +1071,6 @@ spv_result_t spvTextToBinaryWithOptions(const spv_const_context context,
                                      sanitized_options, pBinary, pDiagnostic);
 }
 
-#if defined(SPIRV_RUST_TARGET_ENV)
-namespace spvtools::ffi {
-
-AssembleResult assemble_text_with_context(std::size_t context_ptr,
-                                          ::rust::Slice<const std::uint8_t> text,
-                                          std::uint32_t options) {
-  AssembleResult result{
-      /*success=*/false,
-      /*binary=*/{}};
-
-  if (context_ptr == 0 || text.data() == nullptr) {
-    return result;
-  }
-
-  auto* context = reinterpret_cast<spv_const_context>(context_ptr);
-  if (!context) {
-    return result;
-  }
-
-  spv_binary binary = nullptr;
-  spv_result_t status = AssembleTextWithDiagnostics(
-      context, reinterpret_cast<const char*>(text.data()), text.size(), options,
-      &binary, nullptr);
-  if (status == SPV_SUCCESS && binary != nullptr) {
-    result.success = true;
-    result.binary.reserve(binary->wordCount);
-    for (std::size_t i = 0; i < binary->wordCount; ++i) {
-      result.binary.push_back(binary->code[i]);
-    }
-  }
-  spvBinaryDestroy(binary);
-  return result;
-}
-
-}  // namespace spvtools::ffi
-#endif
-
 void spvTextDestroy(spv_text text) {
   if (text) {
     if (text->str) delete[] text->str;

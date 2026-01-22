@@ -63,6 +63,37 @@ void dispatch_context_message(std::uintptr_t context_ptr, std::uint32_t level,
                     ToSpvPosition(position), message_storage.c_str());
 }
 
+AssembleResult assemble_text_with_context(std::size_t context_ptr,
+                                          rust::Slice<const std::uint8_t> text,
+                                          std::uint32_t options) {
+  AssembleResult result{false, ::rust::Vec<std::uint32_t>()};
+  auto* context = reinterpret_cast<spv_context>(context_ptr);
+  if (context == nullptr) {
+    return result;
+  }
+
+  spv_binary binary = nullptr;
+  spv_diagnostic diagnostic = nullptr;
+  const char* text_ptr = reinterpret_cast<const char*>(text.data());
+  const spv_result_t status =
+      spvTextToBinaryWithOptions(context, text_ptr, text.size(), options,
+                                 &binary, &diagnostic);
+  if (diagnostic) {
+    spvDiagnosticDestroy(diagnostic);
+  }
+
+  if (status == SPV_SUCCESS && binary != nullptr) {
+    result.success = true;
+    result.binary.reserve(binary->wordCount);
+    for (size_t i = 0; i < binary->wordCount; ++i) {
+      result.binary.push_back(binary->code[i]);
+    }
+    spvBinaryDestroy(binary);
+  }
+
+  return result;
+}
+
 ValidateResult validate_binary_with_options(
     std::uint32_t env, rust::Slice<const std::uint32_t> words,
     const ValidatorOptions& options) {
