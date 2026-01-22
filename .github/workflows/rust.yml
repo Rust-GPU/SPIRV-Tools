@@ -93,13 +93,13 @@ jobs:
         run: |
           cmake -B build \
             -DSPIRV_BUILD_FUZZER=OFF \
-            -DSPIRV_USE_RUST_FFI=ON \
+            -DSPIRV_ENABLE_RUST_TARGET_ENV=ON \
             -DCMAKE_BUILD_TYPE=Release
 
       - name: Configure CMake (Windows)
         if: runner.os == 'Windows'
         run: |
-          cmake -B build -DSPIRV_BUILD_FUZZER=OFF -DSPIRV_USE_RUST_FFI=ON
+          cmake -B build -DSPIRV_BUILD_FUZZER=OFF -DSPIRV_ENABLE_RUST_TARGET_ENV=ON
 
       - name: Build C++ with Rust FFI (Unix)
         if: runner.os != 'Windows'
