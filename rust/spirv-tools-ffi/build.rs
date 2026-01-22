@@ -39,6 +39,14 @@ fn main() {
         .std("c++17")
         .warnings_into_errors(true);
 
+    // MSVC-specific flags
+    if env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
+        // /EHsc: Enable C++ exception handling (required by std::ostringstream)
+        bridge_builder.flag("/EHsc");
+        // Disable C4127: conditional expression is constant (triggers in hex_float.h templates)
+        bridge_builder.flag("/wd4127");
+    }
+
     // When building as part of CMake (SPIRV_ENABLE_RUST_TARGET_ENV), the C++ libraries
     // are linked by CMake at final link time. We skip emitting link directives here
     // to avoid circular dependencies during parallel builds.
