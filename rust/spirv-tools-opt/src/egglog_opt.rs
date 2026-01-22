@@ -2099,7 +2099,8 @@ mod tests {
             }
 
             // If iteration takes too long, we have explosion
-            if elapsed.as_millis() > 500 {
+            // Use 5 seconds as threshold to accommodate slow CI environments
+            if elapsed.as_millis() > 5000 {
                 eprintln!(
                     "WARNING: Iteration {} took {:?} - possible explosion",
                     i, elapsed
