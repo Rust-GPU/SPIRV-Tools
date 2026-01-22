@@ -39,8 +39,8 @@ config_setting(
 
 def _build_rust_cmd(profile):
     return (
-        "$(location :build_rust_ffi) "
-        "--manifest-path $(location rust/Cargo.toml) "
+        "$(location :build_rust_ffi) " +
+        "--manifest-path $(location rust/Cargo.toml) " +
         "--profile {profile} --target-dir $(@D)/cargo --output $@"
     ).format(profile = profile)
 
