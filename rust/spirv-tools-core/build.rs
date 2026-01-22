@@ -292,10 +292,19 @@ fn main() {
             if major == 1 && minor == 0 {
                 continue;
             }
+            // Skip opcodes that rspirv doesn't know about yet or have different names
+            let Some(op) = spirv::Op::from_u32(inst.opcode) else {
+                continue;
+            };
             let variant = inst
                 .opname
                 .strip_prefix("Op")
                 .unwrap_or(inst.opname.as_str());
+            // Check that the variant name matches what rspirv has
+            let rspirv_name = format!("{op:?}");
+            if rspirv_name != variant {
+                continue;
+            }
             instruction_version_arms.push_str(&format!(
                 "        spirv::Op::{} => Some(SpirvVersion::new({major}, {minor})),\n",
                 variant
@@ -677,9 +686,10 @@ fn main() {
             Some("Type-Declaration") => "TypeDeclaration",
             _ => continue,
         };
-        if spirv::Op::from_u32(inst.opcode).is_none() {
+        // Skip opcodes that rspirv doesn't know about yet or have different names
+        let Some(op) = spirv::Op::from_u32(inst.opcode) else {
             continue;
-        }
+        };
         let mut variant = inst
             .opname
             .strip_prefix("Op")
@@ -687,6 +697,11 @@ fn main() {
             .to_string();
         if variant.contains("ALTERA") {
             variant = variant.replace("ALTERA", "INTEL");
+        }
+        // Check that the variant name matches what rspirv has
+        let rspirv_name = format!("{op:?}");
+        if rspirv_name != variant {
+            continue;
         }
         class_match_arms.push_str(&format!(
             "        spirv::Op::{variant} => Some(InstructionClass::{class}),\n"
@@ -732,9 +747,10 @@ fn main() {
             "OpExecutionModeId" => (Some("ExecutionMode"), false, false),
             _ => (None, false, false),
         };
-        if spirv::Op::from_u32(inst.opcode).is_none() {
+        // Skip opcodes that rspirv doesn't know about yet or have different names
+        let Some(op) = spirv::Op::from_u32(inst.opcode) else {
             continue;
-        }
+        };
         if stage.is_none() && !is_capability && !is_extension {
             continue;
         }
@@ -745,6 +761,11 @@ fn main() {
             .to_string();
         if variant.contains("ALTERA") {
             variant = variant.replace("ALTERA", "INTEL");
+        }
+        // Check that the variant name matches what rspirv has
+        let rspirv_name = format!("{op:?}");
+        if rspirv_name != variant {
+            continue;
         }
         if let Some(stage) = stage {
             mode_stage_match_arms.push_str(&format!(
