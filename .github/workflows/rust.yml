@@ -92,33 +92,35 @@ jobs:
 
       - name: Configure CMake (Unix)
         if: runner.os != 'Windows'
+        # Use build-rust to match the Rust FFI build.rs expectation
         run: |
-          cmake -B build \
+          cmake -B build-rust \
             -DSPIRV_BUILD_FUZZER=OFF \
             -DSPIRV_ENABLE_RUST_TARGET_ENV=ON \
             -DCMAKE_BUILD_TYPE=Release
 
       - name: Configure CMake (Windows)
         if: runner.os == 'Windows'
+        # Use build-rust to match the Rust FFI build.rs expectation
         run: |
-          cmake -B build -DSPIRV_BUILD_FUZZER=OFF -DSPIRV_ENABLE_RUST_TARGET_ENV=ON
+          cmake -B build-rust -DSPIRV_BUILD_FUZZER=OFF -DSPIRV_ENABLE_RUST_TARGET_ENV=ON
 
       - name: Build C++ with Rust FFI (Unix)
         if: runner.os != 'Windows'
-        run: cmake --build build --config Release -j $(nproc 2>/dev/null || sysctl -n hw.ncpu)
+        run: cmake --build build-rust --config Release -j $(nproc 2>/dev/null || sysctl -n hw.ncpu)
 
       - name: Build C++ with Rust FFI (Windows)
         if: runner.os == 'Windows'
-        run: cmake --build build --config Release
+        run: cmake --build build-rust --config Release
 
       - name: Run C++ tests (Unix)
         if: runner.os != 'Windows'
-        working-directory: build
+        working-directory: build-rust
         run: ctest --output-on-failure -C Release -j $(nproc 2>/dev/null || sysctl -n hw.ncpu)
 
       - name: Run C++ tests (Windows)
         if: runner.os == 'Windows'
-        working-directory: build
+        working-directory: build-rust
         run: ctest --output-on-failure -C Release
 
   # Clippy and format checks
