@@ -83,6 +83,10 @@ void dispatch_context_message(std::uintptr_t context_ptr, std::uint32_t level,
 #endif
 }
 
+// In CMake builds with SPIRV_RUST_TARGET_ENV, this function is provided by
+// source/text.cpp using internal APIs. In standalone Rust builds (Bazel),
+// we provide it here using the public C API.
+#ifndef SPIRV_RUST_TARGET_ENV
 AssembleResult assemble_text_with_context(std::size_t context_ptr,
                                           rust::Slice<const std::uint8_t> text,
                                           std::uint32_t options) {
@@ -113,6 +117,7 @@ AssembleResult assemble_text_with_context(std::size_t context_ptr,
 
   return result;
 }
+#endif
 
 ValidateResult validate_binary_with_options(
     std::uint32_t env, rust::Slice<const std::uint32_t> words,

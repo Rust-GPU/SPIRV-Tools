@@ -1071,6 +1071,43 @@ spv_result_t spvTextToBinaryWithOptions(const spv_const_context context,
                                      sanitized_options, pBinary, pDiagnostic);
 }
 
+// FFI bridge for Rust assembler integration. In CMake builds with SPIRV_RUST_TARGET_ENV,
+// we provide this function here using internal C++ APIs. In standalone Rust builds (Bazel),
+// context_bridge.cc provides this using the public C API.
+#if defined(SPIRV_RUST_TARGET_ENV)
+namespace spvtools::ffi {
+AssembleResult assemble_text_with_context(std::size_t context_ptr,
+                                          rust::Slice<const std::uint8_t> text,
+                                          std::uint32_t options) {
+  AssembleResult result{false, ::rust::Vec<std::uint32_t>()};
+  auto* context = reinterpret_cast<spv_context>(context_ptr);
+  if (context == nullptr) {
+    return result;
+  }
+
+  spv_binary binary = nullptr;
+  spv_diagnostic diagnostic = nullptr;
+  const char* text_ptr = reinterpret_cast<const char*>(text.data());
+  const spv_result_t status = AssembleTextWithDiagnostics(
+      context, text_ptr, text.size(), options, &binary, &diagnostic);
+  if (diagnostic) {
+    spvDiagnosticDestroy(diagnostic);
+  }
+
+  if (status == SPV_SUCCESS && binary != nullptr) {
+    result.success = true;
+    result.binary.reserve(binary->wordCount);
+    for (size_t i = 0; i < binary->wordCount; ++i) {
+      result.binary.push_back(binary->code[i]);
+    }
+    spvBinaryDestroy(binary);
+  }
+
+  return result;
+}
+}  // namespace spvtools::ffi
+#endif
+
 void spvTextDestroy(spv_text text) {
   if (text) {
     if (text->str) delete[] text->str;
