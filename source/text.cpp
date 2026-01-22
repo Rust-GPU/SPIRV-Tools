@@ -1071,11 +1071,41 @@ spv_result_t spvTextToBinaryWithOptions(const spv_const_context context,
                                      sanitized_options, pBinary, pDiagnostic);
 }
 
-// FFI bridge for Rust assembler integration. In CMake builds with SPIRV_RUST_TARGET_ENV,
-// we provide this function here using internal C++ APIs. In standalone Rust builds (Bazel),
-// context_bridge.cc provides this using the public C API.
+// FFI bridge functions for Rust integration. In CMake builds with SPIRV_RUST_TARGET_ENV,
+// we provide these functions here using internal C++ APIs. In standalone Rust builds (Bazel),
+// context_bridge.cc provides stubs (since generated headers aren't available there).
 #if defined(SPIRV_RUST_TARGET_ENV)
 namespace spvtools::ffi {
+namespace {
+spv_position_t ToSpvPosition(MessagePosition position) {
+  spv_position_t pos = {};
+  pos.line = position.line;
+  pos.column = position.column;
+  pos.index = position.index;
+  return pos;
+}
+}  // namespace
+
+void dispatch_context_message(std::uintptr_t context_ptr, std::uint32_t level,
+                              bool has_source, rust::Str source,
+                              MessagePosition position, rust::Str message) {
+  auto* context = reinterpret_cast<spv_context>(context_ptr);
+  if (context == nullptr || !context->consumer) {
+    return;
+  }
+
+  std::string message_storage(message.data(), message.length());
+  const char* source_ptr = nullptr;
+  std::string source_storage;
+  if (has_source) {
+    source_storage.assign(source.data(), source.length());
+    source_ptr = source_storage.c_str();
+  }
+
+  context->consumer(static_cast<spv_message_level_t>(level), source_ptr,
+                    ToSpvPosition(position), message_storage.c_str());
+}
+
 AssembleResult assemble_text_with_context(std::size_t context_ptr,
                                           rust::Slice<const std::uint8_t> text,
                                           std::uint32_t options) {
