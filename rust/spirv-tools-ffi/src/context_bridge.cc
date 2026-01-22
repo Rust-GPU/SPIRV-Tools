@@ -5,8 +5,15 @@
 
 #include "spirv-tools-ffi/src/lib.rs.h"
 #include "rust/cxxbridge/spirv-tools-ffi/src/context_bridge.h"
-#include "source/table.h"
 #include "spirv-tools/libspirv.h"
+
+// When building with Rust target env (CMake integration), we have access to
+// internal headers for spv_context_t definition. In standalone Rust builds
+// (like Bazel), we don't need the full context definition since message
+// dispatch to C++ consumers isn't used.
+#ifdef SPIRV_RUST_TARGET_ENV
+#include "source/table.h"
+#endif
 
 // When building with Rust target env, we don't need C++ fallback implementations
 // since Rust provides them. This avoids link dependencies on C++ SPIRV-Tools
@@ -46,6 +53,9 @@ spv_position_t ToSpvPosition(MessagePosition position) {
 void dispatch_context_message(std::uintptr_t context_ptr, std::uint32_t level,
                               bool has_source, rust::Str source,
                               MessagePosition position, rust::Str message) {
+#ifdef SPIRV_RUST_TARGET_ENV
+  // In CMake builds with Rust target env, we have access to spv_context_t
+  // definition and can dispatch messages to C++ consumers.
   auto* context = reinterpret_cast<spv_context>(context_ptr);
   if (context == nullptr || !context->consumer) {
     return;
@@ -61,6 +71,16 @@ void dispatch_context_message(std::uintptr_t context_ptr, std::uint32_t level,
 
   context->consumer(static_cast<spv_message_level_t>(level), source_ptr,
                     ToSpvPosition(position), message_storage.c_str());
+#else
+  // In standalone Rust builds (like Bazel), message dispatch to C++ consumers
+  // is not supported since we don't have access to generated headers.
+  (void)context_ptr;
+  (void)level;
+  (void)has_source;
+  (void)source;
+  (void)position;
+  (void)message;
+#endif
 }
 
 AssembleResult assemble_text_with_context(std::size_t context_ptr,
