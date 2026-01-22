@@ -3,7 +3,6 @@ use rspirv::dr::{self, Block, Function, Instruction, Module, ModuleHeader, Opera
 use rspirv::grammar::{GlslStd450InstructionTable, OpenCLStd100InstructionTable};
 use rspirv::spirv;
 use std::collections::{HashMap, HashSet};
-use std::ffi::CString;
 use std::mem::size_of_val;
 use std::num::FpCategory;
 use std::slice;
@@ -904,37 +903,18 @@ fn format_f64_literal(bits: u64) -> String {
 }
 
 fn format_decimal_float(value: f64, digits: usize) -> String {
-    let format = match CString::new(format!("%.{digits}g")) {
-        Ok(fmt) => fmt,
-        Err(_) => return value.to_string(),
-    };
-    let mut stack = [0u8; 128];
-    unsafe {
-        let len = libc::snprintf(
-            stack.as_mut_ptr() as *mut libc::c_char,
-            stack.len(),
-            format.as_ptr(),
-            value as libc::c_double,
-        );
-        if len < 0 {
-            return value.to_string();
-        }
-        let len = len as usize;
-        if len < stack.len() {
-            return String::from_utf8_lossy(&stack[..len]).into_owned();
-        }
-        let mut heap = vec![0u8; len + 1];
-        let retry = libc::snprintf(
-            heap.as_mut_ptr() as *mut libc::c_char,
-            heap.len(),
-            format.as_ptr(),
-            value as libc::c_double,
-        );
-        if retry < 0 {
-            value.to_string()
-        } else {
-            String::from_utf8_lossy(&heap[..retry as usize]).into_owned()
-        }
+    // Use pure Rust formatting - format with specified precision then trim trailing zeros
+    // This mimics C's %g format specifier behavior
+    let formatted = format!("{:.prec$}", value, prec = digits);
+
+    // If it contains a decimal point, trim trailing zeros (like %g does)
+    if formatted.contains('.') {
+        let trimmed = formatted.trim_end_matches('0');
+        // Don't leave a trailing decimal point
+        let trimmed = trimmed.trim_end_matches('.');
+        trimmed.to_string()
+    } else {
+        formatted
     }
 }
 
