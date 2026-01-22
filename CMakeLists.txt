@@ -163,7 +163,8 @@ if(SPIRV_ENABLE_RUST_TARGET_ENV)
 
   add_custom_command(
     OUTPUT ${SPIRV_RUST_LIB_PATH}
-    COMMAND cargo build --manifest-path ${SPIRV_RUST_MANIFEST} -p spirv-tools-ffi
+    COMMAND ${CMAKE_COMMAND} -E env SPIRV_TOOLS_FFI_SKIP_CPP_LINK=1
+            cargo build --manifest-path ${SPIRV_RUST_MANIFEST} -p spirv-tools-ffi
             ${SPIRV_RUST_CARGO_ARGS}
     WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
     COMMENT "Building Rust spirv-tools-ffi (${SPIRV_RUST_PROFILE})"

@@ -39,18 +39,26 @@ fn main() {
         .std("c++17")
         .warnings_into_errors(true);
 
-    let core_lib_dir = build_root.join("source");
-    let opt_lib_dir = core_lib_dir.join("opt");
-    let reduce_lib_dir = core_lib_dir.join("reduce");
-    println!("cargo:rustc-link-search=native={}", core_lib_dir.display());
-    println!("cargo:rustc-link-search=native={}", opt_lib_dir.display());
-    println!(
-        "cargo:rustc-link-search=native={}",
-        reduce_lib_dir.display()
-    );
-    println!("cargo:rustc-link-lib=static=SPIRV-Tools");
-    println!("cargo:rustc-link-lib=static=SPIRV-Tools-opt");
-    println!("cargo:rustc-link-lib=static=SPIRV-Tools-reduce");
+    // When building as part of CMake (SPIRV_ENABLE_RUST_TARGET_ENV), the C++ libraries
+    // are linked by CMake at final link time. We skip emitting link directives here
+    // to avoid circular dependencies during parallel builds.
+    // Set SPIRV_TOOLS_FFI_SKIP_CPP_LINK=1 when invoking cargo from CMake.
+    let skip_cpp_link = env::var("SPIRV_TOOLS_FFI_SKIP_CPP_LINK").is_ok();
+
+    if !skip_cpp_link {
+        let core_lib_dir = build_root.join("source");
+        let opt_lib_dir = core_lib_dir.join("opt");
+        let reduce_lib_dir = core_lib_dir.join("reduce");
+        println!("cargo:rustc-link-search=native={}", core_lib_dir.display());
+        println!("cargo:rustc-link-search=native={}", opt_lib_dir.display());
+        println!(
+            "cargo:rustc-link-search=native={}",
+            reduce_lib_dir.display()
+        );
+        println!("cargo:rustc-link-lib=static=SPIRV-Tools");
+        println!("cargo:rustc-link-lib=static=SPIRV-Tools-opt");
+        println!("cargo:rustc-link-lib=static=SPIRV-Tools-reduce");
+    }
 
     bridge_builder.compile("spirv-tools-ffi");
 }
