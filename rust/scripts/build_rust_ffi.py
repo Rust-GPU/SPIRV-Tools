@@ -69,7 +69,14 @@ def main() -> int:
     workdir = manifest.parent
     subprocess.run(command, cwd=workdir, check=True, env=env)
 
-    lib_name = f"lib{package.replace('-', '_')}.a"
+    # Determine library name based on platform
+    # Windows MSVC: spirv_tools_ffi.lib
+    # Unix/MinGW: libspirv_tools_ffi.a
+    lib_base = package.replace("-", "_")
+    if sys.platform == "win32":
+        lib_name = f"{lib_base}.lib"
+    else:
+        lib_name = f"lib{lib_base}.a"
     built_lib = target_dir / profile_dir / lib_name
     if not built_lib.exists():
         raise FileNotFoundError(f"cargo did not produce {built_lib}")

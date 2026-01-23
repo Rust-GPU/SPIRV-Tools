@@ -29,14 +29,22 @@ fn main() {
     .expect("failed to copy context bridge header");
 
     let mut bridge_builder = cxx_build::bridge("src/lib.rs");
-    // Always define SPIRV_RUST_TARGET_ENV when compiling context_bridge.cc via cargo.
-    // This ensures:
-    // 1. We skip C++ includes that need generated headers (reducer.h, libspirv.hpp)
-    // 2. We delegate to Rust implementations (validate_binary_rust, etc.)
-    // 3. We don't provide duplicate implementations of dispatch_context_message
-    //    and assemble_text_with_context (text.cpp provides these in CMake builds
-    //    when SPIRV_RUST_TARGET_ENV is defined there too)
-    bridge_builder.define("SPIRV_RUST_TARGET_ENV", None);
+    // Define SPIRV_RUST_TARGET_ENV only for standalone Rust/Bazel builds.
+    // This controls which implementations context_bridge.cc provides:
+    //
+    // - CMake builds (SPIRV_RUST_TARGET_ENV NOT defined):
+    //   context_bridge.cc provides full implementations using C++ APIs
+    //   (generated headers are available from CMake build)
+    //
+    // - Bazel builds (SPIRV_RUST_TARGET_ENV_DEFINE=1):
+    //   context_bridge.cc provides stub implementations
+    //   (generated headers not available, uses Rust fallbacks)
+    //
+    // Note: CMake also sets SPIRV_TOOLS_FFI_SKIP_CPP_LINK=1, but that only
+    // controls link directives, not the compile-time behavior.
+    if env::var("SPIRV_RUST_TARGET_ENV_DEFINE").is_ok() {
+        bridge_builder.define("SPIRV_RUST_TARGET_ENV", None);
+    }
     bridge_builder
         .file("src/context_bridge.cc")
         .include(repo_root)

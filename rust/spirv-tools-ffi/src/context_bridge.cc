@@ -13,6 +13,7 @@
 #ifndef SPIRV_RUST_TARGET_ENV
 #include "source/reduce/reducer.h"
 #include "source/spirv_reducer_options.h"
+#include "source/table.h"
 #include "spirv-tools/libspirv.hpp"
 #endif
 
@@ -37,19 +38,34 @@ namespace spvtools::ffi {
 // assemble_text_with_context are provided by source/text.cpp using internal APIs.
 // In standalone Rust builds (Bazel), we provide them here.
 #ifndef SPIRV_RUST_TARGET_ENV
+namespace {
+spv_position_t ToSpvPosition(MessagePosition position) {
+  spv_position_t pos = {};
+  pos.line = position.line;
+  pos.column = position.column;
+  pos.index = position.index;
+  return pos;
+}
+}  // namespace
+
 void dispatch_context_message(std::size_t context_ptr, std::uint32_t level,
                               bool has_source, rust::Str source,
                               MessagePosition position, rust::Str message) {
-  // This function is intentionally a no-op in standalone Rust builds.
-  // Message dispatch to C++ consumers requires access to spv_context_t internals
-  // (specifically the `consumer` callback), which requires generated headers
-  // that are not available when compiling via Rust's build.rs.
-  (void)context_ptr;
-  (void)level;
-  (void)has_source;
-  (void)source;
-  (void)position;
-  (void)message;
+  auto* context = reinterpret_cast<spv_context>(context_ptr);
+  if (context == nullptr || !context->consumer) {
+    return;
+  }
+
+  std::string message_storage(message.data(), message.length());
+  const char* source_ptr = nullptr;
+  std::string source_storage;
+  if (has_source) {
+    source_storage.assign(source.data(), source.length());
+    source_ptr = source_storage.c_str();
+  }
+
+  context->consumer(static_cast<spv_message_level_t>(level), source_ptr,
+                    ToSpvPosition(position), message_storage.c_str());
 }
 
 AssembleResult assemble_text_with_context(std::size_t context_ptr,
