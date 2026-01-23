@@ -64,7 +64,8 @@ def check_library(library):
     #   cxxbridge1\$      :  CXX bridge runtime symbols (Rust FFI)
     #   spvtools\$ffi\$   :  SPIRV-Tools Rust FFI symbols
     #   _R                :  Rust mangled symbols (v0 mangling)
-    symbol_ok_pattern = re.compile(r'^(spv[A-Z]|_ZN|_ZSt|_ZZN|_Z[0-9]+spv[A-Z_]|cxxbridge1\$|spvtools\$ffi\$|_R)')
+    #   rust_             :  Rust runtime symbols (eh_personality, etc.)
+    symbol_ok_pattern = re.compile(r'^(spv[A-Z]|_ZN|_ZSt|_ZZN|_Z[0-9]+spv[A-Z_]|cxxbridge1\$|spvtools\$ffi\$|_R|rust_)')
 
     # In addition, the following pattern allowlists global functions that are added
     # by the protobuf compiler:
