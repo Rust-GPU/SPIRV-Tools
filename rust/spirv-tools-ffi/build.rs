@@ -29,12 +29,20 @@ fn main() {
     .expect("failed to copy context bridge header");
 
     let mut bridge_builder = cxx_build::bridge("src/lib.rs");
-    // Only define SPIRV_RUST_TARGET_ENV when NOT building via CMake.
-    // When building via CMake, the FFI library should include its own implementations
-    // of dispatch_context_message and assemble_text_with_context (from context_bridge.cc)
-    // to avoid circular dependency issues at link time.
-    // CMake sets SPIRV_TOOLS_FFI_SKIP_CPP_LINK=1 when invoking cargo.
-    if env::var("SPIRV_TOOLS_FFI_SKIP_CPP_LINK").is_err() {
+    // Define SPIRV_RUST_TARGET_ENV to use Rust-only implementations in context_bridge.cc.
+    // This avoids dependencies on generated SPIRV-Tools headers (like core_tables_header.inc)
+    // and C++ libraries (libspirv.hpp, reducer.h) that may not be available.
+    //
+    // Build scenarios:
+    // - Standalone cargo build (no env vars): Define SPIRV_RUST_TARGET_ENV, use Rust stubs
+    // - Bazel build (SPIRV_RUST_TARGET_ENV_DEFINE=1): Define SPIRV_RUST_TARGET_ENV, use Rust stubs
+    // - CMake build (SPIRV_TOOLS_FFI_SKIP_CPP_LINK=1 only): Don't define, use C++ implementations
+    //
+    // Both Bazel and CMake set SPIRV_TOOLS_FFI_SKIP_CPP_LINK=1 to skip link directives,
+    // but only Bazel sets SPIRV_RUST_TARGET_ENV_DEFINE=1 to use Rust-only implementations.
+    let use_rust_implementations = env::var("SPIRV_RUST_TARGET_ENV_DEFINE").is_ok()
+        || env::var("SPIRV_TOOLS_FFI_SKIP_CPP_LINK").is_err();
+    if use_rust_implementations {
         bridge_builder.define("SPIRV_RUST_TARGET_ENV", None);
     }
     bridge_builder

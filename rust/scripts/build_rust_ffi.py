@@ -53,6 +53,8 @@ def main() -> int:
     env["CARGO_TARGET_DIR"] = str(target_dir)
     # Skip linking C++ SPIRV-Tools libraries - Bazel will link them at final link time
     env["SPIRV_TOOLS_FFI_SKIP_CPP_LINK"] = "1"
+    # Use Rust-only implementations in context_bridge.cc (no dependency on generated headers)
+    env["SPIRV_RUST_TARGET_ENV_DEFINE"] = "1"
 
     package = args.package
     command = [
