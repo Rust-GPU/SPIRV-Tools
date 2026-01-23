@@ -46,7 +46,8 @@ spv_position_t ToSpvPosition(spvtools::ffi::MessagePosition position) {
 
 namespace spvtools::ffi {
 
-// These functions use only the public C API (libspirv.h) and are always provided.
+// dispatch_context_message uses only the internal struct definition (table.h)
+// and is always provided.
 void dispatch_context_message(std::size_t context_ptr, std::uint32_t level,
                               bool has_source, rust::Str source,
                               MessagePosition position, rust::Str message) {
@@ -67,6 +68,19 @@ void dispatch_context_message(std::size_t context_ptr, std::uint32_t level,
                     ToSpvPosition(position), message_storage.c_str());
 }
 
+// assemble_text_with_context needs different implementations:
+// - In standalone Rust builds: call through to C++ SPIRV-Tools assembler
+// - In CMake builds (SPIRV_RUST_TARGET_ENV): Rust should use its native
+//   assembler, so this returns failure to signal the C++ path is unavailable
+#ifdef SPIRV_RUST_TARGET_ENV
+AssembleResult assemble_text_with_context(std::size_t, rust::Slice<const std::uint8_t>,
+                                          std::uint32_t) {
+  // In CMake builds with Rust target env, the Rust side should use its native
+  // assembler instead of calling back into C++. Return failure to signal this.
+  AssembleResult result{false, ::rust::Vec<std::uint32_t>()};
+  return result;
+}
+#else
 AssembleResult assemble_text_with_context(std::size_t context_ptr,
                                           rust::Slice<const std::uint8_t> text,
                                           std::uint32_t options) {
@@ -97,6 +111,7 @@ AssembleResult assemble_text_with_context(std::size_t context_ptr,
 
   return result;
 }
+#endif
 
 ValidateResult validate_binary_with_options(
     std::uint32_t env, rust::Slice<const std::uint32_t> words,
