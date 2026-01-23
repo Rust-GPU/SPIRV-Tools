@@ -7,14 +7,17 @@
 #include "rust/cxxbridge/spirv-tools-ffi/src/context_bridge.h"
 #include "spirv-tools/libspirv.h"
 
-// When building with Rust target env, we don't need C++ fallback implementations
-// since Rust provides them. This avoids link dependencies on C++ SPIRV-Tools
-// libraries (libspirv.hpp, reducer.h) that would create circular dependencies.
+// Always include table.h for spv_context_t struct definition and libspirv.hpp
+// for MessageConsumer. These have no Reducer dependencies.
+#include "source/table.h"
+#include "spirv-tools/libspirv.hpp"
+
+// When building with Rust target env (SPIRV_RUST_TARGET_ENV defined), we skip
+// C++ implementations that depend on the Reducer library to avoid circular
+// dependencies.
 #ifndef SPIRV_RUST_TARGET_ENV
 #include "source/reduce/reducer.h"
 #include "source/spirv_reducer_options.h"
-#include "source/table.h"
-#include "spirv-tools/libspirv.hpp"
 #endif
 
 namespace {
@@ -30,16 +33,9 @@ std::string FormatDiagnostic(spv_message_level_t, const spv_position_t& position
   return oss.str();
 }
 #endif
-}  // namespace
 
-namespace spvtools::ffi {
-
-// In CMake builds with SPIRV_RUST_TARGET_ENV, dispatch_context_message and
-// assemble_text_with_context are provided by source/text.cpp using internal APIs.
-// In standalone Rust builds (Bazel), we provide them here.
-#ifndef SPIRV_RUST_TARGET_ENV
-namespace {
-spv_position_t ToSpvPosition(MessagePosition position) {
+// Helper to convert FFI MessagePosition to spv_position_t (always needed)
+spv_position_t ToSpvPosition(spvtools::ffi::MessagePosition position) {
   spv_position_t pos = {};
   pos.line = position.line;
   pos.column = position.column;
@@ -48,6 +44,9 @@ spv_position_t ToSpvPosition(MessagePosition position) {
 }
 }  // namespace
 
+namespace spvtools::ffi {
+
+// These functions use only the public C API (libspirv.h) and are always provided.
 void dispatch_context_message(std::size_t context_ptr, std::uint32_t level,
                               bool has_source, rust::Str source,
                               MessagePosition position, rust::Str message) {
@@ -98,7 +97,6 @@ AssembleResult assemble_text_with_context(std::size_t context_ptr,
 
   return result;
 }
-#endif
 
 ValidateResult validate_binary_with_options(
     std::uint32_t env, rust::Slice<const std::uint32_t> words,
