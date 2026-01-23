@@ -180,6 +180,12 @@ if(SPIRV_ENABLE_RUST_TARGET_ENV)
   add_library(spirv-tools-ffi STATIC IMPORTED GLOBAL)
   add_dependencies(spirv-tools-ffi spirv-tools-ffi-rust)
   set_target_properties(spirv-tools-ffi PROPERTIES IMPORTED_LOCATION ${SPIRV_RUST_LIB_PATH})
+
+  # On Windows, the Rust standard library requires these system libraries
+  if(WIN32)
+    set_target_properties(spirv-tools-ffi PROPERTIES
+      INTERFACE_LINK_LIBRARIES "ws2_32;ntdll;userenv;bcrypt")
+  endif()
 endif()
 
 option(SPIRV_COLOR_TERMINAL "Enable color terminal output" ON)
