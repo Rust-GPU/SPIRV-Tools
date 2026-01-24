@@ -107,10 +107,24 @@ fn bit_enum_ident(enumerant: &str) -> String {
 
 fn main() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");
-    let grammar_path = PathBuf::from(&manifest_dir)
-        .join("../../external/spirv-headers/include/spirv/unified1/spirv.core.grammar.json");
-    let grammar_contents =
-        fs::read_to_string(&grammar_path).expect("failed to read spirv.core.grammar.json");
+    // Allow overriding the SPIRV-Headers path via environment variable for standalone builds.
+    // When used as a git dependency, the submodule isn't available, so users can set
+    // SPIRV_HEADERS_PATH to point to their local SPIRV-Headers checkout.
+    let grammar_path = if let Ok(headers_path) = env::var("SPIRV_HEADERS_PATH") {
+        println!("cargo:rerun-if-env-changed=SPIRV_HEADERS_PATH");
+        PathBuf::from(headers_path).join("include/spirv/unified1/spirv.core.grammar.json")
+    } else {
+        PathBuf::from(&manifest_dir)
+            .join("../../external/spirv-headers/include/spirv/unified1/spirv.core.grammar.json")
+    };
+    let grammar_contents = fs::read_to_string(&grammar_path).unwrap_or_else(|_| {
+        panic!(
+            "failed to read spirv.core.grammar.json from {:?}. \
+            If building as a git dependency, set SPIRV_HEADERS_PATH to point to a \
+            SPIRV-Headers checkout.",
+            grammar_path
+        )
+    });
     let grammar: CoreGrammar =
         serde_json::from_str(&grammar_contents).expect("failed to parse core grammar");
 
