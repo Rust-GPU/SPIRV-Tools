@@ -7,21 +7,16 @@
 #include "rust/cxxbridge/spirv-tools-ffi/src/context_bridge.h"
 #include "spirv-tools/libspirv.h"
 
-// Always include table.h for spv_context_t struct definition and libspirv.hpp
-// for MessageConsumer. These have no Reducer dependencies.
+// When building with Rust target env (SPIRV_RUST_TARGET_ENV defined), we skip
+// C++ implementations entirely and provide stubs. This avoids dependencies on
+// generated headers (core_tables_header.inc) that aren't available in Bazel.
+#ifndef SPIRV_RUST_TARGET_ENV
 #include "source/table.h"
 #include "spirv-tools/libspirv.hpp"
-
-// When building with Rust target env (SPIRV_RUST_TARGET_ENV defined), we skip
-// C++ implementations that depend on the Reducer library to avoid circular
-// dependencies.
-#ifndef SPIRV_RUST_TARGET_ENV
 #include "source/reduce/reducer.h"
 #include "source/spirv_reducer_options.h"
-#endif
 
 namespace {
-#ifndef SPIRV_RUST_TARGET_ENV
 std::string FormatDiagnostic(spv_message_level_t, const spv_position_t& position,
                              const char* message) {
   std::ostringstream oss;
@@ -32,9 +27,8 @@ std::string FormatDiagnostic(spv_message_level_t, const spv_position_t& position
   oss << ": " << message;
   return oss.str();
 }
-#endif
 
-// Helper to convert FFI MessagePosition to spv_position_t (always needed)
+// Helper to convert FFI MessagePosition to spv_position_t
 spv_position_t ToSpvPosition(spvtools::ffi::MessagePosition position) {
   spv_position_t pos = {};
   pos.line = position.line;
@@ -43,11 +37,19 @@ spv_position_t ToSpvPosition(spvtools::ffi::MessagePosition position) {
   return pos;
 }
 }  // namespace
+#endif  // SPIRV_RUST_TARGET_ENV
 
 namespace spvtools::ffi {
 
-// dispatch_context_message uses only the internal struct definition (table.h)
-// and is always provided.
+// dispatch_context_message dispatches messages to C++ contexts.
+// In SPIRV_RUST_TARGET_ENV mode, this is a no-op stub since we don't have
+// access to the internal spv_context_t structure.
+#ifdef SPIRV_RUST_TARGET_ENV
+void dispatch_context_message(std::size_t, std::uint32_t, bool, rust::Str,
+                              MessagePosition, rust::Str) {
+  // Stub: In Bazel/Rust-only builds, message dispatch is handled in Rust.
+}
+#else
 void dispatch_context_message(std::size_t context_ptr, std::uint32_t level,
                               bool has_source, rust::Str source,
                               MessagePosition position, rust::Str message) {
@@ -67,6 +69,7 @@ void dispatch_context_message(std::size_t context_ptr, std::uint32_t level,
   context->consumer(static_cast<spv_message_level_t>(level), source_ptr,
                     ToSpvPosition(position), message_storage.c_str());
 }
+#endif
 
 // assemble_text_with_context needs different implementations:
 // - In standalone Rust builds: call through to C++ SPIRV-Tools assembler
