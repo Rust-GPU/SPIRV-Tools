@@ -153,6 +153,8 @@ genrule(
         "//conditions:default": build_rust_cmd("release"),
     }),
     tools = [":build_rust_ffi"],
+    # Disable sandbox to allow cargo to access ~/.cargo for git dependencies
+    local = True,
     tags = ["requires-cargo"],
 )
 
