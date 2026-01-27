@@ -1,0 +1,204 @@
+; =============================================================================
+; Loop Fusion and Fission for E-Graph Optimization
+; =============================================================================
+;
+; Loop fusion combines adjacent loops with the same bounds into a single loop.
+; Loop fission (distribution) splits a loop with independent computations.
+;
+; In an e-graph, we represent both forms and let extraction pick the best one
+; based on:
+; - Memory locality (fusion is better for reusing cached data)
+; - Parallelism (fission can enable more parallel execution)
+; - Register pressure (fission reduces live values per loop)
+;
+; RVSDG Theta nodes naturally represent loops:
+; - Theta(cond, body, init) - loop with condition, body, initial value
+; - We use ThetaBundle to represent multiple fused loops
+;
+; =============================================================================
+; SECTION 1: Loop Fusion - Combining Adjacent Loops
+; =============================================================================
+
+; Two sequential Theta nodes with same condition can be fused
+; Theta(c, body1, init1); Theta(c, body2, init2)
+; -> ThetaFused(c, (body1, body2), (init1, init2))
+;
+; In effect form:
+; Seq(Theta(c, b1, i1), Theta(c, b2, i2)) = ThetaFused(c, ...)
+
+; Adjacent loops over same range: fuse into single loop
+(rule ((= e (Seq (Theta cond body1 init1) (Theta cond body2 init2))))
+      ((union e (ThetaFused cond (Pair body1 body2) (Pair init1 init2)))))
+
+; Fused theta can be split back (for extraction to choose)
+(rule ((= e (ThetaFused cond (Pair body1 body2) (Pair init1 init2))))
+      ((union e (Seq (Theta cond body1 init1) (Theta cond body2 init2)))))
+
+; Triple fusion
+(rule ((= e (Seq (Theta c b1 i1) (Seq (Theta c b2 i2) (Theta c b3 i3)))))
+      ((union e (ThetaFused c (Triple b1 b2 b3) (Triple i1 i2 i3)))))
+
+; Fusing with an already-fused loop
+(rule ((= e (Seq (ThetaFused c (Pair b1 b2) (Pair i1 i2)) (Theta c b3 i3))))
+      ((union e (ThetaFused c (Triple b1 b2 b3) (Triple i1 i2 i3)))))
+
+; =============================================================================
+; SECTION 2: Loop Fission - Splitting Loops
+; =============================================================================
+
+; A loop with independent computations can be split
+; Theta(c, (e1, e2), (i1, i2)) where e1, e2 are independent
+; -> Seq(Theta(c, e1, i1), Theta(c, e2, i2))
+
+; If loop body is a pair of independent computations, allow fission
+(rule ((= e (Theta cond (Pair body1 body2) (Pair init1 init2))))
+      ((union e (Seq (Theta cond body1 init1) (Theta cond body2 init2)))))
+
+; =============================================================================
+; SECTION 3: Parallel Loop Representation
+; =============================================================================
+
+; Parallel loops don't have inter-iteration dependencies
+; ParTheta(bounds, body) executes all iterations in parallel
+
+; Convert data-parallel Theta to ParTheta when safe
+; Theta where body doesn't depend on previous iteration's result
+(rule ((= e (Theta cond (LoopInvariant body) init)))
+      ((union e (ParTheta cond body))))
+
+; Parallel loops can be fused freely (no ordering constraint)
+(rule ((= e (Seq (ParTheta c b1) (ParTheta c b2))))
+      ((union e (ParTheta c (Pair b1 b2)))))
+
+; =============================================================================
+; SECTION 4: Loop Interchange
+; =============================================================================
+
+; For nested loops, the order can sometimes be swapped
+; Theta(c1, Theta(c2, body, i2), i1) <-> Theta(c2, Theta(c1, body, i1), i2)
+; when there are no loop-carried dependencies across the interchange
+
+; Nested parallel loops can be freely interchanged
+(rule ((= e (ParTheta c1 (ParTheta c2 body))))
+      ((union e (ParTheta c2 (ParTheta c1 body)))))
+
+; =============================================================================
+; SECTION 5: Loop Unroll and Jam
+; =============================================================================
+
+; Partially unroll outer loop and fuse (jam) with inner loop
+; This is a combination of unrolling and fusion
+
+; Unroll outer by 2 and jam
+(rule ((= e (Theta c1 (Theta c2 body i2) i1)))
+      ((union e (Theta (HalfCount c1)
+        (Seq (Theta c2 body i2) (Theta c2 body i2))
+        i1))))
+
+; =============================================================================
+; SECTION 6: Strip Mining
+; =============================================================================
+
+; Divide loop into chunks for vectorization or cache blocking
+; Theta(N, body, init) -> Theta(N/S, Theta(S, body, _), init)
+
+; Strip mine for vector width 4
+(rule ((= e (Theta (CountRange 0 n 1) body init)))
+      ((union e (Theta (CountRange 0 (Div n 4) 1)
+        (Theta (CountRange 0 4 1) body init)
+        init))))
+
+; =============================================================================
+; SECTION 7: Loop Coalescing
+; =============================================================================
+
+; Merge nested loops into a single loop with combined index space
+; Theta(m, Theta(n, body, _), _) -> Theta(m*n, body', _)
+
+; Coalesce perfectly nested loops
+(rule ((= e (Theta (CountRange 0 m 1) (Theta (CountRange 0 n 1) body i2) i1)))
+      ((union e (Theta (CountRange 0 (Mul m n) 1)
+        (BodyCoalesced body m n)
+        i1))))
+
+; =============================================================================
+; SECTION 8: Loop Peeling
+; =============================================================================
+
+; Separate first or last iterations for special handling
+; Useful when first/last iteration has different behavior
+
+; Peel first iteration
+(rule ((= e (Theta (CountRange 0 n 1) body init)))
+      ((union e (Seq
+        (BodyAtIteration body 0 init)
+        (Theta (CountRange 1 n 1) body (BodyResult body 0 init))))))
+
+; Peel last iteration
+(rule ((= e (Theta (CountRange 0 n 1) body init)))
+      ((union e (Seq
+        (Theta (CountRange 0 (Sub n 1) 1) body init)
+        (BodyAtIteration body (Sub n 1) (ThetaResult (CountRange 0 (Sub n 1) 1) body init))))))
+
+; =============================================================================
+; SECTION 9: Loop Collapsing for Memory Access
+; =============================================================================
+
+; When loops access memory sequentially, collapsing is beneficial
+; for prefetching and cache line utilization
+
+; Collapse row-major access pattern
+(rule ((= e (Theta rows (Theta cols (Load (AccessChain2 arr row col) mem) _) _)))
+      ((union e (Theta (Mul rows cols) (Load (AccessChain1 arr (LoopVar)) mem) _))))
+
+; =============================================================================
+; SECTION 10: Loop Unswitching
+; =============================================================================
+
+; Move loop-invariant conditionals out of the loop
+; Theta(c, Gamma(inv, t, f), i) -> Gamma(inv, Theta(c, t, i), Theta(c, f, i))
+
+; Unswitch loop-invariant condition
+(rule ((= e (Theta cond (Gamma (LoopInvariant c) t f) init)))
+      ((union e (Gamma c (Theta cond t init) (Theta cond f init)))))
+
+; Unswitch effectful branches
+(rule ((= e (Theta cond (EffGamma (LoopInvariant c) t f) init)))
+      ((union e (EffGamma c (Theta cond t init) (Theta cond f init)))))
+
+; =============================================================================
+; SECTION 11: While-to-For Conversion
+; =============================================================================
+
+; Detect induction variable patterns and convert to counted loops
+; Theta(i < n, body(i++), 0) -> CountedTheta(0, n, 1, body)
+
+; Recognize counting pattern
+(rule ((= e (Theta (SLt (LoopVar) n) (Add (LoopVar) (Const 1)) (Const 0))))
+      ((union e (CountedTheta 0 n 1 (LoopVar)))))
+
+; Recognize countdown pattern
+(rule ((= e (Theta (SGt (LoopVar) (Const 0)) (Sub (LoopVar) (Const 1)) n)))
+      ((union e (CountedTheta 0 n 1 (Sub n (LoopVar))))))
+
+; =============================================================================
+; SECTION 12: Software Pipelining (Modulo Scheduling)
+; =============================================================================
+
+; Overlap iterations to hide latency
+; Represents prologue, steady-state kernel, epilogue
+
+; Pipeline loop with 2-stage schedule
+(rule ((= e (Theta cond (Seq load compute store) init)))
+      ((union e (PipelinedTheta cond 2 load compute store init))))
+
+; =============================================================================
+; SECTION 13: Loop Invariant Condition Optimization
+; =============================================================================
+
+; If entire loop body is selected by invariant condition, hoist
+(rule ((= e (Theta cond (Gamma (LoopInvariant c) body (Pure)) init)))
+      ((union e (Gamma c (Theta cond body init) init))))
+
+(rule ((= e (Theta cond (Gamma (LoopInvariant c) (Pure) body) init)))
+      ((union e (Gamma c init (Theta cond body init)))))

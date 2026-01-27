@@ -521,6 +521,252 @@
     (ImageQueryLevels Expr)        ; Get number of mip levels
     (ImageQuerySamples Expr)       ; Get number of samples
     (ImageQueryLod Expr Expr)      ; Query LOD for coordinates
+
+    ; ==========================================================================
+    ; Extended E-Node Definitions for Advanced Optimizations
+    ; ==========================================================================
+    ; These support mem2reg, LICM, loop fusion, merge-return,
+    ; legalization, and instrumentation passes.
+
+    ; ==========================================================================
+    ; Additional Floating-Point Operations
+    ; ==========================================================================
+
+    ; Floating-point modulo (distinct from FRem)
+    (FMod Expr Expr)
+
+    ; Float constant (for rules that need explicit float literals)
+    (FConst f64)
+
+    ; Additional floating-point comparisons
+    (FNe Expr Expr)
+    (FGe Expr Expr)
+    (FLe Expr Expr)
+    (FLt Expr Expr)
+    (FGt Expr Expr)
+    (FEq Expr Expr)
+
+    ; ==========================================================================
+    ; Memory/Register Promotion (mem2reg)
+    ; ==========================================================================
+
+    ; Stack allocation (function-local variable)
+    (Alloca String)
+
+    ; Marker for single-store optimization
+    (SingleStoreOptimized Expr Expr)
+
+    ; Memory state placeholder
+    (MemState i64)
+
+    ; ==========================================================================
+    ; Loop Transformations
+    ; ==========================================================================
+
+    ; Breakable theta - loop with early exit capability
+    (BreakableTheta Expr Expr Expr Expr Expr)
+
+    ; Check if loop was broken out of
+    (WasBroken Expr)
+
+    ; Fused loop - two loops combined into one
+    (ThetaFused Expr Expr Expr Expr Expr)
+
+    ; Parallel loop (for vectorization/GPU)
+    (ParTheta Expr Expr Expr)
+
+    ; Counted loop with known trip count
+    (CountedTheta Expr Expr Expr)
+
+    ; Strip-mined loop
+    (StripMined Expr Expr Expr Expr)
+
+    ; Loop interchange result
+    (LoopInterchange Expr)
+
+    ; Coalesced loop
+    (Coalesced Expr)
+
+    ; Tiled loop
+    (ThetaTiled Expr Expr Expr Expr)
+
+    ; 2D loop tiling
+    (LoopTile2D Expr Expr Expr Expr)
+
+    ; ==========================================================================
+    ; Control Flow (merge-return)
+    ; ==========================================================================
+
+    ; Flattened 4-way conditional
+    (FlatGamma4 Expr Expr Expr Expr Expr Expr Expr)
+
+    ; Single-exit transformation helpers
+    (SetReturn Expr)
+    (HasReturned)
+
+    ; Uniformity markers for GPU control flow
+    (Uniform Expr)
+    (UniformGamma Expr Expr Expr)
+    (WorkgroupUniform Expr)
+
+    ; Control flow statements
+    (Continue)
+    (Break Expr)
+
+    ; Barrier synchronization
+    (Barrier)
+
+    ; Generic function call (in addition to Call1-4)
+    (Call String Expr)
+
+    ; ==========================================================================
+    ; Legalization - Narrow Integer Operations
+    ; ==========================================================================
+
+    ; 8-bit integer operations
+    (Add8 Expr Expr)
+    (Sub8 Expr Expr)
+    (Mul8 Expr Expr)
+
+    ; 16-bit integer operations
+    (Add16 Expr Expr)
+    (Sub16 Expr Expr)
+    (Mul16 Expr Expr)
+
+    ; 64-bit integer operations (extended)
+    (Add64 Expr Expr)
+    (Sub64 Expr Expr)
+    (Mul64 Expr Expr)
+    (Div64 Expr Expr)
+
+    ; Truncation operations
+    (Trunc8 Expr)
+    (Trunc16 Expr)
+
+    ; Extension operations
+    (ZeroExtend8 Expr)
+    (ZeroExtend16 Expr)
+    (SignExtend8 Expr)
+    (SignExtend16 Expr)
+
+    ; Float16 operations (native)
+    (Float16Add Expr Expr)
+    (Float16Sub Expr Expr)
+    (Float16Mul Expr Expr)
+    (Float16Div Expr Expr)
+
+    ; Float16 operations (emulated)
+    (EmulatedFloat16Add Expr Expr)
+    (EmulatedFloat16Sub Expr Expr)
+    (EmulatedFloat16Mul Expr Expr)
+    (EmulatedFloat16Div Expr Expr)
+
+    ; 64-bit integer decomposition
+    (SplitI64 Expr)
+    (MergeI64 Expr Expr)
+    (I64Hi Expr)
+    (I64Lo Expr)
+
+    ; 64-bit arithmetic helpers
+    (DivMod32Hi Expr Expr)
+    (DivMod32Lo Expr Expr)
+    (AddWithCarry Expr Expr Expr)
+    (SubWithBorrow Expr Expr Expr)
+
+    ; Target legalization markers
+    (VulkanLegalized Expr)
+    (OpenCLLegalized Expr)
+
+    ; ==========================================================================
+    ; Instrumentation
+    ; ==========================================================================
+
+    ; Debug instrumentation wrappers
+    (Instrumented Expr)
+    (InstrumentedVec2 Expr)
+    (InstrumentedVec3 Expr)
+    (InstrumentedVec4 Expr)
+    (InstrumentedNamed String Expr)
+
+    ; Profiling
+    (ProfiledBlock i64 Expr)
+    (ProfiledLoop i64 Expr)
+    (ProfiledBranch i64 Expr)
+    (ProfileCounter i64)
+
+    ; Bounds checking
+    (BoundsChecked Expr Expr)
+    (BoundsChecked2D Expr Expr Expr)
+    (BufferBoundsChecked Expr Expr Expr)
+
+    ; NaN/Infinity checking
+    (NaNChecked Expr)
+    (InfChecked Expr)
+    (FiniteChecked Expr)
+    (NaNCheckedVec Expr)
+
+    ; Overflow checking
+    (OverflowCheckedAdd Expr Expr)
+    (OverflowCheckedSub Expr Expr)
+    (OverflowCheckedMul Expr Expr)
+    (AddOverflows Expr Expr)
+    (SubOverflows Expr Expr)
+    (MulOverflows Expr Expr)
+
+    ; Division by zero checking
+    (DivChecked Expr Expr)
+    (UDivChecked Expr Expr)
+    (FDivChecked Expr Expr)
+
+    ; Null pointer checking
+    (NullChecked Expr)
+    (NullCheckedLoad Expr Expr)
+    (NullPtr)
+
+    ; Shader validation
+    (ValidatedTexCoord Expr)
+    (ValidatedNormal Expr)
+    (ValidatedOrthogonal Expr)
+    (FApproxEq Expr Expr)
+
+    ; Timing instrumentation
+    (Timed i64 Expr)
+    (TimerStart i64)
+    (TimerEnd i64)
+    (ReadClock)
+
+    ; Memory access tracking
+    (TrackedLoad Expr Expr)
+    (TrackedStore Expr Expr Expr)
+    (AccessCounter Expr)
+    (StoreCounter Expr)
+    (PtrToInt Expr)
+
+    ; Debug/assert primitives
+    (DebugPrintf String Expr)
+    (Assert Expr String)
+
+    ; Conditional instrumentation
+    (DebugMode Expr)
+    (VerboseMode Expr)
+    (DebugEnabled)
+    (VerboseEnabled)
+    (SampledProfile Expr Expr)
+    (InvocationId)
+
+    ; Vector predicate operations
+    (Any Expr)
+    (All Expr)
+
+    ; ==========================================================================
+    ; Additional Conversion Operations
+    ; ==========================================================================
+
+    ; Generic conversion (type inferred from context)
+    (Convert Expr)
+
+    ; Bitcast alias
+    (BitCast Expr)
 )
 
 ; =============================================================================
@@ -551,6 +797,11 @@
 (function CompositeConstruct (ExprList) Expr :merge old)
 (function CompositeExtract (Expr i64) Expr :merge old)
 (function CompositeInsert (Expr Expr i64) Expr :merge old)
+
+; Switch statement support (functions to avoid forward reference to ExprList)
+(function Switch (Expr ExprList Expr) Expr :merge old)
+(function Case (Expr Expr) Expr :merge old)
+(function BinarySwitch (Expr ExprList Expr) Expr :merge old)
 
 ; CompositeExtract from CompositeConstruct rules - ONE-DIRECTIONAL to prevent explosion
 (rule ((= e (CompositeExtract (CompositeConstruct (ECons a (ENil))) 0)))
@@ -1300,3 +1551,162 @@
 
 ; InitMem is a leaf
 (rule ((Live e) (= e (InitMem))) ())
+
+; =============================================================================
+; Function for Case Count (used in switch optimization)
+; =============================================================================
+(function CaseCount (ExprList) i64 :merge (min old new))
+
+; =============================================================================
+; Capability Check Relations (for legalization)
+; =============================================================================
+(relation VulkanInt8 ())
+(relation VulkanInt16 ())
+(relation VulkanFloat16 ())
+(relation OpenCLFP16 ())
+
+; =============================================================================
+; Liveness Propagation for New E-Nodes
+; =============================================================================
+
+; Floating-point operations
+(rule ((Live e) (= e (FMod a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (FConst _))) ())
+(rule ((Live e) (= e (FNe a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (FGe a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (FLe a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (FLt a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (FGt a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (FEq a b))) ((Live a) (Live b)))
+
+; Memory/register promotion
+(rule ((Live e) (= e (Alloca _))) ())
+(rule ((Live e) (= e (SingleStoreOptimized ptr val))) ((Live ptr) (Live val)))
+(rule ((Live e) (= e (MemState _))) ())
+
+; Loop transformations
+(rule ((Live e) (= e (BreakableTheta c bc bv body init)))
+      ((Live c) (Live bc) (Live bv) (Live body) (Live init)))
+(rule ((Live e) (= e (WasBroken x))) ((Live x)))
+(rule ((Live e) (= e (ThetaFused c b1 b2 i1 i2)))
+      ((Live c) (Live b1) (Live b2) (Live i1) (Live i2)))
+(rule ((Live e) (= e (ParTheta c body init))) ((Live c) (Live body) (Live init)))
+(rule ((Live e) (= e (CountedTheta tc body init))) ((Live tc) (Live body) (Live init)))
+(rule ((Live e) (= e (StripMined oc ic body init)))
+      ((Live oc) (Live ic) (Live body) (Live init)))
+(rule ((Live e) (= e (LoopInterchange x))) ((Live x)))
+(rule ((Live e) (= e (Coalesced x))) ((Live x)))
+(rule ((Live e) (= e (ThetaTiled a b c d))) ((Live a) (Live b) (Live c) (Live d)))
+(rule ((Live e) (= e (LoopTile2D a b c d))) ((Live a) (Live b) (Live c) (Live d)))
+
+; Control flow
+(rule ((Live e) (= e (FlatGamma4 c1 c2 c3 a b c d)))
+      ((Live c1) (Live c2) (Live c3) (Live a) (Live b) (Live c) (Live d)))
+(rule ((Live e) (= e (SetReturn val))) ((Live val)))
+(rule ((Live e) (= e (HasReturned))) ())
+(rule ((Live e) (= e (Uniform x))) ((Live x)))
+(rule ((Live e) (= e (UniformGamma c t f))) ((Live c) (Live t) (Live f)))
+(rule ((Live e) (= e (WorkgroupUniform x))) ((Live x)))
+(rule ((Live e) (= e (Continue))) ())
+(rule ((Live e) (= e (Break val))) ((Live val)))
+(rule ((Live e) (= e (Barrier))) ())
+(rule ((Live e) (= e (Call _ arg))) ((Live arg)))
+
+; Legalization - narrow integer ops
+(rule ((Live e) (= e (Add8 a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (Sub8 a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (Mul8 a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (Add16 a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (Sub16 a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (Mul16 a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (Add64 a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (Sub64 a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (Mul64 a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (Div64 a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (Trunc8 a))) ((Live a)))
+(rule ((Live e) (= e (Trunc16 a))) ((Live a)))
+(rule ((Live e) (= e (ZeroExtend8 a))) ((Live a)))
+(rule ((Live e) (= e (ZeroExtend16 a))) ((Live a)))
+(rule ((Live e) (= e (SignExtend8 a))) ((Live a)))
+(rule ((Live e) (= e (SignExtend16 a))) ((Live a)))
+
+; Float16 operations
+(rule ((Live e) (= e (Float16Add a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (Float16Sub a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (Float16Mul a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (Float16Div a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (EmulatedFloat16Add a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (EmulatedFloat16Sub a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (EmulatedFloat16Mul a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (EmulatedFloat16Div a b))) ((Live a) (Live b)))
+
+; 64-bit decomposition
+(rule ((Live e) (= e (SplitI64 a))) ((Live a)))
+(rule ((Live e) (= e (MergeI64 a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (I64Hi a))) ((Live a)))
+(rule ((Live e) (= e (I64Lo a))) ((Live a)))
+(rule ((Live e) (= e (DivMod32Hi a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (DivMod32Lo a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (AddWithCarry a b c))) ((Live a) (Live b) (Live c)))
+(rule ((Live e) (= e (SubWithBorrow a b c))) ((Live a) (Live b) (Live c)))
+
+; Target legalization markers
+(rule ((Live e) (= e (VulkanLegalized x))) ((Live x)))
+(rule ((Live e) (= e (OpenCLLegalized x))) ((Live x)))
+
+; Instrumentation
+(rule ((Live e) (= e (Instrumented x))) ((Live x)))
+(rule ((Live e) (= e (InstrumentedVec2 x))) ((Live x)))
+(rule ((Live e) (= e (InstrumentedVec3 x))) ((Live x)))
+(rule ((Live e) (= e (InstrumentedVec4 x))) ((Live x)))
+(rule ((Live e) (= e (InstrumentedNamed _ x))) ((Live x)))
+(rule ((Live e) (= e (ProfiledBlock _ x))) ((Live x)))
+(rule ((Live e) (= e (ProfiledLoop _ x))) ((Live x)))
+(rule ((Live e) (= e (ProfiledBranch _ x))) ((Live x)))
+(rule ((Live e) (= e (ProfileCounter _))) ())
+(rule ((Live e) (= e (BoundsChecked a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (BoundsChecked2D a b c))) ((Live a) (Live b) (Live c)))
+(rule ((Live e) (= e (BufferBoundsChecked a b c))) ((Live a) (Live b) (Live c)))
+(rule ((Live e) (= e (NaNChecked x))) ((Live x)))
+(rule ((Live e) (= e (InfChecked x))) ((Live x)))
+(rule ((Live e) (= e (FiniteChecked x))) ((Live x)))
+(rule ((Live e) (= e (NaNCheckedVec x))) ((Live x)))
+(rule ((Live e) (= e (OverflowCheckedAdd a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (OverflowCheckedSub a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (OverflowCheckedMul a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (AddOverflows a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (SubOverflows a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (MulOverflows a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (DivChecked a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (UDivChecked a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (FDivChecked a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (NullChecked x))) ((Live x)))
+(rule ((Live e) (= e (NullCheckedLoad a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (NullPtr))) ())
+(rule ((Live e) (= e (ValidatedTexCoord x))) ((Live x)))
+(rule ((Live e) (= e (ValidatedNormal x))) ((Live x)))
+(rule ((Live e) (= e (ValidatedOrthogonal x))) ((Live x)))
+(rule ((Live e) (= e (FApproxEq a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (Timed _ x))) ((Live x)))
+(rule ((Live e) (= e (TimerStart _))) ())
+(rule ((Live e) (= e (TimerEnd _))) ())
+(rule ((Live e) (= e (ReadClock))) ())
+(rule ((Live e) (= e (TrackedLoad a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (TrackedStore a b c))) ((Live a) (Live b) (Live c)))
+(rule ((Live e) (= e (AccessCounter x))) ((Live x)))
+(rule ((Live e) (= e (StoreCounter x))) ((Live x)))
+(rule ((Live e) (= e (PtrToInt x))) ((Live x)))
+(rule ((Live e) (= e (DebugPrintf _ x))) ((Live x)))
+(rule ((Live e) (= e (Assert c _))) ((Live c)))
+(rule ((Live e) (= e (DebugMode x))) ((Live x)))
+(rule ((Live e) (= e (VerboseMode x))) ((Live x)))
+(rule ((Live e) (= e (DebugEnabled))) ())
+(rule ((Live e) (= e (VerboseEnabled))) ())
+(rule ((Live e) (= e (SampledProfile a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (InvocationId))) ())
+(rule ((Live e) (= e (Any x))) ((Live x)))
+(rule ((Live e) (= e (All x))) ((Live x)))
+
+; Conversion operations
+(rule ((Live e) (= e (Convert x))) ((Live x)))
+(rule ((Live e) (= e (BitCast x))) ((Live x)))

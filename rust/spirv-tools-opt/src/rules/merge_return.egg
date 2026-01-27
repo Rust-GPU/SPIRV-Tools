@@ -1,0 +1,32 @@
+; =============================================================================
+; Merge Return and Control Flow Flattening
+; =============================================================================
+;
+; Transforms multiple return statements into single return.
+; Useful for GPU shaders where single-exit is sometimes required.
+;
+; =============================================================================
+
+; Two branches both returning -> merge into single return with Gamma
+(rule ((= e (EffGamma c (ReturnValue x) (ReturnValue y))))
+      ((union e (ReturnValue (Gamma c x y)))))
+
+; Branch where both sides return same value
+(rule ((= e (EffGamma c (ReturnValue x) (ReturnValue x))))
+      ((union e (ReturnValue x))))
+
+; Return after return is dead
+(rule ((= e (Seq (ReturnValue x) (ReturnValue y))))
+      ((union e (ReturnValue x))))
+
+; Return after unreachable is just unreachable
+(rule ((= e (Seq (Unreachable) (ReturnValue x))))
+      ((union e (Unreachable))))
+
+; Common return expression through branches
+(rule ((= e (EffGamma c (ReturnValue (Call1 f x)) (ReturnValue (Call1 f y)))))
+      ((union e (ReturnValue (Call1 f (Gamma c x y))))))
+
+; Pure effect before return can be skipped
+(rule ((= e (Seq (Pure) (ReturnValue x))))
+      ((union e (ReturnValue x))))

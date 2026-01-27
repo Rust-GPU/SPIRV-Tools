@@ -1,0 +1,276 @@
+; =============================================================================
+; Instrumentation Passes for E-Graph Optimization
+; =============================================================================
+;
+; Instrumentation adds profiling, debugging, and validation code to shaders.
+; In an e-graph, we represent both instrumented and uninstrumented forms.
+;
+; Key insight: Instrumentation rules ADD nodes rather than simplify.
+; During extraction, we can choose whether to include instrumentation
+; based on a build flag or debug mode.
+;
+; Instrumentation types:
+; - DebugPrintf: Print values for debugging
+; - ProfilingCounter: Count executions
+; - BoundsCheck: Validate array indices
+; - NaNCheck: Detect floating-point NaNs
+; - InfinityCheck: Detect floating-point infinities
+; - OverflowCheck: Detect integer overflow
+;
+; =============================================================================
+; SECTION 1: Debug Printf Instrumentation
+; =============================================================================
+
+; Add debug print capability to any value
+; Instrumented(val) includes a debug output alongside the computation
+
+; Scalar debug output
+(rule ((= e (Instrumented val)))
+      ((union e (Seq (DebugPrintf "%f" val) val))))
+
+; Vector debug output
+(rule ((= e (InstrumentedVec2 val)))
+      ((union e (Seq (DebugPrintf "vec2(%f, %f)" (VecExtract val 0) (VecExtract val 1)) val))))
+(rule ((= e (InstrumentedVec3 val)))
+      ((union e (Seq (DebugPrintf "vec3(%f, %f, %f)"
+        (VecExtract val 0) (VecExtract val 1) (VecExtract val 2)) val))))
+(rule ((= e (InstrumentedVec4 val)))
+      ((union e (Seq (DebugPrintf "vec4(%f, %f, %f, %f)"
+        (VecExtract val 0) (VecExtract val 1) (VecExtract val 2) (VecExtract val 3)) val))))
+
+; Named debug output
+(rule ((= e (InstrumentedNamed name val)))
+      ((union e (Seq (DebugPrintf name val) val))))
+
+; =============================================================================
+; SECTION 2: Profiling Counters
+; =============================================================================
+
+; Count how many times a code path is executed
+
+; Increment profiling counter
+(rule ((= e (ProfiledBlock id body)))
+      ((union e (Seq (AtomicIAdd (ProfileCounter id) (Const 1)) body))))
+
+; Profile loop iterations
+(rule ((= e (ProfiledLoop id (Theta cond body init))))
+      ((union e (Theta cond
+        (Seq (AtomicIAdd (ProfileCounter id) (Const 1)) body)
+        init))))
+
+; Profile branch taken
+(rule ((= e (ProfiledBranch id (Gamma cond t f))))
+      ((union e (Gamma cond
+        (Seq (AtomicIAdd (ProfileCounter id) (Const 1)) t)
+        (Seq (AtomicIAdd (ProfileCounter (Add id 1)) (Const 1)) f)))))
+
+; =============================================================================
+; SECTION 3: Bounds Checking
+; =============================================================================
+
+; Add bounds checks to array accesses
+
+; Check array index in bounds
+(rule ((= e (BoundsChecked (AccessChain1 arr idx) size)))
+      ((union e (Seq
+        (Assert (ULt idx size) "Array index out of bounds")
+        (AccessChain1 arr idx)))))
+
+; Multi-dimensional bounds check
+(rule ((= e (BoundsChecked2D (AccessChain2 arr i j) rows cols)))
+      ((union e (Seq
+        (Assert (LogAnd (ULt i rows) (ULt j cols)) "2D index out of bounds")
+        (AccessChain2 arr i j)))))
+
+; Buffer bounds check (byte offset)
+(rule ((= e (BufferBoundsChecked ptr offset size)))
+      ((union e (Seq
+        (Assert (ULe (Add offset (Const 4)) size) "Buffer access out of bounds")
+        (Load ptr)))))
+
+; =============================================================================
+; SECTION 4: NaN/Infinity Detection
+; =============================================================================
+
+; Detect NaN in floating-point computations
+
+; Check for NaN after operation
+(rule ((= e (NaNChecked val)))
+      ((union e (Seq
+        (Assert (LogNot (IsNan val)) "NaN detected")
+        val))))
+
+; Check for infinity
+(rule ((= e (InfChecked val)))
+      ((union e (Seq
+        (Assert (LogNot (IsInf val)) "Infinity detected")
+        val))))
+
+; Check for both NaN and infinity
+(rule ((= e (FiniteChecked val)))
+      ((union e (Seq
+        (Assert (LogAnd (LogNot (IsNan val)) (LogNot (IsInf val))) "Non-finite value")
+        val))))
+
+; Vector NaN check
+(rule ((= e (NaNCheckedVec val)))
+      ((union e (Seq
+        (Assert (LogNot (Any (IsNan val))) "NaN in vector")
+        val))))
+
+; =============================================================================
+; SECTION 5: Integer Overflow Detection
+; =============================================================================
+
+; Detect overflow in integer arithmetic
+
+; Signed addition overflow
+(rule ((= e (OverflowCheckedAdd a b)))
+      ((union e (Seq
+        (Assert (LogNot (AddOverflows a b)) "Integer overflow in addition")
+        (Add a b)))))
+
+; Signed multiplication overflow
+(rule ((= e (OverflowCheckedMul a b)))
+      ((union e (Seq
+        (Assert (LogNot (MulOverflows a b)) "Integer overflow in multiplication")
+        (Mul a b)))))
+
+; Signed subtraction overflow
+(rule ((= e (OverflowCheckedSub a b)))
+      ((union e (Seq
+        (Assert (LogNot (SubOverflows a b)) "Integer overflow in subtraction")
+        (Sub a b)))))
+
+; =============================================================================
+; SECTION 6: Division by Zero Detection
+; =============================================================================
+
+; Check for division by zero
+
+(rule ((= e (DivChecked a b)))
+      ((union e (Seq
+        (Assert (Ne b (Const 0)) "Division by zero")
+        (SDiv a b)))))
+
+(rule ((= e (UDivChecked a b)))
+      ((union e (Seq
+        (Assert (Ne b (Const 0)) "Division by zero")
+        (UDiv a b)))))
+
+(rule ((= e (FDivChecked a b)))
+      ((union e (Seq
+        (Assert (FNe b (FConst 0.0)) "Division by zero")
+        (FDiv a b)))))
+
+; =============================================================================
+; SECTION 7: Null Pointer Checks
+; =============================================================================
+
+; Check for null/invalid pointers
+
+(rule ((= e (NullChecked ptr)))
+      ((union e (Seq
+        (Assert (Ne ptr (NullPtr)) "Null pointer dereference")
+        ptr))))
+
+(rule ((= e (NullCheckedLoad ptr mem)))
+      ((union e (Seq
+        (Assert (Ne ptr (NullPtr)) "Null pointer load")
+        (Load ptr mem)))))
+
+; =============================================================================
+; SECTION 8: Shader Validation
+; =============================================================================
+
+; Validate shader-specific constraints
+
+; Validate texture coordinates in range [0, 1]
+(rule ((= e (ValidatedTexCoord coord)))
+      ((union e (Seq
+        (Assert (LogAnd (FGe coord (FConst 0.0)) (FLe coord (FConst 1.0)))
+          "Texture coordinate out of range")
+        coord))))
+
+; Validate normal vector is normalized
+(rule ((= e (ValidatedNormal n)))
+      ((union e (Seq
+        (Assert (FApproxEq (Length n) (FConst 1.0)) "Normal not normalized")
+        n))))
+
+; Validate matrix is orthogonal
+(rule ((= e (ValidatedOrthogonal m)))
+      ((union e (Seq
+        (Assert (FApproxEq (Determinant m) (FConst 1.0)) "Matrix not orthogonal")
+        m))))
+
+; =============================================================================
+; SECTION 9: Timing Instrumentation
+; =============================================================================
+
+; Measure execution time of code blocks
+
+(rule ((= e (Timed id body)))
+      ((union e (Seq
+        (AtomicIAdd (TimerStart id) (ReadClock))
+        (Seq body
+          (AtomicIAdd (TimerEnd id) (ReadClock)))))))
+
+; =============================================================================
+; SECTION 10: Memory Access Pattern Tracking
+; =============================================================================
+
+; Track memory access patterns for optimization hints
+
+(rule ((= e (TrackedLoad ptr mem)))
+      ((union e (Seq
+        (AtomicIAdd (AccessCounter (PtrToInt ptr)) (Const 1))
+        (Load ptr mem)))))
+
+(rule ((= e (TrackedStore ptr val mem)))
+      ((union e (Seq
+        (AtomicIAdd (StoreCounter (PtrToInt ptr)) (Const 1))
+        (StoreMem ptr val mem)))))
+
+; =============================================================================
+; SECTION 11: Stripping Instrumentation
+; =============================================================================
+
+; Rules to remove instrumentation for release builds
+; These are the "inverse" rules - stripping out the debug code
+
+; Strip debug prints
+(rule ((= e (Seq (DebugPrintf _ _) val)))
+      ((union e val)))
+
+; Strip profiling
+(rule ((= e (Seq (AtomicIAdd (ProfileCounter _) _) body)))
+      ((union e body)))
+
+; Strip assertions (in release mode)
+(rule ((= e (Seq (Assert _ _) val)))
+      ((union e val)))
+
+; Strip timing
+(rule ((= e (Seq (AtomicIAdd (TimerStart _) _) (Seq body (AtomicIAdd (TimerEnd _) _)))))
+      ((union e body)))
+
+; =============================================================================
+; SECTION 12: Conditional Instrumentation
+; =============================================================================
+
+; Enable instrumentation only under certain conditions
+
+; Debug mode flag
+(rule ((= e (DebugMode (Instrumented val))))
+      ((union e (Gamma (DebugEnabled) (Instrumented val) val))))
+
+; Verbose mode for extra output
+(rule ((= e (VerboseMode body)))
+      ((union e (Gamma (VerboseEnabled) body (Pure)))))
+
+; Sample-based profiling (only instrument some invocations)
+(rule ((= e (SampledProfile rate body)))
+      ((union e (Gamma (Eq (Mod (InvocationId) rate) (Const 0))
+        (ProfiledBlock body)
+        body))))

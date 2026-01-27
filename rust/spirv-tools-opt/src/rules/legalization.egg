@@ -1,0 +1,198 @@
+; =============================================================================
+; Target Legalization Rules for E-Graph Optimization
+; =============================================================================
+;
+; Legalization transforms SPIR-V operations into forms valid for specific
+; targets (Vulkan, OpenCL, etc.). In an e-graph, we add equivalences between
+; the "ideal" form and the "legal" form, letting extraction pick the right one.
+;
+; Key principle: Legalization rules are BIDIRECTIONAL in the e-graph sense.
+; Both forms exist; the extractor picks based on target capabilities.
+;
+; =============================================================================
+; SECTION 1: Integer Type Legalization
+; =============================================================================
+; Some targets don't support narrow integers (Int8, Int16) in arithmetic.
+; We provide equivalences to wider types with masking.
+
+; 8-bit operations -> 32-bit with mask
+; Add8(a, b) = Trunc8(Add32(Extend8to32(a), Extend8to32(b)))
+(rule ((= e (Add8 a b)))
+      ((union e (Trunc8 (Add (ZExt32 a) (ZExt32 b))))))
+(rule ((= e (Sub8 a b)))
+      ((union e (Trunc8 (Sub (ZExt32 a) (ZExt32 b))))))
+(rule ((= e (Mul8 a b)))
+      ((union e (Trunc8 (Mul (ZExt32 a) (ZExt32 b))))))
+
+; 16-bit operations -> 32-bit with mask
+(rule ((= e (Add16 a b)))
+      ((union e (Trunc16 (Add (ZExt32 a) (ZExt32 b))))))
+(rule ((= e (Sub16 a b)))
+      ((union e (Trunc16 (Sub (ZExt32 a) (ZExt32 b))))))
+(rule ((= e (Mul16 a b)))
+      ((union e (Trunc16 (Mul (ZExt32 a) (ZExt32 b))))))
+
+; Signed operations need sign extension
+(rule ((= e (SDiv8 a b)))
+      ((union e (Trunc8 (SDiv (SExt32 a) (SExt32 b))))))
+(rule ((= e (SDiv16 a b)))
+      ((union e (Trunc16 (SDiv (SExt32 a) (SExt32 b))))))
+
+; =============================================================================
+; SECTION 2: Float16 Legalization
+; =============================================================================
+; Targets without native float16 need conversion to float32.
+
+; Float16 arithmetic -> Float32
+(rule ((= e (FAdd16 a b)))
+      ((union e (FTrunc16 (FAdd (FExt32 a) (FExt32 b))))))
+(rule ((= e (FSub16 a b)))
+      ((union e (FTrunc16 (FSub (FExt32 a) (FExt32 b))))))
+(rule ((= e (FMul16 a b)))
+      ((union e (FTrunc16 (FMul (FExt32 a) (FExt32 b))))))
+(rule ((= e (FDiv16 a b)))
+      ((union e (FTrunc16 (FDiv (FExt32 a) (FExt32 b))))))
+
+; Float16 comparisons (no conversion needed for result)
+(rule ((= e (FEq16 a b)))
+      ((union e (FEq (FExt32 a) (FExt32 b)))))
+(rule ((= e (FLt16 a b)))
+      ((union e (FLt (FExt32 a) (FExt32 b)))))
+
+; =============================================================================
+; SECTION 3: 64-bit Integer Legalization
+; =============================================================================
+; Targets without native int64 need decomposition to pairs of int32.
+
+; 64-bit add -> pair of 32-bit adds with carry
+; Add64(a, b) = MakePair64(
+;   Add32(Low32(a), Low32(b)),
+;   Add32(Add32(High32(a), High32(b)), Carry(Low32(a), Low32(b)))
+; )
+(rule ((= e (Add64 a b)))
+      ((union e (MakePair64
+        (Add (Low32 a) (Low32 b))
+        (Add (Add (High32 a) (High32 b)) (Carry32 (Low32 a) (Low32 b)))))))
+
+; 64-bit subtraction
+(rule ((= e (Sub64 a b)))
+      ((union e (MakePair64
+        (Sub (Low32 a) (Low32 b))
+        (Sub (Sub (High32 a) (High32 b)) (Borrow32 (Low32 a) (Low32 b)))))))
+
+; 64-bit shift left by constant < 32
+(rule ((= e (Shl64 x (Const n))) (< n 32))
+      ((union e (MakePair64
+        (Shl (Low32 x) (Const n))
+        (BitOr (Shl (High32 x) (Const n)) (ShrU (Low32 x) (Const (- 32 n))))))))
+
+; 64-bit shift left by constant >= 32
+(rule ((= e (Shl64 x (Const n))) (>= n 32))
+      ((union e (MakePair64 (Const 0) (Shl (Low32 x) (Const (- n 32)))))))
+
+; =============================================================================
+; SECTION 4: Vulkan-Specific Legalization
+; =============================================================================
+
+; Vulkan requires certain storage class restrictions
+; Workgroup storage can't be used with certain operations
+
+; Vulkan 1.0 doesn't have OpAtomicFAddEXT - use CAS loop
+(rule ((= e (AtomicFAdd ptr mem val)))
+      ((union e (AtomicFAddCAS ptr mem val))))
+
+; Vulkan requires explicit derivatives in non-uniform control flow
+; Mark derivatives that need helper invocations
+(rule ((= e (DPdx val)))
+      ((union e (DPdxHelper val))))
+(rule ((= e (DPdy val)))
+      ((union e (DPdyHelper val))))
+
+; =============================================================================
+; SECTION 5: OpenCL-Specific Legalization
+; =============================================================================
+
+; OpenCL uses different memory model
+; Relaxed atomics have different semantics
+
+; OpenCL kernel arguments use different address spaces
+; Global = 1 (OpenCL) vs StorageBuffer = 12 (Vulkan)
+
+; OpenCL printf becomes debug output
+(rule ((= e (OpenCLPrintf fmt args)))
+      ((union e (DebugPrintf fmt args))))
+
+; =============================================================================
+; SECTION 6: Vector Width Legalization
+; =============================================================================
+; Some targets prefer specific vector widths.
+
+; Vec3 -> Vec4 padding (common optimization)
+(rule ((= e (Vec3 a b c)))
+      ((union e (VecShuffle (Vec4 a b c (Undef)) 0 1 2))))
+
+; Vec2 operations on targets preferring Vec4
+(rule ((= e (VecAdd2 a b)))
+      ((union e (VecShuffle (VecAdd4 (VecPad2to4 a) (VecPad2to4 b)) 0 1))))
+
+; Widen narrow vectors for SIMD efficiency
+(rule ((= e (Dot2 a b)))
+      ((union e (Dot4 (VecPad2to4 a) (VecPad2to4 b)))))
+
+; =============================================================================
+; SECTION 7: Matrix Operation Legalization
+; =============================================================================
+; Matrix operations may need decomposition on some targets.
+
+; MatrixTimesScalar -> component-wise multiply
+(rule ((= e (MatTimesScalar m s)))
+      ((union e (MatMap (Mul s) m))))
+
+; MatrixTimesVector -> dot products
+(rule ((= e (MatTimesVec m v)))
+      ((union e (Vec4
+        (Dot (MatRow m 0) v)
+        (Dot (MatRow m 1) v)
+        (Dot (MatRow m 2) v)
+        (Dot (MatRow m 3) v)))))
+
+; =============================================================================
+; SECTION 8: Texture/Image Legalization
+; =============================================================================
+
+; Cubemap array indexing differences between APIs
+
+; Gather with offsets -> multiple samples
+(rule ((= e (TextureGatherOffsets tex coord offsets)))
+      ((union e (Vec4
+        (TextureSample tex (VecAdd coord (VecOffset offsets 0)))
+        (TextureSample tex (VecAdd coord (VecOffset offsets 1)))
+        (TextureSample tex (VecAdd coord (VecOffset offsets 2)))
+        (TextureSample tex (VecAdd coord (VecOffset offsets 3)))))))
+
+; =============================================================================
+; SECTION 9: Control Flow Legalization
+; =============================================================================
+
+; Some targets don't support structured control flow exceptions
+; OpSwitch with many cases -> if-else chain
+(rule ((= e (Switch val cases default)) (> (CaseCount cases) 32))
+      ((union e (SwitchToIfElse val cases default))))
+
+; Unstructured control flow -> structured
+; This is complex; basic pattern:
+(rule ((= e (Goto label)))
+      ((union e (Break label))))
+
+; =============================================================================
+; SECTION 10: Capability-Based Selection
+; =============================================================================
+; The e-graph contains multiple equivalent forms.
+; During extraction, we pick based on target capabilities.
+;
+; Example capability checks:
+; - HasInt8 -> use Add8 directly
+; - !HasInt8 -> use Trunc8(Add(ZExt32, ZExt32))
+;
+; These are handled by the extraction cost model, not the rules.
+; Rules just ensure both forms exist in the e-graph.

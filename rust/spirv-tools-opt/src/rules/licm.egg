@@ -1,0 +1,71 @@
+; =============================================================================
+; Loop Invariant Code Motion (LICM) - Unique Extended Rules
+; =============================================================================
+;
+; NOTE: LICM rules are distributed across domain-specific files:
+; - rvsdg.egg: Core arithmetic, bitwise, float, trig, comparisons
+; - glsl.egg: GLSL extended functions (Fma, Clamp, FMix, geometric ops)
+; - vector.egg: Vector operations (VecAdd/Sub/Mul, Dot, Cross, etc.)
+; - matrix.egg: Matrix operations
+; - type_conversion.egg: Type conversion LICM, NClamp
+; - bitfield.egg: Bitfield operation LICM
+; - memory.egg: Load LICM
+; - graphics.egg: Image ops with invariant coordinates
+; - loop_fusion.egg: Theta with invariant body
+;
+; This file contains ONLY unique LICM rules not covered elsewhere.
+; =============================================================================
+
+; Base case: Symbols are inherently loop-invariant
+(rule ((= e (Sym s)))
+      ((union e (LoopInvariant (Sym s)))))
+
+; FMod - distinct from FRem
+(rule ((= e (FMod (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (FMod a b)))))
+
+; Vector construction
+(rule ((= e (Vec2 (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (Vec2 a b)))))
+(rule ((= e (Vec3 (LoopInvariant a) (LoopInvariant b) (LoopInvariant c))))
+      ((union e (LoopInvariant (Vec3 a b c)))))
+(rule ((= e (Vec4 (LoopInvariant a) (LoopInvariant b) (LoopInvariant c) (LoopInvariant d))))
+      ((union e (LoopInvariant (Vec4 a b c d)))))
+
+; Vector element access
+(rule ((= e (VecExtract (LoopInvariant v) idx)))
+      ((union e (LoopInvariant (VecExtract v idx)))))
+(rule ((= e (VecInsert (LoopInvariant v) (LoopInvariant s) idx)))
+      ((union e (LoopInvariant (VecInsert v s idx)))))
+
+; Vector division (not in vector.egg)
+(rule ((= e (VecDiv (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (VecDiv a b)))))
+(rule ((= e (VecFDiv (LoopInvariant a) (LoopInvariant b))))
+      ((union e (LoopInvariant (VecFDiv a b)))))
+(rule ((= e (VecTimesScalar (LoopInvariant v) (LoopInvariant s))))
+      ((union e (LoopInvariant (VecTimesScalar v s)))))
+
+; Access chain LICM
+(rule ((= e (AccessChain1 (LoopInvariant ptr) idx)))
+      ((union e (LoopInvariant (AccessChain1 ptr idx)))))
+(rule ((= e (AccessChain2 (LoopInvariant ptr) i1 i2)))
+      ((union e (LoopInvariant (AccessChain2 ptr i1 i2)))))
+(rule ((= e (AccessChain3 (LoopInvariant ptr) i1 i2 i3)))
+      ((union e (LoopInvariant (AccessChain3 ptr i1 i2 i3)))))
+(rule ((= e (AccessChainDyn (LoopInvariant ptr) (LoopInvariant idx))))
+      ((union e (LoopInvariant (AccessChainDyn ptr idx)))))
+
+; Image operations with BOTH image AND coordinate invariant
+; (graphics.egg only has coord invariant, these are different rules)
+(rule ((= e (ImageSample (LoopInvariant img) (LoopInvariant coord))))
+      ((union e (LoopInvariant (ImageSample img coord)))))
+(rule ((= e (ImageFetch (LoopInvariant img) (LoopInvariant coord))))
+      ((union e (LoopInvariant (ImageFetch img coord)))))
+(rule ((= e (ImageRead (LoopInvariant img) (LoopInvariant coord))))
+      ((union e (LoopInvariant (ImageRead img coord)))))
+
+; Gamma LICM - when all branches AND condition are invariant
+(rule ((= e (Gamma (LoopInvariant c) (LoopInvariant t) (LoopInvariant f))))
+      ((union e (LoopInvariant (Gamma c t f)))))
+

@@ -27,6 +27,12 @@
 //! - `type_conversion.egg`: Type conversion and pack/unpack optimizations
 //! - `constant_folding.egg`: Constant folding rules
 //! - `primitives.egg`: Rules using custom Rust primitives
+//! - `mem2reg.egg`: Memory to register promotion
+//! - `legalization.egg`: Target-specific legalization (Vulkan/OpenCL)
+//! - `licm.egg`: Loop invariant code motion
+//! - `loop_fusion.egg`: Loop fusion and fission
+//! - `instrumentation.egg`: Profiling and debugging hooks
+//! - `merge_return.egg`: Merge-return and control flow flattening
 
 use egglog::{add_primitive, EGraph};
 
@@ -82,6 +88,26 @@ const SPIRV_EGGLOG_PROGRAM: &str = concat!(
     include_str!("rules/bitfield.egg"),
     "\n",
     include_str!("rules/dce.egg"),
+    "\n",
+    include_str!("rules/licm.egg"),
+    "\n",
+    include_str!("rules/mem2reg.egg"),
+    // NOTE: merge_return.egg rules are ALREADY in rvsdg.egg (lines 213, 230).
+    //       Enabling it causes egglog "rule was already present" errors.
+    // NOTE: The following files have structural issues that prevent enabling:
+    // - loop_fusion.egg: Uses undefined types (Pair, Triple, CountRange, etc.) and
+    //   has type mismatches (Seq takes Effect Effect, but Theta returns Expr)
+    // - legalization.egg: Uses many undefined types (SDiv8, FAdd16, MakePair64, etc.)
+    // - instrumentation.egg: Fundamental type mismatches (Seq used with Expr instead
+    //   of Effect, AtomicIAdd called with 2 args instead of 3)
+    // "\n",
+    // include_str!("rules/merge_return.egg"),
+    // "\n",
+    // include_str!("rules/loop_fusion.egg"),
+    // "\n",
+    // include_str!("rules/legalization.egg"),
+    // "\n",
+    // include_str!("rules/instrumentation.egg"),
 );
 
 /// Rules that use custom primitives (must be loaded after primitives are registered).
@@ -7521,5 +7547,439 @@ mod tests {
 
         let check = egraph.parse_and_run_program(None, "(check (= left right))");
         assert!(check.is_ok(), "((A*B)^T)^-1 should equal (B^-1 * A^-1)^T");
+    }
+
+    // =========================================================================
+    // mem2reg Tests
+    // =========================================================================
+
+    #[test]
+    fn test_mem2reg_merge_mem_both_branches_store() {
+        // Load from MergeMem where both branches store different values
+        // should become a Gamma selecting between them
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
+            (let ptr (Var "p" 0))
+            (let cond (Sym "c"))
+            (let val1 (Const 10))
+            (let val2 (Const 20))
+            (let prev_mem (InitMem))
+            (let true_mem (StoreMem ptr val1 prev_mem))
+            (let false_mem (StoreMem ptr val2 prev_mem))
+            (let merged_mem (MergeMem cond true_mem false_mem))
+            (let root (Load ptr merged_mem))
+            (let expected (Gamma cond val1 val2))
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+        assert!(
+            check.is_ok(),
+            "Load(ptr, MergeMem(cond, Store(ptr, v1), Store(ptr, v2))) should equal Gamma(cond, v1, v2)"
+        );
+    }
+
+    #[test]
+    fn test_mem2reg_merge_mem_true_branch_stores() {
+        // Load from MergeMem where only true branch stores
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
+            (let ptr (Var "p" 0))
+            (let cond (Sym "c"))
+            (let new_val (Const 42))
+            (let prev_mem (InitMem))
+            (let true_mem (StoreMem ptr new_val prev_mem))
+            ; false branch doesn't modify ptr
+            (let merged_mem (MergeMem cond true_mem prev_mem))
+            (let root (Load ptr merged_mem))
+            (let expected (Gamma cond new_val (Load ptr prev_mem)))
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+        assert!(
+            check.is_ok(),
+            "Load from MergeMem with only true branch storing should equal Gamma(cond, new_val, Load(ptr, prev))"
+        );
+    }
+
+    #[test]
+    fn test_mem2reg_merge_mem_false_branch_stores() {
+        // Load from MergeMem where only false branch stores
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
+            (let ptr (Var "p" 0))
+            (let cond (Sym "c"))
+            (let new_val (Const 42))
+            (let prev_mem (InitMem))
+            (let false_mem (StoreMem ptr new_val prev_mem))
+            ; true branch doesn't modify ptr
+            (let merged_mem (MergeMem cond prev_mem false_mem))
+            (let root (Load ptr merged_mem))
+            (let expected (Gamma cond (Load ptr prev_mem) new_val))
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+        assert!(
+            check.is_ok(),
+            "Load from MergeMem with only false branch storing should equal Gamma(cond, Load(ptr, prev), new_val)"
+        );
+    }
+
+    #[test]
+    fn test_mem2reg_loop_variable_promotion() {
+        // Load from LoopMem should become Theta (loop-carried value)
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
+            (let ptr (Var "p" 0))
+            (let loop_cond (Sym "continue"))
+            (let loop_val (Sym "x"))
+            (let init_mem (InitMem))
+            (let body_mem (StoreMem ptr loop_val init_mem))
+            (let loop_mem (LoopMem loop_cond body_mem init_mem))
+            (let root (Load ptr loop_mem))
+            (let expected (Theta loop_cond loop_val (Load ptr init_mem)))
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+        assert!(
+            check.is_ok(),
+            "Load from LoopMem should become Theta(cond, loop_val, initial_load)"
+        );
+    }
+
+    #[test]
+    fn test_mem2reg_loop_invariant_hoist() {
+        // Loading a loop-invariant value from LoopMem should hoist it
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
+            (let ptr (Var "p" 0))
+            (let loop_cond (Sym "continue"))
+            (let invariant_val (LoopInvariant (Const 100)))
+            (let init_mem (InitMem))
+            (let body_mem (StoreMem ptr invariant_val init_mem))
+            (let loop_mem (LoopMem loop_cond body_mem init_mem))
+            (let root (Load ptr loop_mem))
+            ; Expected: the loop-invariant value itself
+            (let expected (LoopInvariant (Const 100)))
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+        assert!(
+            check.is_ok(),
+            "Load of loop-invariant value from LoopMem should be hoisted"
+        );
+    }
+
+    #[test]
+    fn test_mem2reg_store_undef_load() {
+        // Storing Undef then loading gives Undef
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
+            (let ptr (Var "p" 0))
+            (let prev_mem (InitMem))
+            (let mem_with_undef (StoreMem ptr (Undef) prev_mem))
+            (let root (Load ptr mem_with_undef))
+            (let expected (Undef))
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+        assert!(
+            check.is_ok(),
+            "Load after storing Undef should give Undef"
+        );
+    }
+
+    // =========================================================================
+    // LICM (Loop Invariant Code Motion) Tests
+    // =========================================================================
+
+    #[test]
+    fn test_licm_sym_is_loop_invariant() {
+        // Symbols are inherently loop-invariant
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
+            (let root (Sym "x"))
+            (let expected (LoopInvariant (Sym "x")))
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+        assert!(check.is_ok(), "Sym should be equivalent to LoopInvariant(Sym)");
+    }
+
+    #[test]
+    fn test_licm_fmod_invariant() {
+        // FMod of loop-invariant values is loop-invariant
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
+            (let a (LoopInvariant (Sym "a")))
+            (let b (LoopInvariant (Sym "b")))
+            (let root (FMod a b))
+            (let expected (LoopInvariant (FMod (Sym "a") (Sym "b"))))
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+        assert!(
+            check.is_ok(),
+            "FMod(LoopInvariant(a), LoopInvariant(b)) should be LoopInvariant(FMod(a, b))"
+        );
+    }
+
+    #[test]
+    fn test_licm_vec2_construction() {
+        // Vec2 with loop-invariant components is loop-invariant
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
+            (let a (LoopInvariant (Sym "x")))
+            (let b (LoopInvariant (Sym "y")))
+            (let root (Vec2 a b))
+            (let expected (LoopInvariant (Vec2 (Sym "x") (Sym "y"))))
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+        assert!(
+            check.is_ok(),
+            "Vec2 with LoopInvariant args should be LoopInvariant"
+        );
+    }
+
+    #[test]
+    fn test_licm_vec_extract() {
+        // VecExtract from loop-invariant vector is loop-invariant
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
+            (let v (LoopInvariant (Sym "vec")))
+            (let root (VecExtract v 0))
+            (let expected (LoopInvariant (VecExtract (Sym "vec") 0)))
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+        assert!(
+            check.is_ok(),
+            "VecExtract(LoopInvariant(v), idx) should be LoopInvariant"
+        );
+    }
+
+    #[test]
+    fn test_licm_vec_insert() {
+        // VecInsert with loop-invariant args is loop-invariant
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
+            (let v (LoopInvariant (Sym "vec")))
+            (let s (LoopInvariant (Sym "scalar")))
+            (let root (VecInsert v s 1))
+            (let expected (LoopInvariant (VecInsert (Sym "vec") (Sym "scalar") 1)))
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+        assert!(
+            check.is_ok(),
+            "VecInsert with LoopInvariant args should be LoopInvariant"
+        );
+    }
+
+    #[test]
+    fn test_licm_access_chain() {
+        // AccessChain with loop-invariant pointer is loop-invariant
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
+            (let ptr (LoopInvariant (Var "base" 0)))
+            (let root (AccessChain1 ptr 0))
+            (let expected (LoopInvariant (AccessChain1 (Var "base" 0) 0)))
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+        assert!(
+            check.is_ok(),
+            "AccessChain1(LoopInvariant(ptr), idx) should be LoopInvariant"
+        );
+    }
+
+    #[test]
+    fn test_licm_gamma_all_invariant() {
+        // Gamma with all loop-invariant parts is loop-invariant
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
+            (let c (LoopInvariant (Sym "cond")))
+            (let t (LoopInvariant (Const 1)))
+            (let f (LoopInvariant (Const 0)))
+            (let root (Gamma c t f))
+            (let expected (LoopInvariant (Gamma (Sym "cond") (Const 1) (Const 0))))
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+        assert!(
+            check.is_ok(),
+            "Gamma with all LoopInvariant parts should be LoopInvariant"
+        );
+    }
+
+    #[test]
+    fn test_licm_image_operations() {
+        // Image operations with loop-invariant image AND coord are loop-invariant
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
+            (let img (LoopInvariant (Sym "sampler")))
+            (let coord (LoopInvariant (Sym "uv")))
+            (let root (ImageSample img coord))
+            (let expected (LoopInvariant (ImageSample (Sym "sampler") (Sym "uv"))))
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+        assert!(
+            check.is_ok(),
+            "ImageSample with both LoopInvariant image and coord should be LoopInvariant"
+        );
+    }
+
+    #[test]
+    fn test_licm_vec_times_scalar() {
+        // VecTimesScalar with loop-invariant args is loop-invariant
+        let mut egraph = create_spirv_egraph().unwrap();
+
+        egraph
+            .parse_and_run_program(
+                None,
+                r#"
+            (let v (LoopInvariant (Sym "vec")))
+            (let s (LoopInvariant (Sym "scale")))
+            (let root (VecTimesScalar v s))
+            (let expected (LoopInvariant (VecTimesScalar (Sym "vec") (Sym "scale"))))
+        "#,
+            )
+            .unwrap();
+        egraph
+            .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+            .unwrap();
+
+        let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+        assert!(
+            check.is_ok(),
+            "VecTimesScalar with LoopInvariant args should be LoopInvariant"
+        );
     }
 }

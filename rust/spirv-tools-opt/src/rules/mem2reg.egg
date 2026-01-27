@@ -1,0 +1,151 @@
+; =============================================================================
+; Memory to Register Promotion (mem2reg) for E-Graph Optimization
+; =============================================================================
+;
+; mem2reg promotes memory operations to SSA values when safe. This is one of
+; the most important optimizations for SPIR-V because GPU shader compilers
+; start with all values in memory (OpVariable) and need to promote them to
+; registers for efficient execution.
+;
+; Key insight for e-graphs: We don't actually "delete" memory ops. Instead,
+; we establish equivalences so that loads return known values and stores
+; become dead (eliminated by DCE).
+;
+; Promotion criteria:
+; - Variable is only accessed via Load/Store (no address escapes)
+; - All accesses go through the same pointer (no aliasing)
+; - Value is dominated by its definition
+;
+; In e-graph terms:
+; - Load(var, StoreMem(var, val, _)) = val (the stored value)
+; - StoreMem(var, val, prev) where val is never loaded = prev (dead store)
+;
+; =============================================================================
+; SECTION 1: Direct Load-After-Store (Core mem2reg)
+; =============================================================================
+; The fundamental promotion rule: loading immediately after storing gives
+; back the stored value.
+
+; Load from ptr after storing val to ptr = val (already in memory.egg)
+; (rule ((= e (Load ptr (StoreMem ptr val prev))))
+;       ((union e val)))
+
+; =============================================================================
+; SECTION 2: SSA Value Construction Through Memory
+; =============================================================================
+; When a variable is stored in multiple places and loaded after a merge,
+; we construct the equivalent SSA phi/gamma.
+
+; Load from merged memory state = Gamma of values from both branches
+; If we stored v1 in true branch and v2 in false branch to same ptr,
+; loading after merge gives Gamma(cond, v1, v2)
+(rule ((= e (Load ptr (MergeMem cond (StoreMem ptr v1 s1) (StoreMem ptr v2 s2)))))
+      ((union e (Gamma cond v1 v2))))
+
+; Special case: only one branch stores, other passes through
+; Load from merge where true branch stores, false branch doesn't modify
+(rule ((= e (Load ptr (MergeMem cond (StoreMem ptr val _) prev))))
+      ((union e (Gamma cond val (Load ptr prev)))))
+
+(rule ((= e (Load ptr (MergeMem cond prev (StoreMem ptr val _)))))
+      ((union e (Gamma cond (Load ptr prev) val))))
+
+; =============================================================================
+; SECTION 3: Loop Variable Promotion
+; =============================================================================
+; Variables updated in a loop can become Theta nodes (loop-carried values).
+
+; Load from loop memory state = loop variable (initial value + update)
+; LoopMem represents the memory state after each loop iteration
+(rule ((= e (Load ptr (LoopMem cond (StoreMem ptr val body_mem) init_mem))))
+      ((union e (Theta cond val (Load ptr init_mem)))))
+
+; If the stored value doesn't depend on the loop, hoist it
+(rule ((= e (Load ptr (LoopMem cond (StoreMem ptr (LoopInvariant val) body_mem) init_mem))))
+      ((union e (LoopInvariant val))))
+
+; =============================================================================
+; SECTION 4: Undef Propagation
+; =============================================================================
+; Loading from uninitialized memory gives Undef
+
+; Store of Undef followed by load = Undef
+(rule ((= e (Load ptr (StoreMem ptr (Undef) prev))))
+      ((union e (Undef))))
+
+; Load from initial memory state (before any store) could be undef
+; But we can't assume this without knowing the variable's initialization
+
+; =============================================================================
+; SECTION 5: Address Computation Optimization
+; =============================================================================
+; Promote variables even when accessed through constant access chains
+
+; Load through access chain after store through same access chain
+; (Already in memory.egg, but we add more patterns)
+
+; Nested access chain promotion
+; Load(AccessChain1(var, 0), StoreMem(AccessChain1(var, 0), val, _)) = val
+; (Already handled by basic load-after-store with access chain pointer)
+
+; =============================================================================
+; SECTION 6: Variable Splitting
+; =============================================================================
+; A struct variable can be split into multiple scalar variables if each
+; field is accessed independently.
+
+; Load of composite followed by extract = Load of field directly
+; (Already in memory.egg: CompositeExtract(Load(...)) = Load(AccessChain(...)))
+
+; Store of constructed composite = sequence of field stores
+; This enables individual field promotion
+; (See sroa.egg for detailed composite decomposition)
+
+; =============================================================================
+; SECTION 7: Promotable Variable Detection
+; =============================================================================
+; Mark variables as promotable when they meet criteria.
+; Promotable node is an annotation that helps extraction choose the SSA form.
+
+; A Variable that's only loaded/stored (no address taken) is promotable
+; We model this by allowing the e-graph to represent both forms:
+; - Memory form: Variable + Load/Store
+; - SSA form: Direct values with Gamma/Theta for control flow
+
+; When both forms exist, extraction prefers SSA (no memory operations)
+
+; =============================================================================
+; SECTION 8: Private/Function Variable Promotion
+; =============================================================================
+; Variables in Private or Function storage class are best candidates
+; for promotion because they can't alias with other pointers.
+
+; Function-local variable with simple access pattern: fully promotable
+; The variable's value IS the SSA value, no memory needed
+
+; When a function-local variable is stored once and read multiple times,
+; all loads return that one stored value
+(rule ((= e1 (Load var mem))
+       (= e2 (Load var mem)))
+      ((union e1 e2)))
+
+; =============================================================================
+; SECTION 9: Partial Promotion
+; =============================================================================
+; Even when full promotion isn't possible, we can partially promote.
+
+; If a variable is mostly used as SSA but occasionally its address is taken,
+; we can still promote the SSA-friendly uses and keep memory for the rest.
+
+; For now, we rely on SROA and field-level promotion for partial cases.
+
+; =============================================================================
+; SECTION 10: Consistency with Other Passes
+; =============================================================================
+; mem2reg works together with:
+; - SROA: Splits aggregates, enabling per-field promotion
+; - DCE: Eliminates the now-dead stores after promotion
+; - Copy propagation: Propagates promoted values
+; - CSE: Combines redundant promoted computations
+
+; These all happen in one e-graph pass via equality saturation!
