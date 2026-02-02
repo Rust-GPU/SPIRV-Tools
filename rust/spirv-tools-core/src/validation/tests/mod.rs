@@ -30277,3 +30277,84 @@ fn udot_signed_result_rejected() {
         "Expected DotProductResultNotUnsignedIntScalar, got: {error:?}"
     );
 }
+
+// Grammar extension lists are alternatives: ANY listed extension suffices.
+// ShaderViewportIndexLayerEXT lists two alternative extensions:
+//   SPV_EXT_shader_viewport_index_layer OR SPV_NV_viewport_array2
+#[test]
+fn capability_with_alternative_extensions_accepts_any_single_extension() {
+    // Should succeed with only SPV_NV_viewport_array2 (not both extensions)
+    let text_nv = [
+        "OpCapability Shader",
+        "OpCapability Geometry",
+        "OpCapability MultiViewport",
+        "OpCapability ShaderViewportIndexLayerEXT",
+        "OpExtension \"SPV_NV_viewport_array2\"",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint Vertex %main \"main\"",
+        "%void = OpTypeVoid",
+        "%fn = OpTypeFunction %void",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    text_nv
+        .as_str()
+        .validate(TargetEnv::Vulkan1_1)
+        .expect("Capability with one of its alternative extensions should be accepted");
+
+    // Should succeed with only SPV_EXT_shader_viewport_index_layer
+    let text_ext = [
+        "OpCapability Shader",
+        "OpCapability Geometry",
+        "OpCapability MultiViewport",
+        "OpCapability ShaderViewportIndexLayerEXT",
+        "OpExtension \"SPV_EXT_shader_viewport_index_layer\"",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint Vertex %main \"main\"",
+        "%void = OpTypeVoid",
+        "%fn = OpTypeFunction %void",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    text_ext
+        .as_str()
+        .validate(TargetEnv::Vulkan1_1)
+        .expect("Capability with the other alternative extension should be accepted");
+}
+
+#[test]
+fn capability_with_alternative_extensions_rejects_when_none_declared() {
+    // Should fail when neither alternative extension is declared
+    let text = [
+        "OpCapability Shader",
+        "OpCapability Geometry",
+        "OpCapability MultiViewport",
+        "OpCapability ShaderViewportIndexLayerEXT",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint Vertex %main \"main\"",
+        "%void = OpTypeVoid",
+        "%fn = OpTypeFunction %void",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    let error = text
+        .as_str()
+        .validate(TargetEnv::Vulkan1_1)
+        .expect_err("Capability without any required extension should be rejected");
+    assert!(
+        matches!(
+            error,
+            ValidationError::DisallowedCapabilityMissingExtension { .. }
+        ),
+        "Expected DisallowedCapabilityMissingExtension, got: {error:?}"
+    );
+}

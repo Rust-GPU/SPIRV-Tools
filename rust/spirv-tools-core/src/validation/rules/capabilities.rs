@@ -120,10 +120,16 @@ pub fn validate_capabilities(
                 && (always_require_extension || !version_allows_core);
 
             if grammar_requires_extension {
-                for &required_ext in grammar_requirements.required_extensions {
-                    if !extension_allowed_in_env(required_ext, env) {
+                // Grammar extension lists are alternatives (ANY suffices).
+                // Only error if NONE of the alternative extensions is allowed.
+                let any_ext_allowed = grammar_requirements
+                    .required_extensions
+                    .iter()
+                    .any(|&ext| extension_allowed_in_env(ext, env));
+                if !any_ext_allowed {
+                    if let Some(&ext) = grammar_requirements.required_extensions.first() {
                         return Err(ValidationError::DisallowedExtension {
-                            extension: ExtensionName::from(required_ext),
+                            extension: ExtensionName::from(ext),
                             env,
                         });
                     }
@@ -171,19 +177,36 @@ pub fn validate_capabilities(
             }
 
             if !grammar_requirements.required_extensions.is_empty() && grammar_requires_extension {
-                for &required_ext in grammar_requirements.required_extensions {
-                    if !extension_allowed_in_env(required_ext, env) {
+                // Grammar extension lists are alternatives (ANY suffices).
+                // The capability is valid if at least one listed extension is
+                // both allowed in the environment and declared in the module.
+                let any_ext_satisfied = grammar_requirements
+                    .required_extensions
+                    .iter()
+                    .any(|&ext| extension_allowed_in_env(ext, env) && has_extension(extensions, ext));
+                if !any_ext_satisfied {
+                    let any_allowed = grammar_requirements
+                        .required_extensions
+                        .iter()
+                        .any(|&ext| extension_allowed_in_env(ext, env));
+                    if !any_allowed {
                         return Err(ValidationError::DisallowedExtension {
-                            extension: ExtensionName::from(required_ext),
+                            extension: ExtensionName::from(
+                                grammar_requirements.required_extensions[0],
+                            ),
                             env,
                         });
                     }
-                    if !has_extension(extensions, required_ext) {
-                        return Err(ValidationError::DisallowedCapabilityMissingExtension {
-                            capability,
-                            required_extension: required_ext.to_string(),
-                        });
-                    }
+                    // At least one is allowed but none is declared
+                    let first_allowed = grammar_requirements
+                        .required_extensions
+                        .iter()
+                        .find(|&&ext| extension_allowed_in_env(ext, env))
+                        .unwrap();
+                    return Err(ValidationError::DisallowedCapabilityMissingExtension {
+                        capability,
+                        required_extension: first_allowed.to_string(),
+                    });
                 }
             }
 
