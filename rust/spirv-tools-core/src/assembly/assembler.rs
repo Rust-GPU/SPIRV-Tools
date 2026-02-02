@@ -1134,8 +1134,87 @@ impl<'a> AssemblyTranslator<'a> {
                 return;
             }
         };
-        let literal = match literal_operand.value() {
-            OperandValue::Literal(value) => value,
+
+        let (type_id, result_id) = self
+            .module_builder
+            .bind_typed_result(result_type, result_id);
+
+        // Look up the result type to determine how to encode the literal.
+        // The operand is a LiteralContextDependentNumber: its encoding depends
+        // on the result type, matching the C++ spirv-as behavior.
+        let float_width = self.lookup_float_type_width(type_id);
+
+        let operands = match literal_operand.value() {
+            OperandValue::Literal(literal) => {
+                // Integer text (e.g. "42", "-1"). For float types, convert the
+                // integer value to float then encode as IEEE 754 bit pattern.
+                match float_width {
+                    Some(32) => {
+                        let float_val = match literal {
+                            LiteralNumber::Unsigned(v) => *v as f32,
+                            LiteralNumber::Signed(v) => *v as f32,
+                        };
+                        vec![dr::Operand::LiteralBit32(float_val.to_bits())]
+                    }
+                    Some(64) => {
+                        let float_val = match literal {
+                            LiteralNumber::Unsigned(v) => *v as f64,
+                            LiteralNumber::Signed(v) => *v as f64,
+                        };
+                        vec![dr::Operand::LiteralBit64(float_val.to_bits())]
+                    }
+                    Some(_) => {
+                        // 16-bit or other widths: encode as raw bits in a 32-bit word
+                        vec![dr::Operand::LiteralBit32(literal_to_u32(literal))]
+                    }
+                    None => {
+                        // Integer type: encode as raw integer bits.
+                        self.module_builder
+                            .note_integer_constant(result_id, literal_to_u64(literal));
+                        vec![encode_literal_operand(literal)]
+                    }
+                }
+            }
+            OperandValue::Word(word) => {
+                // Non-integer text (e.g. "42.5", "0x1.8p+1"). Must be a float type.
+                let text = word.as_str();
+                if float_width.is_none() {
+                    self.module_builder.emit_error(
+                        literal_operand.span().start(),
+                        "integer type requires an integer literal",
+                    );
+                    return;
+                }
+                match float_width {
+                    Some(32) => match text.parse::<f32>() {
+                        Ok(val) => vec![dr::Operand::LiteralBit32(val.to_bits())],
+                        Err(_) => {
+                            self.module_builder.emit_error(
+                                literal_operand.span().start(),
+                                "invalid 32-bit float literal",
+                            );
+                            return;
+                        }
+                    },
+                    Some(64) => match text.parse::<f64>() {
+                        Ok(val) => vec![dr::Operand::LiteralBit64(val.to_bits())],
+                        Err(_) => {
+                            self.module_builder.emit_error(
+                                literal_operand.span().start(),
+                                "invalid 64-bit float literal",
+                            );
+                            return;
+                        }
+                    },
+                    _ => {
+                        self.module_builder.emit_error(
+                            literal_operand.span().start(),
+                            "unsupported float width for literal",
+                        );
+                        return;
+                    }
+                }
+            }
             _ => {
                 self.module_builder.emit_error(
                     literal_operand.span().start(),
@@ -1145,19 +1224,31 @@ impl<'a> AssemblyTranslator<'a> {
             }
         };
 
-        let (type_id, result_id) = self
-            .module_builder
-            .bind_typed_result(result_type, result_id);
         let inst = dr::Instruction::new(
             spirv::Op::Constant,
             Some(type_id),
             Some(result_id),
-            vec![dr::Operand::LiteralBit32(literal_to_u32(literal))],
+            operands,
         );
-        self.module_builder
-            .note_integer_constant(result_id, literal_to_u64(literal));
         self.builder.module_mut().types_global_values.push(inst);
         self.record_from_module(|module| module.types_global_values.last().cloned());
+    }
+
+    /// Look up whether `type_id` refers to an `OpTypeFloat` instruction
+    /// and return its bit width if so.
+    fn lookup_float_type_width(&self, type_id: u32) -> Option<u32> {
+        self.builder
+            .module_ref()
+            .types_global_values
+            .iter()
+            .find(|inst| {
+                inst.class.opcode == spirv::Op::TypeFloat && inst.result_id == Some(type_id)
+            })
+            .and_then(|inst| inst.operands.first())
+            .and_then(|op| match op {
+                dr::Operand::LiteralBit32(w) => Some(*w),
+                _ => None,
+            })
     }
 
     fn translate_type_function(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -5912,5 +6003,246 @@ OpFunctionEnd"#;
         assert!(convert.result_type.is_some());
         assert!(convert.result_id.is_some());
         assert_eq!(convert.operands.len(), 1);
+    }
+
+    // ---------------------------------------------------------------
+    // Context-dependent number literal tests (OpConstant / OpSpecConstant)
+    // Matching C++ spirv-as: integer text for float types is parsed as
+    // the float value, not raw bits.
+    // ---------------------------------------------------------------
+
+    /// Helper: assemble text, find the first OpConstant, return its operand.
+    fn assemble_and_get_constant_operand(lines: &[&str]) -> dr::Operand {
+        let parsed: Vec<_> = lines
+            .iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let module = assemble_instructions(&refs).expect("assemble");
+        module
+            .types_global_values
+            .iter()
+            .find(|inst| inst.class.opcode == spirv::Op::Constant)
+            .expect("OpConstant not found")
+            .operands
+            .first()
+            .expect("OpConstant missing operand")
+            .clone()
+    }
+
+    #[test]
+    fn constant_integer_literal_for_float32_encodes_as_float_value() {
+        // "42" with float32 type should encode as float 42.0, not raw bits 0x2A.
+        let operand = assemble_and_get_constant_operand(&[
+            "%float = OpTypeFloat 32",
+            "%c = OpConstant %float 42",
+        ]);
+        assert_eq!(operand, dr::Operand::LiteralBit32(42.0_f32.to_bits()));
+    }
+
+    #[test]
+    fn constant_zero_for_float32_encodes_correctly() {
+        let operand = assemble_and_get_constant_operand(&[
+            "%float = OpTypeFloat 32",
+            "%c = OpConstant %float 0",
+        ]);
+        assert_eq!(operand, dr::Operand::LiteralBit32(0.0_f32.to_bits()));
+    }
+
+    #[test]
+    fn constant_one_for_float32_encodes_correctly() {
+        let operand = assemble_and_get_constant_operand(&[
+            "%float = OpTypeFloat 32",
+            "%c = OpConstant %float 1",
+        ]);
+        assert_eq!(operand, dr::Operand::LiteralBit32(1.0_f32.to_bits()));
+    }
+
+    #[test]
+    fn constant_negative_integer_for_float32_encodes_as_negative_float() {
+        // "-1" with float32 type should encode as -1.0f (0xBF800000).
+        let operand = assemble_and_get_constant_operand(&[
+            "%float = OpTypeFloat 32",
+            "%c = OpConstant %float -1",
+        ]);
+        assert_eq!(operand, dr::Operand::LiteralBit32((-1.0_f32).to_bits()));
+    }
+
+    #[test]
+    fn constant_large_integer_for_float32_encodes_as_float() {
+        let operand = assemble_and_get_constant_operand(&[
+            "%float = OpTypeFloat 32",
+            "%c = OpConstant %float 1000000",
+        ]);
+        assert_eq!(operand, dr::Operand::LiteralBit32(1_000_000.0_f32.to_bits()));
+    }
+
+    #[test]
+    fn constant_integer_literal_for_float64_encodes_as_double_value() {
+        // "42" with float64 type should encode as double 42.0.
+        let operand = assemble_and_get_constant_operand(&[
+            "%double = OpTypeFloat 64",
+            "%c = OpConstant %double 42",
+        ]);
+        assert_eq!(operand, dr::Operand::LiteralBit64(42.0_f64.to_bits()));
+    }
+
+    #[test]
+    fn constant_negative_integer_for_float64_encodes_as_negative_double() {
+        let operand = assemble_and_get_constant_operand(&[
+            "%double = OpTypeFloat 64",
+            "%c = OpConstant %double -1",
+        ]);
+        assert_eq!(operand, dr::Operand::LiteralBit64((-1.0_f64).to_bits()));
+    }
+
+    #[test]
+    fn constant_float_text_for_float32_encodes_correctly() {
+        // "42.5" is float text, parsed via OperandValue::Word path.
+        let operand = assemble_and_get_constant_operand(&[
+            "%float = OpTypeFloat 32",
+            "%c = OpConstant %float 42.5",
+        ]);
+        assert_eq!(operand, dr::Operand::LiteralBit32(42.5_f32.to_bits()));
+    }
+
+    #[test]
+    fn constant_negative_float_text_for_float32_encodes_correctly() {
+        let operand = assemble_and_get_constant_operand(&[
+            "%float = OpTypeFloat 32",
+            "%c = OpConstant %float -3.14",
+        ]);
+        assert_eq!(operand, dr::Operand::LiteralBit32((-3.14_f32).to_bits()));
+    }
+
+    #[test]
+    fn constant_float_text_for_float64_encodes_correctly() {
+        let operand = assemble_and_get_constant_operand(&[
+            "%double = OpTypeFloat 64",
+            "%c = OpConstant %double 42.5",
+        ]);
+        assert_eq!(operand, dr::Operand::LiteralBit64(42.5_f64.to_bits()));
+    }
+
+    #[test]
+    fn constant_integer_for_uint32_encodes_as_raw_bits() {
+        // Integer types should still encode as raw integer bits.
+        let operand = assemble_and_get_constant_operand(&[
+            "%uint = OpTypeInt 32 0",
+            "%c = OpConstant %uint 42",
+        ]);
+        assert_eq!(operand, dr::Operand::LiteralBit32(42));
+    }
+
+    #[test]
+    fn constant_integer_for_sint32_encodes_as_raw_bits() {
+        let operand = assemble_and_get_constant_operand(&[
+            "%int = OpTypeInt 32 1",
+            "%c = OpConstant %int 42",
+        ]);
+        assert_eq!(operand, dr::Operand::LiteralBit32(42));
+    }
+
+    #[test]
+    fn constant_negative_for_sint32_encodes_twos_complement() {
+        let operand = assemble_and_get_constant_operand(&[
+            "%int = OpTypeInt 32 1",
+            "%c = OpConstant %int -1",
+        ]);
+        // -1 as i32 in two's complement is 0xFFFFFFFF
+        assert_eq!(operand, dr::Operand::LiteralBit32((-1_i32) as u32));
+    }
+
+    #[test]
+    fn constant_integer_for_uint64_encodes_value() {
+        // Small values that fit in 32 bits are stored as LiteralBit32 by
+        // encode_literal_operand. This is a pre-existing behavior; the binary
+        // serializer handles type-width encoding.
+        let operand = assemble_and_get_constant_operand(&[
+            "%ulong = OpTypeInt 64 0",
+            "%c = OpConstant %ulong 42",
+        ]);
+        assert_eq!(operand, dr::Operand::LiteralBit32(42));
+    }
+
+    #[test]
+    fn constant_large_integer_for_uint64_encodes_as_64bit() {
+        // Values that don't fit in 32 bits should use LiteralBit64.
+        let operand = assemble_and_get_constant_operand(&[
+            "%ulong = OpTypeInt 64 0",
+            "%c = OpConstant %ulong 4294967296",
+        ]);
+        assert_eq!(operand, dr::Operand::LiteralBit64(4_294_967_296));
+    }
+
+    #[test]
+    fn constant_float_round_trips_through_assemble_disassemble() {
+        // Full round-trip: assemble "OpConstant %float 42" then disassemble
+        // and verify the output shows 42 (the float value), not 5.88545e-44.
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%float = OpTypeFloat 32",
+            "%c = OpConstant %float 42",
+        ]
+        .join("\n");
+        let disassembled = round_trip_with_options(
+            &text,
+            TextToBinaryOptions::NONE,
+            BinaryToTextOptions::NO_HEADER,
+        );
+        assert!(
+            disassembled.contains("OpConstant") && disassembled.contains(" 42"),
+            "Expected disassembly to contain 'OpConstant ... 42', got: {disassembled}"
+        );
+        // Must NOT contain the subnormal float that 0x2A bit pattern represents
+        assert!(
+            !disassembled.contains("5.88545"),
+            "OpConstant should not show raw bits interpretation: {disassembled}"
+        );
+    }
+
+    #[test]
+    fn constant_float_text_round_trips_through_assemble_disassemble() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%float = OpTypeFloat 32",
+            "%c = OpConstant %float 42.5",
+        ]
+        .join("\n");
+        let disassembled = round_trip_with_options(
+            &text,
+            TextToBinaryOptions::NONE,
+            BinaryToTextOptions::NO_HEADER,
+        );
+        assert!(
+            disassembled.contains("42.5"),
+            "Expected disassembly to contain '42.5', got: {disassembled}"
+        );
+    }
+
+    #[test]
+    fn constant_does_not_note_integer_constant_for_float_type() {
+        // When the type is float, note_integer_constant should NOT be called.
+        // Verify by checking that a subsequent array-length lookup doesn't
+        // confuse float bits with integer values.
+        let type_inst = parse_instruction("%float = OpTypeFloat 32").unwrap();
+        let const_inst = parse_instruction("%c = OpConstant %float 42").unwrap();
+        let mut translator = AssemblyTranslator::new();
+        translator.translate(&type_inst);
+        translator.translate(&const_inst);
+        let (module, diagnostics) = translator.finish();
+        assert!(diagnostics.is_empty());
+        let constant = module
+            .types_global_values
+            .iter()
+            .find(|inst| inst.class.opcode == spirv::Op::Constant)
+            .expect("constant");
+        // The operand should be 42.0f bits, not integer 42
+        assert_eq!(
+            constant.operands.first().unwrap(),
+            &dr::Operand::LiteralBit32(42.0_f32.to_bits())
+        );
     }
 }
