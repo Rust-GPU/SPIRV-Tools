@@ -81,10 +81,6 @@ pub fn validate_capabilities(
             let grammar_requirements = capability_info_from_grammar(capability);
             let allowed_by_env = env.is_capability_allowed(capability);
 
-            if !allowed_by_env && capability == Capability::VulkanMemoryModel {
-                return Err(ValidationError::DisallowedCapability { capability, env });
-            }
-
             if env.is_opencl()
                 && matches!(
                     capability,
@@ -211,6 +207,11 @@ pub fn validate_capabilities(
             let allowed_by_extension = capability_allowed_by_extension(env, capability, extensions);
             let allowed_by_capability =
                 capability_enabled_by_capability(env, capability, &declared);
+
+            // If the capability is not allowed by any means (env allowlist,
+            // extension, or implied by another capability), reject it
+            // immediately. This matches C++ spirv-val which checks env/ext
+            // allowlists first.
             if !(allowed_by_env || allowed_by_extension || allowed_by_capability) {
                 return Err(ValidationError::DisallowedCapability { capability, env });
             }

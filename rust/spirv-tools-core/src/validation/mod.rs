@@ -96,8 +96,8 @@ use rules::capabilities::{
     validate_capabilities,
 };
 use rules::extensions::{
-    extension_operand, extension_satisfied, validate_extension_allowlist, validate_extensions,
-    ExtensionSet,
+    extension_operand, extension_satisfied, has_extension, validate_extension_allowlist,
+    validate_extensions, ExtensionSet,
 };
 use rules::limits::all_limit_rules;
 
@@ -946,12 +946,25 @@ fn validate_instruction_requirements(
             }
             if let Some(required_version) = required_spirv_version_for_operand(operand) {
                 if target_version < required_version {
-                    return Err(ValidationError::OperandRequiresSpirvVersion {
-                        opcode: inst.class.opcode,
-                        operand_index: index,
-                        required_version,
-                        target_version,
-                    });
+                    // Check if an enabling extension is declared that can
+                    // relax the version requirement (matching C++ spirv-val's
+                    // OperandVersionExtensionCheck).
+                    let has_enabling_extension = operand
+                        .required_extensions()
+                        .iter()
+                        .any(|ext| has_extension(extensions, ext))
+                        || grammar_required_extensions_for_operand(operand)
+                            .iter()
+                            .any(|ext| has_extension(extensions, ext));
+
+                    if !has_enabling_extension {
+                        return Err(ValidationError::OperandRequiresSpirvVersion {
+                            opcode: inst.class.opcode,
+                            operand_index: index,
+                            required_version,
+                            target_version,
+                        });
+                    }
                 }
             }
             // Collect ALL capabilities from all sources and check DISJUNCTIVELY

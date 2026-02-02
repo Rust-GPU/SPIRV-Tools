@@ -6331,14 +6331,38 @@ fn vulkan_1_0_rejects_vulkan_memory_model() {
     let error = text
         .as_str()
         .validate(TargetEnv::Vulkan1_0)
-        .expect_err("Vulkan memory model is 1.2+ optional");
+        .expect_err("Vulkan memory model requires SPIR-V 1.5");
     assert_eq!(
         error,
-        ValidationError::DisallowedCapability {
+        ValidationError::CapabilityRequiresSpirvVersion {
             capability: rspirv::spirv::Capability::VulkanMemoryModel,
-            env: TargetEnv::Vulkan1_0
+            required_version: SpirvVersion::new(1, 5),
+            target_version: TargetEnv::Vulkan1_0.spirv_version(),
         }
     );
+}
+#[test]
+fn vulkan_1_1_allows_vulkan_memory_model_with_extension() {
+    // VulkanMemoryModel is available in Vulkan 1.1 via SPV_KHR_vulkan_memory_model extension.
+    // The capability requires SPIR-V 1.5, but the extension enables it on earlier versions.
+    let text = [
+        "OpCapability Shader",
+        "OpCapability VulkanMemoryModel",
+        "OpExtension \"SPV_KHR_vulkan_memory_model\"",
+        "OpMemoryModel Logical VulkanKHR",
+        "%void = OpTypeVoid",
+        "%fn = OpTypeFunction %void",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    let module = text
+        .as_str()
+        .validate(TargetEnv::Vulkan1_1)
+        .expect("VulkanMemoryModel is optional in Vulkan 1.1 (via SPV_KHR_vulkan_memory_model)");
+    assert_eq!(module.env(), TargetEnv::Vulkan1_1);
 }
 #[test]
 fn vulkan_1_2_allows_physical_storage_buffer_addresses() {
@@ -17525,14 +17549,15 @@ fn memory_model_vulkan_requires_spirv_1_5() {
     let error = words
         .as_slice()
         .validate(TargetEnv::Vulkan1_1Spirv1_4)
-        .expect_err("Vulkan memory model requires SPIR-V 1.5");
+        .expect_err("VulkanKHR memory model operand requires VulkanMemoryModel capability");
+    // The extension satisfies the SPIR-V version requirement, so the real
+    // error surfaces: the VulkanMemoryModel capability is not declared.
     assert_eq!(
         error,
-        ValidationError::OperandRequiresSpirvVersion {
+        ValidationError::MissingOperandCapability {
             opcode: rspirv::spirv::Op::MemoryModel,
             operand_index: 1,
-            required_version: SpirvVersion::new(1, 5),
-            target_version: TargetEnv::Vulkan1_1Spirv1_4.spirv_version(),
+            required_capability: rspirv::spirv::Capability::VulkanMemoryModel,
         }
     );
 }
