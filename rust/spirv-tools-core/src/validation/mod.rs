@@ -997,21 +997,23 @@ fn validate_instruction_requirements(
                     });
                 }
             }
-            for required_ext in operand.required_extensions() {
-                if !extension_satisfied(required_ext, extensions, target_version) {
+            // Collect ALL extensions from all sources and check DISJUNCTIVELY
+            // (like C++ spirv-val's HasAnyOfExtensions).
+            // The grammar lists alternatives and you need AT LEAST ONE
+            // from the combined set.
+            let mut all_required_exts: Vec<&str> = Vec::new();
+            all_required_exts.extend(operand.required_extensions());
+            all_required_exts.extend(grammar_required_extensions_for_operand(operand));
+
+            if !all_required_exts.is_empty() {
+                let has_any = all_required_exts
+                    .iter()
+                    .any(|&ext| extension_satisfied(ext, extensions, target_version));
+                if !has_any {
                     return Err(ValidationError::MissingOperandExtension {
                         opcode: inst.class.opcode,
                         operand_index: index,
-                        required_extension: ExtensionName::from(required_ext),
-                    });
-                }
-            }
-            for required_ext in grammar_required_extensions_for_operand(operand) {
-                if !extension_satisfied(required_ext, extensions, target_version) {
-                    return Err(ValidationError::MissingOperandExtension {
-                        opcode: inst.class.opcode,
-                        operand_index: index,
-                        required_extension: ExtensionName::from(required_ext),
+                        required_extension: ExtensionName::from(all_required_exts[0]),
                     });
                 }
             }
