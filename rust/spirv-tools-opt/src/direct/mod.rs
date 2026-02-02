@@ -1160,29 +1160,12 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     // Step 6: Rebuild the module with optimized instructions
     let mut output = module.clone();
 
-    // DCE for types_global_values: only keep types (always needed), used constants,
-    // and used variables. Unused Private/Function storage class variables are removed.
-    // This is the e-graph DCE - only IDs reachable from roots survive extraction
+    // DCE for types_global_values: remove unused Private/Function variables.
+    // Constants are NOT removed here - they will be DCE'd later after cleanup_module
+    // has removed dead function body instructions. This ensures we don't remove constants
+    // that are still referenced by surviving non-optimized instructions.
     output.types_global_values.retain(|inst| {
         match inst.class.opcode {
-            // Constants are only kept if they're in used_ids (reachable from roots)
-            Op::Constant
-            | Op::ConstantTrue
-            | Op::ConstantFalse
-            | Op::ConstantComposite
-            | Op::ConstantSampler
-            | Op::ConstantNull
-            | Op::SpecConstant
-            | Op::SpecConstantTrue
-            | Op::SpecConstantFalse
-            | Op::SpecConstantComposite
-            | Op::SpecConstantOp => {
-                if let Some(id) = inst.result_id {
-                    used_ids.contains(&id)
-                } else {
-                    true
-                }
-            }
             // Variables with Private or Function storage class can be removed if unused.
             // Other storage classes (Input, Output, Uniform, etc.) must be kept as they
             // are part of the shader interface.
@@ -1208,7 +1191,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                     _ => true,
                 }
             }
-            // Types and other instructions are always kept
+            // Types, constants, and other instructions are kept for now
             _ => true,
         }
     });
@@ -1533,6 +1516,80 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     // Step 7: Clean up - remove instructions that are just CopyObject of themselves or unused
     // Pass true_roots so that modules without side effects don't have everything removed
     cleanup_module(&mut output, &id_aliases, &true_roots);
+
+    // Step 7b: DCE for types_global_values constants.
+    // Now that cleanup_module has removed dead function body instructions, we can
+    // accurately determine which constants are still referenced. This must happen
+    // AFTER cleanup_module so we don't remove constants used by surviving instructions
+    // that the e-graph didn't track (e.g., OpAccessChain index constants).
+    {
+        let mut live_ids: HashSet<Word> = HashSet::new();
+        // Collect all IDs referenced by surviving function body instructions
+        for func in &output.functions {
+            for param in &func.parameters {
+                collect_ids_from_instruction(param, &mut live_ids);
+            }
+            for block in &func.blocks {
+                for inst in &block.instructions {
+                    collect_ids_from_instruction(inst, &mut live_ids);
+                }
+            }
+        }
+        // Collect IDs referenced by annotations (decorations may reference constants)
+        for inst in &output.annotations {
+            collect_ids_from_instruction(inst, &mut live_ids);
+        }
+        // Collect IDs referenced by entry points
+        for inst in &output.entry_points {
+            collect_ids_from_instruction(inst, &mut live_ids);
+        }
+        // Collect IDs referenced by other types_global_values (e.g., ConstantComposite
+        // referencing component constants, or types referencing other types).
+        // Iterate to a fixpoint since constants can reference other constants.
+        loop {
+            let prev_len = live_ids.len();
+            for inst in &output.types_global_values {
+                if let Some(id) = inst.result_id {
+                    if live_ids.contains(&id) {
+                        for op in &inst.operands {
+                            if let Some(ref_id) = op.id_ref_any() {
+                                live_ids.insert(ref_id);
+                            }
+                        }
+                        if let Some(ty) = inst.result_type {
+                            live_ids.insert(ty);
+                        }
+                    }
+                }
+            }
+            if live_ids.len() == prev_len {
+                break;
+            }
+        }
+        // Remove constants not referenced by any surviving instruction
+        output.types_global_values.retain(|inst| {
+            match inst.class.opcode {
+                Op::Constant
+                | Op::ConstantTrue
+                | Op::ConstantFalse
+                | Op::ConstantComposite
+                | Op::ConstantSampler
+                | Op::ConstantNull
+                | Op::SpecConstant
+                | Op::SpecConstantTrue
+                | Op::SpecConstantFalse
+                | Op::SpecConstantComposite
+                | Op::SpecConstantOp => {
+                    if let Some(id) = inst.result_id {
+                        live_ids.contains(&id)
+                    } else {
+                        true
+                    }
+                }
+                _ => true,
+            }
+        });
+    }
 
     // Step 8: Update the module's ID bound to account for any new IDs allocated
     // during optimization (synthesized constants, phi nodes, materialized expressions).
@@ -2316,5 +2373,67 @@ mod tests {
         let mut loader = rspirv::dr::Loader::new();
         rspirv::binary::parse_words(&words, &mut loader)
             .expect("optimized module should parse successfully");
+    }
+
+    #[test]
+    fn constants_referenced_by_non_optimized_instructions_survive_dce() {
+        use rspirv::binary::Assemble;
+        use rspirv::dr::Builder;
+        use rspirv::spirv::{
+            AddressingModel, Capability, ExecutionMode, ExecutionModel, FunctionControl,
+            MemoryModel, StorageClass,
+        };
+
+        // Build a module where a constant is ONLY referenced by a non-optimized
+        // side-effect instruction (OpStore). The e-graph only tracks arithmetic
+        // expressions, so this constant wouldn't be in used_ids from extraction.
+        // Without the deferred constant DCE fix, this constant would be removed,
+        // causing "use of undefined id" errors.
+        let mut b = Builder::new();
+        b.capability(Capability::Shader);
+        b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+        let void = b.type_void();
+        let int = b.type_int(32, 0);
+        let ptr_int = b.type_pointer(None, StorageClass::Function, int);
+        let func_ty = b.type_function(void, vec![]);
+        let func = b
+            .begin_function(void, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        // c0 is only used by OpStore - not part of any arithmetic the e-graph tracks
+        let c0 = b.constant_bit32(int, 0);
+        // c4 and c5 are used by arithmetic that the e-graph will optimize
+        let c4 = b.constant_bit32(int, 4);
+        let c5 = b.constant_bit32(int, 5);
+        let var = b.variable(ptr_int, None, StorageClass::Function, None);
+        let add = b.i_add(int, None, c4, c5).expect("add");
+        // OpStore references c0 - a non-optimized instruction
+        b.store(var, c0, None, []).unwrap();
+        // Use add result so it's not dead
+        b.store(var, add, None, []).unwrap();
+        b.ret().unwrap();
+        b.end_function().unwrap();
+        b.entry_point(ExecutionModel::GLCompute, func, "main", []);
+        b.execution_mode(func, ExecutionMode::LocalSize, [1, 1, 1]);
+
+        let module = b.module();
+        let optimized = optimize_module_direct(&module).expect("optimization should succeed");
+
+        // Verify the optimized module assembles and parses without error
+        // (would fail with "use of undefined id" if c0 was incorrectly DCE'd)
+        let words = optimized.assemble();
+        let mut loader = rspirv::dr::Loader::new();
+        rspirv::binary::parse_words(&words, &mut loader)
+            .expect("optimized module should parse - constants used by OpStore must survive DCE");
+
+        // Verify c0 (constant 0) is still present in the module
+        let has_const_0 = optimized.types_global_values.iter().any(|inst| {
+            inst.class.opcode == rspirv::spirv::Op::Constant
+                && inst.result_id == Some(c0)
+        });
+        assert!(
+            has_const_0,
+            "constant 0 (used only by OpStore) must survive DCE"
+        );
     }
 }
